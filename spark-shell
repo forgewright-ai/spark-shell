@@ -7047,7 +7047,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open about_site undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open about_site undo_all files_browse files_open files_app files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -7210,6 +7210,7 @@ tool_spec() {
         undo_all)          _ts=undo _ta=all _th='' _tt='undo' _td='Take the last thing done back.' ;;
         files_browse)      _ts=files _ta=browse _tp=path _tk=path _th=ifo _tt='files browse PATH' _td='Open a folder in the system file manager, for anything beyond the steps here. path is a row'"'"'s own path, exactly as written.' ;;
         files_open)        _ts=files _ta=open _tp=path _tk=path _th=ifo _tt='files open PATH' _td='Open a file with the app that opens its kind. path is a row'"'"'s own path, exactly as written.' ;;
+        files_app)         _ts=files _ta=app _tp=path _tk=path _th=ifo _tt='files app PATH' _td='Open a file in the app the system assigns to its kind, a folder in the system file manager. path is a row'"'"'s own path, exactly as written.' ;;
         files_show)        _ts=files _ta=show _tp=path _tk=path _th=rif _tt='files show PATH' _td='The first lines of a text file. path is a row'"'"'s own path, exactly as written.' ;;
         files_play)        _ts=files _ta=play _tp=path _tk=path _te='at:seconds x:pixels y:pixels w:pixels h:pixels' _th='' _tt='files play PATH' _td='Play a sound here, with no window, from at seconds (the start when none), until it ends or files stop; a video over the box x, y, w, h of the dialog the preview drew it in. path is a row'"'"'s own path, exactly as written.' ;;
         files_stop)        _ts=files _ta=stop _th=i _tt='files stop' _td='Stop the sound files play started.' ;;
@@ -8414,7 +8415,7 @@ files_page() {   # files_page PATH PAGE [full] -> the preview's page of PATH (#1
         video) files_page_media "$1" video "$_fpb-$_fpx" "$_fpx" ;;
         office) files_page_office "$1" "$_fpb" ;;
         *) file -b -- "$1" 2>/dev/null | cut -d, -f1 | scrub_text | cut -c1-40 >> "$TMP/page.lead"
-           files_say "no preview for this kind of file: Enter opens it" ;;
+           files_say "this kind of file cannot be viewed: Enter opens it" ;;
     esac
     printf '%s\n%s\n' "$(files_size "$3")" "$(files_when "$4")" >> "$TMP/page.lead"
     jq -n --arg t "$(printf '%s' "${1##*/}" | scrub_text)" --rawfile f "$TMP/page.lead" --slurpfile k "$TMP/page.json" \
@@ -8422,11 +8423,11 @@ files_page() {   # files_page PATH PAGE [full] -> the preview's page of PATH (#1
 }
 files_page_text() {   # files_page_text PATH KIND SIZE BASE -- page.json: the text's lines, read only; a heading bold (Markdown), lines numbered (code), indented (JSON); BASE.txt for spark
     head -c "$FILES_TEXT_MAX" "$1" > "$TMP/page.raw" 2>/dev/null || :
-    [ "$(LC_ALL=C tr -d '\000' < "$TMP/page.raw" | wc -c | tr -d ' ')" = "$(wc -c < "$TMP/page.raw" | tr -d ' ')" ] || { files_say "no preview: this file is not text, Enter opens it"; return 0; }
+    [ "$(LC_ALL=C tr -d '\000' < "$TMP/page.raw" | wc -c | tr -d ' ')" = "$(wc -c < "$TMP/page.raw" | tr -d ' ')" ] || { files_say "cannot view: this file is not text, Enter opens it"; return 0; }
     if [ "$2" = json ] && [ "$3" -le "$FILES_TEXT_MAX" ] && jq . "$1" > "$TMP/page.pretty" 2>/dev/null; then mv "$TMP/page.pretty" "$TMP/page.raw"; fi
     cp "$TMP/page.raw" "$4.txt"
     expand -t 4 < "$TMP/page.raw" > "$TMP/page.txt" 2>/dev/null || cp "$TMP/page.raw" "$TMP/page.txt"
-    [ "$3" -le "$FILES_TEXT_MAX" ] || printf '\n\nthe preview ends here, at %s of %s: Enter opens the whole file\n' "$(files_size "$FILES_TEXT_MAX")" "$(files_size "$3")" >> "$TMP/page.txt"
+    [ "$3" -le "$FILES_TEXT_MAX" ] || printf '\n\nthe view ends here, at %s of %s: Enter opens the whole file\n' "$(files_size "$FILES_TEXT_MAX")" "$(files_size "$3")" >> "$TMP/page.txt"
     jq -Rn --arg k "$2" --arg a "$4.txt" '[inputs] as $l
         | (if $k == "markdown" then {lines: ($l | map(sub("^#{1,6}[ \t]+"; ""))), bold: [range(0; $l | length) as $i | select($l[$i] | test("^#{1,6}[ \t]")) | $i]}
            else {lines: $l, numbered: ($k == "code")} end) + {attach: $a}' < "$TMP/page.txt" > "$TMP/page.json"
@@ -8448,7 +8449,7 @@ files_page_picture() {   # files_page_picture PATH BASE PX -- page.json: the pic
     case $1 in
         *.svg|*.SVG) command -v rsvg-convert >/dev/null 2>&1 && files_tool rsvg-convert -a -w "$_fps" -h "$_fps" -o "$2.png" "$1" 2>/dev/null ;;
         *) pic_png "$1" "$2.png" "$_fps" ;;
-    esac || { files_say "no preview: nothing here draws this picture, Enter opens it"; return 0; }
+    esac || { files_say "cannot view: nothing here draws this picture, Enter opens it"; return 0; }
     if [ "$_fpz" != null ]; then   # a phone's photo is drawn turned by its EXIF orientation: its size at 100 % is the drawn one's way round
         # shellcheck disable=SC2046   # four numbers, split on purpose
         set -- "$1" "$2" "$3" $_fpd $(png_size "$2.png")
@@ -8459,14 +8460,14 @@ files_page_picture() {   # files_page_picture PATH BASE PX -- page.json: the pic
     jq -cn --arg p "$2.png" --argjson z "$_fpz" --argjson f "$_fpw" '{picture: $p, full: $f} + (if $z == null then {} else {size: $z} end)' > "$TMP/page.json"
 }
 files_page_pdf() {   # files_page_pdf PATH PAGE BASE PX -- page.json: the page drawn PX tall at most, of how many, its size at 100 % (96 pixels an inch); its text for spark
-    command -v pdftoppm >/dev/null 2>&1 || { files_say "no preview: pdftoppm (poppler) is not installed, Enter opens it"; return 0; }
+    command -v pdftoppm >/dev/null 2>&1 || { files_say "cannot view: pdftoppm (poppler) is not installed, Enter opens it"; return 0; }
     _fpn=$(files_tool pdfinfo "$1" 2>"$TMP/pdf.err" | sed -n 's/^Pages: *\([0-9][0-9]*\).*/\1/p')
-    if [ -z "$_fpn" ] && grep -qi 'password' "$TMP/pdf.err"; then files_say "no preview: this PDF is locked by a password, Enter opens it"; return 0; fi
-    [ -n "$_fpn" ] && [ "$_fpn" -gt 0 ] || { files_say "no preview: this PDF could not be read, Enter opens it"; return 0; }
+    if [ -z "$_fpn" ] && grep -qi 'password' "$TMP/pdf.err"; then files_say "cannot view: this PDF is locked by a password, Enter opens it"; return 0; fi
+    [ -n "$_fpn" ] && [ "$_fpn" -gt 0 ] || { files_say "cannot view: this PDF could not be read, Enter opens it"; return 0; }
     [ "$2" -le "$_fpn" ] || set -- "$1" "$_fpn" "$3" "$4"
     _fpz=$(files_tool pdfinfo -f "$2" -l "$2" "$1" 2>/dev/null | awk '/^Page +[0-9]+ size:/ { printf "[%d,%d]", $4 * 96 / 72 + 0.5, $6 * 96 / 72 + 0.5; exit }')
     [ -f "$3-$2.png" ] || files_tool pdftoppm -f "$2" -l "$2" -png -scale-to "$4" -singlefile "$1" "$3-$2" >/dev/null 2>&1 \
-        || { files_say "no preview: this page could not be drawn, Enter opens it"; return 0; }
+        || { files_say "cannot view: this page could not be drawn, Enter opens it"; return 0; }
     [ -f "$3-$2.txt" ] || files_tool pdftotext -f "$2" -l "$2" -enc UTF-8 "$1" "$3-$2.txt" >/dev/null 2>&1 || rm -f "$3-$2.txt"
     _fpa=''; [ ! -s "$3-$2.txt" ] || _fpa=$3-$2.txt
     jq -cn --arg p "$3-$2.png" --argjson n "$2" --argjson m "$_fpn" --arg a "$_fpa" --argjson z "${_fpz:-null}" --argjson f "$([ "$4" = "$FILES_FULL_PX" ] && echo true || echo false)" \
@@ -8516,11 +8517,11 @@ files_sound_stop() {   # the waveform being drawn aside, stopped (another sound'
 }
 files_time() { awk -v s="$1" 'BEGIN { s = int(s + 0.5); h = int(s / 3600); m = int(s % 3600 / 60); if (h > 0) printf "%d:%02d:%02d", h, m, s % 60; else printf "%d:%02d", m, s % 60 }'; }   # files_time SECONDS -> 3:45, 1:02:03
 files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.json: a sound's tags, its waveform over its spectrogram (drawn once, whole, by mpv), what an audio engineer asks first (rate, bits, channels, format, the bitrate of a lossy one), right plays it here; a video's frame, PX wide at most, its length and size, right plays it in its app
-    command -v mpv >/dev/null 2>&1 || { files_say "no preview: mpv is not installed, Enter opens it"; return 0; }
+    command -v mpv >/dev/null 2>&1 || { files_say "cannot view: mpv is not installed, Enter opens it"; return 0; }
     # shellcheck disable=SC2086   # MPV_SAFE is options, split on purpose
     _fmf=$(files_tool mpv $MPV_SAFE --untimed --vo=null --ao=null --length=0.05 --msg-level=all=no,term-msg=info \
         --term-playing-msg="\${=duration:0}$US\${width:}$US\${height:}$US\${audio-params/samplerate:}$US\${audio-params/channel-count:}$US\${audio-params/format:}$US\${audio-codec-name:}$US\${metadata/by-key/title:}$US\${metadata/by-key/artist:}$US\${metadata/by-key/album:}$US\${video-params/rotate:}" -- "$1" </dev/null 2>/dev/null | head -1)
-    [ -n "$_fmf" ] || { files_say "no preview: mpv could not read this file, Enter opens it"; return 0; }
+    [ -n "$_fmf" ] || { files_say "cannot view: mpv could not read this file, Enter opens it"; return 0; }
     printf '%s\n' "$_fmf" | tr "$US" '\n' > "$TMP/page.media"
     { read -r _fms; read -r _fmw; read -r _fmh; read -r _fmr; read -r _fmc; read -r _fmb; read -r _fmk; } < "$TMP/page.media"
     _fma=$(jq -cn --arg p "$1" '{path: $p}')
@@ -8542,7 +8543,7 @@ files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.jso
             files_tool mpv $MPV_SAFE --untimed --really-quiet --no-audio --vo=image --vo-image-format=png --vo-image-outdir="$TMP/frame" \
                 --start=10% --frames=1 $_fmv -- "$1" </dev/null >/dev/null 2>&1
             mv "$TMP/frame/00000001.png" "$3.png" 2>/dev/null
-        } || { files_say "no preview: no frame of this video could be drawn, Enter opens it"; return 0; }
+        } || { files_say "cannot view: no frame of this video could be drawn, Enter opens it"; return 0; }
         # played over its frame where sway is (#125), its length the clock; else in its app
         _fmh=''; ! files_video_here || _fmh=1
         jq -cn --arg p "$3.png" --argjson a "$_fma" --argjson z "$_fmz" --argjson f "$_fmu" --arg h "$_fmh" --argjson n "${_fms:-0}" \
@@ -8570,9 +8571,9 @@ files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.jso
           + (if $p == "" then {} else {sound: {picture: $p, wave: $h}} end)' < "$TMP/page.tags" > "$TMP/page.json"
 }
 files_page_office() {   # files_page_office PATH BASE -- page.json: an Office document's text, read by Python's own zip and XML readers (no LibreOffice); BASE.txt for spark
-    command -v python3 >/dev/null 2>&1 || { files_say "no preview: python3 is not installed, Enter opens it"; return 0; }
+    command -v python3 >/dev/null 2>&1 || { files_say "cannot view: python3 is not installed, Enter opens it"; return 0; }
     files_tool python3 -I "$REPO/lib/office.py" "$1" > "$TMP/page.office" 2>/dev/null && jq -e '.lines | length > 0' "$TMP/page.office" >/dev/null 2>&1 \
-        || { files_say "no preview: this document could not be read, Enter opens it"; return 0; }
+        || { files_say "cannot view: this document could not be read, Enter opens it"; return 0; }
     jq -r '.lines[]' "$TMP/page.office" > "$2.txt"
     jq -c --arg a "$2.txt" '. + {attach: $a}' "$TMP/page.office" > "$TMP/page.json"
 }
@@ -8676,8 +8677,8 @@ provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one fold
         def steps: (if $fm != "" then [{name: "files_reveal", said: "reveal in the system file manager"}] else [] end) + [{name: "files_rename", ask: ["name"], said: "rename"},
             {name: "files_move", pick: "to", said: "move to a folder"}, {name: "files_copy", pick: "to", said: "copy to a folder"}, {name: "files_trash", said: "trash"}];
         # the steps once a list, by kind: a row of a kind takes them with its own path (#123), so a page of a thousand stays small
-        {file: {tool: {name: "files_open", said: "open"}, more: ([{name: "files_preview", said: "preview"}, {name: "files_attach", said: "attach to the next request"}] + steps)},
-         dir: ({more: steps} + (if $fm != "" then {tool: {name: "files_browse", said: "open in the system file manager"}} else {} end)),
+        {file: {tool: {name: "files_open", said: "open"}, more: ([{name: "files_app", said: "open in app"}, {name: "files_preview", said: "view"}, {name: "files_attach", said: "attach to the next request"}] + steps)},
+         dir: ({more: ((if $fm != "" then [{name: "files_app", said: "open in app"}] else [] end) + steps)} + (if $fm != "" then {tool: {name: "files_browse", said: "open in the system file manager"}} else {} end)),
          trashed: {tool: {name: "files_restore", said: "restore"}, more: [{name: "files_purge", said: "delete for good"}]}} as $kinds |
         [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], children: (if .[3] == "" then null else .[3] end), path: .[4], c1: .[5], c2: .[6], group: (if .[7] == "" then null else .[7] end), c3: .[8], kind: .[9], preview: .[10], kw: .[11], stamp: .[12]}
             | {path: .path} as $a
@@ -8686,7 +8687,7 @@ provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one fold
                       elif .kind == "trashdir" or .kind == "drive" then (["", .c1, "", ""] | map((. // "") | '"$SCRUB_JQ"')) else null end),
                page: (if .kind == "file" then "spark-shell://files/preview/" + (.id | ltrimstr("files:file:")) elif .kind == "dir" then "spark-shell://files/preview/" + (.id | ltrimstr("files:dir:")) else null end),
                kind: (if .kind == "file" or .kind == "dir" or .kind == "trashed" then .kind else null end), args: (if .kind == "file" or .kind == "dir" or .kind == "trashed" then $a else null end),
-               more: (if .kind == "here" then [{name: "files_new_folder", arguments: $a, ask: ["name"], said: "new folder"}, {name: "files_new_text", arguments: $a, ask: ["name"], said: "new text file"}]
+               more: (if .kind == "here" then [{name: "files_new_folder", arguments: $a, ask: ["name"], said: "new folder"}, {name: "files_new_text", arguments: $a, ask: ["name"], said: "new file"}]
                           + (if $fm != "" then [{name: "files_browse", arguments: $a, said: "open in the system file manager"}] else [] end)
                       elif .kind == "trash-here" then [{name: "files_empty", arguments: {}, said: "empty the trash"}] else null end),
                preview: (if .preview != "" then .preview else null end)}
@@ -8871,6 +8872,7 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
             [ "$(files_kind "$_ff")" = sound ] && command -v mpv >/dev/null 2>&1 || { provide_refuse "$1" "files: $_fname is no sound mpv plays here"; return 0; }
             files_play "$_ff" "$_fat"; files_result "$1" "playing $_fname" ;;
         files_browse) files_open_with "$1" "$_ff" ;;
+        files_app) files_open_with "$1" "$_ff" ;;   # the app the system assigns, never the editor: a text file too
         files_reveal) files_open_with "$1" "$_ff" --reveal ;;
         files_show|files_attach)
             set -- "$1" "$2" "$(files_stat "$_ff" | cut -d' ' -f1)"

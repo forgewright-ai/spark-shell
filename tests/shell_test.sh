@@ -4576,8 +4576,8 @@ for _mf in "$REPO"/wallpaper/motion/*; do _mn=${_mf##*/}; case $_mn in *.py) wal
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 144 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-four sections hold the 144 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 145 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-four sections hold the 145 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -4686,7 +4686,7 @@ jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.dest
     && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove files_empty files_purge power_logout power_restart power_shutdown printers_cancel theme_delete wifi_forget wifi_setup window_close' ] \
     && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = 'notes_find about_open files_show files_attach files_find files_say' ] \
     && ok "provide: every hint spelled out (the spec's default is destructive); destructive only where something is lost (#112): forget, close, remove, delete, delete for good and empty the trash (#130), the power steps, a print job cancelled, the network manager installed; the network, clock and printer settings carry undo instead; read only: notes find, about, files show, attach, find and say" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
-[ "$(jq -r 'select(._meta["spark-shell/opens"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'about_site apps_open apps_terminal files_browse files_open files_reveal notes_open power_lock storage_open window_focus' ] \
+[ "$(jq -r 'select(._meta["spark-shell/opens"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'about_site apps_open apps_terminal files_app files_browse files_open files_reveal notes_open power_lock storage_open window_focus' ] \
     && [ "$(jq -s '[.[] | select(._meta != null and ._meta != {"spark-shell/opens": true})] | length' "$H/tools.all")" = 0 ] \
     && ok "provide: the tools that put a window in front say so (_meta spark-shell/opens), so the dialog steps aside at the click (#196); no other tool carries _meta" || bad "tool opens" "$(jq -c 'select(._meta) | [.name, ._meta]' "$H/tools.all")"
 jq -e -s 'all(.[]; .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .outputSchema.type == "object")' "$H/tools.all" >/dev/null \
@@ -4911,8 +4911,8 @@ ans 2 | jq -r '.result.contents[0].text' | jq -e --arg u "$(uri "$FR")" '.rows |
     && ok "provide files: the roots are the rows at the top, each opening its folder; / is never a root" || bad "files root rows" "$(ans 2)"
 ans 3 | jq -r '.result.contents[0].text' > "$H/folder.raw"; jq "$KX" "$H/folder.raw" > "$H/folder.json"
 [ "$(jq -r '[.rows[] | .text] | join("|")' "$H/folder.json")" = "docs|blob.txt|notes.md|pic.png|etc-link -> /etc|this folder $(printf '\302\267') 1 folder $(printf '\302\267') 3 files $(printf '\302\267') 16 B" ] \
-    && [ "$(jq -r '.rows[-1] | [.more[].said] | join("|")' "$H/folder.json")" = 'new folder|new text file|open in the system file manager' ] \
-    && jq -e '(.rows[] | select(.text == "docs") | .children != null and .columns == ["2 items"] and .tool.name == "files_browse") and (.rows[] | select(.text == "notes.md") | .tool.name == "files_open" and .columns[0] == "12 B" and ([.more[].name] == ["files_preview", "files_attach", "files_reveal", "files_rename", "files_move", "files_copy", "files_trash"]) and (.page | startswith("spark-shell://files/preview/"))) and (.rows[] | select(.text | startswith("etc-link")) | .tool == null and .children == null)' "$H/folder.json" >/dev/null \
+    && [ "$(jq -r '.rows[-1] | [.more[].said] | join("|")' "$H/folder.json")" = 'new folder|new file|open in the system file manager' ] \
+    && jq -e '(.rows[] | select(.text == "docs") | .children != null and .columns == ["2 items"] and .tool.name == "files_browse") and (.rows[] | select(.text == "notes.md") | .tool.name == "files_open" and .columns[0] == "12 B" and ([.more[].name] == ["files_app", "files_preview", "files_attach", "files_reveal", "files_rename", "files_move", "files_copy", "files_trash"]) and (.page | startswith("spark-shell://files/preview/"))) and (.rows[] | select(.text | startswith("etc-link")) | .tool == null and .children == null)' "$H/folder.json" >/dev/null \
     && ok "provide files: a folder lists its folders, then its files with the size and the date, then one row for itself, its actions behind it (#127); a link is shown and never followed; a hidden file and a pipe are not listed" || bad "files folder" "$(jq -c '.rows[] | [.text, .columns, .tool.name]' "$H/folder.json")"
 # #141: a wide list's columns beside the short ones: a file's kind, its size and its date with the time; a folder's
 jq -e '(.rows[] | select(.text == "notes.md") | .wide[0] == "Markdown" and .wide[1] == .columns[0] and (.wide[2] | test("^today [0-9][0-9]:[0-9][0-9]$")))
@@ -4943,12 +4943,12 @@ ans 2 | jq -r '.result.contents[0].text' | jq "$KX" > "$H/home2.json"; ans 3 | j
 [ "$(jq -r '.here' "$H/home2.json")" = "$F2R" ] && [ "$(jq -r '[.rows[] | select(.group == "recent") | .text + " " + (.columns | join(","))] | join("|")' "$H/home2.json")" = "notes.md 12 B,today,~|invoice.txt 18 B,$(date -d '-3 day' '+%d %b' 2>/dev/null || date -v-3d '+%d %b'),docs" ] \
     && [ "$(jq -r '[.rows[] | select(.group == "home") | .text] | join("|")' "$H/home2.json")" = 'docs|node_modules|pictures|notes.md|trash' ] \
     && [ "$(jq -r '[.rows[] | .group // "-"] | reduce .[] as $g ([]; if .[-1] == $g then . else . + [$g] end) | join(",")' "$H/home2.json")" = 'home,recent,-' ] \
-    && [ "$(jq -r '.rows[-1] | .text + "|" + ([.more[] | .said + ":" + .name + ":" + ((.ask // []) | join(","))] | join("|"))' "$H/home2.json")" = "this folder $(printf '\302\267') 3 folders $(printf '\302\267') 1 file $(printf '\302\267') 12 B|new folder:files_new_folder:name|new text file:files_new_text:name|open in the system file manager:files_browse:" ] \
+    && [ "$(jq -r '.rows[-1] | .text + "|" + ([.more[] | .said + ":" + .name + ":" + ((.ask // []) | join(","))] | join("|"))' "$H/home2.json")" = "this folder $(printf '\302\267') 3 folders $(printf '\302\267') 1 file $(printf '\302\267') 12 B|new folder:files_new_folder:name|new file:files_new_text:name|open in the system file manager:files_browse:" ] \
     && jq -e --arg p "$F2R" '[.rows[-1].more[].arguments.path] | all(. == $p)' "$H/home2.json" >/dev/null \
     && ok "provide files: your home folder: home first, its folders and files, the trash (#130); the files touched in the last days below it (today, 3 days ago; a 2020 picture is not recent), each with its folder's name; then one row for the folder, its actions behind it: new folder and new text file (each asking a name), the system file manager (#127); here is the folder" || bad "files home rows" "$(jq -c '{here, rows: [.rows[] | [.text, .group, .columns, .tool.name]]}' "$H/home2.json")"
 [ "$(jq -r '[.rows[] | .text] | join("|")' "$H/docs2.json")" = "..|deep|invoice.txt|this folder $(printf '\302\267') 1 folder $(printf '\302\267') 1 file $(printf '\302\267') 18 B" ] && [ "$(jq -r .here "$H/docs2.json")" = "$F2R/docs" ] \
-    && [ "$(jq -r '.rows[] | select(.text == "deep") | .tool.name + ":" + .tool.said + "|" + ([.more[] | .said] | join(","))' "$H/docs2.json")" = 'files_browse:open in the system file manager|reveal in the system file manager,rename,move to a folder,copy to a folder,trash' ] \
-    && [ "$(jq -r '.rows[] | select(.text == "invoice.txt") | .tool.name + "|" + ([.more[] | .name + ":" + ((.ask // []) | join(",")) + ":" + (.pick // "")] | join(" "))' "$H/docs2.json")" = 'files_open|files_preview:: files_attach:: files_reveal:: files_rename:name: files_move::to files_copy::to files_trash::' ] \
+    && [ "$(jq -r '.rows[] | select(.text == "deep") | .tool.name + ":" + .tool.said + "|" + ([.more[] | .said] | join(","))' "$H/docs2.json")" = 'files_browse:open in the system file manager|open in app,reveal in the system file manager,rename,move to a folder,copy to a folder,trash' ] \
+    && [ "$(jq -r '.rows[] | select(.text == "invoice.txt") | .tool.name + "|" + ([.more[] | .name + ":" + ((.ask // []) | join(",")) + ":" + (.pick // "")] | join(" "))' "$H/docs2.json")" = 'files_open|files_app:: files_preview:: files_attach:: files_reveal:: files_rename:name: files_move::to files_copy::to files_trash::' ] \
     && [ "$(jq -r '.rows[] | select(.text == "deep") | .columns[0]' "$H/docs2.json")" = '0 items' ] \
     && ok "provide files: a folder's rows: .. first, a folder with its steps (reveal, rename, move, copy, trash, each in a person's words), a file with show and attach before them; rename asks a name, move and copy pick a folder (to); no recent group below your home" || bad "files docs rows" "$(jq -c '{here, rows: [.rows[] | [.text, .group, .tool.name, [.more[]?.said]]]}' "$H/docs2.json")"
 # #130: the trash, a place of its own: what it holds, the folder each came from; restore, delete for good, empty the trash
@@ -5009,6 +5009,14 @@ cat "$H/mcp.first" >> "$H/mcp.out"
 [ "$(ans 9 | jq -c '.result.structuredContent')" = "$(jq -cn --arg p "$F2R/docs/new one" '{receipt: "folder new one made in ~/docs", undo: {name: "files_trash", arguments: {path: $p}}}')" ] && [ -d "$F2/docs/new one" ] \
     && [ "$(ans 10 | jq -c '.result.structuredContent')" = "$(jq -cn --arg p "$F2R/docs/todo.txt" '{receipt: "todo.txt made in ~/docs", undo: {name: "files_trash", arguments: {path: $p}}}')" ] && [ -f "$F2/docs/todo.txt" ] && [ ! -s "$F2/docs/todo.txt" ] \
     && ok "provide files: a new folder and a new text file are made in the folder named, each with the trash as its undo (the editor opens on the desktop alone)" || bad "files new" "$(ans 9) $(ans 10)"
+# F4: the app the system assigns, a text file too, never the editor; outside the folders given, refused before any opener runs
+mcp2 "$(fc2 2 files_app "$H/notes.md")"
+[ "$(ans 2 | jq -r '.result.content[0].text')" = 'files: that is not a file or a folder in the folders given' ] && ok "provide files: files_app holds to the folders given" || bad "files app refused" "$(ans 2)"
+if [ "$(uname)" = Linux ]; then
+    mkdir -p "$H/xo"; printf '#!/bin/sh\nprintf %%s "$1" > "%s/xo/opened"\n' "$H" > "$H/xo/xdg-open"; chmod +x "$H/xo/xdg-open"
+    ( PATH="$H/xo:$PATH" WAYLAND_DISPLAY=proof mcp2 "$(fc2 2 files_app "$F2R/docs/invoice.txt")" )
+    [ "$(cat "$H/xo/opened" 2>/dev/null)" = "$F2R/docs/invoice.txt" ] && ok "provide files: files_app gives a text file to the system's opener, not the editor" || bad "files app" "$(cat "$H/xo/opened" 2>/dev/null) $(ans 2)"
+fi
 mcp2 "$(fc2 2 files_trash "$F2R")" "$(fc2 3 files_rename "$F2R/docs" name .hidden)" "$(fc2 4 files_rename "$F2R/docs" name 'a/b')" "$(fc2 5 files_move "$F2R/docs" to "$F2R/docs/deep")" "$(fc2 6 files_move "$F2R/docs/invoice.txt" to "$F2R/docs")" \
     "$(fc2 7 files_restore "$F2R/docs/nothing.txt")" "$(fc2 8 files_trash "$H/notes.md")" "$(fc2 9 files_new_folder "$F2R" name docs)" "$(fc2 10 files_move "$F2R/docs/invoice.txt" to "$F2R/etc-link")" "$(fc2 11 files_rename "$F2R/docs/deep" name "$(printf 'a\tb')")"
 [ "$(ans 2 | jq -r '.result.content[0].text')" = 'files: your home and a drive stay as they are' ] && [ "$(ans 3 | jq -r '.result.content[0].text')" = 'files: a name is one plain name: no slash, not hidden, 255 characters at most' ] && [ "$(ans 4 | jq -r '.error.message')" = 'files_rename: name is one name, no slash, 255 characters at most' ] \
@@ -5055,9 +5063,9 @@ if [ "$(uname -s)" = Linux ]; then   # the Linux half (the uname stub): xdg-open
     # #114: no system file manager configured: no browse row, no reveal step, a folder's row has no tool (Enter still opens it)
     ( PATH="$H/nofm:$_fpath" mcp2 "$(rq 2 resources/read "$(jq -cn --arg u "$(uri "$F2R")" '{uri: $u}')")" "$(rq 3 resources/read "$(jq -cn --arg u "$(uri "$F2R/docs")" '{uri: $u}')")" )
     ans 2 | jq -r '.result.contents[0].text' | jq "$KX" > "$H/home3.json"; ans 3 | jq -r '.result.contents[0].text' | jq "$KX" > "$H/docs3.json"
-    [ "$(jq -r '.rows[-1] | [.more[].said] | join("|")' "$H/home3.json")" = 'new folder|new text file' ] \
+    [ "$(jq -r '.rows[-1] | [.more[].said] | join("|")' "$H/home3.json")" = 'new folder|new file' ] \
         && jq -e '(.rows[] | select(.text == "docs") | .tool == null and .children != null and ([.more[].name] == ["files_rename", "files_move", "files_copy", "files_trash"]))' "$H/home3.json" >/dev/null \
-        && jq -e '(.rows[] | select(.text == "invoice.txt") | [.more[].name] == ["files_preview", "files_attach", "files_rename", "files_move", "files_copy", "files_trash"])' "$H/docs3.json" >/dev/null \
+        && jq -e '(.rows[] | select(.text == "invoice.txt") | [.more[].name] == ["files_app", "files_preview", "files_attach", "files_rename", "files_move", "files_copy", "files_trash"])' "$H/docs3.json" >/dev/null \
         && ok "provide files: with no system file manager configured the browse row and the reveal step are not offered, and a folder's row keeps its steps and its opening (#114)" || bad "files no file manager" "$(cat "$H/home3.json") $(cat "$H/docs3.json")"
     # #113: a text file opens in the editor in a terminal window, the window the receipt; a picture goes to the system's opener
     mkdir -p "$H/lxo"; cat > "$H/lxo/swaymsg" <<'EOF'
@@ -5142,7 +5150,7 @@ mcpv "$(pvr 2 "$PVR/plan.md")" "$(pvr 3 "$PVR/main.rs")" "$(pvr 4 "$PVR/x.json")
     "$(pvr 16 "$PVR/hi.wav")" "$(pvr 17 "$PVR/take.aif")" "$(pvr 18 "$PVR/locked.pdf")" "$(pvr 19 "$PVR/turned.png")" "$(pvr 20 "$PVR/empty.png")" "$(pvr 21 "$PVR/scan.tif")"
 page 2 | jq -e '.title == "plan.md" and .lines == ["Plan", "", "some words"] and .bold == [0] and (.attach | endswith(".txt")) and (.facts | length) == 2' >/dev/null \
     && page 3 | jq -e '.numbered == true and .lines[1] == "    go();"' >/dev/null && page 4 | jq -e '.lines == ["{", "  \"a\": 1,", "  \"b\": [", "    2", "  ]", "}"]' >/dev/null \
-    && page 5 | jq -e '.say == "no preview for this kind of file: Enter opens it" and .lines == null' >/dev/null \
+    && page 5 | jq -e '.say == "this kind of file cannot be viewed: Enter opens it" and .lines == null' >/dev/null \
     && ok "provide files: a text previews read only, a Markdown heading bold without its #, code numbered with its tabs at four, JSON indented, binary bytes no preview (#120)" || bad "preview text" "$(page 2) | $(page 3) | $(page 4) | $(page 5)"
 page 6 | jq -e '(.picture | endswith(".png")) and .full == true' >/dev/null && grep -q '^-s 26 ' "$F2/thumb.log" \
     && ok "provide files: a picture previews drawn no larger than itself, the whole of it (#120)" || bad "preview picture" "$(page 6) $(cat "$F2/thumb.log" 2>&1)"
@@ -5161,8 +5169,8 @@ page 14 | jq -e '.facts[1] == "1080 \u00d7 1920" and .size == [1080, 1920]' >/de
     || bad "preview video turned" "$(page 14) | $(page 15) | $(grep -F -- --vo-image-outdir "$F2/mpv.log" 2>&1)"
 page 16 | jq -e '.facts[0:4] == ["96 kHz", "24 bit", "stereo", "PCM"] and .sound != null' >/dev/null && page 17 | jq -e '.facts[0:2] == ["48 kHz", "24 bit"] and .sound != null' >/dev/null \
     && ok "provide files: a 24-bit WAV and an AIFF say 24 bit, read from their headers (mpv decodes them to 32); an AIFF is a sound (#120)" || bad "preview bits" "$(page 16) | $(page 17)"
-page 18 | jq -e '.say == "no preview: this PDF is locked by a password, Enter opens it"' >/dev/null && page 19 | jq -e '.size == [20, 40] and .facts[0] == "20 \u00d7 40"' >/dev/null \
-    && page 20 | jq -e '.say == "no preview: nothing here draws this picture, Enter opens it"' >/dev/null && page 21 | jq -e '.size == [5400, 2700] and (.picture | endswith(".png"))' >/dev/null \
+page 18 | jq -e '.say == "cannot view: this PDF is locked by a password, Enter opens it"' >/dev/null && page 19 | jq -e '.size == [20, 40] and .facts[0] == "20 \u00d7 40"' >/dev/null \
+    && page 20 | jq -e '.say == "cannot view: nothing here draws this picture, Enter opens it"' >/dev/null && page 21 | jq -e '.size == [5400, 2700] and (.picture | endswith(".png"))' >/dev/null \
     && ok "provide files: a locked PDF says so; a photo turned by its orientation keeps its size the drawn way round; bytes no tool reads draw no empty square; a TIFF is a picture, its size read by mpv (#120)" \
     || bad "preview trial cases" "$(page 18) | $(page 19) | $(page 20) | $(page 21)"
 [ "$(ans 11 | jq -r '.error.message')" = 'no file at that uri' ] && [ "$(ans 12 | jq -r '.error.message')" = 'no file at that uri' ] && ans 13 | jq -e '[.result.resourceTemplates[].name] == ["folder", "match", "preview"]' >/dev/null \
