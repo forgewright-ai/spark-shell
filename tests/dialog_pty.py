@@ -320,6 +320,9 @@ class Screen:
                 i = j + 1
                 continue
             if ch == "\x1b":
+                if i + 1 >= len(s):   # a read that ends on the ESC: the sequence comes whole with the next
+                    self.rest = b"\x1b" + self.rest
+                    return
                 i += 2
                 continue
             if ch == "\r": self.c = 0
