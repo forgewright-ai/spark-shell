@@ -640,8 +640,8 @@ keys it lists.
 
 Every line is plain English (v0.129): a verb first, as a command, and
 what it acts on, so the line reads as a sentence: `open the selected
-row`, `mark a file for copy, move or trash`. It says what the key does,
-not how: Space marks a file; that the selection then moves down is not
+row`, `select a file for copy, move or trash`. It says what the key does,
+not how: Space selects a file; that the bar then moves down is not
 help's to say. Every line fits beside its key at 60 cells, so none is
 cut. Headings are plain nouns.
 
@@ -666,7 +666,7 @@ cut. Headings are plain nouns.
         quit                                            Ctrl+Q
 
       files
-        mark a file for copy, move or trash              Space
+        select a file for copy, move or trash            Space
         open in its app                                     F4
         copy                                                F5
         move                                                F6

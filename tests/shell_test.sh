@@ -4753,7 +4753,8 @@ if [ "$(uname -s)" != Darwin ]; then
     # any pid_max, so nothing here is ever a real process
     TP=$H/tproc; mkdir -p "$TP"; printf 'cpu  100 0 100 800 0 0 0 0 0 0\nbtime 1793990000\n' > "$TP/stat"
     _ou=0; [ "$(id -u)" != 0 ] || _ou=1
-    _on=$(awk -F: -v u="$_ou" '$3 == u { print $1; f = 1 } END { if (!f) print "user " u }' /etc/passwd)
+    _onn=$(awk -F: -v u="$_ou" '$3 == u { print $1; exit }' /etc/passwd)   # Void and openSUSE have no user 1: the row says the id, the refusal "user 1"
+    _on=${_onn:-user $_ou}; _onl=${_onn:-$_ou}
     tproc() {   # tproc PID UID UTIME COMMAND...
         _tp=$TP/$1; _tu=$2; _tt=$3; shift 3; mkdir -p "$_tp"
         printf '%s (%s) S 1 1 1 0 -1 0 0 0 0 0 %s 0 0 0 20 0 1 0 500 1000 0 0 0 0\n' "${_tp##*/}" "${1:-kthread}" "$_tt" > "$_tp/stat"
@@ -4779,7 +4780,7 @@ if [ "$(uname -s)" != Darwin ]; then
     [ "$(rows 2 | jq -c '[.rows[] | select(.text != "") | [.text, .group, (.columns[0] // ""), (.tool.arguments.command // "")]]')" = '[["programs","problems","missing: fzf zoxide",""],["config files","problems","out of date: .tmux.conf",""],["screen saver","problems","no screen saver",""],["fix",null,"spark-shell on","spark-shell on"],["fix",null,"spark-shell desktop","spark-shell desktop"],["1 passed",null,"",""],["1 not applicable",null,"",""],["check again",null,"checked at '"$(date -d "@$(sed -n 1p "$_ts/check.last")" +%H:%M)"'",""]]' ] \
         && [ "$(rows 2 | jq -r .state)" = '3 problems' ] && [ "$(rows 3 | jq -c '[.rows[] | [.text, .columns[0]]]')" = '[["shell startup","sourced from .zshrc"]]' ] \
         && ok "tools check: the problems by plain name, one fix for the two that share it, the passed and the not applicable counted apart, check again with its time" || bad "tools check" "$(rows 2)"
-    [ "$(rows 4 | jq -c '[.rows[] | [.text, .columns, ([.more[].name] | join(" ")), .line]]')" = "$(jq -cn --arg s "$SEP" --arg o "$_on" '[["firefox", ["0%", "3.1 MB"], "tools_end", "firefox \($s) 0% cpu \($s) 3.1 MB \($s) 2 processes"],
+    [ "$(rows 4 | jq -c '[.rows[] | [.text, .columns, ([.more[].name] | join(" ")), .line]]')" = "$(jq -cn --arg s "$SEP" --arg o "$_onl" '[["firefox", ["0%", "3.1 MB"], "tools_end", "firefox \($s) 0% cpu \($s) 3.1 MB \($s) 2 processes"],
             ["notes-sync.py", ["0%", "1.6 MB"], "tools_end", "notes-sync.py \($s) 0% cpu \($s) 1.6 MB \($s) 1 process"], ["spark-dialog", ["0%", "1.6 MB"], "", "spark-dialog \($s) 0% cpu \($s) 1.6 MB \($s) 1 process"],
             ["sway", ["0%", "1.6 MB"], "", "sway \($s) 0% cpu \($s) 1.6 MB \($s) 1 process"], ["swaybar", ["0%", "1.6 MB"], "", "swaybar \($s) 0% cpu \($s) 1.6 MB \($s) 1 process"],
             ["udevd", ["0%", "1.6 MB"], "", "udevd \($s) 0% cpu \($s) 1.6 MB \($s) 1 process \($s) user \($o)"]]')" ] \
@@ -4797,8 +4798,12 @@ if [ "$(uname -s)" != Darwin ]; then
     # running for real: a program of its own name, ended, and the provider that ends it untouched
     cp "$(command -v sleep)" "$H/spark-test-sleeper"; "$H/spark-test-sleeper" 600 & _tsl=$!
     (SPARK_SHELL_PROC=/proc; export SPARK_SHELL_PROC; mcp tools "$(call 1 tools_end '{"name":"spark-test-sleeper"}')")   # the real one: the section's bar fixture set a fake
-    sleep 0.2; [ "$(ans 1 | jq -r .result.structuredContent.receipt)" = 'spark-test-sleeper ended' ] && ! kill -0 "$_tsl" 2>/dev/null && ok "tools end: every process of the program stopped, said in the past tense" || { kill "$_tsl" 2>/dev/null || :; bad "tools end" "$(ans 1)"; }
-    wait "$_tsl" 2>/dev/null || :
+    # its death is read from wait, not kill -0: until this shell reaps it, a child that ended is a zombie, and dash reaps
+    # it only here; never a wait on one still running (600 seconds)
+    _tsr=$(ans 1 | jq -r .result.structuredContent.receipt)
+    if [ "$_tsr" = 'spark-test-sleeper ended' ]; then _tsw=0; wait "$_tsl" 2>/dev/null || _tsw=$?; else kill "$_tsl" 2>/dev/null || :; wait "$_tsl" 2>/dev/null || :; _tsw=none; fi
+    [ "$_tsr" = 'spark-test-sleeper ended' ] && [ "$_tsw" = 143 ] && ok "tools end: every process of the program stopped (TERM), said in the past tense; one ended and not yet reaped counts as ended" \
+        || bad "tools end" "$(ans 1) wait=$_tsw"
     # space: home measured, the app caches left out, the trash taken out of its folder, a hidden folder viewed, not opened
     mkdir -p "$H/spacebig" "$H/.spacehid" "$H/.cache/mozilla" "$H/.local/share/Trash/files"
     head -c 8000000 /dev/zero > "$H/spacebig/a"; head -c 7000000 /dev/zero > "$H/.spacehid/a"; head -c 300000 /dev/zero > "$H/.cache/mozilla/c"
@@ -5723,19 +5728,19 @@ STUB
     chmod +x "$H/.local/bin/spark"; mcpf=$HOME/.config/spark/mcp.env; mkdir -p "$HOME/.config/spark"; rm -f "$HOME/mcp.log"
     printf 'MCP_SERVER_FILES="/opt/mine/files-server"\nMCP_SERVER_WIFI="/old/clone/spark-shell provide wifi"\n' > "$mcpf"
     out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes 2>&1 || :)
-    printf '%s\n' "$out" | grep -q "^ok     mcp          23 providers on spark's MCP list: the prompt line and spark do know the desktop's tools$" \
+    printf '%s\n' "$out" | grep -q "^ok     mcp          24 providers on spark's MCP list: the prompt line and spark do know the desktop's tools$" \
         && printf '%s\n' "$out" | grep -q "^todo   mcp          already on spark's MCP list as servers of yours, left as they are: files$" \
         && grep -qx 'MCP_SERVER_FILES="/opt/mine/files-server"' "$mcpf" && grep -qx "MCP_SERVER_WIFI=\"$C/spark-shell provide wifi\"" "$mcpf" && grep -qx "MCP_SERVER_CLOCK=\"$C/spark-shell provide clock\"" "$mcpf" \
-        && [ "$(grep -c '^MCP_SERVER_' "$mcpf")" = 24 ] && grep -qx 'mcp rm wifi' "$HOME/mcp.log" && ! grep -q 'mcp add files' "$HOME/mcp.log" \
+        && [ "$(grep -c '^MCP_SERVER_' "$mcpf")" = 25 ] && grep -qx 'mcp rm wifi' "$HOME/mcp.log" && ! grep -q 'mcp add files' "$HOME/mcp.log" \
         && ok "on desktop: each provider on spark's MCP list through spark mcp add; a server of yours under one of the names stays; an older clone's line replaced" || bad "mcp add" "$(printf '%s\n' "$out" | grep mcp); $(cat "$mcpf")"
     rm -f "$HOME/mcp.log"; SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes >/dev/null 2>&1 || :
-    [ ! -e "$HOME/mcp.log" ] && sh "$C/spark-shell" check 2>&1 | grep -q "^warn   mcp          23 of 24 providers on spark's MCP list -- spark-shell on desktop$" \
+    [ ! -e "$HOME/mcp.log" ] && sh "$C/spark-shell" check 2>&1 | grep -q "^warn   mcp          24 of 25 providers on spark's MCP list -- spark-shell on desktop$" \
         && ok "on desktop again: nothing asked of spark; check counts the providers on the list" || bad "mcp again" "$(cat "$HOME/mcp.log" 2>&1); $(sh "$C/spark-shell" check 2>&1 | grep mcp)"
     out=$(sh "$C/spark-shell" off desktop --dry-run 2>&1 || :)
-    printf '%s\n' "$out" | grep -q "^would  mcp          take lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo off spark's MCP list$" \
+    printf '%s\n' "$out" | grep -q "^would  mcp          take lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps tools about undo off spark's MCP list$" \
         && ok "off desktop --dry-run: the lines that are ours, by name; a server of yours is not among them" || bad "mcp off would" "$(printf '%s\n' "$out" | grep mcp)"
     st=0; out=$(sh "$C/spark-shell" off desktop 2>&1) || st=$?
-    printf '%s\n' "$out" | grep -q "^ok     mcp          23 providers off spark's MCP list$" && [ "$(cat "$mcpf")" = 'MCP_SERVER_FILES="/opt/mine/files-server"' ] \
+    printf '%s\n' "$out" | grep -q "^ok     mcp          24 providers off spark's MCP list$" && [ "$(cat "$mcpf")" = 'MCP_SERVER_FILES="/opt/mine/files-server"' ] \
         && ok "off desktop: spark-shell's lines off spark's MCP list through spark mcp rm, a server of yours left" || bad "mcp off" "st=$st $(printf '%s\n' "$out" | grep mcp); $(cat "$mcpf")"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"; rm -f "$mcpf" "$H/.local/bin/spark"
     SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes >/dev/null 2>&1 || :

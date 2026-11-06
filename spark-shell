@@ -8011,7 +8011,8 @@ tools_act() {   # tools_act ACTION [ARG] -> one line; exit 1 when it was not don
             tools_program "$2" | cut -f8 | tr ' ' '\n' | grep -vxFf "$TMP/end.keep" | grep . > "$TMP/end.pids" || { echo "$2 is part of the dialog: Esc closes it"; return 1; }
             xargs kill -TERM < "$TMP/end.pids" 2>/dev/null || :
             _tew=0; while [ "$_tew" -lt 25 ]; do
-                _tel=''; while read -r _p; do [ ! -d "$BAR_PROC/$_p" ] || { _tel=1; break; }; done < "$TMP/end.pids"
+                # a zombie has ended: its parent has yet to reap it (pid_running's rule, here in BAR_PROC)
+                _tel=''; while read -r _p; do [ ! -d "$BAR_PROC/$_p" ] || grep -qs '^State:[[:space:]]*Z' "$BAR_PROC/$_p/status" || { _tel=1; break; }; done < "$TMP/end.pids"
                 [ -n "$_tel" ] || break; sleep 0.2; _tew=$((_tew + 1))
             done
             [ -z "$_tel" ] || { echo "$2 is still running after 5 seconds"; return 1; }

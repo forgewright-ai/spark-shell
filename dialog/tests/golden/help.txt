@@ -20,7 +20,7 @@
     quit                                          Ctrl+Q    
                                                             
   files                                                     
-    mark a file for copy, move or trash            Space    
+    select a file for copy, move or trash          Space    
     open in its app                                   F4    
     copy                                              F5    
     move                                              F6    

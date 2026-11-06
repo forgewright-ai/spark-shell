@@ -1859,7 +1859,7 @@ impl App {
             ("general", "rename the selected row", k(HintKey::Rename)),
             ("general", "scroll by page", format!("{}  {}", k(HintKey::PageUp), k(HintKey::PageDown))),
             ("general", "quit", k(HintKey::Quit)),
-            ("files", "mark a file for copy, move or trash", k(HintKey::Select)),
+            ("files", "select a file for copy, move or trash", k(HintKey::Select)),
             ("files", "open in its app", k(HintKey::Open)),
             ("files", "copy", k(HintKey::Copy)),
             ("files", "move", k(HintKey::Move)),

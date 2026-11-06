@@ -441,7 +441,7 @@ elif sys.argv[1] == 'steps':
                 key("help", "-k", "Return")
                 time.sleep(1)
                 text = "\n".join(screen())
-                assert "general" in text and "mark a file for copy, move or trash" in text, "help opens on the dialog's subjects: " + text
+                assert "general" in text and "select a file for copy, move or trash" in text, "help opens on the dialog's subjects: " + text
                 capture("help-full-void")
                 for _ in range(4):
                     if "Super+Return" in text:

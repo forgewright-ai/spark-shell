@@ -45,8 +45,8 @@ Tools, six utilities after Norton Utilities, and help in plain English.
   Enter, its actions on F9; the gap that sets a files summary apart is
   for a files summary alone.
 - Help is rewritten in plain English, same page, same keys, same order:
-  every line a verb and what it acts on (`open the selected row`, `mark
-  a file for copy, move or trash`, `switch pane`), the headings
+  every line a verb and what it acts on (`open the selected row`,
+  `select a file for copy, move or trash`, `switch pane`), the headings
   `general`, `files`, `view`, `windows`, `workspaces`, `desktop`,
   `prompt`, and the note says where the keys change.
 - A question answered or let go puts the bar back on the row it was
