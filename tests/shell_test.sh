@@ -4796,7 +4796,10 @@ if [ "$(uname -s)" != Darwin ]; then
         && rows 15 | jq -e '[.rows[] | .id] | index("tools:update") != null' >/dev/null \
         && ok "tools system and updates: the facts under hardware, operating system and desktop, copy details; update spark-shell" || bad "tools system" "$(rows 14) $(rows 15)"
     # running for real: a program of its own name, ended, and the provider that ends it untouched
-    cp "$(command -v sleep)" "$H/spark-test-sleeper"; "$H/spark-test-sleeper" 600 & _tsl=$!
+    # a script, named by its own name as an interpreter's script is; a copy of sleep is a uutils multicall on
+    # Ubuntu 26.04, which knows no such name and exits at once; it sleeps in itself, so no child is left behind
+    printf '#!/usr/bin/env python3\nimport time\ntime.sleep(600)\n' > "$H/spark-test-sleeper"; chmod +x "$H/spark-test-sleeper"
+    "$H/spark-test-sleeper" & _tsl=$!; sleep 0.5
     (SPARK_SHELL_PROC=/proc; export SPARK_SHELL_PROC; mcp tools "$(call 1 tools_end '{"name":"spark-test-sleeper"}')")   # the real one: the section's bar fixture set a fake
     # its death is read from wait, not kill -0: until this shell reaps it, a child that ended is a zombie, and dash reaps
     # it only here; never a wait on one still running (600 seconds)

@@ -537,9 +537,10 @@ def tools_walk(binary, env, home):
     """Home, tools, check (it runs, and the page shows), Esc back to the six; running: the walk's own program found by
     words, F9, end asks, keep working keeps it and comes back to it, end ends it; Esc home, Esc closes (v0.129)."""
     sleeper = os.path.join(home, "spark-pty-sleeper")   # a program of its own name: no other process is ever ended
-    shutil.copyfile(shutil.which("sleep"), sleeper)
+    with open(sleeper, "w") as f:   # a script, named by its own name; a copy of sleep is a uutils multicall on some systems
+        f.write("#!/usr/bin/env python3\nimport time\ntime.sleep(600)\n")
     os.chmod(sleeper, 0o700)
-    held = subprocess.Popen([sleeper, "600"])
+    held = subprocess.Popen([sleeper])
     argv = [binary, "--provider", SS + " provide tools", "--provider", SS + " provide about", "--composer", "", "--spark-shell", SS]
     pid, fd = pty.fork()
     if pid == 0:
@@ -595,7 +596,7 @@ def tools_walk(binary, env, home):
     if not wait_for(lambda: "tools \u00b7 running" in scr.text()):
         return stop("running opens")
     os.write(fd, b"spark-pty")
-    if not wait_for(lambda: "spark-pty-sleeper \u00b7 0% cpu" in scr.text()):
+    if not wait_for(lambda: re.search(r"spark-pty-sleeper \u00b7 \d+% cpu", scr.text())):
         return stop("words find the walk's program, its line on the status row")
     os.write(fd, b"\x1b[20~")   # F9
     if not wait_for(lambda: "tools \u00b7 spark-pty-sleeper" in scr.text() and "    end" in scr.text()):
@@ -605,7 +606,7 @@ def tools_walk(binary, env, home):
         return stop("end asks on the question page, about the walk's program")
     ok(True, "words find the walk's program; F9 has end; end asks about it")
     os.write(fd, b"\r")   # keep working is lit first
-    if not (wait_for(lambda: "spark-pty-sleeper \u00b7 0% cpu" in scr.text() and "keep working" not in scr.text()) and held.poll() is None):
+    if not (wait_for(lambda: re.search(r"spark-pty-sleeper \u00b7 \d+% cpu", scr.text()) and "keep working" not in scr.text()) and held.poll() is None):
         return stop("keep working keeps it, back on the list with the bar on it")
     ok(True, "keep working keeps it, back on the list with the bar on it")
     os.write(fd, b"\x1b[20~")

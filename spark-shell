@@ -8009,7 +8009,7 @@ tools_act() {   # tools_act ACTION [ARG] -> one line; exit 1 when it was not don
             : > "$TMP/opened"; echo "$2 in front" ;;
         end) tools_dialog_tree | sort -u > "$TMP/end.keep"
             tools_program "$2" | cut -f8 | tr ' ' '\n' | grep -vxFf "$TMP/end.keep" | grep . > "$TMP/end.pids" || { echo "$2 is part of the dialog: Esc closes it"; return 1; }
-            xargs kill -TERM < "$TMP/end.pids" 2>/dev/null || :
+            while read -r _p; do kill -TERM "$_p" 2>/dev/null || :; done < "$TMP/end.pids"   # the shell's own kill: an external one is procps', not on every machine
             _tew=0; while [ "$_tew" -lt 25 ]; do
                 # a zombie has ended: its parent has yet to reap it (pid_running's rule, here in BAR_PROC)
                 _tel=''; while read -r _p; do [ ! -d "$BAR_PROC/$_p" ] || grep -qs '^State:[[:space:]]*Z' "$BAR_PROC/$_p/status" || { _tel=1; break; }; done < "$TMP/end.pids"

@@ -487,9 +487,10 @@ elif sys.argv[1] == 'steps':
                 # tools (v0.129): the six; check runs; running finds the proof's own program (a name of its own, so no
                 # other process is ended), F9, end asks, keep working keeps it, end ends it; system's three groups
                 sleeper = fixtures / "spark-proof-sleeper"
-                shutil.copyfile(shutil.which("sleep"), sleeper)
+                # a script, named by its own name; a copy of sleep is a uutils multicall on some systems
+                sleeper.write_text("#!/usr/bin/env python3\nimport time\ntime.sleep(600)\n")
                 sleeper.chmod(0o700)
-                held = subprocess.Popen([str(sleeper), "600"], env=env)
+                held = subprocess.Popen([str(sleeper)], env=env)
                 try:
                     open_home()
                     key("tools", "-k", "Return")
@@ -505,7 +506,7 @@ elif sys.argv[1] == 'steps':
                     key("running", "-k", "Return")
                     wait_for(lambda: "sway" in "\n".join(screen()), "running lists sway")
                     key("spark-proof")
-                    wait_for(lambda: "spark-proof-sleeper \u00b7 0% cpu" in "\n".join(screen()), "words find the proof's program")
+                    wait_for(lambda: re.search(r"spark-proof-sleeper \u00b7 \d+% cpu", "\n".join(screen())), "words find the proof's program")
                     capture("tools-running-void")
                     # every step checks it is about the proof's own program before the next key: a wait that fails
                     # raises, so nothing is confirmed on a row the proof did not find
@@ -523,7 +524,7 @@ elif sys.argv[1] == 'steps':
                     wait_for(asked, "end asks about the proof's program")
                     capture("tools-end-void")
                     key("-k", "Return")   # keep working is lit first: Enter keeps
-                    wait_for(lambda: "keep working" not in "\n".join(screen()) and "spark-proof-sleeper \u00b7 0% cpu" in "\n".join(screen()), "keep working comes back with the bar on the program")
+                    wait_for(lambda: "keep working" not in "\n".join(screen()) and re.search(r"spark-proof-sleeper \u00b7 \d+% cpu", "\n".join(screen())), "keep working comes back with the bar on the program")
                     assert held.poll() is None, "keep working keeps the program"
                     key("-k", "F9")
                     wait_for(actions, "F9 again: the proof's program's actions")
