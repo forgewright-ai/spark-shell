@@ -104,9 +104,10 @@ def build_tree(root, big=BIG):
     return {"big_files": big, "big_write_seconds": round(took, 3)}
 
 
-def stub(path, log):
-    """A program that writes its first argument to LOG, a line each time, and exits: what it was handed, read back."""
-    path.write_text("#!/bin/sh\nprintf '%s\\n' \"$1\" >> " + shlex.quote(str(log)) + "\n")
+def stub(path, log, stay=0):
+    """A program that writes its first argument to LOG, a line each time, and exits: what it was handed, read back.
+    STAY seconds before it exits keep a terminal around it long enough for its window to map."""
+    path.write_text("#!/bin/sh\nprintf '%s\\n' \"$1\" >> " + shlex.quote(str(log)) + "\nsleep " + str(stay) + "\n")
     path.chmod(0o700)
 
 
@@ -126,7 +127,7 @@ class FilesSession(Session):
         def with_tree(root):
             self.timings.update(build_tree(root))
             stub(root / "bin/xdg-open", root / ".xdg-open.log")
-            stub(root / "bin" / EDITOR, root / ".editor.log")
+            stub(root / "bin" / EDITOR, root / ".editor.log", stay=2)
             return original(root)
 
         apps_desktop_proof.native_foot_config = with_tree
@@ -848,15 +849,18 @@ def main(binary, destination):
         until(lambda: header_has(s.screen()[0], "~"), "the pick opens the folder above")
         click_row(s, "pictures", double=True)
         until(lambda: header_has(s.screen()[0], "~/pictures"), "the pick opens pictures")
+        s.key("-k", "Down")   # a folder opened by the pointer lights nothing: an arrow does
         top(s)   # the bar on the row that lands it here, the list's first
         s.key("-k", "Return")
         until(lambda: says(s, "letter.pdf copied to ~/pictures"), "the copy landed here, the receipt with undo")
         assert (pictures / "letter.pdf").is_file(), "the copy on disk"
         s.click("undo")
         until(lambda: not (pictures / "letter.pdf").exists(), "the copy gone on undo")
-        until(lambda: header_has(s.screen()[0], "~/documents"), "the list back where the pick began")
+        until(lambda: header_has(s.screen()[0], "~/pictures"), "the list stays where the pick landed")
         s.checks.append("In one pane Left does nothing and F5 picks the folder: open folders until the right one, Enter on copy letter.pdf here; undo takes it back")
         # 21. the large folder: a bounded wait for its first page, End to its last row; one pane keeps home and recent
+        s.key("-k", "Escape")
+        until(lambda: header_has(s.screen()[0], "~/documents"), "Esc goes back where the pick began")
         s.key("-k", "Escape")
         until(lambda: header_has(s.screen()[0], "~") and heading(body(s.screen()), "home"), "Esc to ~, the home heading back in one pane")
         assert heading(body(s.screen()), "recent"), "one pane keeps recent\n" + "\n".join(body(s.screen()))
@@ -902,25 +906,53 @@ def main(binary, destination):
         until(lambda: shows("todo.txt", "notes.md"), "Esc clears the words and both rows are back")
         s.checks.append("With nothing typed Esc, Backspace and the header's back go up a level; typed words filter the folder, Left and Right move the "
                         "cursor in the prompt and open no pane, and Esc clears them")
-        # 23. F4, last: an opener's path closes the dialog (spark-shell files_opened, #117). The stub xdg-open gets the
-        # file and the stub editor nothing; Enter on the same file then runs the editor, so its log is shown to work
+        # 23. F4, last: an opener's path closes the dialog (spark-shell files_opened, #117). The proof's own assignments
+        # decide which way it goes, never the machine's, through a stub xdg-mime put here so the steps before read the
+        # real one: a windowed app goes through the stub xdg-open, a terminal app through its Exec in a terminal, and
+        # Enter on a text file is the editor, the text application's Exec (the provider's environment holds no EDITOR)
         opener, editor = home / ".xdg-open.log", home / ".editor.log"
+        apps = home / "data/applications"
+        apps.mkdir(parents=True, exist_ok=True)
+        for name, terminal in (("proof-window", "false"), ("proof-terminal", "true")):
+            (apps / (name + ".desktop")).write_text("[Desktop Entry]\nType=Application\nName=%s\nExec=%s %%f\nTerminal=%s\n"
+                                                    "MimeType=text/plain;\n" % (name, EDITOR, terminal))
+        mime = home / "bin/xdg-mime"
+        mime.write_text('#!/bin/sh\ncase "$1 $2" in\n"query filetype") echo text/plain ;;\n'
+                        '"query default") [ "$3" != text/plain ] || cat "$HOME/.assigned" ;;\nesac\n')
+        mime.chmod(0o700)
+
+        def assign(name):
+            (home / ".assigned").write_text(name + ".desktop\n")
+
+        def documents_again():
+            """Back in ~/documents on todo.txt: an opener's path closed the dialog; a stub that exits at once may not."""
+            time.sleep(2)
+            if s.window() is None:
+                s.key("-M", "logo", "-k", "space", "-m", "logo")
+                until(s.window, "the dialog again")
+                time.sleep(2)
+                s.key("files", "-k", "Return")
+                until(lambda: shows("documents"), "the home folder again")
+                open_folder(s, "documents", "~/documents")
+            light(s, "todo.txt")
+
+        assign("proof-window")
         light(s, "todo.txt")
         s.key("-k", "F4")
         until(lambda: logged(opener) == [todo], "xdg-open handed the text file's path")
         until(lambda: s.window() is None, "the dialog closes once the opener took the path")
         assert not logged(editor), "F4 is the app the system assigns, never the editor: " + repr(logged(editor))
-        s.key("-M", "logo", "-k", "space", "-m", "logo")
-        until(s.window, "the dialog again")
-        time.sleep(2)
-        s.key("files", "-k", "Return")
-        until(lambda: shows("documents"), "the home folder again")
-        open_folder(s, "documents", "~/documents")
-        light(s, "todo.txt")
+        assign("proof-terminal")
+        documents_again()
+        s.key("-k", "F4")
+        until(lambda: logged(editor) == [todo], "F4 gives an app that runs in a terminal a terminal")
+        assert logged(opener) == [todo], "xdg-open starts a terminal app with no terminal: " + repr(logged(opener))
+        documents_again()
         s.key("-k", "Return")
-        until(lambda: logged(editor) == [todo], "Enter opens the text file in the editor")
+        until(lambda: logged(editor) == [todo, todo], "Enter opens the text file in the editor")
         assert logged(opener) == [todo], "Enter is not the system's opener: " + repr(logged(opener))
-        s.checks.append("F4 hands a text file to the stub xdg-open, its path as the argument, and the stub editor is not run; Enter on the same file runs the editor, not xdg-open")
+        s.checks.append("F4 hands a text file to the stub xdg-open, its path as the argument, and the editor is not run; assigned to an app that runs in "
+                        "a terminal, F4 gives it a terminal, through the editor's path, not xdg-open; Enter on the same file runs the editor, not xdg-open")
         manifest = {"binary_sha256": s.binary_sha256,
                     "palette": s.palette,
                     "environment": "Void Linux; native headless Sway, foot; 1440x1000",

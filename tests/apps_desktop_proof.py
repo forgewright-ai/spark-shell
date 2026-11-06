@@ -313,6 +313,7 @@ def main(binary, destination):
         s.key("Writing", "-k", "Return")
         s.click("writing")
         s.click("rename")
+        s.key(*["-k", "BackSpace"] * len("Writing"))  # the form starts from the name as it is
         s.key("Review", "-k", "Return")
         s.key("-k", "Escape")
         s.click("mappings")

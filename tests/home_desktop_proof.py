@@ -436,13 +436,20 @@ elif sys.argv[1] == 'steps':
                 checks.append("Narrow keys wrap whole groups on the key bar; help opens at the narrow size")
                 close_home()
 
-                # help at the window's own size: the desktop's subjects are on the first page there
+                # help at the window's own size: the dialog's subjects first, the desktop's a page or two down
                 open_home()
                 key("help", "-k", "Return")
                 time.sleep(1)
                 text = "\n".join(screen())
-                assert "in home" in text and "windows" in text and "Super+Return" in text, "help is a list by subject with the desktop's keys: " + text
+                assert "in home" in text and "in files" in text, "help opens on the dialog's subjects: " + text
                 capture("help-full-void")
+                for _ in range(4):
+                    if "Super+Return" in text:
+                        break
+                    key("-k", "Next")
+                    time.sleep(0.5)
+                    text = "\n".join(screen())
+                assert "windows" in text and "Super+Return" in text, "help goes on to the desktop's keys: " + text
                 checks.append("Help lists the dialog's and the desktop's keys by subject, with their chips")
                 close_home()
 
