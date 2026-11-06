@@ -521,7 +521,7 @@ fn asking_is_a_row_last_among_the_matches_and_alone_when_nothing_matches() {
     );
     app.enter();
     assert!(app.apps.undo.is_none(), "Enter took Apps' undo");
-    assert!(app.reply.as_ref().is_some_and(|r| r.text == "put back"), "{:?}", app.reply);
+    assert!(app.reply.as_ref().is_some_and(|r| r.text == "undone"), "{:?}", app.reply);
 
     // in Apps, whose prompt filters the list, the ask row stands too: Enter carries the words to the request
     let mut app = home();
@@ -983,15 +983,22 @@ fn a_wrapped_key_bar_takes_the_air_above_it_and_leaves_the_last_row_empty() {
     app.enter();
     assert!(common::pump(&mut app, &rx, |a| a.folder.is_some()), "the folder opens: {:?}", app.view);
     assert!(matches!(app.view, View::Folder(0, _)), "{:?}", app.view);
-    let (buf, drawn, _) = draw(&mut app, 60, 40);
+    // the files' keys: one line at 120 cells, two at 60 and under
+    let (buf, drawn, _) = draw(&mut app, 120, 40);
     let keys = text(&buf, keys_y(40));
-    assert!(keys.contains("Esc") && keys.contains("F3"), "wide, one line of keys: {:?}", keys);
+    assert!(keys.contains("Esc") && keys.contains("F9"), "wide, one line of keys: {:?}", keys);
     assert!(text(&buf, 39).trim().is_empty(), "the last row is empty");
     assert!(drawn.keys.iter().all(|k| k.2 == keys_y(40)));
+    let (buf, drawn, _) = draw(&mut app, 60, 40);
+    assert!(text(&buf, 39).trim().is_empty(), "the last row is still empty: {:?}", text(&buf, 39));
+    assert!(text(&buf, 37).contains("Esc"), "the first line of keys at h-3: {:?}", text(&buf, 37));
+    assert!(text(&buf, 38).contains("F9"), "the second at h-2: {:?}", text(&buf, 38));
+    assert!(text(&buf, 36).contains("\u{2500}"), "the plain rule above them where it was");
+    assert!(drawn.keys.iter().all(|k| k.2 == 37 || k.2 == 38), "{:?}", drawn.keys);
     let (buf, drawn, _) = draw(&mut app, 36, 20);
     assert!(text(&buf, 19).trim().is_empty(), "narrow, the last row is still empty: {:?}", text(&buf, 19));
     assert!(text(&buf, 17).contains("Esc"), "the first line of keys at h-3: {:?}", text(&buf, 17));
-    assert!(text(&buf, 18).contains("F3"), "the second at h-2: {:?}", text(&buf, 18));
+    assert!(text(&buf, 18).contains("F3"), "the second at h-2, what fits: {:?}", text(&buf, 18));
     assert!(text(&buf, 16).contains("\u{2500}"), "the plain rule above them where it was");
     assert!(drawn.keys.iter().all(|k| k.2 == 17 || k.2 == 18), "{:?}", drawn.keys);
 }

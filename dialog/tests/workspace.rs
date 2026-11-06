@@ -247,10 +247,17 @@ fn a_heading_is_the_filter_and_esc_shows_all() {
 }
 
 #[test]
-fn right_on_a_window_opens_its_page_and_a_choice_its_list_and_the_pick_comes_back() {
+fn f9_on_a_window_opens_its_page_and_a_choice_its_list_and_the_pick_comes_back() {
     let mut app = busy();
     at_workspace(&mut app);
+    let lit = app.sel;
     app.right();
+    assert_eq!(
+        (app.view.clone(), app.sel),
+        (View::Dest(WORKSPACE_DEST), lit),
+        "Right opens nothing outside files"
+    );
+    app.hint_key(HintKey::Actions);
     assert!(matches!(app.view, View::Steps(0)), "{:?}", app.view);
     assert_eq!((app.title().as_str(), app.subtitle().as_str()), ("workspace", "foot"));
     golden(&mut app, "workspace-window", 60, 40);
@@ -284,14 +291,32 @@ fn right_on_a_window_opens_its_page_and_a_choice_its_list_and_the_pick_comes_bac
 }
 
 #[test]
-fn right_on_a_layout_opens_its_page() {
+fn f9_on_a_layout_opens_its_page() {
     let mut app = busy();
     at_workspace(&mut app);
     app.sel = pick_of(&app, "writing");
     app.in_list = true;
-    app.right();
+    app.hint_key(HintKey::Actions);
     assert_eq!(app.subtitle(), "writing");
     golden(&mut app, "workspace-layout", 60, 40);
+}
+
+#[test]
+fn f2_renames_a_layout_from_its_name_and_a_window_has_none() {
+    let mut app = busy();
+    at_workspace(&mut app);
+    app.hint_key(HintKey::Rename);
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("nothing to rename here"), "a window");
+    app.sel = pick_of(&app, "writing");
+    app.in_list = true;
+    app.hint_key(HintKey::Rename);
+    assert!(matches!(app.mode, Mode::Ask { .. }), "{:?}", app.mode);
+    assert_eq!(app.input, "writing", "the name as it is");
+    assert_eq!(app.subtitle(), "rename layout");
+    app.set_draft("");
+    assert_eq!(app.placeholder(), "new name");
+    app.escape();
+    assert_eq!(app.mode, Mode::Normal);
 }
 
 #[test]
@@ -316,7 +341,7 @@ fn f3_previews_a_window_or_a_layout_and_no_letter_or_space_does() {
     at_workspace(&mut app);
     assert!(app.in_list, "the bar stands on the window in front on arrival");
     let hint: String = app.hint().iter().map(|(t, _)| t.as_str()).collect();
-    assert!(hint.contains("Preview F3"), "the key bar reads the preview binding's label: {hint}");
+    assert!(hint.contains("View F3"), "the key bar reads the view binding's label: {hint}");
     assert!(!hint.contains("Space"), "{hint}");
 
     // Space: no preview, no letter of a search not begun
@@ -337,7 +362,7 @@ fn f3_previews_a_window_or_a_layout_and_no_letter_or_space_does() {
     // F3 on a window, and Esc comes back
     app.sel = pick_of(&app, &lit);
     app.in_list = true;
-    app.hint_key(HintKey::Preview);
+    app.hint_key(HintKey::View);
     assert_eq!(app.view, View::Preview, "F3 previews the lit window");
     assert_eq!(app.preview.as_ref().unwrap().row().text, lit);
     app.escape();
@@ -347,7 +372,7 @@ fn f3_previews_a_window_or_a_layout_and_no_letter_or_space_does() {
     // F3 on a layout
     app.sel = pick_of(&app, "writing");
     app.in_list = true;
-    app.hint_key(HintKey::Preview);
+    app.hint_key(HintKey::View);
     assert_eq!(app.view, View::Preview, "F3 previews the lit layout");
     assert_eq!(app.preview.as_ref().unwrap().row().text, "writing");
     app.escape();
@@ -357,7 +382,7 @@ fn f3_previews_a_window_or_a_layout_and_no_letter_or_space_does() {
         app.typed(c);
     }
     assert_eq!(lit_text(&app), "writing", "the bar on the best match");
-    app.hint_key(HintKey::Preview);
+    app.hint_key(HintKey::View);
     assert_eq!(app.view, View::Preview, "F3 with words typed previews the best match");
     app.escape();
 
@@ -365,14 +390,14 @@ fn f3_previews_a_window_or_a_layout_and_no_letter_or_space_does() {
     app.set_draft("");
     app.sel = pick_of(&app, "save this workspace");
     app.in_list = true;
-    app.hint_key(HintKey::Preview);
+    app.hint_key(HintKey::View);
     assert_eq!(app.view, View::Dest(WORKSPACE_DEST));
     assert_eq!(app.input, "", "no page: F3 does nothing");
 
     // a form is the prompt's: F3 opens nothing over it
     app.enter();
     assert!(matches!(app.mode, Mode::Ask { .. }), "{:?}", app.mode);
-    app.hint_key(HintKey::Preview);
+    app.hint_key(HintKey::View);
     assert_eq!(app.view, View::Dest(WORKSPACE_DEST), "no preview over a form");
     assert_eq!(app.input, "", "and F3 types nothing in the name");
 }
@@ -390,18 +415,18 @@ fn preview_bound_to_a_letter_stays_that_letter_in_the_words() {
     app.cfg.keys = keys;
     at_workspace(&mut app);
     let drawn = screen(&mut app);
-    assert!(drawn.contains("preview  P"), "the key bar draws the person's own key: {drawn}");
-    app.hint_key(HintKey::Preview);
+    assert!(drawn.contains("view  P"), "the key bar draws the person's own key: {drawn}");
+    app.hint_key(HintKey::View);
     assert_eq!(app.view, View::Preview, "nothing typed: their key previews");
     app.escape();
     app.typed('a');
-    app.hint_key(HintKey::Preview);
+    app.hint_key(HintKey::View);
     assert_eq!(app.view, View::Dest(WORKSPACE_DEST), "with words typed it opens nothing");
     assert_eq!(app.input, "ap", "it is the letter of the search");
     app.set_draft("");
     app.sel = pick_of(&app, "save this workspace");
     app.in_list = true;
-    app.hint_key(HintKey::Preview);
+    app.hint_key(HintKey::View);
     assert_eq!(app.input, "p", "on a row with no page it is the letter too");
 }
 

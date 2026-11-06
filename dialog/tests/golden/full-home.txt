@@ -21,7 +21,7 @@
                                                                                                                                                       
                                                  settings       tokyonight-night                                                                      
                                                                                                                                                       
-                                                 help           31 shortcuts                                                                          
+                                                 help           39 shortcuts                                                                          
                                                                                                                                                       
                                                  about          spark-shell v0.90                                                                     
                                                                                                                                                       

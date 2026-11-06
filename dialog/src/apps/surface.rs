@@ -53,6 +53,8 @@ impl App {
     /// request to the native adapter, or a refusal.
     pub fn apps_activate(&mut self, action: Action) {
         let nav = self.apps_navigation();
+        // a rename starts from the name as it is, so a letter can be changed (dialog/DESIGN.md)
+        let prefill = if let Action::Rename(name) = &action { Some(name.clone()) } else { None };
         match self.apps.activate(action, nav) {
             Ok(Outcome {
                 navigation,
@@ -64,6 +66,9 @@ impl App {
                 self.reply = None;
                 if let Some(nav) = navigation {
                     self.apps_restore(nav);
+                }
+                if let Some(name) = prefill {
+                    self.set_input(name);
                 }
                 if let Some(request) = request {
                     self.apps_request(request);
@@ -89,7 +94,26 @@ impl App {
         }
     }
 
-    /// Right on an app in the list, or among the hidden: its details.
+    /// F2 in apps: a category's rename, on its page or on its row among the categories; an app has no rename.
+    pub(crate) fn apps_rename(&mut self) {
+        let name = match &self.apps.page {
+            Page::Category(c) => Some(c.clone()),
+            Page::Categories => match self.picks().get(self.sel).filter(|_| self.in_list) {
+                Some(Item::Apps(line)) => match &line.action {
+                    Some(Action::Category(c)) => Some(c.clone()),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        };
+        match name.filter(|c| c != super::preferences::OTHER) {
+            Some(c) => self.apps_activate(Action::Rename(c)),
+            None => self.refuse("nothing to rename here"),
+        }
+    }
+
+    /// F9 on an app in the list, or among the hidden: its details.
     pub fn apps_details(&mut self) -> bool {
         if self.view != View::Apps || !matches!(self.apps.page, Page::List | Page::Hidden) || !self.in_list || self.mode != Mode::Normal {
             return false;
@@ -113,10 +137,15 @@ impl App {
             self.set_input(String::new());
             return self.apps_undo();
         }
-        if let Some(Item::Apps(line)) = self.picks().get(self.sel).filter(|_| self.in_list) {
-            if let Some(action) = &line.action {
-                self.apps_activate(action.clone());
+        match self.picks().get(self.sel).filter(|_| self.in_list) {
+            Some(Item::Apps(line)) => {
+                if let Some(action) = &line.action {
+                    self.apps_activate(action.clone());
+                }
             }
+            // Enter is never silent (dialog/DESIGN.md)
+            _ if self.input.trim().is_empty() => self.refuse("nothing is lit: an arrow or a click lights a row"),
+            _ => self.refuse("no app by these words: Esc clears them"),
         }
     }
 
@@ -138,7 +167,7 @@ impl App {
         };
         if matches!(self.apps.page, Page::List | Page::Hidden) {
             keys.push(("   ".into(), false));
-            keys.extend(pair("Details", "\u{2192}"));
+            keys.extend(pair("Details", "F9"));
         }
         keys
     }

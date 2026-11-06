@@ -3,7 +3,7 @@
 mod common;
 use common::*;
 use serde_json::{json, Value};
-use spark_dialog::app::{App, Item, Job, Mode, Sign, View, CALENDAR_DEST, SETTINGS_DEST};
+use spark_dialog::app::{App, HintKey, Item, Job, Mode, Sign, View, CALENDAR_DEST, SETTINGS_DEST};
 use spark_dialog::mcp::Incoming;
 use spark_dialog::progress::{self, Work};
 use spark_dialog::reply::{Mark, Reply};
@@ -2330,29 +2330,15 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
     let (mut app, rx, calls, home) = manager();
     app.sel = 1; // notes.md
     let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
-    assert!(
-        hint.iter().any(|t| t == "Actions "),
-        "the key row says the arrow opens the actions (#127): {:?}",
-        hint
-    );
-    assert!(
-        !hint.iter().any(|t| t == "Preview "),
-        "a row with no page of its own names no preview: {:?}",
-        hint
-    );
-    app.folder.as_mut().unwrap().2.rows[1].page = Some("spark-shell://files/preview/bm90ZXM".into());
-    let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
-    assert!(
-        hint.iter().any(|t| t == "Preview "),
-        "a file with a page: Space previews it, named in the row (#127): {:?}",
-        hint
-    );
+    assert!(hint.iter().any(|t| t == "Actions "), "the key row says F9 opens the actions: {:?}", hint);
+    assert!(hint.iter().any(|t| t == "F9"), "{:?}", hint);
+    let row = app.hint();
     app.input = "words".into();
-    assert!(app.hint().iter().any(|(t, _)| t == "Preview "), "with words typed the label stands still");
+    assert_eq!(app.hint(), row, "with words typed the label stands still");
     app.input.clear();
-    app.right();
-    // the files' own actions page, in place of the list of steps (dialog/DESIGN.md): the row's steps in the
-    // provider's words, then check, then the folder's under a heading
+    app.hint_key(HintKey::Actions);
+    // the files' own actions page, in place of the list of steps (dialog/DESIGN.md): the rows in the page's own
+    // order and words, what else the provider offers after them, then the folder's
     assert!(matches!(app.view, View::Folder(0, _)) && app.files_page_open(), "{:?}", app.view);
     assert_eq!(app.subtitle(), "notes.md");
     let texts: Vec<String> = app
@@ -2363,16 +2349,22 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
             _ => None,
         })
         .collect();
-    assert_eq!(texts[0], "open");
-    assert_eq!(texts[2], "attach to the next request");
-    assert_eq!(texts[7], "trash");
-    assert_eq!(texts[8], "check", "the dialog's own, after the provider's steps");
-    assert!(
-        texts.contains(&"new folder".to_string()) && texts.contains(&"two panes".to_string()),
-        "{:?}",
-        texts
+    assert_eq!(
+        texts,
+        [
+            "open",
+            "rename",
+            "copy",
+            "move",
+            "copy path",
+            "trash",
+            "select",
+            "show the first lines",
+            "new folder"
+        ],
+        "attach is the prompt's, the system file manager F4's"
     );
-    app.sel = 7;
+    app.sel = 5;
     let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
     assert_eq!(
         hint,
@@ -2423,8 +2415,8 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
 fn a_move_picks_its_folder_in_the_files_and_lands_the_step_here() {
     let (mut app, rx, calls, home) = manager();
     app.sel = 1;
-    app.right();
-    app.sel = 5; // move to a folder
+    app.hint_key(HintKey::Actions);
+    app.sel = 3; // move
     app.enter();
     assert!(
         app.picking.as_ref().is_some_and(|pk| pk.step.is_some() && pk.field == "to"),
@@ -2510,8 +2502,8 @@ fn a_pick_from_outside_the_files_reads_its_folder_once() {
 fn esc_cancels_a_folder_pick_and_leaves_the_list_where_it_was() {
     let (mut app, rx, calls, _) = manager();
     app.sel = 1;
-    app.right();
-    app.sel = 6; // copy to a folder
+    app.hint_key(HintKey::Actions);
+    app.sel = 2; // copy
     app.enter();
     assert!(app.picking.is_some());
     app.escape();
@@ -2947,8 +2939,8 @@ fn a_move_that_lands_in_its_own_folder_leaves_no_second_copy_of_it_behind_esc() 
     let (mut app, rx, calls, _home) = manager();
     let start = app.came_from.clone();
     app.sel = 1;
-    app.right();
-    app.sel = 5; // move to a folder
+    app.hint_key(HintKey::Actions);
+    app.sel = 3; // move
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
     app.in_list = true;

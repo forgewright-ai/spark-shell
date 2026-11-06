@@ -501,17 +501,17 @@ fn design_system_files_preview() {
         None,
     ));
     let mut a = files_app();
-    a.right();
+    a.hint_key(spark_dialog::app::HintKey::Actions);
     a.sel = 5;
     frames.push(ds_frame(
         &draw(&a),
         &pal,
-        "a file's steps, opened with the right arrow: Enter runs one, Esc comes back",
+        "a file's steps, opened with F9: Enter runs one, Esc comes back",
         None,
     ));
     let mut a = files_app();
-    a.right();
-    a.sel = 5;
+    a.hint_key(spark_dialog::app::HintKey::Actions);
+    a.sel = 3;
     a.enter();
     frames.push(ds_frame(
         &draw(&a),

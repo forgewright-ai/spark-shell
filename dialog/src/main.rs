@@ -851,7 +851,12 @@ fn main() {
                     app.hint_key(action);
                 } else if let KeyCode::Char(c) = k.code {
                     if !k.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) {
-                        app.text_key(c);
+                        // Space rebound from select keeps what else it does: the player's play, a switch's flip
+                        if c == ' ' {
+                            app.typed(c);
+                        } else {
+                            app.text_key(c);
+                        }
                     }
                 }
             }

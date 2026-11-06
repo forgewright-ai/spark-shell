@@ -23,9 +23,18 @@ pub enum HintKey {
     Down,
     /// A character a key chip stands for (a preview's + - < >), typed as the key is.
     Char(char),
-    /// The lit row's preview (F3); files: its check (Space), and the other pane made active (Ctrl+Tab).
-    Check,
-    Preview,
+    /// The named keys (dialog/DESIGN.md): the lit row's rename, view, open in app, copy, move and trash, a new folder,
+    /// the actions or the details, the path to the clipboard, select, and the other pane.
+    Rename,
+    View,
+    Open,
+    Copy,
+    Move,
+    New,
+    Trash,
+    Actions,
+    CopyPath,
+    Select,
     Pane,
 }
 
@@ -57,16 +66,16 @@ pub const PLACEHOLDER: &str = "search or ask";
 
 impl App {
     /// What the empty prompt says it takes: a form of apps names the one thing to type (dialog/DESIGN.md).
-    /// A layout's name being typed in the prompt: a form, as a category's name is in apps.
-    pub fn layout_form(&self) -> bool {
-        matches!(&self.mode, Mode::Ask { step, .. } if matches!(step.call.name.as_str(), "layout_save" | "layout_rename"))
+    /// A name being typed in the prompt, a layout's or a note's: a form, as a category's name is in apps.
+    pub fn prompt_form(&self) -> bool {
+        matches!(&self.mode, Mode::Ask { step, .. } if matches!(step.call.name.as_str(), "layout_save" | "layout_rename" | "notes_rename" | "files_rename"))
     }
 
     pub fn placeholder(&self) -> &'static str {
         if let Mode::Ask { step, .. } = &self.mode {
             match step.call.name.as_str() {
                 "layout_save" => return "a name for this layout",
-                "layout_rename" => return "the new name",
+                "layout_rename" | "notes_rename" | "files_rename" => return "new name",
                 _ => {}
             }
         }
@@ -74,7 +83,7 @@ impl App {
             if let crate::apps::Page::Form(form) = &self.apps.page {
                 return match form {
                     crate::apps::Form::AddCategory => "a name for the category",
-                    crate::apps::Form::RenameCategory(_) => "the new name",
+                    crate::apps::Form::RenameCategory(_) => "new name",
                     crate::apps::Form::AddMapping => "a desktop category, such as Network",
                 };
             }
@@ -388,6 +397,28 @@ fn state_dir() -> Option<std::path::PathBuf> {
     Some(std::path::PathBuf::from(base).join("spark-shell").join("dialog"))
 }
 
+/// The name a rename starts from: the row's as it is, so a letter can be changed (dialog/DESIGN.md).
+fn current_name(call: &Call) -> Option<String> {
+    if !call.name.ends_with("_rename") {
+        return None;
+    }
+    let name = call.arguments.get("name").or_else(|| call.arguments.get("path"))?.as_str()?;
+    Some(name.rsplit('/').next().unwrap_or(name).to_string())
+}
+
+/// What a folder's list holds and leaves out.
+#[derive(Default)]
+pub struct FolderShape<'a> {
+    /// A folder being picked for a step: the folders alone.
+    pub folders: bool,
+    /// Attaching or picking a file: the types offered.
+    pub types: Option<&'a [String]>,
+    /// A row stands before the first group, so its heading takes a row of air.
+    pub lead: bool,
+    /// A pane shows the folder's own contents: no `home` heading, no `recent` group (dialog/DESIGN.md).
+    pub own: bool,
+}
+
 /// A section's name as a person reads it: Settings' names, and the places' own.
 pub fn section_name(label: &str) -> String {
     if let Some((_, n, _)) = SETTINGS.iter().find(|(s, _, _)| *s == label) {
@@ -490,7 +521,7 @@ pub enum View {
     Section(usize),
     /// A folder (or any rows resource) under a provider: its uri.
     Folder(usize, String),
-    /// The steps of one row of a provider (its tool and its more), as a list: Right on the row opens it (#112).
+    /// The steps of one row of a provider (its tool and its more), as a list: F9 on the row opens it (#112).
     Steps(usize),
     About,
     Models,
@@ -1618,7 +1649,7 @@ impl App {
                     if let Some(pv) = self.preview.as_mut() {
                         pv.failed = true; // the wait ends with the words (#124)
                     }
-                    self.refuse("the preview did not come in time: Enter opens the file")
+                    self.refuse("the view did not come in time: Enter opens the file")
                 }
                 Kind::Set => self.set_done(idx, id, true, "it did not answer in time", false),
                 Kind::Quiet => {
@@ -1814,18 +1845,26 @@ impl App {
             ("in home", "a new line in the prompt", k(HintKey::Newline)),
             ("in home", "the conversation, and back", k(HintKey::Conversation)),
             ("in home", "the prompt's tools, one to the next", k(HintKey::Tab)),
-            ("in home", "a row's preview", k(HintKey::Preview)),
-            ("in home", "a row's actions or details", k(HintKey::Right)),
-            ("in home", "check a file, and the next", k(HintKey::Check)),
-            ("in home", "the other pane", k(HintKey::Pane)),
+            ("in home", "view a row", k(HintKey::View)),
+            ("in home", "a row's actions or details", k(HintKey::Actions)),
+            ("in home", "rename a row", k(HintKey::Rename)),
             ("in home", "a page up, a page down", format!("{}  {}", k(HintKey::PageUp), k(HintKey::PageDown))),
+            ("in home", "quit", k(HintKey::Quit)),
+            ("in files", "select a row, and the next", k(HintKey::Select)),
+            ("in files", "open in app", k(HintKey::Open)),
+            ("in files", "copy", k(HintKey::Copy)),
+            ("in files", "move", k(HintKey::Move)),
+            ("in files", "new folder", k(HintKey::New)),
+            ("in files", "trash", k(HintKey::Trash)),
+            ("in files", "copy path", k(HintKey::CopyPath)),
+            ("in files", "the other pane", k(HintKey::Pane)),
             (
-                "in a preview",
+                "in a view",
                 "bigger, smaller, as it fits",
                 format!("{}  {}  {}", k(HintKey::Char('+')), k(HintKey::Char('-')), k(HintKey::Char('0'))),
             ),
             (
-                "in a preview",
+                "in a view",
                 "the page before, the page after",
                 format!("{}  {}", k(HintKey::Char('<')), k(HintKey::Char('>'))),
             ),
@@ -1921,7 +1960,7 @@ impl App {
         }
     }
 
-    /// Arriving at the workspace place: the bar stands on the window that was in front, so Right acts on it.
+    /// Arriving at the workspace place: the bar stands on the window that was in front, so F9 acts on it.
     fn workspace_arrive(&mut self) {
         if self.view != View::Dest(WORKSPACE_DEST) {
             return;
@@ -2048,9 +2087,14 @@ impl App {
             return list;
         }
         if self.files_page_open() {
-            // a page of files: its lines, a menu; no ask row over it
-            let key = self.cfg.keys.label(HintKey::Check).to_string();
-            return self.files.lines(self.col_w(), &key, &self.input).into_iter().map(Item::Files).collect();
+            // a page of files: its lines, a menu; no ask row over it. A form has none: the list stands behind it,
+            // and nothing in it is a pick while the prompt takes the name
+            return self
+                .files
+                .lines(self.files_page_width(), &self.cfg.keys, &self.input)
+                .into_iter()
+                .map(Item::Files)
+                .collect();
         }
         let mut out = vec![];
         if self.view == View::Conversation {
@@ -2164,8 +2208,13 @@ impl App {
                     (None, Some(_)) => Some(self.cfg.attach.as_slice()),
                     _ => None,
                 };
-                let lead = !list.is_empty();
-                list.extend(self.folder_items(*p, rows, self.query(), folder_pick, types, lead));
+                let shape = FolderShape {
+                    folders: folder_pick,
+                    types,
+                    lead: !list.is_empty(),
+                    own: self.panes_drawn(),
+                };
+                list.extend(self.folder_items(*p, rows, self.query(), &shape));
             }
             View::Section(p) => self.section_rows(*p, &mut list, false),
             View::Dest(d) if *d == SETTINGS_DEST => {
@@ -2270,19 +2319,35 @@ impl App {
         out
     }
 
+    /// What the list draws: the items, or behind a form of files the folder as it stood, so the form keeps it on screen.
+    pub fn list_items(&self) -> Vec<Item> {
+        match (self.files_form_nav(), &self.folder) {
+            (Some(nav), Some((p, _, rows))) => self.folder_items(
+                *p,
+                rows,
+                &nav.query,
+                &FolderShape {
+                    own: self.panes_drawn(),
+                    ..FolderShape::default()
+                },
+            ),
+            _ => self.items(),
+        }
+    }
+
     /// A folder's rows as items, filtered by the words: a group under its heading with air above it (and above the
-    /// first where a row leads the list), the summary row apart at the end; the folders alone during a folder pick,
-    /// the types asked during a file pick.
-    pub(crate) fn folder_items(&self, p: usize, rows: &Rows, words: &str, folder_pick: bool, types: Option<&[String]>, lead: bool) -> Vec<Item> {
+    /// first where a row leads the list), the summary row apart at the end.
+    pub fn folder_items(&self, p: usize, rows: &Rows, words: &str, shape: &FolderShape) -> Vec<Item> {
+        let shown = |r: &model::Row| !(shape.own && r.group.as_deref() == Some("recent")) && (words.is_empty() || self.row_matches(p, r, words));
         let mut list = vec![];
         for (i, r) in rows.rows.iter().enumerate() {
-            if !words.is_empty() && !self.row_matches(p, r, words) {
+            if !shown(r) {
                 continue;
             }
-            if folder_pick && r.children.is_none() {
+            if shape.folders && r.children.is_none() {
                 continue;
             }
-            if let Some(t) = types {
+            if let Some(t) = shape.types {
                 if r.children.is_none() && r.tool.is_some() {
                     let ext = r.text.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
                     if !t.contains(&ext) {
@@ -2297,13 +2362,10 @@ impl App {
                 list.push(Item::Blank); // the summary at the end stands apart
             }
             // a group starts under its heading, with air above it, as in a section
-            let prev = rows.rows[..i]
-                .iter()
-                .rev()
-                .find(|q| words.is_empty() || self.row_matches(p, q, words))
-                .map(|q| q.group.clone());
-            if r.group.is_some() && prev.as_ref() != Some(&r.group) {
-                if !list.is_empty() || lead {
+            let prev = rows.rows[..i].iter().rev().find(|q| shown(q)).map(|q| q.group.clone());
+            let heading = !(shape.own && r.group.as_deref() == Some("home"));
+            if r.group.is_some() && prev.as_ref() != Some(&r.group) && heading {
+                if !list.is_empty() || shape.lead {
                     list.push(Item::Blank);
                 }
                 list.push(Item::Heading(r.group.clone().unwrap_or_default()));
@@ -2836,6 +2898,10 @@ impl App {
         if self.preview_key() {
             return if self.zoomed() { self.preview_pan(0.0, -1.0) } else { self.preview_file(-1) };
         }
+        // a form of files holds the prompt: the list behind it stands still, and no old request comes in its place
+        if self.files_form_nav().is_some() {
+            return;
+        }
         self.keep_lit = None;
         if self.in_list {
             if self.sel == 0 {
@@ -2969,64 +3035,151 @@ impl App {
                 self.flip_or_keep(&it); // a switch: Space flips it, as Enter and a click do (#183)
                 return;
             }
-            // in a files folder Space checks the lit row while it is the check key (v0.125.1, #224); a form's name takes the space
-            if self.files_pane_view().is_some() && !self.files.form() && self.space_checks() {
+            // in a files folder Space selects the lit row while it is the select key (v0.125.1, #224); a form's name takes the space
+            if self.files_pane_view().is_some() && !self.files.form() && self.space_selects() {
                 return self.files_check();
             }
             if self.in_list && self.input.is_empty() {
-                return; // a lit row: Space is no letter of a search not begun (#196)
+                return self.refuse("nothing to select here"); // a lit row: Space is no letter of a search not begun (#196)
             }
         }
         self.text_key(c);
     }
 
-    /// Whether Space is the check key (the default): then it checks in files, and keeps its other meanings elsewhere;
+    /// Whether Space is the select key (the default): then it selects in files, and keeps its other meanings elsewhere;
     /// rebound (Insert), Space is a plain key.
-    fn space_checks(&self) -> bool {
+    fn space_selects(&self) -> bool {
         use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-        self.cfg.keys.action(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE)) == Some(HintKey::Check)
+        self.cfg.keys.action(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE)) == Some(HintKey::Select)
     }
 
-    /// The check key: in a files folder, or on a files page, the check (Space by default); elsewhere the key does
-    /// what Space does (a switch flips, a space is typed) while it is Space, and nothing
-    /// once it is rebound.
-    fn check_key(&mut self) {
-        if self.files_pane_view().is_some() {
-            // the check while the list holds the keys: nothing typed, or the keys handed to the list by Down or a
+    /// The select key: in a files folder the selection (Space by default); elsewhere the key does what Space does (a
+    /// switch flips, a space is typed) while it is Space, and says there is nothing to select once it is rebound.
+    fn select_key(&mut self) {
+        if self.files_pane_view().is_some() && self.mode == Mode::Normal {
+            // the selection while the list holds the keys: nothing typed, or the keys handed to the list by Down or a
             // click; with words typed Space is a letter of the search (#163), and a form's name takes a space
             let list_keys = self.input.is_empty() || self.list_keys;
             if !self.files.form() && list_keys {
                 return self.files_check();
             }
-            if !self.space_checks() {
-                return self.refuse("nothing to check here: Esc goes back to the list");
+            if !self.space_selects() {
+                return self.refuse("nothing to select here: Esc goes back to the list");
             }
-        } else if !self.space_checks() {
-            return;
+        } else if !self.space_selects() {
+            return self.refuse("nothing to select here");
         }
         self.typed(' ');
     }
 
-    /// The preview key, F3: the lit row's preview, in any list with one, words typed or not: no word typed reaches a
-    /// function key. Bound to a letter in a person's own keys, it previews while the list holds the keys, and is that
-    /// letter everywhere else.
-    fn preview_key_pressed(&mut self) {
-        let bound = self.cfg.keys.label(HintKey::Preview);
+    /// The view key, F3: the lit row in the view, in any list with one, words typed or not: no word typed reaches a
+    /// function key. In the view it is the way back, as in every viewer. Bound to a letter in a person's own keys, it
+    /// views while the list holds the keys, and is that letter everywhere else.
+    fn view_key(&mut self) {
+        let bound = self.cfg.keys.label(HintKey::View);
         let letter = bound.chars().next().filter(|_| bound.chars().count() == 1).map(|c| c.to_ascii_lowercase());
+        if letter.is_none() && self.preview_key() {
+            return self.escape();
+        }
         let typing = letter.is_some() && !self.input.is_empty() && !self.list_keys;
-        let files_page = self.files_pane_view().is_some() && self.files.page != crate::files::Page::List;
-        if !typing
-            && !files_page
-            && self.mode == Mode::Normal
-            && self.chip_focus.is_none()
-            && self.pending.is_none()
-            && self.lit_has_page()
-            && self.open_preview()
-        {
+        let free = !typing && self.mode == Mode::Normal && self.chip_focus.is_none() && self.pending.is_none();
+        if free && self.files_page_open() && !self.files.form() {
+            self.files_page_key(HintKey::View);
+            return;
+        }
+        if free && !self.files_page_open() && self.lit_has_page() && self.open_preview() {
             return;
         }
         if let Some(c) = letter {
-            self.text_key(c);
+            return self.text_key(c);
+        }
+        if !self.key_held() {
+            self.files_nothing(HintKey::View);
+        }
+    }
+
+    /// A key that wants the prompt free says what holds it, and true: a question, an answer being typed, a form, a
+    /// pick. It acts in none of them.
+    fn key_held(&mut self) -> bool {
+        let why = match self.mode {
+            Mode::Normal if (self.view == View::Apps && self.apps.form()) || (self.files_page_open() && self.files.form()) => {
+                "finish this first: Enter saves, Esc cancels"
+            }
+            Mode::Normal if self.picking.is_some() || self.attaching.is_some() => "finish this first: Enter picks, Esc cancels",
+            Mode::Normal => return false,
+            Mode::Confirm(_) => "the question takes Enter on a row",
+            Mode::Listening => "listening: Esc cancels",
+            _ => "finish this first: Enter or Esc",
+        };
+        self.refuse(why);
+        true
+    }
+
+    /// F2: the lit row's rename, the form in the prompt, the name as it is. Any row with a rename step; apps' categories.
+    fn rename_key(&mut self) {
+        if self.view == View::Apps {
+            return self.apps_rename();
+        }
+        if self.files_page_open() {
+            self.files_page_key(HintKey::Rename);
+            return;
+        }
+        let renames = |c: &&Call| c.name.ends_with("_rename");
+        if matches!(self.view, View::Steps(_)) {
+            let at = self
+                .steps_row
+                .as_ref()
+                .and_then(|r| r.tool.iter().chain(r.more.iter()).position(|c| renames(&c)));
+            return match at {
+                Some(k) => {
+                    self.light(k);
+                    self.enter()
+                }
+                None => self.refuse("nothing to rename here"),
+            };
+        }
+        let lit = self.lit_row().filter(|_| self.in_list);
+        let call = lit.as_ref().and_then(|(_, r)| r.tool.iter().chain(r.more.iter()).find(renames).cloned());
+        match (lit, call) {
+            (Some((p, row)), Some(call)) => self.pick_step(p, call, &row.text),
+            _ => self.files_nothing(HintKey::Rename),
+        }
+    }
+
+    /// F9: the row's actions, the whole dialog over; `details` in apps.
+    fn actions_key(&mut self) {
+        if self.files_pane_view().is_some() {
+            return match self.files.page {
+                crate::files::Page::Actions(_) => self.files_back(), // the menu again: it closes
+                crate::files::Page::Conflict(_) => {
+                    self.files_page_key(HintKey::Actions);
+                }
+                _ => {
+                    let row = self.lit_row().filter(|_| self.in_list).map(|(_, r)| r);
+                    self.files_actions(row);
+                }
+            };
+        }
+        if self.view == View::Apps {
+            if !self.apps_details() {
+                self.refuse("no details here");
+            }
+            return;
+        }
+        if !self.open_steps() {
+            self.refuse("no actions here");
+        }
+    }
+
+    /// The keys that act on the lit row, or the folder on screen: each one says why where it cannot.
+    fn row_key(&mut self, key: HintKey) {
+        if self.key_held() {
+            return;
+        }
+        match key {
+            HintKey::Rename => self.rename_key(),
+            HintKey::Actions => self.actions_key(),
+            _ => self.files_key(key),
         }
     }
 
@@ -3181,7 +3334,11 @@ impl App {
         if self.step_value(false) {
             return;
         }
-        // nothing typed, outside the Calendar: Left goes back a level, as Right opens one (dialog/DESIGN.md)
+        // in files Left is the left pane; back there is Esc, Backspace and the header's (dialog/DESIGN.md)
+        if self.files_arrow(crate::files::Side::Left) {
+            return;
+        }
+        // nothing typed, outside the Calendar: Left goes back a level (dialog/DESIGN.md)
         if !self.is_calendar() && self.can_go_back() {
             return self.escape();
         }
@@ -3207,12 +3364,6 @@ impl App {
     }
 
     pub fn right(&mut self) {
-        if self.apps_details() {
-            return;
-        }
-        if self.mode == Mode::Normal && self.chip_focus.is_none() && self.files_right() {
-            return;
-        }
         if self.preview_key() {
             return if self.zoomed() {
                 self.preview_pan(1.0, 0.0)
@@ -3225,7 +3376,8 @@ impl App {
         if self.step_value(true) {
             return;
         }
-        if self.open_steps() {
+        // in files Right is the right pane, and opens it in one pane; elsewhere it opens nothing: F9 does
+        if self.files_arrow(crate::files::Side::Right) {
             return;
         }
         if self.input.is_empty() && (!self.in_list || self.is_calendar()) {
@@ -3430,7 +3582,7 @@ impl App {
             (View::Found(_, w), View::Home) => Some(w.clone()),
             _ => None,
         };
-        // back from a preview or from a row's steps: that row lit again, so F3 and the right arrow go on from it (#169)
+        // back from a preview or from a row's steps: that row lit again, so F3 and F9 go on from it (#169)
         let lit = if self.view == View::Preview {
             self.stop_sound();
             self.preview.take().map(|pv| pv.row().id.clone())
@@ -3754,7 +3906,7 @@ impl App {
         if !self.in_list && (self.attaching.is_some() || self.picking.is_some()) {
             // picking a file or a folder, the words typed find one: Enter picks the best, it never leaves the pick
             if self.input.trim().is_empty() || self.picks().is_empty() {
-                return;
+                return self.refuse("nothing is lit: an arrow or a click lights a row");
             }
             self.in_list = true;
             self.sel = self.best().unwrap_or(0);
@@ -3764,7 +3916,7 @@ impl App {
             // never a row that happens to match them (a question that names an app does not open it)
             let typed = self.input.trim().to_string();
             if typed.is_empty() {
-                return;
+                return self.refuse("nothing is lit: an arrow or a click lights a row");
             }
             self.set_input(String::new());
             return self.request(&typed);
@@ -3941,7 +4093,7 @@ impl App {
                     }
                     self.pick_step(p, call, &row.text);
                 } else if !row.more.is_empty() {
-                    // a row that is only its steps (a saved network not around, #169): Enter opens them, as Right does
+                    // a row that is only its steps (a saved network not around, #169): Enter opens them, as F9 does
                     self.steps_of(p, row);
                 } else if row.page.is_some() {
                     // a row that is only its page (the license, the credits): Enter reads it, as P does
@@ -4002,7 +4154,7 @@ impl App {
                 if let Some(call) = call {
                     self.pick_step(p, call, &row.text);
                 } else if !row.more.is_empty() {
-                    // a row that is only its actions (this folder, #127): Enter opens them, as Right does
+                    // a row that is only its actions (this folder, #127): Enter opens them, as F9 does
                     if !self.files_actions(Some(row.clone())) {
                         self.steps_of(p, row);
                     }
@@ -4241,7 +4393,7 @@ impl App {
     /// Explicit model request. Forms, confirmation text and previews grant no context authority.
     pub fn ask(&mut self) {
         if self.view == View::Apps && self.apps.form() {
-            return self.refuse("finish the category edit first: Enter saves it, Esc lets it go");
+            return self.refuse("finish the category edit first: Enter saves it, Esc cancels");
         }
         if self.mode != Mode::Normal {
             return;
@@ -4709,7 +4861,11 @@ impl App {
             }
             let masked = gate::secret(&field, self.tool_of(&step).and_then(|t| t.schema.pointer(&format!("/properties/{}", field))));
             self.stash_draft();
+            let name = current_name(&step.call);
             self.mode = Mode::Ask { step, field, masked };
+            if let Some(name) = name {
+                self.set_input(name);
+            }
             return;
         }
         if let Some(field) = step.call.pick.clone().filter(|f| !step.call.arguments.contains_key(f)) {
@@ -5169,6 +5325,7 @@ impl App {
                 Some(parts.join(crate::ui::SEP))
             }
             // help's row: what you do and its key, whole, where the row cut the words (dialog/DESIGN.md, v0.127)
+            Item::Key(words, key) if key.is_empty() => Some(words.clone()),
             Item::Key(words, key) => Some(format!("{}{}{}", words, crate::ui::SEP, key)),
             // a menu's row with a wide column (power: what the step does): the row stays one word, its line
             // here while it is lit (dialog/DESIGN.md, v0.127)
@@ -5341,7 +5498,7 @@ impl App {
             View::Models => "model".into(),
             View::Talk => "talk".into(),
             View::Connections => "connections".into(),
-            View::Preview => "preview".into(),
+            View::Preview => "view".into(),
             View::Found(k, _) => k.name().into(),
         }
     }
@@ -5394,7 +5551,7 @@ impl App {
                 match &self.files.page {
                     Page::Actions(a) if self.files_page_open() => a.title.clone(),
                     Page::Conflict(c) if self.files_page_open() => {
-                        format!("{} is in {} already", c.current().map(|t| t.name.clone()).unwrap_or_default(), c.dest_title)
+                        format!("{} already exists", c.current().map(|t| t.name.clone()).unwrap_or_default())
                     }
                     Page::Form(f) if self.files_page_open() => f.words.clone(),
                     _ => self.folder.as_ref().map(|(_, _, r)| r.title.clone()).unwrap_or_default(),
@@ -5413,7 +5570,13 @@ impl App {
         match key {
             HintKey::Enter => self.enter(),
             HintKey::Ask => self.ask(),
-            HintKey::Conversation => self.conversation(),
+            HintKey::Conversation => {
+                if !matches!(self.mode, Mode::Normal) {
+                    self.key_held();
+                } else {
+                    self.conversation();
+                }
+            }
             HintKey::PreviousControl => self.tab(true),
             HintKey::Start => self.line_start(),
             HintKey::End => self.line_end(),
@@ -5431,10 +5594,15 @@ impl App {
             HintKey::Up => self.up(),
             HintKey::Down => self.down(),
             HintKey::Char(c) => self.typed(c),
-            HintKey::Check => self.check_key(),
-            HintKey::Preview => self.preview_key_pressed(),
+            HintKey::Select => self.select_key(),
+            HintKey::View => self.view_key(),
             HintKey::Pane => {
-                self.files_pane();
+                if !self.key_held() {
+                    self.files_pane_key();
+                }
+            }
+            HintKey::Rename | HintKey::Open | HintKey::Copy | HintKey::Move | HintKey::New | HintKey::Trash | HintKey::Actions | HintKey::CopyPath => {
+                self.row_key(key)
             }
         }
     }
@@ -5476,7 +5644,7 @@ impl App {
         match &self.mode {
             // the question's page: Esc keeps; Enter has no chip, it acts on the lit row
             Mode::Confirm(_) => return vec![("keep ".to_string(), false), ("Esc".to_string(), true)],
-            Mode::Ask { .. } if self.layout_form() => {
+            Mode::Ask { .. } if self.prompt_form() => {
                 // a form says what to type in the prompt's placeholder, and Enter saves (dialog/DESIGN.md)
                 let mut v = key("Cancel", "Esc");
                 v.push(gap());
@@ -5596,17 +5764,29 @@ impl App {
         match &self.view {
             View::Conversation => add(&mut v, "History", "\u{2191}"),
             View::Models | View::Talk | View::Steps(_) | View::Help | View::About | View::Preview | View::Apps | View::Home | View::Connections => {}
+            // files: one bar in one pane and in two, whatever row is lit (dialog/DESIGN.md); it wraps at 60 cells
+            View::Folder(..) if self.files_pane_view().is_some() => {
+                add(&mut v, "Nav", "\u{2190} \u{2191} \u{2193} \u{2192}");
+                for (w, k) in [
+                    ("Ren", "F2"),
+                    ("View", "F3"),
+                    ("Open", "F4"),
+                    ("Copy", "F5"),
+                    ("Move", "F6"),
+                    ("New", "F7"),
+                    ("Trash", "F8"),
+                    ("Actions", "F9"),
+                ] {
+                    add(&mut v, w, k);
+                }
+            }
             View::Dest(_) | View::Section(_) | View::Folder(..) | View::Found(..) => {
                 let rows = self.view_rows();
-                // in a files folder every row opens its actions page (dialog/DESIGN.md)
-                if rows.iter().any(|r| !r.more.is_empty()) || self.files_pane_view().is_some() {
-                    add(&mut v, "Actions", "\u{2192}");
+                if rows.iter().any(|r| !r.more.is_empty()) {
+                    add(&mut v, "Actions", "F9");
                 }
                 if rows.iter().any(|r| r.page.is_some()) {
-                    add(&mut v, "Preview", "F3");
-                }
-                if self.two_panes() {
-                    add(&mut v, "Pane", "Ctrl+Tab");
+                    add(&mut v, "View", "F3");
                 }
                 if rows.iter().any(|r| r.step.is_some()) {
                     add(&mut v, "Change", "\u{2190} \u{2192}");
@@ -5934,17 +6114,14 @@ impl App {
         self.running.is_some() || self.setting.is_some() || self.wait.is_some()
     }
 
-    /// The lit row's steps, when it has steps of its own (its more): Right opens them as a list of
-    /// their own, Enter runs one, Esc comes back (#112). The row is kept as it was, so the list stands
-    /// while its folder is read again.
+    /// The lit row's steps, when it has steps of its own (its more): F9 opens them as a list of their own, words typed
+    /// or not, Enter runs one, Esc comes back to the words (#112). The row is kept as it was, so the list stands while
+    /// its folder is read again.
     fn open_steps(&mut self) -> bool {
-        if !self.in_list || !self.input.is_empty() || self.mode != Mode::Normal || self.picking.is_some() || self.attaching.is_some() {
+        if !self.in_list || self.mode != Mode::Normal || self.picking.is_some() || self.attaching.is_some() {
             return false;
         }
         let Some((prov, row)) = self.lit_row() else { return false };
-        if self.providers[prov].label == "files" && self.files_actions(Some(row.clone())) {
-            return true; // the files' own page, in place of the list of steps (dialog/DESIGN.md)
-        }
         if row.more.is_empty() {
             return false;
         }
@@ -5958,6 +6135,8 @@ impl App {
         self.target = None;
         self.keep_lit = None;
         self.steps_row = Some(row);
+        self.prompt_depart();
+        self.set_input(String::new());
         self.came_from.push(self.view.clone());
         self.view = View::Steps(prov);
         self.sel = 0;
@@ -5971,8 +6150,12 @@ impl App {
         row.tool.iter().chain(row.more.iter()).nth(k).cloned()
     }
 
-    /// A step's words in a list of steps: the provider's own ("move to a folder"), else its verb.
+    /// A step's words in a list of steps: the provider's own ("move to a folder"), else its verb; the word for a page
+    /// shown is view, everywhere.
     pub fn step_words(&self, call: &Call) -> String {
+        if call.name.ends_with("_preview") {
+            return "view".into();
+        }
         call.said.clone().unwrap_or_else(|| verb_of(&call.name).to_lowercase())
     }
 

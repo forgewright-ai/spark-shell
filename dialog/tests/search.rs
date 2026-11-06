@@ -255,11 +255,11 @@ fn f3_shows_any_row_that_has_a_page_and_space_does_not() {
     r.app.in_list = true;
     r.app.sel = 0;
     let keys = |a: &App| a.hint().into_iter().map(|(t, _)| t).collect::<String>();
-    assert!(keys(&r.app).contains("Preview F3"), "{}", keys(&r.app));
+    assert!(keys(&r.app).contains("View F3"), "{}", keys(&r.app));
     r.app.typed(' ');
     assert_eq!(r.app.view, View::Section(0), "Space shows no preview");
     assert_eq!(r.app.input, "", "and types nothing on a lit row");
-    r.app.hint_key(spark_dialog::app::HintKey::Preview);
+    r.app.hint_key(spark_dialog::app::HintKey::View);
     assert_eq!(r.app.view, View::Preview, "F3 shows it");
     let app = &mut r.app;
     assert!(
@@ -323,4 +323,21 @@ fn the_same_words_typed_again_are_asked_again() {
         pump(&mut r.app, &r.rx, |_| asked.lock().unwrap().iter().filter(|u| **u == uri).count() > before),
         "asked again"
     );
+}
+
+#[test]
+fn f9_opens_a_found_rows_steps_with_the_words_typed_and_esc_brings_them_back() {
+    let mut r = started();
+    let app = &mut r.app;
+    app.set_draft("cafe");
+    assert!(!app.items().is_empty());
+    let n = app.picks().iter().position(|it| matches!(it, Item::Row(..))).expect("the network's row");
+    app.light(n);
+    app.right();
+    assert_eq!(app.view, View::Home, "Right opens nothing outside files");
+    app.hint_key(spark_dialog::app::HintKey::Actions);
+    assert!(matches!(app.view, View::Steps(_)), "{:?}", app.view);
+    assert!(app.input.is_empty(), "the steps have their own prompt");
+    app.escape();
+    assert_eq!((app.view.clone(), app.input.as_str()), (View::Home, "cafe"), "back to the words");
 }

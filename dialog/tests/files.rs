@@ -18,6 +18,8 @@ const HOME: &str = "spark-shell://files/rows/aG9tZQ";
 const DOCS: &str = "spark-shell://files/rows/ZG9jcw";
 const PICS: &str = "spark-shell://files/rows/cGljcw";
 const TRASH: &str = "spark-shell://files/rows/trash";
+/// The key bar of a files folder, in one pane and in two.
+const BAR: &str = "Back Esc   Nav \u{2190} \u{2191} \u{2193} \u{2192}   Ren F2   View F3   Open F4   Copy F5   Move F6   New F7   Trash F8   Actions F9";
 
 /// The files provider's tools, as the shell offers them: copy and move take `to`, and `name` and `there` besides.
 fn tools() -> Value {
@@ -27,6 +29,7 @@ fn tools() -> Value {
     json!([
         one("files_open", "files open PATH", json!({"path": path}), vec!["path"], false),
         one("files_browse", "files browse PATH", json!({"path": path}), vec!["path"], false),
+        one("files_app", "files app PATH", json!({"path": path}), vec!["path"], false),
         one("files_attach", "files attach PATH", json!({"path": path}), vec!["path"], false),
         one(
             "files_rename",
@@ -71,6 +74,7 @@ fn tools() -> Value {
 /// The steps once a list, by kind, as the provider writes them (#123).
 fn kinds() -> Value {
     let steps = json!([
+        {"name": "files_app", "said": "open in app"},
         {"name": "files_rename", "ask": ["name"], "said": "rename"},
         {"name": "files_move", "pick": "to", "said": "move to a folder"},
         {"name": "files_copy", "pick": "to", "said": "copy to a folder"},
@@ -299,6 +303,12 @@ fn row(app: &App, name: &str) -> usize {
         .unwrap_or_else(|| panic!("no row {}", name))
 }
 
+/// The second pane open beside the first, the bar back in the first.
+fn two_panes(app: &mut App) {
+    app.right();
+    app.left();
+}
+
 fn light_row(app: &mut App, name: &str) {
     let n = row(app, name);
     app.light(n);
@@ -353,8 +363,8 @@ fn the_status_row_says_the_place_the_rows_own_folder_else_the_folder_on_screen()
 #[test]
 fn insert_checks_the_lit_row_moves_the_bar_down_and_the_status_row_counts() {
     let mut app = files_app();
-    assert!(app.cfg.keys.help().contains(&("check", "Space")), "a named action, in help: check Space");
-    assert!(app.cfg.keys.help().contains(&("preview", "F3")), "and preview F3");
+    assert!(app.cfg.keys.help().contains(&("select", "Space")), "a named action, in help: check Space");
+    assert!(app.cfg.keys.help().contains(&("view", "F3")), "and preview F3");
     assert_eq!(lit(&app).as_deref(), Some("notes.md"));
     app.typed(' ');
     assert!(app.files.checked("files:file:home:notes.md"), "checked by its id");
@@ -363,10 +373,10 @@ fn insert_checks_the_lit_row_moves_the_bar_down_and_the_status_row_counts() {
     assert_eq!(lit(&app).as_deref(), Some("todo.txt"));
     assert_eq!(
         app.selected_line().as_deref(),
-        Some("2 checked \u{b7} 4.5 MB"),
+        Some("2 selected \u{b7} 4.5 MB"),
         "the count and the size, in place of the lit row's line"
     );
-    assert_eq!(app.files_checked_line().as_deref(), Some("2 checked \u{b7} 4.5 MB"));
+    assert_eq!(app.files_checked_line().as_deref(), Some("2 selected \u{b7} 4.5 MB"));
     // the sign and the words' column: as a checked list draws its picks
     let rows = screen(&app);
     let notes = rows.iter().find(|r| r.contains("notes.md") && r.contains("18 Oct")).unwrap();
@@ -384,7 +394,7 @@ fn insert_checks_the_lit_row_moves_the_bar_down_and_the_status_row_counts() {
     // not on the trash, the summary row, a drive or ..
     light_row(&mut app, "trash");
     app.typed(' ');
-    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("only a file or a folder can be checked"));
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("only a file or a folder can be selected"));
     assert_eq!(lit(&app).as_deref(), Some("trash"), "the bar stays");
     light_row(&mut app, "STICK");
     app.typed(' ');
@@ -393,11 +403,11 @@ fn insert_checks_the_lit_row_moves_the_bar_down_and_the_status_row_counts() {
     light_row(&mut app, "notes.md");
     app.typed(' ');
     assert!(!app.files.checked("files:file:home:notes.md"));
-    assert_eq!(app.selected_line().as_deref(), Some("1 checked \u{b7} 4.5 MB"));
+    assert_eq!(app.selected_line().as_deref(), Some("1 selected \u{b7} 4.5 MB"));
     // a folder is checked too, and adds nothing to the size
     light_row(&mut app, "documents");
     app.typed(' ');
-    assert_eq!(app.selected_line().as_deref(), Some("2 checked \u{b7} 4.5 MB"));
+    assert_eq!(app.selected_line().as_deref(), Some("2 selected \u{b7} 4.5 MB"));
     // in the prompt, Insert says what to do
     app.in_list = false;
     app.typed(' ');
@@ -426,7 +436,7 @@ fn checks_keep_through_a_filter_and_go_with_esc_first_then_another_folder() {
         app.files.checked("files:file:home:notes.md") && app.files.checked("files:file:home:todo.txt"),
         "kept through the filter"
     );
-    assert_eq!(app.selected_line().as_deref(), Some("2 checked \u{b7} 3 KB"), "counted whole, filtered or not");
+    assert_eq!(app.selected_line().as_deref(), Some("2 selected \u{b7} 3 KB"), "counted whole, filtered or not");
     app.escape();
     assert!(app.input.is_empty(), "the first Esc clears the words");
     assert!(app.files_checks_any(), "the checks stand");
@@ -448,7 +458,7 @@ fn checks_keep_through_a_filter_and_go_with_esc_first_then_another_folder() {
     let mut app = files_app();
     app.typed(' ');
     light_row(&mut app, "report.pdf");
-    app.hint_key(HintKey::Preview);
+    app.hint_key(HintKey::View);
     assert_eq!(app.view, View::Preview);
     app.escape();
     assert!(app.files_checks_any(), "back from the preview, the checks as they were");
@@ -468,71 +478,96 @@ fn files_checked_golden() {
 // ---- the actions page
 
 #[test]
-fn right_opens_the_rows_actions_then_the_folders_and_every_door_goes_back_with_the_row_lit() {
+fn f9_opens_the_rows_actions_then_the_folders_and_every_door_goes_back_with_the_row_lit() {
     let mut app = files_app();
-    assert_eq!(hint(&app), "Back Esc   Actions \u{2192}   Preview F3");
-    app.right();
+    assert_eq!(hint(&app), BAR);
+    app.hint_key(HintKey::Actions);
     assert!(app.files_page_open() && matches!(app.files.page, Page::Actions(_)));
     assert_eq!(format!("{} \u{b7} {}", app.title(), app.subtitle()), "files \u{b7} notes.md");
     assert_eq!(
         labels(&app),
         [
             "open",
-            "preview",
-            "attach to the next request",
+            "open in app",
+            "view",
             "rename",
-            "move to a folder",
-            "copy to a folder",
+            "copy",
+            "move",
+            "copy path",
             "trash",
-            "check",
+            "select",
             "",
-            "this folder",
             "new folder",
-            "new text file",
-            "two panes",
-            "open in the system file manager"
+            "new file"
         ],
-        "the row's actions in the provider's order, check, then the folder's under a heading"
+        "one order whatever the provider's, a blank row, the folder's; close pane only while two stand"
     );
+    let keys: Vec<(String, String)> = app
+        .items()
+        .iter()
+        .filter_map(|it| match it {
+            Item::Files(l) if l.action.is_some() => Some((l.label.clone(), l.key.clone())),
+            _ => None,
+        })
+        .collect();
+    let want = [
+        ("open", "Enter"),
+        ("open in app", "F4"),
+        ("view", "F3"),
+        ("rename", "F2"),
+        ("copy", "F5"),
+        ("move", "F6"),
+        ("copy path", "Ctrl+C"),
+        ("trash", "F8"),
+        ("select", "Space"),
+        ("new folder", "F7"),
+        ("new file", ""),
+    ];
+    assert_eq!(keys, want.map(|(a, b)| (a.to_string(), b.to_string())), "each row's key beside it");
     let check = app
         .items()
         .iter()
         .find_map(|it| match it {
-            Item::Files(l) if l.label == "check" => Some(l.key.clone()),
+            Item::Files(l) if l.label == "select" => Some(l.key.clone()),
             _ => None,
         })
         .unwrap();
-    assert_eq!(check, "Space", "its key as a chip beside it: the check binding's label");
+    assert_eq!(check, "Space", "the select binding's label");
     assert!(app.in_list && app.sel == 0, "the first row lit");
     assert_eq!(hint(&app), "Back Esc");
     assert!(app.can_go_back(), "the header's back stands");
-    for door in ["esc", "left", "backspace"] {
+    app.escape();
+    for door in ["esc", "backspace", "f9"] {
+        app.hint_key(HintKey::Actions);
+        // the arrows stay put on a page: back in files is Esc, Backspace and the header's
+        app.left();
         app.right();
+        assert!(app.files_page_open() && app.files.other.is_none(), "{}: the arrows stayed put", door);
         match door {
             "esc" => app.escape(),
-            "left" => app.left(),
-            _ => app.backspace(),
+            "backspace" => app.backspace(),
+            _ => app.hint_key(HintKey::Actions),
         }
         assert!(!app.files_page_open(), "{} goes back", door);
         assert_eq!(lit(&app).as_deref(), Some("notes.md"), "{}: the row lit again", door);
         assert!(app.in_list);
     }
-    // the chip reads Insert from the keys: a rebinding is read on the page
-    app.cfg.keys = spark_dialog::keys::Bindings::from_json(r#"{"check":"F6"}"#).unwrap();
-    app.right();
+    // the row's key is read from the keys: a rebinding is read on the page
+    app.cfg.keys = spark_dialog::keys::Bindings::from_json(r#"{"select":"F11"}"#).unwrap();
+    app.hint_key(HintKey::Actions);
     let check = app
         .items()
         .iter()
         .find_map(|it| match it {
-            Item::Files(l) if l.label == "check" => Some(l.key.clone()),
+            Item::Files(l) if l.label == "select" => Some(l.key.clone()),
             _ => None,
         })
         .unwrap();
-    assert_eq!(check, "F6");
+    assert_eq!(check, "F11");
     app.escape();
     // the page keeps the dialog's own width in a wide window
     app.size = (150, 46);
-    app.right();
+    app.hint_key(HintKey::Actions);
     assert_eq!(app.col_w(), 60, "a page of choices is 60 cells wide");
     app.escape();
     assert_eq!(app.col_w(), 120, "the list takes its 120 again");
@@ -542,11 +577,11 @@ fn right_opens_the_rows_actions_then_the_folders_and_every_door_goes_back_with_t
 fn a_folders_page_the_summary_rows_and_the_checked_sets() {
     let mut app = files_app();
     light_row(&mut app, "documents");
-    app.right();
+    app.hint_key(HintKey::Actions);
     assert_eq!(
-        labels(&app)[..6],
-        ["open", "rename", "move to a folder", "copy to a folder", "trash", "check"],
-        "a folder's row: open, then its steps, then check"
+        labels(&app)[..8],
+        ["open", "open in app", "rename", "copy", "move", "copy path", "trash", "select"],
+        "a folder's row: no view, the rest as a file's"
     );
     page_row(&mut app, "open");
     app.enter();
@@ -555,25 +590,22 @@ fn a_folders_page_the_summary_rows_and_the_checked_sets() {
         "open opens the folder: {:?}",
         app.view
     );
-    // the summary row: Enter and Right open the folder's actions alone, the header the folder's place
+    // the summary row: Enter and F9 open the folder's actions alone, the header the folder's place
     let mut app = files_app();
     light_row(&mut app, "this folder \u{b7} 3 folders \u{b7} 3 files \u{b7} 4.5 MB");
     app.enter();
     assert!(app.files_page_open());
     assert_eq!(app.subtitle(), "~");
-    assert_eq!(
-        labels(&app),
-        ["this folder", "new folder", "new text file", "two panes", "open in the system file manager"]
-    );
+    assert_eq!(labels(&app), ["new folder", "new file"]);
     app.escape();
-    app.right();
-    assert_eq!(labels(&app)[0], "this folder");
+    app.hint_key(HintKey::Actions);
+    assert_eq!(labels(&app)[0], "new folder");
     app.escape();
     // `..`: the folder's alone too; Enter on it opens the folder above
     at(&mut app, DOCS, docs_rows());
     light_row(&mut app, "..");
-    app.right();
-    assert_eq!(labels(&app)[0], "this folder");
+    app.hint_key(HintKey::Actions);
+    assert_eq!(labels(&app)[0], "new folder");
     assert_eq!(app.subtitle(), "~/documents");
     app.escape();
     app.enter();
@@ -581,7 +613,7 @@ fn a_folders_page_the_summary_rows_and_the_checked_sets() {
     // a drive: open, then the folder's
     let mut app = files_app();
     light_row(&mut app, "STICK");
-    app.right();
+    app.hint_key(HintKey::Actions);
     assert_eq!(labels(&app)[0], "open");
     app.escape();
     // the checked set: the header counts, the rows act on every checked file
@@ -589,31 +621,20 @@ fn a_folders_page_the_summary_rows_and_the_checked_sets() {
     app.typed(' ');
     app.typed(' ');
     light_row(&mut app, "documents");
-    app.right();
-    assert_eq!(app.subtitle(), "2 checked", "whichever row is lit");
+    app.hint_key(HintKey::Actions);
+    assert_eq!(app.subtitle(), "2 selected", "whichever row is lit");
     assert_eq!(
         labels(&app),
-        [
-            "move to a folder",
-            "copy to a folder",
-            "trash",
-            "uncheck all",
-            "",
-            "this folder",
-            "new folder",
-            "new text file",
-            "two panes",
-            "open in the system file manager"
-        ]
+        ["copy", "move", "copy path", "trash", "deselect all", "", "new folder", "new file"]
     );
-    page_row(&mut app, "uncheck all");
+    page_row(&mut app, "deselect all");
     app.enter();
     assert!(!app.files_checks_any() && !app.files_page_open());
     // a click on a menu's row acts at once; check from the page reads uncheck on a checked row
     let mut app = files_app();
-    app.right();
+    app.hint_key(HintKey::Actions);
     let t0 = Instant::now();
-    let n = app.picks().iter().position(|it| matches!(it, Item::Files(l) if l.label == "check")).unwrap();
+    let n = app.picks().iter().position(|it| matches!(it, Item::Files(l) if l.label == "select")).unwrap();
     app.clicked(n, t0);
     assert!(
         !app.files_page_open() && app.files.checked("files:file:home:notes.md"),
@@ -621,10 +642,10 @@ fn a_folders_page_the_summary_rows_and_the_checked_sets() {
     );
     assert_eq!(lit(&app).as_deref(), Some("report.pdf"), "and the bar moves down, as Insert does");
     light_row(&mut app, "notes.md");
-    app.right();
+    app.hint_key(HintKey::Actions);
     assert_eq!(
         app.subtitle(),
-        "1 checked",
+        "1 selected",
         "a check standing, the page is the checked set's whichever row is lit"
     );
     // the wheel on the page: a row at a time
@@ -632,17 +653,13 @@ fn a_folders_page_the_summary_rows_and_the_checked_sets() {
     app.wheel(1);
     assert_eq!(app.sel, 1);
     app.escape();
-    // no system file manager offered: no row for it
-    app.providers[0].tools.retain(|t| t.name != "files_browse");
-    app.right();
-    assert!(!labels(&app).contains(&"open in the system file manager".to_string()));
 }
 
 #[test]
 fn preview_and_a_step_from_the_page_act_on_the_row_and_come_back_to_the_list() {
     let mut app = files_app();
-    app.right();
-    page_row(&mut app, "preview");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "view");
     app.enter();
     assert_eq!(app.view, View::Preview, "preview opens the row's preview");
     assert_eq!(app.preview.as_ref().unwrap().row().text, "notes.md");
@@ -650,8 +667,8 @@ fn preview_and_a_step_from_the_page_act_on_the_row_and_come_back_to_the_list() {
     assert!(matches!(app.view, View::Folder(..)) && !app.files_page_open());
     assert_eq!(lit(&app).as_deref(), Some("notes.md"));
     // copy to a folder in one pane: the picker, as today
-    app.right();
-    page_row(&mut app, "copy to a folder");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "copy");
     app.enter();
     assert!(
         app.picking.as_ref().is_some_and(|pk| pk.step.is_some() && pk.field == "to"),
@@ -669,18 +686,15 @@ fn preview_and_a_step_from_the_page_act_on_the_row_and_come_back_to_the_list() {
 fn two_panes_open_beside_the_first_switch_with_ctrl_tab_and_keep_each_panes_state() {
     let mut app = files_app();
     assert!(app.cfg.keys.help().contains(&("pane", "Ctrl+Tab")), "a named action, in help");
-    app.files_activate(Action::Panes(true));
+    two_panes(&mut app);
     assert!(
         app.two_panes() && app.files.other.as_ref().is_some_and(|o| o.uri == HOME && o.rows.is_some()),
         "the same folder beside"
     );
     assert_eq!(app.files.other_side, Side::Right);
-    assert_eq!(hint(&app), "Back Esc   Actions \u{2192}   Preview F3   Pane Ctrl+Tab");
-    app.right();
-    assert!(
-        labels(&app).contains(&"one pane".to_string()),
-        "the folder's action reads one pane while two stand"
-    );
+    assert_eq!(hint(&app), BAR);
+    app.hint_key(HintKey::Actions);
+    assert!(labels(&app).contains(&"close pane".to_string()), "the menu closes it while two stand");
     app.escape();
     // the other pane on the pictures: each pane keeps its words, its checks and its selection
     app.files.other = Some(pane(PICS, Some(pics_rows(&[]))));
@@ -706,14 +720,14 @@ fn two_panes_open_beside_the_first_switch_with_ctrl_tab_and_keep_each_panes_stat
     assert_eq!(other.checks, vec!["files:file::holiday.jpg".to_string()], "the other pane's checks kept aside");
     assert_eq!(other.sel, 3, "its selection too");
     assert_eq!(app.prompts.restore(&View::Folder(0, PICS.into())), "", "and its own words, none");
-    // one pane closes it
+    // close pane closes it
     app.set_draft("");
-    app.files_activate(Action::Panes(false));
+    app.files_activate(Action::ClosePane);
     assert!(app.files.other.is_none() && !app.two_panes());
-    assert_eq!(hint(&app), "Back Esc   Actions \u{2192}   Preview F3");
+    assert_eq!(hint(&app), BAR);
     // a narrow window refuses
     app.size = (50, 40);
-    app.files_activate(Action::Panes(true));
+    app.right();
     assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("two panes need a window 60 cells wide"));
     assert!(app.files.other.is_none());
 }
@@ -727,8 +741,8 @@ fn a_click_on_the_other_pane_makes_it_active_and_selects_its_row_a_second_opens_
     let drawn = draw(&app);
     assert!(!drawn.other_picks.is_empty(), "the other pane's rows take a click: {:?}", drawn.other_picks);
     assert!(drawn.other_path.is_some(), "and its path line");
-    assert_eq!(drawn.columns, (0, 30), "the bar spans the active pane's half");
-    assert_eq!(drawn.other_columns, (30, 60));
+    assert_eq!(drawn.columns, (0, 29), "the bar spans the active pane's half");
+    assert_eq!(drawn.other_columns, (30, 60), "a cell for the line between them");
     let n = drawn.other_picks.iter().find(|(_, n)| *n == 1).map(|(_, n)| *n).unwrap(); // 2024
     app.pane_clicked(n, t0);
     assert!(matches!(&app.view, View::Folder(0, u) if u == PICS), "the other pane is active");
@@ -754,7 +768,7 @@ fn a_click_on_the_other_pane_makes_it_active_and_selects_its_row_a_second_opens_
         app.selected_line().as_deref(),
         Some("notes.md \u{b7} Markdown \u{b7} 2 KB \u{b7} 18 Oct 09:14 \u{b7} ~")
     );
-    app.hint_key(HintKey::Preview);
+    app.hint_key(HintKey::View);
     assert_eq!(app.view, View::Preview);
     assert_eq!(app.col_w(), 60, "the whole window");
     app.escape();
@@ -766,14 +780,11 @@ fn a_click_on_the_other_pane_makes_it_active_and_selects_its_row_a_second_opens_
 }
 
 #[test]
-fn files_two_panes_goldens() {
+fn below_60_cells_the_active_pane_alone_is_drawn() {
     let mut app = files_app();
     at(&mut app, DOCS, docs_rows());
     app.files.other = Some(pane(PICS, Some(pics_rows(&[]))));
     light_row(&mut app, "todo.txt");
-    render(&app, "files-two-panes");
-    app.size = (120, 40);
-    render_at(&app, "full-files-two-panes", 120, 40);
     // below 60 cells the active pane alone is drawn, nothing said
     app.size = (50, 40);
     let rows = screen(&app);
@@ -785,14 +796,9 @@ fn files_two_panes_goldens() {
 #[test]
 fn copy_to_the_other_pane_refuses_the_same_folder_and_what_is_no_folder() {
     let mut app = files_app();
-    app.files_activate(Action::Panes(true));
-    app.right();
-    assert!(
-        labels(&app).contains(&"copy to ~".to_string()) && labels(&app).contains(&"move to ~".to_string()),
-        "{:?}",
-        labels(&app)
-    );
-    page_row(&mut app, "copy to ~");
+    two_panes(&mut app);
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "copy");
     app.enter();
     assert_eq!(
         app.reply.as_ref().map(|r| r.text.as_str()),
@@ -800,9 +806,8 @@ fn copy_to_the_other_pane_refuses_the_same_folder_and_what_is_no_folder() {
     );
     assert!(app.running.is_none() && app.files.batch.is_none(), "nothing ran");
     app.files.other = Some(pane(TRASH, Some(trash_rows())));
-    app.right();
-    assert!(labels(&app).contains(&"copy to the other pane".to_string()), "{:?}", labels(&app));
-    page_row(&mut app, "move to the other pane");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "move");
     app.enter();
     assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("the other pane is not a folder"));
 }
@@ -916,10 +921,10 @@ fn several_checked_files_copy_one_after_another_with_one_receipt_and_one_undo() 
     for _ in 0..3 {
         app.typed(' '); // notes.md, report.pdf, todo.txt
     }
-    assert_eq!(app.selected_line().as_deref(), Some("3 checked \u{b7} 4.5 MB"));
-    app.right();
-    assert_eq!(app.subtitle(), "3 checked");
-    page_row(&mut app, "copy to ~/pictures");
+    assert_eq!(app.selected_line().as_deref(), Some("3 selected \u{b7} 4.5 MB"));
+    app.hint_key(HintKey::Actions);
+    assert_eq!(app.subtitle(), "3 selected");
+    page_row(&mut app, "copy");
     app.enter();
     assert!(
         app.files.batch.as_ref().is_some_and(|b| b.verb == Verb::Copy && b.total == 3),
@@ -944,7 +949,7 @@ fn several_checked_files_copy_one_after_another_with_one_receipt_and_one_undo() 
     );
     assert!(c.iter().all(|x| x["name"] == "files_copy" && x["arguments"]["to"] == "/data/me/pictures"));
     let r = app.reply.clone().expect("one receipt");
-    assert_eq!((r.mark, r.text.as_str(), r.undo), (Mark::Done, "3 copied to ~/pictures \u{b7} 4.5 MB", true));
+    assert_eq!((r.mark, r.text.as_str(), r.undo), (Mark::Done, "3 files copied to ~/pictures", true));
     assert!(!app.files_checks_any(), "the checks clear when the operation ends");
     assert_eq!(
         app.undo.as_ref().map(|u| u.call.arguments["path"].as_str().unwrap().to_string()),
@@ -966,7 +971,7 @@ fn several_checked_files_copy_one_after_another_with_one_receipt_and_one_undo() 
         ["todo.txt", "report.pdf", "notes.md"]
     );
     assert!(c[3..].iter().all(|x| x["name"] == "files_trash"));
-    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("3 put back"));
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("3 undone"));
     assert!(app.files.undo_more.is_empty() || app.undo.is_some());
 }
 
@@ -977,8 +982,8 @@ fn typed_undo_takes_the_whole_batch_back_and_a_refusal_never_stops_it() {
     for _ in 0..3 {
         app.typed(' ');
     }
-    app.right();
-    page_row(&mut app, "move to ~/pictures");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "move");
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.files.batch.is_none() && a.running.is_none()));
     assert_eq!(tool_calls(&calls).len(), 3, "the refused one stopped nothing");
@@ -1003,7 +1008,7 @@ fn typed_undo_takes_the_whole_batch_back_and_a_refusal_never_stops_it() {
         app.files.batch
     );
     assert!(pump(&mut app, &rx, |a| a.files.batch.is_none() && a.running.is_none()));
-    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("2 put back"));
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("2 undone"));
     let c = tool_calls(&calls);
     assert_eq!(c.len(), 5);
     assert!(c[3..].iter().all(|x| x["name"] == "files_move"));
@@ -1015,7 +1020,7 @@ fn esc_stops_a_batch_after_the_file_under_way_wherever_you_are_and_so_does_the_x
     for _ in 0..3 {
         app.typed(' ');
     }
-    app.right();
+    app.hint_key(HintKey::Actions);
     page_row(&mut app, "trash");
     app.enter();
     assert!(app.running.is_some() && app.files.batch.as_ref().is_some_and(|b| b.verb == Verb::Trash));
@@ -1044,7 +1049,7 @@ fn esc_stops_a_batch_after_the_file_under_way_wherever_you_are_and_so_does_the_x
     for _ in 0..2 {
         app.typed(' ');
     }
-    app.right();
+    app.hint_key(HintKey::Actions);
     page_row(&mut app, "trash");
     app.enter();
     app.conversation();
@@ -1069,9 +1074,9 @@ fn a_single_file_goes_through_the_providers_step_as_today() {
     let (mut app, rx, calls) = started(vec![], vec![]);
     with_pictures(&mut app, &rx);
     app.typed(' '); // notes.md alone checked: one file, one step
-    app.right();
-    assert_eq!(app.subtitle(), "1 checked");
-    page_row(&mut app, "copy to ~/pictures");
+    app.hint_key(HintKey::Actions);
+    assert_eq!(app.subtitle(), "1 selected");
+    page_row(&mut app, "copy");
     app.enter();
     assert!(app.files.batch.is_none(), "one file: no batch");
     assert!(!app.files_checks_any(), "the checks clear when the step is sent");
@@ -1101,43 +1106,25 @@ fn a_name_already_in_the_destination_is_a_page_of_choices() {
     for _ in 0..3 {
         app.typed(' ');
     }
-    app.right();
-    page_row(&mut app, "copy to ~/pictures");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "copy");
     app.enter();
     assert!(matches!(app.files.page, Page::Conflict(_)), "{:?}", app.files.page);
+    assert_eq!(format!("{} \u{b7} {}", app.title(), app.subtitle()), "files \u{b7} notes.md already exists");
     assert_eq!(
-        format!("{} \u{b7} {}", app.title(), app.subtitle()),
-        "files \u{b7} notes.md is in ~/pictures already"
+        labels(&app),
+        ["replace", "replace all", "skip", "skip all", "keep both"],
+        "one list, no second column"
     );
-    let lines: Vec<(String, String)> = app
-        .items()
-        .iter()
-        .filter_map(|it| match it {
-            Item::Files(l) => Some((l.label.clone(), l.value.clone())),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(
-        lines,
-        [
-            ("skip".into(), "".into()),
-            ("keep both".into(), "the copy is named notes 2.md".into()),
-            ("replace".into(), "the one there goes to the trash".into()),
-            ("".into(), "".into()),
-            ("the other too".into(), "".into()),
-            ("skip all".into(), "".into()),
-            ("keep both for all".into(), "".into()),
-            ("replace all".into(), "".into())
-        ]
-    );
-    assert_eq!(hint(&app), "Back Esc");
+    assert!(app.items().iter().all(|it| matches!(it, Item::Files(l) if l.value.is_empty())));
+    assert_eq!(hint(&app), "Cancel Esc");
     assert!(app.in_list && app.sel == 0);
     assert!(app.running.is_none() && tool_calls(&calls).is_empty(), "nothing runs before the answers");
     // keep both for this one: the next conflict is asked, alone
     page_row(&mut app, "keep both");
     app.enter();
-    assert_eq!(app.subtitle(), "todo.txt is in ~/pictures already");
-    assert_eq!(labels(&app), ["skip", "keep both", "replace"], "the last conflict: no others");
+    assert_eq!(app.subtitle(), "todo.txt already exists");
+    assert_eq!(labels(&app), ["replace", "skip", "keep both"], "the last conflict: no `all` rows");
     page_row(&mut app, "replace");
     app.enter();
     assert!(!app.files_page_open(), "the answers given, the batch runs");
@@ -1147,7 +1134,7 @@ fn a_name_already_in_the_destination_is_a_page_of_choices() {
     assert_eq!(c[0]["arguments"]["there"], "keep", "notes.md kept both");
     assert!(c[1]["arguments"].get("there").is_none(), "report.pdf had no conflict");
     assert_eq!(c[2]["arguments"]["there"], "replace");
-    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("3 copied to ~/pictures \u{b7} 4.5 MB"));
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("3 files copied to ~/pictures"));
 }
 
 #[test]
@@ -1157,30 +1144,19 @@ fn skip_all_leaves_the_files_out_and_counts_them_and_esc_lets_the_whole_go() {
     for _ in 0..3 {
         app.typed(' ');
     }
-    app.right();
-    page_row(&mut app, "move to ~/pictures");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "move");
     app.enter();
-    assert_eq!(
-        app.items().iter().find_map(|it| match it {
-            Item::Files(l) if l.label == "keep both" => Some(l.value.clone()),
-            _ => None,
-        }),
-        Some("moved as notes 2.md".into()),
-        "a move's kept copy"
-    );
     page_row(&mut app, "skip all");
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.files.batch.is_none() && a.running.is_none()));
     assert_eq!(tool_calls(&calls).len(), 1, "report.pdf alone");
-    assert_eq!(
-        app.reply.as_ref().map(|r| r.text.as_str()),
-        Some("1 moved to ~/pictures \u{b7} 4.5 MB, 2 skipped")
-    );
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("1 file moved to ~/pictures, 2 skipped"));
     // Esc on the page: the whole operation goes, nothing said
     let (mut app, rx, calls) = started(vec!["notes.md"], vec![]);
     with_pictures(&mut app, &rx);
-    app.right();
-    page_row(&mut app, "copy to ~/pictures");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "copy");
     app.enter();
     assert!(matches!(app.files.page, Page::Conflict(_)), "one file too is asked about");
     app.escape();
@@ -1189,8 +1165,8 @@ fn skip_all_leaves_the_files_out_and_counts_them_and_esc_lets_the_whole_go() {
     pump(&mut app, &rx, |_| false);
     assert!(tool_calls(&calls).is_empty(), "nothing ran");
     // a single file skipped: nothing copied, and the receipt says so
-    app.right();
-    page_row(&mut app, "copy to ~/pictures");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "copy");
     app.enter();
     page_row(&mut app, "skip");
     app.enter();
@@ -1201,8 +1177,8 @@ fn skip_all_leaves_the_files_out_and_counts_them_and_esc_lets_the_whole_go() {
 #[test]
 fn the_folder_picked_in_one_pane_is_read_for_conflicts_too() {
     let (mut app, rx, calls) = started(vec!["notes.md"], vec![]);
-    app.right();
-    page_row(&mut app, "copy to a folder");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "copy");
     app.enter();
     assert!(app.picking.is_some());
     light_row(&mut app, "pictures");
@@ -1233,8 +1209,8 @@ fn files_conflict_golden() {
     for _ in 0..3 {
         app.typed(' ');
     }
-    app.right();
-    page_row(&mut app, "copy to ~/pictures");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "copy");
     app.enter();
     assert!(matches!(app.files.page, Page::Conflict(_)));
     render(&app, "files-conflict");
@@ -1257,8 +1233,8 @@ fn files_batch_golden() {
         children: None,
     };
     let steps = vec![
-        (call("photo-0412.jpg"), "photo-0412.jpg".to_string(), 0u64),
-        (call("todo.txt"), "todo.txt".to_string(), 0),
+        (call("photo-0412.jpg"), "photo-0412.jpg".to_string()),
+        (call("todo.txt"), "todo.txt".to_string()),
     ];
     let mut b = Batch::new(Verb::Copy, Some("~/pictures".into()), steps, 0);
     b.total = 5;
@@ -1285,14 +1261,14 @@ fn files_batch_golden() {
 #[test]
 fn rename_new_folder_and_new_text_file_type_in_the_prompt() {
     let mut app = files_app();
-    app.right();
+    app.hint_key(HintKey::Actions);
     page_row(&mut app, "rename");
     app.enter();
     assert!(app.files_page_open() && app.files.form());
     assert_eq!(app.mode, Mode::Normal, "a form of files, not Mode::Ask");
     assert_eq!((app.input.as_str(), app.cursor), ("notes.md", 8), "the name as it is, the cursor at its end");
-    assert_eq!(app.placeholder(), "the new name");
-    assert_eq!(hint(&app), "Let go Esc   Save Enter");
+    assert_eq!(app.placeholder(), "new name");
+    assert_eq!(hint(&app), "Cancel Esc   Save Enter");
     assert_eq!(format!("{} \u{b7} {}", app.title(), app.subtitle()), "files \u{b7} rename");
     assert!(!app.can_go_back(), "a form has no back: Esc lets it go");
     app.backspace();
@@ -1306,7 +1282,7 @@ fn rename_new_folder_and_new_text_file_type_in_the_prompt() {
     assert_eq!(lit(&app).as_deref(), Some("notes.md"), "the row lit");
     // Esc lets a form go, words typed or none; the list is back with the row lit
     let mut app = files_app();
-    app.right();
+    app.hint_key(HintKey::Actions);
     page_row(&mut app, "rename");
     app.enter();
     app.set_draft("other");
@@ -1314,24 +1290,24 @@ fn rename_new_folder_and_new_text_file_type_in_the_prompt() {
     assert!(!app.files_page_open() && app.input.is_empty() && app.running.is_none());
     assert_eq!(lit(&app).as_deref(), Some("notes.md"));
     // new folder, from the summary row's actions: an empty prompt and its own placeholder
-    app.right();
+    app.hint_key(HintKey::Actions);
     page_row(&mut app, "new folder");
     app.enter();
     assert!(app.files.form() && app.input.is_empty());
-    assert_eq!(app.placeholder(), "a name for the folder");
+    assert_eq!(app.placeholder(), "folder name");
     assert_eq!(app.subtitle(), "new folder");
     app.enter();
     assert_eq!(
         app.reply.as_ref().map(|r| r.text.as_str()),
-        Some("type a name, or Esc lets it go"),
+        Some("type a name, or Esc cancels"),
         "Enter with no name says so"
     );
     assert!(app.files.form());
     app.escape();
-    app.right();
-    page_row(&mut app, "new text file");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "new file");
     app.enter();
-    assert_eq!(app.placeholder(), "a name for the text file");
+    assert_eq!(app.placeholder(), "file name");
     app.set_draft("ideas.txt");
     app.enter();
     assert!(!app.files.form());
@@ -1339,14 +1315,14 @@ fn rename_new_folder_and_new_text_file_type_in_the_prompt() {
     let mut app = files_app();
     app.providers[0].label = "notes".into();
     app.view = View::Folder(0, HOME.into());
-    app.right();
+    app.hint_key(HintKey::Actions);
     assert!(matches!(app.view, View::Steps(0)), "another provider: the list of steps as today");
 }
 
 #[test]
 fn files_form_golden() {
     let mut app = files_app();
-    app.right();
+    app.hint_key(HintKey::Actions);
     page_row(&mut app, "rename");
     app.enter();
     assert_eq!(app.input, "notes.md");
@@ -1359,7 +1335,7 @@ fn the_form_runs_the_step_with_the_name_and_both_panes_read_again() {
     with_pictures(&mut app, &rx);
     let reads = |c: &Calls, uri: &str| c.lock().unwrap().iter().filter(|v| v["read"] == uri).count();
     let (home_before, pics_before) = (reads(&calls, HOME), reads(&calls, PICS));
-    app.right();
+    app.hint_key(HintKey::Actions);
     page_row(&mut app, "rename");
     app.enter();
     app.set_draft("notes2.md");
@@ -1386,7 +1362,7 @@ fn the_form_runs_the_step_with_the_name_and_both_panes_read_again() {
 #[test]
 fn rows_that_land_after_a_pane_switch_keep_the_lit_row_by_id_and_the_checks() {
     let (mut app, rx, _calls) = started(vec![], vec![]);
-    app.files_activate(Action::Panes(true));
+    two_panes(&mut app);
     app.typed(' '); // notes.md checked, report.pdf lit
     app.hint_key(HintKey::Pane); // the other pane active: its read is on its way
     app.hint_key(HintKey::Pane); // and back, before it landed: a read of this pane is on its way too
@@ -1404,7 +1380,7 @@ fn a_steps_result_lands_while_another_view_shows() {
     for _ in 0..2 {
         app.typed(' ');
     }
-    app.right();
+    app.hint_key(HintKey::Actions);
     page_row(&mut app, "trash");
     app.enter();
     assert!(app.running.is_some());
@@ -1414,7 +1390,7 @@ fn a_steps_result_lands_while_another_view_shows() {
     assert!(pump(&mut app, &rx, |a| a.files.batch.is_none() && a.running.is_none()));
     assert_eq!(tool_calls(&calls).len(), 2);
     assert_eq!(app.view, View::Conversation);
-    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("2 trashed \u{b7} 4.5 MB"));
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("2 files trashed"));
     assert!(app.undo.is_some() && app.files.undo_more.len() == 1);
 }
 
@@ -1443,29 +1419,29 @@ fn every_size_draws_the_panes_the_checks_and_the_pages_whole() {
         let cw = w.min(120);
         if cw >= 60 {
             let left = (w - cw) / 2;
-            assert_eq!(drawn.columns, (left, left + cw / 2), "{}x{}: the bar spans the active half", w, h);
+            assert_eq!(drawn.columns, (left, left + (cw - 1) / 2), "{}x{}: the bar spans the active half", w, h);
             assert!(!drawn.other_picks.is_empty(), "{}x{}: the other pane's rows", w, h);
         } else {
             assert!(drawn.other_picks.is_empty(), "{}x{}: the other pane waits", w, h);
         }
         let rows = screen(&app);
         assert!(rows[0].contains("files"), "{}x{}: the header: {:?}", w, h, rows[0]);
-        // a wrapped key bar takes the row of air above it (v0.124.5): at 60 cells two panes wrap `pane Ctrl+Tab`
+        // a wrapped key bar takes the row of air above it (v0.124.5): at 60 cells the files' keys take two lines
         let ky = spark_dialog::ui::keys_y(h) as usize;
         assert!(rows[ky].contains("Esc") || rows[ky - 1].contains("Esc"), "{}x{}: the key bar", w, h);
-        app.right();
+        app.hint_key(HintKey::Actions);
         let _ = screen(&app);
-        page_row(&mut app, "copy to ~/pictures");
+        page_row(&mut app, "copy");
         app.files.other = Some(pane(PICS, Some(pics_rows(&["notes.md", "report.pdf"]))));
         app.escape();
         app.files_activate(Action::UncheckAll);
-        app.right();
-        page_row(&mut app, "copy to ~/pictures");
+        app.hint_key(HintKey::Actions);
+        page_row(&mut app, "copy");
         app.enter();
         assert!(matches!(app.files.page, Page::Conflict(_)), "{}x{}: {:?}", w, h, app.files.page);
         let _ = screen(&app);
         app.escape();
-        app.right();
+        app.hint_key(HintKey::Actions);
         page_row(&mut app, "rename");
         app.enter();
         assert!(app.files.form());
@@ -1497,16 +1473,16 @@ fn a_file_listed_under_home_and_recent_is_one_check() {
     );
     light_row(&mut app, "notes.md");
     app.typed(' ');
-    assert_eq!(app.selected_line().as_deref(), Some("1 checked \u{b7} 2 KB"), "one file, once");
+    assert_eq!(app.selected_line().as_deref(), Some("1 selected \u{b7} 2 KB"), "one file, once");
     let rows = screen(&app);
     assert_eq!(
         rows.iter().filter(|r| r.contains("\u{2713} notes.md")).count(),
         2,
         "the check on both rows of the one file"
     );
-    app.right();
+    app.hint_key(HintKey::Actions);
     let Page::Actions(a) = &app.files.page else { panic!("{:?}", app.files.page) };
-    assert_eq!((a.title.as_str(), a.checked.len()), ("1 checked", 1), "the checked set holds it once");
+    assert_eq!((a.title.as_str(), a.checked.len()), ("1 selected", 1), "the checked set holds it once");
 }
 
 /// Typing on the actions page narrows it to the rows the words name, as typing searches every list: the best
@@ -1515,22 +1491,23 @@ fn a_file_listed_under_home_and_recent_is_one_check() {
 #[test]
 fn typing_narrows_the_actions_page_and_enter_acts_on_the_row_the_words_name() {
     let mut app = files_app();
-    app.right();
+    app.hint_key(HintKey::Actions);
     assert!(matches!(app.files.page, Page::Actions(_)));
-    for c in "two".chars() {
+    for c in "new".chars() {
         app.typed(c);
     }
-    assert_eq!(labels(&app), vec!["this folder", "two panes"], "the heading and the row the words name");
-    assert_eq!(lit(&app).as_deref(), Some("two panes"), "lit by the words");
-    for c in " panes".chars() {
+    assert_eq!(labels(&app), vec!["new folder", "new file"], "the rows the words name");
+    assert_eq!(lit(&app).as_deref(), Some("new folder"), "lit by the words");
+    for c in " fi".chars() {
         app.typed(c);
     }
-    assert_eq!(lit(&app).as_deref(), Some("two panes"));
+    assert_eq!(lit(&app).as_deref(), Some("new file"));
     app.enter();
-    assert!(app.files.other.is_some(), "Enter acted on the row");
-    assert!(matches!(app.files.page, Page::List));
-    assert!(app.input.is_empty(), "the words were the page's, not the folder's");
-    app.right();
+    assert!(app.files.form(), "Enter acted on the row");
+    assert!(app.input.is_empty(), "the words were the page's, not the form's");
+    app.escape();
+    assert!(matches!(app.files.page, Page::List) && app.input.is_empty(), "nor the folder's");
+    app.hint_key(HintKey::Actions);
     for c in "zzz".chars() {
         app.typed(c);
     }
@@ -1549,7 +1526,7 @@ fn a_refused_first_step_never_takes_a_standing_undo_into_the_batch() {
     let (mut app, rx, calls) = started(vec![], vec!["notes.md"]);
     with_pictures(&mut app, &rx);
     light_row(&mut app, "todo.txt");
-    app.right();
+    app.hint_key(HintKey::Actions);
     page_row(&mut app, "rename");
     app.enter();
     app.set_draft("later.txt");
@@ -1560,8 +1537,8 @@ fn a_refused_first_step_never_takes_a_standing_undo_into_the_batch() {
     for _ in 0..3 {
         app.typed(' ');
     }
-    app.right();
-    page_row(&mut app, "copy to ~/pictures");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "copy");
     app.enter();
     assert!(app.files.batch.is_some() && app.undo.is_none(), "a batch starting lets the undo before it go");
     assert!(pump(&mut app, &rx, |a| a.files.batch.is_none() && a.running.is_none()));
@@ -1576,13 +1553,13 @@ fn a_refused_first_step_never_takes_a_standing_undo_into_the_batch() {
     let c = tool_calls(&calls);
     assert_eq!(c.len(), before + 2, "exactly the two done are taken back");
     assert!(c[before..].iter().all(|x| x["name"] == "files_trash"), "{:?}", &c[before..]);
-    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("2 put back"));
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("2 undone"));
 }
 
 #[test]
 fn a_single_step_from_the_page_says_its_receipt() {
     let (mut app, rx, _calls) = started(vec![], vec![]);
-    app.right();
+    app.hint_key(HintKey::Actions);
     page_row(&mut app, "trash");
     app.enter();
     assert!(app.files.batch.is_none());
@@ -1597,36 +1574,36 @@ fn a_single_step_from_the_page_says_its_receipt() {
 #[test]
 fn insert_on_the_actions_page_checks_the_row_and_goes_back() {
     let mut app = files_app();
-    app.right();
+    app.hint_key(HintKey::Actions);
     app.typed(' ');
     assert!(!app.files_page_open(), "back to the list");
     assert!(app.files.checked("files:file:home:notes.md"), "the row checked, as the check row does");
     assert_eq!(lit(&app).as_deref(), Some("report.pdf"), "and the bar a row down");
     // the checked set's page, a conflict, a form: nothing to check there, and the key says so
-    app.right();
-    assert_eq!(app.subtitle(), "1 checked");
+    app.hint_key(HintKey::Actions);
+    assert_eq!(app.subtitle(), "1 selected");
     app.typed(' ');
     assert_eq!(
         app.reply.as_ref().map(|r| r.text.as_str()),
-        Some("nothing to check here: Esc goes back to the list")
+        Some("nothing to select here: Esc goes back to the list")
     );
     assert!(app.files_page_open(), "and stays");
     app.escape();
     app.files_activate(Action::UncheckAll);
     app.files.other = Some(pane(PICS, Some(pics_rows(&["notes.md"]))));
     light_row(&mut app, "notes.md");
-    app.right();
-    page_row(&mut app, "copy to ~/pictures");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "copy");
     app.enter();
     assert!(matches!(app.files.page, Page::Conflict(_)));
     app.typed(' ');
     assert_eq!(
         app.reply.as_ref().map(|r| r.text.as_str()),
-        Some("nothing to check here: Esc goes back to the list")
+        Some("nothing to select here: Esc goes back to the list")
     );
     assert!(matches!(app.files.page, Page::Conflict(_)));
     app.escape();
-    app.right();
+    app.hint_key(HintKey::Actions);
     page_row(&mut app, "rename");
     app.enter();
     assert!(app.files.form());
@@ -1641,8 +1618,8 @@ fn the_picker_says_what_the_folder_is_for() {
     for _ in 0..2 {
         app.typed(' ');
     }
-    app.right();
-    page_row(&mut app, "copy to a folder");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "copy");
     app.enter();
     assert!(app.picking.is_some());
     app.sel = 1; // a folder lit, not the row that lands it here
@@ -1651,8 +1628,8 @@ fn the_picker_says_what_the_folder_is_for() {
     assert!(app.picking.is_none() && app.files_checks_any(), "Esc cancels the pick first; the checks wait");
     app.files_activate(Action::UncheckAll);
     light_row(&mut app, "notes.md");
-    app.right();
-    page_row(&mut app, "move to a folder");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "move");
     app.enter();
     app.sel = 1;
     assert!(hint(&app).starts_with("A folder for notes.md"), "{:?}", hint(&app));
@@ -1665,8 +1642,8 @@ fn a_provider_dying_mid_batch_counts_the_step_with_its_reason_and_stops_the_rest
     for _ in 0..3 {
         app.typed(' ');
     }
-    app.right();
-    page_row(&mut app, "copy to ~/pictures");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "copy");
     app.enter();
     assert!(app.running.is_some());
     app.incoming(spark_dialog::mcp::Incoming::Gone(0, "it exited".into()));
@@ -1703,8 +1680,8 @@ fn a_name_under_recent_or_drives_is_no_conflict() {
     light_row(&mut app, "photo-0412.jpg");
     app.typed(' ');
     app.typed(' '); // STICK, named as the drive is
-    app.right();
-    page_row(&mut app, "copy to ~");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "copy");
     app.enter();
     assert!(
         !matches!(app.files.page, Page::Conflict(_)),
@@ -1718,7 +1695,7 @@ fn a_name_under_recent_or_drives_is_no_conflict() {
 #[test]
 fn enter_with_words_that_name_no_row_on_a_page_says_so() {
     let mut app = files_app();
-    app.right();
+    app.hint_key(HintKey::Actions);
     for c in "zzz".chars() {
         app.typed(c);
     }
@@ -1733,18 +1710,33 @@ fn enter_with_words_that_name_no_row_on_a_page_says_so() {
 }
 
 #[test]
-fn a_narrow_pane_keeps_two_cells_of_air_at_its_edge() {
-    // #223: a row's words end two cells before the column's edge, a pane's too: 4 + 14 + 2 + 9 is 29, one cell
-    // short, so the name is cut in its middle and the right pane's words never reach the window's last cell
+fn a_size_stands_at_the_panes_edge_with_two_cells_of_air() {
     let mut app = files_app();
     at(&mut app, DOCS, docs_rows());
     app.files.other = Some(pane(PICS, Some(pics_rows(&[]))));
     let rows = screen(&app);
     let photo = rows.iter().find(|r| r.contains("0412.jpg")).expect("the picture's row");
-    assert!(photo.contains("ph\u{2026}o-0412.jpg     4.8 MB"), "{:?}", photo);
-    assert!(photo.ends_with("  "), "two cells of air at the window's edge: {:?}", photo);
-    let holiday = rows.iter().find(|r| r.contains("holiday.jpg")).unwrap();
-    assert!(holiday.contains("holiday.jpg       4.8 MB  "), "{:?}", holiday);
+    let cells: Vec<char> = photo.chars().collect();
+    assert_eq!(cells[29], '\u{2502}', "the line between the panes: {:?}", photo);
+    assert!(
+        photo.ends_with("photo-0412.jpg    4.8 MB  "),
+        "the name whole, the size at the edge: {:?}",
+        photo
+    );
+    let todo = rows.iter().find(|r| r.contains("todo.txt")).unwrap();
+    assert!(
+        todo.starts_with("    todo.txt           1 KB  \u{2502}"),
+        "two cells of air at the left pane's edge: {:?}",
+        todo
+    );
+    assert!(!photo.contains("yesterday"), "no date at 30 cells");
+    // at 120 cells the date stands after the size
+    app.size = (120, 40);
+    let rows = screen(&app);
+    let photo = rows.iter().find(|r| r.contains("0412.jpg")).unwrap();
+    assert!(photo.trim_end().ends_with("4.8 MB   yesterday"), "{:?}", photo);
+    let cells: Vec<char> = photo.chars().collect();
+    assert_eq!(cells[59], '\u{2502}', "59 and 60 cells");
 }
 
 #[test]
@@ -1761,8 +1753,8 @@ fn a_click_on_the_other_pane_declined_changes_nothing() {
 fn copy_to_a_pane_whose_rows_have_not_come_says_a_moment() {
     let mut app = files_app();
     app.files.other = Some(pane(PICS, None));
-    app.right();
-    page_row(&mut app, "copy to the other pane");
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "copy");
     app.enter();
     assert_eq!(
         app.reply.as_ref().map(|r| r.text.as_str()),
@@ -1777,9 +1769,9 @@ fn a_trashed_row_is_not_checkable() {
     app.came_from.push(View::Folder(0, HOME.into()));
     light_row(&mut app, "old.txt");
     app.typed(' ');
-    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("only a file or a folder can be checked"));
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("only a file or a folder can be selected"));
     assert!(!app.files_checks_any());
-    app.right();
+    app.hint_key(HintKey::Actions);
     assert!(!labels(&app).contains(&"check".to_string()), "{:?}", labels(&app));
 }
 
@@ -1792,7 +1784,7 @@ fn space_checks_the_lit_row_and_f3_previews_it_and_p_is_always_the_letter() {
     assert!(app.files.checked("files:file:home:notes.md"), "Space checks the lit file");
     assert_eq!(lit(&app).as_deref(), Some("report.pdf"), "and the bar moves down");
     assert!(app.input.is_empty(), "no space typed");
-    app.hint_key(HintKey::Preview);
+    app.hint_key(HintKey::View);
     assert_eq!(app.view, View::Preview, "F3 previews the lit file");
     assert_eq!(app.preview.as_ref().unwrap().row().text, "report.pdf");
     app.typed(' ');
@@ -1800,14 +1792,10 @@ fn space_checks_the_lit_row_and_f3_previews_it_and_p_is_always_the_letter() {
         matches!(app.view, View::Folder(..)),
         "in the preview Space with nothing typed goes back, as before"
     );
-    assert_eq!(
-        hint(&app),
-        "Back Esc   Actions \u{2192}   Preview F3",
-        "the key bar reads the preview binding's label"
-    );
+    assert_eq!(hint(&app), BAR, "the key bar reads the preview binding's label");
     // a folder lit: no preview, and F3 types nothing
     light_row(&mut app, "documents");
-    app.hint_key(HintKey::Preview);
+    app.hint_key(HintKey::View);
     assert!(matches!(app.view, View::Folder(..)), "no page: F3 does nothing");
     assert!(app.input.is_empty(), "and types nothing");
     // p is the letter, on any row: a search starts and nothing opens
@@ -1829,14 +1817,14 @@ fn space_checks_the_lit_row_and_f3_previews_it_and_p_is_always_the_letter() {
     assert!(app.files.checked("files:file:home:report.pdf"), "it checks");
     light_row(&mut app, "report.pdf");
     app.list_keys = true;
-    app.hint_key(HintKey::Preview);
+    app.hint_key(HintKey::View);
     assert_eq!(app.view, View::Preview, "F3 with the list's keys previews");
     app.escape();
     // a form takes a space in the name
     app.set_draft("");
     app.files_activate(Action::UncheckAll);
     light_row(&mut app, "notes.md");
-    app.right();
+    app.hint_key(HintKey::Actions);
     page_row(&mut app, "rename");
     app.enter();
     assert!(app.files.form());
@@ -1844,12 +1832,12 @@ fn space_checks_the_lit_row_and_f3_previews_it_and_p_is_always_the_letter() {
     assert_eq!(app.input, "notes.md ", "a space in the form's name");
     app.escape();
     // the actions page: Space is the check row's key, as its chip says
-    app.right();
+    app.hint_key(HintKey::Actions);
     let chip = app
         .items()
         .iter()
         .find_map(|it| match it {
-            Item::Files(l) if l.label == "check" => Some(l.key.clone()),
+            Item::Files(l) if l.label == "select" => Some(l.key.clone()),
             _ => None,
         })
         .unwrap();
@@ -1868,12 +1856,12 @@ fn space_checks_the_lit_row_and_f3_previews_it_and_p_is_always_the_letter() {
 fn check_rebound_to_insert_checks_in_files_and_nothing_elsewhere_and_space_is_plain() {
     let mut app = files_app();
     app.cfg.keys = spark_dialog::keys::Bindings::from_json(r#"{"check":"Insert"}"#).unwrap();
-    app.right();
+    app.hint_key(HintKey::Actions);
     let chip = app
         .items()
         .iter()
         .find_map(|it| match it {
-            Item::Files(l) if l.label == "check" => Some(l.key.clone()),
+            Item::Files(l) if l.label == "select" => Some(l.key.clone()),
             _ => None,
         })
         .unwrap();
@@ -1881,14 +1869,14 @@ fn check_rebound_to_insert_checks_in_files_and_nothing_elsewhere_and_space_is_pl
     page_row(&mut app, "rename");
     app.enter();
     assert!(app.files.form());
-    app.hint_key(HintKey::Check);
+    app.hint_key(HintKey::Select);
     assert_eq!(
         app.reply.as_ref().map(|r| r.text.as_str()),
-        Some("nothing to check here: Esc goes back to the list"),
+        Some("nothing to select here: Esc goes back to the list"),
         "another check key on a form has nothing to check"
     );
     app.escape();
-    app.hint_key(HintKey::Check);
+    app.hint_key(HintKey::Select);
     assert!(app.files.checked("files:file:home:notes.md"), "Insert checks in files");
     assert_eq!(lit(&app).as_deref(), Some("report.pdf"));
     // Space is no longer the check: a lit row with no words typed takes no space and no check
@@ -1898,14 +1886,15 @@ fn check_rebound_to_insert_checks_in_files_and_nothing_elsewhere_and_space_is_pl
         !app.files_checks_any() && app.input.is_empty(),
         "Space checks nothing now, and types nothing on a lit row"
     );
-    assert!(app.cfg.keys.help().contains(&("check", "Insert")) && app.cfg.keys.help().contains(&("preview", "F3")));
+    assert!(app.cfg.keys.help().contains(&("select", "Insert")) && app.cfg.keys.help().contains(&("view", "F3")));
     // elsewhere Insert does nothing
     app.escape();
     assert_eq!(app.view, View::Home);
     app.in_list = true;
     app.sel = 0;
-    app.hint_key(HintKey::Check);
-    assert!(app.view == View::Home && app.input.is_empty() && app.reply.is_none(), "nothing at the home");
+    app.hint_key(HintKey::Select);
+    assert!(app.view == View::Home && app.input.is_empty(), "nothing at the home");
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("nothing to select here"));
 }
 
 /// #223: a row's words end two cells before the column's edge at every width; the selection bar still spans to it.
@@ -1959,28 +1948,786 @@ fn a_rows_words_end_two_cells_before_the_edge() {
 #[test]
 fn the_check_key_is_a_space_while_words_are_typed() {
     let mut app = files_app();
-    app.right();
-    for c in "two".chars() {
+    app.hint_key(HintKey::Actions);
+    for c in "new".chars() {
         app.typed(c);
     }
-    app.hint_key(HintKey::Check);
-    assert_eq!(app.input, "two ", "a space typed, nothing checked");
-    for c in "panes".chars() {
+    app.hint_key(HintKey::Select);
+    assert_eq!(app.input, "new ", "a space typed, nothing selected");
+    for c in "file".chars() {
         app.typed(c);
     }
-    assert_eq!(lit(&app).as_deref(), Some("two panes"));
+    assert_eq!(lit(&app).as_deref(), Some("new file"));
     app.enter();
-    assert!(app.files.other.is_some() && matches!(app.files.page, Page::List), "Enter opened the panes");
-    assert!(app.files.checks.is_empty(), "no check was made by the space in the words");
+    assert!(app.files.form(), "Enter opened the form");
+    app.escape();
+    assert!(app.files.checks.is_empty(), "the space in the words selected nothing");
     // on the list: words typed, the key is a space; Down hands the keys to the list, then it checks
     for c in "no".chars() {
         app.typed(c);
     }
-    app.hint_key(HintKey::Check);
+    app.hint_key(HintKey::Select);
     assert_eq!(app.input, "no ");
     app.backspace();
     app.down();
-    app.hint_key(HintKey::Check);
+    app.hint_key(HintKey::Select);
     assert_eq!(app.input, "no", "no space typed");
     assert_eq!(app.files.checks.len(), 1, "the lit row checked");
+}
+
+// ---- two panes and the keys (the owner's decisions of 2026-11-05)
+
+/// A row of the next page, as the provider writes it.
+fn next_page() -> Value {
+    json!({"id": "files:more", "sign": "opens", "text": "the next page", "columns": ["1,204 more"], "children": "spark-shell://files/rows/aG9tZQ?from=200", "group": "home"})
+}
+
+fn said(app: &App) -> Option<String> {
+    app.reply.as_ref().map(|r| r.text.clone())
+}
+
+/// The key bar's rows as drawn, without their air.
+fn bar(app: &App) -> Vec<String> {
+    let (_, h) = app.size;
+    let rows = screen(app);
+    let y = spark_dialog::ui::keys_y(h) as usize;
+    rows[y - 1..=y].iter().map(|r| r.trim().to_string()).filter(|r| !r.is_empty()).collect()
+}
+
+#[test]
+fn the_key_bar_is_two_lines_at_60_cells_and_one_at_120_in_one_pane_and_in_two() {
+    let line1 = "back  Esc   nav  \u{2190} \u{2191} \u{2193} \u{2192}   ren  F2   view  F3   open  F4";
+    let line2 = "copy  F5   move  F6   new  F7   trash  F8   actions  F9";
+    let mut app = files_app();
+    assert_eq!(bar(&app), [line1, line2], "one pane, 60 cells");
+    app.size = (120, 40);
+    assert_eq!(bar(&app), [format!("{}   {}", line1, line2)], "one pane, 120 cells");
+    app.size = (WIDTH, HEIGHT);
+    two_panes(&mut app);
+    assert_eq!(bar(&app), [line1, line2], "two panes, 60 cells");
+    app.size = (120, 40);
+    assert_eq!(bar(&app), [format!("{}   {}", line1, line2)], "two panes, 120 cells");
+    app.size = (WIDTH, HEIGHT);
+    // the menu, a form, a conflict
+    app.hint_key(HintKey::Actions);
+    assert_eq!(bar(&app), ["back  Esc"]);
+    page_row(&mut app, "rename");
+    app.enter();
+    assert_eq!(bar(&app), ["cancel  Esc   save  Enter"]);
+    app.escape();
+    app.files.other = Some(pane(PICS, Some(pics_rows(&["notes.md"]))));
+    light_row(&mut app, "notes.md");
+    app.hint_key(HintKey::Copy);
+    assert!(matches!(app.files.page, Page::Conflict(_)));
+    assert_eq!(bar(&app), ["cancel  Esc"]);
+}
+
+#[test]
+fn right_goes_to_the_right_pane_left_to_the_left_and_the_edges_stay_put() {
+    let mut app = files_app();
+    // one pane: Left does nothing, Right opens the second pane and goes to it
+    app.left();
+    assert!(app.files.other.is_none() && matches!(app.view, View::Folder(..)), "Left is no back in files");
+    assert!(app.reply.is_none());
+    app.right();
+    assert_eq!(app.files.other_side, Side::Left, "the bar is in the right pane");
+    assert!(app.files.other.as_ref().is_some_and(|o| o.uri == HOME), "on the same folder");
+    assert_eq!(app.sel, 0, "its first row lit");
+    // the edge: Right stays put
+    let at = (app.view.clone(), app.sel);
+    app.right();
+    assert_eq!((app.view.clone(), app.sel, app.files.other_side), (at.0.clone(), at.1, Side::Left));
+    // Left goes to the left pane, its row lit as it was
+    app.left();
+    assert_eq!(app.files.other_side, Side::Right);
+    assert_eq!(lit(&app).as_deref(), Some("notes.md"));
+    // and at the edge Left stays put
+    app.left();
+    assert_eq!(app.files.other_side, Side::Right);
+    assert!(app.reply.is_none());
+    // Right again, Ctrl+Tab both ways
+    app.right();
+    assert_eq!(app.files.other_side, Side::Left);
+    app.hint_key(HintKey::Pane);
+    assert_eq!(app.files.other_side, Side::Right);
+    // with words typed the arrows are the cursor's
+    app.typed('n');
+    app.typed('o');
+    app.left();
+    assert_eq!((app.cursor, app.files.other_side), (1, Side::Right));
+    app.right();
+    assert_eq!((app.cursor, app.files.other_side), (2, Side::Right));
+    app.escape();
+    light_row(&mut app, "notes.md");
+    // close pane closes the second pane, from either side
+    app.right();
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "close pane");
+    app.enter();
+    assert!(app.files.other.is_none() && app.files.other_side == Side::Right);
+    assert_eq!(lit(&app).as_deref(), Some("notes.md"), "the first pane, as it stood");
+    // a row under the groups a pane leaves out keeps the bar when the pane closes
+    light_row(&mut app, "STICK");
+    app.right();
+    app.left();
+    assert_eq!(lit(&app).as_deref(), Some("STICK"));
+    app.files_activate(Action::ClosePane);
+    assert_eq!(lit(&app).as_deref(), Some("STICK"), "kept by its id: the recent rows came back above it");
+    // Ctrl+Tab opens the second if there is none
+    app.hint_key(HintKey::Pane);
+    assert!(app.files.other.is_some() && app.files.other_side == Side::Left);
+    app.left();
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "close pane");
+    app.enter();
+    assert!(app.files.other.is_none());
+    // a pick holds the arrows
+    let mut app = files_app();
+    app.hint_key(HintKey::Copy);
+    assert!(app.picking.is_some());
+    app.right();
+    assert!(app.files.other.is_none(), "a pick is no place for a pane");
+    // below 60 cells one pane: Right says why, Left stays put
+    let mut app = files_app();
+    app.size = (50, 40);
+    app.left();
+    assert!(app.reply.is_none());
+    app.right();
+    assert_eq!(said(&app).as_deref(), Some("two panes need a window 60 cells wide"));
+    assert!(app.files.other.is_none());
+}
+
+#[test]
+fn back_in_files_is_esc_backspace_and_the_header_and_left_stays_back_outside() {
+    let mut app = files_app();
+    assert!(app.can_go_back());
+    app.backspace();
+    assert_eq!(app.view, View::Home, "Backspace goes back");
+    let mut app = files_app();
+    app.escape();
+    assert_eq!(app.view, View::Home, "Esc goes back");
+    // outside files Left stays back, and Right opens nothing
+    let mut app = files_app();
+    app.view = View::Help;
+    app.came_from = vec![View::Home];
+    app.in_list = true;
+    app.right();
+    assert_eq!(app.view, View::Help);
+    app.left();
+    assert_eq!(app.view, View::Home, "Left is back outside files");
+}
+
+#[test]
+fn every_key_on_every_kind_of_row_acts_or_says_why() {
+    const ACT: &str = "nothing to act on: light a file or a folder, or select some";
+    const NO_ROW: &str = "only a file or a folder can be selected";
+    let lit_at = |text: &str, uri: &str, rows: Value| {
+        let mut app = files_app();
+        at(&mut app, uri, rows);
+        light_row(&mut app, text);
+        app
+    };
+    let mut home = home_rows();
+    home["rows"].as_array_mut().unwrap().insert(6, next_page());
+    let summary = "this folder \u{b7} 3 folders \u{b7} 3 files \u{b7} 4.5 MB";
+    // a row that is no file or folder: every key says why
+    let kinds: Vec<(&str, &str, Value, &str)> = vec![
+        ("..", DOCS, docs_rows(), "nothing to copy here"),
+        ("the next page", HOME, home.clone(), "nothing to copy here"),
+        ("STICK", HOME, home.clone(), "nothing to copy here"),
+        ("old.txt", TRASH, trash_rows(), "nothing to copy here"),
+    ];
+    for (row, uri, rows, path) in kinds {
+        for (key, words) in [
+            (HintKey::Rename, "nothing to rename here"),
+            (HintKey::View, "nothing to view here"),
+            (HintKey::Open, "this cannot be opened here"),
+            (HintKey::Copy, ACT),
+            (HintKey::Move, ACT),
+            (HintKey::Trash, ACT),
+            (HintKey::CopyPath, path),
+            (HintKey::Select, NO_ROW),
+        ] {
+            let mut app = lit_at(row, uri, rows.clone());
+            app.hint_key(key);
+            assert_eq!(said(&app).as_deref(), Some(words), "{:?} on {}", key, row);
+            assert!(!app.files_page_open() && app.picking.is_none(), "{:?} on {} opened nothing", key, row);
+        }
+    }
+    // the summary row: its path is the folder's, and nothing else is for it
+    for (key, words) in [
+        (HintKey::Rename, "nothing to rename here"),
+        (HintKey::View, "nothing to view here"),
+        (HintKey::Open, "this cannot be opened here"),
+        (HintKey::Copy, ACT),
+        (HintKey::Trash, ACT),
+        (HintKey::Select, NO_ROW),
+    ] {
+        let mut app = lit_at(summary, HOME, home_rows());
+        app.hint_key(key);
+        assert_eq!(said(&app).as_deref(), Some(words), "{:?} on the summary", key);
+    }
+    // F7 opens the form on any row of a folder; the trash has no new folder
+    for row in ["..", "drafts", "todo.txt"] {
+        let mut app = lit_at(row, DOCS, docs_rows());
+        app.hint_key(HintKey::New);
+        assert!(app.files.form(), "F7 on {}", row);
+        assert_eq!((app.placeholder(), app.subtitle().as_str()), ("folder name", "new folder"));
+        assert!(app.input.is_empty());
+    }
+    let mut app = lit_at("old.txt", TRASH, trash_rows());
+    app.hint_key(HintKey::New);
+    assert_eq!(said(&app).as_deref(), Some("no new folder here"));
+    // F9 on every kind: the row's actions, or the folder's
+    for (row, uri, rows, first) in [
+        ("..", DOCS, docs_rows(), "new folder"),
+        ("drafts", DOCS, docs_rows(), "open"),
+        ("todo.txt", DOCS, docs_rows(), "open"),
+        (summary, HOME, home_rows(), "new folder"),
+        ("the next page", HOME, home.clone(), "open"),
+        ("STICK", HOME, home.clone(), "open"),
+        ("invoice-0412.pdf", HOME, home.clone(), "open"),
+        ("old.txt", TRASH, trash_rows(), "restore"),
+    ] {
+        let mut app = lit_at(row, uri, rows);
+        app.hint_key(HintKey::Actions);
+        assert!(app.files_page_open(), "F9 on {}: {:?}", row, said(&app));
+        assert_eq!(labels(&app)[0], first, "F9 on {}", row);
+    }
+    // a file, a folder, a recent file: the keys act
+    for row in ["notes.md", "documents", "invoice-0412.pdf"] {
+        let mut app = lit_at(row, HOME, home_rows());
+        app.hint_key(HintKey::Rename);
+        assert!(app.files.form(), "F2 on {}", row);
+        assert_eq!(app.input, row, "prefilled");
+        let mut app = lit_at(row, HOME, home_rows());
+        app.hint_key(HintKey::Copy);
+        assert!(app.picking.is_some(), "F5 in one pane picks the folder");
+        let mut app = lit_at(row, HOME, home_rows());
+        app.hint_key(HintKey::Move);
+        assert!(app.picking.is_some(), "F6 too");
+    }
+    // nothing lit: the keys that want a row say how to light one, F9 opens the folder's, F7 the form
+    let mut app = files_app();
+    app.in_list = false;
+    for key in [HintKey::Rename, HintKey::View, HintKey::Open, HintKey::CopyPath, HintKey::Select] {
+        app.reply = None;
+        app.hint_key(key);
+        assert_eq!(said(&app).as_deref(), Some("nothing is lit: an arrow or a click lights a row"), "{:?}", key);
+    }
+    app.reply = None;
+    app.hint_key(HintKey::Copy);
+    assert_eq!(said(&app).as_deref(), Some(ACT));
+    app.hint_key(HintKey::Actions);
+    assert_eq!(labels(&app)[0], "new folder");
+}
+
+#[test]
+fn the_keys_with_words_typed_in_a_form_on_a_page_and_in_the_view() {
+    // words typed: the function keys act on the row the words lit, Space is a letter
+    let mut app = files_app();
+    app.in_list = false;
+    app.sel = 0;
+    for c in "todo".chars() {
+        app.typed(c);
+    }
+    assert_eq!(lit(&app).as_deref(), Some("todo.txt"));
+    app.hint_key(HintKey::Rename);
+    assert_eq!(app.input, "todo.txt", "F2 on the row the words lit");
+    app.escape();
+    assert_eq!(app.input, "todo", "the words come back with the list");
+    app.hint_key(HintKey::Actions);
+    assert_eq!(app.subtitle(), "todo.txt", "F9 too");
+    app.escape();
+    assert_eq!(app.input, "todo", "and from the menu");
+    // a form: every key says what holds it, Space and the letters are the name's
+    let mut app = files_app();
+    app.hint_key(HintKey::Rename);
+    for key in [
+        HintKey::Rename,
+        HintKey::View,
+        HintKey::Open,
+        HintKey::Copy,
+        HintKey::Move,
+        HintKey::New,
+        HintKey::Trash,
+        HintKey::Actions,
+        HintKey::CopyPath,
+        HintKey::Pane,
+    ] {
+        app.reply = None;
+        app.hint_key(key);
+        assert_eq!(said(&app).as_deref(), Some("finish this first: Enter saves, Esc cancels"), "{:?}", key);
+    }
+    assert!(app.files.form());
+    app.reply = None;
+    app.up();
+    app.down();
+    assert!(app.files.form() && !app.in_list, "the list behind a form takes no arrow");
+    assert_eq!(app.input, "notes.md");
+    // on the menu each key is its row's; a key with no row says why
+    let mut app = files_app();
+    app.hint_key(HintKey::Actions);
+    app.hint_key(HintKey::Rename);
+    assert!(app.files.form(), "F2 on the menu");
+    let mut app = files_app();
+    app.hint_key(HintKey::Actions);
+    app.hint_key(HintKey::View);
+    assert_eq!(app.view, View::Preview, "F3 on the menu");
+    let mut app = files_app();
+    app.hint_key(HintKey::Actions);
+    app.hint_key(HintKey::New);
+    assert!(app.files.form(), "F7 on the menu");
+    assert_eq!(app.subtitle(), "new folder");
+    let mut app = files_app();
+    app.hint_key(HintKey::Actions);
+    app.hint_key(HintKey::Copy);
+    assert!(app.picking.is_some() && !app.files_page_open(), "F5 on the menu");
+    let mut app = files_app();
+    light_row(&mut app, "this folder \u{b7} 3 folders \u{b7} 3 files \u{b7} 4.5 MB");
+    app.hint_key(HintKey::Actions);
+    app.hint_key(HintKey::Rename);
+    assert_eq!(said(&app).as_deref(), Some("nothing to rename here"));
+    assert!(app.files_page_open());
+    app.hint_key(HintKey::Pane);
+    assert_eq!(said(&app).as_deref(), Some("Esc goes back to the list first"));
+    // a conflict takes its rows
+    let mut app = files_app();
+    app.files.other = Some(pane(PICS, Some(pics_rows(&["notes.md"]))));
+    app.hint_key(HintKey::Copy);
+    assert!(matches!(app.files.page, Page::Conflict(_)));
+    for key in [HintKey::Rename, HintKey::View, HintKey::Actions, HintKey::Trash, HintKey::CopyPath] {
+        app.reply = None;
+        app.hint_key(key);
+        assert_eq!(said(&app).as_deref(), Some("choose a row, or Esc cancels"), "{:?}", key);
+    }
+    // a pick: the keys wait for it
+    let mut app = files_app();
+    app.hint_key(HintKey::Copy);
+    assert!(app.picking.is_some());
+    for key in [HintKey::Rename, HintKey::Open, HintKey::Actions, HintKey::New, HintKey::Select, HintKey::Pane] {
+        app.reply = None;
+        app.hint_key(key);
+        assert_eq!(said(&app).as_deref(), Some("finish this first: Enter picks, Esc cancels"), "{:?}", key);
+    }
+    // the view: F3 goes back, the rest are the list's and say so
+    let mut app = files_app();
+    app.hint_key(HintKey::View);
+    assert_eq!(app.view, View::Preview);
+    assert_eq!(app.title(), "view", "the word is view: the header's too");
+    assert_eq!(app.subtitle(), "~");
+    for (key, words) in [
+        (HintKey::Rename, "nothing to rename here"),
+        (HintKey::Open, "nothing to open here"),
+        (HintKey::Copy, "nothing to copy here"),
+        (HintKey::Move, "nothing to move here"),
+        (HintKey::New, "no new folder here"),
+        (HintKey::Trash, "nothing to trash here"),
+        (HintKey::Actions, "no actions here"),
+        (HintKey::CopyPath, "nothing to copy here"),
+        (HintKey::Pane, "no other pane here"),
+    ] {
+        app.reply = None;
+        app.hint_key(key);
+        assert_eq!(said(&app).as_deref(), Some(words), "{:?}", key);
+    }
+    app.hint_key(HintKey::View);
+    assert!(matches!(app.view, View::Folder(..)), "F3 again goes back, as in every viewer");
+}
+
+#[test]
+fn the_folders_own_contents_in_two_panes_and_the_short_summary() {
+    let mut app = files_app();
+    let shown = |app: &App| -> Vec<String> {
+        app.items()
+            .iter()
+            .filter_map(|it| match it {
+                Item::Heading(h) => Some(format!("# {}", h)),
+                Item::Folder(i) => Some(app.folder.as_ref().unwrap().2.rows[*i].text.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    assert!(
+        shown(&app).contains(&"# home".to_string()) && shown(&app).contains(&"# recent".to_string()),
+        "one pane keeps them"
+    );
+    light_row(&mut app, "invoice-0412.pdf");
+    two_panes(&mut app);
+    let rows = shown(&app);
+    assert!(!rows.contains(&"# home".to_string()) && !rows.contains(&"# recent".to_string()), "{:?}", rows);
+    assert!(!rows.contains(&"invoice-0412.pdf".to_string()), "a pane shows the folder's own contents");
+    assert!(rows.contains(&"# drives".to_string()) && rows.contains(&"trash".to_string()), "{:?}", rows);
+    let drawn = screen(&app);
+    assert!(drawn.iter().any(|r| r.contains("6 items \u{b7} 4.5 MB")), "the short summary under 40 cells");
+    app.size = (120, 40);
+    let drawn = screen(&app);
+    assert!(
+        drawn.iter().any(|r| r.contains("this folder \u{b7} 3 folders \u{b7} 3 files \u{b7} 4.5 MB")),
+        "at 60 cells it stays"
+    );
+    // a lit row the panes leave out: the bar stays in the list
+    let mut app = files_app();
+    light_row(&mut app, "report.pdf");
+    two_panes(&mut app);
+    assert_eq!(lit(&app).as_deref(), Some("report.pdf"), "the lit row kept by its id");
+}
+
+#[test]
+fn f4_hands_the_row_to_the_system_by_the_tools_name() {
+    let (mut app, rx, calls) = started(vec![], vec![]);
+    app.hint_key(HintKey::Open);
+    assert!(pump(&mut app, &rx, |_| !tool_calls(&calls).is_empty()));
+    let c = tool_calls(&calls);
+    assert_eq!(c[0]["name"], "files_app");
+    assert_eq!(c[0]["arguments"]["path"], "/data/me/notes.md");
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()));
+    light_row(&mut app, "documents");
+    app.hint_key(HintKey::Open);
+    assert!(pump(&mut app, &rx, |_| tool_calls(&calls).len() == 2));
+    assert_eq!(
+        tool_calls(&calls)[1]["arguments"]["path"],
+        "/data/me/documents",
+        "a folder too: the system file manager"
+    );
+    // outside files there is nothing to open
+    app.view = View::Help;
+    app.hint_key(HintKey::Open);
+    assert_eq!(said(&app).as_deref(), Some("nothing to open here"));
+}
+
+#[test]
+fn ctrl_c_copies_the_path_and_says_how_many() {
+    use spark_dialog::app::{Helper, Job};
+    let sent = |app: &App| -> Value {
+        match app.jobs.last() {
+            Some(Job::RunInput(Helper::Apps(_), _, input)) => serde_json::from_str(input).unwrap(),
+            other => panic!("no copy: {:?}", other),
+        }
+    };
+    let mut app = files_app();
+    app.hint_key(HintKey::CopyPath);
+    assert_eq!(sent(&app), json!({"op": "copy", "text": "/data/me/notes.md"}));
+    app.helper(Helper::Apps(app.apps.serial), Ok(json!({"copied": true}).to_string()));
+    assert_eq!(said(&app).as_deref(), Some("path copied"));
+    // several selected: one path a line
+    app.typed(' ');
+    app.typed(' ');
+    app.hint_key(HintKey::CopyPath);
+    assert_eq!(sent(&app), json!({"op": "copy", "text": "/data/me/notes.md\n/data/me/report.pdf"}));
+    app.helper(Helper::Apps(app.apps.serial), Ok(json!({"copied": true}).to_string()));
+    assert_eq!(said(&app).as_deref(), Some("2 paths copied"));
+    assert!(app.files_checks_any(), "the selection stands: nothing moved");
+    // a refusal says the adapter's words and leaves no receipt waiting
+    app.hint_key(HintKey::CopyPath);
+    app.helper(
+        Helper::Apps(app.apps.serial),
+        Ok(json!({"error": "Copy needs wl-copy in a Wayland session"}).to_string()),
+    );
+    assert_eq!(said(&app).as_deref(), Some("Copy needs wl-copy in a Wayland session"));
+    assert!(app.apps.copy_said.is_none());
+    // the menu's row, and elsewhere there is nothing to copy
+    let mut app = files_app();
+    app.hint_key(HintKey::Actions);
+    app.hint_key(HintKey::CopyPath);
+    assert_eq!(sent(&app)["text"], "/data/me/notes.md");
+    assert!(!app.files_page_open());
+    let mut app = files_app();
+    app.view = View::Home;
+    app.hint_key(HintKey::CopyPath);
+    assert_eq!(said(&app).as_deref(), Some("nothing to copy here"));
+    assert!(app.jobs.is_empty());
+}
+
+#[test]
+fn f5_and_f6_act_at_once_with_undo_and_one_file_says_the_providers_words() {
+    let (mut app, rx, calls) = started(vec![], vec![]);
+    with_pictures(&mut app, &rx);
+    app.hint_key(HintKey::Copy);
+    assert!(app.mode == Mode::Normal, "no confirmation: the prompt never confirms anything");
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.undo.is_some()));
+    assert_eq!(said(&app).as_deref(), Some("notes.md copied to ~/pictures"));
+    assert!(app.reply.as_ref().is_some_and(|r| r.undo));
+    assert_eq!(tool_calls(&calls)[0]["arguments"]["to"], "/data/me/pictures");
+    light_row(&mut app, "notes.md");
+    app.typed(' ');
+    app.typed(' ');
+    app.hint_key(HintKey::Move);
+    assert!(pump(&mut app, &rx, |a| a.files.batch.is_none() && a.running.is_none()));
+    assert_eq!(said(&app).as_deref(), Some("2 files moved to ~/pictures"), "no size");
+    app.undo_now();
+    assert!(pump(&mut app, &rx, |a| a.files.batch.is_none() && a.running.is_none()));
+    assert_eq!(said(&app).as_deref(), Some("2 undone"));
+    // F8: the lit row, or the selected set
+    light_row(&mut app, "report.pdf");
+    app.hint_key(HintKey::Trash);
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.undo.is_some()));
+    assert_eq!(said(&app).as_deref(), Some("report.pdf is in the trash"));
+    // a step under way: no second one on top of it
+    app.hint_key(HintKey::Copy);
+    assert!(app.running.is_some());
+    light_row(&mut app, "todo.txt");
+    app.hint_key(HintKey::Copy);
+    assert_eq!(said(&app).as_deref(), Some("wait for the current action's result"));
+}
+
+#[test]
+fn keys_outside_files_say_there_is_nothing_for_them() {
+    let mut app = files_app();
+    for view in [View::Home, View::Help, View::Conversation, View::About, View::Models] {
+        app.view = view.clone();
+        app.folder = None;
+        app.in_list = false;
+        for (key, words) in [
+            (HintKey::Rename, "nothing to rename here"),
+            (HintKey::View, "nothing to view here"),
+            (HintKey::Open, "nothing to open here"),
+            (HintKey::Copy, "nothing to copy here"),
+            (HintKey::Move, "nothing to move here"),
+            (HintKey::New, "no new folder here"),
+            (HintKey::Trash, "nothing to trash here"),
+            (HintKey::Actions, "no actions here"),
+            (HintKey::CopyPath, "nothing to copy here"),
+            (HintKey::Pane, "no other pane here"),
+        ] {
+            app.reply = None;
+            app.hint_key(key);
+            assert_eq!(said(&app).as_deref(), Some(words), "{:?} in {:?}", key, view);
+        }
+    }
+    // a question takes its rows, an answer being typed its prompt
+    let step = Step {
+        prov: 0,
+        call: model::call(&json!({"name": "files_trash", "arguments": {"path": "/data/me/x"}})).unwrap(),
+        who: Who::Person,
+        line: "trash x".into(),
+        typed: false,
+    };
+    app.view = View::Home;
+    app.mode = Mode::Confirm(step.clone());
+    app.hint_key(HintKey::Rename);
+    assert_eq!(said(&app).as_deref(), Some("the question takes Enter on a row"));
+    app.hint_key(HintKey::Conversation);
+    assert_eq!(app.view, View::Home);
+    app.mode = Mode::Ask {
+        step,
+        field: "name".into(),
+        masked: false,
+    };
+    app.hint_key(HintKey::Actions);
+    assert_eq!(said(&app).as_deref(), Some("finish this first: Enter or Esc"));
+    app.hint_key(HintKey::Select);
+    assert_eq!(app.input, " ", "Space is the answer's");
+}
+
+#[test]
+fn an_unbound_action_draws_no_key_and_the_others_stand() {
+    // `{"conversation": "F2"}`: rename lost its default key
+    let mut app = files_app();
+    app.cfg.keys = spark_dialog::keys::Bindings::from_json(r#"{"conversation": "F2"}"#).unwrap();
+    let line = bar(&app).join("   ");
+    assert!(!line.contains("ren"), "no key, no chip, no word: {:?}", line);
+    assert!(
+        line.contains("view  F3") && line.contains("actions  F9"),
+        "the rest of the bar stands: {:?}",
+        line
+    );
+    assert!(draw(&app).keys.iter().all(|k| k.3 != HintKey::Rename), "and nothing there to click");
+    // the menu's row stands, with no key at its right; it still acts on Enter
+    app.hint_key(HintKey::Actions);
+    let row = app
+        .items()
+        .iter()
+        .find_map(|it| match it {
+            Item::Files(l) if l.label == "rename" => Some(l.key.clone()),
+            _ => None,
+        })
+        .expect("the rename row stands");
+    assert_eq!(row, "", "no key beside it");
+    let drawn = screen(&app);
+    let y = drawn.iter().find(|r| r.starts_with("    rename")).unwrap();
+    assert_eq!(y.trim_end(), "    rename");
+    page_row(&mut app, "rename");
+    app.enter();
+    assert!(app.files.form());
+    app.escape();
+    // help: the row stands, with no key
+    app.view = View::Help;
+    app.folder = None;
+    let row = app.help_rows().into_iter().find(|(_, w, _)| w == "rename a row").unwrap();
+    assert_eq!(row.2, "");
+    assert!(screen(&app).iter().any(|r| r.trim_end() == "    rename a row"), "no chip on its row");
+    // `{"check": "Insert"}`: the old name is select's
+    let mut app = files_app();
+    app.cfg.keys = spark_dialog::keys::Bindings::from_json(r#"{"check": "Insert"}"#).unwrap();
+    app.hint_key(HintKey::Select);
+    assert!(app.files.checked("files:file:home:notes.md"));
+}
+
+#[test]
+fn f2_renames_a_note_a_layout_and_a_category_from_the_name_as_it_is() {
+    let tools = model::tools(&json!({"tools": [
+        {"name": "notes_open", "title": "notes open NAME", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}}},
+        {"name": "notes_rename", "title": "notes rename NAME", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "to": {"type": "string"}}}}
+    ]}));
+    let mut notes = Provider::new("notes");
+    notes.tools = tools;
+    notes.ready = true;
+    notes.rows = model::rows(
+        &json!({"title": "notes", "rows": [
+            {"id": "notes:1", "sign": "blank", "text": "Shopping", "tool": {"name": "notes_open", "arguments": {"name": "Shopping"}},
+             "more": [{"name": "notes_rename", "arguments": {"name": "Shopping"}, "ask": ["to"], "said": "rename"}]},
+            {"id": "notes:new", "sign": "opens", "text": "new note", "tool": {"name": "notes_new", "arguments": {}}}
+        ], "short": []})
+        .to_string(),
+    )
+    .unwrap();
+    let cfg = Config {
+        model: false,
+        talk: false,
+        ..Config::default()
+    };
+    let mut app = App::new(cfg, &[]);
+    app.providers = vec![notes];
+    app.view = View::Section(0);
+    app.came_from = vec![View::Home];
+    app.in_list = true;
+    app.sel = 0;
+    let hint_row: String = app.hint().iter().map(|(t, _)| t.as_str()).collect();
+    assert!(hint_row.contains("Actions F9"), "{}", hint_row);
+    app.hint_key(HintKey::Rename);
+    assert!(matches!(app.mode, Mode::Ask { .. }), "{:?}", app.mode);
+    assert_eq!((app.input.as_str(), app.cursor), ("Shopping", 8), "prefilled, the cursor at its end");
+    assert_eq!(hint(&app), "Cancel Esc   Save Enter");
+    app.set_draft("");
+    assert_eq!(app.placeholder(), "new name");
+    app.escape();
+    assert_eq!(app.mode, Mode::Normal);
+    // from the row's page too, and a row with no rename step says so
+    app.hint_key(HintKey::Actions);
+    assert!(matches!(app.view, View::Steps(0)));
+    app.hint_key(HintKey::Rename);
+    assert!(matches!(app.mode, Mode::Ask { .. }));
+    app.escape();
+    app.sel = 1;
+    app.in_list = true;
+    app.hint_key(HintKey::Rename);
+    assert_eq!(said(&app).as_deref(), Some("nothing to rename here"));
+    app.hint_key(HintKey::Actions);
+    assert_eq!(said(&app).as_deref(), Some("no actions here"));
+    // Right opens nothing outside files
+    app.sel = 0;
+    app.reply = None;
+    app.right();
+    assert_eq!(app.view, View::Section(0));
+    // apps' categories
+    let mut app = App::new(Config::default(), &[]);
+    app.view = View::Apps;
+    app.came_from.push(View::Home);
+    app.apps.prefs = spark_dialog::apps::preferences::Preferences::default();
+    app.apps.preference_error = None;
+    app.hint_key(HintKey::Rename);
+    assert_eq!(said(&app).as_deref(), Some("nothing to rename here"), "an app has no rename");
+    app.hint_key(HintKey::Actions);
+    assert_eq!(said(&app).as_deref(), Some("no details here"));
+    app.apps_activate(spark_dialog::apps::Action::Categories);
+    let n = app
+        .picks()
+        .iter()
+        .position(|it| matches!(it, Item::Apps(l) if l.action == Some(spark_dialog::apps::Action::Category("Web".into()))))
+        .unwrap();
+    app.light(n);
+    app.hint_key(HintKey::Rename);
+    assert!(app.apps.form());
+    assert_eq!(app.input, "Web", "the name as it is");
+    app.escape();
+    app.apps_activate(spark_dialog::apps::Action::Category("Other".into()));
+    app.hint_key(HintKey::Rename);
+    assert_eq!(said(&app).as_deref(), Some("nothing to rename here"), "other stays other");
+}
+
+#[test]
+fn the_two_panes_frames_as_the_mock_has_them() {
+    let docs = |app: &mut App| {
+        at(app, DOCS, docs_rows());
+        app.files.other = Some(pane(PICS, Some(pics_rows(&[]))));
+        light_row(app, "notes.md");
+    };
+    let mut app = files_app();
+    docs(&mut app);
+    render(&app, "files-two-panes");
+    app.size = (120, 40);
+    render_at(&app, "full-files-two-panes", 120, 40);
+    app.size = (WIDTH, HEIGHT);
+    app.hint_key(HintKey::Rename);
+    render(&app, "files-two-panes-rename");
+    app.escape();
+    app.hint_key(HintKey::New);
+    render(&app, "files-two-panes-new");
+    app.escape();
+    app.hint_key(HintKey::Actions);
+    render(&app, "files-two-panes-menu");
+    app.escape();
+    app.typed(' ');
+    light_row(&mut app, "todo.txt");
+    app.typed(' ');
+    light_row(&mut app, "todo.txt");
+    render(&app, "files-two-panes-selected");
+    // the conflict, inside the active pane, the other pane staying
+    let mut app = files_app();
+    docs(&mut app);
+    app.files.other = Some(pane(PICS, Some(pics_rows(&["notes.md"]))));
+    app.hint_key(HintKey::Copy);
+    render(&app, "files-two-panes-conflict");
+    // your home, the folder alone
+    let mut app = files_app();
+    light_row(&mut app, "downloads");
+    two_panes(&mut app);
+    render(&app, "files-two-panes-home");
+}
+
+#[test]
+fn the_menu_and_the_conflict_draw_in_the_pane_that_is_active() {
+    let mut app = files_app();
+    at(&mut app, DOCS, docs_rows());
+    app.files.other = Some(pane(PICS, Some(pics_rows(&[]))));
+    light_row(&mut app, "notes.md");
+    app.right(); // the pictures, in the right pane
+    light_row(&mut app, "holiday.jpg");
+    app.hint_key(HintKey::Actions);
+    let rows = screen(&app);
+    let open = rows.iter().find(|r| r.contains("open in app")).expect("the menu");
+    assert!(open.starts_with("    todo.txt") || open.contains("\u{2502}    open in app"), "{:?}", open);
+    let cells: Vec<char> = open.chars().collect();
+    assert_eq!(cells[29], '\u{2502}', "{:?}", open);
+    assert!(open.ends_with("F4   "), "its key at the pane's right, three cells in: {:?}", open);
+    assert!(rows.iter().any(|r| r.starts_with("    todo.txt")), "the other pane stays");
+    let drawn = draw(&app);
+    assert_eq!(drawn.columns, (30, 60), "the bar in the right pane");
+    // a click on a row of the menu acts at once
+    let n = app.picks().iter().position(|it| matches!(it, Item::Files(l) if l.label == "select")).unwrap();
+    app.clicked(n, Instant::now());
+    assert!(!app.files_page_open() && app.files.checks.len() == 1);
+}
+
+#[test]
+fn enter_with_nothing_lit_and_nothing_typed_says_how_to_light_a_row() {
+    let mut app = files_app();
+    app.in_list = false;
+    app.enter();
+    assert_eq!(said(&app).as_deref(), Some("nothing is lit: an arrow or a click lights a row"));
+    // a form takes no click: the list behind it stands, drawn and not a target
+    light_row(&mut app, "notes.md");
+    app.hint_key(HintKey::Rename);
+    let drawn = draw(&app);
+    assert!(drawn.picks.is_empty(), "{:?}", drawn.picks);
+    assert!(app.picks().is_empty());
+    assert_eq!(app.selected_line(), None, "the status row is the form's");
+    let p = palette("tokyonight-night");
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
+    let y = (0..HEIGHT)
+        .find(|y| (0..WIDTH).map(|x| b[(x, *y)].symbol()).collect::<String>().contains("18 Oct"))
+        .unwrap();
+    assert_eq!(b[(0, y)].bg, p.lit, "the row being renamed stays lit");
 }

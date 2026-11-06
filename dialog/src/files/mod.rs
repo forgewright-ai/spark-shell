@@ -1,8 +1,8 @@
-//! Files: the manager's own state inside the folder list (dialog/DESIGN.md, "Files"): the checks on
-//! several rows, the actions page of a row or of the checked set, the second pane beside the first, the
-//! batch that copies, moves or trashes the checked files one after another, the page of choices a
-//! conflict opens, and the form rename and new folder type in the prompt. The folder list itself stays
-//! the dialog's View::Folder: this module adds to it and draws nothing new.
+//! Files: the manager's own state inside the folder list (dialog/DESIGN.md, "Files"): the selection on
+//! several rows (`checks` here), the actions page of a row or of the selected set, the second pane beside
+//! the first, the batch that copies, moves or trashes the selected files one after another, the list of
+//! choices a conflict opens, and the form rename and new folder type in the prompt. The folder list itself
+//! stays the dialog's View::Folder: this module adds to it and draws nothing new.
 mod presentation;
 mod surface;
 
@@ -30,7 +30,7 @@ impl Verb {
             Verb::Copy => "copying",
             Verb::Move => "moving",
             Verb::Trash => "trashing",
-            Verb::PutBack => "putting back",
+            Verb::PutBack => "undoing",
         }
     }
     pub fn done(self) -> &'static str {
@@ -38,7 +38,7 @@ impl Verb {
             Verb::Copy => "copied",
             Verb::Move => "moved",
             Verb::Trash => "trashed",
-            Verb::PutBack => "put back",
+            Verb::PutBack => "undone",
         }
     }
     /// The provider's tool a row's steps hold for it.
@@ -67,7 +67,6 @@ pub struct Transfer {
     /// None for a row that has no step for the verb: refused by name, never run.
     pub step: Option<Step>,
     pub name: String,
-    pub size: u64,
     pub conflict: bool,
     pub answer: Option<Answer>,
     pub refused: Option<String>,
@@ -79,8 +78,6 @@ pub struct Conflicts {
     pub verb: Verb,
     pub dest_title: String,
     pub items: Vec<Transfer>,
-    /// The names already in the destination: a kept copy takes the next free number among them.
-    pub taken: Vec<String>,
     /// The conflict being asked: an index into items.
     pub at: usize,
 }
@@ -93,10 +90,6 @@ impl Conflicts {
     pub fn current(&self) -> Option<&Transfer> {
         self.items.get(self.at)
     }
-    /// The name a kept copy of the current file takes.
-    pub fn kept_name(&self) -> String {
-        self.current().map(|t| numbered(&t.name, &self.taken)).unwrap_or_default()
-    }
 }
 
 /// The actions page: of one row, of the folder alone (`..`, the summary row), or of the checked set.
@@ -106,10 +99,6 @@ pub struct Actions {
     pub checked: Vec<Row>,
     /// The folder's own actions: the summary row's steps, and the rows of the "this folder" group.
     pub folder: Vec<Call>,
-    /// The folder's path where the provider offers files_browse and no folder action holds it already.
-    pub browse: Option<String>,
-    /// The other pane's place while two panes stand: copy and move go there.
-    pub other: Option<String>,
     pub title: String,
 }
 
@@ -139,10 +128,15 @@ pub enum Action {
     Step(Call),
     /// A step that asks for a name: the form.
     Ask(Call, String),
+    /// The lit row in the view.
+    View,
     Check(String),
     UncheckAll,
-    Panes(bool),
-    /// Copy, move or trash: the lit row to the other pane, or the checked set.
+    /// The lit row's path, or the selected rows', one a line.
+    CopyPath,
+    /// The second pane closes.
+    ClosePane,
+    /// Copy, move or trash: the lit row to the other pane, or the selected set.
     Transfer(Verb),
     /// The conflict page's choice, for this file or for all.
     Answer(Answer, bool),
@@ -183,8 +177,8 @@ pub struct Batch {
     pub verb: Verb,
     pub dest_title: Option<String>,
     pub total: usize,
-    /// The calls still to run or running: (the call, the file's name, its size).
-    pub steps: Vec<(Call, String, u64)>,
+    /// The calls still to run or running: the call and the file's name.
+    pub steps: Vec<(Call, String)>,
     pub done: Vec<(String, Result<(), String>)>,
     pub skipped: usize,
     pub stopped: usize,
@@ -192,12 +186,11 @@ pub struct Batch {
     /// When the step under way began: the march shows once the wait is felt.
     pub since: Instant,
     pub current: Option<String>,
-    pub size: u64,
     pub undos: Vec<Step>,
 }
 
 impl Batch {
-    pub fn new(verb: Verb, dest_title: Option<String>, steps: Vec<(Call, String, u64)>, skipped: usize) -> Batch {
+    pub fn new(verb: Verb, dest_title: Option<String>, steps: Vec<(Call, String)>, skipped: usize) -> Batch {
         Batch {
             verb,
             dest_title,
@@ -209,13 +202,12 @@ impl Batch {
             stopping: false,
             since: Instant::now(),
             current: None,
-            size: 0,
             undos: vec![],
         }
     }
     /// Whether a step is one of this batch's.
     pub fn owns(&self, call: &Call) -> bool {
-        self.steps.iter().any(|(c, _, _)| c == call)
+        self.steps.iter().any(|(c, _)| c == call)
     }
     pub fn ok(&self) -> usize {
         self.done.iter().filter(|(_, r)| r.is_ok()).count()
@@ -242,14 +234,13 @@ impl Batch {
             (Some(t), Verb::Copy | Verb::Move) => format!(" to {}", t),
             _ => String::new(),
         };
-        let mut s = if ok == self.total {
-            format!("{} {}{}", ok, self.verb.done(), dest)
-        } else {
+        let mut s = if ok < self.total {
             format!("{} of {} {}{}", ok, self.total, self.verb.done(), dest)
+        } else if self.verb == Verb::PutBack {
+            format!("{} {}", ok, self.verb.done())
+        } else {
+            format!("{} file{} {}{}", ok, if ok == 1 { "" } else { "s" }, self.verb.done(), dest)
         };
-        if ok == self.total && self.size > 0 && self.verb != Verb::PutBack {
-            s.push_str(&format!("{}{}", crate::ui::SEP, size_words(self.size)));
-        }
         if self.skipped > 0 {
             s.push_str(&format!(", {} skipped", self.skipped));
         }
@@ -316,6 +307,10 @@ impl State {
     pub fn form(&self) -> bool {
         matches!(self.page, Page::Form(_))
     }
+    /// Where the list stood when a form opened: the form keeps it on screen as it was.
+    pub fn form_nav(&self) -> Option<&Navigation> {
+        self.stack.last().filter(|_| self.form()).map(|(_, nav)| nav)
+    }
     pub fn has_back(&self) -> bool {
         !self.stack.is_empty()
     }
@@ -362,6 +357,42 @@ pub fn checkable(row: &Row) -> bool {
     let file = row.page.is_some() || row.tool.as_ref().is_some_and(|t| t.name == "files_open");
     let folder = row.children.is_some() && !row.more.is_empty();
     !is_up(row) && !is_summary(row) && (file || folder)
+}
+
+/// The path a row names: a file's or a folder's, the folder's own on its summary row; `..`, a drive and a trashed file
+/// name none.
+pub fn path_of(row: &Row) -> Option<String> {
+    if is_up(row) || row.tool.as_ref().is_some_and(|t| t.name == "files_restore") {
+        return None;
+    }
+    row.tool
+        .iter()
+        .chain(row.more.iter())
+        .find_map(|c| c.arguments.get("path").and_then(serde_json::Value::as_str))
+        .map(str::to_string)
+}
+
+/// The folder's summary as a pane under 40 cells writes it: `this folder . 1 folder . 3 files . 4.5 MB` reads
+/// `4 items . 4.5 MB`, the provider's own counts added up, its size kept. None for words that hold no count.
+pub fn short_summary(text: &str) -> Option<String> {
+    let sep = crate::ui::SEP;
+    let (mut items, mut size, mut counted) = (0u64, None, false);
+    for part in text.split(sep).skip(1) {
+        if part == "empty" {
+            counted = true;
+        } else if bytes(part).is_some() {
+            size = Some(part);
+        } else {
+            let n: String = part.split_whitespace().next()?.chars().filter(|c| *c != ',').collect();
+            items += n.parse::<u64>().ok()?;
+            counted = true;
+        }
+    }
+    if !counted {
+        return None;
+    }
+    let count = format!("{} item{}", items, if items == 1 { "" } else { "s" });
+    Some(size.map_or(count.clone(), |z| format!("{}{}{}", count, sep, z)))
 }
 
 /// A row of the folder's own: a file or a folder in it, never a recent file, a drive, the trash, `..`, the
@@ -437,22 +468,6 @@ pub fn size_words(n: u64) -> String {
     }
 }
 
-/// The name a kept copy takes beside the one there: `notes 2.md`, then `notes 3.md`.
-pub fn numbered(name: &str, taken: &[String]) -> String {
-    let (stem, ext) = match name.rfind('.') {
-        Some(i) if i > 0 => (&name[..i], &name[i..]),
-        _ => (name, ""),
-    };
-    let mut n = 2;
-    loop {
-        let candidate = format!("{} {}{}", stem, n, ext);
-        if !taken.contains(&candidate) {
-            return candidate;
-        }
-        n += 1;
-    }
-}
-
 /// A path's last part: the file's name.
 pub fn name_of(path: &str) -> String {
     path.trim_end_matches('/').rsplit('/').next().unwrap_or(path).to_string()
@@ -474,10 +489,18 @@ mod tests {
     }
 
     #[test]
-    fn a_kept_copy_takes_the_next_free_number() {
-        assert_eq!(numbered("notes.md", &[]), "notes 2.md");
-        assert_eq!(numbered("notes.md", &["notes 2.md".into()]), "notes 3.md");
-        assert_eq!(numbered("drafts", &[]), "drafts 2");
-        assert_eq!(numbered(".hidden", &[]), ".hidden 2");
+    fn a_short_summary_adds_the_counts_up_and_keeps_the_size() {
+        let dot = crate::ui::SEP;
+        let said = |parts: &[&str]| short_summary(&parts.join(dot));
+        assert_eq!(
+            said(&["this folder", "1 folder", "3 files", "4.5 MB"]).as_deref(),
+            Some("4 items \u{b7} 4.5 MB")
+        );
+        assert_eq!(said(&["this folder", "1 file", "12 B"]).as_deref(), Some("1 item \u{b7} 12 B"));
+        assert_eq!(said(&["this folder", "2 folders"]).as_deref(), Some("2 items"));
+        assert_eq!(said(&["this folder", "1,204 files", "2.1 GB"]).as_deref(), Some("1204 items \u{b7} 2.1 GB"));
+        assert_eq!(said(&["this folder", "empty"]).as_deref(), Some("0 items"));
+        assert_eq!(said(&["the trash", "3 items", "2.1 MB"]).as_deref(), Some("3 items \u{b7} 2.1 MB"));
+        assert_eq!(short_summary("find notes"), None, "words with no count stay as they are");
     }
 }

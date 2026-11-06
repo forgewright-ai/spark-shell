@@ -4,7 +4,7 @@
 //! turn first, then the view's list), scrolled as it needs; a rule; the footer's controls (Attach, the
 //! model, the mic).
 
-use crate::app::{App, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, SETTINGS, WIDTH};
+use crate::app::{App, FolderShape, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, SETTINGS, WIDTH};
 use crate::files::{Pane, Side};
 use crate::page::Line as PageLine;
 use crate::palette::Palette;
@@ -30,6 +30,8 @@ pub const MORE: &str = "\u{203a}";
 /// The header's back, the mirror of MORE: where there is a level above this one (dialog/DESIGN.md).
 pub const BACK: &str = "\u{2039} back";
 pub const RULE: &str = "\u{2500}";
+/// The line between two panes (dialog/DESIGN.md).
+pub const DIVIDE: &str = "\u{2502}";
 /// A color's sample: two full blocks, about a square in a terminal cell's shape.
 pub const SAMPLE: &str = "\u{2588}\u{2588}";
 pub const SEP: &str = " \u{b7} ";
@@ -67,9 +69,8 @@ struct Pen<'a> {
     /// A wide list's right edge (#141): its band and its arrows end where its words end, never at the
     /// screen's edge.
     right: u16,
-    /// A pane narrower than the dialog's own width (two panes at 60): the name cut to fit beside the size or the
-    /// count, the date dropped (dialog/DESIGN.md).
-    narrow: bool,
+    /// A pane of two: its rows keep their size at the pane's edge (dialog/DESIGN.md).
+    pane: bool,
 }
 
 impl Pen<'_> {
@@ -306,14 +307,21 @@ pub fn column_width(w: u16, view: &View) -> u16 {
     }
 }
 
-/// The frame's width now: a page of files (the actions, a conflict, a form) keeps the dialog's own width over a
-/// list that may be wider (dialog/DESIGN.md).
+/// The frame's width now: a page of files (the actions, a conflict) keeps the dialog's own width over a list that
+/// may be wider; in two panes it draws inside the active pane, and a form keeps the list behind it (dialog/DESIGN.md).
 pub fn frame_width(w: u16, app: &App) -> u16 {
-    if app.files_page_open() {
+    if app.files_page_open() && !app.files.form() && !app.two_panes() {
         w.min(WIDTH)
     } else {
         column_width(w, &app.view)
     }
+}
+
+/// The two panes of a column of `w` cells: their widths, with a cell for the line between them (dialog/DESIGN.md):
+/// 29 and 30 at 60 cells, 59 and 60 at 120.
+pub fn pane_widths(w: u16) -> (u16, u16) {
+    let left = w.saturating_sub(1) / 2;
+    (left, w.saturating_sub(1 + left))
 }
 
 /// A column wider than the dialog's own size: a list there shows its rows' wide columns and whole names (#141).
@@ -439,7 +447,7 @@ fn draw_layout(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
             w,
             h,
             right: w,
-            narrow: false,
+            pane: false,
         };
         header(app, &mut pen, &mut drawn);
         rules(app, &mut pen);
@@ -526,7 +534,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: 
         w,
         h,
         right: w,
-        narrow: false,
+        pane: false,
     };
     if w < MIN_WIDTH || h < MIN_HEIGHT {
         // too small to hold the prompt, a list and the footer without cutting one: say so, plainly
@@ -552,7 +560,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: 
     let n = 2;
     let top = cr.saturating_sub(n - 1).min(rows.len().saturating_sub(n));
     drawn.prompt = (PROMPT_Y, PROMPT_Y + n as u16 - 1);
-    if app.input.is_empty() && (app.mode == Mode::Normal || app.layout_form()) {
+    if app.input.is_empty() && (app.mode == Mode::Normal || app.prompt_form()) {
         pen.put(tx, PROMPT_Y, app.placeholder(), pal.muted, false, false);
     } else {
         for (k, r) in rows.iter().skip(top).take(n).enumerate() {
@@ -598,7 +606,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: 
         drawn.picks = picks;
         drawn.preview = picture;
         drawn.pages = pages;
-    } else if app.two_panes() && pen.w >= WIDTH {
+    } else if app.panes_drawn() {
         // two panes (dialog/DESIGN.md): the content area split in two halves of the column; below 60 cells the active
         // pane alone is drawn, and the other waits
         drawn.picks = panes(app, &mut pen, content_y, bottom, &mut drawn);
@@ -638,15 +646,21 @@ fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
         groups.insert(0, back);
     }
     let right = pen.w.saturating_sub(2);
-    let span = |parts: &[(String, bool, Vec<HintKey>)]| parts.iter().map(|(t, k, _)| cells(t) + if *k { 2 } else { 0 }).sum::<usize>() as u16;
+    // the cells a group's words and keys take; a chip's closing cell of air may stand on the margin
+    let span = |parts: &[(String, bool, Vec<HintKey>)]| {
+        let width = parts.iter().map(|(t, k, _)| cells(t) + if *k { 2 } else { 0 }).sum::<usize>() as u16;
+        width - parts.last().is_some_and(|(_, k, _)| *k) as u16
+    };
     let groups: Vec<Vec<(String, bool, Vec<HintKey>)>> = groups
         .into_iter()
         .map(|group| {
             group
                 .into_iter()
                 .map(|(t, key)| {
-                    let actions: Vec<_> = if key { t.split(' ').filter_map(key_of).collect() } else { vec![] };
-                    let label = if actions.is_empty() {
+                    let named: Vec<_> = if key { t.split(' ').filter_map(key_of).collect() } else { vec![] };
+                    // an action a person's own keys left with no key has no chip: its label goes with it
+                    let actions: Vec<_> = named.iter().copied().filter(|a| !app.cfg.keys.label(*a).is_empty()).collect();
+                    let label = if named.is_empty() {
                         t
                     } else {
                         actions.iter().map(|a| app.cfg.keys.label(*a)).collect::<Vec<_>>().join(" ")
@@ -655,6 +669,7 @@ fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
                 })
                 .collect()
         })
+        .filter(|group: &Vec<(String, bool, Vec<HintKey>)>| group.iter().all(|(t, k, _)| !*k || !t.is_empty()))
         .collect();
     // does the bar need its second line: the first group that does not fit the first line, and would fit a line
     let wraps = {
@@ -721,8 +736,14 @@ fn key_of(k: &str) -> Option<HintKey> {
         "+" | "-" | "0" | "<" | ">" => HintKey::Char(k.chars().next()?),
         // Space plays and pauses, its chip as clickable as the others (#150)
         "Space" => HintKey::Char(' '),
-        "F3" => HintKey::Preview,
-        "Ctrl+Tab" => HintKey::Pane,
+        "F2" => HintKey::Rename,
+        "F3" => HintKey::View,
+        "F4" => HintKey::Open,
+        "F5" => HintKey::Copy,
+        "F6" => HintKey::Move,
+        "F7" => HintKey::New,
+        "F8" => HintKey::Trash,
+        "F9" => HintKey::Actions,
         _ => return None,
     })
 }
@@ -893,9 +914,12 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             // help's row (dialog/DESIGN.md, v0.127): what you do at the row column, the key a chip at the right, where
             // the rows' arrows stand; the words cut before it, whole on the status row while the row is lit
             let e = pen.end(y);
-            let kx = e.saturating_sub(3 + cells(key) as u16 + 2);
+            // an action left with no key has no chip: the row says so by showing none
+            let kx = if key.is_empty() { e } else { e.saturating_sub(3 + cells(key) as u16 + 2) };
             pen.put(4, y, &cut_words(words, kx.saturating_sub(6) as usize), pal.fg, false, lit);
-            pen.chip(kx, y, key);
+            if !key.is_empty() {
+                pen.chip(kx, y, key);
+            }
         }
         Item::Heading(h) => {
             pen.put(2, y, h, pal.muted, false, false);
@@ -1020,9 +1044,13 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
         }
         Item::Folder(i) => {
             if let Some(row) = app.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)) {
-                // a check on the row: its sign, as a checked list draws its picks (dialog/DESIGN.md)
+                // a selected row: its sign, as a checked list draws its picks (dialog/DESIGN.md)
                 let checked = app.files_checks_any() && app.files.checked(&row.id);
-                arrows = row_line(pen, row, y, lit, (widths, right, samples, chips, controls, base), checked);
+                if pen.pane {
+                    pane_row(pen, row, y, lit, base, checked);
+                } else {
+                    arrows = row_line(pen, row, y, lit, (widths, right, samples, chips, controls, base), checked);
+                }
             }
         }
         Item::Hit(i) => {
@@ -1110,9 +1138,8 @@ fn page_line<A>(pen: &mut Pen, line: &PageLine<A>, y: u16, lit: bool) {
         pen.put(e.saturating_sub(3), y, &line.tail, pal.muted, false, lit);
     }
     if !line.key.is_empty() {
-        // the key that does what the row does, as a key is drawn everywhere: a chip, at the right where the arrows stand
-        let x = e.saturating_sub(3 + cells(&line.key) as u16 + 2);
-        pen.chip(x, y, &line.key);
+        // the key that does what the row does, at the right, muted: as every menu draws its shortcuts (dialog/DESIGN.md)
+        pen.put(e.saturating_sub(3 + cells(&line.key) as u16), y, &line.key, pal.muted, false, lit);
     }
 }
 
@@ -1443,16 +1470,22 @@ pub fn body_scroll(app: &App) -> usize {
 fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -> Vec<(u16, usize)> {
     drawn.body = (top, bottom);
     let mut at = vec![];
-    let items = app.items();
+    let items = app.list_items();
     let picks: Vec<usize> = items.iter().enumerate().filter(|(_, it)| app.pickable_item(it)).map(|(i, _)| i).collect();
-    let selected = if app.in_list { picks.get(app.sel).copied() } else { None };
+    // a form of files keeps the list as it stood, its row lit; nothing in it takes a click while the prompt takes the name
+    let form = app.files_form_nav();
+    let selected = match form {
+        Some(nav) => picks.get(nav.selected).copied().filter(|_| nav.in_list),
+        None if app.in_list => picks.get(app.sel).copied(),
+        None => None,
+    };
     let n = items.len();
     let rows = item_rows(&items);
     let total = rows.last().map(|r| r + 1).unwrap_or(0);
     let all = bottom.saturating_sub(top) as usize;
     // a list longer than the area keeps its last line to say how many rows sit below
     let room = if total > all { all.saturating_sub(1) } else { all };
-    let first = content_start(&items, selected, app.scroll, room);
+    let first = content_start(&items, selected, form.map_or(app.scroll, |nav| nav.scroll), room);
     let pal = pen.pal.clone();
     let below = items
         .iter()
@@ -1469,7 +1502,7 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         pen.put(4, y, BELOW, pal.muted, false, false);
         pen.put(6, y, &format!("{} more", below), pal.muted, false, false);
     }
-    let (widths, right) = widths(app, &items, pen.w, pen.narrow);
+    let (widths, right) = widths(app, &items, pen.w);
     // a row's words start at the row column, 4; in a list where rows carry a sign that means something (a check, a
     // reminder's dot or ring, a cross, a check on a file) the sign keeps that column and the words follow it at 6. The
     // sign that only said a row opens is gone: every row in a list opens (dialog/DESIGN.md)
@@ -1495,7 +1528,7 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
     } else {
         pen.w
     };
-    let (widths, end) = if app.searching() || app.two_panes() {
+    let (widths, end) = if app.searching() || pen.pane {
         (widths, end)
     } else {
         app.held_columns(widths, end)
@@ -1506,12 +1539,12 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         let mut start = 0;
         for (k, it) in items.iter().enumerate() {
             if matches!(it, Item::Heading(_)) && k > start {
-                let (w, r) = self::widths(app, &items[start..k], pen.w, pen.narrow);
+                let (w, r) = self::widths(app, &items[start..k], pen.w);
                 parts.push((start, w, r));
                 start = k;
             }
         }
-        let (w, r) = self::widths(app, &items[start..], pen.w, pen.narrow);
+        let (w, r) = self::widths(app, &items[start..], pen.w);
         parts.push((start, w, r));
     }
     let cols_at = |k: usize| match parts.iter().rev().find(|(s, _, _)| *s <= k) {
@@ -1539,7 +1572,7 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         // the band is the list column, its first cell to the list's end: the same for every row of the list,
         // whatever the window's size, the row's glyphs and two cells of air inside it
         let band = (0, pen.end(y));
-        if let Some(n) = picks.iter().position(|i| *i == item_owner(&items, k)) {
+        if let Some(n) = picks.iter().position(|i| *i == item_owner(&items, k)).filter(|_| form.is_none()) {
             at.push((y, n));
         }
         if lit {
@@ -1580,27 +1613,26 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
 /// color, the other beside it with no bar and its path muted; nothing else tells them apart.
 fn panes(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -> Vec<(u16, usize)> {
     let pal = pen.pal;
-    let (w, h) = (pen.w, pen.h);
-    let half = w / 2;
-    let narrow = half < WIDTH;
-    let (ax, ox) = match app.files.other_side {
-        Side::Right => (0, half),
-        Side::Left => (half, 0),
+    let h = pen.h;
+    let (lw, rw) = pane_widths(pen.w);
+    let ((ax, aw), (ox, ow)) = match app.files.other_side {
+        Side::Right => ((0, lw), (lw + 1, rw)),
+        Side::Left => ((lw + 1, rw), (0, lw)),
     };
-    let mut abuf = Buffer::empty(Rect::new(0, 0, half, h));
-    abuf.set_style(Rect::new(0, 0, half, h), Style::default().fg(pal.fg));
+    let mut abuf = Buffer::empty(Rect::new(0, 0, aw, h));
+    abuf.set_style(Rect::new(0, 0, aw, h), Style::default().fg(pal.fg));
     let mut d = Drawn::default();
     let picks = {
         let mut p = Pen {
             buf: &mut abuf,
             pal,
-            w: half,
+            w: aw,
             h,
-            right: half,
-            narrow,
+            right: aw,
+            pane: true,
         };
         let title = app.folder.as_ref().map(|(_, _, r)| r.title.clone()).unwrap_or_default();
-        p.put(2, top, &cut_middle(&title, half.saturating_sub(4) as usize), pal.fg, false, false);
+        p.put(2, top, &cut_middle(&title, aw.saturating_sub(4) as usize), pal.fg, false, false);
         content(app, &mut p, top + 1, bottom, &mut d)
     };
     blit_rows(pen.buf, &abuf, ax, top, bottom);
@@ -1608,25 +1640,29 @@ fn panes(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -> 
     drawn.heads = d.heads;
     drawn.steps = d.steps;
     drawn.body = d.body;
-    drawn.columns = (ax, ax + half);
+    drawn.columns = (ax, ax + aw);
+    // the line between the panes, in the rules' color
+    for y in top..bottom {
+        pen.put(lw, y, DIVIDE, pal.lit, false, false);
+    }
     if let Some(other) = &app.files.other {
-        let mut obuf = Buffer::empty(Rect::new(0, 0, half, h));
-        obuf.set_style(Rect::new(0, 0, half, h), Style::default().fg(pal.fg));
+        let mut obuf = Buffer::empty(Rect::new(0, 0, ow, h));
+        obuf.set_style(Rect::new(0, 0, ow, h), Style::default().fg(pal.fg));
         let (opicks, opath) = {
             let mut p = Pen {
                 buf: &mut obuf,
                 pal,
-                w: half,
+                w: ow,
                 h,
-                right: half,
-                narrow,
+                right: ow,
+                pane: true,
             };
             other_pane(app, &mut p, other, top, bottom)
         };
         blit_rows(pen.buf, &obuf, ox, top, bottom);
         drawn.other_picks = opicks;
         drawn.other_path = opath.map(|(a, b, y)| (a + ox, b + ox, y));
-        drawn.other_columns = (ox, ox + half);
+        drawn.other_columns = (ox, ox + ow);
     }
     picks
 }
@@ -1645,7 +1681,11 @@ fn other_pane(app: &App, pen: &mut Pen, pane: &Pane, top: u16, bottom: u16) -> (
         return (vec![], path);
     };
     let words = app.prompts.restore(&View::Folder(p, pane.uri.clone()));
-    let items = app.folder_items(p, rows, &words, false, None, false);
+    let shape = FolderShape {
+        own: true,
+        ..FolderShape::default()
+    };
+    let items = app.folder_items(p, rows, &words, &shape);
     let row_at = |it: &Item| match it {
         Item::Folder(i) => rows.rows.get(*i),
         _ => None,
@@ -1672,7 +1712,6 @@ fn other_pane(app: &App, pen: &mut Pen, pane: &Pane, top: u16, bottom: u16) -> (
         pen.put(4, y, BELOW, pal.muted, false, false);
         pen.put(6, y, &format!("{} more", below), pal.muted, false, false);
     }
-    let (widths, right) = widths_of(items.iter().filter_map(row_at), pen.w, pen.narrow);
     let base: u16 = if items
         .iter()
         .filter_map(row_at)
@@ -1692,8 +1731,7 @@ fn other_pane(app: &App, pen: &mut Pen, pane: &Pane, top: u16, bottom: u16) -> (
             }
             Item::Folder(i) => {
                 if let Some(row) = rows.rows.get(*i) {
-                    let checked = pane.checks.contains(&row.id);
-                    row_line(pen, row, y, false, (&widths, &right, false, false, false, base), checked);
+                    pane_row(pen, row, y, false, base, pane.checks.contains(&row.id));
                 }
                 if let Some(n) = picks.iter().position(|x| *x == k) {
                     at.push((y, n));
@@ -1703,6 +1741,50 @@ fn other_pane(app: &App, pen: &mut Pen, pane: &Pane, top: u16, bottom: u16) -> (
         }
     }
     (at, path)
+}
+
+/// A pane under this many cells keeps its size alone and writes the folder's summary short (dialog/DESIGN.md).
+const PANE_WIDE: u16 = 40;
+
+/// The text cut to `n` cells, an ellipsis where it was cut.
+fn ellipsis(text: &str, n: usize) -> String {
+    if cells(text) > n {
+        format!("{}\u{2026}", cut(text, n.saturating_sub(1)))
+    } else {
+        text.to_string()
+    }
+}
+
+/// A row of a pane (dialog/DESIGN.md): its sign, its name, its size or count at the pane's right edge, two cells of
+/// air there; from 40 cells the size stands before the date column. The name is cut in its middle where its row
+/// would overflow. The folder's summary is muted, and short under 40 cells.
+fn pane_row(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, base: u16, checked: bool) {
+    let pal = pen.pal.clone();
+    let edge = pen.w.saturating_sub(2);
+    let wide = pen.w >= PANE_WIDE;
+    if base > 4 && checked {
+        let (g, c) = sign(&pal, "check");
+        pen.put(base - 2, y, g, c, false, lit);
+    }
+    let room = edge.saturating_sub(base) as usize;
+    if crate::files::is_summary(row) {
+        let short = if wide { None } else { crate::files::short_summary(&row.text) };
+        pen.put(base, y, &ellipsis(short.as_deref().unwrap_or(&row.text), room), pal.muted, false, lit);
+        return;
+    }
+    let ink = if row.muted { pal.muted } else { pal.fg };
+    let Some(size) = row.columns.first().filter(|c| !c.is_empty()) else {
+        pen.put(base, y, &ellipsis(&row.text, room), ink, false, lit);
+        return;
+    };
+    let end = if wide { pen.w.saturating_sub(14) } else { edge };
+    let at = end.saturating_sub(cells(size) as u16);
+    let name = crate::scrub::cut_middle(&row.text, at.saturating_sub(base + 2) as usize);
+    pen.put(base, y, &name, ink, false, lit);
+    pen.put(at, y, size, pal.muted, false, lit);
+    if let Some(date) = row.columns.get(1).filter(|_| wide) {
+        pen.put(pen.w.saturating_sub(11), y, &cut(date, 9), pal.muted, false, lit);
+    }
 }
 
 /// A setting's words: its section's own state, which reads better than its purpose where it has one (on, a level, a
@@ -1745,18 +1827,13 @@ fn figure(col: &str) -> bool {
 
 /// The widths of a list's columns: the name, then each column, so they line up (the name 26 cells at most);
 /// and per column whether every cell in it is a figure, so the column lines up on its right edge.
-fn widths(app: &App, items: &[Item], w: u16, narrow: bool) -> (Vec<usize>, Vec<bool>) {
-    widths_of(items.iter().filter_map(|it| row_of(app, it)), w, narrow)
-}
-
-/// The widths of these rows' columns at `w` cells, as `widths` has them.
-fn widths_of<'a>(rows: impl Iterator<Item = &'a crate::model::Row>, w: u16, narrow: bool) -> (Vec<usize>, Vec<bool>) {
+fn widths(app: &App, items: &[Item], w: u16) -> (Vec<usize>, Vec<bool>) {
     let mut cols: Vec<usize> = vec![];
     let mut right: Vec<bool> = vec![];
     let mut names = 0;
     let mut counted = false;
-    for row in rows {
-        let columns = row_columns_at(row, w, narrow);
+    for row in items.iter().filter_map(|it| row_of(app, it)) {
+        let columns = row_columns(row, wide(w));
         // a palette's row has only its chip: its name still counts, so every chip stands in one column (#195)
         if columns.is_empty() && row.step.is_none() && row.key.is_none() && row.chip.is_empty() {
             continue;
@@ -1775,20 +1852,9 @@ fn widths_of<'a>(rows: impl Iterator<Item = &'a crate::model::Row>, w: u16, narr
     if !counted {
         return (vec![], vec![]);
     }
-    let mut widths = vec![names.min(name_cap_at(w, narrow, cols.first().copied().unwrap_or(0)))];
+    let mut widths = vec![names.min(name_cap(w))];
     widths.extend(cols);
     (widths, right)
-}
-
-/// A name's cells at most: in a narrow pane what is left beside the size or the count (the indent, two cells
-/// between them, the two cells of air every row keeps at its column's edge, #223), so a name is cut only when its
-/// row would overflow; else name_cap.
-fn name_cap_at(w: u16, narrow: bool, first: usize) -> usize {
-    if narrow {
-        (w as usize).saturating_sub(8 + first).max(4)
-    } else {
-        name_cap(w)
-    }
 }
 
 /// A name's cells at most in a list of `w` cells: 26 in the dialog's own size, up to 48 in a wide list (#141), so a long
@@ -1807,17 +1873,6 @@ fn row_columns(row: &crate::model::Row, wide: bool) -> &[String] {
     match &row.wide {
         Some(c) if wide => c,
         _ => &row.columns,
-    }
-}
-
-/// A row's columns at `w` cells: in a narrow pane a file keeps its size or its count alone, the date dropped
-/// (dialog/DESIGN.md).
-fn row_columns_at(row: &crate::model::Row, w: u16, narrow: bool) -> &[String] {
-    let cols = row_columns(row, wide(w));
-    if narrow && row.id.starts_with("files:") {
-        &cols[..cols.len().min(1)]
-    } else {
-        cols
     }
 }
 
@@ -1842,30 +1897,22 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, cols: Col
         pen.put(base, y, SAMPLE, Color::Rgb(r, gr, b), false, lit);
     }
     // a file's or a folder's name cut in its middle, its type kept (#140); other rows' at their end; a wide list's whole
-    let columns = row_columns_at(row, pen.w, pen.narrow);
-    let cap = name_cap_at(pen.w, pen.narrow, widths.get(1).copied().unwrap_or(0));
+    let columns = row_columns(row, wide(pen.w));
+    let cap = name_cap(pen.w);
     // a row's words end two cells before the column's edge (#223): the window's air is the dialog's own since
     // v0.124.5, so the last column is cut there, with its ellipsis, and the bar alone reaches the edge
     let edge = pen.end(y).saturating_sub(2);
     let name = if columns.is_empty() {
-        // a row that is its words alone (the folder's own row): cut with an ellipsis where it would overflow; in a
-        // narrow pane four cells before the pane's edge, as the mock has it
-        let room = if pen.narrow && row.id.starts_with("files:") {
-            pen.end(y).saturating_sub(tx + 4)
-        } else {
-            edge.saturating_sub(tx)
-        } as usize;
-        if cells(&row.text) > room {
-            format!("{}\u{2026}", cut(&row.text, room.saturating_sub(1)))
-        } else {
-            row.text.clone()
-        }
+        // a row that is its words alone (the folder's own row): cut with an ellipsis where it would overflow
+        ellipsis(&row.text, edge.saturating_sub(tx) as usize)
     } else if row.id.starts_with("files:") {
         crate::scrub::cut_middle(&row.text, cap)
     } else {
         cut(&row.text, cap)
     };
-    let mut x = pen.put(tx, y, &name, if row.muted { pal.muted } else { pal.fg }, false, lit);
+    // the folder's own row is muted: a summary, not a row among the rows (dialog/DESIGN.md)
+    let ink = if row.muted || crate::files::is_summary(row) { pal.muted } else { pal.fg };
+    let mut x = pen.put(tx, y, &name, ink, false, lit);
     let name_end = tx + widths.first().copied().unwrap_or(0) as u16;
     // a control's last cell is where the rows' arrows stand
     let end = pen.end(y).saturating_sub(2);

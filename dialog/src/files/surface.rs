@@ -1,7 +1,7 @@
 //! Connect files' pages, checks, panes and batches to home's prompt, selection, status row and job
 //! queue. The folder list stays View::Folder with all its machinery; this is what the files section adds.
 use super::*;
-use crate::app::{App, Item, Mode, Who, WIDTH};
+use crate::app::{App, HintKey, Item, Mode, Who, WIDTH};
 use crate::mcp::{self, Kind};
 use crate::reply::Mark;
 use serde_json::{json, Value};
@@ -20,10 +20,36 @@ impl App {
         self.files_pane_view().is_some() && self.files.page != Page::List
     }
 
-    /// Two panes stand and are the list's shape now: the view is a files folder, no pick or attach is on, no page
-    /// of files is open. Below a column of 60 cells ui.rs draws the active pane alone, and nothing is said.
+    /// Two panes stand and are the list's shape now: the view is a files folder and no pick or attach is on. A page
+    /// of files draws inside the active pane, and a form keeps both. Below a column of 60 cells ui.rs draws the active
+    /// pane alone, and nothing is said.
     pub fn two_panes(&self) -> bool {
-        self.files_pane_view().is_some() && self.files.other.is_some() && self.picking.is_none() && self.attaching.is_none() && self.files.page == Page::List
+        self.files_pane_view().is_some() && self.files.other.is_some() && self.picking.is_none() && self.attaching.is_none()
+    }
+
+    /// The width a page of files is drawn at: the active pane's while two stand, else the frame's.
+    pub(crate) fn files_page_width(&self) -> u16 {
+        let w = self.col_w();
+        if !self.panes_drawn() {
+            return w;
+        }
+        let (left, right) = crate::ui::pane_widths(w);
+        if self.files.other_side == Side::Right {
+            left
+        } else {
+            right
+        }
+    }
+
+    /// The two panes are what the list draws: two stand, and the column has the 60 cells for them.
+    pub fn panes_drawn(&self) -> bool {
+        self.two_panes() && self.col_w() >= WIDTH
+    }
+
+    /// Where the list stands behind a form of files: the form keeps it on screen, lit as it was.
+    pub fn files_form_nav(&self) -> Option<&Navigation> {
+        self.files_pane_view()?;
+        self.files.form_nav()
     }
 
     /// The active pane's checks stand on rows of the folder on screen.
@@ -77,53 +103,80 @@ impl App {
         }
     }
 
-    /// Right on a row of the active pane, Enter on the summary row, the actions chip: the actions page, of the
-    /// checked set while checks stand, else of the row (the folder's alone on `..` and the summary row).
+    /// F9 on a row of the active pane, Enter on the summary row: the actions page, of the selected set while a
+    /// selection stands, else of the row (the folder's alone on `..`, the summary row, and with nothing lit). False
+    /// outside a files folder; a page with nothing to offer says so.
     pub(crate) fn files_actions(&mut self, row: Option<Row>) -> bool {
-        let Some((p, _)) = self.files_pane_view() else { return false };
-        if self.mode != Mode::Normal || self.picking.is_some() || self.attaching.is_some() || self.files.page != Page::List {
+        if self.files_pane_view().is_none() || self.mode != Mode::Normal || self.picking.is_some() || self.attaching.is_some() || self.files.page != Page::List
+        {
             return false;
         }
         let Some((_, _, rows)) = self.folder.clone() else { return false };
         let checked: Vec<Row> = if self.files_checks_any() { self.files_checked_rows(&rows) } else { vec![] };
         let folder = folder_actions(&rows);
-        let browse = self.providers[p]
-            .tools
-            .iter()
-            .any(|t| t.name == "files_browse")
-            .then(|| rows.here.clone())
-            .flatten();
-        let other = self
-            .files
-            .other
-            .as_ref()
-            .map(|o| o.here().map(|_| o.title()).unwrap_or_else(|| "the other pane".into()));
         let row = row.filter(|r| !is_summary(r) && !is_up(r));
         let title = if !checked.is_empty() {
-            format!("{} checked", checked.len())
+            format!("{} selected", checked.len())
         } else if let Some(r) = &row {
             r.text.clone()
         } else {
             rows.title.clone()
         };
-        self.files_open(Page::Actions(Box::new(Actions {
+        let actions = Actions {
             row: if checked.is_empty() { row } else { None },
             checked,
             folder,
-            browse,
-            other,
             title,
-        })));
+        };
+        if !self.files.offers(&actions, &self.cfg.keys) {
+            self.refuse("no actions here");
+            return true;
+        }
+        self.files_open(Page::Actions(Box::new(actions)));
         true
     }
 
-    /// Right in a files folder: the actions page of the lit row, whatever it is.
-    pub(crate) fn files_right(&mut self) -> bool {
-        if self.files_pane_view().is_none() || !self.in_list || !self.input.is_empty() {
+    /// Left and Right in a files folder (dialog/DESIGN.md): Right goes to the right pane and in one pane opens it,
+    /// Left goes to the left pane; at the edge, on a page, in a pick both stay put. False where the arrow is the
+    /// cursor's: with words typed, while the prompt takes an answer, outside files.
+    pub(crate) fn files_arrow(&mut self, side: Side) -> bool {
+        if self.files_pane_view().is_none() || self.mode != Mode::Normal || !self.input.is_empty() {
             return false;
         }
-        let row = self.lit_row().map(|(_, r)| r);
-        self.files_actions(row)
+        if self.files.page != Page::List || self.picking.is_some() || self.attaching.is_some() || self.chip_focus.is_some() {
+            return true;
+        }
+        match (self.files.other.is_some(), side) {
+            (false, Side::Left) => {}
+            (false, Side::Right) => self.files_second_pane(),
+            (true, _) if self.col_w() < WIDTH => {
+                if side == Side::Right {
+                    self.refuse("two panes need a window 60 cells wide");
+                }
+            }
+            (true, _) if self.files.other_side == side => {
+                self.files_pane();
+            }
+            (true, _) => {}
+        }
+        true
+    }
+
+    /// Ctrl+Tab: the other pane, opening the second if there is none.
+    pub(crate) fn files_pane_key(&mut self) {
+        if self.files_pane_view().is_none() {
+            return self.refuse("no other pane here");
+        }
+        if self.files.page != Page::List {
+            return self.refuse("Esc goes back to the list first");
+        }
+        if self.files.other.is_none() {
+            return self.files_second_pane();
+        }
+        if self.col_w() < WIDTH {
+            return self.refuse("two panes need a window 60 cells wide");
+        }
+        self.files_pane();
     }
 
     pub fn files_activate(&mut self, action: Action) {
@@ -151,6 +204,12 @@ impl App {
                     typed: true,
                 });
             }
+            Action::View => {
+                self.files_to_list();
+                if !self.open_preview() {
+                    self.refuse("nothing to view here");
+                }
+            }
             Action::Ask(call, words) => {
                 let line = self.step_line(p, &call, "");
                 let step = Step {
@@ -176,9 +235,13 @@ impl App {
                 self.files_to_list();
                 self.files.clear_checks();
             }
-            Action::Panes(on) => {
+            Action::CopyPath => {
                 self.files_to_list();
-                self.files_two_panes(on);
+                self.files_copy_path();
+            }
+            Action::ClosePane => {
+                self.files_to_list();
+                self.files_close_pane();
             }
             Action::Transfer(verb) => {
                 self.files_to_list();
@@ -190,11 +253,14 @@ impl App {
 
     // ---- the checks
 
-    /// Insert: the lit file's or folder's check toggled, and the bar a row down, as Norton Commander's did. On a
-    /// row's actions page it is the check row's key; any other page has nothing to check, and says so.
+    /// Space: the lit file or folder selected or let go, and the bar a row down, as Norton Commander's Insert did. On
+    /// a row's actions page it is the select row's key; any other page has nothing to select, and says so.
     pub fn files_check(&mut self) {
-        if self.files_pane_view().is_none() || self.mode != Mode::Normal || self.picking.is_some() || self.attaching.is_some() {
+        if self.files_pane_view().is_none() || self.mode != Mode::Normal {
             return;
+        }
+        if self.picking.is_some() || self.attaching.is_some() {
+            return self.refuse("finish this first: Enter picks, Esc cancels");
         }
         match &self.files.page {
             Page::List => {}
@@ -202,7 +268,7 @@ impl App {
                 let id = a.row.as_ref().map(|r| r.id.clone()).unwrap_or_default();
                 return self.files_activate(Action::Check(id));
             }
-            _ => return self.refuse("nothing to check here: Esc goes back to the list"),
+            _ => return self.refuse("nothing to select here: Esc goes back to the list"),
         }
         if !self.in_list {
             return self.refuse("nothing is lit: an arrow or a click lights a row");
@@ -212,7 +278,7 @@ impl App {
             _ => None,
         };
         let Some(row) = row.filter(checkable) else {
-            return self.refuse("only a file or a folder can be checked");
+            return self.refuse("only a file or a folder can be selected");
         };
         self.reply = None;
         self.files_toggle(&row.id);
@@ -263,7 +329,7 @@ impl App {
             .collect()
     }
 
-    /// The status row while checks stand: `2 checked . 4.5 MB`, the checked files' sizes summed.
+    /// The status row while a selection stands: `2 selected . 4.5 MB`, the selected files' sizes summed.
     pub fn files_checked_line(&self) -> Option<String> {
         if !self.files_checks_any() || self.files.page != Page::List || self.mode != Mode::Normal {
             return None;
@@ -274,7 +340,7 @@ impl App {
             return None;
         }
         let size: u64 = checked.iter().map(row_size).sum();
-        let mut s = format!("{} checked", checked.len());
+        let mut s = format!("{} selected", checked.len());
         if size > 0 {
             s.push_str(&format!("{}{}", crate::ui::SEP, size_words(size)));
         }
@@ -301,19 +367,14 @@ impl App {
 
     // ---- two panes
 
-    /// `two panes`: a second pane beside the first, on the same folder; `one pane` closes it.
-    pub fn files_two_panes(&mut self, on: bool) {
+    /// Right in one pane, Ctrl+Tab: the second pane opens at the right on the same folder, and the bar goes to it. The
+    /// first pane drops what is not its folder's own (your home's recent files), its lit row kept by its id.
+    fn files_second_pane(&mut self) {
         let Some((p, uri)) = self.files_pane_view() else { return };
-        if !on {
-            self.files.other = None;
-            return;
-        }
         if self.col_w() < WIDTH {
             return self.refuse("two panes need a window 60 cells wide");
         }
-        if self.files.other.is_some() {
-            return;
-        }
+        let lit = self.lit_row().filter(|_| self.in_list).map(|(_, r)| r.id);
         let rows = self.folder.as_ref().map(|(_, _, r)| r.clone());
         self.files.other = Some(Pane {
             uri,
@@ -325,7 +386,30 @@ impl App {
             came_from: self.came_from.clone(),
         });
         self.files.other_side = Side::Right;
+        self.files_relight(lit);
         self.files_refresh_other(p);
+        self.reply = None;
+        self.files_pane();
+    }
+
+    /// The list changed its shape under the bar, a pane opened or closed: the lit row kept by its id.
+    fn files_relight(&mut self, lit: Option<String>) {
+        if let Some(id) = lit {
+            let picks = self.picks();
+            let at = picks.iter().position(|it| self.row_ref(it).is_some_and(|r| r.id == id));
+            self.sel = at.unwrap_or(self.sel.min(picks.len().saturating_sub(1)));
+        }
+    }
+
+    /// `close pane`: the second pane closes, the one at the right; the bar stands in the first.
+    fn files_close_pane(&mut self) {
+        if self.files.other_side == Side::Left {
+            self.files_pane();
+        }
+        let lit = self.lit_row().filter(|_| self.in_list).map(|(_, r)| r.id);
+        self.files.other = None;
+        self.files.other_side = Side::Right;
+        self.files_relight(lit);
     }
 
     /// Ctrl+Tab, a click on the other pane: the other pane becomes active, the active one waits aside. False when
@@ -482,7 +566,13 @@ impl App {
         if self.providers.get(step.prov).is_none_or(|p| p.label != "files") || !step.call.ask.iter().any(|a| a == "name") || self.files_pane_view().is_none() {
             return false;
         }
-        let words = step.call.said.clone().unwrap_or_else(|| crate::app::verb_of(&step.call.name).to_lowercase());
+        // the header's words: the dialog's own for what it names, else the provider's
+        let words = match step.call.name.as_str() {
+            "files_rename" => "rename".to_string(),
+            "files_new_folder" => "new folder".to_string(),
+            "files_new_text" => "new file".to_string(),
+            _ => step.call.said.clone().unwrap_or_else(|| crate::app::verb_of(&step.call.name).to_lowercase()),
+        };
         let current = if step.call.name == "files_rename" {
             step.call.arguments.get("path").and_then(Value::as_str).map(name_of).unwrap_or_default()
         } else {
@@ -516,7 +606,7 @@ impl App {
         let f = *f;
         let typed = self.input.trim().to_string();
         if typed.is_empty() {
-            return self.refuse("type a name, or Esc lets it go");
+            return self.refuse("type a name, or Esc cancels");
         }
         let mut step = f.step;
         step.call.arguments.insert(f.field.clone(), Value::String(typed));
@@ -531,9 +621,9 @@ impl App {
         let Page::Form(f) = &self.files.page else { return None };
         self.files_pane_view()?;
         Some(match f.step.call.name.as_str() {
-            "files_rename" => "the new name",
-            "files_new_folder" => "a name for the folder",
-            "files_new_text" => "a name for the text file",
+            "files_rename" => "new name",
+            "files_new_folder" => "folder name",
+            "files_new_text" => "file name",
             _ => "a name",
         })
     }
@@ -545,13 +635,127 @@ impl App {
         match &self.files.page {
             Page::List => None,
             Page::Form(_) => {
-                let mut k = pair("Let go", "Esc");
+                let mut k = pair("Cancel", "Esc");
                 k.push(("   ".into(), false));
                 k.extend(pair("Save", "Enter"));
                 Some(k)
             }
-            Page::Actions(_) | Page::Conflict(_) => Some(pair("Back", "Esc")),
+            Page::Actions(_) => Some(pair("Back", "Esc")),
+            Page::Conflict(_) => Some(pair("Cancel", "Esc")),
         }
+    }
+
+    // ---- the keys
+
+    /// The key's refusal where it has nothing to act on.
+    fn files_key_words(key: HintKey) -> &'static str {
+        match key {
+            HintKey::Rename => "nothing to rename here",
+            HintKey::View => "nothing to view here",
+            HintKey::Open => "this cannot be opened here",
+            HintKey::Copy | HintKey::CopyPath => "nothing to copy here",
+            HintKey::Move => "nothing to move here",
+            HintKey::New => "no new folder here",
+            HintKey::Trash => "nothing to trash here",
+            _ => "no actions here",
+        }
+    }
+
+    /// The key on a page of files: on the menu the row that carries it acts, as a click does; a conflict takes its rows.
+    /// True when the page answered the key.
+    pub(crate) fn files_page_key(&mut self, key: HintKey) -> bool {
+        match self.files.page {
+            Page::List | Page::Form(_) => false,
+            Page::Conflict(_) => {
+                self.refuse("choose a row, or Esc cancels");
+                true
+            }
+            Page::Actions(_) => {
+                let label = self.cfg.keys.label(key).to_string();
+                let lines = self.files.lines(self.files_page_width(), &self.cfg.keys, "");
+                match lines.into_iter().find(|l| !label.is_empty() && l.key == label).and_then(|l| l.action) {
+                    Some(action) => self.files_activate(action),
+                    None => self.refuse(Self::files_key_words(key)),
+                }
+                true
+            }
+        }
+    }
+
+    /// A key that wants a row, with none lit, says how to light one; else its own words.
+    pub(crate) fn files_nothing(&mut self, key: HintKey) {
+        if self.files_pane_view().is_some() && self.files.page == Page::List && !self.in_list {
+            return self.refuse("nothing is lit: an arrow or a click lights a row");
+        }
+        self.refuse(Self::files_key_words(key));
+    }
+
+    /// F4 to F8 and Ctrl+C in a files folder: outside one each says there is nothing for it.
+    pub(crate) fn files_key(&mut self, key: HintKey) {
+        let Some((p, _)) = self.files_pane_view() else {
+            return self.refuse(if key == HintKey::Open {
+                "nothing to open here"
+            } else {
+                Self::files_key_words(key)
+            });
+        };
+        if self.files_page_key(key) {
+            return;
+        }
+        match key {
+            HintKey::Open => {
+                let lit = self.lit_row().filter(|_| self.in_list).map(|(_, r)| r);
+                let Some(row) = lit else { return self.files_nothing(key) };
+                match row.tool.iter().chain(row.more.iter()).find(|c| c.name == "files_app") {
+                    Some(call) => self.files_activate(Action::Step(call.clone())),
+                    None => self.refuse(Self::files_key_words(key)),
+                }
+            }
+            HintKey::Copy => self.files_transfer_now(Verb::Copy),
+            HintKey::Move => self.files_transfer_now(Verb::Move),
+            HintKey::Trash => self.files_transfer_now(Verb::Trash),
+            HintKey::CopyPath => self.files_copy_path(),
+            HintKey::New => {
+                let rows = self.folder.as_ref().map(|(_, _, r)| folder_actions(r)).unwrap_or_default();
+                match rows.into_iter().find(|c| c.name == "files_new_folder") {
+                    Some(call) => {
+                        let line = self.step_line(p, &call, "");
+                        let step = Step {
+                            prov: p,
+                            call,
+                            who: Who::Person,
+                            line,
+                            typed: false,
+                        };
+                        self.files_form(step);
+                    }
+                    None => self.refuse(Self::files_key_words(key)),
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Ctrl+C: the lit row's path, or the selected rows', one a line, to the clipboard through the apps adapter.
+    fn files_copy_path(&mut self) {
+        let Some((_, _, rows)) = self.folder.clone() else {
+            return self.files_nothing(HintKey::CopyPath);
+        };
+        let chosen: Vec<Row> = if self.files_checks_any() {
+            self.files_checked_rows(&rows)
+        } else {
+            self.lit_row().filter(|_| self.in_list).map(|(_, r)| r).into_iter().collect()
+        };
+        let paths: Vec<String> = chosen.iter().filter_map(path_of).collect();
+        if paths.is_empty() {
+            return self.files_nothing(HintKey::CopyPath);
+        }
+        if self.apps.pending.is_some() {
+            return self.refuse("the apps are busy: a moment");
+        }
+        let n = paths.len();
+        self.apps.copy_said = Some(if n == 1 { "path copied".into() } else { format!("{} paths copied", n) });
+        self.apps_request(json!({"op": "copy", "text": paths.join("\n")}));
     }
 
     // ---- the operation
@@ -561,6 +765,9 @@ impl App {
     fn files_transfer_now(&mut self, verb: Verb) {
         let Some((p, _)) = self.files_pane_view() else { return };
         let Some((_, _, rows)) = self.folder.clone() else { return };
+        if self.running.is_some() || self.files.batch.is_some() {
+            return self.reply(Mark::Note, "wait for the current action's result");
+        }
         let mut chosen: Vec<Row> = if self.files_checks_any() { self.files_checked_rows(&rows) } else { vec![] };
         if chosen.is_empty() {
             if let Some(Item::Folder(i)) = self.picks().get(self.sel).filter(|_| self.in_list) {
@@ -570,7 +777,7 @@ impl App {
             }
         }
         if chosen.is_empty() {
-            return self.refuse("nothing to act on: light a file or a folder, or check some");
+            return self.refuse("nothing to act on: light a file or a folder, or select some");
         }
         if verb == Verb::Trash {
             let transfers = self.files_steps(p, verb, &chosen, None);
@@ -602,7 +809,6 @@ impl App {
                     return Transfer {
                         step: None,
                         name: name.clone(),
-                        size: 0,
                         conflict: false,
                         answer: None,
                         refused: Some(format!("{}: not offered", name)),
@@ -623,7 +829,6 @@ impl App {
                         typed: false,
                     }),
                     name,
-                    size: row_size(r),
                     conflict: false,
                     answer: None,
                     refused: None,
@@ -687,7 +892,6 @@ impl App {
                 vec![Transfer {
                     step: Some(step),
                     name,
-                    size: 0,
                     conflict: false,
                     answer: None,
                     refused: None,
@@ -720,7 +924,6 @@ impl App {
                     verb,
                     dest_title: title.clone(),
                     items: transfers,
-                    taken,
                     at,
                 })));
                 return;
@@ -733,17 +936,11 @@ impl App {
     fn files_conflict_answer(&mut self, answer: Answer, all: bool) {
         let Page::Conflict(c) = self.files.page.clone() else { return };
         let mut c = *c;
-        let mut taken = c.taken.clone();
         for (i, t) in c.items.iter_mut().enumerate() {
-            if !t.conflict || t.answer.is_some() || (!all && i != c.at) {
-                continue;
-            }
-            t.answer = Some(answer);
-            if answer == Answer::Keep {
-                taken.push(numbered(&t.name, &taken));
+            if t.conflict && t.answer.is_none() && (all || i == c.at) {
+                t.answer = Some(answer);
             }
         }
-        c.taken = taken;
         match c.items.iter().position(|t| t.conflict && t.answer.is_none()) {
             Some(next) => {
                 c.at = next;
@@ -762,7 +959,7 @@ impl App {
     /// the queue, a skipped file left out and counted, a kept or replaced one saying so to the provider.
     fn files_start(&mut self, verb: Verb, dest_title: Option<String>, transfers: Vec<Transfer>) {
         let skipped = transfers.iter().filter(|t| t.answer == Some(Answer::Skip)).count();
-        let mut steps: Vec<(Step, String, u64)> = vec![];
+        let mut steps: Vec<(Step, String)> = vec![];
         let mut seeded: Vec<(String, Result<(), String>)> = vec![];
         for t in transfers {
             if t.answer == Some(Answer::Skip) {
@@ -779,7 +976,7 @@ impl App {
                         }
                         _ => {}
                     }
-                    steps.push((step, t.name, t.size));
+                    steps.push((step, t.name));
                 }
                 (_, Some(why)) => seeded.push((t.name, Err(why))),
                 _ => {}
@@ -787,7 +984,7 @@ impl App {
         }
         if steps.len() == 1 && seeded.is_empty() && skipped == 0 {
             // one file: the provider's step, its receipt on the status row; the checks go once it is sent
-            let (mut step, _, _) = steps.remove(0);
+            let (mut step, _) = steps.remove(0);
             step.typed = true;
             self.run(step);
             if self.running.is_some() || matches!(self.mode, Mode::Confirm(_)) {
@@ -798,7 +995,7 @@ impl App {
         // the batch's undo is its own: the undo standing before it goes, so a refused step can never take it
         self.undo = None;
         self.files.undo_more.clear();
-        let calls: Vec<(Call, String, u64)> = steps.iter().map(|(s, n, z)| (s.call.clone(), n.clone(), *z)).collect();
+        let calls: Vec<(Call, String)> = steps.iter().map(|(s, n)| (s.call.clone(), n.clone())).collect();
         let mut batch = Batch::new(verb, dest_title, calls, skipped);
         batch.total += seeded.len();
         batch.done = seeded;
@@ -806,14 +1003,14 @@ impl App {
         if steps.is_empty() {
             return self.files_finish_batch();
         }
-        self.queue.extend(steps.into_iter().map(|(s, _, _)| s));
+        self.queue.extend(steps.into_iter().map(|(s, _)| s));
         self.next_step();
     }
 
     /// A batch's step was sent: the march counts it from now.
     pub(crate) fn files_step_sent(&mut self, call: &Call) {
         if let Some(b) = self.files.batch.as_mut() {
-            if let Some((_, name, _)) = b.steps.iter().find(|(c, _, _)| c == call) {
+            if let Some((_, name)) = b.steps.iter().find(|(c, _)| c == call) {
                 b.current = Some(name.clone());
                 b.since = std::time::Instant::now();
             }
@@ -830,13 +1027,10 @@ impl App {
         // a step done leaves its undo; a refused one leaves none, and takes none that stood before
         let undo = if outcome.is_ok() { self.undo.take() } else { None };
         let Some(b) = self.files.batch.as_mut() else { return };
-        let Some(k) = b.steps.iter().position(|(c, _, _)| *c == step.call) else {
+        let Some(k) = b.steps.iter().position(|(c, _)| *c == step.call) else {
             return;
         };
-        let (_, name, size) = b.steps.remove(k);
-        if outcome.is_ok() {
-            b.size += size;
-        }
+        let (_, name) = b.steps.remove(k);
         b.done.push((name, outcome));
         b.current = None;
         b.undos.extend(undo);
@@ -871,9 +1065,9 @@ impl App {
         let running: Option<Call> = self.running.as_ref().map(|(_, _, s)| s.call.clone());
         let Some(b) = self.files.batch.as_mut() else { return false };
         let keep = running.filter(|c| b.owns(c));
-        let owned: Vec<Call> = b.steps.iter().map(|(c, _, _)| c.clone()).collect();
+        let owned: Vec<Call> = b.steps.iter().map(|(c, _)| c.clone()).collect();
         let before = b.steps.len();
-        b.steps.retain(|(c, _, _)| keep.as_ref() == Some(c));
+        b.steps.retain(|(c, _)| keep.as_ref() == Some(c));
         b.stopped += before - b.steps.len();
         b.stopping = true;
         let done = b.steps.is_empty();
@@ -902,7 +1096,7 @@ impl App {
     }
 
     /// The batch's undo, from the status row or typed: every step back, newest first, as a batch of its own; the
-    /// receipt says how many were put back. False when the undo at hand is one step, run as today.
+    /// receipt says how many were undone. False when the undo at hand is one step, run as today.
     pub(crate) fn files_undo_batch(&mut self) -> bool {
         if self.files.undo_more.is_empty() {
             return false;
@@ -917,13 +1111,12 @@ impl App {
         };
         let mut steps = vec![head];
         steps.append(&mut self.files.undo_more);
-        let calls: Vec<(Call, String, u64)> = steps
+        let calls: Vec<(Call, String)> = steps
             .iter()
             .map(|s| {
                 (
                     s.call.clone(),
                     s.call.arguments.get("path").and_then(Value::as_str).map(name_of).unwrap_or_default(),
-                    0,
                 )
             })
             .collect();

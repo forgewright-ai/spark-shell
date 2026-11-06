@@ -451,9 +451,12 @@ fn help_is_a_list_by_subject_with_key_chips() {
             _ => None,
         })
         .collect();
-    assert_eq!(groups, vec!["in home", "in a preview", "windows", "workspaces", "the desktop", "at the prompt"]);
+    assert_eq!(
+        groups,
+        vec!["in home", "in files", "in a view", "windows", "workspaces", "the desktop", "at the prompt"]
+    );
     assert_eq!(app.selected_line().as_deref(), Some("ask spark the words \u{b7} Ctrl+Enter"));
-    assert_eq!(app.shortcuts(), 31, "13 of the dialog's and 18 of the desktop's");
+    assert_eq!(app.shortcuts(), 39, "21 of the dialog's and 18 of the desktop's");
     render(&app, "help");
     // words typed keep the rows they name, under their subjects, and the note goes
     app.input = "window".into();
@@ -780,10 +783,10 @@ fn files_your_home_starts_with_home_and_ends_with_its_own_row() {
 }
 
 #[test]
-fn files_a_files_actions_on_the_right_arrow() {
+fn files_a_files_actions_on_f9() {
     // the files' own page (dialog/DESIGN.md): the row's actions, check with its key, then the folder's
     let mut app = files_home();
-    app.right();
+    app.hint_key(spark_dialog::app::HintKey::Actions);
     assert!(matches!(app.view, View::Folder(..)) && app.files_page_open());
     render(&app, "files-actions");
 }
@@ -835,7 +838,7 @@ fn an_empty_trash_keeps_the_sizes_on_their_right_edge() {
 fn right_on_a_file_lists_its_steps_in_the_providers_words() {
     // the provider's steps in its words on the files' actions page, a menu (dialog/DESIGN.md)
     let mut app = manager_app();
-    app.right();
+    app.hint_key(spark_dialog::app::HintKey::Actions);
     assert!(matches!(app.view, View::Folder(..)) && app.files_page_open());
     app.sel = 5;
     render(&app, "steps");
@@ -844,8 +847,8 @@ fn right_on_a_file_lists_its_steps_in_the_providers_words() {
 #[test]
 fn a_move_picks_its_folder_among_the_folders_with_the_row_that_lands_it_here() {
     let mut app = manager_app();
-    app.right();
-    app.sel = 5; // move to a folder
+    app.hint_key(spark_dialog::app::HintKey::Actions);
+    app.sel = 3; // move
     app.enter();
     assert!(app.picking.as_ref().is_some_and(|pk| pk.step.is_some()));
     render(&app, "pick");
@@ -1295,7 +1298,7 @@ fn space_opens_the_lit_files_preview_and_esc_lights_it_again() {
     app.folder = Some((f, uri, rows));
     app.in_list = true;
     app.sel = 2;
-    app.hint_key(spark_dialog::app::HintKey::Preview);
+    app.hint_key(spark_dialog::app::HintKey::View);
     assert_eq!(app.view, View::Preview);
     assert_eq!(app.preview.as_ref().unwrap().row().text, "notes.md");
     assert!(app.input.is_empty(), "F3 opened the preview and typed nothing");
@@ -1450,7 +1453,7 @@ fn a_filtered_file_shows_its_preview_after_the_down_arrow() {
     let hint = |app: &App| app.hint().iter().map(|(t, _)| t.as_str()).collect::<String>();
     let mut app = filtered();
     assert!(
-        hint(&app).contains("Preview F3"),
+        hint(&app).contains("View F3"),
         "the way to the preview is said, the same words as always: {:?}",
         hint(&app)
     );
@@ -1458,8 +1461,8 @@ fn a_filtered_file_shows_its_preview_after_the_down_arrow() {
     assert_eq!(app.input, "invo ", "Space before Down is a space");
     let mut app = filtered();
     app.down();
-    assert!(hint(&app).contains("Preview F3"), "Down: the keys are the list's: {:?}", hint(&app));
-    app.hint_key(spark_dialog::app::HintKey::Preview);
+    assert!(hint(&app).contains("View F3"), "Down: the keys are the list's: {:?}", hint(&app));
+    app.hint_key(spark_dialog::app::HintKey::View);
     assert_eq!(app.view, View::Preview, "F3 shows the lit file");
     assert!(app.input.is_empty(), "the filter's words let go, so Space plays and Esc goes back");
     assert_eq!(app.preview.as_ref().unwrap().row().text, "invoice-0412.pdf");
@@ -1496,7 +1499,7 @@ fn the_space_chip_is_a_key_a_click_takes() {
     let mut b = Buffer::empty(Rect::new(0, 0, 120, 40));
     let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
     assert!(
-        drawn.keys.iter().any(|(_, _, _, k)| *k == spark_dialog::app::HintKey::Preview),
+        drawn.keys.iter().any(|(_, _, _, k)| *k == spark_dialog::app::HintKey::View),
         "the preview chip is clickable and sends F3: {:?}",
         drawn.keys
     );

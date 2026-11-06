@@ -8,7 +8,7 @@ const DEFAULTS: &[(&str, HintKey, &str)] = &[
     ("ask", HintKey::Ask, "Ctrl+Enter"),
     ("newline", HintKey::Newline, "Shift+Enter"),
     ("back", HintKey::Escape, "Esc"),
-    ("conversation", HintKey::Conversation, "F2"),
+    ("conversation", HintKey::Conversation, "F10"),
     ("next-control", HintKey::Tab, "Tab"),
     ("previous-control", HintKey::PreviousControl, "Shift+Tab"),
     ("up", HintKey::Up, "Up"),
@@ -21,9 +21,17 @@ const DEFAULTS: &[(&str, HintKey, &str)] = &[
     ("page-down", HintKey::PageDown, "PageDown"),
     ("backspace", HintKey::Backspace, "Backspace"),
     ("delete", HintKey::Delete, "Delete"),
-    ("quit", HintKey::Quit, "Ctrl+c"),
-    ("preview", HintKey::Preview, "F3"),
-    ("check", HintKey::Check, "Space"),
+    ("quit", HintKey::Quit, "Ctrl+Q"),
+    ("rename", HintKey::Rename, "F2"),
+    ("view", HintKey::View, "F3"),
+    ("open", HintKey::Open, "F4"),
+    ("copy", HintKey::Copy, "F5"),
+    ("move", HintKey::Move, "F6"),
+    ("new", HintKey::New, "F7"),
+    ("trash", HintKey::Trash, "F8"),
+    ("actions", HintKey::Actions, "F9"),
+    ("copy-path", HintKey::CopyPath, "Ctrl+C"),
+    ("select", HintKey::Select, "Space"),
     ("pane", HintKey::Pane, "Ctrl+Tab"),
     ("zoom-in", HintKey::Char('+'), "Plus"),
     ("zoom-out", HintKey::Char('-'), "-"),
@@ -32,8 +40,13 @@ const DEFAULTS: &[(&str, HintKey, &str)] = &[
     ("next-page", HintKey::Char('>'), ">"),
 ];
 
+/// The names an older home-keys.json may hold: the file keeps working when an action takes the word people see.
+const ALIASES: &[(&str, &str)] = &[("preview", "view"), ("check", "select")];
+
+/// Each action: its name, what it does, the key as a person reads it, the key itself. An action a person's own key
+/// took the default from has neither: it stays unbound, and no key does it.
 #[derive(Clone, Debug)]
-pub struct Bindings(Vec<(String, HintKey, String, KeyEvent)>);
+pub struct Bindings(Vec<(String, HintKey, String, Option<KeyEvent>)>);
 
 fn parse(text: &str) -> Result<KeyEvent, String> {
     let mut parts: Vec<_> = text.split('+').collect();
@@ -83,6 +96,10 @@ fn parse(text: &str) -> Result<KeyEvent, String> {
     Ok(normalize(KeyEvent::new(code, modifiers)))
 }
 
+fn same(a: &KeyEvent, b: &KeyEvent) -> bool {
+    a.code == b.code && a.modifiers == b.modifiers
+}
+
 fn normalize(mut key: KeyEvent) -> KeyEvent {
     if key.code == KeyCode::BackTab {
         key.code = KeyCode::Tab;
@@ -105,7 +122,7 @@ impl Default for Bindings {
         Self(
             DEFAULTS
                 .iter()
-                .map(|(name, action, key)| (name.to_string(), *action, key.to_string(), parse(key).unwrap()))
+                .map(|(name, action, key)| (name.to_string(), *action, key.to_string(), Some(parse(key).unwrap())))
                 .collect(),
         )
     }
@@ -124,19 +141,33 @@ impl Bindings {
         let value: serde_json::Value = serde_json::from_str(text).map_err(|e| format!("home keys: {}", e))?;
         let object = value.as_object().ok_or("home keys must be an object of action: key")?;
         let mut bindings = Self::default();
+        let mut set: Vec<(String, KeyEvent)> = vec![];
         for (name, value) in object {
+            let name = ALIASES.iter().find(|(old, _)| old == name).map_or(name.as_str(), |(_, new)| new);
             let entry = bindings
                 .0
                 .iter_mut()
-                .find(|(n, ..)| n == name)
+                .find(|(n, ..)| n.as_str() == name)
                 .ok_or_else(|| format!("unknown home action: {}", name))?;
             let label = value.as_str().ok_or_else(|| format!("{} needs a key string", name))?;
-            entry.3 = parse(label)?;
+            let key = parse(label)?;
+            entry.3 = Some(key);
             entry.2 = label.to_string();
+            set.retain(|(n, _)| n != name); // a name and its old name: the later stands
+            set.push((name.to_string(), key));
         }
-        for (i, (name, _, _, key)) in bindings.0.iter().enumerate() {
-            if let Some((other, ..)) = bindings.0[..i].iter().find(|(_, _, _, k)| k.code == key.code && k.modifiers == key.modifiers) {
+        // two keys the person set on one key: refused before home starts
+        for (i, (name, key)) in set.iter().enumerate() {
+            if let Some((other, _)) = set[..i].iter().find(|(_, k)| same(k, key)) {
                 return Err(format!("key conflict: {} and {}", name, other));
+            }
+        }
+        // a key the person set wins over a default: an upgrade that gives a default to their key never stops home from
+        // starting, and the action that held it by default alone stays unbound
+        for (name, _, label, key) in bindings.0.iter_mut() {
+            if !set.iter().any(|(n, _)| n == name) && key.is_some_and(|k| set.iter().any(|(_, s)| same(s, &k))) {
+                *key = None;
+                label.clear();
             }
         }
         Ok(bindings)
@@ -144,10 +175,7 @@ impl Bindings {
 
     pub fn action(&self, key: KeyEvent) -> Option<HintKey> {
         let key = normalize(key);
-        self.0
-            .iter()
-            .find(|(_, _, _, k)| k.code == key.code && k.modifiers == key.modifiers)
-            .map(|(_, a, ..)| *a)
+        self.0.iter().find(|(_, _, _, k)| k.is_some_and(|k| same(&k, &key))).map(|(_, a, ..)| *a)
     }
 
     pub fn label(&self, action: HintKey) -> &str {
@@ -177,22 +205,83 @@ impl Bindings {
 mod tests {
     use super::*;
     #[test]
-    fn preview_is_f3_so_no_typed_letter_opens_it() {
+    fn view_is_f3_so_no_typed_letter_opens_it() {
         let keys = Bindings::default();
-        assert_eq!(keys.action(KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE)), Some(HintKey::Preview));
+        assert_eq!(keys.action(KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE)), Some(HintKey::View));
         assert_eq!(keys.action(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE)), None);
-        assert_eq!(keys.label(HintKey::Preview), "F3");
+        assert_eq!(keys.label(HintKey::View), "F3");
+    }
+
+    #[test]
+    fn the_keys_are_the_function_row_and_each_is_a_name_in_help() {
+        let keys = Bindings::default();
+        for (n, action, name) in [
+            (2, HintKey::Rename, "rename"),
+            (3, HintKey::View, "view"),
+            (4, HintKey::Open, "open"),
+            (5, HintKey::Copy, "copy"),
+            (6, HintKey::Move, "move"),
+            (7, HintKey::New, "new"),
+            (8, HintKey::Trash, "trash"),
+            (9, HintKey::Actions, "actions"),
+            (10, HintKey::Conversation, "conversation"),
+        ] {
+            assert_eq!(keys.action(KeyEvent::new(KeyCode::F(n), KeyModifiers::NONE)), Some(action), "F{}", n);
+            let f = format!("F{}", n);
+            assert!(keys.help().contains(&(name, f.as_str())), "{} in help", name);
+        }
+        let ctrl = |c: char| KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL);
+        assert_eq!(keys.action(ctrl('c')), Some(HintKey::CopyPath), "Ctrl+C copies, it no longer quits");
+        assert_eq!(keys.action(ctrl('q')), Some(HintKey::Quit));
+        assert_eq!(keys.label(HintKey::CopyPath), "Ctrl+C");
+        assert_eq!(keys.action(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE)), Some(HintKey::Select));
+        assert_eq!(keys.action(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)), Some(HintKey::Right));
+    }
+
+    #[test]
+    fn a_key_the_person_set_wins_over_a_default_and_two_of_theirs_are_refused() {
+        // the README's own example once: F2 is rename's default now, and the person's F2 stands
+        let keys = Bindings::from_json(r#"{"conversation": "F2"}"#).unwrap();
+        assert_eq!(keys.action(KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE)), Some(HintKey::Conversation));
+        assert_eq!(keys.label(HintKey::Rename), "", "rename stays unbound");
+        assert!(keys.help().contains(&("rename", "")), "and help shows no key for it");
+        assert_eq!(
+            keys.action(KeyEvent::new(KeyCode::F(10), KeyModifiers::NONE)),
+            None,
+            "F10 lets go with its action"
+        );
+        // v0.125 pointed people here: check is select's old name, and nothing else moves
+        let keys = Bindings::from_json(r#"{"check": "Insert"}"#).unwrap();
+        assert_eq!(keys.action(KeyEvent::new(KeyCode::Insert, KeyModifiers::NONE)), Some(HintKey::Select));
+        assert_eq!(keys.label(HintKey::Select), "Insert");
+        assert_eq!(keys.action(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE)), None);
+        // two keys the person set on one key: refused before home starts
+        let e = Bindings::from_json(r#"{"ask": "F4", "conversation": "F4"}"#).unwrap_err();
+        assert!(e.contains("conflict") && e.contains("ask") && e.contains("conversation"), "{}", e);
+        // over any default: the person's key is theirs, the default's action unbound
+        let keys = Bindings::from_json(r#"{"ask":"Enter"}"#).unwrap();
+        assert_eq!(keys.action(parse("Enter").unwrap()), Some(HintKey::Ask));
+        assert_eq!(keys.label(HintKey::Enter), "");
+    }
+
+    #[test]
+    fn an_older_home_keys_file_keeps_working() {
+        let keys = Bindings::from_json(r#"{"preview":"F11","check":"Insert"}"#).unwrap();
+        assert_eq!(keys.label(HintKey::View), "F11", "preview is still a name for view");
+        assert_eq!(keys.action(KeyEvent::new(KeyCode::Insert, KeyModifiers::NONE)), Some(HintKey::Select));
+        assert_eq!(keys.action(KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE)), None, "the old key lets go");
+        let keys = Bindings::from_json(r#"{"view":"F12"}"#).unwrap();
+        assert_eq!(keys.label(HintKey::View), "F12");
     }
 
     #[test]
     fn remapping_and_conflicts_are_resolved_before_input() {
-        let keys = Bindings::from_json(r#"{"ask":"F4"}"#).unwrap();
-        assert_eq!(keys.action(KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE)), Some(HintKey::Ask));
+        let keys = Bindings::from_json(r#"{"ask":"F11"}"#).unwrap();
+        assert_eq!(keys.action(KeyEvent::new(KeyCode::F(11), KeyModifiers::NONE)), Some(HintKey::Ask));
         assert_eq!(keys.action(parse("Ctrl+Enter").unwrap()), None);
-        assert_eq!(keys.label(HintKey::Ask), "F4");
-        assert!(Bindings::from_json(r#"{"ask":"Enter"}"#).unwrap_err().contains("conflict"));
+        assert_eq!(keys.label(HintKey::Ask), "F11");
         assert!(Bindings::from_json(r#"{"ask":"Control+Enter"}"#).is_err());
-        assert!(Bindings::from_json(r#"{"typo":"F4"}"#).is_err());
+        assert!(Bindings::from_json(r#"{"typo":"F11"}"#).is_err());
         assert_eq!(
             keys.action(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
             Some(HintKey::PreviousControl)

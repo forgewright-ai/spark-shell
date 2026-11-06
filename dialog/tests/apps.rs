@@ -236,7 +236,7 @@ fn the_frame_is_the_dialogs_own_column_in_the_middle() {
 fn the_key_row_is_the_pages_whatever_is_lit_or_typed() {
     let mut a = app();
     let list = words(&a);
-    assert_eq!(list, "Back Esc   Details \u{2192}", "Esc and the list's own key; Enter has no chip");
+    assert_eq!(list, "Back Esc   Details F9", "Esc and the list's own key; Enter has no chip");
     a.light(2);
     assert_eq!(words(&a), list, "a row lit");
     a.set_draft("fire");
@@ -409,11 +409,7 @@ fn hidden_apps_are_a_list_of_their_own_and_never_leak_into_the_homes_search() {
         .map(|l| l.label.as_str())
         .collect();
     assert_eq!(hidden, ["foot client", "foot server"], "each a row that opens, as in the list");
-    assert_eq!(
-        words(&a),
-        "All apps Esc   Details \u{2192}",
-        "the list's keys, Esc showing all apps again (v0.124.4)"
-    );
+    assert_eq!(words(&a), "All apps Esc   Details F9", "the list's keys, Esc showing all apps again (v0.124.4)");
     pick(&mut a, Action::Launch("footclient.desktop".into()));
     assert!(a.apps_details(), "Right opens its details, where the switch is");
     act(&mut a, Action::Visibility("footclient.desktop".into()));
@@ -780,14 +776,14 @@ fn details_values_reflow_and_the_footer_keeps_its_room() {
 #[test]
 fn configured_details_key_is_drawn_and_works() {
     let mut a = app();
-    a.cfg.keys = spark_dialog::keys::Bindings::from_json(r#"{"right":"F4"}"#).unwrap();
+    a.cfg.keys = spark_dialog::keys::Bindings::from_json(r#"{"actions":"F11"}"#).unwrap();
     pick(&mut a, Action::Launch(ID.into()));
     let (b, d, _) = draw(&mut a, 60, 40);
-    let &(left, right, row, _) = d.keys.iter().find(|(_, _, _, k)| *k == HintKey::Right).expect("the Details key is drawn");
+    let &(left, right, row, _) = d.keys.iter().find(|(_, _, _, k)| *k == HintKey::Actions).expect("the Details key is drawn");
     assert!(left < right && row >= spark_dialog::ui::keys_y(40), "on the key bar at the bottom");
     let chip: String = (left..right).map(|x| b[(x, row)].symbol()).collect();
-    assert!(chip.contains("F4"), "{:?}", chip);
-    a.hint_key(HintKey::Right);
+    assert!(chip.contains("F11"), "{:?}", chip);
+    a.hint_key(HintKey::Actions);
     assert_eq!(a.apps.page, Page::Details(ID.into()));
     cleanup(&a);
 }
@@ -1011,5 +1007,21 @@ fn the_hidden_apps_are_the_lists_own_shape_under_their_categories_and_searched_b
     );
     a.set_draft("edit");
     assert!(lines(&a).iter().any(|l| l.label == "editor"), "and finds by the words");
+    cleanup(&a);
+}
+
+#[test]
+fn right_opens_no_details_and_f9_does() {
+    let mut a = app();
+    pick(&mut a, Action::Launch(ID.into()));
+    a.right();
+    assert_eq!(a.apps.page, Page::List, "Right opens nothing outside files");
+    a.hint_key(HintKey::Actions);
+    assert_eq!(a.apps.page, Page::Details(ID.into()), "F9 is the details");
+    a.left();
+    assert_eq!(a.apps.page, Page::List, "Left stays back outside files");
+    pick(&mut a, Action::Categories);
+    a.hint_key(HintKey::Actions);
+    assert_eq!(a.reply.as_ref().map(|r| r.text.as_str()), Some("no details here"));
     cleanup(&a);
 }

@@ -137,6 +137,8 @@ pub struct State {
     /// with the march once the wait is felt (dialog/DESIGN.md).
     pub pending_since: Option<std::time::Instant>,
     pub pending_name: String,
+    /// What the receipt of a copy says where the words are the asker's (files: `path copied`).
+    pub copy_said: Option<String>,
     pub serial: u64,
     /// The preferences before the last change, while Undo stands on the status row.
     pub undo: Option<Preferences>,
@@ -162,6 +164,7 @@ impl Default for State {
             pending: None,
             pending_since: None,
             pending_name: String::new(),
+            copy_said: None,
             serial: 0,
             undo: None,
             stack: vec![],
@@ -429,7 +432,7 @@ impl State {
             Action::Undo(prefs) => {
                 self.save(*prefs)?;
                 self.undo = None;
-                out.notice = Some("put back".into());
+                out.notice = Some("undone".into());
             }
             Action::Refresh => {
                 self.refreshing = true; // the read that follows gets a receipt; the first read at the home does not
@@ -447,6 +450,7 @@ impl State {
         }
         let (_, op) = self.pending.take().unwrap();
         if let Some(error) = value["error"].as_str() {
+            self.copy_said = None;
             if op == "catalog" {
                 self.failed = true;
             }
@@ -474,7 +478,7 @@ impl State {
                 self.details.insert(id, value);
             }
             "launch" => return Ok(Some(scrub(value["message"].as_str().unwrap_or("launch outcome is unavailable")))),
-            "copy" => return Ok(Some("copied".into())),
+            "copy" => return Ok(Some(self.copy_said.take().unwrap_or_else(|| "copied".into()))),
             _ => return Err("the apps answered something unknown".into()),
         }
         Ok(None)

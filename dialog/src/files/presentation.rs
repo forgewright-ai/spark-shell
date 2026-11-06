@@ -1,11 +1,24 @@
-//! Files' pages as lines, in the row shapes the dialog has everywhere: a heading muted at 2, a row with its
-//! words at 4, a value in one muted column, a key chip beside a row. Every label is lowercase; a file's
-//! name keeps its spelling.
+//! Files' pages as lines, in the row shapes the dialog has everywhere: a row with its words at 4, its key at
+//! the right, muted. Every label is lowercase; a file's name keeps its spelling.
 use super::*;
+use crate::app::HintKey;
+use crate::keys::Bindings;
 use crate::scrub::cut_words;
 
-/// The value column, as every page's.
-const VALUE_X: u16 = 26;
+/// The steps the menu writes in its own words and places (dialog/DESIGN.md, F9), or leaves to another door: attach is
+/// the prompt's, the system file manager F4's.
+const MENU_HOLDS: [&str; 10] = [
+    "files_open",
+    "files_app",
+    "files_preview",
+    "files_rename",
+    "files_copy",
+    "files_move",
+    "files_trash",
+    "files_attach",
+    "files_reveal",
+    "files_browse",
+];
 
 struct Lines {
     rows: Vec<Line>,
@@ -13,36 +26,12 @@ struct Lines {
 }
 
 impl Lines {
-    fn blank(&mut self) {
-        self.rows.push(Line::default());
-    }
-    fn heading(&mut self, label: &str) {
-        self.rows.push(Line {
-            label: label.to_lowercase(),
-            indent: 2,
-            heading: true,
-            ..Line::default()
-        });
-    }
-    fn title(&mut self, label: &str) {
-        self.rows.push(Line {
-            label: label.into(),
-            indent: 2,
-            title: true,
-            ..Line::default()
-        });
-    }
-    /// A row of the menu: its words, a value in the value column where the choice needs saying, the key that
-    /// does the same where it has one.
-    fn row(&mut self, label: &str, value: &str, action: Action, key: &str) {
-        let room = self.width.saturating_sub(VALUE_X + 2) as usize;
+    /// A row of the menu: its words, the key that does the same where it has one.
+    fn row(&mut self, label: &str, action: Action, key: &str) {
         self.rows.push(Line {
             label: cut_words(label, self.width.saturating_sub(6) as usize),
-            value: cut_words(value, room),
-            value_x: VALUE_X,
             action: Some(action),
             indent: 4,
-            value_muted: true,
             key: key.into(),
             ..Line::default()
         });
@@ -60,31 +49,19 @@ fn asks_name(call: &Call) -> bool {
 }
 
 /// The page narrowed to the rows the typed words name (dialog/DESIGN.md: typing searches the list in front
-/// of you): a row stays when its words hold every word typed, a heading only with a row under it, and with
-/// no row left the page says so, muted. A form's page keeps its title: the prompt holds the name there.
+/// of you): a row stays when its words hold every word typed, and with no row left the page says so, muted.
 fn narrowed(rows: Vec<Line>, query: &str) -> Vec<Line> {
     let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
-    if words.is_empty() || rows.iter().any(|r| r.title) {
+    if words.is_empty() {
         return rows;
     }
-    let mut out: Vec<Line> = vec![];
-    for r in rows {
-        if r.action.is_some() {
+    let mut out: Vec<Line> = rows
+        .into_iter()
+        .filter(|r| {
             let label = r.label.to_lowercase();
-            if words.iter().all(|w| label.contains(w.as_str())) {
-                out.push(r);
-            }
-        } else if r.heading {
-            if out.last().is_some_and(|l| l.action.is_some()) {
-                out.push(Line::default());
-            }
-            out.push(r);
-        }
-    }
-    // a heading with nothing under it goes, with the air before it
-    while out.last().is_some_and(|l| l.heading || l.label.is_empty()) {
-        out.pop();
-    }
+            r.action.is_some() && words.iter().all(|w| label.contains(w.as_str()))
+        })
+        .collect();
     if out.is_empty() {
         out.push(Line {
             label: "no action by these words".into(),
@@ -97,135 +74,127 @@ fn narrowed(rows: Vec<Line>, query: &str) -> Vec<Line> {
 }
 
 impl State {
-    /// The page as lines, narrowed to the words typed; `check_key` is the key that checks a row, as a chip
-    /// beside check.
-    pub fn lines(&self, width: u16, check_key: &str, query: &str) -> Vec<Line> {
-        narrowed(self.page_lines(width, check_key), query)
+    /// The page as lines, narrowed to the words typed; `keys` names the key a row's shortcut is bound to. A form has
+    /// none: the list stands behind it.
+    pub fn lines(&self, width: u16, keys: &Bindings, query: &str) -> Vec<Line> {
+        if self.form() {
+            return vec![];
+        }
+        narrowed(self.page_lines(width, keys), query)
     }
 
-    fn page_lines(&self, width: u16, check_key: &str) -> Vec<Line> {
+    /// Whether an actions page would hold a row to act on.
+    pub fn offers(&self, a: &Actions, keys: &Bindings) -> bool {
+        let mut l = Lines { rows: vec![], width: 60 };
+        self.actions(&mut l, a, keys);
+        l.rows.iter().any(|r| r.action.is_some())
+    }
+
+    fn page_lines(&self, width: u16, keys: &Bindings) -> Vec<Line> {
         let mut l = Lines { rows: vec![], width };
         match &self.page {
-            Page::List => {}
-            Page::Actions(a) => self.actions(&mut l, a, check_key),
+            Page::List | Page::Form(_) => {}
+            Page::Actions(a) => self.actions(&mut l, a, keys),
             Page::Conflict(c) => {
-                let (keep, replace) = match c.verb {
-                    Verb::Move => (format!("moved as {}", c.kept_name()), "the one there goes to the trash"),
-                    _ => (format!("the copy is named {}", c.kept_name()), "the one there goes to the trash"),
-                };
-                l.row("skip", "", Action::Answer(Answer::Skip, false), "");
-                l.row("keep both", &keep, Action::Answer(Answer::Keep, false), "");
-                l.row("replace", replace, Action::Answer(Answer::Replace, false), "");
-                let others = c.remaining().saturating_sub(1);
-                if others > 0 {
-                    l.blank();
-                    l.heading(&if others == 1 {
-                        "the other too".to_string()
-                    } else {
-                        format!("the {} others too", others)
-                    });
-                    l.row("skip all", "", Action::Answer(Answer::Skip, true), "");
-                    l.row("keep both for all", "", Action::Answer(Answer::Keep, true), "");
-                    l.row("replace all", "", Action::Answer(Answer::Replace, true), "");
+                // one list; the `all` rows only while more remain
+                let more = c.remaining() > 1;
+                l.row("replace", Action::Answer(Answer::Replace, false), "");
+                if more {
+                    l.row("replace all", Action::Answer(Answer::Replace, true), "");
                 }
+                l.row("skip", Action::Answer(Answer::Skip, false), "");
+                if more {
+                    l.row("skip all", Action::Answer(Answer::Skip, true), "");
+                }
+                l.row("keep both", Action::Answer(Answer::Keep, false), "");
             }
-            Page::Form(f) => l.title(&f.words),
         }
         l.rows
     }
 
-    fn actions(&self, l: &mut Lines, a: &Actions, check_key: &str) {
-        // copy and move: to the other pane while two stand, else the folder is picked as today
-        let transfer = |l: &mut Lines, call: &Call, verb: Verb| match &a.other {
-            Some(place) => l.row(
-                &format!("{} to {}", verb.tool().trim_start_matches("files_"), place),
-                "",
-                Action::Transfer(verb),
-                "",
-            ),
-            None => l.row(&words_of(call), "", Action::Step(call.clone()), ""),
-        };
+    /// The menu (dialog/DESIGN.md, F9): the row's actions in one order whatever the provider's, each with its key at
+    /// the right; what the provider offers beyond them (a trashed file's restore, its delete for good) after them; a
+    /// blank row; the folder's.
+    fn actions(&self, l: &mut Lines, a: &Actions, keys: &Bindings) {
+        let k = |h: HintKey| keys.label(h).to_string();
         if !a.checked.is_empty() {
-            // the checked set's: copy, move and trash act on every checked file in the list's order
-            let step_of = |verb: Verb| {
-                a.checked
-                    .iter()
-                    .find_map(|r| r.more.iter().chain(r.tool.iter()).find(|c| c.name == verb.tool()).cloned())
-            };
-            for verb in [Verb::Move, Verb::Copy] {
-                match (step_of(verb), &a.other) {
-                    (_, Some(place)) => l.row(
-                        &format!("{} to {}", verb.tool().trim_start_matches("files_"), place),
-                        "",
-                        Action::Transfer(verb),
-                        "",
-                    ),
-                    (Some(c), None) => l.row(&words_of(&c), "", Action::Transfer(verb), ""),
-                    (None, None) => {}
-                }
+            let holds = |verb: Verb| a.checked.iter().any(|r| r.tool.iter().chain(r.more.iter()).any(|c| c.name == verb.tool()));
+            if holds(Verb::Copy) {
+                l.row("copy", Action::Transfer(Verb::Copy), &k(HintKey::Copy));
             }
-            if let Some(c) = step_of(Verb::Trash) {
-                l.row(&words_of(&c), "", Action::Transfer(Verb::Trash), "");
+            if holds(Verb::Move) {
+                l.row("move", Action::Transfer(Verb::Move), &k(HintKey::Move));
             }
-            l.row("uncheck all", "", Action::UncheckAll, "");
+            l.row("copy path", Action::CopyPath, &k(HintKey::CopyPath));
+            if holds(Verb::Trash) {
+                l.row("trash", Action::Transfer(Verb::Trash), &k(HintKey::Trash));
+            }
+            l.row("deselect all", Action::UncheckAll, "");
         } else if let Some(row) = &a.row {
-            if let Some(c) = &row.children {
-                l.row("open", "", Action::Open(c.clone()), "");
-            }
-            for call in row.tool.iter().chain(row.more.iter()) {
-                if call.name == "files_browse" && row.children.is_some() {
-                    continue; // a folder's open is the dialog's own; the system file manager is the folder's row below
-                }
-                if call.name.ends_with("_preview") {
-                    l.row(&words_of(call), "", Action::Step(call.clone()), "");
-                } else if asks_name(call) {
-                    l.row(&words_of(call), "", Action::Ask(call.clone(), words_of(call)), "");
-                } else if call.name == Verb::Copy.tool() {
-                    transfer(l, call, Verb::Copy);
-                } else if call.name == Verb::Move.tool() {
-                    transfer(l, call, Verb::Move);
-                } else {
-                    l.row(&words_of(call), "", Action::Step(call.clone()), "");
-                }
-            }
-            if checkable(row) {
-                let word = if self.checked(&row.id) { "uncheck" } else { "check" };
-                l.row(word, "", Action::Check(row.id.clone()), check_key);
-            }
+            self.row_actions(l, row, keys);
         }
-        if !l.rows.is_empty() {
-            l.blank();
-        }
-        l.heading("this folder");
-        for call in &a.folder {
-            if call.name == "files_browse" {
-                continue; // after two panes, as the mock has it
-            }
-            if asks_name(call) {
-                l.row(&words_of(call), "", Action::Ask(call.clone(), words_of(call)), "");
+        let start = l.rows.len();
+        for call in a.folder.iter().filter(|c| c.name != "files_browse") {
+            let (word, key) = match call.name.as_str() {
+                "files_new_folder" => ("new folder".to_string(), k(HintKey::New)),
+                "files_new_text" => ("new file".to_string(), String::new()),
+                _ => (words_of(call), String::new()),
+            };
+            let action = if asks_name(call) {
+                Action::Ask(call.clone(), word.clone())
             } else {
-                l.row(&words_of(call), "", Action::Step(call.clone()), "");
-            }
+                Action::Step(call.clone())
+            };
+            l.row(&word, action, &key);
         }
-        let two = a.other.is_some() || self.other.is_some();
-        l.row(if two { "one pane" } else { "two panes" }, "", Action::Panes(!two), "");
-        let browse = a.folder.iter().find(|c| c.name == "files_browse").cloned().or_else(|| {
-            a.browse.as_ref().map(|path| {
-                let mut arguments = serde_json::Map::new();
-                arguments.insert("path".into(), serde_json::Value::String(path.clone()));
-                Call {
-                    name: "files_browse".into(),
-                    arguments,
-                    ask: vec![],
-                    said: Some("open in the system file manager".into()),
-                    pick: None,
-                    value: None,
-                    children: None,
-                }
-            })
-        });
-        if let Some(call) = browse {
-            l.row(&words_of(&call), "", Action::Step(call), "");
+        if self.other.is_some() {
+            l.row("close pane", Action::ClosePane, "");
+        }
+        if start > 0 && l.rows.len() > start {
+            l.rows.insert(start, Line::default());
+        }
+    }
+
+    fn row_actions(&self, l: &mut Lines, row: &Row, keys: &Bindings) {
+        let k = |h: HintKey| keys.label(h).to_string();
+        let step = |name: &str| row.tool.iter().chain(row.more.iter()).find(|c| c.name == name);
+        let enter = k(HintKey::Enter);
+        if let Some(c) = &row.children {
+            l.row("open", Action::Open(c.clone()), &enter);
+        } else if let Some(t) = row.tool.as_ref() {
+            let word = if t.name == "files_open" { "open".to_string() } else { words_of(t) };
+            l.row(&word, Action::Step(t.clone()), &enter);
+        }
+        if let Some(c) = step("files_app") {
+            l.row("open in app", Action::Step(c.clone()), &k(HintKey::Open));
+        }
+        if row.page.is_some() {
+            l.row("view", Action::View, &k(HintKey::View));
+        }
+        if let Some(c) = step("files_rename") {
+            l.row("rename", Action::Ask(c.clone(), "rename".into()), &k(HintKey::Rename));
+        }
+        if step(Verb::Copy.tool()).is_some() {
+            l.row("copy", Action::Transfer(Verb::Copy), &k(HintKey::Copy));
+        }
+        if step(Verb::Move.tool()).is_some() {
+            l.row("move", Action::Transfer(Verb::Move), &k(HintKey::Move));
+        }
+        if path_of(row).is_some() {
+            l.row("copy path", Action::CopyPath, &k(HintKey::CopyPath));
+        }
+        if step(Verb::Trash.tool()).is_some() {
+            l.row("trash", Action::Transfer(Verb::Trash), &k(HintKey::Trash));
+        }
+        if checkable(row) {
+            l.row("select", Action::Check(row.id.clone()), &k(HintKey::Select));
+        }
+        for call in row.more.iter().filter(|c| !MENU_HOLDS.contains(&c.name.as_str())) {
+            if asks_name(call) {
+                l.row(&words_of(call), Action::Ask(call.clone(), words_of(call)), "");
+            } else {
+                l.row(&words_of(call), Action::Step(call.clone()), "");
+            }
         }
     }
 }
