@@ -16,7 +16,7 @@ selected row, whose bar is a background that text cannot show.
 
 Every view is one column in the middle of the window: 60 cells for
 home, apps, help, about and the conversation, up to 120 for a list
-with columns, the whole window for a preview. Top and bottom have the
+with columns, the whole window for a view. Top and bottom have the
 same shape, a strip, a rule, a row of air, then content:
 
     row 0   the header, a band across the window: back at the left where
@@ -87,7 +87,7 @@ runs, as talk's is.
 
 The key bar holds the view's keys alone: what Esc does here, close at
 home and back everywhere else, then what the list adds (details,
-actions, preview, change, month, history). A key chip is a helper and
+actions, view, change, month, history). A key chip is a helper and
 no control: never lit, never in focus, never a Tab stop; a click on it
 sends the key. Enter has no chip in a view's key bar. A mode that
 waits on Enter for something other than the selection (run the
@@ -95,8 +95,9 @@ commands spark planned, apply a model, land a step in this folder)
 says so with its chip, as a question says what it takes.
 
 Back has more doors than its chip (v0.124.3): Esc; with nothing typed,
-Left, since Right opens a level, and Backspace, as a launcher's does;
-and a click on the header's `< back`, or on its place name. None of
+Left, outside files, where it is the left pane, and Backspace, as a
+launcher's does; and a click on the header's `< back`, or on its place
+name. None of
 them closes the dialog from home: that is Esc's alone.
 
 The wheel moves the bar a row at a time in a list, as the arrows do,
@@ -121,9 +122,8 @@ Two kinds of row, told apart by what they are:
 - A menu's row acts on one click: home's places, settings' rows, a
   choice among choices, an action or a preference on a details page.
 - An object's row is selected by a click: an app, a file, a folder, a
-  note, a window, a layout. Enter or a second click acts on it. Right
-  arrow opens its details or its actions, F3 previews it, Space
-  checks a file (v0.125.1). In apps only an app's own row is an object: the
+  note, a window, a layout. Enter or a second click acts on it. F9
+  opens its details or its actions, F3 views it, Space selects a file. In apps only an app's own row is an object: the
   managing rows at the list's end open pages or run, so they are a
   menu's and act on one
   click (v0.124.4).
@@ -275,10 +275,10 @@ column's end and whole on the status row and in the details.
       firefox . browse the world wide web . web . application default
       --------------------------------------------------------
 
-      back  Esc    details  ->
+      back  Esc    details  F9
 
 One click selects an app and the status row says what it is; a second
-click or Enter launches it; Right arrow opens its details. While a
+click or Enter launches it; F9 opens its details. While a
 launch is felt the status row reads `opening firefox` with the march,
 then `firefox opened`, or the refusal with its reason.
 
@@ -318,14 +318,14 @@ that resolves them is the README's, not a note above the list.
 ## Files
 
 The same kind of list as apps. One click selects, Enter or a second
-click opens, F3 previews, Space checks, Right arrow opens the actions.
+click opens, F3 views, Space selects, F9 opens the actions.
 The status
 row gives the line the narrow columns cannot: name, kind, size, the
 date with its time, the place. Names keep their spelling. A folder is
 told by its item count where a file has a size, and by its kind
-column where there is one. F3 previews the row the bar is on, words
-typed or not: it is a function key, so typing never opens a preview,
-and p is a letter of the search as every letter is.
+column where there is one. F3 views the row the bar is on, words typed
+or not: it is a function key, so typing never opens a view, and v is a
+letter of the search as every letter is.
 
         < back                   files . ~                       x   <- header band
 
@@ -356,7 +356,7 @@ and p is a letter of the search as every letter is.
       notes.md . Markdown . 2 KB . 4 Nov 09:14 . ~
       --------------------------------------------------------
 
-      back  Esc    actions  ->    preview  F3
+      back  Esc    actions  F9    view  F3
 
 At 120 cells the kind and the place come back as columns; nothing
 else changes.
@@ -373,115 +373,146 @@ screen at once, as everywhere; `files find NAME` and `files say WORDS`
 search below it, as lists of their own.
 
 The folder's own row stands last, muted, as drawn above: a summary.
-Enter and Right on it open the folder's actions. In a subfolder `..`
-stands first and opens the folder above, as Esc, Left and Backspace
-do with nothing typed.
+Enter and F9 on it open the folder's actions. In a subfolder `..`
+stands first and opens the folder above, as Esc and Backspace do with
+nothing typed.
 
-### Several files: a check
+### Keys
 
-Space checks the lit file or folder for one operation and moves the
+One key, one meaning (2026-11-05). The function keys are the file
+managers' own: F3 view and F5 to F8 Norton Commander's, F2 rename as in
+Windows and the Linux file managers, F9 the menu as in Norton and mc.
+Each is a named action, listed in help and free to rebind. A key you
+set wins over a default: the action that held it by default goes
+unbound, so an old `home-keys.json` never stops home from opening.
+
+      F2      rename                 a row that can be renamed
+      F3      view                   a row with a page
+      F4      open in app            a file, a folder
+      F5      copy                   the lit file or the selection
+      F6      move                   the lit file or the selection
+      F7      new folder             the active pane
+      F8      trash                  the lit file or the selection
+      F9      actions, details       every list, the whole dialog
+      F10     the conversation       the whole dialog
+      Space   select                 files
+      Ctrl+C  copy path              files
+      Ctrl+Q  quit                   the whole dialog
+
+Left and Right are the panes. Right goes to the right pane, and in one
+pane opens the second and goes to it; Left goes to the left pane and
+does nothing in one pane; at the edge both stay put. With words typed
+they move the cursor in the prompt. Back in files is Esc, Backspace
+and the header's back. Ctrl+Tab is the other pane, opening the second
+where there is none.
+
+F4 hands the file to the app the system assigns to its kind: a picture
+to the image viewer, a text file to the system's text app, a folder to
+the system file manager. Enter stays what it was: a folder opens here,
+a text file opens in your editor, any other file in its app. Ctrl+C
+copies the lit row's path, or the selection's, one path a line.
+
+The key bar is the same in one pane and two:
+
+      back  Esc   nav  <- ^ v ->   ren  F2   view  F3   open  F4
+      copy  F5   move  F6   new  F7   trash  F8   actions  F9
+
+Two lines at 60 cells, one at 120.
+
+### Several files: select
+
+Space selects the lit file or folder for one operation and moves the
 bar down a row, as Norton Commander's Insert did (v0.125.1: Insert is
 far on a full keyboard and a chord on a laptop's; ranger, nnn and lf
-check with Space); Space on a checked row unchecks it. With words
-typed Space is a letter of the search: Down first, then Space checks. A check is a sign cell before the name, drawn as a checked
+select with Space); Space on a selected row deselects it. With words
+typed Space is a letter of the search: Down first, then Space selects.
+A selected row wears a sign cell before the name, drawn as a checked
 list draws its picks: the rows' words move to the sign's right while
-any row is checked, and back when none is. There is no other mark: no
-color on the name, no bold. The status row says the count and the
-checked files' size while checks stand, in place of the lit row's line.
-Esc with nothing typed clears the checks first; the next Esc goes back.
-A check keeps to its row by the row's own identity through a filter and
-a refresh, and the pane's checks go when it opens another folder.
+any row is selected, and back when none is. No color on the name, no
+bold. The status row says the count and the size while a selection
+stands, in place of the lit row's line. Esc with nothing typed clears
+the selection first; the next Esc goes back. A selection keeps to its
+rows by their own identity through a filter and a refresh, and goes
+when the pane opens another folder.
 
-      home
-          documents               12 items
-        v notes.md                    2 KB   4 Nov
-          todo.txt                    1 KB   2025            <- selection bar
-        v report.pdf                4.5 MB   today
+      ~/documents                 | ~/pictures
+          ..                      |   ..
+          drafts          3 items |   2024            12 items
+        v notes.md           2 KB |   holiday.jpg       4.8 MB
+        v report.pdf       4.5 MB |   photo-0412.jpg    4.8 MB
+          todo.txt           1 KB |                              <- selection bar on todo.txt
+                                  |   3 items . 9.6 MB
+          4 items . 4.5 MB        |
 
-          this folder . 2 folders . 3 files . 4.5 MB
-
-      2 checked . 4.5 MB
+      2 selected . 4.5 MB
       --------------------------------------------------------
 
-      back  Esc    actions  ->    preview  F3
-
-`v` stands for the check sign, at the row column, the words after it
-at the sign's right. With checks standing, Right and the
-actions chip open the actions of the checked set, whichever row is
-lit, and copy, move and trash act on every checked file in the list's
-order.
+`v` stands for the sign, at the row column, the words after it. With a
+selection standing F5, F6, F8 and Ctrl+C act on every selected row in
+the list's order, whichever row is lit, and F9 opens the selection's
+actions.
 
 ### The actions
 
-Right on a row opens a page of its own, a menu: its rows act on one
-click. The header names the row. The row's actions come first, then
-the folder's under a heading, so a new folder is in reach from any row
-of a folder of thousands. `check` carries its key as a chip beside it,
-the one key chip on a row. The rows stand in the provider's order.
-Typing narrows the page to the rows the words name, as typing
-searches every list, the best match lit so Enter acts on it; words
-that name no row leave `no action by these words`, muted.
+F9 opens the lit row's actions: its rows act on one click, and each
+says its key at the right, muted, as a menu does. The header names the
+row. In two panes the menu draws inside the active pane, under its
+path, and the other pane stays on screen; in one pane it takes the
+list's place. The row's actions come first, then the folder's after a
+row of air, so a new folder is in reach from any row of a folder of
+thousands. Typing narrows the menu to the rows the words name, the
+best match lit so Enter acts on it; words that name no row leave `no
+action by these words`, muted.
 
-      < back           files . notes.md                       x
+      ~/documents                 | ~/pictures
+        open                Enter |   ..                         <- selection bar on open
+        open in app            F4 |   2024            12 items
+        view                   F3 |   holiday.jpg       4.8 MB
+        rename                 F2 |   photo-0412.jpg    4.8 MB
+        copy                   F5 |
+        move                   F6 |   3 items . 9.6 MB
+        copy path          Ctrl+C |
+        trash                  F8 |
+        select              Space |
+                                  |
+        new folder             F7 |
+        new file                  |
+        close pane                |
 
-      > search or ask
-
-        attach   gemma4-e4b   talk
-      ---------------------------<*>--------------------------
-
-        open                                                  <- selection bar
-        preview
-        attach to the next request
-        rename
-        move to a folder
-        copy to a folder
-        trash
-        check                                         Space
-
-      this folder
-        new folder
-        new text file
-        two panes
-        open in the system file manager
-
-
-      --------------------------------------------------------
-
-      back  Esc
-
-A folder's row has open, rename, move, copy, trash and check; a file's
-has `reveal in the system file manager` after attach where one is
-configured. `..` and the folder's own row open the folder's actions
-alone. With checks
-standing the page is the checked set's: the header reads `files . 2
-checked`, the rows copy, move, trash and `uncheck all`, then the
-folder's. `open in the system file manager` stands only where one is
-configured.
+The rows follow the provider's steps: `attach to the next request`
+after view, `reveal in the system file manager` where one is
+configured. A folder's row has open, open in app, rename, copy, move,
+copy path, trash and select. `..` and the folder's own row open the
+folder's actions alone. With a selection the header reads `files . 2
+selected`, the rows copy, move, copy path, trash and `deselect all`,
+then the folder's. `open in the system file manager` stands only where
+one is configured, and `close pane` only in two panes.
 
 ### Two panes
 
-`two panes` in the folder's actions opens a second pane beside the
-first, showing the same folder; `one pane` closes it. Each pane keeps
+Right opens the second pane beside the first, showing the same folder,
+and goes to it; `close pane` in the actions closes it. Each pane keeps
 its own folder, selection, scroll and typed words. One pane is active:
 it has the selection bar, its path on its first row in the text color,
 and the header names its place. The other pane has no bar and its path
-is muted: nothing else tells them apart, no accent, no frame. The
-status row is the active pane's. Ctrl+Tab makes the other pane active,
-as Tab did in Norton Commander and Tab here is the prompt's; a click on
-a row of the other pane makes it active and selects that row, and a
-second click opens it; a click on its path makes it active too. The
-key bar adds `pane  Ctrl+Tab` while two panes stand. F3 previews the
-active pane's lit file in the whole window and Esc comes back to the
-panes as they were. Opening a folder, going back, typing and checking
-act in the active pane alone.
+is muted. A line stands between them, in the rule's color. The status
+row is the active pane's. A click on a row of the other pane makes it
+active and selects that row, and a second click opens it; a click on
+its path makes it active too. F3 views the active pane's lit file in
+the whole window and Esc comes back to the panes as they were. Opening
+a folder, going back, typing and selecting act in the active pane
+alone.
 
-At 60 cells each pane is 30: the name cut in its middle, its size or
-its count, the size column lined up after the widest name as the list
-lines its columns up, and the key bar's `pane  Ctrl+Tab` wrapped whole
-to the bar's second line. At 120 each pane is 60, the list drawn above. Below 60 cells
-the active pane alone is drawn and the other waits, nothing said;
-`two panes` asked in such a window is refused: `two panes need a window
-60 cells wide`.
+The window never resizes for a pane (2026-11-05). In the normal window
+the panes are 29 and 30 cells with the line between them: the name cut
+in its middle, the size or the count at the pane's right edge, no date
+column, the folder's summary short (`4 items . 4.5 MB`). Super+f gives
+120 cells, panes of 59 and 60, the date after the size and the summary
+whole. Below 60 cells the active pane alone is drawn and the other
+waits, nothing said; Right in such a window is refused: `two panes need
+a window 60 cells wide`. In two panes your home shows the folder alone:
+no `home` heading and no `recent`, whose files are in other folders.
+One pane keeps them.
 
       < back          files . ~/documents                     x
 
@@ -490,46 +521,43 @@ the active pane alone is drawn and the other waits, nothing said;
         attach   gemma4-e4b   talk
       ---------------------------<*>--------------------------
 
-      ~/documents                   ~/pictures
-        ..                            ..
-        drafts         3 items        2024          120 items
-        notes.md          2 KB        holiday.jpg     4.8 MB
-        todo.txt          1 KB        photo-0412.jpg  4.8 MB
-        this folder . 1 fol...        this folder . 1 fol...
+      ~/documents                 | ~/pictures
+        ..                        |   ..
+        drafts            3 items |   2024            12 items
+        notes.md             2 KB |   holiday.jpg       4.8 MB   <- selection bar on notes.md
+        report.pdf         4.5 MB |   photo-0412.jpg    4.8 MB
+        todo.txt             1 KB |
+                                  |   3 items . 9.6 MB
+        4 items . 4.5 MB          |
 
-
-      notes.md . Markdown . 2 KB . 4 Nov 09:14 . ~/documents
+        notes.md . Markdown . 2 KB . 4 Nov 09:14 . ~/documents
       --------------------------------------------------------
+      back  Esc   nav  <- ^ v ->   ren  F2   view  F3   open  F4
+      copy  F5   move  F6   new  F7   trash  F8   actions  F9
 
-      back  Esc   actions  ->   preview  F3   pane  Ctrl+Tab
-
-The bar is on `todo.txt` in the left pane. At 120 cells, the left pane
-`~/documents` at 60 and the right `~/pictures` at 60, each pane the
-list the page draws for a folder: name, size or count, date.
-
-In two panes copy and move go to the other pane's folder, and the
-action says where: `copy to ~/pictures`, `move to ~/pictures`. The
-other pane on the same folder, on the trash or on a search refuses:
-`the other pane shows this folder: open another there`, `the other
-pane is not a folder`. In one pane `copy to a folder` and `move to a
-folder` pick the folder as today: open folders until the right one,
-Enter on the row that lands it here. After a copy or a move the other
-pane reads its folder again, so the result is seen.
+In two panes F5 and F6 go to the other pane's folder. The other pane on
+the same folder, on the trash or on a search refuses: `the other pane
+shows this folder: open another there`, `the other pane is not a
+folder`. In one pane they pick the folder: open folders until the right
+one, Enter on the row that lands it here. After a copy or a move the
+other pane reads its folder again, so the result is seen.
 
 ### The operation and its receipt
 
-One file goes through the provider's step as today, its receipt on the
-status row with `undo`. Several checked files run one after another,
-in the list's order. While one is felt, a third of a second in, the
-status row shows the march with the file and the count:
+F5, F6 and F8 act at once, with no question: the change applies and
+`undo` stands on the status row. The prompt never confirms anything;
+Enter submits what is typed there. One file goes through the provider's
+step, its receipt on the status row. Several selected files run one
+after another, in the list's order. While one is felt, a third of a
+second in, the status row shows the march with the file and the count:
 
       copying photo-0412.jpg . 2 of 5
 
 Then one receipt for the whole, with the real counts, and `undo` that
 takes the whole back, newest first:
 
-      5 copied to ~/pictures . 12.4 MB                    undo
-      3 of 5 moved to ~/pictures, 2 refused: notes.md is there already
+      5 files copied to ~/pictures                        undo
+      3 of 5 moved to ~/pictures, 2 refused: notes.md already exists
       2 of 5 trashed, 3 not: stopped                      undo
 
 Esc while files are being copied, moved or trashed stops after the
@@ -537,55 +565,54 @@ file under way, wherever you are, and the receipt says what was done;
 the x does the same and the dialog stays open, so no transfer ends
 with the window. The next Esc or x closes. A transfer goes on while
 you look at home or apps. Typed `undo` at the prompt takes the last
-change back too. The checks clear once the operation ends.
+change back too. The selection clears once the operation ends.
 
-### A conflict: a page of choices
+### When the name exists
 
 Before a copy or a move starts, the names already in the destination
-are read from its rows. Each conflict is a page, a menu, never a
-message box; the second column says what the choice does, muted:
+are read from its rows. Each one stops the operation on a list of
+choices inside the active pane, a menu, never a message box, with the
+other pane in view; the header says what happened:
 
-      < back     files . notes.md is in ~/pictures already    x
+      < back          files . notes.md already exists         x
 
       > search or ask
 
         attach   gemma4-e4b   talk
       ---------------------------<*>--------------------------
 
-        skip                                                  <- selection bar
-        keep both              the copy is named notes 2.md
-        replace                the one there goes to the trash
-
-      the 2 others too
-        skip all
-        keep both for all
-        replace all
-
+      ~/documents                 | ~/pictures
+        replace                   |   ..                         <- selection bar on replace
+        replace all               |   2024            12 items
+        skip                      |   holiday.jpg       4.8 MB
+        skip all                  |   notes.md            1 KB
+        keep both                 |   photo-0412.jpg    4.8 MB
+                                  |
 
       --------------------------------------------------------
 
-      back  Esc
+      cancel  Esc
 
-The second group stands only while more conflicts remain. Esc lets the
-operation go and nothing is said: Esc said it. A replaced file is in
-the trash and the receipt says so; a conflict the rows could not show
-(a file past the first page of a large folder, a hidden one) is refused
+`replace all` and `skip all` stand only while more names remain. Esc
+cancels the operation and nothing is said. A replaced file is in the
+trash and the receipt says so; `keep both` numbers the new one (`notes
+2.md`) and the receipt names it. A conflict the rows could not show (a
+file past the first page of a large folder, a hidden one) is refused
 by the provider with its reason and the operation goes on with the
 rest.
 
 ### A form typed in the prompt
 
-Rename, new folder and new text file take their words in the prompt,
-as apps' forms do: the placeholder says what to type (`the new name`,
-`a name for the folder`, `a name for the text file`), the key bar says
-`let go  Esc   save  Enter`, Enter saves and Esc lets it go. Rename
-starts with the name as it is, so a letter can be changed. The header
-names the form: `files . rename`, `files . new folder`, `files . new
-text file`.
+Rename, new folder and new file take their words in the prompt, as
+apps' forms do, and the panes stay on screen: the placeholder says what
+to type (`new name`, `folder name`, `file name`), the key bar says
+`cancel  Esc   save  Enter`, Enter saves and Esc cancels. Rename starts
+with the name as it is, so a letter can be changed. The header names
+the form: `files . rename`, `files . new folder`, `files . new file`.
 
 ### Not in v0
 
-Select all and checks by pattern; sorting other than folders first,
+Select all and selecting by pattern; sorting other than folders first,
 then by name; a cancel inside one large file (Esc stops after it); a
 percentage while totals are unknown; archive contents.
 
@@ -599,7 +626,7 @@ top of help; `apps . web`, `apps . firefox`, `files . ~` and
 ## Help
 
 One list by subject, searchable, scrolling: `in home` and `in a
-preview` are the dialog's keys as bound now, a sentence each;
+view` are the dialog's keys as bound now, a sentence each;
 `windows`, `workspaces` and `the desktop` are the desktop's, as the
 about provider sends them; `at the prompt` is the words typed there. A
 row is what you do, its key a chip at the right where the rows' arrows
@@ -621,15 +648,15 @@ change. Home's column is how many keys it lists.
         back a level; at home, close                       Esc
         ask spark the words                         Ctrl+Enter   <- selection bar
         a new line in the prompt                   Shift+Enter
-        the conversation, and back                          F2
+        the conversation, and back                         F10
         the prompt's tools, one to the next                Tab
-        a row's preview                                     F3
-        a row's actions or details                       Right
-        check a file, and the next                       Space
+        a row's view                                        F3
+        a row's actions or details                          F9
+        select a file, and the next                      Space
         the other pane                                Ctrl+Tab
         a page up, a page down                PageUp  PageDown
 
-      in a preview
+      in a view
         bigger, smaller, as it fits                    +  -  0
         the page before, the page after                   <  >
 
@@ -784,7 +811,7 @@ workspace, and a `v` before a pick for its check.
       foot . btop . workspace 2 . floating
       --------------------------------------------------------
 
-      back  Esc    actions  ->    preview  F3
+      back  Esc    actions  F9    view  F3
 
 A heading names a workspace by its number, the key, and the bar's
 symbol, what you see; with numbered workspaces on, the number alone. A
@@ -798,7 +825,7 @@ reads `workspace . 2 <s>` or `workspace . layouts`, Esc's chip reads
 
 The header says what the place holds: `workspace . 4 windows`,
 `workspace . no windows`, `workspace . no desktop`. The bar starts on
-the window that was in front, so Right acts on what you were using.
+the window that was in front, so F9 acts on what you were using.
 
 A window's row is its app's name and its title, muted, both lowercase;
 two windows of one app differ by title. A window in sway's scratchpad
@@ -808,8 +835,8 @@ window's placement and a layout's reason come back as columns; nothing
 else changes.
 
 Only a window's row and a layout's row are objects: one click selects,
-Enter or a second click puts it in front or opens it, Right opens its
-page, F3 its preview. Capture, arrange, save and `also open` are a
+Enter or a second click puts it in front or opens it, F9 opens its
+page, F3 its view. Capture, arrange, save and `also open` are a
 menu's rows and act on one click.
 
 A window's page keeps to 60 cells at any width. Its rows are a menu's;
@@ -875,7 +902,7 @@ live, since it sets the default. With no sway the header says `no
 desktop`, the layouts stand alone, and the selected one's line ends
 `opens in tmux`: no note stands over the list.
 
-Saved sizes and splits, a picture of the window in its preview,
+Saved sizes and splits, a picture of the window in its view,
 renaming a workspace and acting on several windows at once wait.
 
 ## Outside this design

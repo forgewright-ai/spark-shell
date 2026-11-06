@@ -1,5 +1,87 @@
 # Changelog
 
+## v0.128
+
+Two panes and the dialog's keys, reworked by the owner's decisions of
+2026-11-05 on `dialog/DESIGN.md`. His rules: one key, one meaning;
+simple and industry standard; no invented words.
+
+- One key, one meaning, and the function keys are the file managers'
+  own. F2 renames, as in Windows and every Linux file manager, on any
+  row with a rename step; elsewhere it says `nothing to rename here`.
+  F3 views, F5 copies, F6 moves, F7 makes a new folder and F8 trashes,
+  where Norton Commander had them. F4, Norton's edit, opens the file in
+  the app the system assigns. F9 opens the actions, the menu as in
+  Norton and mc. F10 is the conversation, which gave F2 up. Each is a
+  named action in `home-keys.json`, listed in help. The key bar says
+  them in one order in one pane and two: `back`, `nav`, `ren`, `view`,
+  `open`, then `copy`, `move`, `new`, `trash`, `actions`, two lines at
+  60 cells and one at 120.
+- Right and Left are the panes in files. Right goes to the right pane,
+  and in one pane opens the second and goes to it; Left goes to the
+  left pane and does nothing in one pane; at the edge both stay put;
+  with words typed they move the cursor in the prompt. So Left is no
+  longer back in files: back there is Esc, Backspace and the header's
+  back. Outside files Left stays back. Ctrl+Tab stays: the other pane,
+  opening the second where there is none.
+- F9 opens `actions`, `details` in apps, in the whole dialog: notes,
+  layouts, reminders, the workspace, a network, a device, a drive.
+  Right no longer opens them anywhere. A value row, the calendar's
+  months and the view's pages and seek keep their arrows.
+- `view` is the word for preview in the whole dialog: the key bar, the
+  header (`view . ~/documents`), the menu row, help's `in a view`. The
+  named action is `view`.
+- An old `home-keys.json` keeps working: `preview` and `check` are read
+  as `view` and `select`, and a key you set wins over a default, so the
+  action that held it by default goes unbound. `"conversation": "F2"`,
+  the example the README used to give, leaves F2 on the conversation
+  and rename with no key. One key you set on two actions still stops
+  home, with the reason.
+- Select is the word for check: the `select` row, the named action,
+  `2 selected . 4.5 MB` on the status row, `deselect all` in the
+  selection's actions, and the refusals follow. Space is the key, as
+  it was.
+- Two panes live in the normal window, and the window never resizes for
+  a pane. At 60 cells the panes are 29 and 30 with a line between them
+  in the rule's color: the size or the count at the pane's right edge,
+  no date column, the folder's summary short, `4 items . 4.5 MB`. Full
+  screen gives 120 cells, panes of 59 and 60, the date after the size
+  and the summary whole; below 60 one pane, as before. In two panes
+  your home shows the folder alone, no `home` heading and no `recent`,
+  whose files are in other folders; one pane keeps them. `close pane`
+  in the actions closes the second pane; the `two panes` and `one pane`
+  rows are gone, since Right opens it.
+- The actions and the list of choices when a name exists draw inside
+  the active pane, under its path, and the other pane stays on screen;
+  a form keeps both panes too, with no title page. The rows of the
+  actions carry their keys at the right, muted. In one pane the actions
+  are the page they were, with the same rows.
+- When a name exists the header says so, `notes.md already exists`, and
+  the rows are one list: replace, replace all, skip, skip all, keep
+  both, the `all` rows only while more remain. No second column, and no
+  heading over the `all` rows.
+- F5 and F6 act at once, with no question, and `undo` stands on the
+  status row. The prompt confirms nothing: Enter submits what is typed
+  there, one key, one meaning. The receipt for several reads
+  `2 files copied to ~/pictures`, with no size; one file keeps the
+  provider's words.
+- The words are the ones everyone knows: `close pane` for `one pane`,
+  `new file` for `new text file`, `undone` for `put back` (`5 undone`),
+  `cancel` for `let go`, so a form's key bar reads
+  `cancel  Esc   save  Enter` and a prompt `type a name, or Esc
+  cancels`. The forms' placeholders are `new name`, `folder name` and
+  `file name`. Trash, save, this folder, actions, details, keep both,
+  nav and new stay.
+- Ctrl+C copies the lit row's path to the clipboard, several selected
+  one path a line, with `path copied` or `2 paths copied`; outside
+  files it says `nothing to copy here`. Ctrl+Q quits in the whole
+  dialog, as Ctrl+C did, and Ctrl+C no longer closes it: one key, one
+  meaning.
+- The provider's `files_app` is F4's tool: a file goes to the app the
+  system assigns to its kind, a text file too, a folder to the system
+  file manager. Enter stays what it was: a folder opens here, a text
+  file in your editor, any other file in its app.
+
 ## v0.127.2
 
 - The list scrolls past its last row: Down, PageDown or the wheel at
