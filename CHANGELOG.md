@@ -1,5 +1,62 @@
 # Changelog
 
+## v0.129
+
+Tools, six utilities after Norton Utilities, and help in plain English.
+
+- Tools: `check`, `space`, `running`, `system`, `updates`, `software`,
+  one word a row, each its state, the status row what it does. Home's
+  tools column is the last check: `2 problems`, `no problems`, `not
+  checked yet`. `spark-shell provide tools` writes the pages, and
+  `spark-shell panel tools --list` prints the rows. Linux alone.
+- `check` runs `spark-shell check` when it opens: the problems by plain
+  name, then one `fix` row per command that fixes them, which runs it
+  in a terminal window that shows the command and waits for Enter; then
+  the passed checks, a row that opens them, and the not applicable.
+  Every `spark-shell check` keeps its lines and time in
+  `~/.local/state/spark-shell/check.last`.
+- `space` is the system disk, cleanup (the trash, opened in files; the
+  package cache, cleaned in a terminal by the family's own command; the
+  app caches, a view by folder), then home's largest folders as
+  objects: Enter opens one in files, or views it when it is hidden.
+  Nothing is counted twice; the measure takes 8 seconds at most and is
+  kept a minute; space deletes nothing itself.
+- `running` is every program, the busiest first, its cpu and the memory
+  its processes hold alone, read again every 3 seconds while it is on
+  screen. A program is an object: Enter puts its window in front, or
+  views it; F9 is `put in front` and `end`, which asks on the question
+  page and stops every process of the program. The desktop, the dialog
+  and another user's programs are refused with where they close.
+- `system` is the hardware, the operating system and the desktop, and
+  `copy details` copies them for a bug report.
+- `updates` says spark-shell's release and the dialog's version, and
+  runs `spark-shell update` or the system upgrade in a terminal.
+  Nothing checks for updates on its own.
+- `software` is `spark-shell sbom` as lists, apps, tools and parts; a
+  package's view has its description, license, commands, type and
+  source; `export` saves the CycloneDX file. The list is kept an hour
+  and built ahead when the provider starts.
+- The dialog subscribes to a list under a section by its own uri while
+  it is on screen, so a provider can say it changed; one thing is
+  watched at a time.
+- In a folder, a row with a view and no step of its own is viewed on
+  Enter, its actions on F9; the gap that sets a files summary apart is
+  for a files summary alone.
+- Help is rewritten in plain English, same page, same keys, same order:
+  every line a verb and what it acts on (`open the selected row`, `mark
+  a file for copy, move or trash`, `switch pane`), the headings
+  `general`, `files`, `view`, `windows`, `workspaces`, `desktop`,
+  `prompt`, and the note says where the keys change.
+- A question answered or let go puts the bar back on the row it was
+  asked from, with the words that found it. It stood on the question's
+  second row before, so after `keep working` the bar was on another row:
+  power's `suspend` instead of `shutdown`.
+- Enter on a row found by words typed views that row. The words go
+  first, and the view opened the row at the same place in the whole
+  list: a package's or a program's view could be another's.
+- The system's state no longer comes out empty where `/proc/meminfo`
+  cannot be read.
+
 ## v0.128
 
 Two panes and the dialog's keys, reworked by the owner's decisions of

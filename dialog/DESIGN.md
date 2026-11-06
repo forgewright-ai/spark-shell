@@ -163,7 +163,7 @@ holds now, where the dialog has it, else what the place is for. One
 color for the column, so the name leads in the text color and the
 words after it read as its line, as a launcher's subtitle and the
 status row do (v0.124.2: two colors there read as two fonts). At home,
-tools and power have no state worth more than their purpose.
+power has no state worth more than its purpose.
 
 ## Home
 
@@ -188,7 +188,7 @@ scrolls.
 
         calendar     no reminders ahead
 
-        tools        utilities and diagnostics
+        tools        2 problems
 
 
         settings     dark . 2 screens
@@ -218,7 +218,8 @@ from what the dialog already holds:
   no desktop, the layouts by name, else the purpose.
 - notes: the count, the newest note's title and its date.
 - calendar: the next reminder, or none ahead.
-- tools: its purpose, since it has no state yet.
+- tools: the last check, `2 problems`, `no problems` or `not checked
+  yet`; its purpose until its rows come.
 - settings: the look and the screens, from what their sections say,
   whichever are known; never the network, whose name is no business of
   the home's first screen.
@@ -626,16 +627,23 @@ top of help; `apps . web`, `apps . firefox`, `files . ~` and
 
 ## Help
 
-One list by subject, searchable, scrolling: `in home`, `in files` and
-`in a view` are the dialog's keys as bound now, a sentence each;
-`windows`, `workspaces` and `the desktop` are the desktop's, as the
-about provider sends them; `at the prompt` is the words typed there. A
-row is what you do, its key a chip at the right where the rows' arrows
-stand; the sentence is whole on the status row while the row is lit.
-Arrows, Home, End, Backspace and Delete need no help. Words typed keep
-the rows they name, under their subjects, and the ask row stands last
-when a model answers. The last lines are a note: the keys are yours to
-change. Home's column is how many keys it lists.
+One list by subject, searchable, scrolling: `general`, `files` and
+`view` are the dialog's keys as bound now, a line each; `windows`,
+`workspaces` and `desktop` are the desktop's, as the about provider
+sends them; `prompt` is the words typed there. A row is what you do, its
+key a chip at the right where the rows' arrows stand; the line is whole
+on the status row while the row is lit. Arrows, Home, End, Backspace
+and Delete need no help. Words typed keep the rows they name, under
+their subjects, and the ask row stands last when a model answers. The
+last lines are a note: where the keys change. Home's column is how many
+keys it lists.
+
+Every line is plain English (v0.129): a verb first, as a command, and
+what it acts on, so the line reads as a sentence: `open the selected
+row`, `mark a file for copy, move or trash`. It says what the key does,
+not how: Space marks a file; that the selection then moves down is not
+help's to say. Every line fits beside its key at 60 cells, so none is
+cut. Headings are plain nouns.
 
         < back                  help                         x   <- header band
 
@@ -644,38 +652,46 @@ change. Home's column is how many keys it lists.
         attach             gemma4-e4b              talk
       ---------------------------<*>--------------------------
 
-      in home
-        open what the bar is on                          Enter
-        back a level; at home, close                       Esc
-        ask spark the words                         Ctrl+Enter   <- selection bar
-        a new line in the prompt                   Shift+Enter
-        the conversation, and back                         F10
+      general
+        open the selected row                            Enter
+        go back or close                                   Esc
+        ask spark                                   Ctrl+Enter   <- selection bar
+        new line in the prompt                     Shift+Enter
+        open or close the conversation                     F10
+        move between attach, model, talk                   Tab
+        view the selected row                               F3
+        show actions                                        F9
+        rename the selected row                             F2
+        scroll by page                        PageUp  PageDown
         quit                                            Ctrl+Q
-        the prompt's tools, one to the next                Tab
-        view a row                                          F3
-        rename a row                                        F2
-        a row's actions or details                          F9
-        a page up, a page down                PageUp  PageDown
 
-      in files
-        select a row, and the next                       Space
-        open in app                                         F4
+      files
+        mark a file for copy, move or trash              Space
+        open in its app                                     F4
         copy                                                F5
         move                                                F6
         new folder                                          F7
-        trash                                               F8
+        move to trash                                       F8
         copy path                                       Ctrl+C
-        the other pane                                Ctrl+Tab
+        switch pane                                   Ctrl+Tab
 
-      in a view
-        bigger, smaller, as it fits                    +  -  0
-        the page before, the page after                   <  >
+      view
+        zoom in, zoom out, fit                         +  -  0
+        previous page, next page                          <  >
 
       windows
-        a terminal window                         Super+Return
+        open a terminal                           Super+Return
         ...
 
-      ask spark the words . Ctrl+Enter
+      prompt
+        search this list                            type words
+        undo the last change                              undo
+        run a command                    display brightness 30
+
+        change keys: ~/.config/spark-shell/home-keys.json for
+        home, ~/.config/sway/config.d for the desktop
+
+      ask spark . Ctrl+Enter
       --------------------------------------------------------
 
       back  Esc
@@ -759,9 +775,10 @@ words: the verb as the heading, one note in parentheses (the last
 sentence of the tool's description, lowercase), two menu rows, the verb
 and `keep working`, which is lit first (v0.127.2), so Enter again keeps
 and the verb takes Up or a click. Enter or a click on the verb acts; `keep working`,
-Esc and every other way back keep; typed words are refused. The header says
-the verb; the key bar `keep  Esc`. A spark-planned step's heading is
-its line.
+Esc and every other way back keep; typed words are refused. Either way the
+bar comes back to the row the step was asked from, with the words that found
+it (v0.129). The header says the verb; the key bar `keep  Esc`. A
+spark-planned step's heading is its line.
 
         < back              power . shutdown                  x   <- header band
 
@@ -915,6 +932,151 @@ desktop`, the layouts stand alone, and the selected one's line ends
 
 Saved sizes and splits, a picture of the window in its view,
 renaming a workspace and acting on several windows at once wait.
+
+## Tools
+
+Six utilities after Norton Utilities 8: one menu, a line for the
+selected tool, one page per tool with the result and the fix. Linux
+alone; `spark-shell panel tools --list` prints the same rows as text.
+
+- Six rows, one word each, as power's: `check`, `space`, `running`,
+  `system`, `updates`, `software`, each opening its page; no headings.
+  The second column is the state, as at home; the status row says what
+  the tool does. A page's header is `tools . check`, a row's view the
+  view's own.
+- Only the parts that exist: headings, rows, facts, lists with an
+  arrow, a view on F3, actions on F9, the question page, the march,
+  receipts. No new component, no new key. One provider, `spark-shell
+  provide tools`; the dialog runs nothing new itself.
+- What needs sudo or prints output runs in a terminal window: the
+  status row says the command first, the dialog steps aside, and the
+  window shows the command, runs it and ends with `press Enter to
+  close`.
+
+Check (Norton Disk Doctor) is `spark-shell check` grouped by fix, not by
+test. First `problems`, each a fact: a plain label (`programs`, not
+`tools`, which is this place's name; `config files`, not `look`) and
+the check's detail. Then one `fix` row per command that fixes them, so
+two problems `spark-shell on` fixes are one row; a fix that is an
+instruction (`log out and in again`) stays in its problem's line. Then
+`14 passed`, which opens the passed checks, and `7 not applicable`. The
+check runs when the page opens, unless one ran in the last 10 seconds,
+and on `check again`. Every check keeps its lines, so tools and home
+say the last one without running it.
+
+        < back                tools . check                  x   <- header band
+
+      problems
+        programs           missing: fzf zoxide
+        config files       out of date: .tmux.conf
+
+        fix                         spark-shell on            <- selection bar
+
+        14 passed                                    >
+        7 not applicable
+
+        check again                    checked at 09:12
+
+      fix . in a terminal: spark-shell on
+
+Space (Norton Space Wizard) is the system disk, then `cleanup`, a menu:
+`trash` opens the files trash, where restore and empty already are;
+`package cache` runs the family's own clean in a terminal; `app
+caches` opens a view of `~/.cache` by folder. Then `home`, its largest
+folders first: objects, as in files. A click selects one and its status
+row says its size; Enter or a second click opens it in files, or its
+view when it is hidden, since files hides hidden folders; F3 views any
+folder. Then `files in home` and the rest as one row. Nothing is counted
+twice: the app caches are left out of home and the trash taken out of
+the folder that holds it. The measure runs when the page opens, 8
+seconds at most so the page is answered within the dialog's 10, and on
+`measure again`; one that did not end says so. Space deletes nothing
+itself and clears no app's cache: clearing a running app's cache can
+break it.
+
+        system disk          476.9 GB, 120.3 GB free
+
+      cleanup
+        trash                     2.1 GB  >                    <- selection bar
+        package cache             3.2 GB
+        app caches                1.4 GB
+
+      home
+        downloads                18.2 GB  >
+        pictures                 12.0 GB  >
+        .local                    4.2 GB
+        files in home             2.4 GB  >
+        9 more folders            0.4 GB
+
+        measure again           measured at 09:12
+
+      trash . open in files to restore or empty
+
+Running (Norton System Watch) is every program, the busiest first. A
+program is its command's name, an interpreter's script by the script's,
+so firefox's 14 processes are one row; kernel threads are not listed.
+The columns: its share of the processor since the last read, and the
+memory its processes hold alone (resident less shared), summed. A
+program works as a window does in workspace: a click selects it; Enter
+or a second click puts its window in front, or views it when it has
+none; F3 views it; F9 is `put in front` when it has a window and `end`
+when it is yours. `end` asks on the question page and stops every
+process of the program. Sway, the dialog and another user's programs
+have no `end`, and the refusal says where they close (power's
+`logout`, Esc). The list is read again every 3 seconds while it is on
+screen: the dialog subscribes to that list's own uri, one thing watched
+at a time, and the selection stays on its program.
+
+        firefox                  9%      1.6 GB                <- selection bar
+        llama-server             4%      5.1 GB
+        foot                     1%       84 MB
+        sway                     0%      210 MB
+
+      firefox . 9% cpu . 1.6 GB . 14 processes
+
+    F9 on firefox, then end:
+
+      firefox
+        9% cpu, 1.6 GB, 14 processes
+
+        put in front
+        end
+
+      end firefox
+        (unsaved work is lost)
+
+        end firefox
+        keep working                                           <- selection bar
+
+System (Norton System Information) is three groups, `hardware`,
+`operating system` and `desktop`, then `copy details`, which copies them
+for a bug report. Labels lowercase, values as the system writes them; a
+value the machine lacks is not shown: no battery, no battery row.
+
+Updates (Norton LiveUpdate) is `spark-shell` with its release and its
+day, `spark-dialog` under it, then `update spark-shell`, which updates
+the dialog too; then `system` with its package manager and `update
+system`. Both run in a terminal. Nothing downloads until you choose one,
+and nothing checks for updates on its own.
+
+Software is `spark-shell sbom` as a page: `apps`, `tools` and `parts`,
+each its count and its list, then `export`, the CycloneDX file. A
+package is an object: a click selects it and its status row says its
+version and license; Enter, a second click or F3 views its description,
+license, commands, type and source. The list is kept an hour and built
+ahead when the provider starts: reading every license is slow.
+
+In a folder a row with a view and no step of its own is viewed on
+Enter; its actions stay on F9, so Enter never ends a program. `check`
+means the setup check alone; `end` is for programs, `close` stays for
+windows.
+
+Later, a patch each: drive health, what starts with the desktop, the
+errors since boot, local network tests, sound and screen tests,
+duplicate files, a forced end, alerts on the bar. Left out: defragmenting
+and disk caches (Linux needs neither), disk editing and unformatting,
+a secure wipe (no SSD can promise one), encryption and system images
+(the installer's and the backup's), file find (the prompt finds files).
 
 ## Outside this design
 

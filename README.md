@@ -832,11 +832,11 @@ drive, a network, a package manager. The design's rules are one page,
 `dialog/DESIGN.md`. Unavailable capabilities explain their availability.
 Help and the conversation are views inside this same process. F10
 switches between the conversation and the previous view without losing a draft.
-Help is one list by subject: `in home` and `in a view` are the
-dialog's keys as bound now, `windows`, `workspaces` and `the desktop`
-the desktop's, `at the prompt` the words typed there. A row is what
-you do, its key a chip at the right, and whole on the status row while
-the row is lit; words typed keep the rows they name.
+Help is one list by subject: `general`, `files` and `view` are the
+dialog's keys as bound now, `windows`, `workspaces` and `desktop` the
+desktop's, `prompt` the words typed there. A row is what you do, a verb
+and what it acts on, its key a chip at the right, and whole on the
+status row while the row is lit; words typed keep the rows they name.
 A step that loses something asks on a page of its own, wherever it
 comes from: the verb as the heading, one note in parentheses, two rows,
 the verb and `keep working`, which is lit first, so Enter again keeps and
@@ -1181,6 +1181,20 @@ its first and its last row.
   under the group its desktop entry names: internet, office, graphics,
   sound and video, development, education, games, system, utilities,
   and others for an app whose entry names none of them.
+- `tools`: six utilities after Norton Utilities, a page each, each row
+  its state, home's column the last check. `check` runs `spark-shell
+  check` and groups the problems by the fix that solves them; a `fix`
+  row runs its command in a terminal. `space` is the system disk, then
+  cleanup (the trash, opened in files; the package cache, cleaned in a
+  terminal; the app caches, a view), then home's largest folders, each
+  counted once; it deletes nothing itself. `running` is every program
+  by its cpu, read again every 3 seconds while it is on screen; F9 puts
+  one in front, or ends one of yours after a question. `system` is the
+  hardware, the operating system and the desktop, and copies them for a
+  bug report. `updates` runs `spark-shell update` or the system upgrade
+  in a terminal. `software` lists the installed packages and exports
+  the CycloneDX file. Nothing runs or downloads until you choose a row.
+  Linux alone.
 - `about`: the installed release with the day of its tag, the dialog's
   own version under it, then `project`, which opens the address in the
   browser, `license` and `credits`, which open the files as pages, and
@@ -1492,8 +1506,8 @@ Home bindings are named actions in `~/.config/spark-shell/home-keys.json`:
 {"ask": "Ctrl+Enter", "newline": "Shift+Enter", "conversation": "F10"}
 ```
 
-Help lists the actions with their keys as bound, under `in home` and
-`in a view`; arrows, Home, End, Backspace and Delete need no help.
+Help lists the actions with their keys as bound, under `general`,
+`files` and `view`; arrows, Home, End, Backspace and Delete need no help.
 The keys of the lists and of files are named actions too: `rename`, F2;
 `view`, F3; `open`, F4; `copy`, F5; `move`, F6; `new`, F7; `trash`, F8;
 `actions`, F9; `select`, Space; `copy-path`, Ctrl+C; `pane`, Ctrl+Tab;
@@ -1749,7 +1763,9 @@ both.
 
 Type `spark-shell status`. You get one row per part, and a last `next`
 row when something is left to do. Type `spark-shell check`. You get ok,
-warn or FAIL per part, and exit 0 when nothing fails.
+warn or FAIL per part, and exit 0 when nothing fails. Each run keeps its
+lines and its time in `~/.local/state/spark-shell/check.last`, which the
+dialog's tools reads.
 
 ## Software list (sbom)
 

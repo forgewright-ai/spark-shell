@@ -484,6 +484,66 @@ elif sys.argv[1] == 'steps':
                 checks.append("Power is five verbs; logout asks on a question page and keep working comes back")
                 close_home()
 
+                # tools (v0.129): the six; check runs; running finds the proof's own program (a name of its own, so no
+                # other process is ended), F9, end asks, keep working keeps it, end ends it; system's three groups
+                sleeper = fixtures / "spark-proof-sleeper"
+                shutil.copyfile(shutil.which("sleep"), sleeper)
+                sleeper.chmod(0o700)
+                held = subprocess.Popen([str(sleeper), "600"], env=env)
+                try:
+                    open_home()
+                    key("tools", "-k", "Return")
+                    time.sleep(1)
+                    text = "\n".join(screen())
+                    assert all(w in text for w in ("check", "space", "running", "system", "updates", "software")), "tools is six rows: " + text
+                    capture("tools-void")
+                    key("-k", "Down", "-k", "Return")   # opened from words typed, nothing is lit: Down lights check
+                    wait_for(lambda: any(w in "\n".join(screen()) for w in ("check again", "passed", "not applicable")), "the check's page")
+                    capture("tools-check-void")
+                    key("-k", "Escape")
+                    time.sleep(1)
+                    key("running", "-k", "Return")
+                    wait_for(lambda: "sway" in "\n".join(screen()), "running lists sway")
+                    key("spark-proof")
+                    wait_for(lambda: "spark-proof-sleeper \u00b7 0% cpu" in "\n".join(screen()), "words find the proof's program")
+                    capture("tools-running-void")
+                    key("-k", "F9")
+                    wait_for(lambda: any(l.strip() == "end" for l in screen()), "its actions, end among them")
+                    key("-k", "Return")
+                    text = wait_for(lambda: (lambda t: t if "(unsaved work is lost)" in t else None)("\n".join(screen())), "end asks")
+                    assert "keep working" in text, "the question's two rows: " + text
+                    capture("tools-end-void")
+                    key("-k", "Return")   # keep working is lit first: Enter keeps
+                    time.sleep(1)
+                    assert held.poll() is None and "keep working" not in "\n".join(screen()), "keep working keeps the program"
+                    key("-k", "F9")
+                    wait_for(lambda: any(l.strip() == "end" for l in screen()), "its actions again")
+                    key("-k", "Return")
+                    wait_for(lambda: "keep working" in "\n".join(screen()), "end asks again")
+                    key("-k", "Up", "-k", "Return")   # the verb
+                    wait_for(lambda: held.poll() is not None, "end ends the program")
+                    for _ in range(4):   # the receipt, the words, then back to the six: an Esc each
+                        if "updates" in "\n".join(screen()) and "software" in "\n".join(screen()):
+                            break
+                        key("-k", "Escape")
+                        time.sleep(.5)
+                    assert "updates" in "\n".join(screen()), "Esc comes back to the six"
+                    key("system", "-k", "Return")
+                    text = wait_for(lambda: (lambda t: t if "operating system" in t else None)("\n".join(screen())), "system's page")
+                    assert "hardware" in text and "desktop" in text and "copy details" in text, "system is three groups and copy details: " + text
+                    capture("tools-system-void")
+                    if shutil.which("wl-copy") and shutil.which("wl-paste"):
+                        key("copy details", "-k", "Return")
+                        time.sleep(1)
+                        pasted = subprocess.run(["wl-paste", "-n"], env=env, capture_output=True, text=True, timeout=5).stdout
+                        assert "operating system" in pasted, "copy details fills the clipboard: " + pasted[:200]
+                        checks.append("Tools: copy details puts the system's details on the clipboard")
+                    checks.append("Tools is six rows; check runs and shows its page; running lists sway and the proof's own program; F9 end asks, keep working keeps it, end ends it; system is three groups")
+                    close_home()
+                finally:
+                    if held.poll() is None:
+                        held.kill()
+
                 first = open_home()
                 control("attach")
                 key("long-attachment", "-k", "Down", "-k", "Return")

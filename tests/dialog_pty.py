@@ -7,7 +7,7 @@ the ask row and Enter on it asks, Esc closes, and no provider outlives
 the window. CI runs it with no
 network (unshare -n). Linux and macOS, python3 stdlib only."""
 import re
-import fcntl, json, os, pty, select, signal, struct, subprocess, sys, tempfile, termios, time
+import fcntl, json, os, pty, select, shutil, signal, struct, subprocess, sys, tempfile, termios, time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SS = os.path.join(REPO, "spark-shell")
@@ -119,6 +119,8 @@ def main(binary):
     tasks(binary, env, home)
     files(binary, env, home)
     clicks(binary, env, home)
+    if sys.platform.startswith("linux"):
+        tools_walk(binary, env, home)
     print("dialog_pty: %d failed" % failed)
     return 1 if failed else 0
 
@@ -529,6 +531,99 @@ def busy(binary, env, home):
        "took %s s, the busy one still there: %s" % (took, still))
     time.sleep(3)
     ok(not any(slow in l for l in ps().splitlines()), "the busy provider ends by itself once its work is done")
+
+
+def tools_walk(binary, env, home):
+    """Home, tools, check (it runs, and the page shows), Esc back to the six; running: the walk's own program found by
+    words, F9, end asks, keep working keeps it and comes back to it, end ends it; Esc home, Esc closes (v0.129)."""
+    sleeper = os.path.join(home, "spark-pty-sleeper")   # a program of its own name: no other process is ever ended
+    shutil.copyfile(shutil.which("sleep"), sleeper)
+    os.chmod(sleeper, 0o700)
+    held = subprocess.Popen([sleeper, "600"])
+    argv = [binary, "--provider", SS + " provide tools", "--provider", SS + " provide about", "--composer", "", "--spark-shell", SS]
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.execve(binary, argv, env)
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
+    seen = bytearray()
+    scr = Screen()
+
+    def wait_for(test, secs=15):
+        end = time.time() + secs
+        while time.time() < end:
+            if test():
+                return True
+            r, _, _ = select.select([fd], [], [], 0.1)
+            if r:
+                try:
+                    data = os.read(fd, 65536)
+                except OSError:
+                    break
+                seen.extend(data)
+                scr.feed(data)
+        return test()
+
+    tail = lambda: seen.decode("utf-8", "replace")[-4000:]
+    ok(wait_for(lambda: "search or ask" in tail() and "tools" in tail()), "the home draws with tools among its places", tail()[-400:])
+    os.write(fd, b"tools")
+    time.sleep(0.5)
+    os.write(fd, b"\r")
+    ok(wait_for(lambda: "processes" in tail() and "packages" in tail()), "tools opens on its six rows, each its state", tail()[-600:])
+    seen.clear()
+    os.write(fd, b"\x1b[B")   # opened from words typed, nothing is lit: an arrow lights the first row
+    ok(wait_for(lambda: "test the setup and fix problems" in tail()), "Down lights check, its line on the status row", tail()[-600:])
+    seen.clear()
+    os.write(fd, b"\r")
+    ok(wait_for(lambda: any(w in tail() for w in ("check again", "passed", "missing:", "out of date:", "not applicable")), 30),
+       "Enter on check runs the check and shows its page", tail()[-600:])
+    seen.clear()
+    os.write(fd, b"\x1b")
+    ok(wait_for(lambda: "software" in tail() and "check again" not in tail()), "Esc goes back to the six", tail()[-600:])
+    os.write(fd, b"running")
+    time.sleep(0.5)
+    os.write(fd, b"\r")
+    ok(wait_for(lambda: "tools \u00b7 running" in scr.text()), "running opens", scr.text())
+    os.write(fd, b"spark-pty")
+    ok(wait_for(lambda: "spark-pty-sleeper \u00b7 0% cpu" in scr.text()), "words find the walk's program, its line on the status row", scr.text())
+    os.write(fd, b"\x1b[20~")   # F9
+    ok(wait_for(lambda: "tools \u00b7 spark-pty-sleeper" in scr.text() and "    end" in scr.text()), "F9: its actions, end among them", scr.text())
+    os.write(fd, b"\r")
+    ok(wait_for(lambda: "(unsaved work is lost)" in scr.text() and "keep working" in scr.text()), "end asks on the question page", scr.text())
+    os.write(fd, b"\r")   # keep working is lit first
+    ok(wait_for(lambda: "spark-pty-sleeper \u00b7 0% cpu" in scr.text() and "keep working" not in scr.text()) and held.poll() is None,
+       "keep working keeps it, back on the list with the bar on it", scr.text())
+    os.write(fd, b"\x1b[20~")
+    wait_for(lambda: "    end" in scr.text())
+    os.write(fd, b"\r")
+    wait_for(lambda: "keep working" in scr.text())
+    os.write(fd, b"\x1b[A")   # the verb
+    time.sleep(0.3)
+    os.write(fd, b"\r")
+    end = time.time() + 8
+    while time.time() < end and held.poll() is None:
+        wait_for(lambda: False, 0.2)
+    ok(held.poll() is not None, "end ends it", scr.text())
+    if held.poll() is None:
+        held.kill()
+    os.write(fd, b"\x1b")   # the words first, then back to the six
+    time.sleep(0.5)
+    os.write(fd, b"\x1b")
+    ok(wait_for(lambda: "software" in scr.text()), "Esc goes back to the six", scr.text())
+    seen.clear()
+    os.write(fd, b"\x1b")
+    ok(wait_for(lambda: "settings" in tail()), "Esc again goes home, the words typed back in the prompt", tail()[-600:])
+    os.write(fd, b"\x1b")   # the words go first
+    time.sleep(0.5)
+    os.write(fd, b"\x1b")
+    status = None
+    end = time.time() + 10
+    while time.time() < end:
+        wait_for(lambda: False, 0.2)
+        p, st = os.waitpid(pid, os.WNOHANG)
+        if p:
+            status = st
+            break
+    ok(status is not None and os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0, "Esc clears the words, the next Esc closes the dialog, exit 0", repr(status))
 
 
 CLICK_PROVIDER = r"""import json, sys
