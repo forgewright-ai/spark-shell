@@ -244,7 +244,7 @@ impl Batch {
         if self.skipped > 0 {
             s.push_str(&format!(", {} skipped", self.skipped));
         }
-        // the first reason or two, the provider's label dropped: "notes.md is there already"
+        // the first reason or two, the provider's label dropped: "notes.md already exists"
         let refused: Vec<&str> = self
             .done
             .iter()

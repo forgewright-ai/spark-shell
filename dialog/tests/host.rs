@@ -3051,3 +3051,78 @@ fn a_search_answer_that_lands_after_typing_keeps_the_ask_row_lit_so_enter_asks()
     assert!(app.pending.is_some(), "Enter asked: the request left");
     assert_eq!(app.view, View::Conversation);
 }
+
+/// The review's H: a play and a stop both on their way, answered out of order (the stop first). Each answer
+/// finds its own call (App.quiet holds every one, not the last), both are in the record, and the play's
+/// refusal is said.
+#[test]
+fn a_play_and_a_stop_answered_out_of_order_are_both_audited() {
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let path = format!("/data/me/h-{}-{}.flac", std::process::id(), stamp); // a digest of its own in the record
+    let play_schema =
+        json!({"type": "object", "properties": {"path": {"type": "string"}, "at": {"type": "number"}}, "required": ["path"], "additionalProperties": false});
+    let stop_schema = json!({"type": "object", "properties": {"path": {"type": "string"}}, "additionalProperties": false});
+    let tools = json!([
+        {"name": "files_play", "title": "files play PATH", "inputSchema": play_schema},
+        {"name": "files_stop", "title": "files stop", "inputSchema": stop_schema},
+        {"name": "files_open", "title": "files open PATH", "inputSchema": stop_schema}
+    ]);
+    let rows = json!({"title": "notes", "rows": [
+        {"id": "notes:a", "sign": "blank", "text": "a.flac", "tool": {"name": "files_open", "arguments": {"path": path}}, "more": [], "columns": [], "children": null, "group": null, "page": "spark-shell://notes/page/a"}
+    ], "short": ["notes:a"]});
+    let page = json!({"title": "a.flac", "lines": ["a"], "seconds": 20.0, "sound": {"picture": "/run/pages/a.png", "wave": 16},
+        "play": {"name": "files_play", "arguments": {"path": path}}, "stop": {"name": "files_stop", "arguments": {"path": path}}});
+    let (mut app, rx, tx) = app_with(&["notes"]);
+    let mut held: Option<Value> = None;
+    let script: Script = Box::new(move |v, send| {
+        let uri = v.pointer("/params/uri").and_then(Value::as_str).unwrap_or("").to_string();
+        if uri.contains("/page/") {
+            return send(result(
+                &v["id"],
+                json!({"contents": [{"uri": uri, "mimeType": "application/json", "text": page.to_string()}]}),
+            ));
+        }
+        if let Some(a) = ordinary("notes", v, &tools, &rows) {
+            return send(a);
+        }
+        match v.pointer("/params/name").and_then(Value::as_str) {
+            Some("files_play") => held = Some(v["id"].clone()), // the play's answer waits for the stop's
+            Some("files_stop") => {
+                send(result(&v["id"], json!({"content": [], "isError": false})));
+                if let Some(id) = held.take() {
+                    send(result(
+                        &id,
+                        json!({"content": [{"type": "text", "text": "the player is busy"}], "isError": true}),
+                    ));
+                }
+            }
+            _ => {}
+        }
+    });
+    app.servers.push(stub(0, "notes", script, tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready
+        && !a.providers[0].tools.is_empty()
+        && !a.providers[0].rows.rows.is_empty()));
+    at_row(&mut app, View::Section(0), 0);
+    app.hint_key(spark_dialog::app::HintKey::View);
+    assert!(pump(&mut app, &rx, |a| a.preview_plays()), "the preview key shows the sound's page");
+    app.typed(' '); // play: its answer is held
+    app.typed(' '); // stop, while the play is still on its way
+    assert!(
+        pump(&mut app, &rx, |a| a.reply.as_ref().is_some_and(|r| r.text.contains("the player is busy"))),
+        "the play's answer found its call after the stop's, and its refusal is said: {:?}",
+        app.reply.as_ref().map(|r| r.text.clone())
+    );
+    let digest = |schema: &Value, args: Value| spark_dialog::audit::digest(schema, args.as_object().unwrap());
+    let record = std::fs::read_to_string(spark_dialog::audit::path().unwrap()).unwrap_or_default();
+    for want in [
+        format!("\tperson\tnotes\tfiles_stop\t{}\tdone", digest(&stop_schema, json!({"path": path}))),
+        format!(
+            "\tperson\tnotes\tfiles_play\t{}\trefused",
+            digest(&play_schema, json!({"path": path, "at": 0.0}))
+        ),
+    ] {
+        assert!(record.lines().any(|l| l.ends_with(&want)), "{:?} is in the record", want);
+    }
+}

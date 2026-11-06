@@ -83,6 +83,26 @@ simple and industry standard; no invented words.
   file manager. Enter stays what it was: a folder opens here, a text
   file in your editor, any other file in its app.
 
+## v0.127.3
+
+The last of #196's work, which closed before it landed (#209).
+
+- A rows read asks each device, list and file once: the section's
+  title, its short form and its full form share the answer, and the
+  next read asks again. This holds for the sound system, Bluetooth, the
+  drives, mako, the keyboard, the screens, the brightness, the notes and
+  the reminders. A reminder's group, its time and whether spark-shell
+  wrote it are worked out once a read, and a note's day once. On the
+  box (Void, a headless sway), the processes one read starts past the
+  provider's own start, then its time: bt 63 to 49 (107 to 97 ms), out
+  41 to 25 (90 to 55 ms), mic 29 to 20 (59 to 39 ms), storage 34 to 23
+  (45 to 36 ms), notes with ten notes 219 to 112 (310 to 208 ms),
+  reminders with twelve 306 to 77 (672 to 163 ms), notifications 54 to
+  36 (85 to 80 ms), keyboard 26 to 17 (75 to 65 ms), display 46 to 29
+  (about 80 ms before and after: its rows' own work sets its time).
+- The review's bug H has a test of its own: a play and a stop both on
+  their way, answered out of order, are both in the audit record, and
+  the play's refusal is said.
 ## v0.127.2
 
 - The list scrolls past its last row: Down, PageDown or the wheel at

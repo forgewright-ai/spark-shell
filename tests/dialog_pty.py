@@ -627,8 +627,9 @@ def clicks(binary, env, home):
 
 def keys(binary, env):
     """A terminal that speaks the kitty keyboard protocol, as foot does: it
-    answers the dialog's question, and Shift+Enter comes as CSI 13;2u. A
-    new line and a pasted one go into the draft; nothing is sent."""
+    answers the dialog's question, the dialog asks for flags 1 and 2 (the
+    second tells a held key from a press), and Shift+Enter comes as CSI
+    13;2u. A new line and a pasted one go into the draft; nothing is sent."""
     argv = [binary, "--provider", SS + " provide theme", "--composer", "", "--spark-shell", "/nonexistent/spark-shell"]
     pid, fd = pty.fork()
     if pid == 0:
@@ -644,7 +645,7 @@ def keys(binary, env):
         if not answered and b"\x1b[?u" in seen:
             os.write(fd, b"\x1b[?0u\x1b[?62;22c")   # the flags now, then the device attributes: foot's answer
             answered = True
-    ok(answered and b"\x1b[>1u" in seen, "the dialog asks for the kitty keyboard protocol and turns it on where it is answered", repr(bytes(seen[-200:])))
+    ok(answered and b"\x1b[>3u" in seen, "the dialog asks for the kitty keyboard protocol and turns it on where it is answered", repr(bytes(seen[-200:])))
     os.write(fd, b"one")
     os.write(fd, b"\x1b[13;2u")                     # Shift+Enter, as foot sends it
     os.write(fd, b"two")

@@ -874,7 +874,7 @@ fn files_stub(calls: Calls, also: Vec<&'static str>, refuse: Vec<&'static str>, 
             if refuse.contains(&file.as_str()) {
                 return send(result(
                     &v["id"],
-                    json!({"content": [{"type": "text", "text": format!("files: {} is there already", file)}], "isError": true}),
+                    json!({"content": [{"type": "text", "text": format!("files: {} already exists", file)}], "isError": true}),
                 ));
             }
             let to = v.pointer("/params/arguments/to").and_then(Value::as_str).unwrap_or("").to_string();
@@ -1021,7 +1021,7 @@ fn typed_undo_takes_the_whole_batch_back_and_a_refusal_never_stops_it() {
     assert_eq!(tool_calls(&calls).len(), 3, "the refused one stopped nothing");
     assert_eq!(
         app.reply.as_ref().map(|r| r.text.as_str()),
-        Some("2 of 3 moved to ~/pictures, 1 refused: report.pdf is there already"),
+        Some("2 of 3 moved to ~/pictures, 1 refused: report.pdf already exists"),
         "the real counts, the reason without the provider's label"
     );
     assert!(app.reply.as_ref().is_some_and(|r| r.undo));
@@ -1581,7 +1581,7 @@ fn a_refused_first_step_never_takes_a_standing_undo_into_the_batch() {
     assert!(pump(&mut app, &rx, |a| a.files.batch.is_none() && a.running.is_none()));
     assert_eq!(
         app.reply.as_ref().map(|r| r.text.as_str()),
-        Some("2 of 3 copied to ~/pictures, 1 refused: notes.md is there already")
+        Some("2 of 3 copied to ~/pictures, 1 refused: notes.md already exists")
     );
     assert_eq!(app.files.undo_more.len(), 1, "two undos: the head and one more");
     let before = tool_calls(&calls).len();
