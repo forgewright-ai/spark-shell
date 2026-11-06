@@ -290,6 +290,8 @@ pub const ASK_PER_MINUTE: usize = 10;
 pub const READ_GAP: Duration = Duration::from_millis(250);
 /// Rows older than this are read again when their place comes back on screen.
 pub const STALE: Duration = Duration::from_secs(5);
+/// The lists under a section that change by themselves: subscribed by their own uri while on screen (v0.129).
+pub const WATCHED_LISTS: &[&str] = &["spark-shell://tools/rows/running"];
 /// The sections whose rows the home's places say (#36): read again when the home comes back.
 /// How long a launch no window confirmed may still bring its window (the desktop's own wait for a slow app).
 const LAUNCH_WAIT: Duration = Duration::from_secs(30);
@@ -657,8 +659,9 @@ pub struct Provider {
     pub reading: bool,
     pub last_read: Option<Instant>,
     pub read_id: Option<u64>,
-    /// It checks its rows for changes: only while its rows are on screen (#37).
-    pub subscribed: bool,
+    /// It checks its rows for changes: only while its rows are on screen (#37). The uri subscribed: its rows,
+    /// or a list under it that changes by itself (running, v0.129).
+    pub subscribed: Option<String>,
 }
 
 impl Provider {
@@ -675,7 +678,7 @@ impl Provider {
             reading: false,
             last_read: None,
             read_id: None,
-            subscribed: false,
+            subscribed: None,
         }
     }
 }
@@ -1105,24 +1108,35 @@ impl App {
         }
     }
 
+    /// What provider i is subscribed to while it is on screen: a list that changes by itself when that list is
+    /// the folder on screen, else its rows.
+    fn watch_uri(&self, i: usize) -> String {
+        match &self.view {
+            View::Folder(p, uri) if *p == i && WATCHED_LISTS.contains(&uri.as_str()) => uri.clone(),
+            _ => format!("spark-shell://{}/rows", self.providers[i].label),
+        }
+    }
+
     /// Subscribe what is on screen, unsubscribe what left it; the rows of a place just opened read
     /// again when they are older than a few seconds, and the home's states when it comes back (#37).
     fn follow_view(&mut self, now: Instant) {
         let shown = self.shown();
         for i in 0..self.providers.len() {
-            let on = shown.contains(&i);
-            let (ready, sub, dead) = (self.providers[i].ready, self.providers[i].subscribed, self.providers[i].dead.is_some());
-            if dead || !ready || on == sub {
+            let want = shown.contains(&i).then(|| self.watch_uri(i));
+            let have = self.providers[i].subscribed.clone();
+            let (ready, dead) = (self.providers[i].ready, self.providers[i].dead.is_some());
+            if dead || !ready || want == have {
                 continue;
             }
-            let uri = format!("spark-shell://{}/rows", self.providers[i].label);
-            let method = if on { "resources/subscribe" } else { "resources/unsubscribe" };
-            if let Some(s) = self.server(i) {
-                s.request(method, json!({"uri": uri}), Kind::Subscribe, mcp::T_LIST);
+            // the old uri let go first: a provider watches one thing at a time
+            for (method, uri) in [("resources/unsubscribe", &have), ("resources/subscribe", &want)] {
+                if let (Some(uri), Some(s)) = (uri, self.server(i)) {
+                    s.request(method, json!({"uri": uri}), Kind::Subscribe, mcp::T_LIST);
+                }
             }
-            self.providers[i].subscribed = on;
+            self.providers[i].subscribed = want.clone();
             let old = self.providers[i].last_read.map(|t| now.duration_since(t) >= STALE).unwrap_or(true);
-            if on && old && !self.providers[i].reading {
+            if want.is_some() && have.is_none() && old && !self.providers[i].reading {
                 self.read(i);
             }
         }
@@ -2171,12 +2185,19 @@ impl App {
             View::About => self.about_items(&mut list),
             View::Help => self.help_items(&mut list),
             View::Steps(p) => {
-                // a window's page, a layout's: what it is above its steps, as an app's details have it
-                if matches!(self.providers[*p].label.as_str(), "window" | "layout") {
+                // a window's page, a layout's, a program's: what it is above its steps, as an app's details have it
+                if matches!(self.providers[*p].label.as_str(), "window" | "layout" | "tools") {
+                    let tools = self.providers[*p].label == "tools";
                     if let Some(r) = &self.steps_row {
                         list.push(Item::Title(r.text.clone()));
-                        if let Some(c) = r.columns.first().filter(|c| !c.is_empty()) {
-                            list.push(Item::Note(c.clone()));
+                        // a program says its cpu, its memory and its processes; a window, its first column
+                        let note = if tools {
+                            r.wide.as_ref().map(|w| w.join(", ")).unwrap_or_default()
+                        } else {
+                            r.columns.first().cloned().unwrap_or_default()
+                        };
+                        if !note.is_empty() {
+                            list.push(Item::Note(note));
                         }
                         list.push(Item::Blank);
                     }
@@ -2341,7 +2362,7 @@ impl App {
                     continue;
                 }
             }
-            if i + 1 == rows.rows.len() && i > 0 && r.tool.is_none() && r.children.is_none() {
+            if i + 1 == rows.rows.len() && i > 0 && r.tool.is_none() && r.children.is_none() && r.page.is_none() {
                 list.push(Item::Blank); // the summary at the end stands apart
             }
             // a group starts under its heading, with air above it, as in a section
@@ -4197,14 +4218,15 @@ impl App {
                 };
                 if let Some(call) = call {
                     self.pick_step(p, call, &row.text);
+                } else if row.page.is_some() {
+                    // a row with a view and no step of its own (a package, a program with no window, v0.129): Enter
+                    // views it, as F3 does; its actions stay on F9
+                    self.open_preview();
                 } else if !row.more.is_empty() {
                     // a row that is only its actions (this folder, #127): Enter opens them, as F9 does
                     if !self.files_actions(Some(row.clone())) {
                         self.steps_of(p, row);
                     }
-                } else if row.page.is_some() {
-                    // a row that is only its view (a package, v0.129): Enter views it, as F3 does
-                    self.open_preview();
                 }
             }
             _ => {}

@@ -1796,6 +1796,48 @@ fn a_provider_checks_its_rows_only_while_they_are_on_screen_and_its_first_rows_c
     assert_eq!(n("resources/subscribe"), 1);
 }
 
+#[test]
+fn the_running_list_is_checked_by_its_own_uri_while_it_is_on_screen() {
+    let (mut app, rx, tx) = app_with(&["tools"]);
+    let asked = Arc::new(Mutex::new(vec![]));
+    let a2 = asked.clone();
+    let rows = json!({"title": "tools", "state": "", "rows": [
+        {"id": "tools:running", "sign": "blank", "text": "running", "tool": null, "more": [], "columns": ["412 processes"],
+         "children": "spark-shell://tools/rows/running", "group": null}
+    ], "short": []});
+    let script: common::Script = Box::new(move |v, send| {
+        if let (Some(m), Some(u)) = (v.get("method").and_then(Value::as_str), v.pointer("/params/uri").and_then(Value::as_str)) {
+            if m.ends_with("subscribe") {
+                a2.lock().unwrap().push(format!("{m} {u}"));
+            }
+        }
+        if let Some(r) = ordinary("tools", v, &json!([]), &rows) {
+            send(r);
+        }
+    });
+    app.servers.push(stub(0, "tools", script, tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
+    let said = || asked.lock().unwrap().clone();
+    app.view = View::Section(0);
+    assert!(pump(&mut app, &rx, |_| said().len() == 1));
+    app.view = View::Folder(0, "spark-shell://tools/rows/running".into());
+    assert!(pump(&mut app, &rx, |_| said().len() == 3));
+    app.view = View::Section(0);
+    assert!(pump(&mut app, &rx, |_| said().len() == 5));
+    assert_eq!(
+        said(),
+        vec![
+            "resources/subscribe spark-shell://tools/rows",
+            "resources/unsubscribe spark-shell://tools/rows",
+            "resources/subscribe spark-shell://tools/rows/running",
+            "resources/unsubscribe spark-shell://tools/rows/running",
+            "resources/subscribe spark-shell://tools/rows",
+        ],
+        "one thing watched at a time: the running list by its own uri while it is on screen"
+    );
+}
+
 /// The theme's rows for the value tests (#183): a stepper of three, a switch, two palettes kept in place with a
 /// look each, dark and light side by side, and a setting after them.
 fn theme_rows(at: u64, on: bool) -> Value {

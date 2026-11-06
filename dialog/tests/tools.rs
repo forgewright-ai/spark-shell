@@ -4,7 +4,7 @@ mod common;
 use common::palette;
 use ratatui::{buffer::Buffer, layout::Rect};
 use serde_json::{json, Value};
-use spark_dialog::app::{App, Config, Item, Provider, View, DESTS};
+use spark_dialog::app::{App, Config, HintKey, Item, Mode, Provider, View, DESTS};
 use spark_dialog::model;
 use spark_dialog::ui;
 
@@ -77,7 +77,13 @@ fn tools_list() -> Value {
     json!([
         {"name": "tools_check", "annotations": {"readOnlyHint": true, "destructiveHint": false}},
         {"name": "tools_fix", "annotations": {"readOnlyHint": false, "destructiveHint": false}, "_meta": {"spark-shell/opens": true},
-         "inputSchema": {"type": "object", "properties": {"command": {"type": "string"}}}}
+         "inputSchema": {"type": "object", "properties": {"command": {"type": "string"}}}},
+        {"name": "tools_front", "title": "tools front NAME", "description": "Put a running program's newest window in front.",
+         "annotations": {"readOnlyHint": false, "destructiveHint": false}, "_meta": {"spark-shell/opens": true},
+         "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}}},
+        {"name": "tools_end", "title": "end NAME", "description": "End a program and all its processes. Unsaved work is lost.",
+         "annotations": {"readOnlyHint": false, "destructiveHint": true},
+         "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}}}
     ])
 }
 
@@ -305,4 +311,82 @@ fn software_counts_open_their_lists_and_a_package_is_an_object_with_its_view() {
     golden(&mut app, "tools-software-apps", 60, 40);
     app.enter();
     assert_eq!(app.view, View::Preview, "Enter views a package, as F3 does");
+}
+
+/// A program of the running list, as `spark-shell provide tools` writes it: an object, its view, put in front when it
+/// has a window, end when it is the person's.
+fn program(name: &str, cpu: &str, mem: &str, n: u32, window: bool, mine: bool) -> Value {
+    let procs = if n == 1 { "1 process".to_string() } else { format!("{n} processes") };
+    let front = json!({"name": "tools_front", "arguments": {"name": name}, "said": "put in front"});
+    let mut more = vec![];
+    if mine {
+        more.push(json!({"name": "tools_end", "arguments": {"name": name}, "said": "end"}));
+    }
+    let mut line = format!("{name} {SEP} {cpu} cpu {SEP} {mem} {SEP} {procs}");
+    if !mine {
+        line.push_str(&format!(" {SEP} user root"));
+    }
+    json!({"id": format!("tools:program:{name}"), "sign": "blank", "text": name, "more": more, "children": null, "group": null,
+        "columns": [cpu, mem], "wide": [format!("{cpu} cpu"), mem, procs], "line": line,
+        "page": format!("spark-shell://tools/page/{name}"), "tool": if window { front } else { Value::Null }})
+}
+
+fn running() -> Value {
+    json!({"title": "running", "state": "412 processes", "rows": [
+        program("firefox", "9%", "1.6 GB", 14, true, true),
+        program("llama-server", "4%", "5.1 GB", 1, false, true),
+        program("foot", "1%", "84 MB", 3, true, true),
+        program("pipewire", "1%", "32 MB", 2, false, true),
+        program("udevd", "0%", "4.0 MB", 1, false, false)
+    ], "short": []})
+}
+
+#[test]
+fn running_is_every_program_its_cpu_and_its_memory_and_a_program_is_an_object() {
+    let mut app = app();
+    at_page(&mut app, "running", running());
+    let names: Vec<String> = app.picks().iter().map(|it| label(&app, it)).collect();
+    assert_eq!(names, vec!["firefox", "llama-server", "foot", "pipewire", "udevd"]);
+    assert!(app.object_pick(0), "a program is an object: a click selects it");
+    assert_eq!(app.selected_line().as_deref(), Some("firefox \u{b7} 9% cpu \u{b7} 1.6 GB \u{b7} 14 processes"));
+    assert_eq!(app.subtitle(), "running");
+    golden(&mut app, "tools-running", 60, 40);
+    // another user's program says whose it is
+    app.sel = 4;
+    assert_eq!(
+        app.selected_line().as_deref(),
+        Some("udevd \u{b7} 0% cpu \u{b7} 4.0 MB \u{b7} 1 process \u{b7} user root")
+    );
+    // and has no actions here: it is not the person's, and it has no window
+    app.hint_key(HintKey::Actions);
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("no actions here"));
+    // a program with no window: Enter is its view, as F3
+    app.reply = None;
+    app.sel = 1;
+    app.enter();
+    assert_eq!(app.view, View::Preview, "Enter views a program with no window");
+}
+
+#[test]
+fn f9_on_a_program_is_put_in_front_and_end_and_end_asks_first() {
+    let mut app = app();
+    at_page(&mut app, "running", running());
+    app.hint_key(HintKey::Actions);
+    assert!(matches!(app.view, View::Steps(0)), "{:?}", app.view);
+    assert_eq!(app.subtitle(), "firefox");
+    let words: Vec<String> = (0..2).filter_map(|k| app.step_call_words(k)).collect();
+    assert_eq!(words, vec!["put in front", "end"]);
+    assert!(app.step_call_words(2).is_none(), "two steps, each once");
+    golden(&mut app, "tools-running-actions", 60, 40);
+    // end: the question, its line and what it costs, keep working lit first
+    app.in_list = true;
+    app.sel = 1;
+    app.enter();
+    assert!(matches!(app.mode, Mode::Confirm(_)), "end asks first: {:?}", app.mode);
+    assert_eq!(app.question_verb(), "end firefox");
+    golden(&mut app, "tools-end", 60, 40);
+    let screen = snapshot(&app, 60, 40);
+    assert!(screen.contains("(unsaved work is lost)"), "{screen}");
+    app.escape();
+    assert!(matches!(app.mode, Mode::Normal), "Esc keeps working: {:?}", app.mode);
 }

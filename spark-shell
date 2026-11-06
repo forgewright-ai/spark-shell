@@ -7098,7 +7098,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps tools about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open about_site undo_all files_browse files_open files_app files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden tools_check tools_fix tools_copy_details tools_update tools_update_system tools_export"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open about_site undo_all files_browse files_open files_app files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden tools_check tools_fix tools_copy_details tools_update tools_update_system tools_export tools_front tools_end"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -7264,6 +7264,8 @@ tool_spec() {
         tools_update)      _ts=tools _ta=update _th=of _tt='tools update' _td='Run spark-shell update in a terminal window.' ;;
         tools_update_system) _ts=tools _ta=update-system _th=of _tt='tools update system' _td='Run the system upgrade in a terminal window.' ;;
         tools_export)      _ts=tools _ta=export _th=f _tt='tools export' _td='Save the installed software as a CycloneDX file.' ;;
+        tools_front)       _ts=tools _ta=front _tp=name _tk=string _th=of _tt='tools front NAME' _td='Put a running program'"'"'s newest window in front.' ;;
+        tools_end)         _ts=tools _ta=end _tp=name _tk=string _th=df _tt='end NAME' _td='End a program and all its processes. Unsaved work is lost.' ;;
         undo_all)          _ts=undo _ta=all _th='' _tt='undo' _td='Take the last thing done back.' ;;
         files_browse)      _ts=files _ta=browse _tp=path _tk=path _th=ifo _tt='files browse PATH' _td='Open a folder in the system file manager, for anything beyond the steps here. path is a row'"'"'s own path, exactly as written.' ;;
         files_open)        _ts=files _ta=open _tp=path _tk=path _th=ifo _tt='files open PATH' _td='Open a file with the app that opens its kind. path is a row'"'"'s own path, exactly as written.' ;;
@@ -7667,6 +7669,7 @@ provide_tools_page() {   # provide_tools_page PATH -> a tool's page, a rows reso
     case $1 in
         check) tools_check_run; tools_check_page ;;
         check/passed) tools_check_passed ;;
+        running) tools_running_page ;;
         system) tools_system_page ;;
         updates) tools_updates_page ;;
         software) tools_software_page ;;
@@ -7816,10 +7819,68 @@ tools_package_page() {   # tools_package_page KIND:NAME -> a package's view: wha
     printf 'description\t%s\nversion\t%s\nlicense\t%s\ncommands\t%s\ntype\t%s\nsource\t%s\n' "$_tpd" "$_tpv" "$(printf '%s' "$_tpl" | sed 's/^?$//')" "$(printf '%s' "$_tpc" | tr ' ' '\n' | sed 's|.*/||' | paste -sd' ' -)" "$_tpt" "$PM" \
         | page_of "$_tpn" ''
 }
+tools_running_read() {   # -> $TMP/running.tsv, the programs now (lib/tools_running.py), sway's windows by process id
+    : > "$TMP/running.windows"
+    ! desk_in_sway || swaymsg -t get_tree 2>/dev/null | jq -r '.. | objects | select((.type == "con" or .type == "floating_con") and (.pid // 0) > 0) | "\(.pid)\t\(.id)"' > "$TMP/running.windows" 2>/dev/null || :
+    python3 -I "$REPO/lib/tools_running.py" list "$BAR_PROC" "$TMP/running.state" "$TMP/running.windows" > "$TMP/running.tsv" 2>/dev/null
+}
+tools_users() { awk -F: '{ printf "%s\t%s\n", $3, $1 }' /etc/passwd 2>/dev/null | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add // {}'; }   # -> {"0": "root", ...}
+TOOLS_KEEP='sway spark-dialog'   # never ended from here: the desktop and the dialog
+tools_running_page() {   # -> every program, the busiest first: an object each, its actions put in front and end
+    tools_running_read
+    jq -Rn --arg sep "$PANEL_SEP" --arg me "$(id -u)" --argjson users "$(tools_users)" --arg keep " $TOOLS_KEEP " '
+        def b64: @base64 | gsub("="; "") | gsub("[+]"; "-") | gsub("/"; "_");
+        def one: (. * 10 | round) as $t | "\($t / 10 | floor).\($t % 10)";
+        def size: if . < 1024 then "\(.) B" elif . < 1048576 then "\(. / 1024 | floor) KB" elif . < 1073741824 then "\(. / 1048576 | one) MB" else "\(. / 1073741824 | one) GB" end;
+        [inputs | split("\t") | {name: .[0], cpu: (.[1] | tonumber), private: (.[2] | tonumber), count: .[4], uids: (.[5] | split(",")), window: .[9]}
+            | . as $g | ($g.uids == [$me]) as $mine | ("tools:program:" + $g.name) as $id
+            | ($g.uids | map($users[.] // .) | join(", ")) as $who
+            | {id: $id, sign: "blank", text: $g.name, more: [], children: null, group: null,
+               columns: ["\($g.cpu)%", ($g.private | size)],
+               wide: ["\($g.cpu)% cpu", ($g.private | size), (if $g.count == "1" then "1 process" else $g.count + " processes" end)],
+               line: ([$g.name, "\($g.cpu)% cpu", ($g.private | size), (if $g.count == "1" then "1 process" else $g.count + " processes" end)]
+                   + (if $mine then [] else ["user " + $who] end) | join(" " + $sep + " ")),
+               page: ("spark-shell://tools/page/" + ($id | b64)),
+               tool: (if $g.window != "" then {name: "tools_front", arguments: {name: $g.name}, said: "put in front"} else null end)}
+            | .more = (if $mine and ($keep | contains(" " + $g.name + " ") | not) then [{name: "tools_end", arguments: {name: $g.name}, said: "end"}] else [] end)]
+        | {title: "running", state: "\(map(.wide[2] | split(" ")[0] | tonumber) | add // 0) processes", rows: ., short: []}' < "$TMP/running.tsv"
+}
+tools_program() {   # tools_program NAME -> its line of the last read (read now when there is none)
+    [ -s "$TMP/running.tsv" ] || tools_running_read
+    awk -F '\t' -v n="$1" '$1 == n { print; exit }' "$TMP/running.tsv"
+}
+tools_program_page() {   # tools_program_page NAME -> a program's view: its processes, their ids, its user, when it started, its cpu, its memory, its command
+    _tpl=$(tools_program "$1"); [ -n "$_tpl" ] || return 1
+    printf '%s\n' "$_tpl" > "$TMP/program.one"
+    IFS="$TAB" read -r _tpn _tpc _tpp _tpr _tpk _tpu _tps _tpi _tpm _ < "$TMP/program.one"
+    _tpw=$(printf '%s\n' "$_tpu" | tr ',' '\n' | while read -r _u; do if [ "$_u" = "$(id -u)" ]; then echo you; else awk -F: -v u="$_u" '$3 == u { print $1; f = 1 } END { if (!f) print "user " u }' /etc/passwd; fi; done | paste -sd, - | sed 's/,/, /g')
+    _tpd=$(printf '%s' "$_tpi" | awk '{ s = ""; for (i = 1; i <= NF && i <= 4; i++) s = s (i > 1 ? ", " : "") $i; if (NF > 4) s = s " and " (NF - 4) " more"; print s }')
+    _tpt=$(date -d "@$_tps" '+%H:%M' 2>/dev/null || date -r "$_tps" '+%H:%M' 2>/dev/null || :)
+    [ "$(date -d "@$_tps" +%F 2>/dev/null)" = "$(date +%F)" ] || _tpt=$(date -d "@$_tps" '+%e %b %H:%M' 2>/dev/null | sed 's/^ *//' || :)
+    printf 'processes\t%s\nids\t%s\nuser\t%s\nstarted\t%s\ncpu\t%s%%\nmemory\t%s private, %s resident\ncommand\t%s\n' \
+        "$_tpk" "$_tpd" "$_tpw" "$_tpt" "$_tpc" "$(files_size "$_tpp")" "$(files_size "$_tpr")" "$_tpm" | page_of "$_tpn" ''
+}
+tools_dialog_tree() {   # -> the pids never ended from here: this provider's ancestors, and everything under the dialog
+    _tdp=$$; _tdd=''
+    while [ -n "$_tdp" ] && [ "$_tdp" != 0 ] && [ "$_tdp" != 1 ]; do
+        echo "$_tdp"
+        [ "$(cat "$BAR_PROC/$_tdp/comm" 2>/dev/null)" != spark-dialog ] || _tdd=$_tdp
+        _tdp=$(awk '{ sub(/^.*\) /, ""); print $2 }' "$BAR_PROC/$_tdp/stat" 2>/dev/null)
+    done
+    [ -z "$_tdd" ] || python3 -I "$REPO/lib/tools_running.py" tree "$BAR_PROC" "$_tdd" 2>/dev/null
+}
 tools_gate() {   # tools_gate ACTION [ARG] -> ARG as the step takes it (exit 0), or why not (exit 1)
     case $1 in
         check|copy-details|update|export) echo ''; return 0 ;;
         update-system) [ -n "$(tools_upgrade_command)" ] || { echo "no supported package manager here"; return 1; }; echo ''; return 0 ;;
+        front) _tgl=$(tools_program "$2"); [ -n "$_tgl" ] || { echo "$2 is not running"; return 1; }
+            [ -n "$(printf '%s' "$_tgl" | cut -f10)" ] || { echo "$2 has no window"; return 1; }
+            printf '%s\n' "$2"; return 0 ;;
+        end) case " $TOOLS_KEEP " in *" $2 "*) case $2 in sway) echo "sway is the desktop: use logout in power" ;; *) echo "the dialog closes with Esc" ;; esac; return 1 ;; esac
+            tools_running_read; _tgl=$(tools_program "$2"); [ -n "$_tgl" ] || { echo "$2 is not running"; return 1; }
+            _tgu=$(printf '%s' "$_tgl" | cut -f6)
+            [ "$_tgu" = "$(id -u)" ] || { echo "$2 belongs to $(printf '%s\n' "$_tgu" | tr ',' '\n' | grep -vx "$(id -u)" | head -1 | while read -r _u; do awk -F: -v u="$_u" '$3 == u { print $1; f = 1 } END { if (!f) print "user " u }' /etc/passwd; done) and cannot be ended here"; return 1; }
+            printf '%s\n' "$2"; return 0 ;;
         fix) _tgc=$(tools_fix_command "$2") || { echo "$2 is not a fix the last check gave"; return 1; }
             tools_check_rows | while IFS="$TAB" read -r _tst _tnm _tlb _tdt _tfx; do [ "$_tst" = ok ] || tools_fix_command "$_tfx" 2>/dev/null || :; done | grep -qxF -- "$_tgc" \
                 || { echo "$2 is not a fix the last check gave"; return 1; }
@@ -7834,6 +7895,18 @@ tools_act() {   # tools_act ACTION [ARG] -> one line; exit 1 when it was not don
             echo "checked: $(tools_check_state)" ;;
         fix) tools_terminal "$2" ;;
         update) tools_terminal 'spark-shell update' ;;
+        front) _tfc=$(tools_program "$2" | cut -f10)
+            swaymsg "[con_id=$_tfc] focus" >/dev/null 2>&1 || { echo "$2 did not come to front"; return 1; }
+            : > "$TMP/opened"; echo "$2 in front" ;;
+        end) tools_dialog_tree | sort -u > "$TMP/end.keep"
+            tools_program "$2" | cut -f8 | tr ' ' '\n' | grep -vxFf "$TMP/end.keep" | grep . > "$TMP/end.pids" || { echo "$2 is part of the dialog: Esc closes it"; return 1; }
+            xargs kill -TERM < "$TMP/end.pids" 2>/dev/null || :
+            _tew=0; while [ "$_tew" -lt 25 ]; do
+                _tel=''; while read -r _p; do [ ! -d "$BAR_PROC/$_p" ] || { _tel=1; break; }; done < "$TMP/end.pids"
+                [ -n "$_tel" ] || break; sleep 0.2; _tew=$((_tew + 1))
+            done
+            [ -z "$_tel" ] || { echo "$2 is still running after 5 seconds"; return 1; }
+            echo "$2 ended" ;;
         update-system) tools_terminal "$(tools_upgrade_command)" ;;
         copy-details) command -v wl-copy >/dev/null 2>&1 || { echo "cannot copy: wl-copy is not installed (spark-shell on desktop)"; return 1; }
             tools_details_text | wl-copy 2>/dev/null || { echo "cannot copy: the clipboard did not take it"; return 1; }
@@ -7918,9 +7991,17 @@ PROVIDE_POLL=${SPARK_SHELL_PROVIDE_POLL:-}   # the watcher's seconds between loo
 # notice. Every other section changes only by a step, whose answer carries its rows: no watcher for those (#196)
 PROVIDE_WATCHED=${SPARK_SHELL_PROVIDE_WATCHED:-wifi bt out mic storage window notifications}
 provide_seen() { cksum < "$TMP/rows.last" > "$TMP/rows.seen"; }   # the rows the host was last sent, as the watcher compares them (#196)
-provide_watch() {   # the rows looked at again every few seconds while a host is subscribed; a change pokes the loop. Its own TMP: the loop's files are the loop's
-    _seen=$TMP/rows.seen; TMP=$TMP/watch; mkdir -p "$TMP"
+provide_watch() {   # provide_watch SECTION [PAGE] -- the rows, or a page of them, looked at again every few seconds while a host is subscribed; a change pokes the loop. Its own TMP: the loop's files are the loop's
+    _seen=$TMP/rows.seen; _wpage=${2:-}; TMP=$TMP/watch; mkdir -p "$TMP"
     _every=$PROVIDE_POLL; [ -n "$_every" ] || case $(panel_cost "$1") in slow) _every=15 ;; fast) _every=5 ;; *) _every=3 ;; esac
+    if [ -n "$_wpage" ]; then   # a page: a change always pokes, and the host reads the page on screen again
+        _last=$(provide_tools_page "$_wpage" 2>/dev/null | cksum)
+        while :; do
+            sleep "$_every"
+            _now=$(provide_tools_page "$_wpage" 2>/dev/null | cksum)
+            [ "$_now" = "$_last" ] || { _last=$_now; fifo_put poke; }
+        done
+    fi
     _last=$(provide_rows "$1" 2>/dev/null | cksum)
     while :; do
         sleep "$_every"
@@ -8063,6 +8144,13 @@ EOF
                     rpc_result "$_id" "$(jq -c --arg u "$_uri" '.rows |= map(select(.tool.name == "notes_open")) | .short = [] | {contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/notes.found.json")"
                 else rpc_error "$_id" -32002 "no search at that uri"; fi
                 NOTES_WORDS=''
+                return 0
+            fi
+            if [ "$sec" = tools ] && [ "$_uri" = "spark-shell://tools/rows/running" ]; then   # running, read again every 3 seconds while it is on screen (v0.129)
+                case $_method in
+                    resources/subscribe) SUBSCRIBED=1; [ -n "$WATCH" ] || { provide_watch tools running 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; }; rpc_result "$_id" '{}' ;;
+                    resources/unsubscribe) SUBSCRIBED=''; [ -z "$WATCH" ] || { kill "$WATCH" 2>/dev/null || :; wait "$WATCH" 2>/dev/null || :; WATCH=''; }; rpc_result "$_id" '{}' ;;
+                esac
                 return 0
             fi
             [ "$_uri" = "spark-shell://$sec/rows" ] || { rpc_error "$_id" -32002 "no resource at that uri"; return 0; }
@@ -8635,6 +8723,7 @@ provide_page() {   # provide_page SECTION ROW-ID -> the page F3 shows for one ro
         bt:'bt:'*' '?*) bt_page "${2#bt:* }" ;;
         storage:'storage:'*' '?*) storage_page "${2#storage:* }" ;;
         tools:tools:package:?*) tools_package_page "${2#tools:package:}" ;;
+        tools:tools:program:?*) tools_program_page "${2#tools:program:}" ;;
         about:about:license) scrub_text < "$REPO/LICENSE" | jq -Rn '{title: "license", lines: [inputs], bold: []}' ;;   # the files as they are, read only (dialog/DESIGN.md, v0.127)
         about:about:credits) scrub_text < "$REPO/CREDITS.md" | jq -Rn '[inputs] as $l | {title: "credits", lines: ($l | map(sub("^#+ *"; ""))), bold: [range($l | length) | select($l[.] | startswith("#"))]}' ;;
         *) return 1 ;;
