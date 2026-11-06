@@ -47,8 +47,8 @@ simple and industry standard; no invented words.
   no date column, the folder's summary short, `4 items . 4.5 MB`. Full
   screen gives 120 cells, panes of 59 and 60, the date after the size
   and the summary whole; below 60 one pane, as before. In two panes
-  your home shows the folder alone, no `home` heading and no `recent`,
-  whose files are in other folders; one pane keeps them. `close pane`
+  your home has no `home` heading and no `recent`, whose files are in
+  other folders; one pane keeps them. `close pane`
   in the actions closes the second pane; the `two panes` and `one pane`
   rows are gone, since Right opens it.
 - The actions and the list of choices when a name exists draw inside
@@ -60,8 +60,9 @@ simple and industry standard; no invented words.
   the rows are one list: replace, replace all, skip, skip all, keep
   both, the `all` rows only while more remain. No second column, and no
   heading over the `all` rows.
-- F5 and F6 act at once, with no question, and `undo` stands on the
-  status row. The prompt confirms nothing: Enter submits what is typed
+- F5 and F6 to the other pane, and F8, act at once, with no question,
+  and `undo` stands on the status row; in one pane F5 and F6 pick the
+  folder first. The prompt confirms nothing: Enter submits what is typed
   there, one key, one meaning. The receipt for several reads
   `2 files copied to ~/pictures`, with no size; one file keeps the
   provider's words.

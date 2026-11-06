@@ -359,13 +359,13 @@ def request(data):
         raise ValueError("Application request must be an object")
     if data.get("op") == "copy":
         text = data.get("text")
-        if not isinstance(text, str) or len(text) > 16384:
-            raise ValueError("Invalid copy value")
+        if not isinstance(text, str) or len(text) > 1048576:
+            raise ValueError("that is too much to copy")
         if not shutil.which("wl-copy") or not os.environ.get("WAYLAND_DISPLAY"):
-            raise RuntimeError("Copy needs wl-copy in a Wayland session")
+            raise RuntimeError("copying needs wl-copy in a Wayland session")
         copied = subprocess.run(["wl-copy", "--"], input=text, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True, timeout=4)
         if copied.returncode:
-            raise RuntimeError("The clipboard did not accept this value")
+            raise RuntimeError("the clipboard did not take it")
         return {"copied": True}
     desktop = Desktop()
     op = data.get("op")

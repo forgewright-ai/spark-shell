@@ -7217,8 +7217,8 @@ tool_spec() {
         files_attach)      _ts=files _ta=attach _tp=path _tk=path _th=rif _tt='files attach PATH' _td='A text file to ask spark about, with the next words. path is a row'"'"'s own path, exactly as written.' ;;
         files_reveal)      _ts=files _ta=reveal _tp=path _tk=path _th=ifo _tt='files reveal PATH' _td='Show a file or folder in the system file manager, its folder opened. path is a row'"'"'s own path, exactly as written.' ;;
         files_rename)      _ts=files _ta=rename _tp=path _tk=path _te='name:filename' _th='' _tt='files rename PATH' _td='Give a file or folder a new name, in its folder. path is a row'"'"'s own path, exactly as written; name the new name alone, no folder in it. Undo puts the old name back.' ;;
-        files_move)        _ts=files _ta=move _tp=path _tk=path _te='to:path name?:filename there?:keep|replace' _th='' _tt='files move PATH' _td='Move a file or folder into another folder. path and to are rows'"'"' own paths, exactly as written; to is a folder; name, when given, is the name it takes there, one name alone. A name there already is refused; there is what to do when the name is there already: keep both, the new one named with a number (notes 2.md), or replace, the one there put in the trash first. Undo moves it back, under its old name.' ;;
-        files_copy)        _ts=files _ta=copy _tp=path _tk=path _te='to:path name?:filename there?:keep|replace' _th='' _tt='files copy PATH' _td='Copy a file or folder into another folder. path and to are rows'"'"' own paths, exactly as written; to is a folder; name, when given, is the name it takes there, one name alone. A name there already is refused; there is what to do when the name is there already: keep both, the new one named with a number (notes 2.md), or replace, the one there put in the trash first. Undo trashes the copy.' ;;
+        files_move)        _ts=files _ta=move _tp=path _tk=path _te='to:path name?:filename there?:keep|replace' _th='' _tt='files move PATH' _td='Move a file or folder into another folder. path and to are rows'"'"' own paths, exactly as written; to is a folder; name, when given, is the name it takes there, one name alone. A name there already is refused; there is what to do when the name already exists: keep both, the new one named with a number (notes 2.md), or replace, the one there put in the trash first. Undo moves it back, under its old name.' ;;
+        files_copy)        _ts=files _ta=copy _tp=path _tk=path _te='to:path name?:filename there?:keep|replace' _th='' _tt='files copy PATH' _td='Copy a file or folder into another folder. path and to are rows'"'"' own paths, exactly as written; to is a folder; name, when given, is the name it takes there, one name alone. A name there already is refused; there is what to do when the name already exists: keep both, the new one named with a number (notes 2.md), or replace, the one there put in the trash first. Undo trashes the copy.' ;;
         files_trash)       _ts=files _ta=trash _tp=path _tk=path _th='' _tt='files trash PATH' _td='Put a file or folder in the trash: the delete here. path is a row'"'"'s own path, exactly as written. Undo brings it back.' ;;
         files_restore)     _ts=files _ta=restore _tp=path _tk=path _th=f _tt='files restore PATH' _td='Bring a file or folder back from the trash to the path it had.' ;;
         files_purge)       _ts=files _ta=purge _tp=path _tk=path _th=d _tt='files purge PATH' _td='Delete for good the newest file or folder the trash holds from path, the path it had: it cannot be brought back.' ;;
@@ -8050,7 +8050,7 @@ files_name_ok() {   # files_name_ok NAME -> 0 for a name a file or folder may ta
 files_new_ok() {   # files_new_ok FOLDER NAME -> FOLDER/NAME when it is a path a file may be made at: the folder holds to the lines, the name is one, nothing is there
     _fnd=$(files_ok "$1" dir) || { echo "that is not a folder in the folders given"; return 1; }
     files_name_ok "$2" || { echo "a name is one plain name: no slash, not hidden, 255 characters at most"; return 1; }
-    [ ! -e "$_fnd/$2" ] && [ ! -L "$_fnd/$2" ] || { echo "$2 is there already"; return 1; }
+    [ ! -e "$_fnd/$2" ] && [ ! -L "$_fnd/$2" ] || { echo "$2 already exists"; return 1; }
     printf '%s\n' "$_fnd/$2"
 }
 files_free() {   # files_free FOLDER NAME dir|file -> NAME 2.EXT, then NAME 3.EXT, the first not in FOLDER: a name beside the one there (keep both); a folder takes its number at its end, a file before what follows its last dot
@@ -8726,7 +8726,7 @@ files_trashed() {   # files_trashed PATH -> the name under the trash's files/ of
 }
 files_restore() {   # files_restore PATH -> one line: the newest file the trash holds from PATH put back where it was, by the spec's own records (so gio's are read too)
     _ftd=$(files_trash_dir "$1") || { echo "no trash holds ${1##*/}"; return 1; }
-    [ ! -e "$1" ] && [ ! -L "$1" ] || { echo "${1##*/} is there already"; return 1; }
+    [ ! -e "$1" ] && [ ! -L "$1" ] || { echo "${1##*/} already exists"; return 1; }
     _frn=$(files_trashed "$1"); [ -n "$_frn" ] || { echo "the trash holds nothing from ${1##*/}"; return 1; }
     mv "$_ftd/files/$_frn" "$1" || { echo "could not bring ${1##*/} back"; return 1; }
     rm -f "$_ftd/info/$_frn.trashinfo"
@@ -8805,6 +8805,13 @@ files_open_text() {   # files_open_text ID PATH -- a text file in the editor, in
     if [ "$_wr" -eq 0 ]; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
     else files_result "$1" "$(printf '%s' "${2##*/}" | scrub_text) opens in ${_fed%% *}"; fi
 }
+files_app_terminal() {   # files_app_terminal PATH -> 0 when the app the system assigns to PATH runs in a terminal: xdg-open starts it with none, and nothing opens
+    [ "$OS" != Darwin ] && command -v xdg-mime >/dev/null 2>&1 || return 1
+    _fam=$(xdg-mime query filetype "$1" 2>/dev/null); _fad=$(xdg-mime query default "$_fam" 2>/dev/null); [ -n "$_fad" ] || return 1
+    _fai=$IFS; IFS=:; set -- ${XDG_DATA_HOME:-$HOME/.local/share} ${XDG_DATA_DIRS:-/usr/local/share:/usr/share}; IFS=$_fai
+    for _fax in "$@"; do [ ! -f "$_fax/applications/$_fad" ] || { grep -qx 'Terminal=true' "$_fax/applications/$_fad"; return; }; done
+    return 1
+}
 files_open_with() {   # files_open_with ID PATH [--reveal] -- the path through the system's opener (xdg-open, open; a reveal selects it in the file manager)
     if [ "$OS" != Darwin ]; then
         command -v xdg-open >/dev/null 2>&1 || { provide_refuse "$1" "files: xdg-open is not installed, so nothing opens files"; return 0; }
@@ -8864,7 +8871,7 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
             _fat=$(printf '%s' "$3" | jq -r '.at // 0 | if type == "number" and . >= 0 and . < 86400 then (. * 10 | floor) / 10 else 0 end')
             if [ "$(files_kind "$_ff")" = video ] && command -v mpv >/dev/null 2>&1 && files_video_here; then   # over its frame (#125)
                 _fbx=$(printf '%s' "$3" | jq -r '[.x, .y, .w, .h] | if all(type == "number" and . >= 0 and . <= 65535) then map(floor | tostring) | join(" ") else "" end')
-                [ -n "$_fbx" ] || { provide_refuse "$1" "files: a video plays over its preview: the dialog gives the box"; return 0; }
+                [ -n "$_fbx" ] || { provide_refuse "$1" "files: a video plays over its view: the dialog gives the box"; return 0; }
                 # shellcheck disable=SC2086   # four numbers, split on purpose
                 _fpv=$(files_play_video "$_ff" "$_fat" $_fbx) || { provide_refuse "$1" "files: ${_fpv:-$_fname could not be played here}"; return 0; }
                 files_result "$1" "playing $_fname"; return 0
@@ -8872,7 +8879,9 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
             [ "$(files_kind "$_ff")" = sound ] && command -v mpv >/dev/null 2>&1 || { provide_refuse "$1" "files: $_fname is no sound mpv plays here"; return 0; }
             files_play "$_ff" "$_fat"; files_result "$1" "playing $_fname" ;;
         files_browse) files_open_with "$1" "$_ff" ;;
-        files_app) files_open_with "$1" "$_ff" ;;   # the app the system assigns, never the editor: a text file too
+        files_app)   # the app the system assigns; one that runs in a terminal gets a terminal, as the editor does (#113)
+            if files_app_terminal "$_ff"; then files_open_text "$1" "$_ff" || files_open_with "$1" "$_ff"
+            else files_open_with "$1" "$_ff"; fi ;;
         files_reveal) files_open_with "$1" "$_ff" --reveal ;;
         files_show|files_attach)
             set -- "$1" "$2" "$(files_stat "$_ff" | cut -d' ' -f1)"
@@ -8902,7 +8911,7 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
                     keep) _fnk='file'; [ ! -d "$_ff" ] || _fnk=dir; _fnn=$(files_free "$_fd" "$_fnn" "$_fnk") ;;
                     replace) _fone=$(files_ok "$_fd/$_fnn" any) || { provide_refuse "$1" "files: $_fnn there is not a file or a folder: it stays"; return 0; }
                         _fo=$(files_trash "$_fone") || { provide_refuse "$1" "files: $_fo"; return 0; }; _fend=', the one there is in the trash' ;;
-                    *) provide_refuse "$1" "files: $_fnn is there already"; return 0 ;;
+                    *) provide_refuse "$1" "files: $_fnn already exists"; return 0 ;;
                 esac
             fi
             _fn=$(files_new_ok "$_fd" "$_fnn") || { provide_refuse "$1" "files: $_fn"; return 0; }

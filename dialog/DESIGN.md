@@ -481,8 +481,7 @@ action by these words`, muted.
 
 The rows follow the provider's steps: `attach to the next request`
 after view, `reveal in the system file manager` where one is
-configured. A folder's row has open, open in app, rename, copy, move,
-copy path, trash and select. `..` and the folder's own row open the
+configured. A folder's row has the same rows without attach. `..` and the folder's own row open the
 folder's actions alone. With a selection the header reads `files . 2
 selected`, the rows copy, move, copy path, trash and `deselect all`,
 then the folder's. `open in the system file manager` stands only where
@@ -492,14 +491,16 @@ one is configured, and `close pane` only in two panes.
 
 Right opens the second pane beside the first, showing the same folder,
 and goes to it; `close pane` in the actions closes it. Each pane keeps
-its own folder, selection, scroll and typed words. One pane is active:
+its own folder, selection, scroll and typed words; two panes on one
+folder share their words. One pane is active:
 it has the selection bar, its path on its first row in the text color,
 and the header names its place. The other pane has no bar and its path
 is muted. A line stands between them, in the rule's color. The status
 row is the active pane's. A click on a row of the other pane makes it
 active and selects that row, and a second click opens it; a click on
 its path makes it active too. F3 views the active pane's lit file in
-the whole window and Esc comes back to the panes as they were. Opening
+the whole window and Esc comes back to the panes, the words typed
+gone. Opening
 a folder, going back, typing and selecting act in the active pane
 alone.
 
@@ -510,9 +511,9 @@ column, the folder's summary short (`4 items . 4.5 MB`). Super+f gives
 120 cells, panes of 59 and 60, the date after the size and the summary
 whole. Below 60 cells the active pane alone is drawn and the other
 waits, nothing said; Right in such a window is refused: `two panes need
-a window 60 cells wide`. In two panes your home shows the folder alone:
-no `home` heading and no `recent`, whose files are in other folders.
-One pane keeps them.
+a window 60 cells wide`. In two panes your home has no `home` heading
+and no `recent`, whose files are in other folders; its folders, files,
+trash and drives stay. One pane keeps them.
 
       < back          files . ~/documents                     x
 
@@ -544,7 +545,8 @@ other pane reads its folder again, so the result is seen.
 
 ### The operation and its receipt
 
-F5, F6 and F8 act at once, with no question: the change applies and
+F5 and F6 to the other pane, and F8, act at once, with no question: the
+change applies and
 `undo` stands on the status row. The prompt never confirms anything;
 Enter submits what is typed there. One file goes through the provider's
 step, its receipt on the status row. Several selected files run one
@@ -562,8 +564,8 @@ takes the whole back, newest first:
 
 Esc while files are being copied, moved or trashed stops after the
 file under way, wherever you are, and the receipt says what was done;
-the x does the same and the dialog stays open, so no transfer ends
-with the window. The next Esc or x closes. A transfer goes on while
+the x does the same and the dialog stays open. The next Esc or x
+closes. Ctrl+Q quits at once, a transfer with it, and says nothing. A transfer goes on while
 you look at home or apps. Typed `undo` at the prompt takes the last
 change back too. The selection clears once the operation ends.
 
@@ -595,8 +597,8 @@ other pane in view; the header says what happened:
 
 `replace all` and `skip all` stand only while more names remain. Esc
 cancels the operation and nothing is said. A replaced file is in the
-trash and the receipt says so; `keep both` numbers the new one (`notes
-2.md`) and the receipt names it. A conflict the rows could not show (a
+trash; `keep both` numbers the new one (`notes 2.md`). For one file the
+receipt says which; for several it counts them. A conflict the rows could not show (a
 file past the first page of a large folder, a hidden one) is refused
 by the provider with its reason and the operation goes on with the
 rest.
@@ -625,8 +627,8 @@ top of help; `apps . web`, `apps . firefox`, `files . ~` and
 
 ## Help
 
-One list by subject, searchable, scrolling: `in home` and `in a
-view` are the dialog's keys as bound now, a sentence each;
+One list by subject, searchable, scrolling: `in home`, `in files` and
+`in a view` are the dialog's keys as bound now, a sentence each;
 `windows`, `workspaces` and `the desktop` are the desktop's, as the
 about provider sends them; `at the prompt` is the words typed there. A
 row is what you do, its key a chip at the right where the rows' arrows
@@ -649,12 +651,22 @@ change. Home's column is how many keys it lists.
         ask spark the words                         Ctrl+Enter   <- selection bar
         a new line in the prompt                   Shift+Enter
         the conversation, and back                         F10
+        quit                                            Ctrl+Q
         the prompt's tools, one to the next                Tab
-        a row's view                                        F3
+        view a row                                          F3
+        rename a row                                        F2
         a row's actions or details                          F9
-        select a file, and the next                      Space
-        the other pane                                Ctrl+Tab
         a page up, a page down                PageUp  PageDown
+
+      in files
+        select a row, and the next                       Space
+        open in app                                         F4
+        copy                                                F5
+        move                                                F6
+        new folder                                          F7
+        trash                                               F8
+        copy path                                       Ctrl+C
+        the other pane                                Ctrl+Tab
 
       in a view
         bigger, smaller, as it fits                    +  -  0

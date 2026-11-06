@@ -1267,8 +1267,8 @@ its first and its last row.
   file's rows are open (Enter), open in app (F4), view (F3), attach to
   the next request, reveal in the system file manager where one is
   configured, rename (F2), copy (F5), move (F6), copy path (Ctrl+C),
-  trash (F8) and select (Space); a folder's are open, open in app,
-  rename, copy, move, copy path, trash and select. Then, after a row of
+  trash (F8) and select (Space); a folder's are the same without
+  attach. Then, after a row of
   air, the folder's own: `new folder` (F7), `new file` (the file opens
   in your editor), `open in the system file manager`, for anything
   beyond these steps (permissions, archives, remote places), where one
@@ -1281,7 +1281,8 @@ its first and its last row.
 
   Two panes: Right opens the second pane beside the first, on the same
   folder, and goes to it; `close pane` in the actions closes it. Each
-  pane keeps its own folder, selection, scroll and typed words. One
+  pane keeps its own folder, selection, scroll and typed words; two
+  panes on one folder share their words. One
   pane is active: it has the selection bar, its path on its first row
   in the text color, and the header names its place; the other has no
   bar and its path is muted. A line stands between them, in the rule's
@@ -1290,7 +1291,8 @@ its first and its last row.
   it, and a click on its path makes it active too. Opening a folder,
   going back, typing and selecting act in the active pane alone; F3
   views its lit file in the whole window, and Esc comes back to the
-  panes as they were. The window never resizes for a pane. In the
+  panes, the words typed gone. The window never resizes for a pane. In
+  the
   normal window the panes are 29 and 30 cells with the line between
   them: the name cut in its middle, the size or the count at the pane's
   right edge, no date column, the folder's summary short,
@@ -1298,11 +1300,12 @@ its first and its last row.
   59 and 60, the date after the size and the summary whole. Below 60
   cells the active pane alone is drawn and the other waits, nothing
   said, and Right is refused: `two panes need a window 60 cells wide`.
-  In two panes your home shows the folder alone, with no `home` heading
-  and no `recent`, whose files are in other folders; one pane keeps
-  them.
+  In two panes your home has no `home` heading and no `recent`, whose
+  files are in other folders; its folders, files, trash and drives stay,
+  and one pane keeps them.
 
-  The operation: F5, F6 and F8 act at once, with no question: the
+  The operation: F5 and F6 to the other pane, and F8, act at once, with
+  no question: the
   change applies and `undo` stands on the status row. The prompt never
   confirms anything; Enter submits what is typed there. In two panes F5
   and F6 go to the other pane's folder; the other pane on the same
@@ -1319,8 +1322,8 @@ its first and its last row.
   and one `undo` that takes the whole back, newest first. Esc while
   files are being copied, moved or trashed stops after the file under
   way, wherever you are, and the receipt says what was done; the x does
-  the same and the dialog stays open, so no transfer ends with the
-  window; the next Esc or x closes. A transfer goes on while you look
+  the same and the dialog stays open; the next Esc or x closes, and
+  Ctrl+Q quits at once, a transfer with it. A transfer goes on while you look
   at home or apps, and typed `undo` at the prompt takes the last change
   back too. The selection clears once the operation ends. Trash is the
   delete: the file goes to the freedesktop trash (`gio trash` where it
@@ -1334,9 +1337,9 @@ its first and its last row.
   header says what happened, `notes.md already exists`, and the rows
   are `replace`, `replace all`, `skip`, `skip all` and `keep both`, the
   `all` rows only while more names remain. A replaced file is in the
-  trash and the receipt says so; `undo` takes the move or the copy back
-  and leaves the replaced one in the trash. `keep both` numbers the new
-  one (`notes 2.md`) and the receipt names it. Esc cancels the
+  trash, and `undo` takes the move or the copy back and leaves it there.
+  `keep both` numbers the new one (`notes 2.md`). For one file the
+  receipt says which; for several it counts them. Esc cancels the
   operation and nothing is said. A conflict the rows could not show (a
   file past the first page of a large folder, a hidden one) is refused
   by the provider with its reason, and the operation goes on with the
