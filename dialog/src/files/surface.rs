@@ -647,6 +647,37 @@ impl App {
 
     // ---- the keys
 
+    /// F4 outside a folder: in the view the file on screen goes to its app, as from the list, a sound stopping as Enter
+    /// stops it; a row that names no path, and every other place, has nothing to open.
+    fn files_view_open(&mut self) {
+        let call = self.files_viewed_app();
+        let Some(call) = call.filter(|_| self.view == View::Preview) else {
+            return self.refuse("nothing to open here");
+        };
+        self.stop_sound();
+        self.files_activate(Action::Step(call));
+    }
+
+    /// The viewed row's step to its app: the row's own, or its path handed to the provider's tool.
+    fn files_viewed_app(&self) -> Option<Call> {
+        let pv = self.preview.as_ref()?;
+        let row = pv.row();
+        let path = path_of(row)?;
+        if self.files() != Some(pv.prov) || !self.providers[pv.prov].tools.iter().any(|t| t.name == "files_app") {
+            return None;
+        }
+        let own = row.tool.iter().chain(row.more.iter()).find(|c| c.name == "files_app").cloned();
+        Some(own.unwrap_or_else(|| Call {
+            name: "files_app".into(),
+            arguments: serde_json::Map::from_iter([("path".to_string(), Value::String(path))]),
+            ask: vec![],
+            said: None,
+            pick: None,
+            value: None,
+            children: None,
+        }))
+    }
+
     /// The key's refusal where it has nothing to act on.
     fn files_key_words(key: HintKey) -> &'static str {
         match key {
@@ -693,11 +724,10 @@ impl App {
     /// F4 to F8 and Ctrl+C in a files folder: outside one each says there is nothing for it.
     pub(crate) fn files_key(&mut self, key: HintKey) {
         let Some((p, _)) = self.files_pane_view() else {
-            return self.refuse(if key == HintKey::Open {
-                "nothing to open here"
-            } else {
-                Self::files_key_words(key)
-            });
+            return match key {
+                HintKey::Open => self.files_view_open(),
+                _ => self.refuse(Self::files_key_words(key)),
+            };
         };
         if self.files_page_key(key) {
             return;

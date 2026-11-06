@@ -114,7 +114,8 @@ fn dir(parent: &str, name: &str, items: &str, group: &str, uri: &str) -> Value {
 fn summary(text: &str, path: &str) -> Value {
     json!({"id": "files:here", "sign": "opens", "text": text, "columns": [], "more": [
         {"name": "files_new_folder", "arguments": {"path": path}, "ask": ["name"], "said": "new folder"},
-        {"name": "files_new_text", "arguments": {"path": path}, "ask": ["name"], "said": "new text file"}]})
+        {"name": "files_new_text", "arguments": {"path": path}, "ask": ["name"], "said": "new text file"},
+        {"name": "files_browse", "arguments": {"path": path}, "said": "open in the system file manager"}]})
 }
 
 fn up(uri: &str) -> Value {
@@ -490,6 +491,7 @@ fn f9_opens_the_rows_actions_then_the_folders_and_every_door_goes_back_with_the_
             "open",
             "open in app",
             "view",
+            "attach to the next request",
             "rename",
             "copy",
             "move",
@@ -498,7 +500,8 @@ fn f9_opens_the_rows_actions_then_the_folders_and_every_door_goes_back_with_the_
             "select",
             "",
             "new folder",
-            "new file"
+            "new file",
+            "open in the system file manager"
         ],
         "one order whatever the provider's, a blank row, the folder's; close pane only while two stand"
     );
@@ -514,6 +517,7 @@ fn f9_opens_the_rows_actions_then_the_folders_and_every_door_goes_back_with_the_
         ("open", "Enter"),
         ("open in app", "F4"),
         ("view", "F3"),
+        ("attach to the next request", ""),
         ("rename", "F2"),
         ("copy", "F5"),
         ("move", "F6"),
@@ -522,6 +526,7 @@ fn f9_opens_the_rows_actions_then_the_folders_and_every_door_goes_back_with_the_
         ("select", "Space"),
         ("new folder", "F7"),
         ("new file", ""),
+        ("open in the system file manager", ""),
     ];
     assert_eq!(keys, want.map(|(a, b)| (a.to_string(), b.to_string())), "each row's key beside it");
     let check = app
@@ -596,7 +601,7 @@ fn a_folders_page_the_summary_rows_and_the_checked_sets() {
     app.enter();
     assert!(app.files_page_open());
     assert_eq!(app.subtitle(), "~");
-    assert_eq!(labels(&app), ["new folder", "new file"]);
+    assert_eq!(labels(&app), ["new folder", "new file", "open in the system file manager"]);
     app.escape();
     app.hint_key(HintKey::Actions);
     assert_eq!(labels(&app)[0], "new folder");
@@ -625,7 +630,17 @@ fn a_folders_page_the_summary_rows_and_the_checked_sets() {
     assert_eq!(app.subtitle(), "2 selected", "whichever row is lit");
     assert_eq!(
         labels(&app),
-        ["copy", "move", "copy path", "trash", "deselect all", "", "new folder", "new file"]
+        [
+            "copy",
+            "move",
+            "copy path",
+            "trash",
+            "deselect all",
+            "",
+            "new folder",
+            "new file",
+            "open in the system file manager"
+        ]
     );
     page_row(&mut app, "deselect all");
     app.enter();
@@ -2310,7 +2325,7 @@ fn the_keys_with_words_typed_in_a_form_on_a_page_and_in_the_view() {
         app.hint_key(key);
         assert_eq!(said(&app).as_deref(), Some("finish this first: Enter picks, Esc cancels"), "{:?}", key);
     }
-    // the view: F3 goes back, the rest are the list's and say so
+    // the view: F3 goes back, F4 is the viewed file's, the rest are the list's and say so
     let mut app = files_app();
     app.hint_key(HintKey::View);
     assert_eq!(app.view, View::Preview);
@@ -2318,7 +2333,6 @@ fn the_keys_with_words_typed_in_a_form_on_a_page_and_in_the_view() {
     assert_eq!(app.subtitle(), "~");
     for (key, words) in [
         (HintKey::Rename, "nothing to rename here"),
-        (HintKey::Open, "nothing to open here"),
         (HintKey::Copy, "nothing to copy here"),
         (HintKey::Move, "nothing to move here"),
         (HintKey::New, "no new folder here"),
@@ -2394,6 +2408,133 @@ fn f4_hands_the_row_to_the_system_by_the_tools_name() {
     app.view = View::Help;
     app.hint_key(HintKey::Open);
     assert_eq!(said(&app).as_deref(), Some("nothing to open here"));
+}
+
+#[test]
+fn f4_in_the_view_hands_the_viewed_file_to_its_app_and_says_why_where_no_path_stands() {
+    let (mut app, rx, calls) = started(vec![], vec![]);
+    app.hint_key(HintKey::View);
+    assert_eq!(app.view, View::Preview);
+    app.preview.as_mut().unwrap().playing = Some(Instant::now());
+    app.hint_key(HintKey::Open);
+    assert!(pump(&mut app, &rx, |_| !tool_calls(&calls).is_empty()));
+    let c = tool_calls(&calls);
+    assert_eq!(c[0]["name"], "files_app");
+    assert_eq!(c[0]["arguments"]["path"], "/data/me/notes.md");
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()));
+    assert_eq!(app.view, View::Preview, "the view stands behind the app");
+    assert!(app.preview.as_ref().unwrap().playing.is_none(), "a sound stops, as Enter stops it");
+    // the file on screen, not the one the view opened on
+    app.down();
+    app.hint_key(HintKey::Open);
+    assert!(pump(&mut app, &rx, |_| tool_calls(&calls).len() == 2));
+    assert_eq!(tool_calls(&calls)[1]["arguments"]["path"], "/data/me/report.pdf");
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()));
+    // a row that names its path and offers no such step: the path is enough
+    let pv = app.preview.as_mut().unwrap();
+    let at = pv.at;
+    pv.files[at].more.retain(|c| c.name != "files_app");
+    app.hint_key(HintKey::Open);
+    assert!(pump(&mut app, &rx, |_| tool_calls(&calls).len() == 3));
+    let c = &tool_calls(&calls)[2];
+    assert_eq!(c["name"], "files_app");
+    assert_eq!(c["arguments"]["path"], "/data/me/report.pdf");
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()));
+    // a trashed row names no path of its own, a row with no steps none at all
+    let pv = app.preview.as_mut().unwrap();
+    let at = pv.at;
+    let keep = pv.files[at].clone();
+    pv.files[at].tool.as_mut().unwrap().name = "files_restore".into();
+    app.hint_key(HintKey::Open);
+    assert_eq!(said(&app).as_deref(), Some("nothing to open here"));
+    let pv = app.preview.as_mut().unwrap();
+    pv.files[at].tool = None;
+    pv.files[at].more.clear();
+    app.reply = None;
+    app.hint_key(HintKey::Open);
+    assert_eq!(said(&app).as_deref(), Some("nothing to open here"));
+    // a provider with no such tool has nothing to hand it to
+    app.preview.as_mut().unwrap().files[at] = keep;
+    app.providers[0].tools.retain(|t| t.name != "files_app");
+    app.reply = None;
+    app.hint_key(HintKey::Open);
+    assert_eq!(said(&app).as_deref(), Some("nothing to open here"));
+    assert_eq!(tool_calls(&calls).len(), 3, "a refusal calls nothing");
+}
+
+#[test]
+fn attach_on_the_menu_runs_the_rows_own_step() {
+    let (mut app, rx, calls) = started(vec![], vec![]);
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "attach to the next request");
+    app.enter();
+    assert!(pump(&mut app, &rx, |_| !tool_calls(&calls).is_empty()));
+    let c = tool_calls(&calls);
+    assert_eq!(c[0]["name"], "files_attach");
+    assert_eq!(c[0]["arguments"]["path"], "/data/me/notes.md");
+}
+
+#[test]
+fn the_system_file_manager_stands_in_the_menu_where_the_provider_offers_it() {
+    // the folder's door: it opens the folder on screen, after the folder's steps, before close pane
+    let (mut app, rx, calls) = started(vec![], vec![]);
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "open in the system file manager");
+    app.enter();
+    assert!(pump(&mut app, &rx, |_| !tool_calls(&calls).is_empty()));
+    let c = tool_calls(&calls);
+    assert_eq!(c[0]["name"], "files_browse");
+    assert_eq!(c[0]["arguments"]["path"], "/data/me");
+    let mut app = files_app();
+    app.files.other = Some(pane(PICS, Some(pics_rows(&["notes.md"]))));
+    app.hint_key(HintKey::Actions);
+    let rows = labels(&app);
+    assert_eq!(
+        rows[rows.len() - 4..],
+        ["new folder", "new file", "open in the system\u{2026}", "close pane"],
+        "the words cut to the pane, as every row's are"
+    );
+    // the provider's first: the menu keeps its place for it all the same
+    let mut folder = home_rows();
+    let last = folder["rows"].as_array().unwrap().len() - 1;
+    folder["rows"][last]["more"].as_array_mut().unwrap().reverse();
+    let mut app = files_app();
+    at(&mut app, HOME, folder);
+    light_row(&mut app, "this folder \u{b7} 3 folders \u{b7} 3 files \u{b7} 4.5 MB");
+    app.hint_key(HintKey::Actions);
+    assert_eq!(labels(&app), ["new file", "new folder", "open in the system file manager"]);
+    // a file's reveal: after attach, wherever the provider wrote it, its row running the file's step
+    let mut folder = home_rows();
+    let step = json!({"name": "files_reveal", "said": "reveal in the system file manager"});
+    folder["kinds"]["file"]["more"].as_array_mut().unwrap().push(step);
+    let mut app = files_app();
+    at(&mut app, HOME, folder);
+    app.hint_key(HintKey::Actions);
+    assert_eq!(
+        labels(&app)[..6],
+        [
+            "open",
+            "open in app",
+            "view",
+            "attach to the next request",
+            "reveal in the system file manager",
+            "rename"
+        ]
+    );
+    // none configured: the tool stands in the provider's list, the folder's steps and the row's hold none, so no row
+    let mut folder = home_rows();
+    let last = folder["rows"].as_array().unwrap().len() - 1;
+    folder["rows"][last]["more"].as_array_mut().unwrap().retain(|c| c["name"] != "files_browse");
+    let mut app = files_app();
+    at(&mut app, HOME, folder);
+    assert!(app.providers[0].tools.iter().any(|t| t.name == "files_browse"));
+    app.hint_key(HintKey::Actions);
+    let rows = labels(&app);
+    assert!(
+        !rows.iter().any(|l| l.contains("system file manager")) && rows.last().map(String::as_str) == Some("new file"),
+        "{:?}",
+        rows
+    );
 }
 
 #[test]

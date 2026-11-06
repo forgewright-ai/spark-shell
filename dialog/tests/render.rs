@@ -764,7 +764,8 @@ fn files_home() -> App {
         {"id": "files:drive:s", "sign": "opens", "text": "STICK", "columns": ["14.2 GB free"], "wide": ["", "14.2 GB free", "", ""], "children": "spark-shell://files/rows/c3RpY2s", "group": "drives"},
         {"id": "files:here", "sign": "opens", "text": "this folder \u{b7} 3 folders \u{b7} 2 files \u{b7} 3 KB", "columns": [], "more": [
             {"name": "files_new_folder", "arguments": {"path": "/data/me"}, "ask": ["name"], "said": "new folder"},
-            {"name": "files_new_text", "arguments": {"path": "/data/me"}, "ask": ["name"], "said": "new text file"}]}
+            {"name": "files_new_text", "arguments": {"path": "/data/me"}, "ask": ["name"], "said": "new text file"},
+            {"name": "files_browse", "arguments": {"path": "/data/me"}, "said": "open in the system file manager"}]}
     ], "short": []})
         .to_string(),
     )
@@ -840,7 +841,7 @@ fn right_on_a_file_lists_its_steps_in_the_providers_words() {
     let mut app = manager_app();
     app.hint_key(spark_dialog::app::HintKey::Actions);
     assert!(matches!(app.view, View::Folder(..)) && app.files_page_open());
-    app.sel = 5;
+    app.sel = 7; // trash
     render(&app, "steps");
 }
 
@@ -848,7 +849,7 @@ fn right_on_a_file_lists_its_steps_in_the_providers_words() {
 fn a_move_picks_its_folder_among_the_folders_with_the_row_that_lands_it_here() {
     let mut app = manager_app();
     app.hint_key(spark_dialog::app::HintKey::Actions);
-    app.sel = 3; // move
+    app.sel = 5; // move
     app.enter();
     assert!(app.picking.as_ref().is_some_and(|pk| pk.step.is_some()));
     render(&app, "pick");

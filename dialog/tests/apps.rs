@@ -5,7 +5,7 @@
 mod common;
 use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
 use serde_json::json;
-use spark_dialog::app::{App, Config, Helper, HintKey, Item, View};
+use spark_dialog::app::{App, Config, Found, Helper, HintKey, Item, View};
 use spark_dialog::apps::{
     preferences::{Preference, Preferences},
     Action, Line, Navigation, Page,
@@ -1007,6 +1007,53 @@ fn the_hidden_apps_are_the_lists_own_shape_under_their_categories_and_searched_b
     );
     a.set_draft("edit");
     assert!(lines(&a).iter().any(|l| l.label == "editor"), "and finds by the words");
+    cleanup(&a);
+}
+
+#[test]
+fn f9_on_an_app_found_from_home_opens_its_details_and_esc_brings_the_words_back() {
+    let mut a = app();
+    a.view = View::Home;
+    a.came_from.clear();
+    for c in "editor".chars() {
+        a.typed(c);
+    }
+    pick(&mut a, Action::Launch(ID.into()));
+    a.hint_key(HintKey::Actions);
+    assert_eq!(a.view, View::Apps);
+    assert_eq!(a.apps.page, Page::Details(ID.into()), "F9 is the details, as in Apps");
+    assert_eq!(a.input, "", "the words wait at home");
+    a.apps.pending = None;
+    a.escape();
+    assert_eq!(a.apps.page, Page::List, "Esc goes back a page at a time");
+    a.escape();
+    assert_eq!(a.view, View::Home);
+    assert_eq!(a.input, "editor", "the search as it was");
+    // the apps at work: home stays, with the words, and says so
+    pick(&mut a, Action::Launch(ID.into()));
+    a.apps.pending = Some((9, "launch".into()));
+    a.hint_key(HintKey::Actions);
+    assert_eq!(a.view, View::Home);
+    assert_eq!(a.input, "editor");
+    assert_eq!(a.reply.as_ref().map(|r| r.text.as_str()), Some("the apps are busy: a moment"));
+    a.apps.pending = None;
+    // nothing lit: F9 has nothing to open
+    a.in_list = false;
+    a.hint_key(HintKey::Actions);
+    assert_eq!(a.view, View::Home);
+    assert_eq!(a.reply.as_ref().map(|r| r.text.as_str()), Some("no actions here"));
+    // the rest of a kind, a list of its own: the same door, and back to it
+    let found = View::Found(Found::Apps, "editor".into());
+    a.set_draft("");
+    a.view = found.clone();
+    a.came_from.push(View::Home);
+    pick(&mut a, Action::Launch(ID.into()));
+    a.hint_key(HintKey::Actions);
+    assert_eq!(a.apps.page, Page::Details(ID.into()));
+    a.apps.pending = None;
+    a.escape();
+    a.escape();
+    assert_eq!(a.view, found);
     cleanup(&a);
 }
 

@@ -502,7 +502,7 @@ fn design_system_files_preview() {
     ));
     let mut a = files_app();
     a.hint_key(spark_dialog::app::HintKey::Actions);
-    a.sel = 5;
+    a.sel = 7;
     frames.push(ds_frame(
         &draw(&a),
         &pal,
@@ -511,7 +511,7 @@ fn design_system_files_preview() {
     ));
     let mut a = files_app();
     a.hint_key(spark_dialog::app::HintKey::Actions);
-    a.sel = 3;
+    a.sel = 5;
     a.enter();
     frames.push(ds_frame(
         &draw(&a),

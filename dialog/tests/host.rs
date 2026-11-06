@@ -2239,7 +2239,7 @@ fn manager_stub(calls: Arc<Mutex<Vec<Value>>>, home: String) -> Script {
     let folder = json!({"title": "~", "here": home, "rows": [
         {"id": "files:dir:d", "sign": "opens", "text": "docs", "tool": {"name": "files_browse", "arguments": {"path": docs}, "said": "open in the system file manager"}, "more": steps(&docs), "columns": ["3 items"], "children": "spark-shell://files/rows/ZG9jcw", "group": null},
         {"id": "files:file:n", "sign": "blank", "text": "notes.md", "tool": {"name": "files_open", "arguments": {"path": note}, "said": "open"}, "more": home_more, "columns": ["12 B", "today"], "children": null, "group": null},
-        {"id": "files:total", "sign": "blank", "text": "1 file \u{b7} 12 B", "tool": null, "more": [], "columns": [], "children": null, "group": "this folder"},
+        {"id": "files:total", "sign": "blank", "text": "1 file \u{b7} 12 B", "tool": null, "more": [{"name": "files_browse", "arguments": {"path": home}, "said": "open in the system file manager"}], "columns": [], "children": null, "group": "this folder"},
         {"id": "files:new-folder", "sign": "opens", "text": "new folder", "tool": {"name": "files_new_folder", "arguments": {"path": home}, "ask": ["name"], "said": "new folder"}, "more": [], "columns": [], "children": null, "group": "this folder"}
     ], "short": []});
     let inside = json!({"title": "~/docs", "here": docs, "rows": [
@@ -2353,6 +2353,8 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
         texts,
         [
             "open",
+            "attach to the next request",
+            "reveal in the system file manager",
             "rename",
             "copy",
             "move",
@@ -2360,11 +2362,11 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
             "trash",
             "select",
             "show the first lines",
-            "new folder"
-        ],
-        "attach is the prompt's, the system file manager F4's"
+            "new folder",
+            "open in the system file manager"
+        ]
     );
-    app.sel = 5;
+    app.sel = 7;
     let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
     assert_eq!(
         hint,
@@ -2416,7 +2418,7 @@ fn a_move_picks_its_folder_in_the_files_and_lands_the_step_here() {
     let (mut app, rx, calls, home) = manager();
     app.sel = 1;
     app.hint_key(HintKey::Actions);
-    app.sel = 3; // move
+    app.sel = 5; // move
     app.enter();
     assert!(
         app.picking.as_ref().is_some_and(|pk| pk.step.is_some() && pk.field == "to"),
@@ -2503,7 +2505,7 @@ fn esc_cancels_a_folder_pick_and_leaves_the_list_where_it_was() {
     let (mut app, rx, calls, _) = manager();
     app.sel = 1;
     app.hint_key(HintKey::Actions);
-    app.sel = 2; // copy
+    app.sel = 4; // copy
     app.enter();
     assert!(app.picking.is_some());
     app.escape();
@@ -2940,7 +2942,7 @@ fn a_move_that_lands_in_its_own_folder_leaves_no_second_copy_of_it_behind_esc() 
     let start = app.came_from.clone();
     app.sel = 1;
     app.hint_key(HintKey::Actions);
-    app.sel = 3; // move
+    app.sel = 5; // move
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
     app.in_list = true;

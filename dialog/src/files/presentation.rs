@@ -5,9 +5,8 @@ use crate::app::HintKey;
 use crate::keys::Bindings;
 use crate::scrub::cut_words;
 
-/// The steps the menu writes in its own words and places (dialog/DESIGN.md, F9), or leaves to another door: attach is
-/// the prompt's, the system file manager F4's.
-const MENU_HOLDS: [&str; 10] = [
+/// The steps the menu writes in its own places (dialog/DESIGN.md, F9); what else a row offers follows them.
+const MENU_HOLDS: [&str; 9] = [
     "files_open",
     "files_app",
     "files_preview",
@@ -17,7 +16,6 @@ const MENU_HOLDS: [&str; 10] = [
     "files_trash",
     "files_attach",
     "files_reveal",
-    "files_browse",
 ];
 
 struct Lines {
@@ -134,7 +132,10 @@ impl State {
             self.row_actions(l, row, keys);
         }
         let start = l.rows.len();
-        for call in a.folder.iter().filter(|c| c.name != "files_browse") {
+        // the folder's door to the system file manager closes its steps: the provider holds it to where one is
+        // configured, so the step decides, never the tool's being listed
+        let browse = |c: &&Call| c.name == "files_browse";
+        for call in a.folder.iter().filter(|c| !browse(c)).chain(a.folder.iter().filter(browse)) {
             let (word, key) = match call.name.as_str() {
                 "files_new_folder" => ("new folder".to_string(), k(HintKey::New)),
                 "files_new_text" => ("new file".to_string(), String::new()),
@@ -170,6 +171,11 @@ impl State {
         }
         if row.page.is_some() {
             l.row("view", Action::View, &k(HintKey::View));
+        }
+        for name in ["files_attach", "files_reveal"] {
+            if let Some(c) = step(name) {
+                l.row(&words_of(c), Action::Step(c.clone()), "");
+            }
         }
         if let Some(c) = step("files_rename") {
             l.row("rename", Action::Ask(c.clone(), "rename".into()), &k(HintKey::Rename));

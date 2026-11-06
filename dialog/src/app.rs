@@ -3166,6 +3166,21 @@ impl App {
             }
             return;
         }
+        // an app found by a search: the details it has in Apps; the apps at work keep the search where it is
+        let found = self.picks().get(self.sel).filter(|_| self.in_list).and_then(|it| match it {
+            Item::Apps(line) => match &line.action {
+                Some(crate::apps::Action::Launch(id)) => Some(id.clone()),
+                _ => None,
+            },
+            _ => None,
+        });
+        if let Some(id) = found {
+            if self.apps.pending.is_some() {
+                return self.refuse("the apps are busy: a moment");
+            }
+            self.go(View::Apps);
+            return self.apps_activate(crate::apps::Action::Details(id));
+        }
         if !self.open_steps() {
             self.refuse("no actions here");
         }
@@ -6479,7 +6494,7 @@ impl App {
     }
 
     /// A sound playing here stops where it is: leaving its file, leaving the preview, Right again.
-    fn stop_sound(&mut self) {
+    pub(crate) fn stop_sound(&mut self) {
         let now = Instant::now();
         let Some(pv) = self.preview.as_mut() else { return };
         if pv.playing.is_none() {
