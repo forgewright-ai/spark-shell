@@ -872,6 +872,9 @@ pub struct App {
     /// The row a value was just changed on: the light stays on it while the list around it changes
     /// (the receipt and the Undo row come in above it), until a key moves it.
     pub keep_lit: Option<String>,
+    /// Where the bar stood when a question's page opened (its sel, in the list or not): put back when the question
+    /// is answered or let go, so keep working comes back to the row it was asked from (v0.129).
+    pub question_back: Option<(usize, bool)>,
     /// Words typed, then the down arrow or a click: the keys are the list's, so Space checks the lit file (#163).
     pub list_keys: bool,
     /// The preview shown (View::Preview): the list it came from, the file, its page (#120).
@@ -1003,6 +1006,7 @@ impl App {
             palette: None,
             last_view: None,
             keep_lit: None,
+            question_back: None,
             list_keys: false,
             preview: None,
             quiet: vec![],
@@ -3572,6 +3576,7 @@ impl App {
                 self.hidden = false;
                 self.input.clear();
                 self.unstash();
+                self.question_left();
                 // a batch's step let go stops the batch with it: the receipt says what was done
                 if self.files.batch.is_some() {
                     self.files_stop_batch();
@@ -3836,6 +3841,7 @@ impl App {
                 self.input.clear();
                 self.unstash();
                 self.hidden = false;
+                self.question_left();
                 self.approved(step);
             }
             return;
@@ -4036,10 +4042,12 @@ impl App {
                     self.open_preview();
                     return;
                 }
-                self.steps_row = None; // a step run from the list: the light is not put back on a row it may have taken away
+                self.steps_row = None; // a step run from the list: the light is not kept on a row it may take away
                 if let Some(v) = self.came_from.pop() {
                     self.go_back(v);
                 }
+                // the bar on the row the step is for, once: a question let go comes back to it (v0.129)
+                self.light_row(&row.id);
                 self.pick_step(p, call, &row.text);
             }
             Item::Here => {
@@ -4161,7 +4169,9 @@ impl App {
                     // a row that is only its steps (a saved network not around, #169): Enter opens them, as F9 does
                     self.steps_of(p, row);
                 } else if row.page.is_some() {
-                    // a row that is only its page (the license, the credits): Enter reads it, as P does
+                    // a row that is only its page (the license, the credits): Enter reads it, as P does; the words that
+                    // found it are gone by now, so the bar goes to it in the list as it stands
+                    self.light_row(&row.id);
                     self.open_preview();
                 }
             }
@@ -4220,7 +4230,9 @@ impl App {
                     self.pick_step(p, call, &row.text);
                 } else if row.page.is_some() {
                     // a row with a view and no step of its own (a package, a program with no window, v0.129): Enter
-                    // views it, as F3 does; its actions stay on F9
+                    // views it, as F3 does; its actions stay on F9. The words that found it are gone by now, so the
+                    // bar goes to it in the list as it stands
+                    self.light_row(&row.id);
                     self.open_preview();
                 } else if !row.more.is_empty() {
                     // a row that is only its actions (this folder, #127): Enter opens them, as F9 does
@@ -5005,6 +5017,7 @@ impl App {
         }
         if self.risky(&tool) {
             self.stash_draft();
+            self.question_back = Some((self.sel, self.in_list));
             self.mode = Mode::Confirm(step);
             // the question's page, keep working lit first (dialog/DESIGN.md, v0.127.2): Enter again keeps, and the
             // verb takes Up or a click, so a bounce on Enter never shuts the machine down
@@ -5040,6 +5053,24 @@ impl App {
             Who::Person => {}
         }
         Ok(())
+    }
+
+    /// The bar on the row of this id, where the list shows it; nothing moves where it does not.
+    fn light_row(&mut self, id: &str) {
+        let picks = self.picks();
+        if let Some(n) = picks.iter().position(|it| self.row_ref(it).is_some_and(|r| r.id == id)) {
+            self.sel = n;
+            self.in_list = true;
+        }
+    }
+
+    /// A question answered or let go: the bar back where it stood when the question was asked, within the list as it
+    /// stands now.
+    fn question_left(&mut self) {
+        if let Some((sel, in_list)) = self.question_back.take() {
+            self.sel = sel.min(self.picks().len().saturating_sub(1));
+            self.in_list = in_list;
+        }
     }
 
     /// The yes was typed for this step, these arguments: checked again against what is offered now,

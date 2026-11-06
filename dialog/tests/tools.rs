@@ -481,3 +481,50 @@ fn space_is_the_disk_then_cleanup_then_homes_folders_as_objects() {
 fn space_page() -> Value {
     serde_json::from_str(&space().to_string().replace("\"group\":\"\"", "\"group\":null")).unwrap()
 }
+
+#[test]
+fn keep_working_comes_back_to_the_program_the_words_found_and_enter_views_that_one() {
+    let mut app = app();
+    at_page(&mut app, "running", running());
+    for c in "pipe".chars() {
+        app.typed(c);
+    }
+    assert_eq!(app.selected_line().as_deref(), Some("pipewire \u{b7} 1% cpu \u{b7} 32 MB \u{b7} 2 processes"));
+    app.hint_key(HintKey::Actions);
+    assert_eq!(app.subtitle(), "pipewire", "F9 with words typed: the program they found");
+    app.in_list = true;
+    app.sel = 0;
+    app.enter();
+    assert!(matches!(app.mode, Mode::Confirm(_)), "{:?}", app.mode);
+    assert_eq!(app.question_verb(), "end pipewire");
+    app.escape();
+    // keep working: back on the list, the words as they were, the bar on the program it was asked for
+    assert_eq!(app.view, View::Folder(0, "spark-shell://tools/rows/running".into()));
+    assert_eq!(app.input, "pipe");
+    assert_eq!(app.selected_line().as_deref(), Some("pipewire \u{b7} 1% cpu \u{b7} 32 MB \u{b7} 2 processes"));
+    // Enter views the row the bar is on, though the words go first
+    app.enter();
+    assert_eq!(app.view, View::Preview);
+    assert_eq!(app.preview.as_ref().map(|p| p.row().id.as_str()), Some("tools:program:pipewire"));
+}
+
+#[test]
+fn enter_with_words_typed_views_the_package_they_found() {
+    let mut app = app();
+    let package = |n: &str| {
+        let mut r = row(&format!("tools:package:app:{n}"), n);
+        r["page"] = json!(format!("spark-shell://tools/page/{n}"));
+        r
+    };
+    let list = json!({"title": "apps", "state": "", "rows": [package("firefox"), package("foot"), package("mpv"), package("thunar")], "short": []});
+    at_page(&mut app, "software/apps", list);
+    for c in "thun".chars() {
+        app.typed(c);
+    }
+    app.enter();
+    assert_eq!(
+        app.preview.as_ref().map(|p| p.row().id.as_str()),
+        Some("tools:package:app:thunar"),
+        "not the first of the list"
+    );
+}

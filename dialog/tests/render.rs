@@ -1721,4 +1721,8 @@ fn power_is_five_verbs_and_the_uptime() {
     });
     assert_eq!(note.as_deref(), Some("(everything open closes and the machine turns off)"));
     render(&app, "power-question");
+    // keep working: the bar back on shutdown, where it was asked from, not on the question's second row (v0.129)
+    app.escape();
+    assert!(matches!(app.mode, Mode::Normal), "{:?}", app.mode);
+    assert_eq!((app.sel, app.in_list), (4, true), "back on shutdown");
 }
