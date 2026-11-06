@@ -5,7 +5,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::{
     self, DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste, EnableFocusChange, EnableMouseCapture, Event, KeyCode,
-    KeyEventKind, KeyModifiers, KeyboardEnhancementFlags, MouseButton, MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    KeyModifiers, KeyboardEnhancementFlags, MouseButton, MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use ratatui::crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::crossterm::{execute, queue};
@@ -443,7 +443,11 @@ fn main() {
     // Enter. Asked before the keys' thread starts: that thread would hold the terminal's answer.
     let kitty = terminal::supports_keyboard_enhancement().unwrap_or(false);
     if kitty {
-        let _ = execute!(out, PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES));
+        // and a key held says so, so copy, move and trash can count it once (keys.rs)
+        let _ = execute!(
+            out,
+            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES | KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
+        );
     }
     {
         let tx = tx.clone();
@@ -837,7 +841,7 @@ fn main() {
                 invalidate_frame(&mut term);
                 dirty = true;
             }
-            Ev::Term(Event::Key(k)) if k.kind == KeyEventKind::Press => {
+            Ev::Term(Event::Key(k)) if app.cfg.keys.takes(&k) => {
                 dirty = true;
                 // a letter typed while the opening plays lands at the prompt and the opening plays on; Enter, Esc, an
                 // arrow or a click cut it (#138)
@@ -903,7 +907,7 @@ fn main() {
                             && (drawn.back.is_some_and(|(a, b)| m.column >= a && m.column < b)
                                 || drawn.title.is_some_and(|(a, b)| m.column >= a && m.column < b))
                         {
-                            app.escape(); // the header's back, or its place name: back a level (dialog/DESIGN.md)
+                            app.back_key(); // the header's back, or its place name: back a level (dialog/DESIGN.md)
                         } else if let Some((_, _, _, label)) = drawn.heads.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
                             app.apps_heading(&label.clone()); // a category's heading: the list narrowed to it, or widened
                         } else if drawn.reply_undo.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {

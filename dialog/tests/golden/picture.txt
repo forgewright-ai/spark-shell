@@ -21,7 +21,7 @@
   this folder                                               
     2 files · 3 KB                                          
     new folder                                              
-    new text file                                           
+    new file                                                
     open in the system file manager                         
                                                             
   drives                                                    

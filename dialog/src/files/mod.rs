@@ -324,6 +324,16 @@ impl State {
             nav
         })
     }
+    /// The list's place while a page stands over it.
+    pub fn list_nav(&self) -> Option<&Navigation> {
+        self.stack.first().map(|(_, nav)| nav)
+    }
+    /// The list's lit row behind the pages, moved to where it stands now.
+    pub fn list_lit(&mut self, selected: usize) {
+        if let Some((_, nav)) = self.stack.first_mut() {
+            nav.selected = selected;
+        }
+    }
     /// Back to the list, whatever pages stand: the list's own navigation.
     pub fn back_to_list(&mut self) -> Option<Navigation> {
         let mut last = None;
@@ -339,6 +349,11 @@ impl State {
     pub fn clear_checks(&mut self) {
         self.checks.clear();
     }
+}
+
+/// A row of your home's recent files: two panes draw none.
+pub fn is_recent(row: &Row) -> bool {
+    row.group.as_deref() == Some("recent")
 }
 
 /// The row that is the folder's own: its summary, which opens the folder's actions.

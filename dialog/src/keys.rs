@@ -1,6 +1,6 @@
 //! Named home actions. One validated map drives terminal input and visible hints.
 use crate::app::HintKey;
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::path::Path;
 
 const DEFAULTS: &[(&str, HintKey, &str)] = &[
@@ -129,6 +129,29 @@ impl Default for Bindings {
 }
 
 impl Bindings {
+    /// Whether a terminal's key event counts: a release never does, and a key held counts once for copy, move and
+    /// trash, so holding F5, F6 or F8 walks down no folder; every other key repeats.
+    pub fn takes(&self, key: &KeyEvent) -> bool {
+        match key.kind {
+            KeyEventKind::Press => true,
+            KeyEventKind::Repeat => !matches!(self.action(*key), Some(HintKey::Copy | HintKey::Move | HintKey::Trash)),
+            KeyEventKind::Release => false,
+        }
+    }
+
+    /// What an action's key is to the prompt: the letter it types, Delete or Backspace. None for a key that types
+    /// nothing there, a function key, anything with Ctrl or Alt.
+    pub fn typed(&self, action: HintKey) -> Option<HintKey> {
+        let key = self.0.iter().find(|(_, a, ..)| *a == action)?.3?;
+        match (key.code, key.modifiers) {
+            (KeyCode::Char(c), KeyModifiers::NONE) => Some(HintKey::Char(c)),
+            (KeyCode::Char(c), KeyModifiers::SHIFT) => Some(HintKey::Char(c.to_ascii_uppercase())),
+            (KeyCode::Delete, KeyModifiers::NONE) => Some(HintKey::Delete),
+            (KeyCode::Backspace, KeyModifiers::NONE) => Some(HintKey::Backspace),
+            _ => None,
+        }
+    }
+
     pub fn load(path: &Path) -> Result<Self, String> {
         match std::fs::read_to_string(path) {
             Ok(text) => Self::from_json(&text),
@@ -163,11 +186,32 @@ impl Bindings {
             }
         }
         // a key the person set wins over a default: an upgrade that gives a default to their key never stops home from
-        // starting, and the action that held it by default alone stays unbound
+        // starting, and the action that held it by default alone stays unbound; but for Enter and Esc, which home cannot
+        // do without, and which no file that worked before can have taken
         for (name, _, label, key) in bindings.0.iter_mut() {
-            if !set.iter().any(|(n, _)| n == name) && key.is_some_and(|k| set.iter().any(|(_, s)| same(s, &k))) {
+            let Some(held) = key.filter(|_| !set.iter().any(|(n, _)| n == name)) else {
+                continue;
+            };
+            if let Some((taker, _)) = set.iter().find(|(_, s)| same(s, &held)) {
+                if matches!(name.as_str(), "accept" | "back") {
+                    return Err(format!("key conflict: {} and {}", taker, name));
+                }
                 *key = None;
                 label.clear();
+            }
+        }
+        // quit keeps a key: one set on Ctrl+Q leaves it on Ctrl+C, where it stood before copy path came; that key the
+        // person's own stays theirs, and Esc is the way out
+        let ctrl_c = parse("Ctrl+C")?;
+        if bindings.0.iter().any(|(_, a, _, k)| *a == HintKey::Quit && k.is_none()) && !set.iter().any(|(_, s)| same(s, &ctrl_c)) {
+            for (_, action, label, key) in bindings.0.iter_mut() {
+                if *action == HintKey::Quit {
+                    *key = Some(ctrl_c);
+                    *label = "Ctrl+C".to_string();
+                } else if key.is_some_and(|k| same(&k, &ctrl_c)) {
+                    *key = None;
+                    label.clear();
+                }
             }
         }
         Ok(bindings)
@@ -258,10 +302,66 @@ mod tests {
         // two keys the person set on one key: refused before home starts
         let e = Bindings::from_json(r#"{"ask": "F4", "conversation": "F4"}"#).unwrap_err();
         assert!(e.contains("conflict") && e.contains("ask") && e.contains("conversation"), "{}", e);
-        // over any default: the person's key is theirs, the default's action unbound
-        let keys = Bindings::from_json(r#"{"ask":"Enter"}"#).unwrap();
+        // over a default: the person's key is theirs, the default's action unbound
+        let keys = Bindings::from_json(r#"{"ask":"F9"}"#).unwrap();
+        assert_eq!(keys.action(parse("F9").unwrap()), Some(HintKey::Ask));
+        assert_eq!(keys.label(HintKey::Actions), "");
+    }
+
+    #[test]
+    fn enter_and_esc_stay_on_a_key_and_quit_keeps_one() {
+        // a file that orphans either never starts: no file that worked before can hold that
+        for text in [r#"{"ask":"Enter"}"#, r#"{"ask":"Esc"}"#, r#"{"rename":"Enter"}"#, r#"{"trash":"Esc"}"#] {
+            let e = Bindings::from_json(text).unwrap_err();
+            assert!(e.contains("conflict"), "{}: {}", text, e);
+        }
+        // the person moved them themselves: nothing is orphaned
+        let keys = Bindings::from_json(r#"{"accept":"F11","ask":"Enter"}"#).unwrap();
+        assert_eq!(keys.action(parse("F11").unwrap()), Some(HintKey::Enter));
         assert_eq!(keys.action(parse("Enter").unwrap()), Some(HintKey::Ask));
-        assert_eq!(keys.label(HintKey::Enter), "");
+        // a person's key on Ctrl+Q: quit stays on Ctrl+C, as it always was
+        let keys = Bindings::from_json(r#"{"conversation":"Ctrl+Q"}"#).unwrap();
+        assert_eq!(keys.action(parse("Ctrl+Q").unwrap()), Some(HintKey::Conversation));
+        assert_eq!(keys.action(parse("Ctrl+C").unwrap()), Some(HintKey::Quit));
+        assert_eq!(keys.label(HintKey::Quit), "Ctrl+C");
+        assert_eq!(keys.label(HintKey::CopyPath), "", "copy path has given its key back");
+        // copy path on a key of its own: the same, and it keeps that key
+        let keys = Bindings::from_json(r#"{"conversation":"Ctrl+Q","copy-path":"F12"}"#).unwrap();
+        assert_eq!(keys.action(parse("Ctrl+C").unwrap()), Some(HintKey::Quit));
+        assert_eq!(keys.action(parse("F12").unwrap()), Some(HintKey::CopyPath));
+        // Ctrl+C the person's too: theirs stands, and Esc is the way out
+        let keys = Bindings::from_json(r#"{"conversation":"Ctrl+Q","ask":"Ctrl+C"}"#).unwrap();
+        assert_eq!(keys.action(parse("Ctrl+C").unwrap()), Some(HintKey::Ask));
+        assert_eq!(keys.label(HintKey::Quit), "");
+    }
+
+    #[test]
+    fn a_held_f5_f6_or_f8_counts_once_and_every_other_key_repeats() {
+        use ratatui::crossterm::event::KeyEventKind;
+        let keys = Bindings::default();
+        let held = |text: &str, kind: KeyEventKind| {
+            let mut k = parse(text).unwrap();
+            k.kind = kind;
+            keys.takes(&k)
+        };
+        for key in ["F5", "F6", "F8"] {
+            assert!(held(key, KeyEventKind::Press), "{}", key);
+            assert!(!held(key, KeyEventKind::Repeat), "{} held walks down no folder", key);
+            assert!(!held(key, KeyEventKind::Release), "{}", key);
+        }
+        for key in ["Down", "Up", "PageDown", "F2", "F7", "F9", "Backspace", "Enter", "x"] {
+            assert!(held(key, KeyEventKind::Press), "{}", key);
+            assert!(held(key, KeyEventKind::Repeat), "{} keeps repeating", key);
+            assert!(!held(key, KeyEventKind::Release), "{}: a release is no key", key);
+        }
+        // the action, not the key: copy moved to F11 goes with it, and F5 is any key
+        let keys = Bindings::from_json(r#"{"copy":"F11"}"#).unwrap();
+        let mut k = parse("F11").unwrap();
+        k.kind = KeyEventKind::Repeat;
+        assert!(!keys.takes(&k));
+        let mut k = parse("F5").unwrap();
+        k.kind = KeyEventKind::Repeat;
+        assert!(keys.takes(&k));
     }
 
     #[test]
@@ -280,6 +380,7 @@ mod tests {
         assert_eq!(keys.action(KeyEvent::new(KeyCode::F(11), KeyModifiers::NONE)), Some(HintKey::Ask));
         assert_eq!(keys.action(parse("Ctrl+Enter").unwrap()), None);
         assert_eq!(keys.label(HintKey::Ask), "F11");
+        assert!(Bindings::from_json(r#"{"ask":"Enter"}"#).unwrap_err().contains("conflict"));
         assert!(Bindings::from_json(r#"{"ask":"Control+Enter"}"#).is_err());
         assert!(Bindings::from_json(r#"{"typo":"F11"}"#).is_err());
         assert_eq!(

@@ -1047,7 +1047,7 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
                 // a selected row: its sign, as a checked list draws its picks (dialog/DESIGN.md)
                 let checked = app.files_checks_any() && app.files.checked(&row.id);
                 if pen.pane {
-                    pane_row(pen, row, y, lit, base, checked);
+                    pane_row(pen, row, y, lit, base, checked, panes_wide(app));
                 } else {
                     arrows = row_line(pen, row, y, lit, (widths, right, samples, chips, controls, base), checked);
                 }
@@ -1731,7 +1731,7 @@ fn other_pane(app: &App, pen: &mut Pen, pane: &Pane, top: u16, bottom: u16) -> (
             }
             Item::Folder(i) => {
                 if let Some(row) = rows.rows.get(*i) {
-                    pane_row(pen, row, y, false, base, pane.checks.contains(&row.id));
+                    pane_row(pen, row, y, false, base, pane.checks.contains(&row.id), panes_wide(app));
                 }
                 if let Some(n) = picks.iter().position(|x| *x == k) {
                     at.push((y, n));
@@ -1743,8 +1743,14 @@ fn other_pane(app: &App, pen: &mut Pen, pane: &Pane, top: u16, bottom: u16) -> (
     (at, path)
 }
 
-/// A pane under this many cells keeps its size alone and writes the folder's summary short (dialog/DESIGN.md).
-const PANE_WIDE: u16 = 40;
+/// A column under this many cells keeps each pane's size alone and writes the folder's summary short
+/// (dialog/DESIGN.md). The column decides, not the pane: an even column splits in two widths, and both panes keep one
+/// shape.
+const PANES_WIDE: u16 = 80;
+
+fn panes_wide(app: &App) -> bool {
+    app.col_w() >= PANES_WIDE
+}
 
 /// The text cut to `n` cells, an ellipsis where it was cut.
 fn ellipsis(text: &str, n: usize) -> String {
@@ -1756,12 +1762,11 @@ fn ellipsis(text: &str, n: usize) -> String {
 }
 
 /// A row of a pane (dialog/DESIGN.md): its sign, its name, its size or count at the pane's right edge, two cells of
-/// air there; from 40 cells the size stands before the date column. The name is cut in its middle where its row
-/// would overflow. The folder's summary is muted, and short under 40 cells.
-fn pane_row(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, base: u16, checked: bool) {
+/// air there; in a wide column the size stands before the date column. The name is cut in its middle where its row
+/// would overflow. The folder's summary is muted, and short in a narrower column.
+fn pane_row(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, base: u16, checked: bool, wide: bool) {
     let pal = pen.pal.clone();
     let edge = pen.w.saturating_sub(2);
-    let wide = pen.w >= PANE_WIDE;
     if base > 4 && checked {
         let (g, c) = sign(&pal, "check");
         pen.put(base - 2, y, g, c, false, lit);

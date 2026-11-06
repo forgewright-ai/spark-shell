@@ -1,10 +1,13 @@
 //! Connect files' pages, checks, panes and batches to home's prompt, selection, status row and job
 //! queue. The folder list stays View::Folder with all its machinery; this is what the files section adds.
 use super::*;
-use crate::app::{App, HintKey, Item, Mode, Who, WIDTH};
+use crate::app::{App, FolderShape, HintKey, Item, Mode, Who, WIDTH};
 use crate::mcp::{self, Kind};
 use crate::reply::Mark;
 use serde_json::{json, Value};
+
+/// What F5, F6, F8 and F9 say while the folder they would act on is loading.
+const NOT_COME: &str = "the rows have not come yet: a moment";
 
 impl App {
     /// The files provider and its folder on screen: the active pane, when the view is one.
@@ -111,7 +114,10 @@ impl App {
         {
             return false;
         }
-        let Some((_, _, rows)) = self.folder.clone() else { return false };
+        let Some((_, _, rows)) = self.folder.clone() else {
+            self.refuse(NOT_COME);
+            return true;
+        };
         let checked: Vec<Row> = if self.files_checks_any() { self.files_checked_rows(&rows) } else { vec![] };
         let folder = folder_actions(&rows);
         let row = row.filter(|r| !is_summary(r) && !is_up(r));
@@ -179,8 +185,37 @@ impl App {
         self.files_pane();
     }
 
+    /// A row's action on the menu: the list again with the page's own row lit by its id, or its set checked against
+    /// the rows, whatever landed under the page. False, said, where it left: nothing else may take its place.
+    fn files_menu_target(&mut self, action: &Action) -> bool {
+        let Page::Actions(a) = &self.files.page else { return true };
+        let on_row = |c: &Call| a.row.as_ref().is_some_and(|r| r.tool.iter().chain(r.more.iter()).any(|s| s == c));
+        let aimed = match action {
+            Action::View | Action::CopyPath | Action::Transfer(_) | Action::Check(_) => true,
+            Action::Open(uri) => a.row.as_ref().is_some_and(|r| r.children.as_ref() == Some(uri)),
+            Action::Step(call) | Action::Ask(call, _) => on_row(call),
+            Action::UncheckAll | Action::ClosePane | Action::Answer(..) => false,
+        };
+        if !aimed {
+            return true;
+        }
+        let set: Vec<String> = a.checked.iter().map(|r| r.id.clone()).collect();
+        let row = a.row.as_ref().map(|r| r.id.clone());
+        self.files_to_list();
+        let stands = |id: &String| self.folder.as_ref().is_some_and(|(_, _, rows)| rows.rows.iter().any(|r| r.id == *id));
+        let there = set.iter().all(stands) && row.as_ref().is_none_or(stands);
+        if !there || !row.is_none_or(|id| self.files_light_id(&id)) {
+            self.refuse("this file is gone: read the list again");
+            return false;
+        }
+        true
+    }
+
     pub fn files_activate(&mut self, action: Action) {
         let Some(p) = self.files() else { return };
+        if !self.files_menu_target(&action) {
+            return;
+        }
         match action {
             Action::Open(uri) => {
                 self.files_to_list();
@@ -314,19 +349,38 @@ impl App {
     }
 
     /// The checked rows of the folder on screen, each file once: your home lists a recent file under `recent`
-    /// and under `home` with one id, and a check on either is one check on one file.
+    /// and under `home` with one id, and a check on either is one check on one file. Two panes draw no recent row, so
+    /// none of those counts then.
     pub(crate) fn files_checked_rows(&self, rows: &Rows) -> Vec<Row> {
+        let own = self.panes_drawn();
         let mut seen: Vec<&str> = vec![];
         rows.rows
             .iter()
             .filter(|r| {
-                self.files.checked(&r.id) && checkable(r) && !seen.contains(&r.id.as_str()) && {
+                self.files.checked(&r.id) && checkable(r) && !(own && is_recent(r)) && !seen.contains(&r.id.as_str()) && {
                     seen.push(r.id.as_str());
                     true
                 }
             })
             .cloned()
             .collect()
+    }
+
+    /// Words typed hide selected rows: no key reaches a row off the list, and this says how many and how to see them.
+    /// True when it said so.
+    fn files_hidden_refused(&mut self) -> bool {
+        let Some((_, _, rows)) = self.folder.as_ref().filter(|_| self.files_checks_any()) else {
+            return false;
+        };
+        let shown = self.picks();
+        let on_list = |id: &str| shown.iter().any(|it| self.row_ref(it).is_some_and(|r| r.id == id));
+        let hidden = self.files_checked_rows(rows).iter().filter(|r| !on_list(&r.id)).count();
+        match hidden {
+            0 => return false,
+            1 => self.refuse("1 selected row is hidden: Esc clears the words"),
+            n => self.refuse(&format!("{} selected rows are hidden: Esc clears the words", n)),
+        }
+        true
     }
 
     /// The status row while a selection stands: `2 selected . 4.5 MB`, the selected files' sizes summed.
@@ -355,12 +409,12 @@ impl App {
         })
     }
 
-    /// The checks keep to the folder they were made in: another folder opened takes them away; a preview and
-    /// back leaves them.
+    /// The checks keep to the folder they were made in: another folder opened takes them away; a preview or the
+    /// conversation and back leaves them.
     pub(crate) fn files_on_view(&mut self) {
         match &self.view {
             View::Folder(_, uri) if *uri == self.files.checks_uri => {}
-            View::Preview => {}
+            View::Preview | View::Conversation => {}
             _ => self.files.clear_checks(),
         }
     }
@@ -368,7 +422,8 @@ impl App {
     // ---- two panes
 
     /// Right in one pane, Ctrl+Tab: the second pane opens at the right on the same folder, and the bar goes to it. The
-    /// first pane drops what is not its folder's own (your home's recent files), its lit row kept by its id.
+    /// first pane drops what is not its folder's own (your home's recent files), its lit row kept by its id, and the
+    /// selection on those rows goes with them.
     fn files_second_pane(&mut self) {
         let Some((p, uri)) = self.files_pane_view() else { return };
         if self.col_w() < WIDTH {
@@ -376,6 +431,9 @@ impl App {
         }
         let lit = self.lit_row().filter(|_| self.in_list).map(|(_, r)| r.id);
         let rows = self.folder.as_ref().map(|(_, _, r)| r.clone());
+        if let Some(r) = &rows {
+            self.files.checks.retain(|c| r.rows.iter().any(|row| row.id == *c && !is_recent(row)));
+        }
         self.files.other = Some(Pane {
             uri,
             rows,
@@ -392,13 +450,50 @@ impl App {
         self.files_pane();
     }
 
-    /// The list changed its shape under the bar, a pane opened or closed: the lit row kept by its id.
+    /// The list changed under the bar, a pane opened or closed, fresh rows landed: the lit row kept by its id, or the
+    /// bar on a row that is there.
     fn files_relight(&mut self, lit: Option<String>) {
-        if let Some(id) = lit {
-            let picks = self.picks();
-            let at = picks.iter().position(|it| self.row_ref(it).is_some_and(|r| r.id == id));
-            self.sel = at.unwrap_or(self.sel.min(picks.len().saturating_sub(1)));
+        if lit.is_some_and(|id| !self.files_light_id(&id)) {
+            self.sel = self.sel.min(self.picks().len().saturating_sub(1));
         }
+    }
+
+    /// The bar on the row of this id, where the list draws one: the row it stands on if that is it. False where none is.
+    fn files_light_id(&mut self, id: &str) -> bool {
+        let picks = self.picks();
+        let is_it = |it: &Item| self.row_ref(it).is_some_and(|r| r.id == id);
+        let at = picks
+            .get(self.sel)
+            .filter(|it| is_it(it))
+            .map(|_| self.sel)
+            .or_else(|| picks.iter().position(is_it));
+        if let Some(n) = at {
+            self.sel = n;
+            self.in_list = true;
+        }
+        at.is_some()
+    }
+
+    /// The rows a bar walks over in this folder, by id: as the list draws them at these words, in a pane's shape or not.
+    fn files_bar_ids(&self, p: usize, rows: &Rows, words: &str, own: bool) -> Vec<String> {
+        let shape = FolderShape { own, ..FolderShape::default() };
+        let row = |it: &Item| match it {
+            Item::Folder(i) => rows.rows.get(*i).filter(|r| App::pickable(r)).map(|r| r.id.clone()),
+            _ => None,
+        };
+        self.folder_items(p, rows, words, &shape).iter().filter_map(row).collect()
+    }
+
+    /// The list's lit row by id, as the list stands now, under a page or not.
+    fn files_lit_id(&self) -> Option<String> {
+        let Some(nav) = self.files.list_nav() else {
+            return self
+                .in_list
+                .then(|| self.picks().get(self.sel).and_then(|it| self.row_ref(it)).map(|r| r.id.clone()))
+                .flatten();
+        };
+        let (p, _, rows) = self.folder.as_ref().filter(|_| nav.in_list)?;
+        self.files_bar_ids(*p, rows, &nav.query, self.panes_drawn()).get(nav.selected).cloned()
     }
 
     /// `close pane`: the second pane closes, the one at the right; the bar stands in the first.
@@ -520,30 +615,36 @@ impl App {
         let ids: Vec<&str> = rows.rows.iter().map(|r| r.id.as_str()).collect();
         if to_other {
             let keep: Vec<String> = ids.iter().map(|s| s.to_string()).collect();
+            let words = self.prompts.restore(&View::Folder(idx, uri.clone()));
+            let bar = self.files_bar_ids(idx, &rows, &words, true);
+            let lit = self.files.other.as_ref().and_then(|o| {
+                let was = self.files_bar_ids(idx, o.rows.as_ref()?, &words, true);
+                was.get(o.sel).cloned()
+            });
             if let Some(o) = self.files.other.as_mut() {
                 o.checks.retain(|c| keep.contains(c));
+                o.sel = lit
+                    .and_then(|id| bar.iter().position(|b| *b == id))
+                    .unwrap_or(o.sel.min(bar.len().saturating_sub(1)));
                 o.rows = Some(rows);
             }
             return;
         }
-        let lit = self
-            .in_list
-            .then(|| self.picks().get(self.sel).and_then(|it| self.row_ref(it)).map(|r| r.id.clone()))
-            .flatten();
+        let lit = self.files_lit_id();
         if self.files.checks_uri == uri {
             let keep: Vec<String> = ids.iter().map(|s| s.to_string()).collect();
             self.files.checks.retain(|c| keep.contains(c));
         }
         self.folder = Some((idx, uri, rows));
         self.hold_rows(idx);
-        if let Some(id) = lit {
-            let picks = self.picks();
-            if let Some(i) = picks.iter().position(|it| self.row_ref(it).is_some_and(|r| r.id == id)) {
-                self.sel = i;
-            } else {
-                self.sel = self.sel.min(picks.len().saturating_sub(1));
-            }
-        }
+        // a page over the list: the list's place is behind it, and keeps by id as the bar does
+        let Some(nav) = self.files.list_nav().cloned() else {
+            return self.files_relight(lit);
+        };
+        let Some((_, _, rows)) = &self.folder else { return };
+        let bar = self.files_bar_ids(idx, rows, &nav.query, self.panes_drawn());
+        let at = lit.and_then(|id| bar.iter().position(|b| *b == id));
+        self.files.list_lit(at.unwrap_or(nav.selected.min(bar.len().saturating_sub(1))));
     }
 
     /// The panes of this provider read again: the folder on screen, and the other pane's.
@@ -771,6 +872,9 @@ impl App {
         let Some((_, _, rows)) = self.folder.clone() else {
             return self.files_nothing(HintKey::CopyPath);
         };
+        if self.files_hidden_refused() {
+            return;
+        }
         let chosen: Vec<Row> = if self.files_checks_any() {
             self.files_checked_rows(&rows)
         } else {
@@ -790,13 +894,18 @@ impl App {
 
     // ---- the operation
 
-    /// Copy, move or trash: the checked set, else the lit row; to the other pane's folder while two stand, else
+    /// Copy, move or trash: the checked set, else the lit row; to the other pane's folder while two are on screen, else
     /// the folder is picked as today.
     fn files_transfer_now(&mut self, verb: Verb) {
         let Some((p, _)) = self.files_pane_view() else { return };
-        let Some((_, _, rows)) = self.folder.clone() else { return };
+        let Some((_, _, rows)) = self.folder.clone() else {
+            return self.refuse(NOT_COME);
+        };
         if self.running.is_some() || self.files.batch.is_some() {
             return self.reply(Mark::Note, "wait for the current action's result");
+        }
+        if self.files_hidden_refused() {
+            return;
         }
         let mut chosen: Vec<Row> = if self.files_checks_any() { self.files_checked_rows(&rows) } else { vec![] };
         if chosen.is_empty() {
@@ -813,7 +922,7 @@ impl App {
             let transfers = self.files_steps(p, verb, &chosen, None);
             return self.files_start(verb, None, transfers);
         }
-        let Some(other) = self.files.other.clone() else {
+        let Some(other) = self.files.other.clone().filter(|_| self.panes_drawn()) else {
             return self.files_pick_folder(p, verb, chosen);
         };
         if other.rows.is_none() {
@@ -1022,6 +1131,8 @@ impl App {
             }
             return;
         }
+        // the checks go as the batch starts, as one file's do: this is the source's pane, and the end may find another
+        self.files.clear_checks();
         // the batch's undo is its own: the undo standing before it goes, so a refused step can never take it
         self.undo = None;
         self.files.undo_more.clear();
@@ -1070,8 +1181,7 @@ impl App {
         }
     }
 
-    /// The batch ended: one receipt for the whole, undo for the whole newest first, the checks gone, both panes
-    /// read again.
+    /// The batch ended: one receipt for the whole, undo for the whole newest first, both panes read again.
     fn files_finish_batch(&mut self) {
         let Some(b) = self.files.batch.take() else { return };
         let text = b.receipt();
@@ -1083,7 +1193,6 @@ impl App {
         if let Some(r) = self.reply.as_mut() {
             r.undo = self.undo.is_some();
         }
-        self.files.clear_checks();
         if let Some(p) = self.files() {
             self.providers[p].dirty = true;
         }

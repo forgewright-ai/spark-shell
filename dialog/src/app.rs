@@ -397,15 +397,6 @@ fn state_dir() -> Option<std::path::PathBuf> {
     Some(std::path::PathBuf::from(base).join("spark-shell").join("dialog"))
 }
 
-/// The name a rename starts from: the row's as it is, so a letter can be changed (dialog/DESIGN.md).
-fn current_name(call: &Call) -> Option<String> {
-    if !call.name.ends_with("_rename") {
-        return None;
-    }
-    let name = call.arguments.get("name").or_else(|| call.arguments.get("path"))?.as_str()?;
-    Some(name.rsplit('/').next().unwrap_or(name).to_string())
-}
-
 /// What a folder's list holds and leaves out.
 #[derive(Default)]
 pub struct FolderShape<'a> {
@@ -796,7 +787,7 @@ pub struct App {
     navigation: Vec<(View, usize, bool, usize, i32)>,
     /// The folder shown now: its provider, its uri, its rows once read.
     pub folder: Option<(usize, String, Rows)>,
-    /// The row whose steps are shown (View::Steps), as it was when Right opened them.
+    /// The row whose steps are shown (View::Steps), as it was when F9 opened them.
     pub steps_row: Option<model::Row>,
     /// The heading shown alone in the workspace place (dialog/DESIGN.md).
     pub ws_filter: Option<String>,
@@ -3024,7 +3015,7 @@ impl App {
                 if self.preview_plays() {
                     return self.preview_play_pause();
                 }
-                return self.escape();
+                return self.back_key();
             }
             if let Some(it) = self
                 .picks()
@@ -3073,15 +3064,14 @@ impl App {
     }
 
     /// The view key, F3: the lit row in the view, in any list with one, words typed or not: no word typed reaches a
-    /// function key. In the view it is the way back, as in every viewer. Bound to a letter in a person's own keys, it
-    /// views while the list holds the keys, and is that letter everywhere else.
+    /// function key. In the view it is the way back, as in every viewer. Bound to a letter or Delete in a person's own
+    /// keys, it views while the list holds the keys, and is that letter or Delete everywhere else.
     fn view_key(&mut self) {
-        let bound = self.cfg.keys.label(HintKey::View);
-        let letter = bound.chars().next().filter(|_| bound.chars().count() == 1).map(|c| c.to_ascii_lowercase());
-        if letter.is_none() && self.preview_key() {
-            return self.escape();
+        let own = self.cfg.keys.typed(HintKey::View);
+        if own.is_none() && self.preview_key() {
+            return self.back_key();
         }
-        let typing = letter.is_some() && !self.input.is_empty() && !self.list_keys;
+        let typing = own.is_some() && !self.input.is_empty() && !self.list_keys;
         let free = !typing && self.mode == Mode::Normal && self.chip_focus.is_none() && self.pending.is_none();
         if free && self.files_page_open() && !self.files.form() {
             self.files_page_key(HintKey::View);
@@ -3090,12 +3080,44 @@ impl App {
         if free && !self.files_page_open() && self.lit_has_page() && self.open_preview() {
             return;
         }
-        if let Some(c) = letter {
-            return self.text_key(c);
+        if let Some(key) = own {
+            return self.prompt_takes(key);
         }
         if !self.key_held() {
             self.files_nothing(HintKey::View);
         }
+    }
+
+    /// Whether the list holds the keys: a row lit, no word being typed, nothing asked, no control in focus. A row key
+    /// set on a letter or Delete acts only then.
+    fn list_holds_keys(&self) -> bool {
+        self.in_list && (self.input.is_empty() || self.list_keys) && self.mode == Mode::Normal && self.chip_focus.is_none() && self.pending.is_none()
+    }
+
+    /// The prompt's own use of a key: the letter typed, Delete and Backspace at the cursor.
+    fn prompt_takes(&mut self, key: HintKey) {
+        match key {
+            HintKey::Char(' ') => self.typed(' '),
+            HintKey::Char(c) => self.text_key(c),
+            HintKey::Delete => self.delete(),
+            HintKey::Backspace => self.backspace(),
+            _ => {}
+        }
+    }
+
+    /// A row key set on a letter or Delete, while the list does not hold the keys: it is that letter or Delete, as
+    /// view_key's is. A key of the files' alone is the letter outside them too. True when the prompt took it.
+    fn row_key_typed(&mut self, key: HintKey) -> bool {
+        use HintKey::*;
+        if !matches!(key, Rename | Open | Copy | Move | New | Trash | CopyPath | Actions | Select) {
+            return false;
+        }
+        let Some(own) = self.cfg.keys.typed(key) else { return false };
+        if self.list_holds_keys() && (matches!(key, Rename | Actions) || self.files_pane_view().is_some()) {
+            return false;
+        }
+        self.prompt_takes(own);
+        true
     }
 
     /// A key that wants the prompt free says what holds it, and true: a question, an answer being typed, a form, a
@@ -3297,7 +3319,7 @@ impl App {
         if self.cursor == 0 {
             // an empty prompt: Backspace goes back a level, as a launcher's does (dialog/DESIGN.md)
             if self.can_go_back() {
-                self.escape();
+                self.back_key();
             }
             return;
         }
@@ -3355,7 +3377,7 @@ impl App {
         }
         // nothing typed, outside the Calendar: Left goes back a level (dialog/DESIGN.md)
         if !self.is_calendar() && self.can_go_back() {
-            return self.escape();
+            return self.back_key();
         }
         if self.input.is_empty() && (!self.in_list || self.is_calendar()) {
             return self.month(-1);
@@ -3468,13 +3490,18 @@ impl App {
         }
     }
 
-    /// Esc: a question waiting is answered no (the draft comes back); the focus on a control or the
-    /// draft goes first; then back one view; from the first view the dialog closes.
+    /// The Esc key: files being copied, moved or trashed stop after the file under way, wherever you are; only Esc and
+    /// the x stop them (dialog/DESIGN.md). Then it goes back as every way back does.
     pub fn escape(&mut self) {
-        // files being copied, moved or trashed: Esc stops after the file under way, wherever you are (dialog/DESIGN.md)
         if self.mode == Mode::Normal && self.files_stop_batch() {
             return;
         }
+        self.back_key();
+    }
+
+    /// Back, whichever key or click means it: a question waiting is answered no (the draft comes back); the focus on a
+    /// control or the draft goes first; then back one view; from the first view the dialog closes.
+    pub fn back_key(&mut self) {
         // a page of files: the actions or a conflict go back, a form is let go (dialog/DESIGN.md); the words first
         if self.files_page_open() && self.mode == Mode::Normal && self.chip_focus.is_none() && (self.input.is_empty() || self.files.form()) {
             return self.files_back();
@@ -3793,6 +3820,10 @@ impl App {
                 self.approved(step);
             }
             return;
+        }
+        // a name left empty: the form stands, as files' does
+        if self.prompt_form() && self.input.trim().is_empty() {
+            return self.refuse("type a name, or Esc cancels");
         }
         match std::mem::replace(&mut self.mode, Mode::Normal) {
             Mode::Confirm(_) => return,
@@ -4858,6 +4889,23 @@ impl App {
         tool.destructive || LOCAL_RISK.contains(&tool.name.as_str())
     }
 
+    /// The name a rename starts from, so a letter can be changed (dialog/DESIGN.md): the words of the row the step is
+    /// on, a note's title and never its file; a step no row holds, what its arguments name.
+    fn current_name(&self, prov: usize, call: &Call) -> Option<String> {
+        if !call.name.ends_with("_rename") {
+            return None;
+        }
+        let holds = |r: &&model::Row| r.tool.iter().chain(r.more.iter()).any(|c| c == call);
+        let folder = self.folder.iter().flat_map(|(_, _, rows)| rows.rows.iter());
+        let hits = self.hits.iter().map(|(_, r)| r);
+        let rows = self.providers.get(prov).into_iter().flat_map(|p| p.rows.rows.iter());
+        if let Some(row) = self.steps_row.iter().chain(rows).chain(folder).chain(hits).find(holds) {
+            return Some(row.text.clone());
+        }
+        let name = call.arguments.get("name").or_else(|| call.arguments.get("path"))?.as_str()?;
+        Some(name.rsplit('/').next().unwrap_or(name).to_string())
+    }
+
     /// A step: an argument asked when it lacks one; a typed yes when it is risky, then the call. Nothing is
     /// drawn for it: a refusal lands in the reply row, a typed step's receipt too (#196).
     pub fn run(&mut self, step: Step) {
@@ -4870,13 +4918,13 @@ impl App {
             self.target = None;
         }
         if let Some(field) = step.call.ask.first().cloned() {
-            // files' rename, new folder and new text file: a form typed in the prompt (dialog/DESIGN.md)
+            // files' rename, new folder and new file: a form typed in the prompt (dialog/DESIGN.md)
             if self.files_form(step.clone()) {
                 return;
             }
             let masked = gate::secret(&field, self.tool_of(&step).and_then(|t| t.schema.pointer(&format!("/properties/{}", field))));
             self.stash_draft();
-            let name = current_name(&step.call);
+            let name = self.current_name(step.prov, &step.call);
             self.mode = Mode::Ask { step, field, masked };
             if let Some(name) = name {
                 self.set_input(name);
@@ -5582,6 +5630,9 @@ impl App {
     /// The row under the prompt: what a key does now, a key named as a chip and nothing else as one.
     /// A visible key chip follows the same action as that key on the keyboard.
     pub fn hint_key(&mut self, key: HintKey) {
+        if self.row_key_typed(key) {
+            return;
+        }
         match key {
             HintKey::Enter => self.enter(),
             HintKey::Ask => self.ask(),

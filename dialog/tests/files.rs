@@ -114,7 +114,7 @@ fn dir(parent: &str, name: &str, items: &str, group: &str, uri: &str) -> Value {
 fn summary(text: &str, path: &str) -> Value {
     json!({"id": "files:here", "sign": "opens", "text": text, "columns": [], "more": [
         {"name": "files_new_folder", "arguments": {"path": path}, "ask": ["name"], "said": "new folder"},
-        {"name": "files_new_text", "arguments": {"path": path}, "ask": ["name"], "said": "new text file"},
+        {"name": "files_new_text", "arguments": {"path": path}, "ask": ["name"], "said": "new file"},
         {"name": "files_browse", "arguments": {"path": path}, "said": "open in the system file manager"}]})
 }
 
@@ -831,16 +831,25 @@ fn copy_to_the_other_pane_refuses_the_same_folder_and_what_is_no_folder() {
 
 type Calls = Arc<Mutex<Vec<Value>>>;
 
-/// A stub files provider: your home, the documents, the pictures (with `also` in them) and the trash; a call of a
-/// name in `refuse` is refused as the shell refuses a name already there; the rest answer with a receipt and an undo.
-fn files_stub(calls: Calls, also: Vec<&'static str>, refuse: Vec<&'static str>) -> Script {
+/// The names that have left your home: a read after one is pushed here no longer lists it.
+type Gone = Arc<Mutex<Vec<String>>>;
+
+/// A stub files provider: your home (less the names in `gone`), the documents, the pictures (with `also` in them) and
+/// the trash; a call of a name in `refuse` is refused as the shell refuses a name already there; the rest answer with
+/// a receipt and an undo.
+fn files_stub(calls: Calls, also: Vec<&'static str>, refuse: Vec<&'static str>, gone: Gone) -> Script {
     let tools = tools();
     let root = root();
     Box::new(move |v, send| {
         if v.get("method").and_then(Value::as_str) == Some("resources/read") {
             let uri = v.pointer("/params/uri").and_then(Value::as_str).unwrap_or("").to_string();
             let rows = match uri.as_str() {
-                HOME => Some(home_rows()),
+                HOME => {
+                    let mut rows = home_rows();
+                    let names = gone.lock().unwrap();
+                    rows["rows"].as_array_mut().unwrap().retain(|r| !names.iter().any(|n| r["text"] == n.as_str()));
+                    Some(rows)
+                }
                 DOCS => Some(docs_rows()),
                 PICS => Some(pics_rows(&also)),
                 TRASH => Some(trash_rows()),
@@ -893,13 +902,21 @@ fn files_stub(calls: Calls, also: Vec<&'static str>, refuse: Vec<&'static str>) 
     })
 }
 
-type Started = (App, std::sync::mpsc::Receiver<spark_dialog::mcp::Incoming>, Calls);
+type Rx = std::sync::mpsc::Receiver<spark_dialog::mcp::Incoming>;
+type Started = (App, Rx, Calls);
 
 /// The files open at your home against the stub, notes.md lit.
 fn started(also: Vec<&'static str>, refuse: Vec<&'static str>) -> Started {
+    let (app, rx, calls, _) = started_gone(also, refuse);
+    (app, rx, calls)
+}
+
+/// As started, with the names that have left your home to push to.
+fn started_gone(also: Vec<&'static str>, refuse: Vec<&'static str>) -> (App, Rx, Calls, Gone) {
     let (mut app, rx, tx) = app_with(&["files"]);
     let calls = Arc::new(Mutex::new(vec![]));
-    app.servers.push(stub(0, "files", files_stub(calls.clone(), also, refuse), tx));
+    let gone: Gone = Arc::new(Mutex::new(vec![]));
+    app.servers.push(stub(0, "files", files_stub(calls.clone(), also, refuse, gone.clone()), tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
     app.in_list = true;
@@ -908,7 +925,7 @@ fn started(also: Vec<&'static str>, refuse: Vec<&'static str>) -> Started {
     assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "files opens the home folder");
     app.in_list = true;
     app.sel = 3;
-    (app, rx, calls)
+    (app, rx, calls, gone)
 }
 
 fn tool_calls(calls: &Calls) -> Vec<Value> {
@@ -1453,7 +1470,12 @@ fn every_size_draws_the_panes_the_checks_and_the_pages_whole() {
         app.hint_key(HintKey::Actions);
         page_row(&mut app, "copy");
         app.enter();
-        assert!(matches!(app.files.page, Page::Conflict(_)), "{}x{}: {:?}", w, h, app.files.page);
+        // the other pane is the destination while it is on screen; below 60 cells the folder is picked
+        if cw >= 60 {
+            assert!(matches!(app.files.page, Page::Conflict(_)), "{}x{}: {:?}", w, h, app.files.page);
+        } else {
+            assert!(app.picking.is_some(), "{}x{}: {:?}", w, h, said(&app));
+        }
         let _ = screen(&app);
         app.escape();
         app.hint_key(HintKey::Actions);
@@ -2716,8 +2738,8 @@ fn f2_renames_a_note_a_layout_and_a_category_from_the_name_as_it_is() {
     notes.ready = true;
     notes.rows = model::rows(
         &json!({"title": "notes", "rows": [
-            {"id": "notes:1", "sign": "blank", "text": "Shopping", "tool": {"name": "notes_open", "arguments": {"name": "Shopping"}},
-             "more": [{"name": "notes_rename", "arguments": {"name": "Shopping"}, "ask": ["to"], "said": "rename"}]},
+            {"id": "notes:1", "sign": "blank", "text": "Shopping", "tool": {"name": "notes_open", "arguments": {"name": "shopping.md"}},
+             "more": [{"name": "notes_rename", "arguments": {"name": "shopping.md"}, "ask": ["to"], "said": "rename"}]},
             {"id": "notes:new", "sign": "opens", "text": "new note", "tool": {"name": "notes_new", "arguments": {}}}
         ], "short": []})
         .to_string(),
@@ -2749,6 +2771,7 @@ fn f2_renames_a_note_a_layout_and_a_category_from_the_name_as_it_is() {
     assert!(matches!(app.view, View::Steps(0)));
     app.hint_key(HintKey::Rename);
     assert!(matches!(app.mode, Mode::Ask { .. }));
+    assert_eq!(app.input, "Shopping", "from the row's page too");
     app.escape();
     app.sel = 1;
     app.in_list = true;
@@ -2785,6 +2808,518 @@ fn f2_renames_a_note_a_layout_and_a_category_from_the_name_as_it_is() {
     app.apps_activate(spark_dialog::apps::Action::Category("Other".into()));
     app.hint_key(HintKey::Rename);
     assert_eq!(said(&app).as_deref(), Some("nothing to rename here"), "other stays other");
+}
+
+// ---- what the review found: every key on the row a person sees, and only there
+
+const GONE: &str = "this file is gone: read the list again";
+
+/// The provider says its rows changed and they land, these names gone from your home.
+fn lands_without(app: &mut App, rx: &Rx, gone: &Gone, names: &[&str]) {
+    gone.lock().unwrap().extend(names.iter().map(|n| n.to_string()));
+    app.providers[0].dirty = true;
+    let left = |rows: &model::Rows| rows.here.as_deref() == Some("/data/me") && !rows.rows.iter().any(|r| names.contains(&r.text.as_str()));
+    let landed = |a: &App| a.folder.as_ref().is_some_and(|(_, _, r)| left(r)) || a.files.other.as_ref().and_then(|o| o.rows.as_ref()).is_some_and(left);
+    assert!(pump(app, rx, landed), "the rows landed without {:?}", names);
+}
+
+#[test]
+fn a_menu_acts_on_its_own_row_when_the_rows_land_under_it() {
+    // F8 took notes.md, Down lit report.pdf, F9 opened its menu, and only then the read landed, a row shorter: the
+    // index behind the page now names todo.txt
+    let stale = || {
+        let (mut app, rx, calls, gone) = started_gone(vec![], vec![]);
+        light_row(&mut app, "report.pdf");
+        app.hint_key(HintKey::Actions);
+        lands_without(&mut app, &rx, &gone, &["notes.md"]);
+        assert_eq!(app.subtitle(), "report.pdf");
+        (app, rx, calls)
+    };
+    let (mut app, rx, calls) = stale();
+    page_row(&mut app, "trash");
+    app.enter();
+    assert!(pump(&mut app, &rx, |_| !tool_calls(&calls).is_empty()));
+    let c = tool_calls(&calls);
+    assert_eq!(c[0]["name"], "files_trash");
+    assert_eq!(c[0]["arguments"]["path"], "/data/me/report.pdf", "never the row that came up into its place");
+    for word in ["copy", "move"] {
+        let (mut app, ..) = stale();
+        page_row(&mut app, word);
+        app.enter();
+        let step = app.picking.as_ref().and_then(|pk| pk.step.clone()).expect("the pick");
+        assert_eq!(step.call.arguments["path"], "/data/me/report.pdf", "{}", word);
+    }
+    let (mut app, ..) = stale();
+    page_row(&mut app, "view");
+    app.enter();
+    assert_eq!(app.preview.as_ref().unwrap().row().text, "report.pdf");
+    let (mut app, ..) = stale();
+    app.apps.pending = None; // the catalog home asked for at the start
+    page_row(&mut app, "copy path");
+    app.enter();
+    let copied = app.jobs.iter().rev().find_map(|j| match j {
+        spark_dialog::app::Job::RunInput(spark_dialog::app::Helper::Apps(_), _, input) => Some(input.clone()),
+        _ => None,
+    });
+    assert!(copied.is_some_and(|i| i.contains("/data/me/report.pdf")));
+    // back from the page, the bar is on its row: the place behind a page keeps by id as the list does
+    let (mut app, ..) = stale();
+    app.escape();
+    assert_eq!(lit(&app).as_deref(), Some("report.pdf"));
+    // and behind a form
+    let (mut app, rx, _, gone) = started_gone(vec![], vec![]);
+    light_row(&mut app, "report.pdf");
+    app.hint_key(HintKey::Rename);
+    lands_without(&mut app, &rx, &gone, &["notes.md"]);
+    app.escape();
+    assert_eq!(lit(&app).as_deref(), Some("report.pdf"));
+}
+
+#[test]
+fn a_menu_whose_row_left_says_so_and_touches_nothing() {
+    for word in [
+        "open",
+        "open in app",
+        "view",
+        "attach to the next request",
+        "rename",
+        "copy",
+        "move",
+        "copy path",
+        "trash",
+        "select",
+    ] {
+        let (mut app, rx, calls, gone) = started_gone(vec![], vec![]);
+        light_row(&mut app, "report.pdf");
+        app.hint_key(HintKey::Actions);
+        lands_without(&mut app, &rx, &gone, &["report.pdf"]);
+        app.apps.pending = None; // the catalog home asked for at the start
+        app.jobs.clear();
+        page_row(&mut app, word);
+        app.enter();
+        assert_eq!(said(&app).as_deref(), Some(GONE), "{}", word);
+        assert!(tool_calls(&calls).is_empty() && app.running.is_none(), "{}: nothing ran", word);
+        assert!(
+            !app.files_page_open() && app.picking.is_none() && app.preview.is_none() && !app.files.form() && !app.files_checks_any() && app.jobs.is_empty(),
+            "{}: nothing opened",
+            word
+        );
+    }
+    // the folder's own rows are no row's: they stand
+    let (mut app, rx, _, gone) = started_gone(vec![], vec![]);
+    light_row(&mut app, "report.pdf");
+    app.hint_key(HintKey::Actions);
+    lands_without(&mut app, &rx, &gone, &["report.pdf"]);
+    page_row(&mut app, "new folder");
+    app.enter();
+    assert!(app.files.form(), "{:?}", said(&app));
+    // the set's menu: one of it gone and the set is not what the page showed
+    let (mut app, rx, calls, gone) = started_gone(vec![], vec![]);
+    app.typed(' ');
+    app.typed(' ');
+    app.hint_key(HintKey::Actions);
+    assert_eq!(app.subtitle(), "2 selected");
+    lands_without(&mut app, &rx, &gone, &["report.pdf"]);
+    page_row(&mut app, "trash");
+    app.enter();
+    assert_eq!(said(&app).as_deref(), Some(GONE));
+    assert!(tool_calls(&calls).is_empty() && app.files.batch.is_none());
+    // the set whole, the rows moved under it: it acts on the set, as selected
+    let (mut app, rx, calls, gone) = started_gone(vec![], vec![]);
+    light_row(&mut app, "report.pdf");
+    app.typed(' ');
+    app.typed(' ');
+    app.hint_key(HintKey::Actions);
+    lands_without(&mut app, &rx, &gone, &["notes.md"]);
+    page_row(&mut app, "trash");
+    app.enter();
+    assert!(pump(&mut app, &rx, |_| tool_calls(&calls).len() == 2));
+    let paths: Vec<Value> = tool_calls(&calls).iter().map(|c| c["arguments"]["path"].clone()).collect();
+    assert_eq!(paths, ["/data/me/report.pdf", "/data/me/todo.txt"]);
+}
+
+#[test]
+fn below_sixty_cells_f5_and_f6_pick_the_folder_for_the_other_pane_is_not_on_screen() {
+    for key in [HintKey::Copy, HintKey::Move] {
+        let mut app = files_app();
+        app.files.other = Some(pane(PICS, Some(pics_rows(&["notes.md"]))));
+        app.size = (50, HEIGHT);
+        assert!(!app.panes_drawn());
+        app.hint_key(key);
+        assert!(app.picking.as_ref().is_some_and(|pk| pk.step.is_some()), "{:?}: {:?}", key, said(&app));
+        assert!(!matches!(app.files.page, Page::Conflict(_)), "nothing asks about a folder nobody can see");
+    }
+    // the pane back on screen, the pane is the destination again
+    let mut app = files_app();
+    app.files.other = Some(pane(PICS, Some(pics_rows(&["notes.md"]))));
+    app.size = (WIDTH, HEIGHT);
+    app.hint_key(HintKey::Copy);
+    assert!(app.picking.is_none() && matches!(app.files.page, Page::Conflict(_)));
+}
+
+#[test]
+fn opening_the_second_pane_lets_go_of_the_recent_rows_it_stops_drawing() {
+    let mut app = files_app();
+    light_row(&mut app, "photo-0412.jpg");
+    app.typed(' ');
+    light_row(&mut app, "todo.txt");
+    app.typed(' ');
+    assert_eq!(app.files.checks.len(), 2);
+    light_row(&mut app, "todo.txt");
+    two_panes(&mut app);
+    assert!(app.panes_drawn());
+    assert_eq!(app.files.checks, ["files:file:home:todo.txt"], "what is off screen is off the selection");
+    assert_eq!(app.selected_line().as_deref(), Some("1 selected \u{b7} 1 KB"));
+    // the window grew back over a selection made below 60 cells: the set is what the list draws
+    let mut app = files_app();
+    app.files.other = Some(pane(PICS, Some(pics_rows(&[]))));
+    app.size = (50, HEIGHT);
+    light_row(&mut app, "photo-0412.jpg");
+    app.typed(' ');
+    app.size = (WIDTH, HEIGHT);
+    assert!(app.panes_drawn());
+    assert_eq!(app.selected_line(), None);
+}
+
+#[test]
+fn words_that_hide_selected_rows_stop_the_keys_with_the_count() {
+    let selected = || {
+        let mut app = files_app();
+        light_row(&mut app, "report.pdf");
+        app.typed(' ');
+        light_row(&mut app, "todo.txt");
+        app.typed(' ');
+        app
+    };
+    let mut app = selected();
+    for c in "note".chars() {
+        app.typed(c);
+    }
+    for key in [HintKey::Copy, HintKey::Move, HintKey::Trash, HintKey::CopyPath] {
+        app.reply = None;
+        app.hint_key(key);
+        assert_eq!(said(&app).as_deref(), Some("2 selected rows are hidden: Esc clears the words"), "{:?}", key);
+        assert!(app.picking.is_none() && app.files.batch.is_none() && app.jobs.is_empty(), "{:?}", key);
+    }
+    // from the menu too
+    app.reply = None;
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "trash");
+    app.enter();
+    assert_eq!(said(&app).as_deref(), Some("2 selected rows are hidden: Esc clears the words"));
+    // one of them shows: the count is the hidden ones
+    let mut app = selected();
+    for c in "todo".chars() {
+        app.typed(c);
+    }
+    app.hint_key(HintKey::Trash);
+    assert_eq!(said(&app).as_deref(), Some("1 selected row is hidden: Esc clears the words"));
+    // Esc clears the words, the selection stands, and the keys act on what is on screen
+    app.escape();
+    assert_eq!(app.input, "");
+    assert!(app.files_checks_any(), "the words go first");
+    app.reply = None;
+    app.hint_key(HintKey::CopyPath);
+    assert_eq!(said(&app), None);
+    assert!(!app.jobs.is_empty(), "both rows on screen: the keys act");
+}
+
+#[test]
+fn a_row_key_set_on_a_letter_or_delete_is_the_prompts_until_the_list_holds_the_keys() {
+    let keys = |text: &str| spark_dialog::keys::Bindings::from_json(text).unwrap();
+    let all = [
+        ("rename", HintKey::Rename),
+        ("open", HintKey::Open),
+        ("copy", HintKey::Copy),
+        ("move", HintKey::Move),
+        ("new", HintKey::New),
+        ("trash", HintKey::Trash),
+        ("copy-path", HintKey::CopyPath),
+        ("actions", HintKey::Actions),
+        ("select", HintKey::Select),
+        ("view", HintKey::View),
+    ];
+    for (name, key) in all {
+        // words typed: the letter is one more of them, and nothing else happens
+        let mut app = files_app();
+        app.cfg.keys = keys(&format!(r#"{{"{}": "o"}}"#, name));
+        app.typed('n');
+        app.hint_key(key);
+        assert_eq!(app.input, "no", "{}", name);
+        assert!(
+            said(&app).is_none() && !app.files_page_open() && app.picking.is_none() && app.files.batch.is_none() && app.view != View::Preview,
+            "{}: {:?}",
+            name,
+            said(&app)
+        );
+        assert!(!app.files_checks_any() && app.jobs.is_empty(), "{}", name);
+        // Down hands the keys to the list: the key is the key
+        app.down();
+        app.hint_key(key);
+        assert_ne!(app.input, "noo", "{} acts once the list holds the keys", name);
+        // Delete, the same way: it deletes the letter under the cursor
+        let mut app = files_app();
+        app.cfg.keys = keys(&format!(r#"{{"{}": "Delete"}}"#, name));
+        app.set_draft("no");
+        app.cursor = 0;
+        app.hint_key(key);
+        assert_eq!(app.input, "o", "{} on Delete", name);
+        assert!(said(&app).is_none() && app.jobs.is_empty(), "{}", name);
+        // a form's name takes it
+        let mut app = files_app();
+        app.cfg.keys = keys(&format!(r#"{{"{}": "o"}}"#, name));
+        app.hint_key(HintKey::New);
+        assert!(app.files.form() && app.input.is_empty(), "{}", name);
+        app.hint_key(key);
+        assert_eq!(app.input, "o", "{}: a name", name);
+        // an answer being typed takes it
+        let mut app = notes_app(&format!(r#"{{"{}": "o"}}"#, name));
+        app.hint_key(HintKey::Rename);
+        assert!(matches!(app.mode, Mode::Ask { .. }));
+        app.set_draft("n");
+        app.hint_key(key);
+        assert_eq!(app.input, "no", "{}: an answer", name);
+    }
+    // the home with nothing lit: a letter starts the words, whatever it is bound to
+    for (name, key) in all {
+        let mut app = App::new(Config::default(), &[]);
+        app.cfg.keys = keys(&format!(r#"{{"{}": "o"}}"#, name));
+        app.hint_key(key);
+        assert_eq!(app.input, "o", "{} at home", name);
+        assert_eq!(app.view, View::Home);
+    }
+    // a key of the files' alone is a letter anywhere else, lit row or none
+    let mut app = notes_app(r#"{"copy": "o"}"#);
+    app.hint_key(HintKey::Copy);
+    assert_eq!(app.input, "o");
+    assert_eq!(said(&app), None);
+    // a shifted letter is that letter, a key with Ctrl no letter at all
+    let mut app = files_app();
+    app.cfg.keys = keys(r#"{"trash": "Shift+o"}"#);
+    app.typed('n');
+    app.hint_key(HintKey::Trash);
+    assert_eq!(app.input, "nO");
+    let mut app = files_app();
+    app.cfg.keys = keys(r#"{"copy-path": "Ctrl+o"}"#);
+    app.typed('n');
+    app.hint_key(HintKey::CopyPath);
+    assert_eq!(app.input, "n");
+    assert!(!app.jobs.is_empty(), "Ctrl types nothing: it acts as a function key does");
+}
+
+/// A note in Notes, lit, its row as the provider writes it: the file in the arguments, the title in the text.
+fn notes_app(keys: &str) -> App {
+    let mut notes = Provider::new("notes");
+    notes.tools = model::tools(&json!({"tools": [
+        {"name": "notes_open", "title": "notes open NAME", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}}},
+        {"name": "notes_rename", "title": "notes rename NAME", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "to": {"type": "string"}}}}
+    ]}));
+    notes.ready = true;
+    notes.rows = model::rows(
+        &json!({"title": "notes", "rows": [
+            {"id": "notes:shopping.md", "sign": "blank", "text": "Shopping", "tool": {"name": "notes_open", "arguments": {"name": "shopping.md"}},
+             "more": [{"name": "notes_rename", "arguments": {"name": "shopping.md"}, "ask": ["to"], "said": "rename"}]}
+        ], "short": []})
+        .to_string(),
+    )
+    .unwrap();
+    let mut app = App::new(
+        Config {
+            model: false,
+            talk: false,
+            ..Config::default()
+        },
+        &[],
+    );
+    app.cfg.keys = spark_dialog::keys::Bindings::from_json(keys).unwrap();
+    app.providers = vec![notes];
+    app.view = View::Section(0);
+    app.came_from = vec![View::Home];
+    app.in_list = true;
+    app.sel = 0;
+    app
+}
+
+#[test]
+fn a_rename_left_empty_keeps_its_form_and_says_how_it_ends() {
+    let mut app = notes_app("{}");
+    app.hint_key(HintKey::Rename);
+    app.set_draft("");
+    app.enter();
+    assert_eq!(said(&app).as_deref(), Some("type a name, or Esc cancels"));
+    assert!(matches!(app.mode, Mode::Ask { .. }), "the form stands: {:?}", app.mode);
+    app.escape();
+    assert_eq!(app.mode, Mode::Normal);
+}
+
+#[test]
+fn the_passive_panes_bar_keeps_its_row_by_id() {
+    let aside = || {
+        let (mut app, rx, _, gone) = started_gone(vec![], vec![]);
+        light_row(&mut app, "todo.txt");
+        app.right();
+        light_row(&mut app, "documents");
+        app.enter();
+        assert!(pump(&mut app, &rx, |a| a.folder.as_ref().is_some_and(|(_, u, _)| u == DOCS)));
+        (app, rx, gone)
+    };
+    let (mut app, rx, gone) = aside();
+    lands_without(&mut app, &rx, &gone, &["notes.md"]);
+    assert!(app.files_pane());
+    assert_eq!(lit(&app).as_deref(), Some("todo.txt"), "the row, not its place");
+    // the lit row itself left: the bar stands on a row that is there
+    let (mut app, rx, gone) = aside();
+    lands_without(
+        &mut app,
+        &rx,
+        &gone,
+        &["todo.txt", "trash", "STICK", "this folder \u{b7} 3 folders \u{b7} 3 files \u{b7} 4.5 MB"],
+    );
+    assert!(app.files_pane());
+    assert!(app.sel < app.picks().len(), "{} of {}", app.sel, app.picks().len());
+}
+
+#[test]
+fn only_esc_and_the_x_stop_a_batch_every_other_way_back_leaves_it_running() {
+    let running = || {
+        let (mut app, rx, calls) = started(vec![], vec![]);
+        app.typed(' ');
+        app.typed(' ');
+        app.typed(' ');
+        app.hint_key(HintKey::Trash);
+        assert!(app.files.batch.is_some());
+        (app, rx, calls)
+    };
+    let untouched = |app: &App, how: &str| {
+        assert!(
+            app.files.batch.as_ref().is_some_and(|b| !b.stopping && b.stopped == 0),
+            "{}: {:?}",
+            how,
+            app.files.batch
+        );
+    };
+    // F3 in the view, Space in the view
+    let (mut app, ..) = running();
+    light_row(&mut app, "todo.txt");
+    app.hint_key(HintKey::View);
+    assert_eq!(app.view, View::Preview);
+    app.hint_key(HintKey::View);
+    assert!(matches!(app.view, View::Folder(..)), "{:?}", app.view);
+    untouched(&app, "F3");
+    light_row(&mut app, "todo.txt");
+    app.hint_key(HintKey::View);
+    app.typed(' ');
+    assert!(matches!(app.view, View::Folder(..)), "{:?}", app.view);
+    untouched(&app, "Space");
+    // Backspace on an empty prompt, Left outside files
+    let (mut app, ..) = running();
+    app.backspace();
+    assert_eq!(app.view, View::Home);
+    untouched(&app, "Backspace");
+    let (mut app, ..) = running();
+    app.came_from.push(app.view.clone());
+    app.view = View::Help;
+    app.left();
+    assert!(matches!(app.view, View::Folder(..)), "{:?}", app.view);
+    untouched(&app, "Left");
+    // the header's back
+    let (mut app, ..) = running();
+    app.back_key();
+    assert_eq!(app.view, View::Home);
+    untouched(&app, "the header's back");
+    // Esc still stops it
+    let (mut app, ..) = running();
+    app.escape();
+    assert!(app.files.batch.as_ref().is_some_and(|b| b.stopping));
+}
+
+#[test]
+fn f2_starts_from_the_rows_words_never_its_file() {
+    let mut app = notes_app("{}");
+    app.hint_key(HintKey::Rename);
+    assert_eq!(app.input, "Shopping", "the title, its first line");
+    app.escape();
+    // a layout's name is its row's words, as the provider writes it; a save-as from a recent one too
+    let mut layouts = Provider::new("layout");
+    layouts.tools = model::tools(&json!({"tools": [
+        {"name": "layout_open", "title": "layout open NAME", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}}},
+        {"name": "layout_rename", "title": "layout rename NAME", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "to": {"type": "string"}}}}
+    ]}));
+    layouts.ready = true;
+    layouts.rows = model::rows(
+        &json!({"title": "layouts", "rows": [
+            {"id": "layout:coding", "sign": "blank", "text": "coding", "tool": {"name": "layout_open", "arguments": {"name": "coding"}},
+             "more": [{"name": "layout_rename", "arguments": {"name": "coding"}, "ask": ["to"], "said": "rename"}]}
+        ], "short": []})
+        .to_string(),
+    )
+    .unwrap();
+    app.providers = vec![layouts];
+    app.in_list = true;
+    app.sel = 0;
+    app.hint_key(HintKey::Rename);
+    assert_eq!(app.input, "coding");
+}
+
+#[test]
+fn a_batch_lets_go_of_the_sources_selection_when_it_starts_and_of_no_other() {
+    let (mut app, rx, calls) = started(vec![], vec![]);
+    light_row(&mut app, "report.pdf");
+    app.right();
+    light_row(&mut app, "report.pdf");
+    app.typed(' ');
+    app.left();
+    app.typed(' ');
+    app.typed(' ');
+    assert_eq!(app.files.checks.len(), 2);
+    app.hint_key(HintKey::Trash);
+    assert!(app.files.batch.is_some());
+    assert!(app.files.checks.is_empty(), "gone as the batch starts, as one file's is");
+    // the other pane active while it runs, its own selection standing through the batch's end
+    assert!(app.files_pane());
+    assert!(app.files_checks_any());
+    assert!(pump(&mut app, &rx, |a| a.files.batch.is_none()));
+    assert_eq!(tool_calls(&calls).len(), 2);
+    assert!(app.files_checks_any(), "the batch's end is no pane's business");
+    assert_eq!(app.files.checks, ["files:file:home:report.pdf"]);
+}
+
+#[test]
+fn the_keys_say_the_rows_have_not_come_while_the_folder_loads() {
+    for key in [HintKey::Copy, HintKey::Move, HintKey::Trash, HintKey::Actions] {
+        let mut app = files_app();
+        app.folder = None;
+        app.hint_key(key);
+        assert_eq!(said(&app).as_deref(), Some("the rows have not come yet: a moment"), "{:?}", key);
+    }
+}
+
+#[test]
+fn f10_and_back_keeps_the_selection() {
+    let (mut app, rx, _) = started(vec![], vec![]);
+    app.typed(' ');
+    assert!(app.files_checks_any());
+    app.hint_key(HintKey::Conversation);
+    assert_eq!(app.view, View::Conversation);
+    app.hint_key(HintKey::Conversation);
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
+    assert!(app.files_checks_any(), "the conversation is no other folder");
+}
+
+#[test]
+fn both_panes_take_one_date_decision_by_the_columns_width() {
+    let mut app = files_app();
+    at(&mut app, DOCS, docs_rows());
+    app.files.other = Some(pane(PICS, Some(pics_rows(&[]))));
+    light_row(&mut app, "notes.md");
+    let dated = |app: &App, name: &str, date: &str| screen(app).iter().any(|r| r.contains('\u{2502}') && r.contains(name) && r.contains(date));
+    let (l, r) = spark_dialog::ui::pane_widths(80);
+    assert_ne!(l, r, "80 cells split in two widths");
+    app.size = (80, 40);
+    assert!(dated(&app, "notes.md", "18 Oct"), "the left pane has its dates at 80");
+    assert!(dated(&app, "holiday.jpg", "today"), "and the right");
+    app.size = (79, 40);
+    assert!(!dated(&app, "notes.md", "18 Oct") && !dated(&app, "holiday.jpg", "today"), "at 79 neither has");
 }
 
 #[test]
