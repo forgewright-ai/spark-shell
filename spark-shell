@@ -3383,7 +3383,12 @@ cmd_status() {
     status_next
 }
 
-cmd_check() {
+cmd_check() {   # the setup's tests, a line each, kept for tools' check (v0.129)
+    { cmd_check_lines; echo $? > "$TMP/check.rc"; } | tee "$TMP/check.out"
+    [ ! -s "$TMP/check.out" ] || tools_check_keep "$TMP/check.out"
+    return "$(cat "$TMP/check.rc" 2>/dev/null || echo 1)"
+}
+cmd_check_lines() {
     config_load
     fails=0
     chk() { # chk NAME ok|warn|fail DETAIL [REMEDY] -- a warn names its remedy and does not fail
@@ -4635,7 +4640,7 @@ panel_colors() {   # the three SGRs from our own render, when there is one (a pi
 }
 
 # --- the sections: their order by use, which of them this machine has, what each costs
-PANEL_ORDER="undo spark apps printers layout notes reminders window display keyboard pointer notifications out mic bt wifi storage theme bar power about"   # grouped by what you do: what is on the screen, the sound, the connections and the drives, the look, the power, then about; undo only while there is one
+PANEL_ORDER="undo spark apps printers layout notes reminders window display keyboard pointer notifications out mic bt wifi storage theme bar power tools about"   # grouped by what you do: what is on the screen, the sound, the connections and the drives, the look, the power, then about; undo only while there is one
 PANEL_BLOCKS="lan wifi bt out mic bat clock theme"      # the bar's blocks in the bar's order, and the palette: the facts, and what a click may open
 PANEL_LOOKS="lan bat clock"                            # blocks with nothing to set: shown only when they opened the panel
 panel_blocks_here() {   # -> the bar's blocks this machine has, in the bar's order
@@ -4655,7 +4660,7 @@ panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on
     [ "$_f" = glance ] || echo "$_f"
     for s in $PANEL_ORDER; do
         [ "$s" != "$_f" ] || continue
-        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; printers) command -v lpstat >/dev/null 2>&1 || continue ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|display|keyboard|pointer|notes|reminders|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
+        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; tools) [ "$OS" != Darwin ] || continue ;; printers) command -v lpstat >/dev/null 2>&1 || continue ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|display|keyboard|pointer|notes|reminders|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
         echo "$s"
     done
 }
@@ -5141,6 +5146,7 @@ panel_title() {   # panel_title SECTION -> the line(s) that say what opened the 
             case ${_sn:-0} in 0) echo "$(panel_col storage)no drive plugged in" ;; 1) echo "$(panel_col storage)1 drive" ;; *) echo "$(panel_col storage)$_sn drives" ;; esac ;;
         power) _pu=$(power_up); echo "$(panel_col power)${_pu:-lock, suspend, restart}" ;;
         about) echo "$(panel_col about)spark-shell $(panel_version) $PANEL_SEP the project, the license, the credits" ;;
+        tools) echo "$(panel_col tools)$(tools_check_state)" ;;
         layout) _n=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | wc -l | tr -d ' '); _last=''; [ ! -f "$DESK_LAST" ] || _last=$(desk_words "$DESK_LAST")
             if [ "$_n" -eq 0 ]; then echo "$(panel_col layout)none saved yet"
             else echo "$(panel_col layout)$_n saved${_last:+ $PANEL_SEP last: $_last}"; fi ;;
@@ -5310,6 +5316,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             if [ "$_cur" = default ]; then _gm=$PANEL_TICK; else _gm=-; fi
             printf '%s\tthe ground\twallpaper default\tcustom|%s\n' "$_gm" "$WALL_GROUND_SAID" ;;   # in use or not, its own step: the check moves in place (#191)
         about) printf '%s\tspark-shell %s\topen\n' "$PANEL_GO" "$(panel_version)" ;;   # the splash, in this window
+        tools) tools_menu | while IFS="$TAB" read -r _tmn _tms _tml; do printf -- '-\t%s  %s\tshow\n' "$_tmn" "$_tms"; done ;;   # the six, as text: the dialog opens their pages
         window) for _w in split tabs stacked; do
                 if [ "$_w" = "${WINDOWS:-split}" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$(win_words "$_w")"; else printf -- '-\t%s\t%s\n' "$(win_words "$_w")" "$_w"; fi
             done
@@ -6334,7 +6341,8 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                     bar_redraw; echo "the keyboard is $_arg" ;;
                 *) echo "$_a is not something keyboard does"; return 1 ;;
             esac ;;
-        about) case $_a in open) panel_about 72 ;; site) about_site ;; *) echo "$_a is not something about does"; return 1 ;; esac ;;   # on a pipe: the splash as text
+        about) case $_a in open) panel_about 72 ;; site) about_site ;; *) echo "$_a is not something about does"; return 1 ;; esac ;;
+        tools) tools_act "$_a" "$_arg" ;;   # on a pipe: the splash as text
         bar) case $_a in
                 off) bar_desktop off desktop >/dev/null; echo "bar hidden $PANEL_SEP $(panel_keys "$(desk_keys | awk '$2 == "home.open." {print $1; exit}')") opens the dialog" ;;
                 on) bar_desktop on desktop >/dev/null; echo "bar shown" ;;
@@ -6767,6 +6775,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
             [ -n "${3:-}" ] && [ "$(printf '%s' "$3" | wc -c)" -le 32 ] && [ "$(printf '%s' "$3" | tr -d '\001-\037\177')" = "$3" ] || { echo 'a network name is 1 to 32 bytes, without control characters'; return 1; }
             echo "$3"; return 0 ;;
         spark:chat|undo:all|about:open|about:site) echo ''; return 0 ;;
+        tools:*) tools_gate "$2" "${3:-}"; return ;;
         layout:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: save takes a name"; return 1 ;;
         layout:add) _n=$(jq -r '.suggested // [] | .[]' "$DESK_LAST" 2>/dev/null | awk -v w="$(panel_lower "$3")" 'tolower($0) == w && !d {print; d = 1}'); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "layout: $3 was not suggested for the last layout"; return 1 ;;
         apps:open) panel_apps_read "$TMP/apps.gate"   # the list the step opens from too: the desktop read once a step (#196)
@@ -7087,9 +7096,9 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 # JSON value is built by jq with --arg, every request is parsed by jq,
 # and a method or a tool name is matched by case, never run as a name.
 PROVIDE_PROTOCOL=2025-06-18
-PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
+PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps tools about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open about_site undo_all files_browse files_open files_app files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open about_site undo_all files_browse files_open files_app files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden tools_check tools_fix"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -7249,6 +7258,8 @@ tool_spec() {
         apps_terminal)     _ts=apps _ta=terminal _th=o _tt='apps terminal' _td='Open a terminal window.' ;;
         about_open)        _ts=about _ta=open _th=ri _tt='about' _td='The version, the project, the license and the credits.' ;;
         about_site)        _ts=about _ta=site _th=o _tt='about site' _td='Open the project page in the browser.' ;;
+        tools_check)       _ts=tools _ta=check _th=rf _tt='tools check' _td='Run spark-shell check again and keep its result.' ;;
+        tools_fix)         _ts=tools _ta=fix _tp=command _tk=string _th=of _tt='tools fix COMMAND' _td='Run a fix the last check gave, a spark-shell command, in a terminal window.' ;;
         undo_all)          _ts=undo _ta=all _th='' _tt='undo' _td='Take the last thing done back.' ;;
         files_browse)      _ts=files _ta=browse _tp=path _tk=path _th=ifo _tt='files browse PATH' _td='Open a folder in the system file manager, for anything beyond the steps here. path is a row'"'"'s own path, exactly as written.' ;;
         files_open)        _ts=files _ta=open _tp=path _tk=path _th=ifo _tt='files open PATH' _td='Open a file with the app that opens its kind. path is a row'"'"'s own path, exactly as written.' ;;
@@ -7325,6 +7336,7 @@ provide_tools() {   # provide_tools SECTION -> the section's tools as one JSON a
 provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state" (the section's state now, the dialog's subtitle), "rows": [{"id", "sign", "text", "tool", "more", "columns", "children", "group"}], "short": [ID]}; a tool may carry `ask`, the arguments the host asks the person for
     [ "$1" != clock ] || [ "${2:-}" = settings ] || { provide_clock_rows; return; }
     [ "$1" != about ] || { provide_about_rows; return; }
+    [ "$1" != tools ] || { provide_tools_rows; return; }
     [ "$1" != files ] || { provide_files_rows; return; }
     THEME_ENUM_NOW=''; [ "$1" != theme ] || THEME_ENUM_NOW=$(theme_enum)   # the palette names once for this read, not once a row (#183)
     WIFI_TOOL_READ=''; [ "$1" != wifi ] || { WIFI_TOOL_NOW=$(wifi_tool); WIFI_TOOL_READ=1; }   # the wifi manager once for this read (#196)
@@ -7574,7 +7586,131 @@ provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION [GROUP|COLUMN
 provide_clock_rows() {
     jq -cn --arg state "$(time_zone), $(time_sync)" '{title: "clock", state: $state, rows: [{id: "clock:settings", sign: "opens", text: "time settings", tool: null, more: [], columns: [], children: "spark-shell://clock/rows/settings", group: null}], short: ["clock:settings"]}'
 }
-provide_title() { [ "$1" != about ] || return 0; [ "$1" != files ] || { echo "your home folder"; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }
+provide_title() { [ "$1" != about ] || return 0; [ "$1" != tools ] || return 0; [ "$1" != files ] || { echo "your home folder"; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }
+# --- the tools provider (v0.129, dialog/DESIGN.md "Tools"): six utilities after Norton Utilities, a
+# page each. Nothing runs that its row does not say; a step that needs sudo or prints its own output
+# runs in a terminal window that waits for Enter. The check's last result is kept, so the menu and
+# home say it without running one.
+TOOLS_CHECK=$STATE_DIR/check.last   # the epoch, then spark-shell check's own lines
+TOOLS_CHECK_FRESH=10                # a check younger than this many seconds is read, not run again
+tools_label() {   # tools_label NAME -> the plain name of a check row
+    case $1 in
+        rc) echo 'shell startup' ;; tools) echo programs ;; terminfo) echo terminal ;; look) echo 'config files' ;;
+        font) echo 'console font' ;; quiet) echo 'boot messages' ;; saver) echo 'screen saver' ;; mcp) echo 'spark tools' ;;
+        login) echo 'login screen' ;; bar) echo 'status line' ;; top) echo bar ;; storage) echo drives ;; notify) echo notifications ;;
+        *) printf '%s\n' "$1" ;;
+    esac
+}
+tools_check_keep() {   # tools_check_keep FILE -- a check's lines kept with the time it ran
+    mkdir_private "$STATE_DIR"
+    { date +%s; cat "$1"; } > "$TOOLS_CHECK.$$" 2>/dev/null && mv "$TOOLS_CHECK.$$" "$TOOLS_CHECK" || rm -f "$TOOLS_CHECK.$$"
+}
+tools_check_run() {   # the check run now (it keeps its own lines), unless the kept one is younger than TOOLS_CHECK_FRESH seconds
+    _tct=$(sed -n 1p "$TOOLS_CHECK" 2>/dev/null)
+    case $_tct in ''|*[!0-9]*) _tct=0 ;; esac
+    [ $(( $(date +%s) - _tct )) -lt "$TOOLS_CHECK_FRESH" ] && return 0
+    "$REPO/spark-shell" check > /dev/null 2>&1 || :
+}
+tools_check_rows() {   # -> STATUS<tab>NAME<tab>LABEL<tab>DETAIL<tab>FIX, a row each of the kept check; FIX the remedy as the check wrote it
+    sed 1d "$TOOLS_CHECK" 2>/dev/null | awk '
+        /^(ok|warn|FAIL) / { st = $1; nm = $2; d = $0; sub(/^[^ ]+ +[^ ]+ +/, "", d); fx = ""
+            if (st != "ok") { i = index(d, " -- "); if (i > 0) { fx = substr(d, i + 4); d = substr(d, 1, i - 1) } }
+            printf "%s\t%s\t%s\t%s\n", st, nm, d, fx }' | while IFS="$TAB" read -r _tst _tnm _tdt _tfx; do
+        printf '%s\t%s\t%s\t%s\t%s\n' "$_tst" "$_tnm" "$(tools_label "$_tnm")" "$_tdt" "$_tfx"
+    done
+}
+tools_fix_command() {   # tools_fix_command FIX -> the spark-shell command a remedy names, its words in parentheses left out; false for an instruction
+    _tfc=$(printf '%s' "$1" | sed 's/ *([^)]*)$//')
+    printf '%s' "$_tfc" | grep -qE '^spark-shell( [a-z0-9][a-z0-9-]*)+$' || return 1
+    printf '%s\n' "$_tfc"
+}
+tools_check_state() {   # -> "2 problems", "1 problem", "no problems", "not checked yet"
+    [ -s "$TOOLS_CHECK" ] || { echo 'not checked yet'; return; }
+    _tcn=$(sed 1d "$TOOLS_CHECK" | grep -cE '^(warn|FAIL) ' || :)
+    case $_tcn in 0) echo 'no problems' ;; 1) echo '1 problem' ;; *) echo "$_tcn problems" ;; esac
+}
+tools_menu() {   # -> NAME<tab>STATE<tab>LINE, the six in their order
+    printf 'check\t%s\ttest the setup and fix problems\n' "$(tools_check_state)"
+}
+provide_tools_rows() {   # -> the tools section's rows resource: the six, each its state as a column and its page as children
+    tools_menu | jq -Rn --arg sep "$PANEL_SEP" '
+        [inputs | split("\t") | {id: ("tools:" + .[0]), sign: "blank", text: .[0], tool: null, more: [], columns: [.[1]],
+            children: ("spark-shell://tools/rows/" + .[0]), group: null, line: (.[0] + " " + $sep + " " + .[2])}]
+        | {title: "tools", state: "", rows: ., short: [.[].id]}'
+}
+provide_tools_page() {   # provide_tools_page PATH -> a tool's page, a rows resource: check, check/passed
+    case $1 in
+        check) tools_check_run; tools_check_page ;;
+        check/passed) tools_check_passed ;;
+        *) return 1 ;;
+    esac
+}
+tools_check_page() {   # -> the check's page: the problems, one fix row per command, the passed and the not applicable, check again
+    tools_check_rows > "$TMP/check.rows"
+    _tca=$(sed -n 1p "$TOOLS_CHECK" 2>/dev/null); _tcw=''
+    case $_tca in ''|*[!0-9]*) ;; *) _tcw=$(date -d "@$_tca" '+%H:%M' 2>/dev/null || date -r "$_tca" '+%H:%M' 2>/dev/null || :) ;; esac
+    while IFS="$TAB" read -r _tst _tnm _tlb _tdt _tfx; do
+        [ "$_tst" != ok ] || continue
+        _tfcm=''; _tfcm=$(tools_fix_command "$_tfx") || _tfcm=''
+        printf '%s\t%s\t%s\t%s\t%s\n' "$_tnm" "$_tlb" "$_tdt" "$_tfx" "$_tfcm"
+    done < "$TMP/check.rows" > "$TMP/check.problems"
+    _tcp=$(awk -F '\t' '$1 == "ok" && $4 !~ /^na( |$)/' "$TMP/check.rows" | grep -c . || :)
+    _tcna=$(awk -F '\t' '$1 == "ok" && $4 ~ /^na( |$)/' "$TMP/check.rows" | grep -c . || :)
+    jq -Rn --arg sep "$PANEL_SEP" --arg passed "$_tcp" --arg na "$_tcna" --arg when "$_tcw" --arg state "$(tools_check_state)" '
+        def row($id; $text): {id: $id, sign: "blank", text: $text, tool: null, more: [], columns: [], children: null, group: null};
+        def gap($n): row("tools:gap:" + $n; "") | .muted = true;
+        [inputs | split("\t") | {name: .[0], label: .[1], detail: .[2], fix: .[3], command: .[4]}] as $p
+        | [$p[] | . as $x | row("tools:problem:" + $x.name; $x.label) | .group = "problems"
+            | .columns = [$x.detail + (if $x.command == "" and $x.fix != "" then ": " + $x.fix else "" end)]] as $problems
+        | ($p | map(select(.command != "") | .command) | reduce .[] as $c ([]; if index([$c]) then . else . + [$c] end)) as $order
+        | [$order[] as $c
+            | row("tools:fix:" + $c; "fix") | .columns = [$c] | .tool = {name: "tools_fix", arguments: {command: $c}}
+            | .line = ("fix " + $sep + " runs " + $c + " in a terminal")] as $fixes
+        | ($problems
+           + (if ($fixes | length) > 0 then [gap("1")] + $fixes else [] end)
+           + (if ($problems | length) > 0 then [gap("2")] else [] end)
+           + (if $passed != "0" then [row("tools:passed"; "\($passed) passed") | .children = "spark-shell://tools/rows/check/passed"
+                | .line = ("\($passed) passed " + $sep + " the checks with no problem")] else [] end)
+           + (if $na != "0" then [row("tools:na"; "\($na) not applicable") | .muted = true] else [] end)
+           + [gap("3"), (row("tools:check-again"; "check again") | .columns = (if $when == "" then [] else ["checked at " + $when] end)
+                | .tool = {name: "tools_check", arguments: {}} | .line = ("check again " + $sep + " runs every test again"))]) as $rows
+        | {title: "check", state: $state, rows: $rows, short: []}' < "$TMP/check.problems"
+}
+tools_check_passed() {   # -> the passed checks, a fact each: the plain name and the check's detail
+    tools_check_rows | awk -F '\t' '$1 == "ok" && $4 !~ /^na( |$)/ { printf "%s\t%s\t%s\n", $2, $3, $4 }' | jq -Rn '
+        [inputs | split("\t") | {id: ("tools:ok:" + .[0]), sign: "blank", text: .[1], tool: null, more: [], columns: [.[2]], children: null, group: null}]
+        | {title: "passed", state: "", rows: ., short: []}'
+}
+tools_gate() {   # tools_gate ACTION [ARG] -> ARG as the step takes it (exit 0), or why not (exit 1)
+    case $1 in
+        check) echo ''; return 0 ;;
+        fix) _tgc=$(tools_fix_command "$2") || { echo "$2 is not a fix the last check gave"; return 1; }
+            tools_check_rows | while IFS="$TAB" read -r _tst _tnm _tlb _tdt _tfx; do [ "$_tst" = ok ] || tools_fix_command "$_tfx" 2>/dev/null || :; done | grep -qxF -- "$_tgc" \
+                || { echo "$2 is not a fix the last check gave"; return 1; }
+            printf '%s\n' "$_tgc"; return 0 ;;
+    esac
+    echo "$1 is not something tools does"; return 1
+}
+tools_act() {   # tools_act ACTION [ARG] -> one line; exit 1 when it was not done
+    case $1 in
+        check) "$REPO/spark-shell" check > /dev/null 2>&1 || :
+            [ -s "$TOOLS_CHECK" ] || { echo "the check printed nothing"; return 1; }
+            echo "checked: $(tools_check_state)" ;;
+        fix) tools_terminal "$2" ;;
+        *) echo "$1 is not something tools does"; return 1 ;;
+    esac
+}
+tools_terminal() {   # tools_terminal LINE -- a gated command in a terminal window that waits for Enter; LINE spark-shell's or the package manager's own
+    desk_in_sway || { echo "a terminal window needs the desktop"; return 1; }
+    mkdir_private "$STATE_DIR/tools"
+    _tts=$(mktemp "$STATE_DIR/tools/run.XXXXXX") || { echo "could not open a terminal"; return 1; }
+    case $1 in spark-shell|'spark-shell '*) _ttc="$REPO/$1" ;; *) _ttc=$1 ;; esac
+    printf '#!/bin/sh\nrm -f "$0"\nprintf %s\n%s\nprintf %s\nread _\n' "'%s\\n\\n' '$1'" "$_ttc" "'\\npress Enter to close\\n'" > "$_tts"
+    _wr=0; win_exec "foot sh $_tts" || _wr=$?
+    [ "$_wr" -ne 2 ] || { rm -f "$_tts"; echo "could not open a terminal"; return 1; }
+    [ "$_wr" -eq 0 ] || { echo "the terminal opened no window"; return 1; }
+    : > "$TMP/opened"; echo "opened a terminal: $1"
+}
 help_keys() {   # -> help's desktop rows (dialog/DESIGN.md, v0.127): SUBJECT, what you do, the binding whose key it is (one key a row, or none), the key as the template binds it
     printf '%s\n' \
         "windows	a terminal window	terminal.open	Super+Return" \
@@ -7763,6 +7899,11 @@ EOF
             fi
             if [ "$sec" = window ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://window/rows/?*) true ;; *) false ;; esac; then   # a picker of the workspace place
                 rpc_result "$_id" "$(provide_window_rows "$_uri" | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
+            fi
+            if [ "$sec" = tools ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://tools/rows/?*) true ;; *) false ;; esac; then   # a tool's page (v0.129)
+                if provide_tools_page "${_uri#spark-shell://tools/rows/}" > "$TMP/tools.page" 2>/dev/null && [ -s "$TMP/tools.page" ]; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/tools.page")"
+                else rpc_error "$_id" -32002 "no tool page at that uri"; fi
+                return 0
             fi
             if [ "$sec" = clock ] && [ "$_method" = resources/read ] && [ "$_uri" = "spark-shell://clock/rows/settings" ]; then
                 rpc_result "$_id" "$(provide_rows clock settings | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
@@ -7993,7 +8134,7 @@ EOF
     # the section's rows as the step left them go with the answer: the host shows them and reads nothing again, the
     # gate's rows are these, and the watcher counts them as seen (#196). A window put in front needs none.
     [ -s "$TMP/action.effect" ] || printf 'null' > "$TMP/action.effect"
-    if [ -f "$TMP/opened" ]; then printf 'null' > "$TMP/rows.last.new"
+    if [ -f "$TMP/opened" ] || [ "$sec" = tools ]; then printf 'null' > "$TMP/rows.last.new"   # tools: the page on screen changed, not the six; with no rows the host reads both again
     else provide_rows "$sec" > "$TMP/rows.last.new" && cp "$TMP/rows.last.new" "$TMP/rows.last" && provide_seen; fi
     rpc_result "$1" "$(jq -cn --arg r "$_out" --argjson u "$_undo" --argjson p "$_pal" --argjson t "$_trn" --argjson o "$([ -f "$TMP/opened" ] && echo true || echo false)" \
         --slurpfile e "$TMP/action.effect" --slurpfile rows "$TMP/rows.last.new" '

@@ -134,8 +134,8 @@ pub const DESTS: [Dest; 10] = [
     },
     Dest {
         name: "tools",
-        purpose: "utilities and diagnostics",
-        sections: &[],
+        purpose: "check, space, running",
+        sections: &["tools"],
     },
     Dest {
         name: "settings",
@@ -2234,15 +2234,7 @@ impl App {
                 let secs = self.dest_sections(*d);
                 let one = secs.len() == 1;
                 if secs.is_empty() {
-                    self.text(
-                        &mut list,
-                        if *d == TOOLS_DEST {
-                            "No utilities are registered here yet. Native diagnostics: spark-shell status."
-                        } else {
-                            "This capability is unavailable in this session."
-                        },
-                        true,
-                    );
+                    self.text(&mut list, "This capability is unavailable in this session.", true);
                 }
                 for p in secs {
                     self.section_rows(p, &mut list, !one);
@@ -2773,6 +2765,12 @@ impl App {
                     .map(|i| self.providers[i].version.trim_start_matches('v').to_string())
                     .filter(|v| !v.is_empty())?;
                 return Some(format!("spark-shell v{}", v));
+            }
+            // tools: the last check, as its check row says it (dialog/DESIGN.md, v0.129)
+            "tools" => {
+                return prov("tools")
+                    .and_then(|p| p.rows.rows.iter().find(|r| r.id == "tools:check"))
+                    .and_then(|r| r.columns.first().cloned());
             }
             "notes" | "calendar" => {}
             "workspace" => {
@@ -5330,6 +5328,10 @@ impl App {
             // menu's and act on one click (dialog/DESIGN.md)
             Item::Folder(_) | Item::Row(..) | Item::Hit(_) => self.prov_of(&it).is_some_and(|p| match self.providers[p].label.as_str() {
                 "files" | "notes" => true,
+                // tools' objects: a program, a package, a folder; its menu rows act on one click (v0.129)
+                "tools" => self
+                    .row_ref(&it)
+                    .is_some_and(|r| r.id.starts_with("tools:program:") || r.id.starts_with("tools:package:") || r.id.starts_with("tools:folder:")),
                 "window" | "layout" => self
                     .row_ref(&it)
                     .and_then(|r| r.tool.as_ref())
@@ -5391,9 +5393,12 @@ impl App {
             Item::Key(words, key) if key.is_empty() => Some(words.clone()),
             Item::Key(words, key) => Some(format!("{}{}{}", words, crate::ui::SEP, key)),
             // a menu's row with a wide column (power: what the step does): the row stays one word, its line
-            // here while it is lit (dialog/DESIGN.md, v0.127)
-            Item::Row(..) => {
+            // here while it is lit (dialog/DESIGN.md, v0.127); a row that says its own line says it (tools, v0.129)
+            Item::Row(..) | Item::Folder(_) | Item::Hit(_) => {
                 let r = self.row_ref(&it)?;
+                if let Some(line) = &r.line {
+                    return Some(line.clone());
+                }
                 let wide = r.wide.as_ref()?;
                 let mut parts = vec![r.text.clone()];
                 parts.extend(wide.iter().filter(|c| !c.is_empty()).cloned());
