@@ -402,10 +402,10 @@ elif sys.argv[1] == 'steps':
                 checks.append("Root and conversation share one normal size, font, key row and configured footer")
                 key("unfinished follow-up")
                 key("-k", "Next")
-                key("-k", "F2")
-                key("-k", "F2")
+                key("-k", "F10")
+                key("-k", "F10")
                 capture("conversation-scroll-void")
-                checks.append("The full fixture answer scrolls; F2 preserves the follow-up draft")
+                checks.append("The full fixture answer scrolls; F10 preserves the follow-up draft")
                 key("-M", "logo", "-k", "f", "-m", "logo")
                 assert windows()[0]["fullscreen_mode"] == 1
                 capture("fullscreen-void")
@@ -428,7 +428,7 @@ elif sys.argv[1] == 'steps':
                 assert "unfinished follow-up" in "\n".join(screen()), "draft survives snap, fullscreen and resize"
                 assert "conversati" in screen()[0].lower(), "resize changed the conversation view"
                 key("-k", "Escape")
-                key("-k", "F2")
+                key("-k", "F10")
                 key("help", "-k", "Return")
                 time.sleep(1)
                 assert "in home" in "\n".join(screen()), "help opens on the dialog's own keys at the narrow size"
@@ -501,11 +501,12 @@ elif sys.argv[1] == 'steps':
                 checks.append("At 36 columns with a long attachment, Talk, Cancel, Remove, Model and Attach clicks reach their displayed controls")
                 close_home()
 
+                # F4 is open's by default: a key you set wins over a default, and that action goes unbound (v0.128)
                 (settings / "home-keys.json").write_text('{"ask": "F4"}\n')
                 open_home()
                 key("configured request", "-k", "F4")
                 wait_for(lambda: json.loads(request_file.read_text())["argv"][-1] == "configured request", "configured F4 Ask")
-                checks.append("Configured F4 reaches the same explicit Ask action")
+                checks.append("Configured F4 wins over open's default and reaches the same explicit Ask action")
                 close_home()
 
                 (settings / "home-keys.json").unlink()

@@ -267,7 +267,7 @@ print(json.dumps({"answer": "", "steps": [{"name": "notes_pick", "arguments": {"
     except (AssertionError, KeyError, IndexError) as e:
         ok(False, "task terminal interaction", str(e) + " " + repr(re.sub(rb"\x1b\[[0-9;?]*[A-Za-z]", b"", bytes(seen[-2500:]))))
     finally:
-        os.write(fd, b"\x03")
+        os.write(fd, b"\x11")
         if not wait_for(lambda: os.waitpid(pid, os.WNOHANG)[0] != 0, 5):
             os.kill(pid, signal.SIGKILL)
             os.waitpid(pid, 0)
@@ -336,7 +336,9 @@ class Screen:
 
 def files(binary, env, home):
     """The files as a file manager (#112), against the real provider on a fixture home: Files opens
-    the home folder with its rows, Right on a file opens its steps, Esc comes back, Esc leaves."""
+    the home folder with its rows, F9 on a file opens its steps, Esc comes back, Right opens the second
+    pane, close pane closes it. F keys as a legacy terminal sends them: F2 \\x1bOQ, F3 \\x1bOR, F5
+    \\x1b[15~, F7 \\x1b[18~, F9 \\x1b[20~, F10 \\x1b[21~."""
     with open(os.path.join(home, "hello.txt"), "w") as f:
         f.write("hello\n")
     os.makedirs(os.path.join(home, "docs"), exist_ok=True)
@@ -363,6 +365,12 @@ def files(binary, env, home):
     shown = lambda: re.sub(r"\s+", "", screen.text())   # the screen as the terminal holds it, with no spaces
     try:
         assert wait_for(lambda: "search or ask" in plain() and "browse your home" in plain()), "the home did not draw with the files ready"
+        os.write(fd, b"\x1bOQ")        # F2 where no row can be renamed
+        assert wait_for(lambda: "nothingtorenamehere" in shown()), "F2 at the home did not refuse: " + screen.text()[-900:]
+        os.write(fd, b"\x03")          # Ctrl+C is copy path: at the home it refuses, and the dialog stays
+        assert wait_for(lambda: "nothingtocopyhere" in shown()), "Ctrl+C at the home did not refuse: " + screen.text()[-900:]
+        assert os.waitpid(pid, os.WNOHANG)[0] == 0, "Ctrl+C closed the dialog"
+        ok(True, "F2 and Ctrl+C refuse where they have nothing to act on, and Ctrl+C no longer closes the dialog")
         os.write(fd, b"files")
         time.sleep(0.3)
         os.write(fd, b"\r")
@@ -371,66 +379,108 @@ def files(binary, env, home):
         os.write(fd, b"\x1b[B")       # Down: the first row, the folder
         time.sleep(0.3)
         os.write(fd, b"\x1b[B")       # Down: the file, lit
-        assert wait_for(lambda: "actions" in shown() and "preview" in shown()), "the key bar did not show the file's actions and preview: " + screen.text()[-600:]
+        assert wait_for(lambda: all(w in shown() for w in ("renF2", "viewF3", "openF4", "copyF5", "moveF6", "newF7", "trashF8", "actionsF9"))), "the key bar did not show the file's keys: " + screen.text()[-600:]
         seen.clear()
-        os.write(fd, b"\x1b[C")       # Right: its actions
+        os.write(fd, b"\x1b[20~")     # F9: its actions
         # read from the screen, not the bytes: a cell the row before held too is not sent again ("rename" over "hello.txt" keeps its e)
-        assert wait_for(lambda: "movetoafolder" in shown() and "trash" in shown() and "rename" in shown() and "back" in shown()), "the actions did not draw: " + screen.text()[-900:]
-        ok(True, "Down lights the file with actions and preview on the key bar; Right opens the actions in the provider's words: open, preview, attach, rename, move, copy, trash")
+        assert wait_for(lambda: all(w in shown() for w in ("openinappF4", "renameF2", "copypathCtrl+C", "selectSpace", "newfolderF7", "newfile", "back"))), "the actions did not draw: " + screen.text()[-900:]
+        assert "closepane" not in shown() and "twopanes" not in shown(), "one pane has no pane row: " + screen.text()[-900:]
+        ok(True, "Down lights the file with its keys on the bar; F9 opens the actions, each row with its key at the right, and no pane row in one pane")
         seen.clear()
         os.write(fd, b"\x1b")          # back to the folder
-        assert wait_for(lambda: "hello.txt" in shown() and "thisfolder" in shown()), "Esc did not come back: " + screen.text()[-900:]
+        assert wait_for(lambda: "hello.txt" in shown() and "thisfolder" in shown() and "renameF2" not in shown()), "Esc did not come back: " + screen.text()[-900:]
         ok(True, "Esc comes back to the folder")
-        os.write(fd, b"\x1bOR")        # F3, the bytes foot sends: the lit file's preview
-        assert wait_for(lambda: "preview\u00b7" in shown()), "F3 did not preview the lit file: " + screen.text()[-900:]
+        os.write(fd, b"\x1bOR")        # F3, the bytes foot sends: the lit file's view
+        assert wait_for(lambda: "view\u00b7" in shown()), "F3 did not view the lit file: " + screen.text()[-900:]
         os.write(fd, b"\x1b")
-        assert wait_for(lambda: "thisfolder" in shown() and "preview\u00b7" not in shown()), "Esc did not leave the preview: " + screen.text()[-900:]
-        ok(True, "F3 through the terminal previews the lit file, and Esc comes back")
-        os.write(fd, b"p")             # p on a lit row is a letter: a search starts and no preview comes up
-        assert wait_for(lambda: "searchorask" not in shown()), "p did not reach the prompt: " + screen.text()[-900:]
+        assert wait_for(lambda: "thisfolder" in shown() and "view\u00b7" not in shown()), "Esc did not leave the view: " + screen.text()[-900:]
+        ok(True, "F3 through the terminal views the lit file, and Esc comes back")
+        os.write(fd, b"v")             # v on a lit row is a letter: a search starts and no view comes up
+        assert wait_for(lambda: "searchorask" not in shown()), "v did not reach the prompt: " + screen.text()[-900:]
         time.sleep(0.5)
         wait_for(lambda: False, 0.3)
-        assert "preview\u00b7" not in shown(), "p opened a preview: " + screen.text()[-900:]
+        assert "view\u00b7" not in shown(), "v opened a view: " + screen.text()[-900:]
         os.write(fd, b"\x7f")
-        assert wait_for(lambda: "searchorask" in shown() and "hello.txt" in shown()), "Backspace did not clear the p: " + screen.text()[-900:]
-        ok(True, "p on a lit row types a letter and opens nothing")
+        assert wait_for(lambda: "searchorask" in shown() and "hello.txt" in shown()), "Backspace did not clear the v: " + screen.text()[-900:]
+        ok(True, "v on a lit row types a letter and opens nothing")
         os.write(fd, b"\x1b[B")       # typing took the keys to the prompt: Down, Down lights the file again
         time.sleep(0.3)
         os.write(fd, b"\x1b[B")
         assert wait_for(lambda: "hello.txt" in re.sub(r"\s+", "", "".join(screen.cells[35]))), "the file was not lit again: " + screen.text()[-900:]
-        # files v0 (dialog/DESIGN.md, Files): a check, the folder's actions under this folder, two panes and back
-        # to one. The status row is h-5, row 35 of 40; read with no spaces, as the rest. Ctrl+Tab is the kitty
-        # protocol's and a legacy pty cannot send it, so the pane switch is the desktop proof's alone
+        # the rework of 2026-11-05 (dialog/DESIGN.md, Files): a selection, the second pane by Right and the actions'
+        # close pane. The status row is h-5, row 35 of 40; read with no spaces, as the rest. Ctrl+Tab is the kitty
+        # protocol's and a legacy pty cannot send it, so the desktop proof alone presses it
         status = lambda: re.sub(r"\s+", "", "".join(screen.cells[35]))
+        prompt = lambda: re.sub(r"\s+", "", "".join(screen.cells[2]))
         twice = lambda word: any("".join(row).count(word) >= 2 for row in screen.cells)
-        os.write(fd, b" ")             # Space: the lit file checked, the bar a row down (v0.125.1)
-        assert wait_for(lambda: "1checked" in status()), "Space did not count the check on the status row: " + screen.text()[-900:]
-        ok(True, "Space checks the lit file: the status row reads 1 checked")
-        os.write(fd, b"\x1b")          # Esc with nothing typed: the checks go first, the lit row's line comes back
-        assert wait_for(lambda: status() and "checked" not in status()), "Esc did not clear the check: " + screen.text()[-900:]
+        line = lambda: any("\u2502" in "".join(row) for row in screen.cells[8:35])
+        os.write(fd, b" ")             # Space: the lit file selected, the bar a row down
+        assert wait_for(lambda: "1selected" in status()), "Space did not count the selection on the status row: " + screen.text()[-900:]
+        ok(True, "Space selects the lit file: the status row reads 1 selected")
+        os.write(fd, b"\x1b")          # Esc with nothing typed: the selection goes first, the lit row's line comes back
+        assert wait_for(lambda: status() and "selected" not in status()), "Esc did not clear the selection: " + screen.text()[-900:]
         if "hello.txt" not in status():
             os.write(fd, b"\x1b[A")    # Up: Space moved the bar a row down, so the file's line is a row up
         assert wait_for(lambda: "hello.txt" in status()), "the file's line is not back on the status row: " + screen.text()[-900:]
-        ok(True, "Esc clears the checks first: hello.txt's line is back on the status row")
-        os.write(fd, b"\x1b[C")        # Right: the actions, the row's first, the folder's under this folder
-        assert wait_for(lambda: all(w in shown() for w in ("thisfolder", "newfolder", "twopanes", "check", "Space"))), "the actions page lacks the folder's actions or the check chip: " + screen.text()[-900:]
-        ok(True, "Right opens the actions: check with its Space chip, then this folder with new folder and two panes")
-        os.write(fd, b"two panes")     # the page is a menu and typing searches it as every list does
-        assert wait_for(lambda: "twopanes" in shown() and "newfolder" not in shown()), "typing did not filter the actions page: " + screen.text()[-900:]
+        ok(True, "Esc clears the selection first: hello.txt's line is back on the status row")
+        os.write(fd, b"\x1b[C")        # Right: the second pane, the same folder, the bar on its first row
+        assert wait_for(lambda: line() and twice("hello.txt") and "".join(screen.cells[8]).count("~") >= 2 and "docs" in status()), "Right did not open the second pane: " + screen.text()[-900:]
+        assert wait_for(lambda: not re.search(r"\b(home|recent)\b", screen.text())), "two panes at home keep a heading: " + screen.text()[-900:]
+        ok(True, "Right opens the second pane: the line between them, each pane's path on its first row, the bar on the second's first row, no home heading and no recent")
+        wait_for(lambda: False, 0.3)
+        drawn = screen.text()
+        os.write(fd, b"\x1b[C")        # Right again: the edge
+        wait_for(lambda: False, 0.4)
+        assert screen.text() == drawn, "Right at the edge moved: " + screen.text()[-900:]
+        os.write(fd, b"\x1b[D")        # Left: the left pane, its bar where it was
+        assert wait_for(lambda: "hello.txt" in status()), "Left did not go to the left pane: " + screen.text()[-900:]
+        wait_for(lambda: False, 0.3)
+        drawn = screen.text()
+        os.write(fd, b"\x1b[D")        # Left again: the edge
+        wait_for(lambda: False, 0.4)
+        assert screen.text() == drawn, "Left at the edge moved: " + screen.text()[-900:]
+        ok(True, "Left and Right move between the panes and stay put at the edge")
+        os.write(fd, b"\x1bOQ")        # F2: the form in the prompt, the name as it is, both panes on screen
+        assert wait_for(lambda: "hello.txt" in prompt() and "cancelEsc" in shown() and "saveEnter" in shown() and line()), "F2 did not open the form: " + screen.text()[-900:]
+        os.write(fd, b"\x1b")
+        assert wait_for(lambda: "searchorask" in prompt()), "Esc did not cancel the form: " + screen.text()[-900:]
+        os.write(fd, b"\x1b[18~")      # F7: the same form, its placeholder
+        assert wait_for(lambda: "foldername" in prompt() and "cancelEsc" in shown() and line()), "F7 did not open the form: " + screen.text()[-900:]
+        os.write(fd, b"\x1b")
+        assert wait_for(lambda: "searchorask" in prompt()), "Esc did not cancel the form: " + screen.text()[-900:]
+        ok(os.path.exists(os.path.join(home, "hello.txt")), "F2 opens the form with the name, F7 asks folder name, both panes stay, and Esc cancels")
+        os.write(fd, b"\x1b[15~")      # F5 with both panes on one folder
+        assert wait_for(lambda: "theotherpaneshowsthisfolder" in status()), "F5 did not refuse: " + screen.text()[-900:]
+        os.write(fd, b"\x1b[20~")      # the refusal stands until the next action, and Esc alone would also go back a level
+        assert wait_for(lambda: "closepane" in shown()), "F9 did not open the actions: " + screen.text()[-900:]
+        os.write(fd, b"\x1b")
+        assert wait_for(lambda: "closepane" not in shown() and "hello.txt" in status()), "Esc did not come back to the file: " + screen.text()[-900:]
+        os.write(fd, b"\x1b[C")        # the right pane, on docs, its first row
+        assert wait_for(lambda: "docs" in status()), "Right did not go to the right pane: " + screen.text()[-900:]
         os.write(fd, b"\r")
-        assert wait_for(lambda: twice("hello.txt") or "".join(screen.cells[8]).count("~") >= 2), "two panes did not draw: " + screen.text()[-900:]
-        ok(True, "two panes: the folder twice at 30 cells each, each pane's path on the panes' first row")
-        os.write(fd, b"\x1b[C")
-        assert wait_for(lambda: "onepane" in shown()), "the actions page lacks one pane: " + screen.text()[-900:]
-        os.write(fd, b"one pane")
-        assert wait_for(lambda: "onepane" in shown() and "newfolder" not in shown()), "typing did not filter the actions page to one pane: " + screen.text()[-900:]
+        assert wait_for(lambda: "~/docs" in "".join(screen.cells[8])), "Enter did not open docs in the right pane: " + screen.text()[-900:]
+        os.write(fd, b"\x1b[D")
+        assert wait_for(lambda: "hello.txt" in status()), "Left did not come back: " + screen.text()[-900:]
+        os.write(fd, b"\x1b[15~")      # F5: at once, to the other pane's folder
+        assert wait_for(lambda: "hello.txtcopiedto~/docs" in status() and "undo" in status()), "F5 did not copy: " + screen.text()[-900:]
+        ok(os.path.exists(os.path.join(home, "docs", "hello.txt")) and "searchorask" in prompt() and line(),
+           "F5 refuses on one folder and copies to the other pane's at once, no words in the prompt, both panes on screen", screen.text()[-900:])
+        os.write(fd, b"\x1b[21~")      # F10: the conversation, and back
+        assert wait_for(lambda: "conversation" in "".join(screen.cells[0])), "F10 did not open the conversation: " + screen.text()[-900:]
+        os.write(fd, b"\x1b[21~")
+        assert wait_for(lambda: "conversation" not in "".join(screen.cells[0]) and line()), "F10 did not come back: " + screen.text()[-900:]
+        ok(True, "F10 opens the conversation and comes back to the panes")
+        os.write(fd, b"\x1b[20~")      # F9: the actions, inside the pane, close pane among them
+        assert wait_for(lambda: "closepane" in shown() and "~/docs" in "".join(screen.cells[8])), "the actions lack close pane or the other pane: " + screen.text()[-900:]
+        os.write(fd, b"close pane")    # typing narrows the menu, the best match lit
+        assert wait_for(lambda: "newfolderF7" not in shown()), "typing did not narrow the actions: " + screen.text()[-900:]
         os.write(fd, b"\r")
-        assert wait_for(lambda: "hello.txt" in shown() and not twice("hello.txt") and "".join(screen.cells[8]).count("~") < 2), "one pane did not come back: " + screen.text()[-900:]
-        ok(True, "one pane closes the second pane: the folder once again")
+        assert wait_for(lambda: "hello.txt" in shown() and not line() and not twice("hello.txt") and "".join(screen.cells[8]).count("~") < 2), "close pane did not close the second pane: " + screen.text()[-900:]
+        ok(True, "F9 draws the actions in the pane with the other on screen; close pane, typed, closes the second pane: the folder once again")
     except AssertionError as e:
         ok(False, "files terminal interaction", str(e))
     finally:
-        os.write(fd, b"\x03")
+        os.write(fd, b"\x11")
         if not wait_for(lambda: os.waitpid(pid, os.WNOHANG)[0] != 0, 5):
             os.kill(pid, signal.SIGKILL)
             os.waitpid(pid, 0)
@@ -564,7 +614,7 @@ def clicks(binary, env, home):
         time.sleep(0.5)
         ok(calls() == ["12", "11"], "a click on the row's name lights it and runs nothing", repr(calls()))
     finally:
-        os.write(fd, b"\x03")
+        os.write(fd, b"\x11")
         gone = []
         if not wait_for(lambda: bool(gone) or (os.waitpid(pid, os.WNOHANG)[0] != 0 and not gone.append(1)), 5):
             os.kill(pid, signal.SIGKILL)
@@ -606,7 +656,7 @@ def keys(binary, env):
     # saying a line sits above (#196)
     ok("twothree" in text and "four" in text and "\u2191" in text and "No such file" not in text and "not found" not in text,
        "Shift+Enter starts a new line and a pasted newline stays in the draft: nothing was sent", text[-400:])
-    os.write(fd, b"\x03")
+    os.write(fd, b"\x11")
     status = None
     end = time.time() + 10
     while time.time() < end:
@@ -620,7 +670,8 @@ def keys(binary, env):
         if p:
             status = st
             break
-    ok(status is not None and b"\x1b[<1u" in seen, "Ctrl-C closes it, and the protocol is turned off again on the way out", repr(status))
+    ok(status is not None and os.WIFEXITED(status) and os.WEXITSTATUS(status) == 130 and b"\x1b[<1u" in seen,
+       "Ctrl+Q closes it with a signal's 130, and the protocol is turned off again on the way out", repr(status))
 
 
 if __name__ == "__main__":

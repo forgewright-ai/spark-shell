@@ -277,15 +277,15 @@ def main(binary, destination):
         s.key("btop")
         s.four_modes("query", capture=False)
         assert "btop" in s.screen()[2], "resize lost the search"
-        s.click("\u2192")  # the physical keycap opens Details through the same action
+        s.click("F9")  # the key bar's keycap opens Details through the same action
         wait_for(lambda: "preferences" in "\n".join(s.screen()), "application Details")
         time.sleep(1)
         s.four_modes("details")
         s.checks.append("Real system Apps and on-demand btop Details render in compact, fullscreen and equal work-area snaps")
         s.key("-k", "Escape")
         assert "btop" in "\n".join(s.screen()), "Details returns to its query"
-        s.checks.append("Returning from Details restores the app search; active query and selected app survive all four modes; clicked Right keycap opens Details")
-        s.key("-k", "Right")
+        s.checks.append("Returning from Details restores the app search; active query and selected app survive all four modes; clicked F9 keycap opens Details")
+        s.key("-k", "F9")
         s.click("hide this app")
         assert "btop++ hidden" in s.text() and "undo" in s.text(), "applied at once, said on the status row with undo"
         preferences = s.root / ".config/spark-shell/apps.json"
@@ -301,6 +301,8 @@ def main(binary, destination):
         s.click("hidden apps", body=True)
         assert "btop++" in s.text()
         s.key("-k", "Down", "-k", "Right")
+        assert "technical details" not in s.text(), "Right opens nothing outside files: details are F9's"
+        s.key("-k", "F9")
         wait_for(lambda: "technical details" in s.text(), "hidden app Details")
         s.click("hide this app")
         assert not json.loads(preferences.read_text())["apps"]["btop.desktop"]["hidden"]
@@ -324,7 +326,7 @@ def main(binary, destination):
         assert "Review" not in saved["categories"] and "Development" not in saved["mappings"]
         s.checks.append("Native category creation, rename, mapping edit and deletion apply at once, persist and reclassify")
         s.key("-k", "Escape")  # the categories, back to the list
-        s.key("btop", "-k", "Right")
+        s.key("btop", "-k", "F9")
         s.click("category")
         s.click("utilities")
         assert json.loads(preferences.read_text())["apps"]["btop.desktop"]["category"] == "Utilities"
@@ -384,7 +386,7 @@ def main(binary, destination):
         s.click("btop++", body=True, app_name=True, double=True)
         wait_for(lambda: len(app_windows("btop")) == 2, "second btop window")
         s.focus()
-        s.key("-k", "Right")
+        s.key("-k", "F9")
         s.click("launch")
         s.click("focus existing")
         s.sway("[con_id=%d] focus" % first_btop)
@@ -417,7 +419,7 @@ def main(binary, destination):
         time.sleep(2)
         s.key("apps", "-k", "Return")
         wait_for(lambda: "btop" in s.text(), "catalog after restart")
-        s.key("btop", "-k", "Right")
+        s.key("btop", "-k", "F9")
         wait_for(lambda: "focus existing" in s.text(), "preferences after restart")
         assert "utilities" in s.text()
         s.checks.append("After restarting home, btop retains its category override, restored visibility and Focus existing preference")
@@ -429,7 +431,7 @@ def main(binary, destination):
         fixture.write_text("[Desktop Entry]\nType=Application\nName=Inspection Fixture\nComment=Local fixture for missing package metadata and declared desktop actions\nExec=foot --app-id=org.example.AppsProof --title=Apps-proof\nActions=new-window;\n\n[Desktop Action new-window]\nName=New window\nExec=foot --app-id=org.example.AppsProof --title=Apps-proof-new\n")
         s.click("refresh apps")
         time.sleep(1)
-        s.key("inspection", "-k", "Right")
+        s.key("inspection", "-k", "F9")
         wait_for(lambda: re.search("unavailable", s.text(), re.I), "missing package metadata")
         if app_windows() or app_windows("btop"):
             s.sway('[app_id="^(foot|btop)$"] move container to workspace 2')

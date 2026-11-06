@@ -34,7 +34,7 @@ def main(binary, destination):
         wait_for(lambda: listed in s.text(), "installed catalog")
 
     def details():
-        s.key("btop", "-k", "Right")
+        s.key("btop", "-k", "F9")
         wait_for(lambda: "preferences" in s.text(), "Details")
 
     try:
@@ -72,21 +72,21 @@ def main(binary, destination):
         time.sleep(2)
         apps("hidden apps")  # btop is hidden now: the list leaves it out, and says so in the count
         s.click("hidden apps", body=True)
-        s.key("-k", "Down", "-k", "Right")
+        s.key("-k", "Down", "-k", "F9")
         wait_for(lambda: "preferences" in s.text(), "the hidden app's details")
         s.click("hide this app")
         assert not hidden(), "shown again from the hidden apps"
         s.key("-k", "Escape", "-k", "Escape")
         s.key("btop")
-        s.key("-k", "F2")
+        s.key("-k", "F10")
         assert s.screen()[0].find("conversation") >= 0
-        s.key("retain this request draft", "-k", "F2")
+        s.key("retain this request draft", "-k", "F10")
         assert "btop" in s.screen()[2], "the app query is its own"
         capture("03-restored-app-query")
-        s.key("-k", "F2")
+        s.key("-k", "F10")
         assert "retain this request draft" in s.screen()[2], "the request draft is its own"
         capture("04-restored-request")
-        s.key("-k", "F2")
+        s.key("-k", "F10")
         s.checks.append("A change applies at once, is said with Undo and survives Esc and the close without a question; request and app query restore separately")
 
         s.key("-k", "Escape")
