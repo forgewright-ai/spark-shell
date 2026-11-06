@@ -22,6 +22,7 @@ plain() {   # plain FILE -- no hex color, no byte outside ASCII
 fresh() {   # a new throwaway HOME with the stubs in place
     H=$(mktemp -d)
     export HOME=$H XDG_CONFIG_HOME=$H/.config XDG_STATE_HOME=$H/.local/state XDG_DATA_HOME=$H/.local/share
+    unset XDG_CACHE_HOME   # never the caller's cache: the default, under the HOME each test sets
     mkdir -p "$H/.local/bin" "$H/.config/spark"
     printf '#!/bin/sh\necho starship 0.0-stub\n' > "$H/.local/bin/starship"   # the prompt row finds it
     chmod +x "$H/.local/bin/starship"

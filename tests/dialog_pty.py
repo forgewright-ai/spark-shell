@@ -564,7 +564,9 @@ def tools_walk(binary, env, home):
                 scr.feed(data)
         return test()
 
-    tail = lambda: seen.decode("utf-8", "replace")[-4000:]
+    # every check reads the screen as drawn: the dialog sends only the cells that change, so the bytes alone miss a
+    # word whose letters were on screen already (`oftware`)
+    tail = scr.text
     ok(wait_for(lambda: "search or ask" in tail() and "tools" in tail()), "the home draws with tools among its places", tail()[-400:])
     os.write(fd, b"tools")
     time.sleep(0.5)
