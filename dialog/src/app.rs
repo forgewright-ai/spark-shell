@@ -1844,33 +1844,33 @@ impl App {
     pub fn help_rows(&self) -> Vec<(String, String, String)> {
         let k = |a: HintKey| self.cfg.keys.label(a).to_string();
         let mut rows: Vec<(String, String, String)> = vec![
-            ("in home", "open what the bar is on", k(HintKey::Enter)),
-            ("in home", "back a level; at home, close", k(HintKey::Escape)),
-            ("in home", "ask spark the words", k(HintKey::Ask)),
-            ("in home", "a new line in the prompt", k(HintKey::Newline)),
-            ("in home", "the conversation, and back", k(HintKey::Conversation)),
-            ("in home", "the prompt's tools, one to the next", k(HintKey::Tab)),
-            ("in home", "view a row", k(HintKey::View)),
-            ("in home", "a row's actions or details", k(HintKey::Actions)),
-            ("in home", "rename a row", k(HintKey::Rename)),
-            ("in home", "a page up, a page down", format!("{}  {}", k(HintKey::PageUp), k(HintKey::PageDown))),
-            ("in home", "quit", k(HintKey::Quit)),
-            ("in files", "select a row, and the next", k(HintKey::Select)),
-            ("in files", "open in app", k(HintKey::Open)),
-            ("in files", "copy", k(HintKey::Copy)),
-            ("in files", "move", k(HintKey::Move)),
-            ("in files", "new folder", k(HintKey::New)),
-            ("in files", "trash", k(HintKey::Trash)),
-            ("in files", "copy path", k(HintKey::CopyPath)),
-            ("in files", "the other pane", k(HintKey::Pane)),
+            ("general", "open the selected row", k(HintKey::Enter)),
+            ("general", "go back or close", k(HintKey::Escape)),
+            ("general", "ask spark", k(HintKey::Ask)),
+            ("general", "new line in the prompt", k(HintKey::Newline)),
+            ("general", "open or close the conversation", k(HintKey::Conversation)),
+            ("general", "move between attach, model, talk", k(HintKey::Tab)),
+            ("general", "view the selected row", k(HintKey::View)),
+            ("general", "show actions", k(HintKey::Actions)),
+            ("general", "rename the selected row", k(HintKey::Rename)),
+            ("general", "scroll by page", format!("{}  {}", k(HintKey::PageUp), k(HintKey::PageDown))),
+            ("general", "quit", k(HintKey::Quit)),
+            ("files", "mark a file for copy, move or trash", k(HintKey::Select)),
+            ("files", "open in its app", k(HintKey::Open)),
+            ("files", "copy", k(HintKey::Copy)),
+            ("files", "move", k(HintKey::Move)),
+            ("files", "new folder", k(HintKey::New)),
+            ("files", "move to trash", k(HintKey::Trash)),
+            ("files", "copy path", k(HintKey::CopyPath)),
+            ("files", "switch pane", k(HintKey::Pane)),
             (
-                "in a view",
-                "bigger, smaller, as it fits",
+                "view",
+                "zoom in, zoom out, fit",
                 format!("{}  {}  {}", k(HintKey::Char('+')), k(HintKey::Char('-')), k(HintKey::Char('0'))),
             ),
             (
-                "in a view",
-                "the page before, the page after",
+                "view",
+                "previous page, next page",
                 format!("{}  {}", k(HintKey::Char('<')), k(HintKey::Char('>'))),
             ),
         ]
@@ -1885,22 +1885,22 @@ impl App {
             }
         }
         for (w, key) in [
-            ("search the list in front of you", "type"),
-            ("take the last thing back", "undo"),
-            ("a tool's words with its value", "display brightness 30"),
+            ("search this list", "type words"),
+            ("undo the last change", "undo"),
+            ("run a command", "display brightness 30"),
         ] {
-            rows.push(("at the prompt".into(), w.into(), key.into()));
+            rows.push(("prompt".into(), w.into(), key.into()));
         }
         rows
     }
 
     /// How many keys help lists: the home's column.
     pub fn shortcuts(&self) -> usize {
-        self.help_rows().iter().filter(|(g, _, _)| g != "at the prompt").count()
+        self.help_rows().iter().filter(|(g, _, _)| g != "prompt").count()
     }
 
     /// Help as a list (dialog/DESIGN.md, v0.127): the rows under their subjects, the ones the words typed name when
-    /// there are words; then the note that the keys are yours to change.
+    /// there are words; then the note that says where to change them.
     fn help_items(&self, list: &mut Vec<Item>) {
         let filtering = !self.query().trim().is_empty();
         let mut group: Option<String> = None;
@@ -1920,7 +1920,7 @@ impl App {
         if !filtering {
             list.push(Item::Blank);
             for l in crate::ui::wrap(
-                "the keys are yours to change: home-keys.json for home, sway's config.d for the desktop",
+                "change keys: ~/.config/spark-shell/home-keys.json for home, ~/.config/sway/config.d for the desktop",
                 self.col_w().saturating_sub(8).max(10) as usize,
             ) {
                 list.push(Item::Text(format!("  {}", l), true));

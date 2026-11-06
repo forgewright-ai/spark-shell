@@ -451,11 +451,8 @@ fn help_is_a_list_by_subject_with_key_chips() {
             _ => None,
         })
         .collect();
-    assert_eq!(
-        groups,
-        vec!["in home", "in files", "in a view", "windows", "workspaces", "the desktop", "at the prompt"]
-    );
-    assert_eq!(app.selected_line().as_deref(), Some("ask spark the words \u{b7} Ctrl+Enter"));
+    assert_eq!(groups, vec!["general", "files", "view", "windows", "workspaces", "desktop", "prompt"]);
+    assert_eq!(app.selected_line().as_deref(), Some("ask spark \u{b7} Ctrl+Enter"));
     assert_eq!(app.shortcuts(), 39, "21 of the dialog's and 18 of the desktop's");
     render(&app, "help");
     // words typed keep the rows they name, under their subjects, and the note goes
@@ -471,18 +468,13 @@ fn help_is_a_list_by_subject_with_key_chips() {
         })
         .collect();
     assert!(
-        rows.iter().all(|w| w.contains("window")
-            || w == "a terminal window"
-            || w == "tabs"
-            || w == "a stack"
-            || w == "side by side again"
-            || w == "move the focus"
-            || w == "fill the screen"),
+        rows.iter()
+            .all(|w| w.contains("window") || w == "open a terminal" || w.ends_with("layout") || w == "move focus"),
         "{:?}",
         rows
     );
     assert!(
-        rows.contains(&"close the window".to_string()) && rows.contains(&"take the window there".to_string()),
+        rows.contains(&"close the window".to_string()) && rows.contains(&"move the window to a workspace".to_string()),
         "{:?}",
         rows
     );
@@ -499,17 +491,13 @@ fn help_scrolls_past_its_last_row_to_the_note() {
     app.sel = app.picks().len() - 1;
     let (_, _, rows) = drawn(&app);
     let shown = |rows: &Vec<String>, s: &str| rows.iter().any(|r| r.contains(s));
-    assert!(
-        shown(&rows, "more") && !shown(&rows, "the keys are yours"),
-        "the note sits under the fold: {:?}",
-        rows
-    );
+    assert!(shown(&rows, "more") && !shown(&rows, "change keys"), "the note sits under the fold: {:?}", rows);
     // Down past the last row scrolls the list, so the note comes into view (dialog/DESIGN.md, v0.127.2)
     for _ in 0..3 {
         app.down();
     }
     let (_, _, rows) = drawn(&app);
-    assert!(shown(&rows, "the keys are yours") && !shown(&rows, "more"), "{:?}", rows);
+    assert!(shown(&rows, "change keys") && !shown(&rows, "more"), "{:?}", rows);
     assert_eq!(app.sel, app.picks().len() - 1, "the bar stays on the last row");
 }
 

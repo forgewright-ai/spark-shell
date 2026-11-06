@@ -2717,9 +2717,9 @@ fn an_unbound_action_draws_no_key_and_the_others_stand() {
     // help: the row stands, with no key
     app.view = View::Help;
     app.folder = None;
-    let row = app.help_rows().into_iter().find(|(_, w, _)| w == "rename a row").unwrap();
+    let row = app.help_rows().into_iter().find(|(_, w, _)| w == "rename the selected row").unwrap();
     assert_eq!(row.2, "");
-    assert!(screen(&app).iter().any(|r| r.trim_end() == "    rename a row"), "no chip on its row");
+    assert!(screen(&app).iter().any(|r| r.trim_end() == "    rename the selected row"), "no chip on its row");
     // `{"check": "Insert"}`: the old name is select's
     let mut app = files_app();
     app.cfg.keys = spark_dialog::keys::Bindings::from_json(r#"{"check": "Insert"}"#).unwrap();

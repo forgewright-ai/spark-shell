@@ -5565,11 +5565,11 @@ _want=$(jq -cn --arg d "$_day" --arg p "$REPO" --arg n "$(grep -c '^- ' "$REPO/C
        ["about:installed", "installed at " + $p, [], null, null, null, "blank"],
        ["about:open", "spark-shell " + $v, [], null, null, "about_open", "opens"]]')
 [ "$(jq -r '[.rows[] | select(.id | startswith("about:key:"))] | length' "$H/about.json")" = 18 ] \
-    && [ "$(jq -c '[.rows[] | select(.id | startswith("about:key:")) | [.group, .text, .key]][0, 2, 12]' "$H/about.json" | paste -sd ' ' -)" = '["windows","a terminal window","Super+Return"] ["windows","move the focus","Super+h j k l"] ["the desktop","home","Super+space"]' ] \
-    && [ "$(jq -c '[.rows[] | select(.id | startswith("about:key:")) | .group] | unique' "$H/about.json")" = '["the desktop","windows","workspaces"]' ] \
+    && [ "$(jq -c '[.rows[] | select(.id | startswith("about:key:")) | [.group, .text, .key]][0, 2, 12]' "$H/about.json" | paste -sd ' ' -)" = '["windows","open a terminal","Super+Return"] ["windows","move focus","Super+h j k l"] ["desktop","open home","Super+space"]' ] \
+    && [ "$(jq -c '[.rows[] | select(.id | startswith("about:key:")) | .group] | unique' "$H/about.json")" = '["desktop","windows","workspaces"]' ] \
     && [ "$(jq -c '.short' "$H/about.json")" = '["about:open"]' ] && jq -e '.rows[] | select(.id == "about:open") | .tool.name == "about_open"' "$H/about.json" >/dev/null \
     && [ "$(jq -c '[.rows[] | select(.id | startswith("about:key") | not) | [.id, .text, .columns, .wide, .page, .tool.name, .sign]]' "$H/about.json")" = "$_want" ] \
-    && ok "provide about: the facts by id (released, installed), project with its tool, license and credits with their pages, the short form that opens it; then help's 18 desktop rows, what you do with its key, under windows, workspaces and the desktop (dialog/DESIGN.md, v0.127)" || bad "about rows" "$(jq -c '[.rows[] | select(.id | startswith("about:key") | not)]' "$H/about.json")"
+    && ok "provide about: the facts by id (released, installed), project with its tool, license and credits with their pages, the short form that opens it; then help's 18 desktop rows, what you do with its key, under windows, workspaces and desktop (dialog/DESIGN.md, v0.129)" || bad "about rows" "$(jq -c '[.rows[] | select(.id | startswith("about:key") | not)]' "$H/about.json")"
 sh "$SH" desktop keys | grep -v '^[A-Za-z0-9_+]* [a-z][a-z0-9.-]*\.$' > "$H/keys.odd" || :
 [ ! -s "$H/keys.odd" ] && ok "desktop keys: each sentence opens with one combo and a verb (the about's two columns)" || bad "key sentences" "$(cat "$H/keys.odd")"
 if [ "$(uname -s)" = Darwin ]; then

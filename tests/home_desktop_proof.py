@@ -431,7 +431,7 @@ elif sys.argv[1] == 'steps':
                 key("-k", "F10")
                 key("help", "-k", "Return")
                 time.sleep(1)
-                assert "in home" in "\n".join(screen()), "help opens on the dialog's own keys at the narrow size"
+                assert "open the selected row" in "\n".join(screen()), "help opens on the dialog's own keys at the narrow size"
                 capture("help-void")
                 checks.append("Narrow keys wrap whole groups on the key bar; help opens at the narrow size")
                 close_home()
@@ -441,7 +441,7 @@ elif sys.argv[1] == 'steps':
                 key("help", "-k", "Return")
                 time.sleep(1)
                 text = "\n".join(screen())
-                assert "in home" in text and "in files" in text, "help opens on the dialog's subjects: " + text
+                assert "general" in text and "mark a file for copy, move or trash" in text, "help opens on the dialog's subjects: " + text
                 capture("help-full-void")
                 for _ in range(4):
                     if "Super+Return" in text:

@@ -8039,24 +8039,24 @@ tools_terminal() {   # tools_terminal LINE -- a gated command in a terminal wind
 }
 help_keys() {   # -> help's desktop rows (dialog/DESIGN.md, v0.127): SUBJECT, what you do, the binding whose key it is (one key a row, or none), the key as the template binds it
     printf '%s\n' \
-        "windows	a terminal window	terminal.open	Super+Return" \
+        "windows	open a terminal	terminal.open	Super+Return" \
         "windows	close the window	window.close	Super+Shift+q" \
-        "windows	move the focus		Super+h j k l" \
-        "windows	snap the window to a half		Super+arrow" \
-        "windows	float the window, or tile it again	desktop.desktop-window-float	Super+Shift+space" \
-        "windows	fill the screen	window.fullscreen	Super+f" \
-        "windows	tabs	layout.tabs	Super+w" \
-        "windows	a stack	layout.stack	Super+Shift+s" \
-        "windows	side by side again	layout.toggle-split	Super+e" \
-        "workspaces	go to workspace 1 to 10		Super+1..0" \
-        "workspaces	take the window there		Super+Shift+1..0" \
-        "workspaces	the previous one, the next		Super+Ctrl+Left  Right" \
-        "the desktop	home	home.open	Super+space" \
-        "the desktop	lock the screen	desktop.desktop-lock	Super+Escape" \
-        "the desktop	capture the screen	desktop.desktop-capture-screen	Print" \
-        "the desktop	capture an area	desktop.desktop-capture-area	Shift+Print" \
-        "the desktop	capture the window	desktop.desktop-capture-window	Super+Print" \
-        "the desktop	the next keyboard layout	desktop.desktop-keyboard-next	Super+Ctrl+space"
+        "windows	move focus		Super+h j k l" \
+        "windows	snap the window to half the screen		Super+arrow" \
+        "windows	float or tile the window	desktop.desktop-window-float	Super+Shift+space" \
+        "windows	make the window full screen	window.fullscreen	Super+f" \
+        "windows	tabbed layout	layout.tabs	Super+w" \
+        "windows	stacked layout	layout.stack	Super+Shift+s" \
+        "windows	side-by-side layout	layout.toggle-split	Super+e" \
+        "workspaces	go to a workspace		Super+1..0" \
+        "workspaces	move the window to a workspace		Super+Shift+1..0" \
+        "workspaces	previous or next workspace		Super+Ctrl+Left  Right" \
+        "desktop	open home	home.open	Super+space" \
+        "desktop	lock the screen	desktop.desktop-lock	Super+Escape" \
+        "desktop	capture the screen	desktop.desktop-capture-screen	Print" \
+        "desktop	capture an area	desktop.desktop-capture-area	Shift+Print" \
+        "desktop	capture the window	desktop.desktop-capture-window	Super+Print" \
+        "desktop	next keyboard layout	desktop.desktop-keyboard-next	Super+Ctrl+space"
 }
 provide_about_rows() {   # -> the about's rows (dialog/DESIGN.md, v0.127): the facts by id (released, installed), the rows that open (project, license, credits: a tool, two pages) and the short form that opens the page; then help's key rows, a sentence each with its combo as a column
     _av=$(panel_version); _ad=''
