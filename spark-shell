@@ -9234,7 +9234,7 @@ provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one fold
         def steps: (if $fm != "" then [{name: "files_reveal", said: "reveal in the system file manager"}] else [] end) + [{name: "files_rename", ask: ["name"], said: "rename"},
             {name: "files_move", pick: "to", said: "move to a folder"}, {name: "files_copy", pick: "to", said: "copy to a folder"}, {name: "files_trash", said: "trash"}];
         # the steps once a list, by kind: a row of a kind takes them with its own path (#123), so a page of a thousand stays small
-        {file: {tool: {name: "files_open", said: "open"}, more: ([{name: "files_app", said: "open in app"}, {name: "files_preview", said: "view"}, {name: "files_attach", said: "attach to the next request"}] + steps)},
+        {file: {tool: {name: "files_open", said: "open"}, more: ([{name: "files_app", said: "open in app"}, {name: "files_preview", said: "view"}, {name: "files_attach", said: "attach"}] + steps)},
          dir: ({more: ((if $fm != "" then [{name: "files_app", said: "open in app"}] else [] end) + steps)} + (if $fm != "" then {tool: {name: "files_browse", said: "open in the system file manager"}} else {} end)),
          trashed: {tool: {name: "files_restore", said: "restore"}, more: [{name: "files_purge", said: "delete for good"}]}} as $kinds |
         [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], children: (if .[3] == "" then null else .[3] end), path: .[4], c1: .[5], c2: .[6], group: (if .[7] == "" then null else .[7] end), c3: .[8], kind: .[9], preview: .[10], kw: .[11], stamp: .[12]}

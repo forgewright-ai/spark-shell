@@ -82,7 +82,7 @@ fn kinds() -> Value {
     ]);
     let mut more = vec![
         json!({"name": "files_preview", "said": "preview"}),
-        json!({"name": "files_attach", "said": "attach to the next request"}),
+        json!({"name": "files_attach", "said": "attach"}),
     ];
     more.extend(steps.as_array().unwrap().iter().cloned());
     json!({"file": {"tool": {"name": "files_open", "said": "open"}, "more": more}, "dir": {"more": steps}})
@@ -491,7 +491,7 @@ fn f9_opens_the_rows_actions_then_the_folders_and_every_door_goes_back_with_the_
             "open",
             "open in app",
             "view",
-            "attach to the next request",
+            "attach",
             "rename",
             "copy",
             "move",
@@ -517,7 +517,7 @@ fn f9_opens_the_rows_actions_then_the_folders_and_every_door_goes_back_with_the_
         ("open", "Enter"),
         ("open in app", "F4"),
         ("view", "F3"),
-        ("attach to the next request", ""),
+        ("attach", ""),
         ("rename", "F2"),
         ("copy", "F5"),
         ("move", "F6"),
@@ -1644,6 +1644,7 @@ fn insert_on_the_actions_page_checks_the_row_and_goes_back() {
     page_row(&mut app, "rename");
     app.enter();
     assert!(app.files.form());
+    app.line_end();
     app.typed(' ');
     assert_eq!(app.input, "notes.md ", "on a form Space is a space in the name (v0.125.1)");
     assert!(app.files.form());
@@ -1865,6 +1866,7 @@ fn space_checks_the_lit_row_and_f3_previews_it_and_p_is_always_the_letter() {
     page_row(&mut app, "rename");
     app.enter();
     assert!(app.files.form());
+    app.line_end();
     app.typed(' ');
     assert_eq!(app.input, "notes.md ", "a space in the form's name");
     app.escape();
@@ -2488,7 +2490,7 @@ fn f4_in_the_view_hands_the_viewed_file_to_its_app_and_says_why_where_no_path_st
 fn attach_on_the_menu_runs_the_rows_own_step() {
     let (mut app, rx, calls) = started(vec![], vec![]);
     app.hint_key(HintKey::Actions);
-    page_row(&mut app, "attach to the next request");
+    page_row(&mut app, "attach");
     app.enter();
     assert!(pump(&mut app, &rx, |_| !tool_calls(&calls).is_empty()));
     let c = tool_calls(&calls);
@@ -2534,14 +2536,7 @@ fn the_system_file_manager_stands_in_the_menu_where_the_provider_offers_it() {
     app.hint_key(HintKey::Actions);
     assert_eq!(
         labels(&app)[..6],
-        [
-            "open",
-            "open in app",
-            "view",
-            "attach to the next request",
-            "reveal in the system file manager",
-            "rename"
-        ]
+        ["open", "open in app", "view", "attach", "reveal in the system file manager", "rename"]
     );
     // none configured: the tool stands in the provider's list, the folder's steps and the row's hold none, so no row
     let mut folder = home_rows();
@@ -2881,7 +2876,7 @@ fn a_menu_whose_row_left_says_so_and_touches_nothing() {
         "open",
         "open in app",
         "view",
-        "attach to the next request",
+        "attach",
         "rename",
         "copy",
         "move",
@@ -3406,4 +3401,87 @@ fn enter_with_nothing_lit_and_nothing_typed_says_how_to_light_a_row() {
         .find(|y| (0..WIDTH).map(|x| b[(x, *y)].symbol()).collect::<String>().contains("18 Oct"))
         .unwrap();
     assert_eq!(b[(0, y)].bg, p.lit, "the row being renamed stays lit");
+}
+
+#[test]
+fn f2s_name_stands_lit_and_the_first_letter_replaces_it() {
+    let rename = || {
+        let mut app = files_app();
+        app.hint_key(HintKey::Actions);
+        page_row(&mut app, "rename");
+        app.enter();
+        assert!(app.name_is_lit() && app.input == "notes.md", "the name offered, lit");
+        app
+    };
+    let mut app = rename();
+    app.typed('a');
+    assert_eq!((app.input.as_str(), app.cursor), ("a", 1), "the first letter replaces the name whole");
+    assert!(!app.name_is_lit());
+    app.typed('b');
+    assert_eq!(app.input, "ab", "the letters after it follow");
+    let mut app = rename();
+    app.paste("later.txt");
+    assert_eq!((app.input.as_str(), app.cursor), ("later.txt", 9), "a paste replaces it too");
+    let mut app = rename();
+    app.paste("\u{7}");
+    assert!(app.name_is_lit() && app.input == "notes.md", "a paste of nothing takes nothing");
+    // every other key keeps the name to edit, and a letter then goes where the cursor stands
+    type Press = fn(&mut App);
+    let keeps: [(&str, Press, &str); 6] = [
+        ("Backspace", App::backspace, "notes.mx"),
+        ("Delete", App::delete, "notes.mdx"),
+        ("Left", App::left, "notes.mxd"),
+        ("Right", App::right, "notes.mdx"),
+        ("Home", App::line_start, "xnotes.md"),
+        ("End", App::line_end, "notes.mdx"),
+    ];
+    for (key, press, after) in keeps {
+        let mut app = rename();
+        press(&mut app);
+        assert!(!app.name_is_lit(), "{} keeps the name to edit", key);
+        app.typed('x');
+        assert_eq!(app.input, after, "{}", key);
+    }
+    let mut app = rename();
+    app.focus_prompt();
+    assert!(!app.name_is_lit(), "a click on the prompt keeps it too");
+    app.typed('x');
+    assert_eq!(app.input, "notes.mdx");
+    // Esc: nothing stays lit for the prompt's next words
+    let mut app = rename();
+    app.escape();
+    app.set_draft("notes.md");
+    assert!(!app.name_is_lit(), "the same words typed later are only words");
+    app.typed('x');
+    assert_eq!(app.input, "notes.mdx");
+    // a new folder has no name to offer
+    let mut app = files_app();
+    app.hint_key(HintKey::New);
+    assert!(app.files.form() && app.input.is_empty() && !app.name_is_lit());
+    // a note, through the prompt's own ask
+    let mut app = notes_app("{}");
+    app.hint_key(HintKey::Rename);
+    assert!(matches!(app.mode, Mode::Ask { .. }) && app.name_is_lit(), "{:?}", app.mode);
+    app.typed('z');
+    assert_eq!(app.input, "z");
+}
+
+#[test]
+fn the_name_a_rename_offers_is_drawn_on_the_selections_background() {
+    let cell = |app: &App, x: u16| {
+        let p = palette("tokyonight-night");
+        let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+        spark_dialog::ui::draw(app, &p, CLOCK, &mut b);
+        (b[(x, 2)].symbol().to_string(), b[(x, 2)].bg == p.lit)
+    };
+    let mut app = files_app();
+    app.size = (WIDTH, HEIGHT);
+    app.hint_key(HintKey::Actions);
+    page_row(&mut app, "rename");
+    app.enter();
+    assert_eq!(cell(&app, 4), ("n".to_string(), true), "the name's first letter, lit");
+    assert_eq!(cell(&app, 11), ("d".to_string(), true), "and its last");
+    assert_eq!(cell(&app, 12), (" ".to_string(), false), "the background ends with the name");
+    app.left();
+    assert_eq!(cell(&app, 4), ("n".to_string(), false), "kept to edit: only words again");
 }

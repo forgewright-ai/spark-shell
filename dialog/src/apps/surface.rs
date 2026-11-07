@@ -68,7 +68,7 @@ impl App {
                     self.apps_restore(nav);
                 }
                 if let Some(name) = prefill {
-                    self.set_input(name);
+                    self.offer_name(name);
                 }
                 if let Some(request) = request {
                     self.apps_request(request);

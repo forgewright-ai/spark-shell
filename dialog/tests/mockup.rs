@@ -549,7 +549,7 @@ fn files_app() -> App {
         let p = format!("/data/me/{}", name);
         let mut more = vec![
             json!({"name": "files_preview", "arguments": {"path": p}, "said": "preview"}),
-            json!({"name": "files_attach", "arguments": {"path": p}, "said": "attach to the next request"}),
+            json!({"name": "files_attach", "arguments": {"path": p}, "said": "attach"}),
         ];
         more.extend(steps(&p).as_array().unwrap().iter().cloned());
         let mut columns = vec![size.to_string(), when.to_string()];

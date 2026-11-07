@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.129.4
+
+Two things the v0.128 proofs showed on the box.
+
+- F2 shows the name lit in the prompt, and the first letter typed
+  replaces it, as F2 does in Windows and the Finder: renaming `writing`
+  to `review` no longer gives `writingreview`. A paste replaces it too.
+  An arrow, Home, End, Backspace, Delete or a click on the prompt keeps
+  the name to edit. Files, notes, layouts and the categories of apps
+  all work this way.
+- The F9 row `attach to the next request` reads `attach`, whole in a
+  narrow pane.
+
 ## v0.129.3
 
 Fixes from a full code review of v0.129.2.

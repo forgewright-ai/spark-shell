@@ -810,6 +810,8 @@ pub struct App {
     pub input: String,
     /// The cursor in the draft, in characters.
     pub cursor: usize,
+    /// The name a rename offered, while it stands lit in the prompt (App::offer_name).
+    pub name_lit: Option<String>,
     /// Requests from this window only. Forms and confirmations never enter here.
     prompt_history: VecDeque<String>,
     history_at: Option<usize>,
@@ -969,6 +971,7 @@ impl App {
             mode: Mode::Normal,
             input: String::new(),
             cursor: 0,
+            name_lit: None,
             prompt_history: VecDeque::new(),
             history_at: None,
             history_draft: None,
@@ -2912,6 +2915,7 @@ impl App {
     }
 
     pub fn up(&mut self) {
+        self.name_lit = None;
         if self.preview_key() {
             return if self.zoomed() { self.preview_pan(0.0, -1.0) } else { self.preview_file(-1) };
         }
@@ -2939,6 +2943,7 @@ impl App {
     }
 
     pub fn down(&mut self) {
+        self.name_lit = None;
         if self.preview_key() {
             return if self.zoomed() { self.preview_pan(0.0, 1.0) } else { self.preview_file(1) };
         }
@@ -3302,7 +3307,26 @@ impl App {
         self.insert(&t);
     }
 
+    /// A rename starts from the name as it is, lit in the prompt: the first letter typed replaces it whole, as F2
+    /// does on every desktop, and an arrow, Backspace or a click keeps it to edit (dialog/DESIGN.md).
+    pub(crate) fn offer_name(&mut self, name: String) {
+        self.set_input(name.clone());
+        self.name_lit = Some(name).filter(|n| !n.is_empty());
+    }
+
+    /// Whether the prompt holds the name offered, whole and untouched: the prompt draws it lit.
+    pub fn name_is_lit(&self) -> bool {
+        self.name_lit.as_deref() == Some(self.input.as_str())
+    }
+
     fn insert(&mut self, t: &str) {
+        if !t.is_empty() {
+            if self.name_is_lit() {
+                self.input.clear();
+                self.cursor = 0;
+            }
+            self.name_lit = None;
+        }
         self.leave_history();
         let room = INPUT_MAX.saturating_sub(self.input.chars().count());
         if self.plain_text_input() && t.chars().count() > room {
@@ -3336,6 +3360,7 @@ impl App {
     }
 
     pub(crate) fn set_input(&mut self, s: String) {
+        self.name_lit = None;
         self.leave_history();
         self.list_keys = false;
         self.cursor = s.chars().count();
@@ -3343,6 +3368,7 @@ impl App {
     }
 
     pub fn backspace(&mut self) {
+        self.name_lit = None;
         if self.cursor == 0 {
             // an empty prompt: Backspace goes back a level, as a launcher's does (dialog/DESIGN.md)
             if self.can_go_back() {
@@ -3362,6 +3388,7 @@ impl App {
     }
 
     pub fn delete(&mut self) {
+        self.name_lit = None;
         if self.cursor >= self.input.chars().count() {
             return;
         }
@@ -3377,6 +3404,7 @@ impl App {
 
     /// A click in the prompt keeps an explicit row as the request's target.
     pub fn focus_prompt(&mut self) {
+        self.name_lit = None;
         self.remember_target();
         self.in_list = false;
         self.chip_focus = None;
@@ -3386,6 +3414,7 @@ impl App {
     /// whether the focus is in the prompt or in the reminders under them (#59); else the cursor in
     /// the draft.
     pub fn left(&mut self) {
+        self.name_lit = None;
         if self.preview_key() {
             if self.zoomed() {
                 return self.preview_pan(-1.0, 0.0);
@@ -3428,6 +3457,7 @@ impl App {
     }
 
     pub fn right(&mut self) {
+        self.name_lit = None;
         if self.preview_key() {
             return if self.zoomed() {
                 self.preview_pan(1.0, 0.0)
@@ -3453,6 +3483,7 @@ impl App {
     /// Home and End: in a list, its first and its last row (a folder of a thousand, #123); else the
     /// line's start and end.
     pub fn line_start(&mut self) {
+        self.name_lit = None;
         if self.preview_key() && self.preview_plays() {
             return self.preview_seek(0.0); // Home: a sound or a video from its start (#151)
         }
@@ -3471,6 +3502,7 @@ impl App {
     }
 
     pub fn line_end(&mut self) {
+        self.name_lit = None;
         // with nothing typed the line has no end to go to: End is the list's last row, on a page just opened too (v0.129.2)
         if !self.in_list && self.input.is_empty() && self.chip_focus.is_none() && !self.preview_key() && !self.picks().is_empty() {
             self.in_list = true;
@@ -3530,6 +3562,7 @@ impl App {
     /// The Esc key: files being copied, moved or trashed stop after the file under way, wherever you are; only Esc and
     /// the x stop them (dialog/DESIGN.md). Then it goes back as every way back does.
     pub fn escape(&mut self) {
+        self.name_lit = None;
         if self.mode == Mode::Normal && self.files_stop_batch() {
             return;
         }
@@ -3539,6 +3572,7 @@ impl App {
     /// Back, whichever key or click means it: a question waiting is answered no (the draft comes back); the focus on a
     /// control or the draft goes first; then back one view; from the first view the dialog closes.
     pub fn back_key(&mut self) {
+        self.name_lit = None;
         // a page of files: the actions or a conflict go back, a form is let go (dialog/DESIGN.md); the words first
         if self.files_page_open() && self.mode == Mode::Normal && self.chip_focus.is_none() && (self.input.is_empty() || self.files.form()) {
             return self.files_back();
@@ -4992,7 +5026,7 @@ impl App {
             let name = self.current_name(step.prov, &step.call);
             self.mode = Mode::Ask { step, field, masked };
             if let Some(name) = name {
-                self.set_input(name);
+                self.offer_name(name);
             }
             return;
         }

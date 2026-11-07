@@ -1280,9 +1280,9 @@ prompt too, on a page just opened.
   path, and the other pane stays on screen; in one pane it takes the
   list's place. Typed words narrow it, the best match lit so Enter acts
   on it; words that name no row leave `no action by these words`. A
-  file's rows are open (Enter), open in app (F4), view (F3), attach to
-  the next request, reveal in the system file manager where one is
-  configured, rename (F2), copy (F5), move (F6), copy path (Ctrl+C),
+  file's rows are open (Enter), open in app (F4), view (F3), attach,
+  reveal in the system file manager where one is configured, rename
+  (F2), copy (F5), move (F6), copy path (Ctrl+C),
   trash (F8) and select (Space); a folder's are the same without
   attach. Then, after a row of
   air, the folder's own: `new folder` (F7), `new file` (the file opens
@@ -1366,8 +1366,9 @@ prompt too, on a page just opened.
   form (`files . rename`, `files . new folder`, `files . new file`),
   the placeholder says what to type (`new name`, `folder name`,
   `file name`), the key bar says `cancel  Esc   save  Enter`, Enter
-  saves and Esc cancels. Rename starts with the name as it is, so a
-  letter can be changed.
+  saves and Esc cancels. Rename starts with the name as it is, lit:
+  the first letter typed replaces it, and an arrow, Backspace or a
+  click keeps it to edit.
 - View: one file, or the page of any row, as large as the content
   area allows, read only. The header names its folder or its place, the
   facts row at the area's foot says what it is. Selecting or viewing

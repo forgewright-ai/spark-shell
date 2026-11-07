@@ -10,7 +10,7 @@
     open             Enter   │    ..                        
     open in app         F4   │    2024           120 items  
     view                F3   │    holiday.jpg       4.8 MB  
-    attach to the next…      │    photo-0412.jpg    4.8 MB  
+    attach                   │    photo-0412.jpg    4.8 MB  
     rename              F2   │                              
     copy                F5   │    3 items · 9.6 MB          
     move                F6   │                              

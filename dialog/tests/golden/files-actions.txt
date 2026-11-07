@@ -8,7 +8,7 @@
                                                             
     open                                            Enter   
     view                                               F3   
-    attach to the next request                              
+    attach                                                  
     rename                                             F2   
     copy                                               F5   
     move                                               F6   

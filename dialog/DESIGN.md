@@ -481,7 +481,7 @@ action by these words`, muted.
         new file                  |
         close pane                |
 
-The rows follow the provider's steps: `attach to the next request`
+The rows follow the provider's steps: `attach`
 after view, `reveal in the system file manager` where one is
 configured. A folder's row has the same rows without attach. `..` and the folder's own row open the
 folder's actions alone. With a selection the header reads `files . 2
@@ -611,7 +611,9 @@ Rename, new folder and new file take their words in the prompt, as
 apps' forms do, and the panes stay on screen: the placeholder says what
 to type (`new name`, `folder name`, `file name`), the key bar says
 `cancel  Esc   save  Enter`, Enter saves and Esc cancels. Rename starts
-with the name as it is, so a letter can be changed. The header names
+with the name as it is, lit with the selection's background: the first
+letter typed or a paste replaces it whole, and an arrow, Home, End,
+Backspace, Delete or a click on the prompt keeps it to edit. The header names
 the form: `files . rename`, `files . new folder`, `files . new file`.
 
 ### Not in v0

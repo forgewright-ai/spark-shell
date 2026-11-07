@@ -2277,7 +2277,7 @@ fn manager_stub(calls: Arc<Mutex<Vec<Value>>>, home: String) -> Script {
     let docs = format!("{}/docs", home);
     let mut home_more = vec![
         json!({"name": "files_show", "arguments": {"path": note}, "said": "show the first lines"}),
-        json!({"name": "files_attach", "arguments": {"path": note}, "said": "attach to the next request"}),
+        json!({"name": "files_attach", "arguments": {"path": note}, "said": "attach"}),
     ];
     home_more.extend(steps(&note).as_array().unwrap().iter().cloned());
     let folder = json!({"title": "~", "here": home, "rows": [
@@ -2397,7 +2397,7 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
         texts,
         [
             "open",
-            "attach to the next request",
+            "attach",
             "reveal in the system file manager",
             "rename",
             "copy",

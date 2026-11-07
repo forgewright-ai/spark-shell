@@ -709,9 +709,7 @@ def main(binary, destination):
         bar = keys(lines)
         assert re.search(r"\bcancel\s+Esc\b", bar) and re.search(r"\bsave\s+Enter\b", bar), bar
         s.capture("files-rename")
-        s.key("-k", "End")
-        s.key(*[arg for _ in range(8) for arg in ("-k", "BackSpace")])
-        s.key("later.txt", "-k", "Return")
+        s.key("later.txt", "-k", "Return")   # the name stands lit: the first letter replaces it
         until(lambda: (documents / "later.txt").is_file() and find_row(s.screen(), "later.txt", 0), "the row and the file renamed")
         assert not (documents / "todo.txt").exists()
         assert "renamed" in status(s.screen()), status(s.screen())

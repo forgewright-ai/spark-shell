@@ -564,7 +564,14 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: 
         pen.put(tx, PROMPT_Y, app.placeholder(), pal.muted, false, false);
     } else {
         for (k, r) in rows.iter().skip(top).take(n).enumerate() {
-            pen.put(tx, PROMPT_Y + k as u16, r, pal.fg, false, false);
+            let y = PROMPT_Y + k as u16;
+            pen.put(tx, y, r, pal.fg, false, false);
+            // a rename's name, whole: the selection's own background, what the first letter typed replaces
+            if app.name_is_lit() {
+                for x in tx..tx + cells(r) as u16 {
+                    pen.buf[(x, y)].set_bg(pal.lit);
+                }
+            }
         }
         if top > 0 {
             pen.put(w - 2, PROMPT_Y, ABOVE, pal.muted, false, false);

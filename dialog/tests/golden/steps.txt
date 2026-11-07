@@ -7,7 +7,7 @@
   ─────────────────────────── ◆ ──────────────────────────  
                                                             
     open                                            Enter   
-    attach to the next request                              
+    attach                                                  
     reveal in the system file manager                       
     rename                                             F2   
     copy                                               F5   

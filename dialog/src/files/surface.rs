@@ -692,7 +692,7 @@ impl App {
             })),
             nav,
         );
-        self.set_input(current);
+        self.offer_name(current);
         self.in_list = false;
         self.sel = 0;
         self.scroll = 0;

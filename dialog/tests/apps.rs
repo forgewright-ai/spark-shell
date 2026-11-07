@@ -673,6 +673,19 @@ fn a_renamed_category_keeps_its_filter() {
 }
 
 #[test]
+fn a_categorys_rename_stands_lit_and_the_first_letter_replaces_it() {
+    let mut a = app();
+    let name = a.apps.prefs.categories[0].clone();
+    act(&mut a, Action::Categories);
+    act(&mut a, Action::Category(name.clone()));
+    act(&mut a, Action::Rename(name.clone()));
+    assert!(a.name_is_lit() && a.input == name, "the name offered, lit");
+    a.typed('R');
+    assert_eq!(a.input, "R", "the first letter replaces it whole");
+    cleanup(&a);
+}
+
+#[test]
 fn the_filter_is_the_headings_and_the_query_crosses_categories() {
     // dialog/DESIGN.md (v0.124.4): a heading narrows the list to its category; words typed search every category
     let mut a = app();
