@@ -2921,6 +2921,7 @@ impl App {
             if self.sel == 0 {
                 self.in_list = false; // above the first row is the prompt
                 self.list_keys = false;
+                self.scroll = 0; // and the list from its top: a scroll past its last row is let go (v0.129.1)
             } else {
                 self.sel -= 1;
             }

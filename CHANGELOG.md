@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.129.1
+
+- Up and the wheel come back to the top of a list. A list scrolled past
+  its last row kept that scroll on the way back: the lit row rode the
+  top edge, so the first group's heading (`system` in apps) never came
+  into view, and the prompt kept the list where it was. A row lit now
+  brings its heading and the air above it into view where they fit,
+  the first row brings the top, and the prompt shows the list from its
+  top.
+
 ## v0.129
 
 Tools, six utilities after Norton Utilities, and help in plain English.

@@ -1072,3 +1072,61 @@ fn right_opens_no_details_and_f9_does() {
     assert_eq!(a.reply.as_ref().map(|r| r.text.as_str()), Some("no details here"));
     cleanup(&a);
 }
+
+/// The screen's text, a line a row.
+fn screen_text(b: &Buffer) -> Vec<String> {
+    (0..b.area.height)
+        .map(|y| {
+            (0..b.area.width)
+                .map(|x| b[(x, y)].symbol().to_string())
+                .collect::<String>()
+                .trim_end()
+                .to_string()
+        })
+        .collect()
+}
+
+#[test]
+fn up_comes_back_to_the_top_of_the_list_its_first_heading_in_view() {
+    // a list longer than the window, scrolled past its last row, then walked back up: the first heading comes back
+    // into view on the first row, and the prompt shows the list from its top (v0.129.1)
+    let mut a = app();
+    let mut apps = vec![];
+    for (i, cat) in ["Development", "Network", "Office", "AudioVideo", "Game", "Utility"].iter().enumerate() {
+        for k in 0..3 {
+            apps.push(json!({"id": format!("app{i}{k}.desktop"), "name": format!("app {i}{k}"), "description": "an app", "categories": [cat]}));
+        }
+    }
+    a.apps.pending = Some((2, "catalog".into()));
+    a.apps.receive(2, json!({ "apps": apps })).unwrap();
+    let (b, _, _) = draw(&mut a, 60, 24);
+    let top = screen_text(&b);
+    assert!(top.iter().any(|l| l.trim() == "development"), "the first heading at the start: {top:?}");
+    // down from the prompt to the last row, and past it
+    a.in_list = false;
+    for _ in 0..(a.picks().len() + 3) {
+        a.down();
+        draw(&mut a, 60, 24);
+    }
+    // back up to the first row
+    while a.sel > 0 {
+        a.up();
+        draw(&mut a, 60, 24);
+    }
+    let (b, _, _) = draw(&mut a, 60, 24);
+    let at_first = screen_text(&b);
+    assert!(
+        at_first.iter().any(|l| l.trim() == "development"),
+        "on the first row, its heading above it: {at_first:?}"
+    );
+    // and up once more: the prompt, the list from its top
+    a.up();
+    assert!(!a.in_list);
+    let (b, _, _) = draw(&mut a, 60, 24);
+    let at_prompt = screen_text(&b);
+    assert!(
+        at_prompt.iter().any(|l| l.trim() == "development"),
+        "at the prompt, the list from its top: {at_prompt:?}"
+    );
+    cleanup(&a);
+}

@@ -286,7 +286,9 @@ The category headings are the filter (v0.124.4): a click on `web`
 shows web alone, the header reads `apps . web`, and Esc shows all
 again, its chip reading `all apps` while a filter is on. The headings
 stand at the top of every group, so the filter is in reach wherever
-the list is scrolled; the arrows skip them, as before. There is no
+the list is scrolled; the arrows skip them, as before. Walking up, a
+group's heading comes into view with its first row, and above the
+first row the prompt shows the list from its top (v0.129.1). There is no
 filter row at the end of the list. The rows that stay there, `hidden
 apps`, `edit categories` and `refresh apps`, act on one click. Hidden
 is a state of the same apps, not another kind of list: `hidden apps`

@@ -1439,13 +1439,27 @@ fn item_rows(items: &[Item]) -> Vec<usize> {
     (0..items.len()).collect()
 }
 
+/// A line that only frames the rows: a heading, or a line of air (an apps list draws both as its own lines).
+fn framing(it: &Item) -> bool {
+    match it {
+        Item::Heading(_) | Item::Blank => true,
+        Item::Apps(l) => l.heading || (l.label.is_empty() && l.value.is_empty()),
+        Item::Files(l) => l.label.is_empty() && l.value.is_empty(),
+        _ => false,
+    }
+}
+
 fn content_start(items: &[Item], selected: Option<usize>, scroll: usize, room: usize) -> usize {
     let rows = item_rows(items);
     let total = rows.last().map(|r| r + 1).unwrap_or(0);
     let mut first = scroll.min(total.saturating_sub(room));
     if let Some(s) = selected.filter(|s| *s < items.len()) {
-        first = first.min(rows[s]);
         let last = (s + 1..items.len()).take_while(|&k| item_owner(items, k) == s).last().unwrap_or(s);
+        // the lit row with what frames it from above, its heading and the air before it, where they fit: walking up,
+        // a group's heading comes into view with its first row, and the list's first row brings the top (v0.129.1)
+        let head = (0..s).rev().take_while(|&k| framing(&items[k])).last().unwrap_or(s);
+        let top = if rows[last] < rows[head] + room { rows[head] } else { rows[s] };
+        first = first.min(top);
         if rows[last] >= first + room {
             first = (rows[last] + 1).saturating_sub(room).min(rows[s]);
         }
