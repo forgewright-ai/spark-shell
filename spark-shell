@@ -9577,6 +9577,7 @@ cmd_update() {   # the clone moves to the newest tag past its own that a key in 
     git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "$_to" 2>/dev/null || refuse "could not move the clone to $_to"
     echo "spark-shell update: $_to, signed by ${_by:-a key in allowed-signers} (was $_here)$_note"
     seat_on || return 0
+    rm -rf "$TMP"; trap - EXIT   # an exec runs no trap
     exec "$REPO/spark-shell" on --yes     # the new tree applies itself
 }
 release_up() {   # release_up TAG -> 0 when TAG's dialog can be fetched, or there is nothing here to fetch (no build for this machine, no release, no curl: on's row says which)

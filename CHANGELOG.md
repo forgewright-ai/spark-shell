@@ -44,8 +44,10 @@ Fixes from a full code review of v0.129.2.
   scrub, and a note holding `\c` lost everything after it.
 - Home and End with nothing typed take the keys with the list, as Down
   does: the cursor no longer stays in the prompt beside a lit row.
-- A sound's picture stopped before it is drawn takes its folder with
-  it, and tests/dialog_pty.py removes its home.
+- `update` removes its temp folder before the new tree takes over:
+  every update on a seat left one. A sound's picture stopped before it
+  is drawn takes its folder with it, and tests/dialog_pty.py removes
+  its home.
 
 ## v0.129.2
 

@@ -6601,8 +6601,9 @@ if command -v ssh-keygen >/dev/null 2>&1; then
     # the seat on: on --yes runs from the new tree after the move
     sh "$C" on --yes >/dev/null 2>&1 || :
     echo six > "$U/w/six"; git -C "$U/w" add -A; git -C "$U/w" commit -q -m v9.6; git -C "$U/w" tag -s -m v9.6 v9.6; git -C "$U/w" push -q origin main v9.6
-    out=$(sh "$C" update 2>&1) && rc=0 || rc=$?
+    mkdir "$U/t"; out=$(TMPDIR=$U/t sh "$C" update 2>&1) && rc=0 || rc=$?
     first=$(printf '%s\n' "$out" | sed -n 1p)
+    [ -z "$(ls -A "$U/t")" ] && ok "update with the seat on: its temp folder goes before the new tree takes over (an exec runs no trap)" || bad "update temp folder" "$(ls -A "$U/t")"
     [ "$rc" -eq 0 ] && [ "$first" = "spark-shell update: v9.6, signed by spark-shell-release (was v9.1)" ] \
         && [ "$(printf '%s\n' "$out" | wc -l)" -gt 1 ] && [ "$(git -C "$U/c" rev-parse HEAD)" = "$(git -C "$U/c" rev-parse 'v9.6^{commit}')" ] \
         && ok "update with the seat on: the move, then on --yes from the new tree" || bad "update: seat on" "$rc $out"
