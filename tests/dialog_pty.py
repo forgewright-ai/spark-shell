@@ -7,7 +7,7 @@ the ask row and Enter on it asks, Esc closes, and no provider outlives
 the window. CI runs it with no
 network (unshare -n). Linux and macOS, python3 stdlib only."""
 import re
-import fcntl, json, os, pty, select, shutil, signal, struct, subprocess, sys, tempfile, termios, time
+import atexit, fcntl, json, os, pty, select, shutil, signal, struct, subprocess, sys, tempfile, termios, time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SS = os.path.join(REPO, "spark-shell")
@@ -22,6 +22,8 @@ def ok(cond, what, detail=""):
 
 def main(binary):
     home = tempfile.mkdtemp()
+    me = os.getpid()   # a forked child that fails to start leaves the folder to this process
+    atexit.register(lambda: os.getpid() == me and shutil.rmtree(home, ignore_errors=True))
     os.makedirs(os.path.join(home, ".config", "spark-shell"))
     cfg = os.path.join(home, ".config", "spark-shell", "config")
     with open(cfg, "w") as f:
@@ -119,6 +121,7 @@ def main(binary):
     tasks(binary, env, home)
     files(binary, env, home)
     clicks(binary, env, home)
+    double_click(binary, env, home)
     if sys.platform.startswith("linux"):
         tools_walk(binary, env, home)
     print("dialog_pty: %d failed" % failed)
@@ -734,6 +737,93 @@ def clicks(binary, env, home):
         click(r, 6)
         time.sleep(0.5)
         ok(calls() == ["12", "11"], "a click on the row's name lights it and runs nothing", repr(calls()))
+    finally:
+        os.write(fd, b"\x11")
+        gone = []
+        if not wait_for(lambda: bool(gone) or (os.waitpid(pid, os.WNOHANG)[0] != 0 and not gone.append(1)), 5):
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
+        os.close(fd)
+
+
+POWER_PROVIDER = r"""import json, sys
+names = ("lock", "suspend", "logout", "restart", "shutdown")
+rows = {"title": "power", "short": [], "rows": [{"id": "power:" + n, "sign": "blank", "text": n, "tool": {"name": "power_" + n, "arguments": {}}, "more": [], "columns": [], "children": None, "group": None} for n in names]}
+tools = [{"name": "power_" + n, "title": "power " + n, "description": "Does it.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+          "annotations": {"readOnlyHint": False, "destructiveHint": n in ("logout", "restart", "shutdown"), "idempotentHint": False, "openWorldHint": False}} for n in names]
+for line in sys.stdin:
+    v = json.loads(line)
+    m, i = v.get("method"), v.get("id")
+    if i is None:
+        continue
+    if m == "initialize":
+        r = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}, "resources": {"subscribe": True}}, "serverInfo": {"name": "power", "title": "power", "version": "1"}}
+    elif m == "tools/list":
+        r = {"tools": tools}
+    elif m == "resources/read":
+        r = {"contents": [{"uri": "spark-shell://power/rows", "mimeType": "application/json", "text": json.dumps(rows)}]}
+    elif m == "tools/call":
+        with open(sys.argv[1], "a") as f:
+            f.write(json.dumps(v["params"]) + "\n")
+        r = {"content": [{"type": "text", "text": "done"}], "isError": False}
+    else:
+        r = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": i, "result": r}), flush=True)
+"""
+
+
+def double_click(binary, env, home):
+    """A double click on restart, as a terminal sends it: the first click opens the question, the page is drawn, and the
+    second lands on what stands under the pointer now, the verb's row (v0.129.3). A stand-in provider: nothing here can
+    restart anything. The second click answers nothing; a click that comes later is a person's answer."""
+    prov, log = os.path.join(home, "power-provider.py"), os.path.join(home, "power-calls")
+    with open(prov, "w") as f:
+        f.write(POWER_PROVIDER)
+    argv = [binary, "--provider", "%s %s %s power" % (sys.executable, prov, log), "--home", "power", "--composer", "", "--spark-shell", SS]
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.execve(binary, argv, env)
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
+    screen = Screen()
+
+    def wait_for(test, secs=10):
+        end = time.time() + secs
+        while time.time() < end and not test():
+            r, _, _ = select.select([fd], [], [], 0.1)
+            if r:
+                try:
+                    screen.feed(os.read(fd, 65536))
+                except OSError:
+                    break
+        return test()
+
+    def calls():
+        try:
+            with open(log) as f:
+                return [json.loads(l)["name"] for l in f if l.strip()]
+        except OSError:
+            return []
+
+    def spot():
+        for k, l in enumerate(screen.cells):
+            t = "".join(l)
+            if "restart" in t:
+                return k, t.index("restart") + 2
+        return None
+
+    press = lambda r, c: ("\x1b[<0;%d;%dM\x1b[<0;%d;%dm" % (c + 1, r + 1, c + 1, r + 1))
+    try:
+        drawn = wait_for(lambda: spot() is not None and "shutdown" in screen.text())
+        ok(drawn, "the power rows draw", screen.text()[-600:])
+        if not drawn:
+            return
+        r, c = spot()
+        os.write(fd, (press(r, c) + press(r, c)).encode())
+        ok(wait_for(lambda: "keep working" in screen.text(), 5), "the first click of a double click opens the question", screen.text()[-400:])
+        wait_for(lambda: False, 1)
+        ok(calls() == [] and "keep working" in screen.text(), "the second click answers nothing: the question stands, nothing ran", repr(calls()))
+        os.write(fd, press(r, c).encode())
+        ok(wait_for(lambda: calls() == ["power_restart"], 5), "a click that comes later is an answer", repr(calls()))
     finally:
         os.write(fd, b"\x11")
         gone = []

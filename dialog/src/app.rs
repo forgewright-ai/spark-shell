@@ -838,6 +838,8 @@ pub struct App {
     pub launch_wait: Option<Instant>,
     /// The last click on an object's row, and when: a second within DOUBLE_CLICK acts on it (dialog/DESIGN.md).
     pub last_click: Option<(usize, Instant)>,
+    /// When a click last opened a question or fell on one just opened: a click close behind it is the same hand, no answer.
+    pub question_click: Option<Instant>,
     pub busy_since: Option<Instant>,
     pub frame: u64,
     /// Every model spark lists: (name, serving | downloaded | -).
@@ -984,6 +986,7 @@ impl App {
             stow: false,
             launch_wait: None,
             last_click: None,
+            question_click: None,
             busy_since: None,
             frame: 0,
             models: vec![],
@@ -3456,6 +3459,7 @@ impl App {
         // with nothing typed the line has no start to go to: Home is the list's first row (v0.129.2)
         if !self.in_list && self.input.is_empty() && self.chip_focus.is_none() && !self.preview_key() && !self.picks().is_empty() {
             self.in_list = true;
+            self.list_keys = true;
         }
         if self.in_list && !self.preview_key() {
             self.keep_lit = None;
@@ -3470,6 +3474,7 @@ impl App {
         // with nothing typed the line has no end to go to: End is the list's last row, on a page just opened too (v0.129.2)
         if !self.in_list && self.input.is_empty() && self.chip_focus.is_none() && !self.preview_key() && !self.picks().is_empty() {
             self.in_list = true;
+            self.list_keys = true;
         }
         if self.in_list && !self.preview_key() {
             self.keep_lit = None;
@@ -5369,6 +5374,13 @@ impl App {
     /// A click on row `n` (dialog/DESIGN.md): a menu's row acts at once; an object's row is selected by the first
     /// click and acts on a second within DOUBLE_CLICK, as a file does on every desktop.
     pub fn clicked(&mut self, n: usize, now: Instant) {
+        // the page is drawn before the next event is read: a double click's second lands on what the question put under
+        // the pointer, and the verb's row stands where the row that asked stood (v0.129.3)
+        if matches!(self.mode, Mode::Confirm(_)) && self.question_click.is_some_and(|at| now.saturating_duration_since(at) < DOUBLE_CLICK) {
+            self.question_click = Some(now);
+            return;
+        }
+        let asked = matches!(self.mode, Mode::Confirm(_));
         let again = self
             .last_click
             .is_some_and(|(k, at)| k == n && now.saturating_duration_since(at) < DOUBLE_CLICK);
@@ -5379,6 +5391,7 @@ impl App {
         } else {
             self.last_click = Some((n, now));
         }
+        self.question_click = (!asked && matches!(self.mode, Mode::Confirm(_))).then_some(now);
     }
 
     /// A click on a category's heading in the list of apps (dialog/DESIGN.md, v0.124.4): the list narrows to that

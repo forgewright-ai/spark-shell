@@ -1728,6 +1728,23 @@ fn power_is_five_verbs_and_the_uptime() {
 }
 
 #[test]
+fn home_and_end_with_nothing_typed_take_the_keys_with_the_list() {
+    // a row lit is where the keys are, as after Down: the cursor leaves the prompt, it does not stay there beside the light (v0.129.3)
+    let mut app = base();
+    app.view = View::Help;
+    app.came_from = vec![View::Home];
+    app.in_list = false;
+    app.sel = 0;
+    app.list_keys = false;
+    app.line_end();
+    assert!(app.in_list && app.list_keys, "End");
+    app.in_list = false;
+    app.list_keys = false;
+    app.line_start();
+    assert!(app.in_list && app.list_keys, "Home");
+}
+
+#[test]
 fn home_and_end_with_nothing_typed_take_the_list_on_a_page_just_opened() {
     // help opens with the prompt's line empty and nothing lit: End went to the end of that empty line, so it moved
     // nothing; with nothing typed, End is the list's last row and Home its first (v0.129.2)

@@ -1,5 +1,52 @@
 # Changelog
 
+## v0.129.3
+
+Fixes from a full code review of v0.129.2.
+
+- `spark-shell layout` runs only what its gate means to run. The gate
+  judged the last part of a word, and sway hands an exec to sh: a first
+  word like `X=/firefox` is a variable to sh, and the program after it
+  ran with no yes. It reads the word as sh does now: a first word with
+  a `=` is refused, and a model's app is a name, never a path. A
+  model's words past the app are pages and files: a flag is refused,
+  since browsers and editors can run a command by their own flags. The
+  flags of the app's desktop entry and of your EDITOR stay. A layout in
+  the history keeps to the model's rule, so a window refused the first
+  time is refused again; a layout you saved stays yours.
+- `delete for good` and `restore` on a trash row act on that row. Two
+  trashed files from one path made two rows with the same step, and
+  the newest went: pick the old one and the new one was deleted, with
+  no undo. Each row names its own item now.
+- A double click on `restart` no longer answers its own question. The
+  second click landed on the question's verb, which stands where the
+  row stood; with no suspend row that was `shutdown`. A click close
+  behind the one that opened a question is ignored.
+- A second backup never replaces the first. `.bak` stays the file `off`
+  hands back, a later one sits beside it as `.bak.TIME`, and a file the
+  same as one kept is not kept twice.
+- A network's name reaches grep as a name. One named like an option
+  was read as an option, and could take the machine's memory when the
+  dialog opened.
+- `update` reads the release chain by allowed-signers alone. An
+  unsigned tag at the clone's commit set the floor, so updates stopped
+  for good and said "the newest release": the floor is the newest
+  signed tag now, and about shows that one. A PGP signature skipped
+  allowed-signers when its key was in the gpg keyring; only ssh
+  signatures are read. A tag moved on origin stopped every later
+  update with a wrong message: it is named, the copy here stays, and
+  the update goes on.
+- The release workflow's chain ends at v0.64 by name. It stopped where
+  the history under test had no allowed-signers, so a history made for
+  it could end the walk early. It reads only ssh signatures too.
+- `echo` prints words as they are. dash's own read a backslash as an
+  escape: `\033` in a notification came back as a real escape after the
+  scrub, and a note holding `\c` lost everything after it.
+- Home and End with nothing typed take the keys with the list, as Down
+  does: the cursor no longer stays in the prompt beside a lit row.
+- A sound's picture stopped before it is drawn takes its folder with
+  it, and tests/dialog_pty.py removes its home.
+
 ## v0.129.2
 
 - A step of tools that runs in a terminal, or with sudo (fix, update

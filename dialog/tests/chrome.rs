@@ -1033,6 +1033,41 @@ fn undo_on_the_status_row_is_a_control_not_a_key_chip() {
 }
 
 #[test]
+fn a_double_click_on_a_risky_row_opens_its_question_and_never_answers_it() {
+    use std::time::{Duration, Instant};
+    // the first click opens the question, and the page is drawn before the next event is read: the second click lands
+    // on what the page put under the pointer, and the verb's row stands where restart stood (v0.129.3)
+    let mut app = home();
+    let k = app.providers.len();
+    app.providers.push(provider(
+        "power",
+        "power",
+        json!({"title": "power", "rows": [row("power:restart", "blank", "restart", Some(("power_restart", json!({}))), None)], "short": []}),
+        json!([{"name": "power_restart", "annotations": {"destructiveHint": true}}]),
+    ));
+    app.view = View::Section(k);
+    app.came_from.push(View::Home);
+    let t0 = Instant::now();
+    let restart = app
+        .picks()
+        .iter()
+        .position(|it| matches!(it, Item::Row(p, 0) if *p == k))
+        .expect("restart is a pick");
+    app.clicked(restart, t0);
+    assert!(matches!(app.mode, Mode::Confirm(_)), "the first click asks: {:?}", app.mode);
+    let yes = app.picks().iter().position(|it| matches!(it, Item::Question(true))).expect("the verb's row");
+    app.clicked(yes, t0 + Duration::from_millis(150));
+    assert!(matches!(app.mode, Mode::Confirm(_)), "the second click belongs to the first: {:?}", app.mode);
+    assert_eq!(app.sel, 1, "keep working stays lit");
+    // a third close behind it is the same hand's bounce
+    app.clicked(yes, t0 + Duration::from_millis(450));
+    assert!(matches!(app.mode, Mode::Confirm(_)), "still the same clicks: {:?}", app.mode);
+    // a click that comes later is a person's answer
+    app.clicked(yes, t0 + Duration::from_secs(2));
+    assert!(!matches!(app.mode, Mode::Confirm(_)), "a later click answers");
+}
+
+#[test]
 fn a_question_is_a_page_of_choices_and_the_typed_yes_is_gone() {
     // dialog/DESIGN.md (v0.127): a risky step opens a page in the frame, its line as the heading, two menu rows,
     // the verb and keep working. The header says the verb, the key bar reads keep Esc, typing is refused, keep

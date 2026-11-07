@@ -139,6 +139,10 @@
 # writes plainly and takes systemctl from PATH.
 set -eu
 
+# echo prints its words as they are: dash's own reads a backslash as an escape, so a name or a notification
+# scrubbed of control bytes came back with them (\033), and \c cut what followed. Nothing here means an escape by it
+echo() { printf '%s\n' "$*"; }
+
 # ~/.local/bin/spark-shell is a symlink into the clone: resolve it, the
 # way spark's bin/spark does, so the templates are found from anywhere
 SELF=$0
@@ -866,13 +870,24 @@ pkg_install_on() {
 # a file used as-is, a rendered regular file where a value is baked in.
 # Yours is never overwritten -- it moves to <path>.bak. A file marked
 # `rendered by spark-shell` is ours to render again; a file with any
-# other marker, or none, is yours: it moves to .bak.
+# other marker, or none, is yours: it moves to .bak. The first .bak stays,
+# for off to hand back: a later one goes beside it by its time, and a file
+# the same as one kept is not kept twice (btop writes its conf back on exit).
 changes=0
 backup() {
     changes=$((changes + 1))
     if [ "$MODE" = dry ]; then row would "back up" "$1"; return; fi
-    mv "$1" "$1.bak"
-    row "back" "up" "$1 -> $1.bak"
+    _bk=$1.bak
+    if [ -e "$_bk" ] || [ -L "$_bk" ]; then
+        for _bo in "$_bk" "$_bk".*; do
+            [ -f "$1" ] && [ ! -L "$1" ] && [ -f "$_bo" ] && [ ! -L "$_bo" ] && cmp -s "$1" "$_bo" || continue
+            rm -f "$1"; row "back" "up" "$1 -- kept already, as $_bo"; return
+        done
+        _bs=$1.bak.$(date +%Y%m%d%H%M%S); _bk=$_bs; _bn=1
+        while [ -e "$_bk" ] || [ -L "$_bk" ]; do _bk=$_bs.$_bn; _bn=$((_bn + 1)); done
+    fi
+    mv "$1" "$_bk"
+    row "back" "up" "$1 -> $_bk"
 }
 link_one() {   # link_one SRC DST
     if [ -L "$2" ] && [ "$(readlink "$2")" = "$1" ]; then ok rc "$2"; return; fi
@@ -2047,7 +2062,7 @@ kept_prune() {   # kept_prune KIND -- the looks and the layouts kept only for th
     for _f in "$_kd"/*; do
         [ -e "$_f" ] || continue
         _n=${_f##*/}
-        grep -qxF "$_n" "$TMP/kept.names" && continue
+        grep -qxF -- "$_n" "$TMP/kept.names" && continue
         [ "$1" = theme ] && [ "$_n" = "${THEME:-}" ] && continue
         rm -rf "$_f"
     done
@@ -5229,7 +5244,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             wifi_scan | awk -F '\t' -v c="$_c" '$1 != c' > "$TMP/wifi.around"
             _n=0; _left=0
             while IFS="$TAB" read -r n l sec; do
-                if grep -qxF "$n" "$TMP/wifi.known"; then _k=" $PANEL_TICK saved"; else _k=''; fi
+                if grep -qxF -- "$n" "$TMP/wifi.known"; then _k=" $PANEL_TICK saved"; else _k=''; fi
                 if [ "${2:-}" != full ] && [ -z "$_k" ] && [ "$_n" -ge 3 ]; then _left=$((_left + 1)); continue; fi
                 printf '%s\t%s %s%s\tconnect %s\n' "$PANEL_RING" "$n" "$(panel_bars "$l")" "$_k" "$n"
                 [ -n "$_k" ] || _n=$((_n + 1))
@@ -7283,8 +7298,8 @@ tool_spec() {
         files_move)        _ts=files _ta=move _tp=path _tk=path _te='to:path name?:filename there?:keep|replace' _th='' _tt='files move PATH' _td='Move a file or folder into another folder. path and to are rows'"'"' own paths, exactly as written; to is a folder; name, when given, is the name it takes there, one name alone. A name there already is refused; there is what to do when the name already exists: keep both, the new one named with a number (notes 2.md), or replace, the one there put in the trash first. Undo moves it back, under its old name.' ;;
         files_copy)        _ts=files _ta=copy _tp=path _tk=path _te='to:path name?:filename there?:keep|replace' _th='' _tt='files copy PATH' _td='Copy a file or folder into another folder. path and to are rows'"'"' own paths, exactly as written; to is a folder; name, when given, is the name it takes there, one name alone. A name there already is refused; there is what to do when the name already exists: keep both, the new one named with a number (notes 2.md), or replace, the one there put in the trash first. Undo trashes the copy.' ;;
         files_trash)       _ts=files _ta=trash _tp=path _tk=path _th='' _tt='files trash PATH' _td='Put a file or folder in the trash: the delete here. path is a row'"'"'s own path, exactly as written. Undo brings it back.' ;;
-        files_restore)     _ts=files _ta=restore _tp=path _tk=path _th=f _tt='files restore PATH' _td='Bring a file or folder back from the trash to the path it had.' ;;
-        files_purge)       _ts=files _ta=purge _tp=path _tk=path _th=d _tt='files purge PATH' _td='Delete for good the newest file or folder the trash holds from path, the path it had: it cannot be brought back.' ;;
+        files_restore)     _ts=files _ta=restore _tp=path _tk=path _te='item?:filename' _th=f _tt='files restore PATH' _td='Bring a file or folder back from the trash to the path it had: item, a trash row'"'"'s own, when given; else the newest the trash holds from path.' ;;
+        files_purge)       _ts=files _ta=purge _tp=path _tk=path _te='item?:filename' _th=d _tt='files purge PATH' _td='Delete for good a file or folder in the trash: item, a trash row'"'"'s own, when given; else the newest the trash holds from path, the path it had. It cannot be brought back.' ;;
         files_empty)       _ts=files _ta=empty _th=d _tt='files empty' _td='Empty the trash of your home folder: every file and folder in it is deleted for good.' ;;
         files_new_folder)  _ts=files _ta=new-folder _tp=path _tk=path _te='name:filename' _th='' _tt='files new-folder PATH' _td='Make a folder inside the folder path names, with the name given. Undo trashes it.' ;;
         files_new_text)    _ts=files _ta=new-text _tp=path _tk=path _te='name:filename' _th='' _tt='files new-text PATH' _td='Make an empty text file inside the folder path names, with the name given, and open it in the editor. Undo trashes it.' ;;
@@ -9038,14 +9053,14 @@ files_sound_draw() {   # files_sound_draw PATH BASE -- BASE-sound.png, the wavef
         files_sound_stop
     fi
     (
-        FILES_IDLE=1; FILES_TOOL_T=$FILES_SOUND_T; _fsd=$(mktemp -d) || exit 0
+        FILES_IDLE=1; FILES_TOOL_T=$FILES_SOUND_T; _fsd=$(mktemp -d) || exit 0; _fsp=$2-sound.pid
+        trap 'rm -rf "$_fsd" "$_fsp"' EXIT; trap 'exit 143' TERM   # stopped before it is drawn: its folder goes too
         # shellcheck disable=SC2086   # MPV_SAFE is options, split on purpose
         files_tool mpv $MPV_SAFE --untimed --really-quiet --ao=null --vo=image --vo-image-format=png --vo-image-outdir="$_fsd" \
             --lavfi-complex="[aid1]asplit[a][b];[a]showwavespic=s=1600x${FILES_WAVE_PX}:split_channels=0:colors=white:scale=sqrt[w];[b]showspectrumpic=s=1600x512:legend=0:fscale=log:scale=log[s];[w][s]vstack=inputs=2[vo]" \
             -- "$1" </dev/null >/dev/null 2>&1 &
         echo "$!" > "$2-sound.pid"; wait "$!"
         mv "$_fsd/00000001.png" "$2-sound.png.new" 2>/dev/null && mv "$2-sound.png.new" "$2-sound.png"   # whole or not there: the dialog reads it as it comes
-        rm -rf "$_fsd" "$2-sound.pid"
     ) </dev/null >/dev/null 2>&1 &
     echo "$! $2" > "$TMP/sound.job"
     files_sound_wait "$2"
@@ -9228,7 +9243,7 @@ provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one fold
                wide: (if (.kind == "file" or .kind == "dir") and (.kw // "") != "" then ([.kw, .c1, .stamp, .c3] | map((. // "") | '"$SCRUB_JQ"'))
                       elif .kind == "trashdir" or .kind == "drive" then (["", .c1, "", ""] | map((. // "") | '"$SCRUB_JQ"')) else null end),
                page: (if .kind == "file" then "spark-shell://files/preview/" + (.id | ltrimstr("files:file:")) elif .kind == "dir" then "spark-shell://files/preview/" + (.id | ltrimstr("files:dir:")) else null end),
-               kind: (if .kind == "file" or .kind == "dir" or .kind == "trashed" then .kind else null end), args: (if .kind == "file" or .kind == "dir" or .kind == "trashed" then $a else null end),
+               kind: (if .kind == "file" or .kind == "dir" or .kind == "trashed" then .kind else null end), args: (if .kind == "file" or .kind == "dir" then $a elif .kind == "trashed" then $a + {item: .kw} else null end),
                more: (if .kind == "here" then [{name: "files_new_folder", arguments: $a, ask: ["name"], said: "new folder"}, {name: "files_new_text", arguments: $a, ask: ["name"], said: "new file"}]
                           + (if $fm != "" then [{name: "files_browse", arguments: $a, said: "open in the system file manager"}] else [] end)
                       elif .kind == "trash-here" then [{name: "files_empty", arguments: {}, said: "empty the trash"}] else null end),
@@ -9257,26 +9272,34 @@ files_trash() {   # files_trash PATH -> one line: PATH in the trash, by gio wher
     fi
     echo "${1##*/} is in the trash"
 }
-files_trashed() {   # files_trashed PATH -> the name under the trash's files/ of the newest file it holds from PATH, by the spec's own records (so gio's are read too); nothing when none
+files_trash_holds() {   # files_trash_holds RECORD PATH -> true when RECORD (NAME.trashinfo) is the trash's own, with its file, and says PATH
+    _frp=$(files_urldec "$(sed -n 's/^Path=//p' "$_ftd/info/$1" 2>/dev/null | head -1)")
+    case $_frp in /*) ;; *) _frp=${_ftd%/.Trash-*}/$_frp ;; esac
+    [ "$_frp" = "$2" ] && { [ -e "$_ftd/files/${1%.trashinfo}" ] || [ -L "$_ftd/files/${1%.trashinfo}" ]; }
+}
+files_trashed() {   # files_trashed PATH [ITEM] -> the name under the trash's files/: ITEM, a row's own, when it is one name the trash holds from PATH; with none, the newest it holds from PATH (an undo has no row), by the spec's own records (so gio's are read too); nothing when none
+    if [ -n "${2:-}" ]; then
+        case $2 in .|..|*/*) return 0 ;; esac
+        if files_trash_holds "$2.trashinfo" "$1"; then printf '%s\n' "$2"; fi
+        return 0
+    fi
     ls -t "$_ftd/info" 2>/dev/null | while IFS= read -r _fri; do
         case $_fri in *.trashinfo) ;; *) continue ;; esac
-        _frp=$(files_urldec "$(sed -n 's/^Path=//p' "$_ftd/info/$_fri" | head -1)")
-        case $_frp in /*) ;; *) _frp=${_ftd%/.Trash-*}/$_frp ;; esac
-        [ "$_frp" = "$1" ] && { [ -e "$_ftd/files/${_fri%.trashinfo}" ] || [ -L "$_ftd/files/${_fri%.trashinfo}" ]; } || continue
+        files_trash_holds "$_fri" "$1" || continue
         printf '%s\n' "${_fri%.trashinfo}"; break
     done
 }
-files_restore() {   # files_restore PATH -> one line: the newest file the trash holds from PATH put back where it was, by the spec's own records (so gio's are read too)
+files_restore() {   # files_restore PATH [ITEM] -> one line: ITEM, else the newest file the trash holds from PATH, put back where it was
     _ftd=$(files_trash_dir "$1") || { echo "no trash holds ${1##*/}"; return 1; }
     [ ! -e "$1" ] && [ ! -L "$1" ] || { echo "${1##*/} already exists"; return 1; }
-    _frn=$(files_trashed "$1"); [ -n "$_frn" ] || { echo "the trash holds nothing from ${1##*/}"; return 1; }
+    _frn=$(files_trashed "$1" "${2:-}"); [ -n "$_frn" ] || { echo "the trash holds nothing from ${1##*/}"; return 1; }
     mv "$_ftd/files/$_frn" "$1" || { echo "could not bring ${1##*/} back"; return 1; }
     rm -f "$_ftd/info/$_frn.trashinfo"
     echo "${1##*/} is back"
 }
-files_purge() {   # files_purge PATH -> one line: the newest file the trash holds from PATH deleted for good, its record with it (#130)
+files_purge() {   # files_purge PATH [ITEM] -> one line: ITEM, else the newest file the trash holds from PATH, deleted for good, its record with it (#130)
     _ftd=$(files_trash_dir "$1") || { echo "no trash holds ${1##*/}"; return 1; }
-    _frn=$(files_trashed "$1"); [ -n "$_frn" ] || { echo "the trash holds nothing from ${1##*/}"; return 1; }
+    _frn=$(files_trashed "$1" "${2:-}"); [ -n "$_frn" ] || { echo "the trash holds nothing from ${1##*/}"; return 1; }
     rm -rf -- "$_ftd/files/$_frn" && rm -f -- "$_ftd/info/$_frn.trashinfo" || { echo "could not delete ${1##*/}"; return 1; }
     echo "${1##*/} is deleted for good"
 }
@@ -9312,11 +9335,11 @@ files_trash_rows() {   # -> the rows of your home's trash, the newest first: eac
         }
         {
             if (!($2 in t)) next   # a record with nothing under files/: not listed
-            p = dec($3); if (p !~ /^\//) next; if (p ~ /[\001-\037\177]/) next
+            p = dec($3); if (p !~ /^\//) next; if (p ~ /[\001-\037\177]/ || $2 ~ /[\001-\037\177]/) next
             name = p; sub(/.*\//, "", name); d = p; sub(/\/[^\/]*$/, "", d); f = d; sub(/.*\//, "", f); if (d == home) f = "~"
             day = substr($1, 1, 4) substr($1, 6, 2) substr($1, 9, 2)
             n++; if (t[$2] !~ /^dir/) b += z[$2]
-            print "files:trashed:" clean($2) us "blank" us clean(name) us "" us p us (t[$2] ~ /^dir/ ? "folder" : size(z[$2])) us when(day) us "" us clean(f) us "trashed" us ""
+            print "files:trashed:" clean($2) us "blank" us clean(name) us "" us p us (t[$2] ~ /^dir/ ? "folder" : size(z[$2])) us when(day) us "" us clean(f) us "trashed" us "" us $2
         }
         END { printf "%d 0 %.0f\n", n, b > sum }' "$TMP/trash.list"
     read -r _ftn _ftx _ftb < "$TMP/files.sum"
@@ -9382,13 +9405,13 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
             _ff=$_fa; case $_ff in /*) ;; *) provide_refuse "$1" "files: that is not a path in the folders given"; return 0 ;; esac
             _ffd=$(files_ok "$(dirname "$_ff")" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; }
             files_name_ok "${_ff##*/}" || { provide_refuse "$1" "files: that is not a name in the folders given"; return 0; }
-            _fo=$(files_restore "$_ffd/${_ff##*/}") || { provide_refuse "$1" "files: $_fo"; return 0; }
+            _fo=$(files_restore "$_ffd/${_ff##*/}" "$(printf '%s' "$3" | jq -r '.item // ""')") || { provide_refuse "$1" "files: $_fo"; return 0; }
             files_result "$1" "$_fo" files_trash "$(jq -cn --arg p "$_ffd/${_ff##*/}" '{path: $p}')"; return 0 ;;
         files_purge)   # the path it had, held as restore holds it; for good: no undo (#130)
             _ff=$_fa; case $_ff in /*) ;; *) provide_refuse "$1" "files: that is not a path in the folders given"; return 0 ;; esac
             _ffd=$(files_ok "$(dirname "$_ff")" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; }
             files_name_ok "${_ff##*/}" || { provide_refuse "$1" "files: that is not a name in the folders given"; return 0; }
-            _fo=$(files_purge "$_ffd/${_ff##*/}") || { provide_refuse "$1" "files: $_fo"; return 0; }
+            _fo=$(files_purge "$_ffd/${_ff##*/}" "$(printf '%s' "$3" | jq -r '.item // ""')") || { provide_refuse "$1" "files: $_fo"; return 0; }
             files_result "$1" "$_fo"; return 0 ;;
         files_new_folder|files_new_text)
             _fn=$(files_new_ok "$_fa" "$_fnm") || { provide_refuse "$1" "files: $_fn"; return 0; }
@@ -9496,15 +9519,23 @@ dialog_want_sha() {   # -> the sha256 the release tag's own tree pins for this m
 }
 sha256_of() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 dialog_ok() { [ -x "$DIALOG_BIN" ] && _dw=$(dialog_want_sha) && [ -n "$_dw" ] && [ "$(sha256_of "$DIALOG_BIN")" = "$_dw" ]; }   # the binary in place is the one the tree pins
-release_tag() {   # -> the release the clone's dialog belongs to: the newest tag at or behind HEAD whose tree has dialog/dialog.env, when dialog/ is unchanged since (committed or not); false otherwise
-    _rt=$(git -C "$REPO" describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null) || return 1
+tag_floor() {   # -> the newest tag at or behind HEAD a key in allowed-signers signed; false when none. A tag anyone pushed sets no floor: a fetch takes them all
+    for _tf in $(git -C "$REPO" tag -l 'v[0-9]*' --merged HEAD --sort=-v:refname 2>/dev/null); do
+        if tag_signed "$_tf"; then printf '%s\n' "$_tf"; return 0; fi
+    done
+    return 1
+}
+clone_tag() { tag_floor || git -C "$REPO" describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null; }   # -> the release this clone is at: the signed one; the nearest tag only where none behind HEAD is signed (the row then says so)
+release_tag() {   # -> the release the clone's dialog belongs to: clone_tag, when its tree has dialog/dialog.env and dialog/ is unchanged since (committed or not); false otherwise
+    _rt=$(clone_tag) || return 1
     git -C "$REPO" cat-file -e "$_rt:dialog/dialog.env" 2>/dev/null || return 1
     git -C "$REPO" diff --quiet "$_rt" -- dialog 2>/dev/null || return 1
     printf '%s\n' "$_rt"
 }
+tag_verify() { git -C "$REPO" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$REPO/allowed-signers" -c gpg.program=false -c gpg.openpgp.program=false -c gpg.x509.program=false verify-tag "$1"; }   # tag_verify TAG -- by allowed-signers alone: git picks the program from the signature, so one of another kind gets none, and no gpg keyring speaks for a release
 tag_signed() {   # tag_signed TAG -> 0 when a key in the tree's allowed-signers signed it, and the tag object names itself TAG
     command -v ssh-keygen >/dev/null 2>&1 && [ -f "$REPO/allowed-signers" ] || return 1
-    git -C "$REPO" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$REPO/allowed-signers" verify-tag "$1" >/dev/null 2>&1 || return 1
+    tag_verify "$1" >/dev/null 2>&1 || return 1
     [ "$(git -C "$REPO" cat-file tag "$1" 2>/dev/null | sed -n 's/^tag //p' | sed -n 1p)" = "$1" ]
 }
 cmd_update() {   # the clone moves to the newest tag past its own that a key in this tree's allowed-signers signed (tag_signed), the newer tags it skipped named; then on --yes from the new tree when the seat is on. A plain pull takes main as it is; this takes a release, forward only
@@ -9514,8 +9545,13 @@ cmd_update() {   # the clone moves to the newest tag past its own that a key in 
     command -v ssh-keygen >/dev/null 2>&1 || refuse "ssh-keygen is not installed: a release tag's signature cannot be read (the openssh package)"
     [ -f "$REPO/allowed-signers" ] || refuse "no allowed-signers beside spark-shell: not a clone of spark-shell"
     git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 || refuse "$REPO is not a git clone"
-    _here=$(git -C "$REPO" describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo none)
-    git -C "$REPO" fetch -q origin 'refs/tags/*:refs/tags/*' 2>/dev/null || refuse "could not fetch the tags from origin"
+    _here=$(tag_floor || echo none)
+    # a tag moved on origin is refused by git, and that fails the fetch of the rest too: it stays as first seen, and is said
+    _fo=$(LC_ALL=C git -C "$REPO" fetch origin 'refs/tags/*:refs/tags/*' 2>&1) || {
+        _moved=$(printf '%s\n' "$_fo" | sed -n 's/.*\[rejected\] *\([^ ]*\) .*would clobber existing tag.*/\1/p' | paste -sd' ' -)
+        [ -n "$_moved" ] || refuse "could not fetch the tags from origin"
+        echo "spark-shell update: $_moved moved on origin: the copy here stays"
+    }
     _to=''; _skipped=''
     for _t in $(git -C "$REPO" tag -l 'v[0-9]*' --sort=-v:refname); do
         [ "$_t" != "$_here" ] || break        # newest first: at the clone's own tag, the rest are behind it
@@ -9530,7 +9566,7 @@ cmd_update() {   # the clone moves to the newest tag past its own that a key in 
     if seat_on && ! release_up "$_to"; then
         refuse "$_to is signed, but its release is not published yet -- nothing moved; try again in a few minutes"
     fi
-    _by=$(git -C "$REPO" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$REPO/allowed-signers" verify-tag "$_to" 2>&1 | sed -n 's/.*signature for \([^ ]*\) with.*/\1/p' | sed -n 1p)
+    _by=$(tag_verify "$_to" 2>&1 | sed -n 's/.*signature for \([^ ]*\) with.*/\1/p' | sed -n 1p)
     _note=''; [ -z "$_skipped" ] || _note=" (skipped, not a signed release:$_skipped)"
     if [ "$MODE" = dry ]; then
         echo "spark-shell update: would move $_here -> $_to, signed by ${_by:-a key in allowed-signers}$_note"
@@ -9572,8 +9608,8 @@ dialog_install() {   # the dialog's row of `on`: in place as the tree pins it, o
 # to play with as it is (a proof's, the tests' stand-in).
 PLAYER_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-wallpaper
 player_target() { case $(uname -m) in x86_64|amd64) echo x86_64-linux-gnu ;; *) return 1 ;; esac; }   # the builds there are: x86_64 alone today
-player_release_tag() {   # -> the release the clone's player belongs to: the newest tag at or behind HEAD whose tree has player/player.env, when player/ is unchanged since; false otherwise
-    _plr=$(git -C "$REPO" describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null) || return 1
+player_release_tag() {   # -> the release the clone's player belongs to: clone_tag, when its tree has player/player.env and player/ is unchanged since; false otherwise
+    _plr=$(clone_tag) || return 1
     git -C "$REPO" cat-file -e "$_plr:player/player.env" 2>/dev/null || return 1
     git -C "$REPO" diff --quiet "$_plr" -- player 2>/dev/null || return 1
     printf '%s\n' "$_plr"
@@ -9866,7 +9902,7 @@ panel_hint() {   # the one line under the list: the keys as keys
     if [ "${view:-home}" = about ]; then printf 'say what you would like %s %s closes' "$PANEL_SEP" "$(panel_chip Esc)"
     else printf '%s %s pick an option, or say what you would like %s %s closes' "$(panel_chip "$PANEL_UP")" "$(panel_chip "$PANEL_DOWN")" "$PANEL_SEP" "$(panel_chip Esc)"; fi
 }
-panel_version() { [ -z "${PANEL_VERSION_READ:-}" ] || { printf '%s\n' "$PANEL_VERSION_NOW"; return 0; }; (cd "$REPO" 2>/dev/null && git describe --tags --abbrev=0 2>/dev/null) | sed 's/^v//'; }   # the release this copy is at, or nothing; a provider asks git once (#196)
+panel_version() { [ -z "${PANEL_VERSION_READ:-}" ] || { printf '%s\n' "$PANEL_VERSION_NOW"; return 0; }; clone_tag | sed 's/^v//'; }   # the release this copy is at, or nothing; a provider asks git once (#196)
 panel_about() {   # panel_about WIDTH -> the splash: the logo small, the version, the keys as keys with their sentences in one column, the licence and the address
     _k=20; _w=$(($1 - _k)); [ "$_w" -ge 20 ] || _w=20
     _y1=''; _y2=''; _r=''; _b=''
@@ -11023,15 +11059,25 @@ desk_gate() {   # desk_gate LINE -> '' when it may run, else why not
         [ "$4" -ge 20 ] && [ "$4" -le 240 ] && [ "$5" -ge 5 ] && [ "$5" -le 100 ] || { echo "invalid terminal size"; return; }
         shift 5
     fi
+    # the word as sh reads it: with a = it is a variable, and the program is the word after it; a path is not a name on the list
+    case ${1:-} in *=*) echo "a variable before a program is shell syntax"; return ;; esac
+    [ -n "${KEPT:-}" ] || case ${1:-} in */*) echo "an app is named, not a path"; return ;; esac
     app=${1:-}; app=${app##*/}
     [ -n "$app" ] || { echo "exec of nothing"; return; }
     case " $DESK_NOT_APPS " in *" $app "*) echo "$app is not an app"; return ;; esac
     # the model's answer stays inside the list it was given; a desk you kept may
     # open any program this machine has (you kept it, you can read and edit it)
     if [ -n "${KEPT:-}" ]; then desk_on_path "$app" || desk_app_known "$app" || echo "$app is not on this machine"
-    elif desk_app_known "$app"; then :
+    elif desk_app_known "$app"; then shift; desk_args_ok "$app" "$@"
     elif desk_on_path "$app"; then echo "$app is not one of the allowed apps (spark-shell apps adds it)"
     else echo "$app is not on this machine"; fi
+}
+desk_args_ok() {   # desk_args_ok APP WORD... -> '' when a model's words past APP are pages and files: a flag is an app's own way to run a command; the words of its desktop entry and of your EDITOR are not the model's
+    _dwa=$1; shift
+    _dwo=" $(grep "^$_dwa	" "$TMP/exec" 2>/dev/null | head -1 | cut -f2-) ${ED:-} "
+    for _dw in "$@"; do
+        case $_dw in -*|*\"*) case $_dwo in *" $_dw "*) ;; *) echo "a page or a file, not a flag"; return ;; esac ;; esac
+    done
 }
 
 # The model's answer to sway's words, in two passes. First each window's
@@ -11356,7 +11402,7 @@ desk_replay() {   # desk_replay NAME -> the saved layout, or one of the last ten
     [ -n "${ASKED:-}" ] || printf 'layout> %s\n' "$(desk_words "$_rf")"
     why=$(desk_why "$_rf"); [ -z "$why" ] || printf '  %s\n' "$why"
     desk_render "$_rf"
-    if [ -f "$LAYOUTS_DIR/$1" ]; then KEPT=1 desk_show "the saved layout $1"; else KEPT=1 desk_show "the layout $1 again"; fi
+    if [ -f "$LAYOUTS_DIR/$1" ]; then KEPT=1 desk_show "the saved layout $1"; else desk_show "the layout $1 again"; fi   # the history is the model's answer, kept with no act of yours: its rule still holds; a saved one is yours
     [ -n "${KEPT_BACK:-}" ] || kept_note layout "$1"
 }
 desk_back() {   # the layout before this one, opened again; one step further each time, until a new one is made or opened

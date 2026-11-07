@@ -777,7 +777,8 @@ words: the verb as the heading, one note in parentheses (the last
 sentence of the tool's description, lowercase), two menu rows, the verb
 and `keep working`, which is lit first (v0.127.2), so Enter again keeps
 and the verb takes Up or a click. Enter or a click on the verb acts; `keep working`,
-Esc and every other way back keep; typed words are refused. Either way the
+Esc and every other way back keep; typed words are refused. A click close behind
+the one that opened the question is the same hand's, and answers nothing (v0.129.3). Either way the
 bar comes back to the row the step was asked from, with the words that found
 it (v0.129). The header says the verb; the key bar `keep  Esc`. A
 spark-planned step's heading is its line.

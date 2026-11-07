@@ -740,6 +740,21 @@ fi
 [ ! -e "$HOME/.config/spark-shell/sgr.sh" ] && ok "off: sgr.sh is gone (the prompt goes plain)" || bad "sgr removal"
 printf '%s\n' "$out" | grep -q 'packages stay installed' && ok "off: packages stay, said so" || bad "off closing" "$out"
 
+# a second backup never takes the first's place: .bak stays the file off hands back, a later one sits beside it by its time
+fresh
+theme_fixture '#ff5555'
+printf 'first of mine\n' > "$HOME/.tmux.conf"
+sh "$SH" on --yes >/dev/null
+printf 'second of mine\n' > "$HOME/.tmux.conf"
+out=$(sh "$SH" on --yes)
+[ "$(cat "$HOME/.tmux.conf.bak")" = 'first of mine' ] && [ "$(cat "$HOME"/.tmux.conf.bak.* 2>/dev/null)" = 'second of mine' ] && printf '%s\n' "$out" | grep -q 'tmux\.conf\.bak\.[0-9]' \
+    && ok "on: a second backup never takes the first's place: .bak stays, the later one beside it by its time, the row says where" || bad "second backup" "$(ls -la "$HOME"/.tmux.conf* 2>&1) $out"
+printf 'second of mine\n' > "$HOME/.tmux.conf"
+sh "$SH" on --yes >/dev/null
+[ "$(ls "$HOME"/.tmux.conf.bak.* 2>/dev/null | wc -l | tr -d ' ')" = 1 ] && ok "on: a file the same as one kept already is not kept twice (btop writes its conf back on every exit)" || bad "backup twice" "$(ls -la "$HOME"/.tmux.conf* 2>&1)"
+sh "$SH" off >/dev/null
+[ "$(cat "$HOME/.tmux.conf")" = 'first of mine' ] && ok "off: the first .bak comes back, the file you had before spark-shell" || bad "off first backup" "$(ls -la "$HOME"/.tmux.conf* 2>&1)"
+
 fi
 
 # --- 8. invoked through a symlink (~/.local/bin): the repo still found --
@@ -1632,6 +1647,32 @@ EOF
     [ "$st" -eq 1 ] && grep -q '^exec foot -e reader$' "$swlog" && printf '%s\n' "$out" | grep -qE '^  refused  exec (foot -e )?sudo ls  \(sudo is not an app\)$' \
         && ok "a kept desk: a program on the machine but not in the inventory opens; sudo never" || bad "kept gate" "st=$st $out $(cat "$swlog")"
     rm -f "$desks/kept-reader" "$H/.local/bin/reader"
+    # the gate reads a line as sh does, and a model's words past the app are pages and files (v0.129.3)
+    gate_answer() { printf '%s\n' "$1" > "$HOME/answer.json"; : > "$swlog"; st=0; out=$(sh "$SH" layout "read the news in firefox" 2>&1) || st=$?; rm -f "$HOME/answer.json"; }
+    gate_one() { jq -cn --arg a "$1" --arg g "$2" '{main: {app: "firefox", quote: "firefox"}, side: [{app: $a, args: $g, quote: "read the news"}]}'; }
+    gate_answer "$(gate_one "X=/firefox sh -c \"touch $H/pwned\"" '')"
+    ! grep -q 'X=/firefox' "$swlog" && printf '%s\n' "$out" | grep -qF '(a variable before a program is shell syntax)' \
+        && ok "gate: a first word with a = is a variable, and the program after it is what sh runs: refused" || bad "gate variable" "st=$st $out $(cat "$swlog")"
+    gate_answer "$(gate_one /tmp/nowhere/firefox '')"
+    ! grep -q nowhere "$swlog" && printf '%s\n' "$out" | grep -qF '(an app is named, not a path)' \
+        && ok "gate: a model's app is a name, never a path whose last part is an allowed name" || bad "gate path" "st=$st $out $(cat "$swlog")"
+    gate_answer "$(gate_one firefox --renderer-cmd-prefix=/tmp/a)"
+    ! grep -q 'renderer-cmd-prefix' "$swlog" && printf '%s\n' "$out" | grep -qF '(a page or a file, not a flag)' \
+        && ok "gate: a flag in a model's args is an app's own way to run a command: refused" || bad "gate flag" "st=$st $out $(cat "$swlog")"
+    gate_answer "$(gate_one 'firefox --renderer-cmd-prefix=/tmp/a' '')"
+    ! grep -q 'renderer-cmd-prefix' "$swlog" && ok "gate: a flag written into a model's app word: refused the same" || bad "gate flag in app" "st=$st $out $(cat "$swlog")"
+    gate_answer "$(gate_one micro '-c "term curl -o /tmp/a http://x.invalid/a"')"
+    ! grep -q 'term curl' "$swlog" && ok "gate: a terminal app's flags from a model: refused in foot -e too" || bad "gate term flag" "st=$st $out $(cat "$swlog")"
+    gate_answer "$(gate_one firefox 'https://x.com/?a=1')"
+    grep -qxF 'exec firefox https://x.com/?a=1' "$swlog" && ok "gate: a page with = and ? in it is still a page" || bad "gate page" "st=$st $out $(cat "$swlog")"
+    # a layout in the history is the model's answer, kept with no act of yours: it stays to the model's rule; a saved one is yours
+    printf '#!/bin/sh\n:\n' > "$H/.local/bin/reader"; chmod +x "$H/.local/bin/reader"
+    gate_answer '{"main": {"app": "firefox", "quote": "firefox"}, "side": [{"app": "reader", "quote": "read the news"}]}'
+    _gk=$(ls -t "$H/.local/state/spark-shell/layouts" | head -1)
+    : > "$swlog"; st=0; out=$(sh "$SH" layout "$_gk" 2>&1) || st=$?
+    ! grep -q reader "$swlog" && printf '%s\n' "$out" | grep -qF '(reader is not one of the allowed apps' \
+        && ok "gate: a window refused when the model named it is refused again from the history" || bad "gate history" "st=$st $_gk $out $(cat "$swlog")"
+    rm -f "$H/.local/bin/reader"
     # a window that never comes (mpv with nothing to play): the split meant for it is skipped,
     # so the next window lands beside the main one instead of cutting it
     printf '{"words": "gone", "main": {"app": "micro", "width": 70}, "side": [{"app": "gone"}, {"app": "firefox"}]}\n' > "$desks/gone"
@@ -2021,6 +2062,10 @@ printf '%s\n' "$out" | grep -qx '  also suggested: btop -- add it to your words 
 jq -e '.main.app == "vi" and (.side | map(.app)) == ["shell"] and .suggested == ["btop"] and (has("why") | not)' "$desk_last" >/dev/null 2>&1 \
     && ok "named: desk.last holds what opened (vi and shell), btop as suggested for the panel's row, and no why" || bad "named desk.last" "$(cat "$desk_last")"
 printf '%s\n' "$out" | grep -q 'vi to write, btop to watch' && bad "named: the model's why said though btop was dropped" "$out" || ok "named: btop dropped, so the model's why is not said"
+# the same gate on a room: a first word with a = is a variable, and sh runs the word after it
+printf '{"main": {"app": "vi", "args": ""}, "side": [{"app": "X=/vi", "args": "sh -c id", "quote": "the prompt shell"}]}\n' > "$H/answer.json"
+: > "$tlog"; st=0; out=$(sh "$SH" layout "writing with vi and the prompt shell" 2>&1) || st=$?
+! grep -q 'X=/vi' "$tlog" && printf '%s\n' "$out" | grep -qF '(a variable before a program is shell syntax)' && ok "gate: a room's first word with a = is refused too" || bad "gate room" "st=$st $out $(cat "$tlog")"
 printf '{"main": {"app": "btop", "args": "", "width": 60}, "side": [{"app": "newsboat", "args": ""}, {"app": "shell", "args": ""}, {"app": "micro", "args": ""}]}\n' > "$H/answer.json"
 dname=the-feeds-in-newsboat-and-a-shell; : > "$tlog"
 st=0; out=$(sh "$SH" layout "the feeds in Newsboat and a shell" 2>&1) || st=$?
@@ -4157,6 +4202,10 @@ STUB
     [ "$(printf '%s\n' "$out" | grep -c "^$RING wifi       ")" = 4 ] && printf '%s\n' "$out" | grep -q "^$RING wifi       old .* $TICK saved	wifi connect old$" && printf '%s\n' "$out" | grep -q "^  wifi       3 more	wifi more$" \
         && ok "panel: a fresh scan is read from the cache; wifi shows the saved ones, the strongest three and a more row" || bad "wifi more" "$out"
     [ "$(sh "$SH" panel wifi --list | grep -c "^$RING wifi       ")" = 7 ] && ! sh "$SH" panel wifi --list | grep -q "	wifi more$" && ok "panel wifi: the section that opened the panel shows every network, no more row" || bad "wifi full" "$(sh "$SH" panel wifi --list)"
+    # a network's name is anyone's words: one made like an option stays a name (grep took -c for its own, then read the rest of the list as its input)
+    { echo "$(date +%s)"; printf -- '-c\t4\t1\ncafe-two\t3\t1\n'; } > "$cache/wifi.scan"
+    _wo=$(sh "$SH" panel wifi --list 2>&1)
+    printf '%s\n' "$_wo" | grep -q 'connect -c$' && printf '%s\n' "$_wo" | grep -q 'connect cafe-two$' && ok "panel wifi: a network named like an option is a row, and the rows after it stay" || bad "wifi option name" "$_wo"
     { echo "$(( $(date +%s) - 120 ))"; printf 'stale\t4\t1\n'; } > "$cache/wifi.scan"
     sh "$SH" panel --list | grep -q "^$RING wifi       cafe" && ! sh "$SH" panel --list | grep -q stale && grep -q "^cafe" "$cache/wifi.scan" && [ $(( $(date +%s) - $(sed -n 1p "$cache/wifi.scan") )) -lt 60 ] \
         && ok "panel: a scan older than a minute is made again and kept, with its time" || bad "wifi stale" "cache: $(tr '\n' '|' < "$cache/wifi.scan"); list: $(sh "$SH" panel --list 2>&1 | grep wifi | tr '\n' '|')"
@@ -4597,6 +4646,10 @@ ans 1 | jq -e '.result.isError == false and .result.structuredContent.effect == 
     && ans 3 | jq -e '.result.structuredContent | has("effect") | not' >/dev/null \
     && grep -qx -- '- one more line' "$H/notes/ax-result-fixture.md" \
     && ok "provide notes: results identify the actual created or appended file, with no stale effect on the next call" || bad "note result" "$(ans 1) $(ans 2) $(ans 3)"
+# the words given are the words kept: dash's echo read a backslash in them as an escape, and \c cut the rest
+mcp notes "$(call 1 notes_add "$(jq -cn --arg t 'the folder C:\new\temp and \cut this part' '{text: $t}')")"
+_nf=$(ans 1 | jq -r '.result.structuredContent.effect.id')
+[ "$(sed -n 1p "$H/notes/$_nf")" = '# the folder C:\new\temp and \cut this part' ] && ok "provide notes: a backslash in the words stays a backslash, and nothing after it is cut" || bad "note backslash" "$(ans 1) $(cat "$H/notes/$_nf" 2>&1)"
 # a call's answer carries the section's rows as the step left them, and no note that they changed follows it: the host
 # shows them and reads nothing again (#196); a host's step writes neither the panel's recent picks nor its undo journal
 rm -f "$H/.local/state/spark-shell/panel/recent" "$H/.local/state/spark-shell/panel/undo"
@@ -5121,6 +5174,21 @@ ans 4 | jq -r '.result.contents[0].text' | jq "$KX" > "$H/trash.json"
 ( NO_GIO=1 mcp2 "$(call 2 files_empty '{}')" "$(call 3 files_empty '{}')" )
 [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'the trash is empty: 1 deleted for good' ] && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = 'the trash is empty already' ] \
     && [ -z "$(ls -A "$TR/files" 2>/dev/null)" ] && [ -z "$(ls -A "$TR/info" 2>/dev/null)" ] && ok "provide files: empty the trash deletes every file in it for good, its records with them; an empty trash says so (#130)" || bad "files empty" "$(ans 2) $(ans 3) $(ls -A "$TR/files" "$TR/info" 2>&1)"
+# two trashed from one path (a file replaced twice is this): a row names its own item, so what you pick is what goes
+printf 'OLD' > "$F2/docs/twin.txt"; ( NO_GIO=1 mcp2 "$(fc2 2 files_trash "$F2R/docs/twin.txt")" )
+printf 'NEW' > "$F2/docs/twin.txt"; ( NO_GIO=1 mcp2 "$(fc2 2 files_trash "$F2R/docs/twin.txt")" "$(rq 3 resources/read '{"uri":"spark-shell://files/rows/trash"}')" )
+ans 3 | jq -r '.result.contents[0].text' | jq "$KX" > "$H/twins.json"
+_old=$(jq -c '.rows[] | select(.id == "files:trashed:twin.txt") | .tool.arguments' "$H/twins.json")
+_new=$(jq -c '.rows[] | select(.id == "files:trashed:twin.txt.2") | .tool.arguments' "$H/twins.json")
+[ "$(printf '%s' "$_old" | jq -r .item)" = twin.txt ] && [ "$(printf '%s' "$_new" | jq -r .item)" = twin.txt.2 ] && ok "provide files: two trashed from one path: each row's step names its own item" || bad "trash item rows" "$(cat "$H/twins.json")"
+( NO_GIO=1 mcp2 "$(call 2 files_purge "$(printf '%s' "$_old" | jq -c '.item = "../../docs/keep"')")" "$(call 3 files_purge "$(printf '%s' "$_old" | jq -c '.item = "other.txt"')")" )
+ans 2 | jq -e '.error.code == -32602' >/dev/null && [ "$(ans 3 | jq -r .result.isError)" = true ] && [ "$(cat "$TR/files/twin.txt")" = OLD ] && [ "$(cat "$TR/files/twin.txt.2")" = NEW ] \
+    && ok "provide files: an item that is a path, or one the trash does not hold from that path, is refused, nothing gone" || bad "trash item refused" "$(ans 2) $(ans 3)"
+( NO_GIO=1 mcp2 "$(call 2 files_purge "$_old")" )
+[ ! -e "$TR/files/twin.txt" ] && [ ! -e "$TR/info/twin.txt.trashinfo" ] && [ "$(cat "$TR/files/twin.txt.2")" = NEW ] && ok "provide files: delete for good on the older row deletes the older, the newer stays" || bad "trash purge older" "$(ans 2) $(ls "$TR/files")"
+printf 'OLDER' > "$F2/docs/twin.txt"; ( NO_GIO=1 mcp2 "$(fc2 2 files_trash "$F2R/docs/twin.txt")" "$(call 3 files_restore "$_new")" )
+[ "$(cat "$F2/docs/twin.txt")" = NEW ] && [ "$(cat "$TR/files/twin.txt")" = OLDER ] && ok "provide files: restore on a row brings that item back, not the newest from its path" || bad "trash restore row" "$(ans 3) $(ls "$TR/files")"
+( NO_GIO=1 mcp2 "$(fc2 2 files_restore "$F2R/nothing-here.txt")" ); rm -rf "$TR" "$F2/docs/twin.txt"
 # #123: a folder of thousands, gracefully. Each row carries its kind and its path, the steps are the list's once; a large folder
 # lists a page at a time under the 512 kB of a resource the dialog reads, its last row opening the next; no small pictures (#127); one stat
 # for many paths, so a folder of 1,235 answers in moments; a search that reaches its time says so
@@ -5348,6 +5416,10 @@ mcpv "$(call 2 files_play "$(jq -cn --arg p "$PVR/song.flac" '{path: $p, at: 12.
 _t0=$(date +%s); ( SLOW_WAVE=1 mcpv "$(pvr 2 "$PVR/song.flac")" ); _t1=$(date +%s)
 page 2 | jq -e '(.sound.picture | endswith("-sound.png")) and .sound.wave == 160 and .play.name == "files_play" and .seconds == 20.5' >/dev/null && [ $((_t1 - _t0)) -le 5 ] \
     && ok "provide files: a long sound's page comes at once with its facts and Play, its waveform drawn aside at an idle priority and named for the dialog to draw when it is there (#124)" || bad "preview sound aside" "$((_t1 - _t0)) s $(page 2)"
+# a picture stopped before it is drawn takes its folder with it: mpv's folder stayed in the temp folder, the picture in it, each time
+_st=$(tmpd); rm -rf "$F2/.cache/spark-shell"; ( TMPDIR=$_st SLOW_WAVE=1 mcpv "$(pvr 2 "$PVR/song.flac")" )
+_i=0; while [ "$_i" -lt 30 ] && [ -n "$(ls -A "$_st")" ]; do sleep 0.1; _i=$((_i + 1)); done
+[ -z "$(ls -A "$_st")" ] && ok "provide files: a sound's picture stopped midway leaves no folder behind" || bad "sound folder" "$(ls -A "$_st") $(page 2 | head -c 200)"
 # #125: where sway is, a video plays over its frame: the page offers play and stop; the player laid at the dialog's corner, foot's padding and the frame's box
 mkdir -p "$H/pvsw" "$F2/.config/foot"; printf '[main]\npad=24x19\n' > "$F2/.config/foot/dialog.ini"
 cat > "$H/pvsw/swaymsg" <<'STUB'
@@ -6547,6 +6619,41 @@ if command -v ssh-keygen >/dev/null 2>&1; then
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "spark-shell update: v9.7, signed by spark-shell-release (was v9.6)" ] \
         && [ "$(git -C "$U/c" rev-parse HEAD)" = "$(git -C "$U/c" rev-parse 'v9.7^{commit}')" ] \
         && ok "update: once the release is up, the same command moves" || bad "update: release up" "$rc $out"
+    # the floor is the newest tag a key in allowed-signers signed: an unsigned tag at the clone's commit stops nothing (v0.129.3)
+    git clone -q "$U/origin.git" "$U/d"; D=$U/d/spark-shell; git -C "$U/d" -c advice.detachedHead=false checkout -q --detach v9.7
+    git -C "$U/w" tag -a -m v99.0 v99.0 v9.7; git -C "$U/w" push -q origin v99.0
+    out=$(sh "$D" update --dry-run 2>&1) && rc=0 || rc=$?
+    out2=$(sh "$D" update --dry-run 2>&1) && rc2=0 || rc2=$?
+    [ "$rc" -eq 1 ] && [ "$rc2" -eq 1 ] && [ "$out2" = "spark-shell update: the releases past v9.7 are not signed by a key in allowed-signers: v99.0 -- nothing moved" ] \
+        && ok "update: an unsigned tag at the clone's commit is no floor: refused and named, every run, never the newest release" || bad "update: unsigned floor" "$rc $out | $rc2 $out2"
+    [ "$(sh "$D" panel about --list 2>/dev/null | grep -c 'spark-shell 9\.7')" -ge 1 ] && ok "about: the version is the signed release, not an unsigned tag beside it" || bad "version floor" "$(sh "$D" panel about --list 2>&1)"
+    echo eight > "$U/w/eight"; git -C "$U/w" add -A; git -C "$U/w" commit -q -m v9.8; git -C "$U/w" tag -s -m v9.8 v9.8; git -C "$U/w" push -q origin main v9.8
+    out=$(sh "$D" update --dry-run 2>&1) && rc=0 || rc=$?
+    [ "$rc" -eq 0 ] && [ "$(printf '%s\n' "$out" | sed -n 1p)" = "spark-shell update: would move v9.7 -> v9.8, signed by spark-shell-release (skipped, not a signed release: v99.0)" ] \
+        && ok "update: a real release past that tag is found and moved to" || bad "update: past the unsigned" "$rc $out"
+    # a signature that is not ssh is never read: gpg's keyring is no allowed-signers
+    mkdir -p "$U/gpg"; cat > "$U/gpg/gpg" <<'GPG'
+#!/bin/sh
+printf '[GNUPG:] NEWSIG\n[GNUPG:] GOODSIG 0000000000000000 mallory\n[GNUPG:] VALIDSIG 00 2026-01-01 0 4 0 22 8 00 00\n[GNUPG:] TRUST_UNDEFINED 0 pgp\n'
+GPG
+    chmod +x "$U/gpg/gpg"
+    echo nine > "$U/w/nine"; git -C "$U/w" add -A; git -C "$U/w" commit -q -m v9.9
+    _obj=$(printf 'object %s\ntype commit\ntag v9.9\ntagger m <m> 1700000000 +0000\n\nv9.9\n-----BEGIN PGP SIGNATURE-----\n\nAAAA\n-----END PGP SIGNATURE-----\n' "$(git -C "$U/w" rev-parse HEAD)" | git -C "$U/w" hash-object -t tag -w --stdin)
+    git -C "$U/w" update-ref refs/tags/v9.9 "$_obj"; git -C "$U/w" push -q origin main v9.9
+    out=$(PATH=$U/gpg:$PATH sh "$D" update --dry-run 2>&1) && rc=0 || rc=$?
+    [ "$rc" -eq 0 ] && [ "$(printf '%s\n' "$out" | sed -n 1p)" = "spark-shell update: would move v9.7 -> v9.8, signed by spark-shell-release (skipped, not a signed release: v99.0 v9.9)" ] \
+        && ok "update: a PGP signature gpg calls good is not a key in allowed-signers: skipped, named" || bad "update: pgp" "$rc $out"
+    # a tag moved on origin stays as it was seen here, is said, and stops nothing after it
+    git -C "$U/w" tag -d v9.8 >/dev/null; git -C "$U/w" tag -s -m v9.8 v9.8; git -C "$U/w" push -q -f origin v9.8
+    echo ten > "$U/w/ten"; git -C "$U/w" add -A; git -C "$U/w" commit -q -m v9.10; git -C "$U/w" tag -s -m v9.10 v9.10; git -C "$U/w" push -q origin main v9.10
+    _was=$(git -C "$U/d" rev-parse v9.8)
+    out=$(sh "$D" update --dry-run 2>&1) && rc=0 || rc=$?
+    [ "$rc" -eq 0 ] && [ "$(printf '%s\n' "$out" | sed -n 1p)" = "spark-shell update: v9.8 moved on origin: the copy here stays" ] \
+        && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "spark-shell update: would move v9.7 -> v9.10, signed by spark-shell-release (skipped, not a signed release: v99.0)" ] && [ "$(git -C "$U/d" rev-parse v9.8)" = "$_was" ] \
+        && ok "update: a tag moved on origin is said, the copy here stays, and the release after it is found" || bad "update: moved tag" "$rc $out"
+    git -C "$U/d" remote set-url origin "$U/gone.git"
+    out=$(sh "$D" update --dry-run 2>&1) && rc=0 || rc=$?
+    [ "$rc" -eq 1 ] && [ "$out" = "spark-shell update: could not fetch the tags from origin" ] && ok "update: an origin that does not answer is still refused" || bad "update: no origin" "$rc $out"
     unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL GIT_CONFIG_NOSYSTEM
     rm -rf "$U"
 else
@@ -6684,6 +6791,11 @@ STUB
         && ok "desktop notifications do-not-disturb off: said, mako's mode gone, the config too" || bad "dnd off cli" "$out"
     [ -z "$(nb)" ] && ok "bar: do not disturb off and every notification looked at: no notifications block" || bad "bar no count" "$(nb)"
     out=$(sh "$SH" desktop notifications 2>&1 || :); [ "$out" = "$(printf 'do not disturb off\n  firefox: Saved')" ] && ok "desktop notifications: do not disturb, then the last few with their app" || bad "notifications cli" "$out"
+    # a notification's words are any site's: scrubbed text stays plain, dash's echo made \033 a real escape again
+    _mk=$(cat "$HOME/mako.history"); printf 'Notification 21: hello\\033[2Jgone\n  App name: browser\n' > "$HOME/mako.history"
+    out=$(sh "$SH" desktop notifications 2>&1 || :)
+    printf '%s\n' "$out" | grep -qF 'browser: hello\033[2Jgone' && ! printf '%s' "$out" | LC_ALL=C grep -q "$(printf '\033')" && ok "desktop notifications: an escape written out in a notification stays words" || bad "notification escape" "$(printf '%s' "$out" | od -c | head -5)"
+    printf '%s\n' "$_mk" > "$HOME/mako.history"
     rc=0; out=$(sh "$SH" desktop notifications loud 2>&1) || rc=$?; [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: notifications takes do-not-disturb on|off, dismiss or restore' ] && ok "desktop notifications WORD: refused in one line" || bad "notifications refuse" "rc=$rc $out"
     # a reminder due comes as a notification once, on the desktop alone
     mkdir -p "$HOME/calendar"; rm -f "$nlog"
