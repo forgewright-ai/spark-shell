@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.129.2
+
+- A step of tools that runs in a terminal, or with sudo (fix, update
+  spark-shell, update system, clean the package cache), runs from its
+  row alone, as the design had it. A plan was offered them: the dialog's
+  request to spark, `spark-shell want`, and spark's MCP list, the prompt
+  line and spark do. They carry `_meta` `spark-shell/person` now; the
+  provider lists them to the dialog alone and refuses them from any
+  other client, and the dialog neither offers them to a plan nor stages
+  a plan that names one.
+- Home and End with nothing typed take the list: on a page just opened,
+  help's among them, End went to the end of an empty line and moved
+  nothing. With words typed they are the line's, as before.
+- The shell suite removes the folders it makes: every throwaway home
+  stayed in /tmp, one a section, every run. Its exit status is its own:
+  the cleanup cannot end it with a failure of its own.
+- The host test of a provider that dies ends its stub without a panic's
+  backtrace, which with RUST_BACKTRACE set could outlast the test's two
+  seconds under a full suite.
+
 ## v0.129.1
 
 - Up and the wheel come back to the top of a list. A list scrolled past

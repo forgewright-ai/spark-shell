@@ -278,9 +278,11 @@ fn a_provider_with_another_name_or_protocol_is_closed() {
 
 #[test]
 fn a_provider_that_dies_floods_or_hangs_is_one_line_and_the_dialog_stays() {
-    // dies
+    // dies. resume_unwind ends the stub's thread at once: a panic! runs the hook first, and with RUST_BACKTRACE set (the
+    // gate's) it resolves a backtrace of the whole test binary under a global lock before the pipe closes, which under a
+    // full suite outlasted pump's 2 s (v0.129.2)
     let (mut app, rx, tx) = app_with(&["window"]);
-    let script: Script = Box::new(|_, _| panic!("the stub ends"));
+    let script: Script = Box::new(|_, _| std::panic::resume_unwind(Box::new("the stub ends")));
     app.servers.push(stub(0, "window", script, tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].dead.is_some()));

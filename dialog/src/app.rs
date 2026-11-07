@@ -3453,6 +3453,10 @@ impl App {
         if self.preview_key() && self.preview_plays() {
             return self.preview_seek(0.0); // Home: a sound or a video from its start (#151)
         }
+        // with nothing typed the line has no start to go to: Home is the list's first row (v0.129.2)
+        if !self.in_list && self.input.is_empty() && self.chip_focus.is_none() && !self.preview_key() && !self.picks().is_empty() {
+            self.in_list = true;
+        }
         if self.in_list && !self.preview_key() {
             self.keep_lit = None;
             self.sel = 0;
@@ -3463,6 +3467,10 @@ impl App {
     }
 
     pub fn line_end(&mut self) {
+        // with nothing typed the line has no end to go to: End is the list's last row, on a page just opened too (v0.129.2)
+        if !self.in_list && self.input.is_empty() && self.chip_focus.is_none() && !self.preview_key() && !self.picks().is_empty() {
+            self.in_list = true;
+        }
         if self.in_list && !self.preview_key() {
             self.keep_lit = None;
             self.sel = self.picks().len().saturating_sub(1);
@@ -4645,8 +4653,10 @@ impl App {
             .iter()
             .filter(|p| p.ready && p.dead.is_none())
             .flat_map(|p| {
+                // a person's step (a terminal, or sudo) is never offered to a plan: it runs from its row (v0.129.2)
                 p.tools
                     .iter()
+                    .filter(|t| !t.person)
                     .map(|t| json!({"name": t.name, "title": t.title, "description": t.description, "inputSchema": t.schema}))
             })
             .collect();
@@ -4813,6 +4823,11 @@ impl App {
             let at = self.providers.iter().position(|p| p.tools.iter().any(|t| t.name == name));
             if let Some(p) = at {
                 self.nearest_name(p, &mut call);
+            }
+            // a person's step (a terminal, or sudo) runs from its row, never from a plan (v0.129.2)
+            if at.is_some_and(|p| self.providers[p].tools.iter().any(|t| t.name == name && t.person)) {
+                no.push(format!("{} runs from its row, never from a plan", line));
+                continue;
             }
             match at {
                 None => no.push(format!("{} is not offered here now", line)),
@@ -5049,6 +5064,9 @@ impl App {
         let Some(tool) = self.tool_of(step) else {
             return Err("this is not offered here now".into());
         };
+        if step.who == Who::Model && tool.person {
+            return Err("that runs from its row, never from a plan".into());
+        }
         if step.call.arguments.iter().any(|(key, v)| {
             let prop = tool.schema.get("properties").and_then(|p| p.get(key)).unwrap_or(&Value::Null);
             v.as_str().is_some_and(|text| !gate::text_controls_ok(prop, text))

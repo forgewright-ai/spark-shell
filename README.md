@@ -1079,7 +1079,8 @@ them on Enter. When the list
 is longer than the window, its last line says how many rows sit below.
 In a list,
 Page Up and Page Down move the lit row by a screen, Home and End go to
-its first and its last row.
+its first and its last row; with nothing typed they do so from the
+prompt too, on a page just opened.
 
 - `layout`: a saved layout, a row with its apps, opens on Enter or a
   second click; its page, behind F9, has open, rename (it

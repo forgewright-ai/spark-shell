@@ -19,8 +19,16 @@ plain() {   # plain FILE -- no hex color, no byte outside ASCII
     ! grep -Eq '#[0-9a-fA-F]{6}' "$1" && ! LC_ALL=C grep -q "[^ -~${tab}]" "$1"
 }
 
+# every throwaway folder the suite makes is listed here and goes at its end: the homes once stayed in /tmp, one a
+# fresh, every run (v0.129.2). A folder a test left unreadable is made readable first
+TMPDIRS=$(mktemp)
+tmpd() { _td=$(mktemp -d) && printf '%s\n' "$_td" >> "$TMPDIRS" && printf '%s\n' "$_td"; }   # tmpd -> a new folder, gone at the end
+# the suite's own exit status kept: under set -e a command of the trap that failed (a chmod in a tree a test left) ended
+# the suite with 1 after 0 failed
+_rc=0   # set again inside the trap; named here so shellcheck sees it
+trap '_rc=$?; while IFS= read -r _td; do [ -z "$_td" ] || { chmod -R u+rwX "$_td" 2>/dev/null || :; rm -rf "$_td" 2>/dev/null || :; }; done < "$TMPDIRS" || :; rm -f "$TMPDIRS" || :; exit "$_rc"' EXIT
 fresh() {   # a new throwaway HOME with the stubs in place
-    H=$(mktemp -d)
+    H=$(tmpd)
     export HOME=$H XDG_CONFIG_HOME=$H/.config XDG_STATE_HOME=$H/.local/state XDG_DATA_HOME=$H/.local/share
     unset XDG_CACHE_HOME   # never the caller's cache: the default, under the HOME each test sets
     mkdir -p "$H/.local/bin" "$H/.config/spark"
@@ -4742,8 +4750,18 @@ jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.dest
     && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = 'notes_find tools_check tools_measure about_open files_show files_attach files_find files_say' ] \
     && ok "provide: every hint spelled out (the spec's default is destructive); destructive only where something is lost (#112): forget, close, remove, delete, delete for good and empty the trash (#130), the power steps, a print job cancelled, the network manager installed, a program ended (v0.129); the network, clock and printer settings carry undo instead; read only: notes find, the check and the measure of tools, about, files show, attach, find and say" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
 [ "$(jq -r 'select(._meta["spark-shell/opens"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'about_site apps_open apps_terminal files_app files_browse files_open files_reveal notes_open power_lock storage_open tools_clean_packages tools_fix tools_front tools_update tools_update_system window_focus' ] \
-    && [ "$(jq -s '[.[] | select(._meta != null and ._meta != {"spark-shell/opens": true})] | length' "$H/tools.all")" = 0 ] \
-    && ok "provide: the tools that put a window in front say so (_meta spark-shell/opens), so the dialog steps aside at the click (#196); no other tool carries _meta" || bad "tool opens" "$(jq -c 'select(._meta) | [.name, ._meta]' "$H/tools.all")"
+    && [ "$(jq -s '[.[] | select(._meta != null and ._meta != {"spark-shell/opens": true} and ._meta != {"spark-shell/opens": true, "spark-shell/person": true})] | length' "$H/tools.all")" = 0 ] \
+    && [ "$(jq -r 'select(._meta["spark-shell/person"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'tools_clean_packages tools_fix tools_update tools_update_system' ] \
+    && ok "provide: the tools that put a window in front say so (_meta spark-shell/opens), so the dialog steps aside at the click (#196); a person's step says so too (spark-shell/person: a terminal, or sudo, v0.129.2); no other _meta" || bad "tool opens" "$(jq -c 'select(._meta) | [.name, ._meta]' "$H/tools.all")"
+# a person's step to the dialog alone (v0.129.2): another client that names itself (spark's MCP list, the prompt line, spark
+# do) neither sees it nor calls it; the suite's raw requests, which name no client, see every tool
+pinit() { rq 0 initialize "$(jq -cn --arg n "$1" '{protocolVersion: "2025-06-18", capabilities: {}, clientInfo: {name: $n, version: "1"}}')"; }
+mcp tools "$(pinit spark-dialog)" "$(rq 1 tools/list)"; _pd=$(ans 1 | jq -r '[.result.tools[].name] | join(" ")')
+mcp tools "$(pinit spark)" "$(rq 1 tools/list)" "$(call 2 tools_update)"; _ps=$(ans 1 | jq -r '[.result.tools[].name] | join(" ")')
+[ "$_pd" = 'tools_check tools_fix tools_copy_details tools_update tools_update_system tools_export tools_front tools_end tools_measure tools_clean_packages' ] \
+    && [ "$_ps" = 'tools_check tools_copy_details tools_export tools_front tools_end tools_measure' ] \
+    && [ "$(ans 2 | jq -r .error.message)" = 'tools_update runs from its row in the dialog, never from a plan' ] \
+    && ok "provide tools: a person's step to the dialog alone; spark sees the rest, and a call of one is refused in one line (v0.129.2)" || bad "person steps" "dialog: $_pd | spark: $_ps | $(ans 2)"
 # tools (v0.129): six utilities, a page each; the check kept, a fake /proc, a measured home; every step that ends or runs
 # something held to its gate. Linux alone: macOS has no /proc and no tools place
 if [ "$(uname -s)" != Darwin ]; then
@@ -5016,7 +5034,7 @@ if env --default-signal=PIPE true 2>/dev/null; then printf '#!/bin/sh\nexec env 
 elif command -v python3 >/dev/null 2>&1; then printf '#!/usr/bin/env python3\nimport os, signal, sys\nsignal.signal(signal.SIGPIPE, signal.SIG_DFL)\nos.execvp(sys.argv[1], sys.argv[1:])\n' > "$H/dflpipe"
 else rm -f "$H/dflpipe"; fi
 if [ -f "$H/dflpipe" ]; then
-    chmod +x "$H/dflpipe"; pt=$(mktemp -d); rm -f "$H/prov.rc"
+    chmod +x "$H/dflpipe"; pt=$(tmpd); rm -f "$H/prov.rc"
     { rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}'; sleep 1; rq 2 no/such '{}'; sleep 1; rq 3 ping '{}'; sleep 1; } \
         | { TMPDIR="$pt" "$H/dflpipe" sh "$SH" provide theme 2>/dev/null; echo $? > "$H/prov.rc"; } | head -c 1 > /dev/null
     sleep 1
@@ -5952,7 +5970,7 @@ done
 sw=$(grep '^exec swayidle ' "$REPO/templates/login/sway.conf"); [ "$sw" = "exec swayidle timeout 300 'swaymsg \"output * power off\"' resume 'swaymsg \"output * power on\"'" ] \
     && ok "templates/login: five idle minutes turn the display off, a key or a move turns it on" || bad "login swayidle" "$(grep -n swayidle "$REPO/templates/login/sway.conf")"
 # the session says nothing on tty1: the console cleared and its cursor hidden, then what sway and its children say lands in login.log
-ls_d=$(mktemp -d); mkdir -p "$ls_d/bin" "$ls_d/run"
+ls_d=$(tmpd); mkdir -p "$ls_d/bin" "$ls_d/run"
 printf '#!/bin/sh\necho "sway $*"\necho "[main.c:332] Found config * for output" >&2\n' > "$ls_d/bin/sway"; chmod +x "$ls_d/bin/sway"
 sed 's|@LOGIN_ETC@|etc/spark-shell/login|g' "$REPO/templates/login/session" > "$ls_d/session"
 out=$(PATH="$ls_d/bin:$PATH" XDG_RUNTIME_DIR="$ls_d/run" sh "$ls_d/session" 2>&1)
@@ -5960,7 +5978,7 @@ out=$(PATH="$ls_d/bin:$PATH" XDG_RUNTIME_DIR="$ls_d/run" sh "$ls_d/session" 2>&1
     && ok "templates/login/session: tty1 is cleared, its cursor hidden, and sway's words go to login.log, none on the screen" || bad "login session quiet" "$(printf '%s' "$out" | od -c | head -3) $(cat "$ls_d/run/login.log" 2>&1)"
 rm -rf "$ls_d"
 # the login window opens on the main screen (#116): the screen at 0 0 is focused before foot opens it
-lw_d=$(mktemp -d); mkdir -p "$lw_d/bin"
+lw_d=$(tmpd); mkdir -p "$lw_d/bin"
 printf '#!/bin/sh\necho "foot $*" >> "%s/log"\n' "$lw_d" > "$lw_d/bin/foot"
 cat > "$lw_d/bin/swaymsg" <<EOF
 #!/bin/sh
@@ -6466,7 +6484,7 @@ fi
 # section is a note.
 if command -v ssh-keygen >/dev/null 2>&1; then
     fresh
-    U=$(mktemp -d)
+    U=$(tmpd)
     export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t GIT_CONFIG_NOSYSTEM=1
     ssh-keygen -q -t ed25519 -N '' -C t -f "$U/key"
     ssh-keygen -q -t ed25519 -N '' -C o -f "$U/other"

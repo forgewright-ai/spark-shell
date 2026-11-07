@@ -344,6 +344,7 @@ mod tests {
             read_only: false,
             destructive: true,
             opens: false,
+            person: false,
         }
     }
     fn args(v: Value) -> Map<String, Value> {
@@ -516,6 +517,7 @@ mod tests {
             schema: json!({"type": "object", "properties": {"name": {"type": "string", "minLength": 1}}, "required": ["name"], "additionalProperties": false}),
             destructive: false,
             opens: false,
+            person: false,
             read_only: false,
         }];
         let r = crate::model::rows(r#"{"title":"theme","rows":[
@@ -547,6 +549,7 @@ mod tests {
             schema: json!({"type": "object", "properties": {"level": {"type": "string", "enum": ["up", "down", "10", "25", "30"]}}, "required": ["level"], "additionalProperties": false}),
             destructive: false,
             opens: false,
+            person: false,
             read_only: false,
         }];
         let r = crate::model::rows(r#"{"title":"display","rows":[
@@ -585,6 +588,7 @@ mod tests {
             schema: json!({"type": "object", "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 256}}, "required": ["name"], "additionalProperties": false}),
             destructive: false,
             opens: false,
+            person: false,
             read_only: false,
         }];
         let r = crate::model::rows(r#"{"title":"theme","rows":[{"id":"theme:save","sign":"blank","text":"save this look as","tool":{"name":"theme_save","arguments":{"name":""},"ask":["name"]},"more":[],"columns":[],"children":null}]}"#).unwrap();
@@ -634,6 +638,7 @@ mod path_tests {
             read_only: false,
             destructive: false,
             opens: false,
+            person: false,
         }];
         let call = |p: &str| Call {
             name: "files_move".into(),

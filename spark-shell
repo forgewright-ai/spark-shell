@@ -6935,6 +6935,7 @@ want_tools() {   # -> the desktop's tools as one tools/list result: those of the
     for t in $PROVIDE_TOOLS; do
         [ -z "${WANT_ONLY:-}" ] || [ "$t" = "$WANT_ONLY" ] || continue   # theme WORDS: the one tool the words are for
         tool_spec "$t" || continue
+        case $_th in *p*) continue ;; esac   # a person's step: from its row alone, never from a plan (v0.129.2)
         case $_ts in files) continue ;; about|undo) ;; *) case $_here in *" $_ts "*) ;; *) continue ;; esac ;; esac
         tool_json "$t"   # no enum of the names listed now: a grammar held to them wrote a wrong network for one not listed; a name not listed whole is refused by the gate instead
     done | jq -cs '{tools: .}'
@@ -7129,7 +7130,8 @@ scrub_text() {   # stdin -> the same lines scrubbed; C0 and DEL alone where ther
 # when a person is asked for it, _tq a secret argument, _th the
 # hints (r read only, d destructive, i idempotent, f free: the argument
 # names no row, o opens: it puts a window in front, so the dialog steps
-# aside at the click, #196), _tt the title, the sentence the model may say, and _td
+# aside at the click, #196; p a person's step: it runs in a terminal, or with
+# sudo, from its row alone and never from a plan, v0.129.2), _tt the title, the sentence the model may say, and _td
 # the words for a person; _te the extra arguments, NAME:KIND a word
 # each, NAME? one the call may leave out. False for a name that is no
 # tool. The panel's action `=` takes the argument itself as the action
@@ -7259,14 +7261,14 @@ tool_spec() {
         about_open)        _ts=about _ta=open _th=ri _tt='about' _td='The version, the project, the license and the credits.' ;;
         about_site)        _ts=about _ta=site _th=o _tt='about site' _td='Open the project page in the browser.' ;;
         tools_check)       _ts=tools _ta=check _th=rf _tt='tools check' _td='Run spark-shell check again and keep its result.' ;;
-        tools_fix)         _ts=tools _ta=fix _tp=command _tk=string _th=of _tt='tools fix COMMAND' _td='Run a fix the last check gave, a spark-shell command, in a terminal window.' ;;
+        tools_fix)         _ts=tools _ta=fix _tp=command _tk=string _th=ofp _tt='tools fix COMMAND' _td='Run a fix the last check gave, a spark-shell command, in a terminal window.' ;;
         tools_copy_details) _ts=tools _ta=copy-details _th=f _tt='tools copy details' _td='Copy the hardware and software details to the clipboard, for a bug report.' ;;
-        tools_update)      _ts=tools _ta=update _th=of _tt='tools update' _td='Run spark-shell update in a terminal window.' ;;
-        tools_update_system) _ts=tools _ta=update-system _th=of _tt='tools update system' _td='Run the system upgrade in a terminal window.' ;;
+        tools_update)      _ts=tools _ta=update _th=ofp _tt='tools update' _td='Run spark-shell update in a terminal window.' ;;
+        tools_update_system) _ts=tools _ta=update-system _th=ofp _tt='tools update system' _td='Run the system upgrade in a terminal window.' ;;
         tools_export)      _ts=tools _ta=export _th=f _tt='tools export' _td='Save the installed software as a CycloneDX file.' ;;
         tools_front)       _ts=tools _ta=front _tp=name _tk=string _th=of _tt='tools front NAME' _td='Put a running program'"'"'s newest window in front.' ;;
         tools_measure)     _ts=tools _ta=measure _th=rf _tt='tools measure' _td='Measure what uses the disk again: your home by folder, the trash, the package cache and the app caches.' ;;
-        tools_clean_packages) _ts=tools _ta=clean-packages _th=of _tt='tools clean packages' _td='Run the package manager'"'"'s clean of its download cache in a terminal window.' ;;
+        tools_clean_packages) _ts=tools _ta=clean-packages _th=ofp _tt='tools clean packages' _td='Run the package manager'"'"'s clean of its download cache in a terminal window.' ;;
         tools_end)         _ts=tools _ta=end _tp=name _tk=string _th=df _tt='end NAME' _td='End a program and all its processes. Unsaved work is lost.' ;;
         undo_all)          _ts=undo _ta=all _th='' _tt='undo' _td='Take the last thing done back.' ;;
         files_browse)      _ts=files _ta=browse _tp=path _tk=path _th=ifo _tt='files browse PATH' _td='Open a folder in the system file manager, for anything beyond the steps here. path is a row'"'"'s own path, exactly as written.' ;;
@@ -7335,12 +7337,18 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
             required: (if $n == "notes_add" or $n == "notes_append" or ($n | startswith("reminders_")) or ($n | test("^(out|mic)_(level|adjust|mute|unmute)$")) then ["receipt", "effect"] elif $n == "window_focus" or $n == "window_close" then ["effect"] else [] end), additionalProperties: false},
          annotations: {title: $t, readOnlyHint: ($h | contains("r")), destructiveHint: ($h | contains("d")), idempotentHint: ($h | contains("i")), openWorldHint: false}}
          | if ($h | contains("o")) then ._meta = {"spark-shell/opens": true} else . end
+         | if ($h | contains("p")) then ._meta = ((._meta // {}) + {"spark-shell/person": true}) else . end
          | if $n == "notes_append" then .inputSchema = {type:"object", properties:{name:{type:"string", minLength:1, maxLength:255, description:"Exact existing Markdown filename"}, text:{type:"string", minLength:1, maxLength:16384, contentMediaType:"text/plain", description:"Text to append; spaces and line breaks are preserved"}}, required:["name","text"], additionalProperties:false} else . end
          | if $n == "notes_rename" then .inputSchema = {type:"object", properties:{name:{type:"string", minLength:1, maxLength:255, description:"Exact existing Markdown filename"}, to:{type:"string", minLength:1, maxLength:255, description:"the new title"}}, required:["name","to"], additionalProperties:false} else . end'
 }
-provide_tools() {   # provide_tools SECTION -> the section's tools as one JSON array
-    for _n in $PROVIDE_TOOLS; do tool_spec "$_n" && [ "$_ts" = "$1" ] && tool_json "$_n"; done | jq -cs .
+provide_tools() {   # provide_tools SECTION -> the section's tools as one JSON array; a person's step (p) to the dialog alone
+    for _n in $PROVIDE_TOOLS; do tool_spec "$_n" && [ "$_ts" = "$1" ] && { provide_person_ok || case $_th in *p*) false ;; esac; } && tool_json "$_n"; done | jq -cs .
 }
+# A person's step (hint p: a terminal, or sudo) runs from its row in the dialog, never from a plan (v0.129.2): a client
+# that names itself as another (spark's MCP list, the prompt line, spark do) neither sees it nor calls it. A client that
+# says no name is the suite's raw requests, and sees every tool
+PROVIDE_CLIENT=''
+provide_person_ok() { case $PROVIDE_CLIENT in ''|spark-dialog) return 0 ;; esac; return 1; }
 provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state" (the section's state now, the dialog's subtitle), "rows": [{"id", "sign", "text", "tool", "more", "columns", "children", "group"}], "short": [ID]}; a tool may carry `ask`, the arguments the host asks the person for
     [ "$1" != clock ] || [ "${2:-}" = settings ] || { provide_clock_rows; return; }
     [ "$1" != about ] || { provide_about_rows; return; }
@@ -8189,6 +8197,7 @@ EOF
     case $_id in '"'*|[0-9]*|-[0-9]*) ;; *) rpc_error null -32600 "an id is a string or a number"; return 0 ;; esac
     case $_method in
         initialize)
+            PROVIDE_CLIENT=$(printf '%s' "$_params" | jq -r '.clientInfo.name // "" | tostring | gsub("[^A-Za-z0-9._-]"; "")')
             [ "$(printf '%s' "$_params" | jq -r '.capabilities.experimental["spark-shell/pairing"] == true')" != true ] || CLIENT_PAIRING=1
             [ "$(printf '%s' "$_params" | jq -r '.capabilities.roots != null')" != true ] || CLIENT_ROOTS=1
             rpc_result "$_id" "$(jq -cn --arg v "$PROVIDE_PROTOCOL" --arg n "$sec" --arg t "$(provide_title "$sec")" --arg ver "$(panel_version)" \
@@ -8355,6 +8364,7 @@ EOF
     case $_name in *[!a-z0-9_]*|[!a-z]*|'') rpc_error "$1" -32602 "no tool by that name"; return 0 ;; esac
     WIN_LABELS_READ=''   # a call's own read of the windows is its alone
     { tool_spec "$_name" && [ "$_ts" = "$sec" ]; } || { rpc_error "$1" -32602 "no tool $_name in $sec"; return 0; }
+    case $_th in *p*) provide_person_ok || { rpc_error "$1" -32602 "$_name runs from its row in the dialog, never from a plan"; return 0; } ;; esac
     _title=$_tt   # the call's own title: the undo's tool_spec below sets _tt to its own (the review: "bar: bar on did not work")
     [ "$_name" != notes_append ] || { provide_notes_append "$1" "$_args"; return 0; }
     case $_name in notes_rename|notes_trash|notes_restore) provide_notes_step "$1" "$_name" "$_args"; return 0 ;; esac   # a note's file by its exact name, as the append (#169)

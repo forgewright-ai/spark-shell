@@ -953,7 +953,9 @@ alone; `spark-shell panel tools --list` prints the same rows as text.
 - What needs sudo or prints output runs in a terminal window: the
   status row says the command first, the dialog steps aside, and the
   window shows the command, runs it and ends with `press Enter to
-  close`.
+  close`. Those steps (fix, update spark-shell, update system, clean
+  the package cache) run from their row alone: a plan is never offered
+  them, and a plan that names one is refused (v0.129.2).
 
 Check (Norton Disk Doctor) is `spark-shell check` grouped by fix, not by
 test. First `problems`, each a fact: a plain label (`programs`, not

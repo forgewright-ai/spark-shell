@@ -103,6 +103,7 @@ fn a_dead_or_unready_provider_is_not_offered_and_the_files_are() {
             read_only: true,
             destructive: false,
             opens: false,
+            person: false,
         }];
     }
     app.providers[2].dead = Some("gone".into());
@@ -624,4 +625,54 @@ fn a_raw_error_of_the_system_is_said_in_plain_words() {
     app.helper(Helper::Want(serial), Err("No such file or directory (os error 2)".into()));
     assert_eq!(app.reply.as_ref().unwrap().text, "spark did not answer: spark is not installed here");
     assert_eq!(app.input, "make it quieter", "the words come back");
+}
+
+#[test]
+fn a_persons_step_is_never_offered_to_a_plan_and_a_plan_that_names_one_is_refused() {
+    // tools' terminal steps (a fix, an update, the package cache's clean) carry _meta spark-shell/person: they run from
+    // their row alone (dialog/DESIGN.md, Tools, v0.129.2)
+    let (mut app, rx, tx) = app_with(&["tools"]);
+    app.cfg.spark = "/bin/sh".into();
+    app.model_name = Some("test-model".into());
+    let calls = Arc::new(Mutex::new(vec![]));
+    let captured = calls.clone();
+    let tools = json!([
+        {"name": "tools_check", "title": "tools check", "description": "Run the setup's tests.", "inputSchema": {"type": "object", "properties": {}},
+         "annotations": {"readOnlyHint": true, "destructiveHint": false}},
+        {"name": "tools_update", "title": "tools update", "description": "Run spark-shell update in a terminal window.", "inputSchema": {"type": "object", "properties": {}},
+         "annotations": {"readOnlyHint": false, "destructiveHint": false}, "_meta": {"spark-shell/opens": true, "spark-shell/person": true}}
+    ]);
+    let rows = json!({"title": "tools", "state": "", "rows": [
+        {"id": "tools:check", "sign": "blank", "text": "check", "tool": null, "more": [], "columns": ["no problems"], "children": "spark-shell://tools/rows/check", "group": null}
+    ], "short": []});
+    let script: Script = Box::new(move |v, send| {
+        if let Some(r) = ordinary("tools", v, &tools, &rows) {
+            return send(r);
+        }
+        if v["method"] == "tools/call" {
+            captured.lock().unwrap().push(v["params"].clone());
+            send(result(
+                &v["id"],
+                json!({"isError": false, "content": [{"type": "text", "text": "done"}], "structuredContent": {"receipt": "done"}}),
+            ));
+        }
+    });
+    app.servers.push(stub(0, "tools", script, tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && a.providers[0].tools.len() == 2));
+    assert!(app.providers[0].tools.iter().any(|t| t.name == "tools_update" && t.person));
+    app.view = View::Section(0);
+    app.jobs.clear();
+    type_words(&mut app, "update everything");
+    app.ask();
+    let (serial, _, offered) = request(&app);
+    let names: Vec<&str> = offered["tools"].as_array().unwrap().iter().filter_map(|t| t["name"].as_str()).collect();
+    assert_eq!(names, vec!["tools_check"], "a person's step is not in the plan's tool list");
+    propose(&mut app, serial, json!([{"name": "tools_update", "arguments": {}}]));
+    assert!(
+        app.reply.as_ref().is_some_and(|r| r.text.contains("never from a plan")),
+        "{:?}",
+        app.reply.as_ref().map(|r| r.text.clone())
+    );
+    assert!(app.staged.is_none() && calls.lock().unwrap().is_empty(), "nothing staged, nothing called");
 }

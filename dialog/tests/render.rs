@@ -1726,3 +1726,27 @@ fn power_is_five_verbs_and_the_uptime() {
     assert!(matches!(app.mode, Mode::Normal), "{:?}", app.mode);
     assert_eq!((app.sel, app.in_list), (4, true), "back on shutdown");
 }
+
+#[test]
+fn home_and_end_with_nothing_typed_take_the_list_on_a_page_just_opened() {
+    // help opens with the prompt's line empty and nothing lit: End went to the end of that empty line, so it moved
+    // nothing; with nothing typed, End is the list's last row and Home its first (v0.129.2)
+    let mut app = base();
+    app.view = View::Help;
+    app.came_from = vec![View::Home];
+    app.in_list = false;
+    app.sel = 0;
+    app.line_end();
+    let last = app.picks().len() - 1;
+    assert_eq!((app.in_list, app.sel), (true, last), "End: the last row");
+    app.line_start();
+    assert_eq!((app.in_list, app.sel), (true, 0), "Home: the first row");
+    // words typed: Home and End are the line's, as before
+    app.in_list = false;
+    app.input = "window".into();
+    app.cursor = 0;
+    app.line_end();
+    assert_eq!((app.in_list, app.cursor), (false, 6), "End with words: the line's end");
+    app.line_start();
+    assert_eq!((app.in_list, app.cursor), (false, 0), "Home with words: the line's start");
+}

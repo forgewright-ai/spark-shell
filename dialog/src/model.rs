@@ -281,6 +281,8 @@ pub struct Tool {
     pub destructive: bool,
     /// It puts a window in front (an app, a file, a terminal): the dialog steps aside at the click.
     pub opens: bool,
+    /// A person's step (a terminal, or sudo): it runs from its row alone, never from a plan (v0.129.2).
+    pub person: bool,
 }
 
 /// A tool's name is offered only in this shape (the review's L3).
@@ -362,6 +364,7 @@ pub fn tools(v: &Value) -> Vec<Tool> {
                         read_only,
                         destructive,
                         opens: t.pointer("/_meta/spark-shell~1opens").and_then(Value::as_bool).unwrap_or(false),
+                        person: t.pointer("/_meta/spark-shell~1person").and_then(Value::as_bool).unwrap_or(false),
                     })
                 })
                 .collect()
