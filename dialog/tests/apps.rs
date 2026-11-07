@@ -1128,5 +1128,20 @@ fn up_comes_back_to_the_top_of_the_list_its_first_heading_in_view() {
         at_prompt.iter().any(|l| l.trim() == "development"),
         "at the prompt, the list from its top: {at_prompt:?}"
     );
+    // PageDown at the prompt scrolls the list and lights nothing: the wheel up scrolls it back to its top
+    a.page(1);
+    let (b, _, _) = draw(&mut a, 60, 24);
+    assert!(!screen_text(&b).iter().any(|l| l.trim() == "development"), "PageDown scrolled the heading away");
+    for _ in 0..10 {
+        a.wheel(-1);
+        draw(&mut a, 60, 24);
+    }
+    assert!(!a.in_list, "the wheel scrolls; it lights nothing at the prompt");
+    let (b, _, _) = draw(&mut a, 60, 24);
+    let wheeled = screen_text(&b);
+    assert!(
+        wheeled.iter().any(|l| l.trim() == "development"),
+        "the wheel up brings the top back: {wheeled:?}"
+    );
     cleanup(&a);
 }

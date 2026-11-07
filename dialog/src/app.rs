@@ -4363,6 +4363,15 @@ impl App {
             self.scroll = step(self.scroll);
             return;
         }
+        // at the prompt with the list scrolled (PageDown lights no row), the wheel up scrolls it back to its top before
+        // it does anything else: the wheel is a scroll, never the prompt's history while the list stands away (v0.129.1)
+        if d < 0 && !self.in_list && self.chip_focus.is_none() {
+            let now = crate::ui::body_scroll(self);
+            if now > 0 {
+                self.scroll = step(now);
+                return;
+            }
+        }
         if d < 0 {
             self.up();
         } else {

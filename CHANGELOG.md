@@ -8,7 +8,9 @@
   into view, and the prompt kept the list where it was. A row lit now
   brings its heading and the air above it into view where they fit,
   the first row brings the top, and the prompt shows the list from its
-  top.
+  top. PageDown at the prompt scrolls and lights no row; the wheel up
+  there recalled the prompt's history and left the list away. It
+  scrolls the list back to its top now, before anything else.
 
 ## v0.129
 
