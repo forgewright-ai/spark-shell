@@ -1,6 +1,6 @@
 //! The six transitions drawn here, in the palette the dialog wears (#247, arc 2): moon, ripple, tide, embers,
 //! sun and flight, as lib/animation.py draws them, shape for shape. The shipped palettes play the GIFs
-//! make.py drew ahead; a palette with none (a theme from a picture or from words, a palette file of yours)
+//! lib/animation.py drew ahead; a palette with none (a theme from a picture or from words, a palette file of yours)
 //! plays these, drawn when the dialog opens or its look changes, from the colors it already has: no file, no
 //! cache, no package. spark-shell names one as `draw:PIECE` where it would name a folder.
 //!
@@ -102,7 +102,7 @@ impl Roles {
         Some(Roles::with(c("PANEL_BG")?, c("HEX_FG")?, c("PANEL_MUTED")?, c("HEX_ACCENT")?, ansi))
     }
 
-    /// From a palette file's THEME_* keys, worked out as make.py and spark-shell's panel_load do: the surface the
+    /// From a palette file's THEME_* keys, worked out as lib/animation.py and spark-shell's panel_load do: the surface the
     /// ground 9% of the way to the text, the quiet text lifted until it reads on it.
     pub fn from_theme(get: impl Fn(&str) -> Option<String>) -> Roles {
         let c = |k: &str, d: &str| {
@@ -601,7 +601,7 @@ fn tide(c: &Canvas, ro: &Roles, anim: Anim, f: f64) -> Vec<Layer> {
     out
 }
 
-/// make.py's embers (random.Random(11)): birth in the loop, column, life, rise, drift, wobble.
+/// lib/animation.py's embers (random.Random(11)): birth in the loop, column, life, rise, drift, wobble.
 const EMBERS: [(i32, i32, i32, f64, f64, f64); 22] = [
     (1, 33, 12, 5.213298177079218, 0.35504563590425864, 1.1925847566102958),
     (2, 31, 13, 5.827358370535915, -0.40587654377078153, 1.9053599292820202),
@@ -626,7 +626,7 @@ const EMBERS: [(i32, i32, i32, f64, f64, f64); 22] = [
     (28, 42, 13, 4.84909741957265, -0.31019933403673994, 4.6435851680485705),
     (0, 22, 12, 5.987941557679543, 0.10353421478344349, 2.6467513663894073),
 ];
-/// make.py's flicker for each cell of the line (32, from column 14): phase, turns a loop.
+/// lib/animation.py's flicker for each cell of the line (32, from column 14): phase, turns a loop.
 const FLICK: [(f64, i32); 32] = [
     (0.6521131989718737, 1),
     (3.217594590527116, 2),
@@ -912,7 +912,7 @@ mod tests {
         Roles::from_theme(get)
     }
 
-    /// A GIF's frames as RGBA, each laid alone (make.py clears each after it: disposal 2), with its length.
+    /// A GIF's frames as RGBA, each laid alone (lib/animation.py clears each after it: disposal 2), with its length.
     fn gif_frames(path: &str) -> Vec<(Vec<u8>, u32)> {
         let mut opts = gif::DecodeOptions::new();
         opts.set_color_output(gif::ColorOutput::RGBA);
@@ -958,7 +958,7 @@ mod tests {
         assert!(frames("comet", &ro, 1, Anim::Open).is_none());
     }
 
-    /// The pieces drawn here are the GIFs make.py drew, frame for frame: the same pixels drawn, in the same colors
+    /// The pieces drawn here are the GIFs lib/animation.py drew, frame for frame: the same pixels drawn, in the same colors
     /// but for the GIF's cut to 255 of them, in a dark and a light palette.
     #[test]
     fn every_piece_is_the_gif_make_py_drew() {

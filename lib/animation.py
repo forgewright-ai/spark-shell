@@ -624,7 +624,7 @@ def lzw(data, min_size):
 def gate():
     """What the privacy gate refuses in the tree (ci.yml's privacy job reads
     binary files too): an e-mail address, a private IPv4 address, a home path
-    naming a user, and a word of .privacy-terms or of your own list (the one
+    naming a user, and a word of your own list (the one
     .githooks/pre-commit reads). Compressed bytes can spell one by chance."""
     shapes = [
         rb"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",

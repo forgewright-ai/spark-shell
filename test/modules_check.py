@@ -82,20 +82,23 @@ def main():
     files = modules()
     order = {name: i for i, (name, _) in enumerate(files)}
     defs, owner, top_sets, reads, words, top_words, top_reads, decls = {}, {}, {}, {}, {}, {}, {}, {}
-    current = None
     for name, path in files:
         lines, decls[name] = code_lines(path)
+        MODULE_TEXT[name] = "\n".join(text for _, text, _, _ in lines)
         top_sets[name], reads[name], words[name], top_words[name], top_reads[name] = set(), set(), set(), set(), set()
         for n, text, fn, inside in lines:
             if fn:
                 defs.setdefault(fn, []).append((name, n))
-                current = fn
                 text = text[len(fn) + 2:]
-            data = bool(ASSIGN.match(text) or DEFAULT.match(text))   # an assignment's right side is data, not a call
+            data = bool(ASSIGN.match(text) or DEFAULT.match(text))   # an assignment's right side is data, not a call...
             for w in WORD.findall(text):
                 words[name].add(w)
                 if not inside and not data:
                     top_words[name].add(w)
+            if not inside and data:   # ...but a command substitution in it runs at source time
+                for sub in re.findall(r"\$\(([^()]*)\)|`([^`]*)`", text):
+                    for w in WORD.findall(sub[0] + " " + sub[1]):
+                        top_words[name].add(w)
             for v in READ.findall(text):
                 reads[name].add(v)
                 if not inside:
@@ -182,20 +185,12 @@ def main():
     return 0
 
 
+MODULE_TEXT = {}   # a module's code lines, comments gone, as one text
+
+
 def words_only_def(fn, module, files):
     """True when the function's name appears in its own module only on its definition line."""
-    path = dict(files)[module]
-    count = 0
-    with open(path, encoding="utf-8") as fh:
-        for line in fh:
-            s = line.strip()
-            if s.startswith("#"):
-                continue
-            m = TRAIL.match(line.rstrip("\n"))
-            if m and not m.group(1).count('"') % 2 and not m.group(1).count("'") % 2:
-                line = m.group(1)
-            count += len(re.findall(r"\b%s\b" % re.escape(fn), line))
-    return count <= 1
+    return len(re.findall(r"\b%s\b" % re.escape(fn), MODULE_TEXT[module])) <= 1
 
 
 if __name__ == "__main__":

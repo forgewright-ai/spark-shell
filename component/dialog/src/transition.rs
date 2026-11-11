@@ -148,7 +148,7 @@ mod tests {
     fn every_piece_is_a_film_in_a_dark_and_a_light_palette() {
         let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../gallery/animation");
         let mut n = 0;
-        // a piece is a folder; one a tool left (__pycache__ beside make.py) is not
+        // a piece is a folder; one a tool left (__pycache__ beside lib/animation.py) is not
         for piece in std::fs::read_dir(root)
             .unwrap()
             .flatten()
