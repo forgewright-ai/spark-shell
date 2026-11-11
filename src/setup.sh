@@ -112,22 +112,65 @@ cmd_on() {   # cmd_on [desktop|login]
     [ "${1:-}" != desktop ] || [ -z "$(desktop_na)" ] || refuse "$(desktop_na)"
     [ "${1:-}" != login ] || [ -z "$(login_na)" ] || refuse_in login "$(login_na)"
     config_load
+    on_config "$@"
+    sudo_upfront
+    loud && printf '== packages\n'
+    on_packages "$@"
+    if [ "$MODE" != dry ]; then
+        case ${1:-} in login) config_set LOGIN yes ;; desktop) config_set DESKTOP sway ;; esac
+    fi
+    # why the desktop's packages are not in the row above
+    if _dna=$(desktop_na) && [ -n "$_dna" ]; then
+        [ "$DESKTOP" != sway ] || skip desktop "$_dna"
+    elif ! desktop_wanted; then
+        skip desktop "DESKTOP=none (the config)"
+    fi
+    # the font after the packages, before anything renders FONT
+    neon_install
+    neon_move
+    faces_install
+    private_dirs
+    loud && printf '\n== prompt\n'
+    on_prompt
+    on_terminfo
+    loud && printf '\n== files\n'
+    tree=$(rc_tree)
+    for f in $(rc_files); do
+        link_one "$tree/$f" "$HOME/$f"
+    done
+    theme_files   # the palette first: every render reads theme.env
+    render_all
+    old_greetd_off   # the login screen, handed back to getty
+    if login_wanted; then login_screen_apply; else login_screen_off; fi
+    # spark-shell on PATH, so the prompt and tmux can call it
+    link_one "$REPO/spark-shell" "$HOME/.local/bin/spark-shell"
+    tmux_reload
+    loud && printf '\n== console\n'
+    if [ "$THEME" = none ]; then palette_off all; fi
+    console_apply
+    if [ "$MODE" = dry ]; then
+        dry_close
+    else
+        theme_seen
+        console_now
+        if [ "$changes" -eq 0 ] && [ "$todo" -eq 0 ]; then echo "Nothing to do"; else echo "open a new shell (exec \$SHELL)"; fi
+    fi
+}
+on_config() {   # on_config [desktop|login] -- LOGIN=yes or DESKTOP=sway for this run; the config is written after the packages install
     if [ "${1:-}" = login ]; then
-        # LOGIN=yes is written only after the packages install
         if [ "$LOGIN" != yes ]; then
             if [ "$MODE" = dry ]; then row would config "LOGIN=yes ($CONFIG)"; else changes=$((changes + 1)); fi
         fi
         LOGIN=yes; export LOGIN
     fi
     if [ "${1:-}" = desktop ]; then
-        # DESKTOP=sway, the same
         if [ "$DESKTOP" != sway ]; then
             if [ "$MODE" = dry ]; then row would config "DESKTOP=sway ($CONFIG)"; else changes=$((changes + 1)); fi
         fi
         DESKTOP=sway; export DESKTOP
     fi
-    sudo_upfront
-    loud && printf '== packages\n'
+}
+on_packages() {   # on_packages [desktop|login] -- the packages row: the lists installed, or a todo; a return of 1 ends the run (set -e) before any file changes
     pm_detect
     if [ "$PM" = brew ]; then
         if ! command -v brew >/dev/null 2>&1; then
@@ -180,23 +223,8 @@ cmd_on() {   # cmd_on [desktop|login]
             fi
         fi
     fi
-    if [ "$MODE" != dry ]; then
-        case ${1:-} in login) config_set LOGIN yes ;; desktop) config_set DESKTOP sway ;; esac
-    fi
-    # why the desktop's packages are not in the row above
-    if _dna=$(desktop_na) && [ -n "$_dna" ]; then
-        [ "$DESKTOP" != sway ] || skip desktop "$_dna"
-    elif ! desktop_wanted; then
-        skip desktop "DESKTOP=none (the config)"
-    fi
-    # the font after the packages, before anything renders FONT
-    neon_install
-    neon_move
-    faces_install
-    private_dirs
-    # starship from the package manager alone, nothing downloaded. A skip,
-    # not a todo: Debian's dry-run still ends in Nothing to do.
-    loud && printf '\n== prompt\n'
+}
+on_prompt() {   # the prompt row: starship from the package manager alone, nothing downloaded. A skip, not a todo: Debian's dry-run still ends in Nothing to do
     if [ "$PROMPT" != starship ]; then skip prompt "PROMPT=$PROMPT (the config): the shell's own"
     elif command -v starship >/dev/null 2>&1 || [ -x "$HOME/.local/bin/starship" ]; then
         v=$(PATH=$HOME/.local/bin:$PATH starship --version 2>/dev/null | head -1)
@@ -204,7 +232,8 @@ cmd_on() {   # cmd_on [desktop|login]
     elif starship_listed; then skip prompt "starship comes with the packages above"
     else skip prompt "no starship package here: the shell's own prompt (the rc files draw it)"
     fi
-    # terminfo: tmux-256color must know modified arrow keys
+}
+on_terminfo() {   # the terminfo row: tmux-256color must know modified arrow keys
     if infocmp -1x tmux-256color 2>/dev/null | grep -q 'kUP='; then
         ok terminfo "tmux-256color knows modified arrow keys"
     elif [ "$OS" = Darwin ]; then
@@ -217,28 +246,6 @@ cmd_on() {   # cmd_on [desktop|login]
         fi
     else
         skip terminfo "tmux-256color lacks kUP here -- a newer ncurses-term has it"
-    fi
-    loud && printf '\n== files\n'
-    tree=$(rc_tree)
-    for f in $(rc_files); do
-        link_one "$tree/$f" "$HOME/$f"
-    done
-    theme_files   # the palette first: every render reads theme.env
-    render_all
-    old_greetd_off   # the login screen, handed back to getty
-    if login_wanted; then login_screen_apply; else login_screen_off; fi
-    # spark-shell on PATH, so the prompt and tmux can call it
-    link_one "$REPO/spark-shell" "$HOME/.local/bin/spark-shell"
-    tmux_reload
-    loud && printf '\n== console\n'
-    if [ "$THEME" = none ]; then palette_off all; fi
-    console_apply
-    if [ "$MODE" = dry ]; then
-        dry_close
-    else
-        theme_seen
-        console_now
-        if [ "$changes" -eq 0 ] && [ "$todo" -eq 0 ]; then echo "Nothing to do"; else echo "open a new shell (exec \$SHELL)"; fi
     fi
 }
 
@@ -455,25 +462,46 @@ cmd_check() {   # the setup's tests, a line each, kept for tools' check
     [ ! -s "$TMP/check.out" ] || tools_check_keep "$TMP/check.out"
     return "$(cat "$TMP/check.rc" 2>/dev/null || echo 1)"
 }
-cmd_check_lines() {
+chk() {   # chk NAME ok|warn|fail DETAIL [REMEDY] -- a check's row; a warn names its remedy and does not fail
+    case $2 in
+        ok) printf 'ok     %-12s %s\n' "$1" "$3" ;;
+        warn) printf 'warn   %-12s %s -- %s\n' "$1" "$3" "${4:-}" ;;
+        *) printf 'FAIL   %-12s %s -- %s\n' "$1" "$3" "${4:-}"; fails=$((fails + 1)) ;;
+    esac
+}
+cmd_check_lines() {   # the checks, a row each; false when one fails
     config_load
     fails=0
-    chk() { # chk NAME ok|warn|fail DETAIL [REMEDY] -- a warn names its remedy and does not fail
-        case $2 in
-            ok) printf 'ok     %-12s %s\n' "$1" "$3" ;;
-            warn) printf 'warn   %-12s %s -- %s\n' "$1" "$3" "${4:-}" ;;
-            *) printf 'FAIL   %-12s %s -- %s\n' "$1" "$3" "${4:-}"; fails=$((fails + 1)) ;;
-        esac
-    }
+    check_rc
+    check_tools
+    check_terminfo
+    check_look
+    check_theme
+    check_font
+    check_quiet
+    check_desktop
+    check_pointer
+    check_saver
+    check_mcp
+    check_login
+    check_dialog
+    check_semantic
+    check_apps
+    check_bar
+    check_top
+    if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then sound_check; notify_check; portal_check; bt_check; storage_check; power_check; fi
+    [ "$fails" = 0 ]
+}
+check_rc() {   # the rc files are spark-shell's links
     tree=$(rc_tree)
     rc_ok=1
     for f in $(rc_files); do
         [ -L "$HOME/$f" ] && [ "$(readlink "$HOME/$f")" = "$tree/$f" ] || rc_ok=0
     done
     [ "$rc_ok" = 1 ] && chk rc ok "the rc files are spark-shell's" || chk rc fail "an rc file is not spark-shell's" "spark-shell on"
+}
+check_tools() {   # the tools are on PATH; starship only where a package manager has it and the config asks; ~/.local/bin too: a non-login ssh shell has no such PATH
     miss=''
-    # starship only where a package manager has it and the config asks;
-    # ~/.local/bin too: a non-login ssh shell has no such PATH
     pm_detect
     tools="tmux fzf zoxide eza bat btop fd"
     if [ "$PROMPT" = starship ] && starship_listed; then tools="$tools starship"; fi
@@ -481,9 +509,12 @@ cmd_check_lines() {
         tool_here "$t" || miss="$miss $t"
     done
     [ -z "$miss" ] && chk tools ok "$(printf '%s' "$tools" | sed 's/ /, /g')" || chk tools fail "missing:$miss" "spark-shell on"
+}
+check_terminfo() {   # tmux-256color knows modified arrow keys
     infocmp -1x tmux-256color 2>/dev/null | grep -q 'kUP=' && chk terminfo ok "tmux-256color knows modified arrows" \
         || chk terminfo fail "tmux-256color lacks kUP" "spark-shell on"
-    # render freshness: what on would write vs what is on disk
+}
+check_look() {   # render freshness: what on would write vs what is on disk
     theme_load
     EXPR=$(render_expr)
     stale=''
@@ -493,9 +524,8 @@ cmd_check_lines() {
         cmp -s "$TMP/chk" "$HOME/$rel" || stale="$stale $rel"
     done
     [ -z "$stale" ] && chk look ok "the settings files match the palette" || chk look fail "out of date:$stale" "spark-shell on"
-    check_theme
-    check_font
-    check_quiet
+}
+check_desktop() {   # the desktop's tools and rendered files, the seat, the font
     if [ "$OS" = Darwin ]; then chk desktop ok "na (macOS)"
     elif is_wsl; then chk desktop ok "na (WSL)"
     elif [ "$DESKTOP" = none ]; then chk desktop ok "na (DESKTOP=none)"
@@ -519,19 +549,27 @@ cmd_check_lines() {
         elif [ "$(font_spec)" != "$FONT" ]; then chk desktop warn "$NEON is not installed, so foot draws $NEON_OLD" "spark-shell on"
         else chk desktop ok "sway and foot are installed and up to date"; fi
     fi
+}
+check_pointer() {   # the spark pointer is drawn
     if [ -n "$(desktop_na)" ] || [ "$DESKTOP" = none ]; then chk pointer ok "na (no desktop)"
     elif pointer_drawn; then chk pointer ok "spark-white and spark-black are drawn; sway shows $POINTER_NAME at $POINTER_SIZE"
     elif ! pointer_can; then chk pointer warn "python3 cannot draw the spark pointer here" "install python3, then spark-shell on desktop"
     else chk pointer fail "the spark pointer is not drawn" "spark-shell on desktop"; fi
+}
+check_saver() {   # the idle screen's saver can run
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk saver ok "na (no desktop)"
     elif [ "$DISPLAY_SAVER" = clock ]; then chk saver ok "the idle screen shows the clock alone"
     elif saver_can; then chk saver ok "the idle screen shows the $DISPLAY_SAVER saver"
     else chk saver warn "python3 cannot run the $DISPLAY_SAVER saver: the idle screen shows the clock" "install python3, or spark-shell desktop display saver clock"; fi
+}
+check_mcp() {   # the providers are on spark's MCP list
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk mcp ok "na (no desktop)"
     elif ! mcp_spark >/dev/null; then chk mcp ok "na (spark has no MCP list before 1.90)"
     else _mn=$(mcp_mine | wc -w | tr -d ' '); _mt=$(printf '%s' "$PROVIDE_SECTIONS" | wc -w | tr -d ' ')
         if [ "$_mn" = "$_mt" ]; then chk mcp ok "the $_mt providers are on spark's MCP list"; else chk mcp warn "$_mn of $_mt providers on spark's MCP list" "spark-shell on desktop"; fi
     fi
+}
+check_login() {   # the login screen takes tty1 at boot
     if [ -n "$(login_na)" ] || [ "$LOGIN" != yes ]; then chk login ok "na (the console login, LOGIN=no)"
     elif ! greetd_here; then chk login fail "greetd is not installed" "spark-shell on login"
     else
@@ -541,12 +579,14 @@ cmd_check_lines() {
         elif [ "$DISTRO" = void ] && ! in_group _seatd "$LOGIN_ACCOUNT"; then chk login fail "$LOGIN_ACCOUNT is not in the _seatd group" "spark-shell on login"
         else chk login ok "the login screen takes tty1 at boot, tty2 keeps the console login"; fi
     fi
-    # home runs only the build the release pins: said here, not at the key
+}
+check_dialog() {   # home runs only the build the release pins: said here, not at the key
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ] || [ "$DIALOG_URL" = none ] || [ -n "${SPARK_SHELL_DIALOG:-}" ] || ! dialog_target >/dev/null; then chk dialog ok "na (no release build here)"
     elif ! _crt=$(release_tag); then chk dialog ok "na (this clone is past its release)"
     elif dialog_ok; then chk dialog ok "$DIALOG_BIN, the sha256 $_crt pins"
     else chk dialog fail "not the build $_crt pins, so home will not open" "spark-shell on"; fi
-    # the model is read whole for its sha256 here, never as home opens
+}
+check_semantic() {   # the model is the one spark-shell pins: read whole for its sha256 here, never as home opens
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk semantic ok "na (no desktop)"
     elif [ -z "$(spark_bin)" ]; then chk semantic ok "na (spark is not installed)"
     elif [ "$DIALOG_SEMANTIC" = no ]; then chk semantic ok "na (DIALOG_SEMANTIC=no)"
@@ -554,6 +594,8 @@ cmd_check_lines() {
     elif [ ! -f "$SEMANTIC_MODEL" ]; then chk semantic fail "the model is missing" "spark-shell on"
     elif ! semantic_model_ok; then chk semantic fail "the model is not the one spark-shell pins" "spark-shell on"
     else semantic_where; _cst='not running'; ! semantic_up || _cst="running at $SEMANTIC_SOCK"; chk semantic ok "$SEMANTIC_MODEL, the sha256 spark-shell pins, $_cst"; fi
+}
+check_apps() {   # the allowed apps are here
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk apps ok "na (no desktop)"
     else
         sbom_entries; ne=$(wc -l < "$TMP/entries" | tr -d ' ')
@@ -563,17 +605,19 @@ cmd_check_lines() {
             [ -z "$gone" ] && chk apps ok "$(grep -c '^[A-Za-z0-9]' "$APPS") allowed apps, $ne apps installed" || chk apps fail "allowed but not here:$gone" "spark-shell apps"
         else chk apps ok "$ne apps installed, all allowed (spark-shell apps chooses)"; fi
     fi
+}
+check_bar() {   # spark draws the status line
     spark=$(spark_bin)
     if [ -z "$spark" ]; then chk bar ok "na (spark not found -- the status line stays empty)"
     elif "$spark" bar line >/dev/null 2>&1; then chk bar ok "spark bar line works"
     else chk bar fail "spark bar line failed" "spark check"; fi
+}
+check_top() {   # the bar draws its blocks
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk top ok "na (no desktop)"
     elif [ "$DESKTOP_BAR" != yes ]; then chk top ok "hidden (spark-shell bar on --desktop shows it)"
     elif ! command -v jq >/dev/null 2>&1; then chk top warn "jq is not installed: the bar takes no clicks" "spark-shell on"
     elif line=$(REM_LOOK=1 bar_status --once 2>/dev/null) && printf '%s' "$line" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
         chk top ok "the bar draws $(printf '%s' "$line" | jq -r '[.[] | select(.name != "div" and .name != "logo") | .name] | unique | join(", ")')"
     else chk top fail "spark-shell bar status draws nothing" "spark-shell on"; fi
-    if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then sound_check; notify_check; portal_check; bt_check; storage_check; power_check; fi
-    [ "$fails" = 0 ]
 }
 

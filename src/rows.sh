@@ -41,6 +41,24 @@ scrub_text() {   # stdin -> the same lines scrubbed; C0 and DEL alone where ther
 # row alone), _tt the title, _td the words for a person; false for no tool
 tool_spec() {
     _tp=''; _tk=''; _tq=''; _tw=''; _te=''
+    case ${1%%_*} in
+        lan|wifi) tool_spec_network "$1" ;;
+        printers) tool_spec_printers "$1" ;;
+        bt) tool_spec_bt "$1" ;;
+        out|mic) tool_spec_sound "$1" ;;
+        theme) tool_spec_theme "$1" ;;
+        window) tool_spec_window "$1" ;;
+        notes) tool_spec_notes "$1" ;;
+        reminders) tool_spec_reminders "$1" ;;
+        display|clock) tool_spec_display "$1" ;;
+        keyboard|pointer) tool_spec_input "$1" ;;
+        notifications|storage|power|bar) tool_spec_system "$1" ;;
+        layout|apps|about|tools|undo) tool_spec_desktop "$1" ;;
+        files) tool_spec_files "$1" ;;
+        *) return 1 ;;
+    esac
+}
+tool_spec_network() {   # the lan and wifi tools
     case $1 in
         lan_address|wifi_address) _ts=${1%%_*} _ta=address _tp=device _tk=string _te='address:net gateway:net' _th=f _tt="$_ts address DEVICE" _td='Set a fixed IPv4 address with prefix and gateway (or none) through the active native manager. The connection may drop.' ;;
         lan_auto|wifi_auto) _ts=${1%%_*} _ta=auto _tp=device _tk=string _th=f _tt="$_ts auto DEVICE" _td='Use an automatic IPv4 address through the active native manager. The connection may drop.' ;;
@@ -51,16 +69,31 @@ tool_spec() {
         wifi_connect)      _ts=wifi _ta=connect _tp=name _tk=string _tq=password _th=i _tt='wifi connect NAME' _td='Connect to a network around, or a saved one.' ;;
         wifi_disconnect)   _ts=wifi _ta=disconnect _th=i _tt='wifi disconnect' _td='Leave the network in use.' ;;
         wifi_forget)       _ts=wifi _ta=forget _tp=name _tk=string _th=di _tt='wifi forget NAME' _td='Forget a saved network and its password.' ;;
+        *) return 1 ;;
+    esac
+}
+tool_spec_printers() {   # the printers tools
+    case $1 in
         printers_default) _ts=printers _ta=default _tp=name _tk=string _th=i _tt='printers default NAME' _td='Choose a configured native printer as the default.' ;;
         printers_pause) _ts=printers _ta=pause _tp=name _tk=string _th=i _tt='printers pause NAME' _td='Pause the configured print queue; resume takes it back. Native administrative permission may be needed.' ;;
         printers_resume) _ts=printers _ta=resume _tp=name _tk=string _th=i _tt='printers resume NAME' _td='Enable the configured print queue. Pending jobs may print.' ;;
         printers_cancel) _ts=printers _ta=cancel _tp=job _tk=string _th=d _tt='printers cancel JOB' _td='Cancel one pending job owned by the current user. The job cannot be restored.' ;;
+        *) return 1 ;;
+    esac
+}
+tool_spec_bt() {   # the bluetooth tools
+    case $1 in
         bt_connect)        _ts=bt _ta=connect _tp=name _tk=string _th=i _tt='bt connect NAME' _td='Connect a paired device.' ;;
         bt_disconnect)     _ts=bt _ta=disconnect _tp=name _tk=string _th=i _tt='bt disconnect NAME' _td='Disconnect a device.' ;;
         bt_remove)         _ts=bt _ta=remove _tp=name _tk=string _th=id _tt='bt remove NAME' _td='Remove a paired device and its saved trust. Pair it again to reconnect.' ;;
         bt_pair)           _ts=bt _ta=pair _tp=name _tk=string _th='' _tt='bt pair NAME' _td='Pair a new device and connect it.' ;;
         bt_scan)           _ts=bt _ta=scan _th='' _tt='bt scan' _td='Look for new devices nearby.' ;;
         bt_power)          _ts=bt _ta=power _tp=state _tk='on|off' _th=i _tt='bt power STATE' _td='Turn Bluetooth on or off.' ;;
+        *) return 1 ;;
+    esac
+}
+tool_spec_sound() {   # the out and mic tools
+    case $1 in
         out_use)           _ts=out _ta=use _tp=name _tk=string _th=i _tt='out use NAME' _td='Play the sound on another output.' ;;
         out_level)         _ts=out _ta=level _tp=level _tk=level _th=if _tt='out level N' _td='Set the volume, 0 to 100. Native readback must match within one percentage point for mixer rounding; the result reports the actual level.' ;;
         out_adjust)        _ts=out _ta=adjust _tp=delta _tk=delta _th=f _tt='out adjust DELTA' _td='Change the volume by delta percentage points from its fresh native level. Negative lowers and positive raises; the result is bounded to 0 to 100 and read back. Use this for relative requests; no arithmetic from a remembered level is needed.' ;;
@@ -71,6 +104,11 @@ tool_spec() {
         mic_adjust)        _ts=mic _ta=adjust _tp=delta _tk=delta _th=f _tt='mic adjust DELTA' _td='Change the microphone level by delta percentage points from its fresh native level. Negative lowers and positive raises; the result is bounded to 0 to 100 and read back. Use this for relative requests; no arithmetic from a remembered level is needed.' ;;
         mic_mute)          _ts=mic _ta=mute _th=if _tt='mic mute' _td='Mute the microphone.' ;;
         mic_unmute)        _ts=mic _ta=unmute _th=if _tt='mic unmute' _td='Unmute the microphone.' ;;
+        *) return 1 ;;
+    esac
+}
+tool_spec_theme() {   # the theme tools
+    case $1 in
         theme_palette)     _ts=theme _ta='=' _tp=name _tk=${THEME_ENUM_NOW:-$(theme_enum)} _th=i _tt='theme NAME' _td='Use a palette everywhere, a saved theme, a look from the last ten, or none. A near name, heard or typed, is the nearest palette: groove box dark is gruvbox-dark.' ;;
         theme_save)        _ts=theme _ta=save _tp=name _tk=string _th=f _tt='theme save NAME' _td='Keep the look in use under a name: the palette, the wallpaper, the face and its size, the glyph family, the animation, the transparency. After the look is made, never before it.' ;;
         theme_delete)      _ts=theme _ta=delete _tp=name _tk=string _th=dif _tt='theme delete NAME' _td='Delete a saved theme.' ;;
@@ -91,6 +129,11 @@ tool_spec() {
         theme_transparency) _ts=theme _ta=transparency _tp=amount _tk='more|less|0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31|32|33|34|35|36|37|38|39|40|41|42|43|44|45|46|47|48|49|50' _th='' _tt='theme transparency AMOUNT' _td='The windows more or less transparent, or a percent from 0 (off) to 50.' ;;
         theme_preview)     _ts=theme _ta=preview _tp=name _tk="${THEME_ENUM_NOW:-$(theme_enum)}|off" _th='' _tt='theme preview NAME' _td='A palette on the screen while it is looked at, nothing kept; off puts the one in use back.' ;;
         theme_alpha)       _ts=theme _ta=alpha _tp=value _tk=alpha _th=if _tt='theme alpha N' _td='How solid the windows are, 0 to 1.' ;;
+        *) return 1 ;;
+    esac
+}
+tool_spec_window() {   # the window tools
+    case $1 in
         window_split)      _ts=window _ta=split _th=if _tt='window split' _td='Windows side by side, on this workspace now and on every new one.' ;;
         window_tabs)       _ts=window _ta=tabs _th=if _tt='window tabs' _td='Windows in tabs, on this workspace now and on every new one.' ;;
         window_stacked)    _ts=window _ta=stacked _th=if _tt='window stacked' _td='Windows stacked, on this workspace now and on every new one.' ;;
@@ -100,6 +143,11 @@ tool_spec() {
         window_focus)      _ts=window _ta=focus _tp=name _tk=string _th=io _tt='window focus NAME' _td='Put one open window in front. Use its native container ID from the row, not its display label.' ;;
         window_close)      _ts=window _ta=close _tp=name _tk=string _th=d _tt='window close NAME' _td='Close one open window by its native container ID from the row. It cannot be undone.' ;;
         window_capture)    _ts=window _ta=capture _tp=what _tk='screen|area|window' _te='name:text' _th=f _tt='window capture WHAT' _td='A picture of the screen, of an area you drag, or of a window, in ~/pictures/screenshots. The name argument is the window by its native container ID; with none, the window in front.' ;;
+        *) return 1 ;;
+    esac
+}
+tool_spec_notes() {   # the notes tools
+    case $1 in
         notes_new)         _ts=notes _ta=new _th='' _tt='notes new' _td='Open a blank note in the editor for the person to write. No supplied text is saved.' ;;
         notes_open)        _ts=notes _ta=open _tp=name _tk=string _th=o _tt='notes open NAME' _td='Only open a note in the editor; this does not append or save supplied text. To append text, use notes_append. Use the filename from the row; duplicate titles are not identities.' ;;
         notes_add)         _ts=notes _ta=add _tp=text _tk=string _th=f _tt='notes add TEXT' _td='Create a new note: text is the literal heading, never an invented filename or filename prefix. The result gives the actual filename. To add a body or append to an existing note, use notes_append with that filename and separate text. The legacy NAME: TEXT syntax still appends when NAME already exists.' ;;
@@ -108,11 +156,21 @@ tool_spec() {
         notes_rename)      _ts=notes _ta=rename _tp=name _tk=string _th='' _tt='notes rename NAME' _td='Give a note a new title, its first line. name is its exact filename from the row; to is the new title. Undo puts the old title back.' ;;
         notes_trash)       _ts=notes _ta=trash _tp=name _tk=string _th='' _tt='notes trash NAME' _td='Put a note in the trash. name is its exact filename from the row. Undo brings it back.' ;;
         notes_restore)     _ts=notes _ta=restore _tp=name _tk=string _th=f _tt='notes restore NAME' _td='Bring a note put in the trash back, by its filename.' ;;
+        *) return 1 ;;
+    esac
+}
+tool_spec_reminders() {   # the reminders tools
+    case $1 in
         reminders_add)     _ts=reminders _ta=add _tp=words _tk=string _tw='when and what: fri 9am call the vet' _th=f _tt='reminders add WORDS' _td='Save a reminder at a local time to come. words: a day and a time then the title (tomorrow 09:00 call the dentist), a time alone for today or else tomorrow (5pm gym), or in N minutes or hours before or after the title. Keep the words as the person said them; never invent a time. With no time in the words the provider asks for one.' ;;
         reminders_done)    _ts=reminders _ta='done' _tp=name _tk=string _th='' _tt='reminders done NAME' _td='Put aside one due or future reminder by its UID from the row. Undo brings that exact event back for 30 days.' ;;
         reminders_delete)  _ts=reminders _ta=delete _tp=name _tk=string _th='' _tt='reminders delete NAME' _td='Delete one reminder by its UID from the row: the event goes. Undo brings it back while this window is open.' ;;
         reminders_restore) _ts=reminders _ta=restore _tp=name _tk=string _th=f _tt='reminders restore NAME' _td='Bring back a reminder marked done in the last 30 days.' ;;
         reminders_snooze)  _ts=reminders _ta=snooze _tp=name _tk=string _th='' _tt='reminders snooze NAME' _td='Move one reminder, identified by its UID from the row, to 10 minutes from now.' ;;
+        *) return 1 ;;
+    esac
+}
+tool_spec_display() {   # the display and clock tools
+    case $1 in
         display_idle)      _ts=display _ta=idle _tp=minutes _tk=minutes _th=i _tt='display idle N' _td='Show the idle screen after N idle minutes; 0 never.' ;;
         display_lock)      _ts=display _ta=lock _tp=minutes _tk=minutes _th=i _tt='display lock N' _td='Lock the screen and turn the display off after N idle minutes; 0 never.' ;;
         display_saver)     _ts=display _ta=saver _tp=name _tk="clock|$(printf '%s' "$SAVER_NAMES" | tr ' ' '|')" _th=i _tt='display saver NAME' _td='What the idle screen shows: the clock alone, or an animation behind it.' ;;
@@ -128,6 +186,11 @@ tool_spec() {
         clock_format) _ts=clock _ta=format _tp=format _tk='12|24' _th=if _tt='clock format' _td='Show a 12 or 24 hour clock on the bar, Calendar and idle screen.' ;;
         clock_week) _ts=clock _ta=week _tp=day _tk='sunday|monday' _th=if _tt='first weekday' _td='Start the Calendar week on Sunday or Monday.' ;;
         clock_zone) _ts=clock _ta=zone _tp=zone _tk=string _th=if _tt='time zone' _td='Change the machine time zone through its native settings; undo puts the one before back. Requires system permission.' ;;
+        *) return 1 ;;
+    esac
+}
+tool_spec_input() {   # the keyboard and pointer tools
+    case $1 in
         keyboard_use)      _ts=keyboard _ta=use _tp=name _tk=string _th=i _tt='keyboard use NAME' _td='Type in another of the keyboard layouts.' ;;
         pointer_tap)       _ts=pointer _ta=tap _tp=state _tk='on|off' _th=if _tt='pointer tap STATE' _td='Enable or disable tap to click on touchpads.' ;;
         pointer_scroll)    _ts=pointer _ta=scroll _tp=state _tk='on|off' _th=if _tt='pointer scroll STATE' _td='Set natural scrolling for mouse and touchpad.' ;;
@@ -136,6 +199,11 @@ tool_spec() {
         keyboard_repeat_rate) _ts=keyboard _ta=repeat-rate _tp=value _tk=level _th=if _tt='keyboard repeat-rate N' _td='Key repeats per second, 0 to 100; 0 disables repeat.' ;;
         keyboard_caps)     _ts=keyboard _ta=caps _tp=key _tk='caps|control|escape' _th=if _tt='keyboard caps KEY' _td='Use Caps Lock as itself, Control or Escape.' ;;
         keyboard_next)     _ts=keyboard _ta=next _th='' _tt='keyboard next' _td='Go to the next keyboard layout.' ;;
+        *) return 1 ;;
+    esac
+}
+tool_spec_system() {   # the notifications, storage, power and bar tools
+    case $1 in
         notifications_do_not_disturb) _ts=notifications _ta=do-not-disturb _tp=state _tk='on|off' _th=if _tt='notifications do-not-disturb STATE' _td='Keep notifications out of sight, or show them again; a critical one always shows.' ;;
         notifications_dismiss) _ts=notifications _ta=dismiss _th=i _tt='notifications dismiss' _td='Dismiss the notifications on the screen.' ;;
         notifications_restore) _ts=notifications _ta=restore _th='' _tt='notifications restore' _td='Show the last notification again.' ;;
@@ -154,6 +222,11 @@ tool_spec() {
         bar_bottom)        _ts=bar _ta=bottom _th=i _tt='bar bottom' _td='Show the bar at the bottom of the screen.' ;;
         bar_text)          _ts=bar _ta=text _tp=size _tk='auto|bigger|smaller|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31|32|33|34|35|36|37|38|39|40' _th='' _tt='bar text SIZE' _td='The text on the bar one size bigger or smaller, a size from 6 to 40, or auto: the text size, larger on a screen of many pixels.' ;;
         bar_tray)          _ts=bar _ta=tray _tp=state _tk='on|off' _th=i _tt='bar tray STATE' _td='Show the icons apps put in the tray at the end of the bar, or keep them off it; the apps run either way.' ;;
+        *) return 1 ;;
+    esac
+}
+tool_spec_desktop() {   # the layout, apps, about, tools and undo tools
+    case $1 in
         layout_open)       _ts=layout _ta=open _tp=name _tk=string _th='' _tt='layout open NAME' _td='Open a saved layout.' ;;
         layout_new)        _ts=layout _ta=new _tp=words _tk=string _th=f _tt='layout new WORDS' _td='Open the apps for a task, picked by spark.' ;;
         layout_save)       _ts=layout _ta=save _tp=name _tk=string _th=f _tt='layout save NAME' _td='Save what is open on this workspace as a layout.' ;;
@@ -177,6 +250,11 @@ tool_spec() {
         tools_clean_packages) _ts=tools _ta=clean-packages _th=ofp _tt='tools clean packages' _td='Run the package manager'"'"'s clean of its download cache in a terminal window.' ;;
         tools_end)         _ts=tools _ta=end _tp=name _tk=string _th=df _tt='end NAME' _td='End a program and all its processes. Unsaved work is lost.' ;;
         undo_all)          _ts=undo _ta=all _th='' _tt='undo' _td='Take the last thing done back.' ;;
+        *) return 1 ;;
+    esac
+}
+tool_spec_files() {   # the files tools
+    case $1 in
         files_browse)      _ts=files _ta=browse _tp=path _tk=path _th=ifo _tt='files browse PATH' _td='Open a folder in the system file manager, for anything beyond the steps here. path is a row'"'"'s own path, exactly as written.' ;;
         files_open)        _ts=files _ta=open _tp=path _tk=path _th=ifo _tt='files open PATH' _td='Open a file with the app that opens its kind. path is a row'"'"'s own path, exactly as written.' ;;
         files_app)         _ts=files _ta=app _tp=path _tk=path _th=ifo _tt='files app PATH' _td='Open a file in the app the system assigns to its kind, a folder in the system file manager. path is a row'"'"'s own path, exactly as written.' ;;

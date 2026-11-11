@@ -110,94 +110,92 @@ EOF
     esac
     case $_id in '"'*|[0-9]*|-[0-9]*) ;; *) rpc_error null -32600 "an id is a string or a number"; return 0 ;; esac
     case $_method in
-        initialize)
-            PROVIDE_CLIENT=$(printf '%s' "$_params" | jq -r '.clientInfo.name // "" | tostring | gsub("[^A-Za-z0-9._-]"; "")')
-            [ "$(printf '%s' "$_params" | jq -r '.capabilities.experimental["spark-shell/pairing"] == true')" != true ] || CLIENT_PAIRING=1
-            [ "$(printf '%s' "$_params" | jq -r '.capabilities.roots != null')" != true ] || CLIENT_ROOTS=1
-            rpc_result "$_id" "$(jq -cn --arg v "$PROVIDE_PROTOCOL" --arg n "$sec" --arg t "$(provide_title "$sec")" --arg ver "$(panel_version)" \
-                '{protocolVersion: $v, capabilities: {tools: {listChanged: true}, resources: {subscribe: true, listChanged: true}, logging: {}}, serverInfo: {name: $n, title: $t, version: $ver}}')" ;;
+        initialize) provide_initialize "$_id" "$_params" ;;
         ping|logging/setLevel) rpc_result "$_id" '{}' ;;
         tools/list) rpc_result "$_id" "$(provide_tools "$sec" | jq -c '{tools: .}')" ;;
         tools/call) provide_call "$_id" "$_params" ;;
         resources/list) rpc_result "$_id" "$(jq -cn --arg u "spark-shell://$sec/rows" --arg s "$sec" '{resources: [{uri: $u, name: "rows", title: ($s + " rows"), mimeType: "application/json"}]}')" ;;
-        resources/templates/list) if [ "$sec" = files ]; then rpc_result "$_id" '{"resourceTemplates":[{"uriTemplate":"spark-shell://files/rows/{folder}{?from}","name":"folder","title":"a folder under the roots, a page of it from an entry","mimeType":"application/json"},{"uriTemplate":"spark-shell://files/rows/match/{words}","name":"match","title":"the names under your home that hold the words","mimeType":"application/json"},{"uriTemplate":"spark-shell://files/preview/{file}{?page}","name":"preview","title":"a file shown as a page","mimeType":"application/json"}]}'
-            else rpc_result "$_id" "$(jq -cn --arg s "$sec" '{resourceTemplates: ([{uriTemplate: ("spark-shell://" + $s + "/page/{row}"), name: "page", title: "a row shown as a page", mimeType: "application/json"}] + (if $s == "notes" then [{uriTemplate: "spark-shell://notes/rows/find/{words}", name: "find", title: "the notes whose text holds the words", mimeType: "application/json"}] else [] end))}')"; fi ;;
-        resources/read|resources/subscribe|resources/unsubscribe)
-            _uri=$(printf '%s' "$_params" | jq -r '.uri // "" | tostring')
-            if [ "$sec" = files ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://files/rows/?*) true ;; *) false ;; esac; then
-                if provide_files_rows "$_uri" > "$TMP/folder.json"; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/folder.json")"
-                else rpc_error "$_id" -32002 "no folder at that uri"; fi
-                return 0
-            fi
-            if [ "$sec" = files ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://files/preview/?*) true ;; *) false ;; esac; then
-                _pu=${_uri#spark-shell://files/preview/}; _ppg=1; _ppf=''
-                case $_pu in *'?'*) _pq=${_pu#*'?'}; _pu=${_pu%%'?'*}
-                    case "&$_pq&" in *'&page='*) _ppg=${_pq#*page=}; _ppg=${_ppg%%'&'*} ;; esac
-                    case "&$_pq&" in *'&full=1&'*) _ppf=full ;; esac ;;
-                esac
-                if _pp=$(files_unb64 "$_pu") && files_page "$_pp" "$_ppg" "$_ppf" > "$TMP/page.out"; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/page.out")"
-                else rpc_error "$_id" -32002 "no file at that uri"; fi
-                return 0
-            fi
-            if [ "$sec" = theme ] && [ "$_uri" = "spark-shell://theme/rows/wallpapers" ] && [ "$_method" = resources/read ]; then
-                provide_wall_rows > "$TMP/wall.last"   # for the gate
-                rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/wall.last")"; return 0
-            fi
-            if [ "$sec" = theme ] && [ "$_uri" = "spark-shell://theme/rows/animations" ] && [ "$_method" = resources/read ]; then
-                rpc_result "$_id" "$(provide_anim_rows | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
-            fi
-            if [ "$sec" = display ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://display/rows/screen/?*) true ;; *) false ;; esac; then
-                if provide_screen_rows "${_uri##*/}" > "$TMP/screen.json"; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/screen.json")"
-                else rpc_error "$_id" -32002 "no screen at that uri"; fi
-                return 0
-            fi
-            if { [ "$sec" = lan ] || [ "$sec" = wifi ]; } && [ "$_method" = resources/read ] && case $_uri in spark-shell://"$sec"/rows/network/?*) true ;; *) false ;; esac; then
-                if provide_network_rows "$sec" "${_uri##*/}" > "$TMP/network.rows"; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/network.rows")"
-                else rpc_error "$_id" -32002 "no network interface at that uri"; fi
-                return 0
-            fi
-            if [ "$sec" = window ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://window/rows/?*) true ;; *) false ;; esac; then
-                rpc_result "$_id" "$(provide_window_rows "$_uri" | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
-            fi
-            if [ "$sec" = tools ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://tools/rows/?*) true ;; *) false ;; esac; then
-                if provide_tools_page "${_uri#spark-shell://tools/rows/}" > "$TMP/tools.page" 2>/dev/null && [ -s "$TMP/tools.page" ]; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/tools.page")"
-                else rpc_error "$_id" -32002 "no tool page at that uri"; fi
-                return 0
-            fi
-            if [ "$sec" = clock ] && [ "$_method" = resources/read ] && [ "$_uri" = "spark-shell://clock/rows/settings" ]; then
-                rpc_result "$_id" "$(provide_rows clock settings | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
-            fi
-            if [ "$_method" = resources/read ] && case $_uri in "spark-shell://$sec/page/"?*) true ;; *) false ;; esac; then
-                if _pid=$(files_unb64 "${_uri#"spark-shell://$sec/page/"}") && provide_page "$sec" "$_pid" > "$TMP/rowpage.json" 2>/dev/null && [ -s "$TMP/rowpage.json" ]; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/rowpage.json")"
-                else rpc_error "$_id" -32002 "no page at that uri"; fi
-                return 0
-            fi
-            if [ "$sec" = notes ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://notes/rows/find/?*) true ;; *) false ;; esac; then
-                if NOTES_WORDS=$(files_unb64 "${_uri##*/}") && [ -n "$NOTES_WORDS" ] && provide_rows notes > "$TMP/notes.found.json"; then
-                    rpc_result "$_id" "$(jq -c --arg u "$_uri" '.rows |= map(select(.tool.name == "notes_open")) | .short = [] | {contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/notes.found.json")"
-                else rpc_error "$_id" -32002 "no search at that uri"; fi
-                NOTES_WORDS=''
-                return 0
-            fi
-            if [ "$sec" = tools ] && [ "$_uri" = "spark-shell://tools/rows/running" ]; then   # polled while on screen
-                case $_method in
-                    resources/subscribe) SUBSCRIBED=1; [ -n "$WATCH" ] || { provide_watch tools running 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; }; rpc_result "$_id" '{}' ;;
-                    resources/unsubscribe) SUBSCRIBED=''; [ -z "$WATCH" ] || { kill "$WATCH" 2>/dev/null || :; wait "$WATCH" 2>/dev/null || :; WATCH=''; }; rpc_result "$_id" '{}' ;;
-                esac
-                return 0
-            fi
-            [ "$_uri" = "spark-shell://$sec/rows" ] || { rpc_error "$_id" -32002 "no resource at that uri"; return 0; }
-            case $_method in
-                resources/read) provide_rows "$sec" > "$TMP/rows.last"; provide_seen   # the gate's and the watcher's
-                    rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/rows.last")" ;;
-                resources/subscribe) SUBSCRIBED=1
-                    case " $PROVIDE_WATCHED " in *" $sec "*) [ -n "$WATCH" ] || { provide_watch "$sec" 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; } ;; esac
-                    [ "$sec" != tools ] || [ -n "$WATCH" ] || { _sum=$({ cksum < "$TOOLS_CHECK"; } 2>/dev/null); provide_watch_check "$_sum" 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; }
-                    rpc_result "$_id" '{}' ;;
-                resources/unsubscribe) SUBSCRIBED=''; [ -z "$WATCH" ] || { kill "$WATCH" 2>/dev/null || :; wait "$WATCH" 2>/dev/null || :; WATCH=''; }; rpc_result "$_id" '{}' ;;
-            esac ;;
+        resources/templates/list) provide_templates "$_id" ;;
+        resources/read|resources/subscribe|resources/unsubscribe) provide_resource "$_id" "$_method" "$(printf '%s' "$_params" | jq -r '.uri // "" | tostring')" ;;
         *) rpc_error "$_id" -32601 "no method $_method here" ;;
     esac
+}
+provide_initialize() {   # provide_initialize ID PARAMS -- the client's name and what it supports kept; the server named back
+    PROVIDE_CLIENT=$(printf '%s' "$2" | jq -r '.clientInfo.name // "" | tostring | gsub("[^A-Za-z0-9._-]"; "")')
+    [ "$(printf '%s' "$2" | jq -r '.capabilities.experimental["spark-shell/pairing"] == true')" != true ] || CLIENT_PAIRING=1
+    [ "$(printf '%s' "$2" | jq -r '.capabilities.roots != null')" != true ] || CLIENT_ROOTS=1
+    rpc_result "$1" "$(jq -cn --arg v "$PROVIDE_PROTOCOL" --arg n "$sec" --arg t "$(provide_title "$sec")" --arg ver "$(panel_version)" \
+        '{protocolVersion: $v, capabilities: {tools: {listChanged: true}, resources: {subscribe: true, listChanged: true}, logging: {}}, serverInfo: {name: $n, title: $t, version: $ver}}')"
+}
+provide_templates() {   # provide_templates ID -- the resource templates: a row as a page; files its folders, matches and previews; notes its find
+    if [ "$sec" = files ]; then rpc_result "$1" '{"resourceTemplates":[{"uriTemplate":"spark-shell://files/rows/{folder}{?from}","name":"folder","title":"a folder under the roots, a page of it from an entry","mimeType":"application/json"},{"uriTemplate":"spark-shell://files/rows/match/{words}","name":"match","title":"the names under your home that hold the words","mimeType":"application/json"},{"uriTemplate":"spark-shell://files/preview/{file}{?page}","name":"preview","title":"a file shown as a page","mimeType":"application/json"}]}'
+    else rpc_result "$1" "$(jq -cn --arg s "$sec" '{resourceTemplates: ([{uriTemplate: ("spark-shell://" + $s + "/page/{row}"), name: "page", title: "a row shown as a page", mimeType: "application/json"}] + (if $s == "notes" then [{uriTemplate: "spark-shell://notes/rows/find/{words}", name: "find", title: "the notes whose text holds the words", mimeType: "application/json"}] else [] end))}')"; fi
+}
+provide_resource() {   # provide_resource ID METHOD URI -- a read, a subscription or its end: the section's own resources first, then its rows
+    provide_resource_files "$@" && return 0
+    provide_resource_special "$@" && return 0
+    [ "$3" = "spark-shell://$sec/rows" ] || { rpc_error "$1" -32002 "no resource at that uri"; return 0; }
+    case $2 in
+        resources/read) provide_rows "$sec" > "$TMP/rows.last"; provide_seen   # the gate's and the watcher's
+            rpc_result "$1" "$(jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/rows.last")" ;;
+        resources/subscribe) SUBSCRIBED=1
+            case " $PROVIDE_WATCHED " in *" $sec "*) [ -n "$WATCH" ] || { provide_watch "$sec" 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; } ;; esac
+            [ "$sec" != tools ] || [ -n "$WATCH" ] || { _sum=$({ cksum < "$TOOLS_CHECK"; } 2>/dev/null); provide_watch_check "$_sum" 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; }
+            rpc_result "$1" '{}' ;;
+        resources/unsubscribe) SUBSCRIBED=''; [ -z "$WATCH" ] || { kill "$WATCH" 2>/dev/null || :; wait "$WATCH" 2>/dev/null || :; WATCH=''; }; rpc_result "$1" '{}' ;;
+    esac
+}
+provide_resource_files() {   # provide_resource_files ID METHOD URI -- the files section's folders and previews, read; false when the uri is not one
+    [ "$sec" = files ] && [ "$2" = resources/read ] || return 1
+    case $3 in
+        spark-shell://files/rows/?*)
+            if provide_files_rows "$3" > "$TMP/folder.json"; then rpc_result "$1" "$(jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/folder.json")"
+            else rpc_error "$1" -32002 "no folder at that uri"; fi ;;
+        spark-shell://files/preview/?*)
+            _pu=${3#spark-shell://files/preview/}; _ppg=1; _ppf=''
+            case $_pu in *'?'*) _pq=${_pu#*'?'}; _pu=${_pu%%'?'*}
+                case "&$_pq&" in *'&page='*) _ppg=${_pq#*page=}; _ppg=${_ppg%%'&'*} ;; esac
+                case "&$_pq&" in *'&full=1&'*) _ppf=full ;; esac ;;
+            esac
+            if _pp=$(files_unb64 "$_pu") && files_page "$_pp" "$_ppg" "$_ppf" > "$TMP/page.out"; then rpc_result "$1" "$(jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/page.out")"
+            else rpc_error "$1" -32002 "no file at that uri"; fi ;;
+        *) return 1 ;;
+    esac
+    return 0
+}
+provide_resource_special() {   # provide_resource_special ID METHOD URI -- one section's own resources: a read of them, or tools' running list watched; false when the uri is not one
+    case $sec:$2:$3 in
+        theme:resources/read:spark-shell://theme/rows/wallpapers)
+            provide_wall_rows > "$TMP/wall.last"   # for the gate
+            rpc_result "$1" "$(jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/wall.last")" ;;
+        theme:resources/read:spark-shell://theme/rows/animations)
+            rpc_result "$1" "$(provide_anim_rows | jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')" ;;
+        display:resources/read:spark-shell://display/rows/screen/?*)
+            if provide_screen_rows "${3##*/}" > "$TMP/screen.json"; then rpc_result "$1" "$(jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/screen.json")"
+            else rpc_error "$1" -32002 "no screen at that uri"; fi ;;
+        lan:resources/read:spark-shell://lan/rows/network/?*|wifi:resources/read:spark-shell://wifi/rows/network/?*)
+            if provide_network_rows "$sec" "${3##*/}" > "$TMP/network.rows"; then rpc_result "$1" "$(jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/network.rows")"
+            else rpc_error "$1" -32002 "no network interface at that uri"; fi ;;
+        window:resources/read:spark-shell://window/rows/?*)
+            rpc_result "$1" "$(provide_window_rows "$3" | jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')" ;;
+        tools:resources/read:spark-shell://tools/rows/?*)
+            if provide_tools_page "${3#spark-shell://tools/rows/}" > "$TMP/tools.page" 2>/dev/null && [ -s "$TMP/tools.page" ]; then rpc_result "$1" "$(jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/tools.page")"
+            else rpc_error "$1" -32002 "no tool page at that uri"; fi ;;
+        clock:resources/read:spark-shell://clock/rows/settings)
+            rpc_result "$1" "$(provide_rows clock settings | jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')" ;;
+        *:resources/read:"spark-shell://$sec/page/"?*)
+            if _pid=$(files_unb64 "${3#"spark-shell://$sec/page/"}") && provide_page "$sec" "$_pid" > "$TMP/rowpage.json" 2>/dev/null && [ -s "$TMP/rowpage.json" ]; then rpc_result "$1" "$(jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/rowpage.json")"
+            else rpc_error "$1" -32002 "no page at that uri"; fi ;;
+        notes:resources/read:spark-shell://notes/rows/find/?*)
+            if NOTES_WORDS=$(files_unb64 "${3##*/}") && [ -n "$NOTES_WORDS" ] && provide_rows notes > "$TMP/notes.found.json"; then
+                rpc_result "$1" "$(jq -c --arg u "$3" '.rows |= map(select(.tool.name == "notes_open")) | .short = [] | {contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/notes.found.json")"
+            else rpc_error "$1" -32002 "no search at that uri"; fi
+            NOTES_WORDS='' ;;
+        tools:resources/subscribe:spark-shell://tools/rows/running) SUBSCRIBED=1; [ -n "$WATCH" ] || { provide_watch tools running 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; }; rpc_result "$1" '{}' ;;   # polled while on screen
+        tools:resources/unsubscribe:spark-shell://tools/rows/running) SUBSCRIBED=''; [ -z "$WATCH" ] || { kill "$WATCH" 2>/dev/null || :; wait "$WATCH" 2>/dev/null || :; WATCH=''; }; rpc_result "$1" '{}' ;;
+        *) return 1 ;;
+    esac
+    return 0
 }
 provide_notes_append() {   # provide_notes_append ID ARGS -- the text skips the token grammar
     printf '%s' "$2" | jq -e 'type == "object" and keys == ["name","text"]
@@ -270,7 +268,7 @@ provide_ask() {   # provide_ask CALL-ID MESSAGE FIELD TITLE -> the answer; false
     [ "$_ast" -eq 0 ] || return 1
     printf '%s' "$_ans"
 }
-provide_call() {   # provide_call ID PARAMS -- a tool call: arguments, row, gate, step
+provide_call() {   # provide_call ID PARAMS -- a tool call: the arguments checked, the row, the gate, the step, the answer
     # a line each: compact JSON holds no newline
     _parts=$(printf '%s' "$2" | jq -r '(.name // "" | tostring | gsub("[\u0000-\u001f]"; " ")), (.arguments // {} | tojson), (._meta.progressToken // "" | if . == "" then "" else tojson end)')
     { IFS= read -r _name; IFS= read -r _args; IFS= read -r _tok; } <<EOF
@@ -283,7 +281,25 @@ EOF
     _title=$_tt   # saved: the undo's tool_spec below resets _tt
     [ "$_name" != notes_append ] || { provide_notes_append "$1" "$_args"; return 0; }
     case $_name in notes_rename|notes_trash|notes_restore) provide_notes_step "$1" "$_name" "$_args"; return 0 ;; esac
-    _bad=$(printf '%s' "$_args" | jq -r --arg p "$_tp" --arg k "$_tk" --arg q "$_tq" --arg x "$_te" '
+    _bad=$(provide_args_bad "$_args")
+    [ -z "$_bad" ] || { rpc_error "$1" -32602 "$_name: $_bad"; return 0; }
+    [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_args"; return 0; }   # files: not the panel's gate
+    provide_call_value "$1" || return 0
+    provide_call_listed "$1" || return 0
+    _g=$(panel_gate "$sec" "$_act" "$_arg") || { PANEL_ROW_MATCHED=''; provide_refuse "$1" "$(printf '%s' "$_g" | scrub_text)"; return 0; }
+    PANEL_ROW_MATCHED=''
+    # read before the step: undo puts back the state now
+    _undo='null'; PANEL_INV=$(panel_inverse "$sec" "$_act" "$_g"); PANEL_INV_READ=1; _inv=${PANEL_INV%%"$TAB"*}
+    if [ -n "$_inv" ] && action_tool "$sec" "$_inv"; then _undo=$(tool_call_json "$_tool" "$_tv") || _undo='null'; fi
+    provide_call_step "$1" || return 0
+    if [ "$_rc" -ne 0 ]; then provide_refuse "$1" "${_out:-$sec: $_title did not work}"; return 0; fi
+    case $_name in notes_add|reminders_*|out_level|out_adjust|out_mute|out_unmute|mic_level|mic_adjust|mic_mute|mic_unmute|window_focus|window_close)
+        [ -s "$TMP/action.effect" ] || { provide_refuse "$1" 'the action may have happened, but its result could not be read back; check the current state before trying again'; return 0; } ;;
+    esac
+    provide_call_answer "$1"
+}
+provide_args_bad() {   # provide_args_bad ARGUMENTS -> why they do not fit the tool (tool_spec's _tp, _tk, _tq and _te), nothing when they do
+    printf '%s' "$1" | jq -r --arg p "$_tp" --arg k "$_tk" --arg q "$_tq" --arg x "$_te" '
         def plain: test("^[^\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff\u2028\u2029]{1,256}$");
         ($x | split(" ") | map(select(. != "") | split(":") | [(.[0] | rtrimstr("?")), .[1], (.[0] | endswith("?"))])) as $xs | ($xs | map(.[0])) as $xk | . as $a |
         [$xs[] | select(.[1] != "text" and .[1] != "seconds" and .[1] != "pixels" and (.[2] | not))] as $xr | [$xs[] | select(. as $e | $a | has($e[0]))] as $xp |   # the extras a call must give; the ones this call gave
@@ -314,9 +330,9 @@ EOF
         elif (.[$p] | type) != "string" or ((.[$p]) | plain | not) then $p + " is plain text, 256 characters at most"
         elif ($k | contains("|")) and (.[$p] as $x | $k | split("|") | any(. == $x) | not) then $p + " is one of " + ($k | split("|") | join(", "))
         else "" end
-        + (if $q != "" and has($q) and ((.[$q] | type) != "string" or (.[$q] | length) > 256) then "; " + $q + " is text, 256 characters at most" else "" end)')
-    [ -z "$_bad" ] || { rpc_error "$1" -32602 "$_name: $_bad"; return 0; }
-    [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_args"; return 0; }   # files: not the panel's gate
+        + (if $q != "" and has($q) and ((.[$q] | type) != "string" or (.[$q] | length) > 256) then "; " + $q + " is text, 256 characters at most" else "" end)'
+}
+provide_call_value() {   # provide_call_value ID -- _v the value, _plain the arguments less the secret, _act and _arg the step; a name resolved to its file, UID or window; false after a refusal
     # the value (text extras slugged) and the arguments less the secret
     _parts=$(printf '%s' "$_args" | jq -r --arg p "$_tp" --arg x "$_te" --arg q "$_tq" '. as $a
         | (if $p == "" then "" else [$a[$p] | tostring] + [$x | split(" ")[] | select(. != "") | split(":") | [(.[0] | rtrimstr("?")), .[1]] | . as $e | select($a[$e[0]] != null) | $e[0] + "=" + (($a[$e[0]] | tostring) | if $e[1] == "text" or $e[1] == "name" then ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-+|-+$"; "") | .[0:40] else . end)] | join(" ") end),
@@ -326,42 +342,41 @@ $_parts
 EOF
     PANEL_PASS=''; [ -z "$_tq" ] || PANEL_PASS=$(printf '%s' "$_args" | jq -r --arg q "$_tq" '.[$q] // ""')   # a password: never a file, never a line out
     case $_name in
-        notes_open) _resolved=$(note_file "$_v") || { provide_refuse "$1" 'select one note by its filename; that name is missing or ambiguous'; return 0; }; _v=${_resolved##*/} ;;
-        reminders_done|reminders_snooze|reminders_delete) _resolved=$(rem_find "$_v") || { provide_refuse "$1" 'select one reminder by its UID; that name is missing or ambiguous'; return 0; }; _v=$(printf '%s' "$_resolved" | cut -f2) ;;
+        notes_open) _resolved=$(note_file "$_v") || { provide_refuse "$1" 'select one note by its filename; that name is missing or ambiguous'; return 1; }; _v=${_resolved##*/} ;;
+        reminders_done|reminders_snooze|reminders_delete) _resolved=$(rem_find "$_v") || { provide_refuse "$1" 'select one reminder by its UID; that name is missing or ambiguous'; return 1; }; _v=$(printf '%s' "$_resolved" | cut -f2) ;;
         window_focus|window_close) win_label > "$TMP/win.labels"; WIN_LABELS_READ=1   # read once for check, name and step
-            _v=$(win_named "$_v") || { provide_refuse "$1" 'select one open window by its ID; that name is missing or ambiguous'; return 0; } ;;
+            _v=$(win_named "$_v") || { provide_refuse "$1" 'select one open window by its ID; that name is missing or ambiguous'; return 1; } ;;
     esac
     case $_name in notes_open|reminders_done|reminders_snooze|reminders_delete|window_focus|window_close) _plain=$(jq -cn --arg n "$_v" '{name:$n}') ;; esac
     _act=$_ta; _arg=$_v; [ "$_ta" != '=' ] || { _act=$_v; _arg=''; }   # a palette's step is its name alone
     if [ "$_name" = reminders_add ] && ! rem_parse "$_v" >/dev/null 2>&1; then   # no time in the words: one question first
         case $(printf '%s' "$_v" | tr 'A-Z' 'a-z') in "remind me to "*) _v=$(printf '%s' "$_v" | cut -c14-) ;; "remind me "*) _v=$(printf '%s' "$_v" | cut -c11-) ;; esac
-        _when=$(provide_ask "$1" "When" when "5pm, tomorrow 9:00, in 20 min") || { provide_refuse "$1" "not done: no time given"; return 0; }
+        _when=$(provide_ask "$1" "When" when "5pm, tomorrow 9:00, in 20 min") || { provide_refuse "$1" "not done: no time given"; return 1; }
         _v="$_when $_v"; _arg=$_v
     fi
+    return 0
+}
+provide_call_listed() {   # provide_call_listed ID -- the rows the host has are the allowlist, unless the tool is free; false after a refusal
     PANEL_ROW_MATCHED=''
-    case $_th in *f*) ;; *)   # the rows the host has are the allowlist
-        provide_quick "$sec" "$_name" "$_v" && _quick=1 || _quick=''
-        if [ -z "$_quick" ]; then
-            [ -s "$TMP/rows.last" ] || provide_rows "$sec" > "$TMP/rows.last"
-            cat "$TMP/rows.last" > "$TMP/rows.json"
-            if [ "$sec" = theme ]; then   # the wallpaper rows count too
-                [ -s "$TMP/wall.last" ] || provide_wall_rows > "$TMP/wall.last"
-                cat "$TMP/wall.last" >> "$TMP/rows.json"
-            fi
-            jq -e -s --arg n "$_name" --argjson a "$_plain" 'any(.[] | ((.rows // [])[] | .tool, (.more // [])[], (.step // empty | . as $s | $s.values[] | . as $v | $s.set | .arguments[$s.key] = $v.sent), .switch.turn_on, .switch.turn_off, .look), .look_back | select(. != null); .name == $n and .arguments == $a)' "$TMP/rows.json" >/dev/null 2>&1 \
-                && PANEL_ROW_MATCHED=1
+    case $_th in *f*) return 0 ;; esac
+    provide_quick "$sec" "$_name" "$_v" && _quick=1 || _quick=''
+    if [ -z "$_quick" ]; then
+        [ -s "$TMP/rows.last" ] || provide_rows "$sec" > "$TMP/rows.last"
+        cat "$TMP/rows.last" > "$TMP/rows.json"
+        if [ "$sec" = theme ]; then   # the wallpaper rows count too
+            [ -s "$TMP/wall.last" ] || provide_wall_rows > "$TMP/wall.last"
+            cat "$TMP/wall.last" >> "$TMP/rows.json"
         fi
-        [ -n "$_quick$PANEL_ROW_MATCHED" ] || provide_in_use "$sec" "$_name" "${_arg:-$_act}" \
-            || { provide_refuse "$1" "${_arg:-$_act} is not in the list now"; return 0; } ;;
-    esac
-    _g=$(panel_gate "$sec" "$_act" "$_arg") || { PANEL_ROW_MATCHED=''; provide_refuse "$1" "$(printf '%s' "$_g" | scrub_text)"; return 0; }
-    PANEL_ROW_MATCHED=''
-    # read before the step: undo puts back the state now
-    _undo='null'; PANEL_INV=$(panel_inverse "$sec" "$_act" "$_g"); PANEL_INV_READ=1; _inv=${PANEL_INV%%"$TAB"*}
-    if [ -n "$_inv" ] && action_tool "$sec" "$_inv"; then _undo=$(tool_call_json "$_tool" "$_tv") || _undo='null'; fi
+        jq -e -s --arg n "$_name" --argjson a "$_plain" 'any(.[] | ((.rows // [])[] | .tool, (.more // [])[], (.step // empty | . as $s | $s.values[] | . as $v | $s.set | .arguments[$s.key] = $v.sent), .switch.turn_on, .switch.turn_off, .look), .look_back | select(. != null); .name == $n and .arguments == $a)' "$TMP/rows.json" >/dev/null 2>&1 \
+            && PANEL_ROW_MATCHED=1
+    fi
+    [ -n "$_quick$PANEL_ROW_MATCHED" ] || provide_in_use "$sec" "$_name" "${_arg:-$_act}" \
+        || { provide_refuse "$1" "${_arg:-$_act} is not in the list now"; return 1; }
+}
+provide_call_step() {   # provide_call_step ID -- the step in a child, progress and pairing questions relayed meanwhile; _rc and _out its result; false after a refusal
     BT_BRIDGE=''
     if [ "$_name" = bt_pair ]; then
-        [ -n "$CLIENT_PAIRING" ] || { provide_refuse "$1" "pairing needs a client that supports native pairing questions"; return 0; }
+        [ -n "$CLIENT_PAIRING" ] || { provide_refuse "$1" "pairing needs a client that supports native pairing questions"; return 1; }
         BT_BRIDGE=$TMP
         rm -f "$TMP/bt.cancel" "$TMP/bt.ask"
         printf '%s\n' "$1" > "$TMP/bt.call-id"
@@ -385,10 +400,9 @@ EOF
     if [ -n "$(find "$CONFIG" "$THEME_ENV" -newer "$TMP/step.mark" 2>/dev/null)" ]; then
         for _k in $THEME_KEYS; do unset "$_k"; done; config_load; theme_load
     fi
-    if [ "$_rc" -ne 0 ]; then provide_refuse "$1" "${_out:-$sec: $_title did not work}"; return 0; fi
-    case $_name in notes_add|reminders_*|out_level|out_adjust|out_mute|out_unmute|mic_level|mic_adjust|mic_mute|mic_unmute|window_focus|window_close)
-        [ -s "$TMP/action.effect" ] || { provide_refuse "$1" 'the action may have happened, but its result could not be read back; check the current state before trying again'; return 0; } ;;
-    esac
+    return 0
+}
+provide_call_answer() {   # provide_call_answer ID -- the result: the receipt, the undo, the palette and animation for the dialog to repaint, the effect, the rows
     _pal='null'; _trn='null'   # the palette now, for the dialog to repaint
     [ "$sec" != theme ] || { _trn=$(dialog_transitions); _trn=$(jq -cn --arg t "$_trn" '$t'); }   # and the animation: "" plays none
     if [ "$_name" = theme_preview ]; then   # a look: nothing to undo

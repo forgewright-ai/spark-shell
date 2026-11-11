@@ -143,149 +143,176 @@ look_apply() {   # a look change, on the screen now
     look_burst
     desktop_files >/dev/null 2>&1 || :
 }
-panel_act() {   # panel_act SECTION ACTION [ARG] -> one line; exit 1 when not done
+panel_act() {   # panel_act SECTION ACTION [ARG] -> one line; exit 1 when not done. The steps read _p, _a and _arg
     _p=$1; _a=$2; shift 2; _arg=$*
     case $_a in show) return 0 ;; esac
     case $_p:$_a in lan:address|lan:auto|lan:dns|lan:restore|wifi:address|wifi:auto|wifi:dns|wifi:restore) network_action "$_a" "$_arg"; return ;; esac
     case $_p in
-        wifi) case $_a in
-                setup) wifi_setup ;;
-                hidden) _pw=${PANEL_PASS:-}; [ -n "$_pw" ] || _pw=$(panel_secret "password for $_arg (empty for an open network): "); wifi_connect "$_arg" "$_pw" hidden ;;
-                connect) _sec=$(wifi_scan | awk -F '\t' -v n="$(panel_lower "$_arg")" 'tolower($1) == n && !done {print $3; done = 1}')
-                    if [ -n "$(wifi_known_id "$_arg")" ] || [ "${_sec:-0}" = 0 ]; then wifi_connect "$_arg"
-                    else _pw=${PANEL_PASS:-}; [ -n "$_pw" ] || _pw=$(panel_secret "password for $_arg: "); [ -n "$_pw" ] || { echo "no password given, so not connected"; return 1; }; wifi_connect "$_arg" "$_pw"; fi ;;
-                disconnect) wifi_disconnect ;;
-                forget) wifi_forget "$_arg" ;;
-                *) echo "$_a is not something wifi does"; return 1 ;;
-            esac ;;
+        wifi) panel_act_wifi ;;
         bt) bt_act "$_a" "$_arg" ;;
         printers) panel_forget printers.status
             if python3 "$REPO/lib/printers.py" "$_a" "$_arg" > "$TMP/printers.result" 2> "$TMP/printers.error"; then jq -r .receipt "$TMP/printers.result"
             else cat "$TMP/printers.error"; return 1; fi ;;
-        out|mic) case $_a in
-                use) snd_use "$_p" "$_arg" ;;
-                level) snd_apply "$_p" "$_arg" ;;
-                adjust) snd_adjust "$_p" "$_arg" ;;
-                mute) snd_apply "$_p" muted ;;
-                unmute) snd_apply "$_p" unmuted ;;
-                *) echo "$_a is not something $_p does"; return 1 ;;
-            esac ;;
-        theme) case $_a in
-                text|font) text_step "$_arg" ;;   # font: synonym
-                wallpaper) _r=$(cmd_theme wallpaper "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "the wallpaper is $_arg" ;;
-                wallpaper-color) _h=$(wall_hex "$_arg") || { echo "a color is a name ($(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')) or #rrggbb"; return 1; }
-                    _r=$(cmd_theme wallpaper "$_h" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "the wallpaper is $_arg" ;;
-                wallpaper-picture) _pp=$(wall_picture_ok "$_arg") || { echo "$_pp"; return 1; }
-                    _r=$(cmd_theme wallpaper "$_pp" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "the wallpaper is ${_pp##*/}" ;;
-                save) _r=$(cmd_theme save "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "saved $(layout_name_of "$_arg") $PANEL_SEP spark-shell theme $(layout_name_of "$_arg") brings it back" ;;
-                delete) _r=$(cmd_theme delete "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "deleted $_arg" ;;
-                back) _r=$(cmd_theme back 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | sed -n 1p ;;
-                picture) _r=$(cmd_theme picture "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | sed -n 1p ;;
-                words) theme_words_step "$_arg" ;;
-                alpha) case $_arg in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) ;; *) echo "alpha is 0 to 1, as 0.85"; return 1 ;; esac
-                    config_set ALPHA "$_arg" >/dev/null; ALPHA=$_arg; export ALPHA; look_apply
-                    echo "alpha at $_arg" ;;
-                transparency|see-through) case ${_arg%\%} in more|less|[0-9]|[1-4][0-9]|50) alpha_step "${_arg%\%}" ;; *) echo "transparency takes more or less, or a percent from 0 to 50"; return 1 ;; esac ;;   # see-through: synonym
-                preview) theme_preview "$_arg" ;;
-                animation) anim_step "$_arg" ;;
-                glyphs) glyphs_step "$_arg" ;;
-                icons) icons_step "$_arg" ;;
-                spacing) spacing_step "$_arg" ;;
-                family) family_step "$_arg" ;;
-                face) face_step "$_arg" ;;
-                motion) motion_step "$_arg" ;;
-                theme) _r=$(cmd_theme "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "$_arg is on" ;;   # an older spelling
-                *) _r=$(cmd_theme "$_a" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "$_a is on" ;;   # a palette's name
-            esac ;;
-        layout) case $_a in
-                open) layout_kept_file "$_arg" >/dev/null || { echo "no saved layout named $_arg"; return 1; }
-                    ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; KEPT_ALSO=1 layout_need "$_arg" ) ;;
-                delete) ( REFUSE_AS=layout; layout_delete "$_arg" ) </dev/null ;;
-                restore) [ -n "${LAYOUT_DELETED:-}" ] && [ -f "$LAYOUT_DELETED/$_arg" ] || { echo "$_arg can no longer come back"; return 1; }
-                    mkdir -p "$LAYOUTS_DIR" && mv "$LAYOUT_DELETED/$_arg" "$LAYOUTS_DIR/$_arg" || { echo "could not bring $_arg back"; return 1; }
-                    echo "$_arg is back" ;;
-                rename) _rn=''; case $_arg in *' to='*) _rn=${_arg#* to=} ;; esac
-                    ( REFUSE_AS=layout; layout_rename "${_arg%% *}" "$_rn" ) </dev/null ;;
-                back) ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; layout_back ) ;;
-                new) [ -n "$_arg" ] || { echo "say what you want to do"; return 1; }
-                    ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; layout_need "$_arg" ) ;;
-                save) panel_layout_save "$_arg" ;;
-                add) panel_app_open "$_arg" || return 1
-                    jq --arg a "$_arg" '.suggested = ((.suggested // []) - [$a])' "$LAYOUT_LAST" > "$LAYOUT_LAST.new" && mv "$LAYOUT_LAST.new" "$LAYOUT_LAST" ;;
-                *) echo "$_a is not something layout does"; return 1 ;;
-            esac ;;
-        apps) case $_a in
-                close|focus) panel_act window "$_a" "$_arg" ;;   # done to its window
-                pick) ( cmd_apps_verb ) ;;
-                open) panel_app_open "$_arg" ;;
-                terminal) layout_in_sway || { echo "a terminal window needs the desktop"; return 1; }
-                    _wr=0; win_exec foot || _wr=$?
-                    [ "$_wr" -ne 2 ] || { echo "could not open a terminal"; return 1; }
-                    [ "$_wr" -eq 0 ] || { echo "the terminal opened no window"; return 1; }
-                    : > "$TMP/opened"; echo "opened a terminal" ;;
-                *) echo "$_a is not something apps does"; return 1 ;;
-            esac ;;
+        out|mic) panel_act_sound ;;
+        theme) panel_act_theme ;;
+        layout) panel_act_layout ;;
+        apps) panel_act_apps ;;
         spark) case $_a in chat) panel_chat ;; *) echo "$_a is not something spark does here"; return 1 ;; esac ;;
-        window) case $_a in
-                split|tabs|stacked) config_set WINDOWS "$_a" >/dev/null; WINDOWS=$_a; export WINDOWS; sway_file_apply
-                    win_arrange "$_a" || { echo "could not arrange this workspace: new workspaces will use $(win_words "$_a")"; return 1; }
-                    echo "windows $(win_said "$_a")" ;;
-                restore) _rd=${_arg%% *}; _rw=${_arg##* now=}   # undo: the default and this workspace
-                    config_set WINDOWS "$_rd" >/dev/null; WINDOWS=$_rd; export WINDOWS; sway_file_apply
-                    win_arrange "$_rw" || { echo "could not arrange this workspace: new workspaces will use $(win_words "$_rd")"; return 1; }
-                    echo "windows $(win_said "$_rw")" ;;
-                move) win_move "${_arg%% *}" "${_arg##* to=}" ;;
-                place) win_place "${_arg%% *}" "${_arg##* how=}" ;;
-                close) win_change close "$_arg" ;;
-                capture) _cw=${_arg%% *}; _ci=''; case $_arg in *' name='*) _ci=${_arg##* name=} ;; esac
-                    case $_cw in screen|area|window) ;; *) echo "capture takes screen, area or window"; return 1 ;; esac
-                    layout_in_sway || { echo "capture needs the desktop: run spark-shell on desktop"; return 1; }
-                    win_capture "$_cw" "$_ci" ;;
-                focus) win_change focus "$_arg" ;;
-                *) echo "$_a is not something window does"; return 1 ;;
-            esac ;;
+        window) panel_act_window ;;
         notes) notes_act "$_a" "$_arg" ;;
         reminders) rem_act "$_a" "$_arg" ;;
         notifications) notify_act "$_a" "$_arg" ;;
         storage) storage_act "$_a" "$_arg" ;;
         power) power_act "$_a" ;;
-        display) case $_a in
-                idle|lock) case $_arg in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) echo "$_a takes minutes, 0 to 999 (0: never)"; return 1 ;; esac
-                    _k=DISPLAY_IDLE; [ "$_a" = idle ] || _k=DISPLAY_LOCK
-                    config_set "$_k" "$_arg" >/dev/null; eval "$_k=\$_arg"; export "${_k?}"; sway_file_apply; idle_restart
-                    if [ "$_a" = idle ]; then echo "idle screen $(idle_words "$_arg")"; else echo "lock and display off $(idle_words "$_arg")"; fi ;;
-                saver) _p=$(saver_problem "$_arg"); [ -z "$_p" ] || { echo "$_p"; return 1; }
-                    config_set DISPLAY_SAVER "$_arg" >/dev/null; DISPLAY_SAVER=$_arg; export DISPLAY_SAVER
-                    echo "idle screen shows $(saver_words "$_arg")" ;;
-                brightness) light_set "$_arg" ;;
-                scale|mode|position|place|transform|screen-on|screen-off|main) screen_action "$_a" "$_arg" ;;
-                *) echo "$_a is not something display does"; return 1 ;;
-            esac ;;
+        display) panel_act_display ;;
         clock) time_setting "$_a" "$_arg" ;;
         pointer) input_setting pointer "$_a" "$_arg" ;;
-        keyboard) case $_a in
-                repeat-delay|repeat-rate|caps) input_setting keyboard "$_a" "$_arg" ;;
-                next) layout_in_sway || { echo "a layout switch needs the desktop"; return 1; }
-                    swaymsg -- input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || { echo "sway took no layout switch"; return 1; }
-                    bar_redraw; echo "the keyboard is $(kb_active)" ;;
-                use) layout_in_sway || { echo "a layout switch needs the desktop"; return 1; }
-                    _i=$(printf '%s\n' $KEYBOARD | awk -v n="$(panel_lower "$_arg")" 'tolower($0) == n {print NR - 1; exit}'); [ -n "$_i" ] || { echo "no layout $_arg in KEYBOARD ($KEYBOARD)"; return 1; }
-                    swaymsg -- input type:keyboard xkb_switch_layout "$_i" >/dev/null 2>&1 || { echo "sway took no layout switch"; return 1; }
-                    bar_redraw; echo "the keyboard is $_arg" ;;
-                *) echo "$_a is not something keyboard does"; return 1 ;;
-            esac ;;
+        keyboard) panel_act_keyboard ;;
         about) case $_a in open) panel_about 72 ;; site) about_site ;; *) echo "$_a is not something about does"; return 1 ;; esac ;;
         tools) tools_act "$_a" "$_arg" ;;
-        bar) case $_a in
-                off) bar_desktop off desktop >/dev/null; echo "bar hidden $PANEL_SEP $(panel_keys "$(layout_keys | awk '$2 == "home.open." {print $1; exit}')") opens the dialog" ;;
-                on) bar_desktop on desktop >/dev/null; echo "bar shown" ;;
-                top|bottom) bar_where "$_a" >/dev/null; echo "bar $(bar_place_words "$_a")" ;;
-                text) bar_text_step "$_arg" ;;
-                tray) case $_arg in on|off) bar_tray_step "$_arg" ;; *) echo "tray takes on or off"; return 1 ;; esac ;;
-                *) echo "$_a is not something bar does"; return 1 ;;
-            esac ;;
+        bar) panel_act_bar ;;
         undo) case $_a in all) panel_undo ;; *) echo "$_a is not something undo does"; return 1 ;; esac ;;
         *) echo "$_p takes no action"; return 1 ;;
+    esac
+}
+panel_act_wifi() {   # the wifi steps: setup, hidden, connect (a password asked for when the network needs one), disconnect, forget
+    case $_a in
+        setup) wifi_setup ;;
+        hidden) _pw=${PANEL_PASS:-}; [ -n "$_pw" ] || _pw=$(panel_secret "password for $_arg (empty for an open network): "); wifi_connect "$_arg" "$_pw" hidden ;;
+        connect) _sec=$(wifi_scan | awk -F '\t' -v n="$(panel_lower "$_arg")" 'tolower($1) == n && !done {print $3; done = 1}')
+            if [ -n "$(wifi_known_id "$_arg")" ] || [ "${_sec:-0}" = 0 ]; then wifi_connect "$_arg"
+            else _pw=${PANEL_PASS:-}; [ -n "$_pw" ] || _pw=$(panel_secret "password for $_arg: "); [ -n "$_pw" ] || { echo "no password given, so not connected"; return 1; }; wifi_connect "$_arg" "$_pw"; fi ;;
+        disconnect) wifi_disconnect ;;
+        forget) wifi_forget "$_arg" ;;
+        *) echo "$_a is not something wifi does"; return 1 ;;
+    esac
+}
+panel_act_sound() {   # the out and mic steps: the device, the level, mute and unmute
+    case $_a in
+        use) snd_use "$_p" "$_arg" ;;
+        level) snd_apply "$_p" "$_arg" ;;
+        adjust) snd_adjust "$_p" "$_arg" ;;
+        mute) snd_apply "$_p" muted ;;
+        unmute) snd_apply "$_p" unmuted ;;
+        *) echo "$_a is not something $_p does"; return 1 ;;
+    esac
+}
+panel_act_theme() {   # the theme steps: the text, the wallpaper, save, delete, back, a picture, words, the settings, else a palette's name
+    case $_a in
+        text|font) text_step "$_arg" ;;   # font: synonym
+        wallpaper) _r=$(cmd_theme wallpaper "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "the wallpaper is $_arg" ;;
+        wallpaper-color) _h=$(wall_hex "$_arg") || { echo "a color is a name ($(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')) or #rrggbb"; return 1; }
+            _r=$(cmd_theme wallpaper "$_h" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "the wallpaper is $_arg" ;;
+        wallpaper-picture) _pp=$(wall_picture_ok "$_arg") || { echo "$_pp"; return 1; }
+            _r=$(cmd_theme wallpaper "$_pp" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "the wallpaper is ${_pp##*/}" ;;
+        save) _r=$(cmd_theme save "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "saved $(layout_name_of "$_arg") $PANEL_SEP spark-shell theme $(layout_name_of "$_arg") brings it back" ;;
+        delete) _r=$(cmd_theme delete "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "deleted $_arg" ;;
+        back) _r=$(cmd_theme back 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | sed -n 1p ;;
+        picture) _r=$(cmd_theme picture "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | sed -n 1p ;;
+        words) theme_words_step "$_arg" ;;
+        alpha) case $_arg in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) ;; *) echo "alpha is 0 to 1, as 0.85"; return 1 ;; esac
+            config_set ALPHA "$_arg" >/dev/null; ALPHA=$_arg; export ALPHA; look_apply
+            echo "alpha at $_arg" ;;
+        transparency|see-through) case ${_arg%\%} in more|less|[0-9]|[1-4][0-9]|50) alpha_step "${_arg%\%}" ;; *) echo "transparency takes more or less, or a percent from 0 to 50"; return 1 ;; esac ;;   # see-through: synonym
+        preview) theme_preview "$_arg" ;;
+        animation) anim_step "$_arg" ;;
+        glyphs) glyphs_step "$_arg" ;;
+        icons) icons_step "$_arg" ;;
+        spacing) spacing_step "$_arg" ;;
+        family) family_step "$_arg" ;;
+        face) face_step "$_arg" ;;
+        motion) motion_step "$_arg" ;;
+        theme) _r=$(cmd_theme "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "$_arg is on" ;;   # an older spelling
+        *) _r=$(cmd_theme "$_a" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "$_a is on" ;;   # a palette's name
+    esac
+}
+panel_act_layout() {   # the layout steps: open, delete, restore, rename, back, new, save, add
+    case $_a in
+        open) layout_kept_file "$_arg" >/dev/null || { echo "no saved layout named $_arg"; return 1; }
+            ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; KEPT_ALSO=1 layout_need "$_arg" ) ;;
+        delete) ( REFUSE_AS=layout; layout_delete "$_arg" ) </dev/null ;;
+        restore) [ -n "${LAYOUT_DELETED:-}" ] && [ -f "$LAYOUT_DELETED/$_arg" ] || { echo "$_arg can no longer come back"; return 1; }
+            mkdir -p "$LAYOUTS_DIR" && mv "$LAYOUT_DELETED/$_arg" "$LAYOUTS_DIR/$_arg" || { echo "could not bring $_arg back"; return 1; }
+            echo "$_arg is back" ;;
+        rename) _rn=''; case $_arg in *' to='*) _rn=${_arg#* to=} ;; esac
+            ( REFUSE_AS=layout; layout_rename "${_arg%% *}" "$_rn" ) </dev/null ;;
+        back) ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; layout_back ) ;;
+        new) [ -n "$_arg" ] || { echo "say what you want to do"; return 1; }
+            ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; layout_need "$_arg" ) ;;
+        save) panel_layout_save "$_arg" ;;
+        add) panel_app_open "$_arg" || return 1
+            jq --arg a "$_arg" '.suggested = ((.suggested // []) - [$a])' "$LAYOUT_LAST" > "$LAYOUT_LAST.new" && mv "$LAYOUT_LAST.new" "$LAYOUT_LAST" ;;
+        *) echo "$_a is not something layout does"; return 1 ;;
+    esac
+}
+panel_act_apps() {   # the apps steps: close and focus done to the window, pick, open, a terminal
+    case $_a in
+        close|focus) panel_act window "$_a" "$_arg" ;;   # done to its window
+        pick) ( cmd_apps_verb ) ;;
+        open) panel_app_open "$_arg" ;;
+        terminal) layout_in_sway || { echo "a terminal window needs the desktop"; return 1; }
+            _wr=0; win_exec foot || _wr=$?
+            [ "$_wr" -ne 2 ] || { echo "could not open a terminal"; return 1; }
+            [ "$_wr" -eq 0 ] || { echo "the terminal opened no window"; return 1; }
+            : > "$TMP/opened"; echo "opened a terminal" ;;
+        *) echo "$_a is not something apps does"; return 1 ;;
+    esac
+}
+panel_act_window() {   # the window steps: the arrangement and its undo, move, place, close, capture, focus
+    case $_a in
+        split|tabs|stacked) config_set WINDOWS "$_a" >/dev/null; WINDOWS=$_a; export WINDOWS; sway_file_apply
+            win_arrange "$_a" || { echo "could not arrange this workspace: new workspaces will use $(win_words "$_a")"; return 1; }
+            echo "windows $(win_said "$_a")" ;;
+        restore) _rd=${_arg%% *}; _rw=${_arg##* now=}   # undo: the default and this workspace
+            config_set WINDOWS "$_rd" >/dev/null; WINDOWS=$_rd; export WINDOWS; sway_file_apply
+            win_arrange "$_rw" || { echo "could not arrange this workspace: new workspaces will use $(win_words "$_rd")"; return 1; }
+            echo "windows $(win_said "$_rw")" ;;
+        move) win_move "${_arg%% *}" "${_arg##* to=}" ;;
+        place) win_place "${_arg%% *}" "${_arg##* how=}" ;;
+        close) win_change close "$_arg" ;;
+        capture) _cw=${_arg%% *}; _ci=''; case $_arg in *' name='*) _ci=${_arg##* name=} ;; esac
+            case $_cw in screen|area|window) ;; *) echo "capture takes screen, area or window"; return 1 ;; esac
+            layout_in_sway || { echo "capture needs the desktop: run spark-shell on desktop"; return 1; }
+            win_capture "$_cw" "$_ci" ;;
+        focus) win_change focus "$_arg" ;;
+        *) echo "$_a is not something window does"; return 1 ;;
+    esac
+}
+panel_act_display() {   # the display steps: the idle and lock minutes, the saver, the brightness, the screens
+    case $_a in
+        idle|lock) case $_arg in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) echo "$_a takes minutes, 0 to 999 (0: never)"; return 1 ;; esac
+            _k=DISPLAY_IDLE; [ "$_a" = idle ] || _k=DISPLAY_LOCK
+            config_set "$_k" "$_arg" >/dev/null; eval "$_k=\$_arg"; export "${_k?}"; sway_file_apply; idle_restart
+            if [ "$_a" = idle ]; then echo "idle screen $(idle_words "$_arg")"; else echo "lock and display off $(idle_words "$_arg")"; fi ;;
+        saver) _p=$(saver_problem "$_arg"); [ -z "$_p" ] || { echo "$_p"; return 1; }
+            config_set DISPLAY_SAVER "$_arg" >/dev/null; DISPLAY_SAVER=$_arg; export DISPLAY_SAVER
+            echo "idle screen shows $(saver_words "$_arg")" ;;
+        brightness) light_set "$_arg" ;;
+        scale|mode|position|place|transform|screen-on|screen-off|main) screen_action "$_a" "$_arg" ;;
+        *) echo "$_a is not something display does"; return 1 ;;
+    esac
+}
+panel_act_keyboard() {   # the keyboard steps: the repeat and caps settings, the next layout, one by name
+    case $_a in
+        repeat-delay|repeat-rate|caps) input_setting keyboard "$_a" "$_arg" ;;
+        next) layout_in_sway || { echo "a layout switch needs the desktop"; return 1; }
+            swaymsg -- input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || { echo "sway took no layout switch"; return 1; }
+            bar_redraw; echo "the keyboard is $(kb_active)" ;;
+        use) layout_in_sway || { echo "a layout switch needs the desktop"; return 1; }
+            _i=$(printf '%s\n' $KEYBOARD | awk -v n="$(panel_lower "$_arg")" 'tolower($0) == n {print NR - 1; exit}'); [ -n "$_i" ] || { echo "no layout $_arg in KEYBOARD ($KEYBOARD)"; return 1; }
+            swaymsg -- input type:keyboard xkb_switch_layout "$_i" >/dev/null 2>&1 || { echo "sway took no layout switch"; return 1; }
+            bar_redraw; echo "the keyboard is $_arg" ;;
+        *) echo "$_a is not something keyboard does"; return 1 ;;
+    esac
+}
+panel_act_bar() {   # the bar steps: off, on, the place, the text size, the tray
+    case $_a in
+        off) bar_desktop off desktop >/dev/null; echo "bar hidden $PANEL_SEP $(panel_keys "$(layout_keys | awk '$2 == "home.open." {print $1; exit}')") opens the dialog" ;;
+        on) bar_desktop on desktop >/dev/null; echo "bar shown" ;;
+        top|bottom) bar_where "$_a" >/dev/null; echo "bar $(bar_place_words "$_a")" ;;
+        text) bar_text_step "$_arg" ;;
+        tray) case $_arg in on|off) bar_tray_step "$_arg" ;; *) echo "tray takes on or off"; return 1 ;; esac ;;
+        *) echo "$_a is not something bar does"; return 1 ;;
     esac
 }
 panel_app_open() {   # panel_app_open NAME -> the app opens here

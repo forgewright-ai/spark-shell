@@ -194,38 +194,9 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
     case $2 in
         files_stop) files_stop; files_result "$1" "stopped"; return 0 ;;
         files_empty) _fo=$(files_empty) || { provide_refuse "$1" "files: $_fo"; return 0; }; files_result "$1" "$_fo"; return 0 ;;   # for good: no undo
-        files_find|files_say)
-            _fk=${2#files_}; _fsw=$(printf '%s' "$_fws" | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')
-            [ -n "$_fsw" ] || { provide_refuse "$1" "files: $_fk takes the words to look for"; return 0; }
-            _fsu="spark-shell://files/rows/$_fk/$(files_b64 "$_fsw")"
-            provide_files_rows "$_fsu" > "$TMP/files.search" || { provide_refuse "$1" "files: $_fk takes plain words, 256 characters at most"; return 0; }
-            _fsc=$(jq '[.rows[] | select(.id != "files:total")] | length' "$TMP/files.search")
-            if [ "$_fsc" -eq 0 ]; then if [ "$_fk" = find ]; then files_result "$1" "nothing under your home is named $_fsw"; else files_result "$1" "no text file under your home says $_fsw"; fi; return 0; fi
-            if [ "$_fk" = find ]; then files_result "$1" "$_fsc named $_fsw" '' '' "open=$_fsu"; else files_result "$1" "$_fsc say $_fsw" '' '' "open=$_fsu"; fi
-            return 0 ;;
-        files_restore)
-            _ff=$_fa; case $_ff in /*) ;; *) provide_refuse "$1" "files: that is not a path in the folders given"; return 0 ;; esac
-            _ffd=$(files_ok "$(dirname "$_ff")" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; }
-            files_name_ok "${_ff##*/}" || { provide_refuse "$1" "files: that is not a name in the folders given"; return 0; }
-            _fo=$(files_restore "$_ffd/${_ff##*/}" "$(printf '%s' "$3" | jq -r '.item // ""')") || { provide_refuse "$1" "files: $_fo"; return 0; }
-            files_result "$1" "$_fo" files_trash "$(jq -cn --arg p "$_ffd/${_ff##*/}" '{path: $p}')"; return 0 ;;
-        files_purge)   # for good: no undo
-            _ff=$_fa; case $_ff in /*) ;; *) provide_refuse "$1" "files: that is not a path in the folders given"; return 0 ;; esac
-            _ffd=$(files_ok "$(dirname "$_ff")" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; }
-            files_name_ok "${_ff##*/}" || { provide_refuse "$1" "files: that is not a name in the folders given"; return 0; }
-            _fo=$(files_purge "$_ffd/${_ff##*/}" "$(printf '%s' "$3" | jq -r '.item // ""')") || { provide_refuse "$1" "files: $_fo"; return 0; }
-            files_result "$1" "$_fo"; return 0 ;;
-        files_new_folder|files_new_text)
-            _fn=$(files_new_ok "$_fa" "$_fnm") || { provide_refuse "$1" "files: $_fn"; return 0; }
-            if [ "$2" = files_new_folder ]; then mkdir "$_fn" 2>/dev/null || { provide_refuse "$1" "files: could not make $_fnm"; return 0; }
-                files_result "$1" "folder $_fnm made in $(files_home "${_fn%/*}")" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"; return 0; fi
-            : > "$_fn" 2>/dev/null || { provide_refuse "$1" "files: could not make $_fnm"; return 0; }
-            if layout_in_sway && editor_pick >/dev/null; then   # in the editor, in a terminal window: the window is the receipt
-                case $_fn in *[,\;\'\"]*) ;; *)
-                    if win_exec "$(editor_exec "$_fn")"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"; return 0; fi ;;
-                esac
-            fi
-            files_result "$1" "$_fnm made in $(files_home "${_fn%/*}")" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"; return 0 ;;
+        files_find|files_say) files_call_search "$@"; return 0 ;;
+        files_restore|files_purge) files_call_trashed "$@"; return 0 ;;
+        files_new_folder|files_new_text) files_call_new "$@"; return 0 ;;
         files_browse) _ff=$(files_ok "$_fa" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; } ;;
         files_open|files_show|files_attach|files_play) _ff=$(files_ok "$_fa" file) || { provide_refuse "$1" "files: that is not a file in the folders given"; return 0; } ;;
         *) _ff=$(files_ok "$_fa" any) || { provide_refuse "$1" "files: that is not a file or a folder in the folders given"; return 0; } ;;
@@ -234,67 +205,107 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
     case $2 in files_rename|files_move|files_copy|files_trash) ! files_is_root "$_ff" || { provide_refuse "$1" "files: your home and a drive stay as they are"; return 0; } ;; esac
     case $2 in
         files_open) files_open_text "$1" "$_ff" || files_open_with "$1" "$_ff" ;;
-        files_play)
-            _fat=$(printf '%s' "$3" | jq -r '.at // 0 | if type == "number" and . >= 0 and . < 86400 then (. * 10 | floor) / 10 else 0 end')
-            if [ "$(files_kind "$_ff")" = video ] && command -v mpv >/dev/null 2>&1 && files_video_here; then   # over its frame
-                _fbx=$(printf '%s' "$3" | jq -r '[.x, .y, .w, .h] | if all(type == "number" and . >= 0 and . <= 65535) then map(floor | tostring) | join(" ") else "" end')
-                [ -n "$_fbx" ] || { provide_refuse "$1" "files: a video plays over its view: the dialog gives the box"; return 0; }
-                # shellcheck disable=SC2086   # four numbers, split on purpose
-                _fpv=$(files_play_video "$_ff" "$_fat" $_fbx) || { provide_refuse "$1" "files: ${_fpv:-$_fname could not be played here}"; return 0; }
-                files_result "$1" "playing $_fname"; return 0
-            fi
-            [ "$(files_kind "$_ff")" = sound ] && command -v mpv >/dev/null 2>&1 || { provide_refuse "$1" "files: $_fname is no sound mpv plays here"; return 0; }
-            files_play "$_ff" "$_fat"; files_result "$1" "playing $_fname" ;;
+        files_play) files_call_play "$@" ;;
         files_browse) files_open_with "$1" "$_ff" ;;
         files_app)   # the app the system assigns; a terminal program gets a terminal
             if files_app_terminal "$_ff"; then files_open_text "$1" "$_ff" || files_open_with "$1" "$_ff"
             else files_open_with "$1" "$_ff"; fi ;;
         files_reveal) files_open_with "$1" "$_ff" --reveal ;;
-        files_show|files_attach)
-            set -- "$1" "$2" "$(files_stat "$_ff" | cut -d' ' -f1)"
-            [ "$3" -le "$FILES_SHOW_MAX" ] || { provide_refuse "$1" "files: $_fname is larger than $((FILES_SHOW_MAX / 1024)) kB"; return 0; }
-            [ "$(tr -d '\000' < "$_ff" | wc -c | tr -d ' ')" = "$3" ] || { provide_refuse "$1" "files: $_fname is not text"; return 0; }
-            if [ "$2" = files_show ]; then
-                rpc_result "$1" "$(head -n "$FILES_SHOW_LINES" "$_ff" | scrub_text | jq -Rs --arg n "$_fname" '{receipt: ($n + "\n" + (. | rtrimstr("\n")))} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
-            else
-                _fx=$(printf '%s' "${_ff##*/}" | sed -n 's/.*\.\([A-Za-z0-9]*\)$/\1/p' | tr 'A-Z' 'a-z')
-                case " $DIALOG_ATTACH_TYPES " in *" ${_fx:-.} "*) ;; *) provide_refuse "$1" "files: $_fname is not a type plus attaches ($DIALOG_ATTACH_TYPES)"; return 0 ;; esac
-                rpc_result "$1" "$(jq -cn --arg r "attached $_fname" --arg p "$_ff" '{receipt: $r, attach: $p} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
-            fi ;;
+        files_show|files_attach) files_call_show "$@" ;;
         files_rename)
             _fn=$(files_new_ok "${_ff%/*}" "$_fnm") || { provide_refuse "$1" "files: $_fn"; return 0; }
             mv "$_ff" "$_fn" 2>/dev/null || { provide_refuse "$1" "files: could not rename $_fname"; return 0; }
             files_result "$1" "$_fname renamed to $_fnm" files_rename "$(jq -cn --arg p "$_fn" --arg n "${_ff##*/}" '{path: $p, name: $n}')" ;;
-        files_move|files_copy)
-            _fd=$(files_ok "$_fto" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; }
-            [ "$_fd" != "${_ff%/*}" ] || { provide_refuse "$1" "files: $_fname is in $(files_home "$_fd") already"; return 0; }
-            case $_fd in "$_ff"|"$_ff"/*) provide_refuse "$1" "files: a folder does not go inside itself"; return 0 ;; esac
-            # the name it takes there: the one given, else its own. One there already is refused unless there says
-            # keep (NAME 2.EXT, the first free) or replace (the one there to the trash first)
-            _fnn=${_fnm:-${_ff##*/}}; _fth=$(printf '%s' "$3" | jq -r '.there // ""'); _fend=''
-            files_name_ok "$_fnn" || { provide_refuse "$1" "files: a name is one plain name: no slash, not hidden, 255 characters at most"; return 0; }
-            if [ -e "$_fd/$_fnn" ] || [ -L "$_fd/$_fnn" ]; then
-                case $_fth in
-                    keep) _fnk='file'; [ ! -d "$_ff" ] || _fnk=dir; _fnn=$(files_free "$_fd" "$_fnn" "$_fnk") ;;
-                    replace) _fone=$(files_ok "$_fd/$_fnn" any) || { provide_refuse "$1" "files: $_fnn there is not a file or a folder: it stays"; return 0; }
-                        _fo=$(files_trash "$_fone") || { provide_refuse "$1" "files: $_fo"; return 0; }; _fend=', the one there is in the trash' ;;
-                    *) provide_refuse "$1" "files: $_fnn already exists"; return 0 ;;
-                esac
-            fi
-            _fn=$(files_new_ok "$_fd" "$_fnn") || { provide_refuse "$1" "files: $_fn"; return 0; }
-            _fas=''; [ "$_fnn" = "${_ff##*/}" ] || _fas=" as $(printf '%s' "$_fnn" | scrub_text)"   # the receipt names the name it took when that is not its own
-            if [ "$2" = files_move ]; then
-                mv "$_ff" "$_fn" 2>/dev/null || { files_unreplace; provide_refuse "$1" "files: could not move $_fname"; return 0; }
-                _fub=$(jq -cn --arg p "$_fn" --arg t "${_ff%/*}" --arg n "${_ff##*/}" --arg k "$_fnn" '{path: $p, to: $t} + (if $n == $k then {} else {name: $n} end)')   # back, under its old name
-                files_result "$1" "$_fname moved to $(files_home "$_fd")$_fas$_fend" files_move "$_fub"
-            else
-                cp -Rp "$_ff" "$_fn" 2>/dev/null || { rm -rf "$_fn"; files_unreplace; provide_refuse "$1" "files: could not copy $_fname"; return 0; }
-                files_result "$1" "$_fname copied to $(files_home "$_fd")$_fas$_fend" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"
-            fi ;;
+        files_move|files_copy) files_call_put "$@" ;;
         files_trash)
             _fo=$(files_trash "$_ff") || { provide_refuse "$1" "files: $_fo"; return 0; }
             files_result "$1" "$_fo" files_restore "$(jq -cn --arg p "$_ff" '{path: $p}')" ;;
     esac
+}
+files_call_search() {   # files_call_search ID TOOL ARGUMENTS -- find (names) or say (text): the count, and the list to open
+    _fk=${2#files_}; _fsw=$(printf '%s' "$_fws" | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')
+    [ -n "$_fsw" ] || { provide_refuse "$1" "files: $_fk takes the words to look for"; return 0; }
+    _fsu="spark-shell://files/rows/$_fk/$(files_b64 "$_fsw")"
+    provide_files_rows "$_fsu" > "$TMP/files.search" || { provide_refuse "$1" "files: $_fk takes plain words, 256 characters at most"; return 0; }
+    _fsc=$(jq '[.rows[] | select(.id != "files:total")] | length' "$TMP/files.search")
+    if [ "$_fsc" -eq 0 ]; then if [ "$_fk" = find ]; then files_result "$1" "nothing under your home is named $_fsw"; else files_result "$1" "no text file under your home says $_fsw"; fi; return 0; fi
+    if [ "$_fk" = find ]; then files_result "$1" "$_fsc named $_fsw" '' '' "open=$_fsu"; else files_result "$1" "$_fsc say $_fsw" '' '' "open=$_fsu"; fi
+}
+files_call_trashed() {   # files_call_trashed ID TOOL ARGUMENTS -- restore brings one back from the trash to the path it had; purge deletes it for good (no undo)
+    _ff=$_fa; case $_ff in /*) ;; *) provide_refuse "$1" "files: that is not a path in the folders given"; return 0 ;; esac
+    _ffd=$(files_ok "$(dirname "$_ff")" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; }
+    files_name_ok "${_ff##*/}" || { provide_refuse "$1" "files: that is not a name in the folders given"; return 0; }
+    _fit=$(printf '%s' "$3" | jq -r '.item // ""')
+    if [ "$2" = files_restore ]; then
+        _fo=$(files_restore "$_ffd/${_ff##*/}" "$_fit") || { provide_refuse "$1" "files: $_fo"; return 0; }
+        files_result "$1" "$_fo" files_trash "$(jq -cn --arg p "$_ffd/${_ff##*/}" '{path: $p}')"
+    else
+        _fo=$(files_purge "$_ffd/${_ff##*/}" "$_fit") || { provide_refuse "$1" "files: $_fo"; return 0; }
+        files_result "$1" "$_fo"
+    fi
+}
+files_call_new() {   # files_call_new ID TOOL ARGUMENTS -- a folder, or an empty text file opened in the editor
+    _fn=$(files_new_ok "$_fa" "$_fnm") || { provide_refuse "$1" "files: $_fn"; return 0; }
+    if [ "$2" = files_new_folder ]; then mkdir "$_fn" 2>/dev/null || { provide_refuse "$1" "files: could not make $_fnm"; return 0; }
+        files_result "$1" "folder $_fnm made in $(files_home "${_fn%/*}")" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"; return 0; fi
+    : > "$_fn" 2>/dev/null || { provide_refuse "$1" "files: could not make $_fnm"; return 0; }
+    if layout_in_sway && editor_pick >/dev/null; then   # in the editor, in a terminal window: the window is the receipt
+        case $_fn in *[,\;\'\"]*) ;; *)
+            if win_exec "$(editor_exec "$_fn")"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"; return 0; fi ;;
+        esac
+    fi
+    files_result "$1" "$_fnm made in $(files_home "${_fn%/*}")" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"
+}
+files_call_play() {   # files_call_play ID TOOL ARGUMENTS -- a video over the box the dialog gives, or a sound with no window
+    _fat=$(printf '%s' "$3" | jq -r '.at // 0 | if type == "number" and . >= 0 and . < 86400 then (. * 10 | floor) / 10 else 0 end')
+    if [ "$(files_kind "$_ff")" = video ] && command -v mpv >/dev/null 2>&1 && files_video_here; then   # over its frame
+        _fbx=$(printf '%s' "$3" | jq -r '[.x, .y, .w, .h] | if all(type == "number" and . >= 0 and . <= 65535) then map(floor | tostring) | join(" ") else "" end')
+        [ -n "$_fbx" ] || { provide_refuse "$1" "files: a video plays over its view: the dialog gives the box"; return 0; }
+        # shellcheck disable=SC2086   # four numbers, split on purpose
+        _fpv=$(files_play_video "$_ff" "$_fat" $_fbx) || { provide_refuse "$1" "files: ${_fpv:-$_fname could not be played here}"; return 0; }
+        files_result "$1" "playing $_fname"; return 0
+    fi
+    [ "$(files_kind "$_ff")" = sound ] && command -v mpv >/dev/null 2>&1 || { provide_refuse "$1" "files: $_fname is no sound mpv plays here"; return 0; }
+    files_play "$_ff" "$_fat"; files_result "$1" "playing $_fname"
+}
+files_call_show() {   # files_call_show ID TOOL ARGUMENTS -- show: the first lines of a text file; attach: the file for spark, when its type plus attaches
+    set -- "$1" "$2" "$(files_stat "$_ff" | cut -d' ' -f1)"
+    [ "$3" -le "$FILES_SHOW_MAX" ] || { provide_refuse "$1" "files: $_fname is larger than $((FILES_SHOW_MAX / 1024)) kB"; return 0; }
+    [ "$(tr -d '\000' < "$_ff" | wc -c | tr -d ' ')" = "$3" ] || { provide_refuse "$1" "files: $_fname is not text"; return 0; }
+    if [ "$2" = files_show ]; then
+        rpc_result "$1" "$(head -n "$FILES_SHOW_LINES" "$_ff" | scrub_text | jq -Rs --arg n "$_fname" '{receipt: ($n + "\n" + (. | rtrimstr("\n")))} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
+    else
+        _fx=$(printf '%s' "${_ff##*/}" | sed -n 's/.*\.\([A-Za-z0-9]*\)$/\1/p' | tr 'A-Z' 'a-z')
+        case " $DIALOG_ATTACH_TYPES " in *" ${_fx:-.} "*) ;; *) provide_refuse "$1" "files: $_fname is not a type plus attaches ($DIALOG_ATTACH_TYPES)"; return 0 ;; esac
+        rpc_result "$1" "$(jq -cn --arg r "attached $_fname" --arg p "$_ff" '{receipt: $r, attach: $p} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
+    fi
+}
+files_call_put() {   # files_call_put ID TOOL ARGUMENTS -- move or copy into another folder, under the name given or its own; a name there already is refused unless there says keep or replace
+    _fd=$(files_ok "$_fto" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; }
+    [ "$_fd" != "${_ff%/*}" ] || { provide_refuse "$1" "files: $_fname is in $(files_home "$_fd") already"; return 0; }
+    case $_fd in "$_ff"|"$_ff"/*) provide_refuse "$1" "files: a folder does not go inside itself"; return 0 ;; esac
+    # the name it takes there: the one given, else its own. One there already is refused unless there says
+    # keep (NAME 2.EXT, the first free) or replace (the one there to the trash first)
+    _fnn=${_fnm:-${_ff##*/}}; _fth=$(printf '%s' "$3" | jq -r '.there // ""'); _fend=''
+    files_name_ok "$_fnn" || { provide_refuse "$1" "files: a name is one plain name: no slash, not hidden, 255 characters at most"; return 0; }
+    if [ -e "$_fd/$_fnn" ] || [ -L "$_fd/$_fnn" ]; then
+        case $_fth in
+            keep) _fnk='file'; [ ! -d "$_ff" ] || _fnk=dir; _fnn=$(files_free "$_fd" "$_fnn" "$_fnk") ;;
+            replace) _fone=$(files_ok "$_fd/$_fnn" any) || { provide_refuse "$1" "files: $_fnn there is not a file or a folder: it stays"; return 0; }
+                _fo=$(files_trash "$_fone") || { provide_refuse "$1" "files: $_fo"; return 0; }; _fend=', the one there is in the trash' ;;
+            *) provide_refuse "$1" "files: $_fnn already exists"; return 0 ;;
+        esac
+    fi
+    _fn=$(files_new_ok "$_fd" "$_fnn") || { provide_refuse "$1" "files: $_fn"; return 0; }
+    _fas=''; [ "$_fnn" = "${_ff##*/}" ] || _fas=" as $(printf '%s' "$_fnn" | scrub_text)"   # the receipt names the name it took when that is not its own
+    if [ "$2" = files_move ]; then
+        mv "$_ff" "$_fn" 2>/dev/null || { files_unreplace; provide_refuse "$1" "files: could not move $_fname"; return 0; }
+        _fub=$(jq -cn --arg p "$_fn" --arg t "${_ff%/*}" --arg n "${_ff##*/}" --arg k "$_fnn" '{path: $p, to: $t} + (if $n == $k then {} else {name: $n} end)')   # back, under its old name
+        files_result "$1" "$_fname moved to $(files_home "$_fd")$_fas$_fend" files_move "$_fub"
+    else
+        cp -Rp "$_ff" "$_fn" 2>/dev/null || { rm -rf "$_fn"; files_unreplace; provide_refuse "$1" "files: could not copy $_fname"; return 0; }
+        files_result "$1" "$_fname copied to $(files_home "$_fd")$_fas$_fend" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"
+    fi
 }
 provide_roots() {   # provide_roots RESULT -- the host's roots kept in PROOTS, each a folder's realpath, never /
     printf '%s' "$1" | jq -r '.roots // [] | .[] | .uri // "" | select(startswith("file://")) | ltrimstr("file://")
