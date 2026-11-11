@@ -510,5 +510,4 @@ mod tests {
     }
 }
 
-pub mod run;
 pub mod ui;

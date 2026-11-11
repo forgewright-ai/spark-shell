@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""paths_check.py [--report] -- every path written in the tree points at something in the tree.
+"""paths_check.py -- every path written in the tree points at something in the tree.
 
 Scans the tracked text files for references into the top-level folders (asset, component,
-distro, gallery, lib, src, template, test) and the root files, in these forms:
+distro, gallery, lib, src, template, test), in these forms:
   template/login/config.toml   "$REPO/src/core.sh"   $REPO/lib/apps.py   ./test/gate.sh
 A reference with a shell variable or a glob after the folder (src/$name.sh, lib/motion_*.py)
 is checked up to the first such part. A reference that names nothing in the tree is an error.
@@ -15,13 +15,13 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOP = "asset component distro gallery lib src template test".split()
-ROOT_FILES = "spark-shell config.example allowed-signers LICENSE README.md CHANGELOG.md CREDITS.md".split()
 REF = re.compile(r"(?<![A-Za-z0-9_.\-/])(?:\./|\$REPO/|\$\{REPO\}/|\"\$REPO\"/)?((?:%s)/[A-Za-z0-9_.\-/$*{}]+)" % "|".join(TOP))
 KEEP = (
     "rendered by spark-shell from template",   # the marker an installed file carries; readers accept it
     "[ ! -e ",                                 # a test that a path is absent
 )
-TEXT = (".sh", ".py", ".rs", ".toml", ".yml", ".yaml", ".md", ".env", ".ini", ".conf", ".json", ".txt", ".svg", ".desktop", ".rules", ".service", "")
+TEXT = (".sh", ".py", ".rs", ".toml", ".yml", ".yaml", ".md", ".env", ".ini", ".conf", ".json", ".txt", ".svg", ".desktop", ".rules", ".service")
+NOEXT = ("spark-shell", "allowed-signers", "pre-commit", "pre-push", "xterm", "brewfile", "licenses", "run", "finish", "session", "window", "login-boot", "sudoers", ".gitignore")
 
 
 def tracked():
@@ -45,7 +45,7 @@ def exists(ref, base):
     partial = len(fixed) < len(parts)
     for root in (REPO, base):
         path = os.path.join(root, cut) if cut else root
-        if partial and os.path.isdir(os.path.dirname(path) if not os.path.isdir(path) else path):
+        if partial and os.path.isdir(path):   # every folder before the variable part exists
             return True
         if not partial and os.path.exists(path):
             return True
@@ -53,10 +53,9 @@ def exists(ref, base):
 
 
 def main():
-    report = "--report" in sys.argv[1:]
     bad = []
     for path in tracked():
-        if not path.endswith(TEXT) or "/golden/" in path or path.startswith("gallery/animation/"):
+        if not (path.endswith(TEXT) or os.path.basename(path) in NOEXT) or "/golden/" in path or path.startswith("gallery/animation/"):
             continue
         full = os.path.join(REPO, path)
         crate = re.match(r"^(component/[a-z_]+)/", path)

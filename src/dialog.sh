@@ -114,7 +114,7 @@ wallpaper_want_sha() {   # -> the sha256 the release tag's tree pins for this ma
     git -C "$REPO" show "$_plr:component/wallpaper/wallpaper.env" 2>/dev/null | sed -n "s/^$_plk=\([0-9a-f]\{64\}\)$/\1/p"
 }
 wallpaper_ok() { [ -x "$WALLPAPER_BIN" ] && _plw=$(wallpaper_want_sha) && [ -n "$_plw" ] && [ "$(sha256_of "$WALLPAPER_BIN")" = "$_plw" ]; }   # the binary in place is the one the tree pins
-wallpaper_cmd() { if [ -n "${SPARK_SHELL_WALLPAPER:-}" ]; then [ -x "$SPARK_SHELL_WALLPAPER" ] && printf '%s' "$SPARK_SHELL_WALLPAPER"; elif wallpaper_ok; then printf '%s' "$WALLPAPER_BIN"; else return 1; fi; }   # -> SPARK_SHELL_WALLPAPER (another build, as it is), else the pinned player; false when none
+wallpaper_cmd() { [ -n "${SPARK_SHELL_WALLPAPER:-}" ] || SPARK_SHELL_WALLPAPER=${SPARK_SHELL_PLAYER:-}; if [ -n "${SPARK_SHELL_WALLPAPER:-}" ]; then [ -x "$SPARK_SHELL_WALLPAPER" ] && printf '%s' "$SPARK_SHELL_WALLPAPER"; elif wallpaper_ok; then printf '%s' "$WALLPAPER_BIN"; else return 1; fi; }   # -> SPARK_SHELL_WALLPAPER (another build, as it is), else the pinned player; false when none
 wallpaper_install() {   # the wallpaper loop's row of on desktop: in place as pinned, or fetched for the signed tag and checked
     _plt=$(wallpaper_target) || { skip motion "no spark-wallpaper built for $(uname -m) yet: the wallpaper stays still"; return 0; }
     _plr=$(wallpaper_release_tag) || { row todo motion "this clone is past its release: spark-wallpaper comes with the next tag"; return 0; }

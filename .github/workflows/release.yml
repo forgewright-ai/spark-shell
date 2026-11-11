@@ -1,7 +1,7 @@
 # The release: a signed v* tag becomes a GitHub Release with the dialog
 # binary, its sha256 and its SBOM, and the wallpaper loop's binary and
 # its sha256 (#187) and the pad's (v0.133), each built in the pinned image
-# CI's player and pad jobs use. Nothing is published unless the tag is
+# CI's wallpaper and pad jobs use. Nothing is published unless the tag is
 # on main, signed by a key the release before it trusted, names itself,
 # and the chain of releases behind it holds (#64); ci.yml passed for its
 # commit; and the binary built here has the sha256 component/dialog/dialog.env pins
@@ -88,7 +88,7 @@ jobs:
           path: out/
           retention-days: 7
   wallpaper:
-    # the wallpaper loop at the tag, in the image CI's player job pins,
+    # the wallpaper loop at the tag, in the image CI's wallpaper job pins,
     # and the sha256 component/wallpaper/wallpaper.env pins in the tagged tree; the build
     # job above checked the tag before this one publishes anything
     needs: build
@@ -109,7 +109,7 @@ jobs:
           got=$(sh test/wallpaper_build.sh | cut -d' ' -f1)
           want=$(sed -n 's/^WALLPAPER_SHA256_X86_64_LINUX_GNU=//p' component/wallpaper/wallpaper.env)
           echo "built $got, pinned $want"
-          [ "$got" = "$want" ] || { echo "the player is not the one the tree pins: nothing is published"; exit 1; }
+          [ "$got" = "$want" ] || { echo "the wallpaper loop is not the one the tree pins: nothing is published"; exit 1; }
           mkdir -p out
           cp component/wallpaper/target/x86_64-unknown-linux-gnu/release/spark-wallpaper out/spark-wallpaper-x86_64-linux-gnu
           (cd out && sha256sum spark-wallpaper-x86_64-linux-gnu > spark-wallpaper-x86_64-linux-gnu.sha256)

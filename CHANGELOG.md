@@ -9,8 +9,10 @@ No change in behavior.
   tree's folders and fails on any that names nothing; CI and the
   pre-push gate run it.
 - The wallpaper crate's folder is component/wallpaper (the binary stays
-  spark-wallpaper); the variable that says where a layout opens is
-  LAYOUT_ON, with the values desktop and terminal.
+  spark-wallpaper); the override SPARK_SHELL_WALLPAPER replaces
+  SPARK_SHELL_PLAYER, which is still read for one release; the variable
+  that says where a layout opens is LAYOUT_ON, with the values desktop
+  and terminal.
 - The shell modules are named by their domain: config, setup, undo, ask,
   rows, devices and facts replace read, verbs, step, want, provide,
   probes and machine; system.sh is notifications, storage and power; the

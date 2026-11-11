@@ -486,7 +486,7 @@ jobs:
           want=$(sed -n 's/^WALLPAPER_SHA256_X86_64_LINUX_GNU=//p' component/wallpaper/wallpaper.env)
           if [ "$got" != "$want" ]; then echo "the build is not the binary component/wallpaper/wallpaper.env pins -- WALLPAPER_SHA256_X86_64_LINUX_GNU=$got"; exit 1; fi
   wallpaper-deny:
-    # cargo-deny over the player's crates (advisories, licences), on the
+    # cargo-deny over the wallpaper loop's crates (advisories, licences), on the
     # runner: the action is a container of its own
     needs: lint
     runs-on: ubuntu-latest
@@ -502,7 +502,7 @@ jobs:
   pad:
     # the pad (component/pad/, v0.133): the format, clippy, its tests, the release
     # build twice and its sha256 against component/pad/pad.env, all in the pinned
-    # Debian 12 image the player's job uses, so the build is reproducible
+    # Debian 12 image the wallpaper job uses, so the build is reproducible
     # and release.yml builds the same bytes; the binary kept as an
     # artifact. The first build of a new pad prints the sha256 to pin.
     needs: lint

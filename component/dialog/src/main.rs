@@ -456,9 +456,12 @@ fn invalidate_frame(term: &mut Terminal<CrosstermBackend<std::io::Stdout>>) {
     }
 }
 
+#[path = "login/run.rs"]
+mod login_run;
+
 fn main() {
     if std::env::args().nth(1).as_deref() == Some("login") {
-        spark_dialog::login::run::main();
+        login_run::main();
     }
     let a = match args() {
         Ok(a) => a,
