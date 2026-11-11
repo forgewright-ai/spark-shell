@@ -2,7 +2,7 @@
 
 The software spark-shell installs, builds with or draws from, each with
 its license. The programs come from the package manager's own
-repositories; the font and the model are pinned to one release.
+repositories; the fonts and the model are pinned to one release.
 
 ## The logo
 
@@ -46,10 +46,10 @@ repositories; the font and the model are pinned to one release.
 - Poppler -- https://gitlab.freedesktop.org/poppler/poppler -- GPL-2.0-or-later.
 - mpv -- https://mpv.io -- GPL-2.0-or-later.
 
-## The font
+## The fonts
 
-- Monaspace Neon -- https://github.com/githubnext/monaspace
-  -- SIL Open Font License 1.1.
+- Monaspace, the five faces Neon, Argon, Xenon, Radon and Krypton
+  -- https://github.com/githubnext/monaspace -- SIL Open Font License 1.1.
 
 ## The dialog
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.138
+
+The long functions are short ones with names, and the layout's state
+files carry the layout's name. No change in behavior.
+
+- The eight functions over 100 lines are each under 60 now: a
+  dispatcher and named helpers. panel_rows and panel_act have one
+  helper a section, tool_spec one a domain, provide_one and
+  provide_call one a phase of a call, cmd_on and cmd_check_lines one a
+  row, provide_files_call one a kind of step. The longest function in
+  the shell is 96 lines.
+- The layout's state files are layout.last and layout.pending; a file
+  under the old name is moved to the new one once, on the next run.
+- The credits name the five Monaspace faces the setup installs.
+
 ## v0.137
 
 Names say what things are, and every path written in the tree exists.
