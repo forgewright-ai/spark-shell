@@ -1,11 +1,12 @@
 [package]
 name = "spark-pad"
-version = "0.134.4"
+version = "0.137.0"
 edition = "2021"
 rust-version = "1.98"
 license = "MIT"
+repository = "https://github.com/forgewright-ai/spark-shell"
 publish = false
-description = "The spark pad: the minimized windows of a sway desktop, on a surface of their own"
+description = "The minimized windows of the desktop, on a surface of their own"
 
 [lib]
 path = "src/lib.rs"

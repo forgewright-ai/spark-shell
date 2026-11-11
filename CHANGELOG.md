@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.137
+
+Names say what things are, and every path written in the tree exists.
+No change in behavior.
+
+- test/paths_check.py scans the tracked files for references into the
+  tree's folders and fails on any that names nothing; CI and the
+  pre-push gate run it.
+- The wallpaper crate's folder is component/wallpaper (the binary stays
+  spark-wallpaper); the variable that says where a layout opens is
+  LAYOUT_ON, with the values desktop and terminal.
+- The shell modules are named by their domain: config, setup, undo, ask,
+  rows, devices and facts replace read, verbs, step, want, provide,
+  probes and machine; system.sh is notifications, storage and power; the
+  layout code says layout_ where it said desk_.
+- The python helpers are wifi, reminders, launch, running, terminal,
+  dhcp, bluetooth and layout, with lib/shim/ for the terminal shim; the
+  tests follow.
+- The dialog crate keeps its login screen in login/ (mod, ui, run) and
+  its animation module under that name.
+- The three crates carry the release's version, a description without
+  the brand and the repository.
+
 ## v0.136
 
 The shell script is split into modules with declared interfaces. No
