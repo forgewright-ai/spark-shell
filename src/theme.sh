@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # ---------------------------------------------- verbs: theme, font, quiet
+# sets: MOTION_DIR MOTION_NOW THEME_WORDS WORDS_TAKE
+# reads: ANIMATION_NAMES CONFIG CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GLYPH_FAMILIES LOOKS_DIR LOOK_FORMAT MODE NEON NEON_OLD NL OS PALETTE_DIR PALETTE_MARK PANEL_SEP PATH_REFUSED PM RENDERED REPO ROOT SCENE_MAKE STATE_DIR TAB TERMINAL_SEEN THEME_ENV THEME_KEYS TMP WALL_CACHE WALL_NAMES WALL_SCENES WALL_SHIPPED
 refuse_in() { echo "spark-shell $1: $2"; exit 1; }   # refuse_in VERB SENTENCE
 seat_on() { _r=$(rc_files); _r=${_r%% *}; [ -L "$HOME/$_r" ] && [ "$(readlink "$HOME/$_r")" = "$(rc_tree)/$_r" ]; }
 look_now() {   # a palette change: the palette loaded and the drawing drawn in it, the switch, then the files for new windows and the next login
@@ -626,3 +628,38 @@ theme_words_apply() {   # theme_words_apply HUE ACCENT WARMTH CONTRAST LIGHT [NA
     echo "$(theme_words_of "$name") is on $PANEL_SEP spark-shell theme save NAME keeps it, theme back returns"
 }
 
+
+check_theme() {
+    if [ -z "$THEME" ]; then chk theme ok "na (THEME unset: the palette stays as it is -- spark-shell theme NAME)"; return; fi
+    if [ "$THEME" = none ]; then
+        if [ -f "$THEME_ENV" ]; then chk theme fail "THEME=none, but theme.env is here" "spark-shell on"
+        elif console_linux && { [ -e "$ROOT/$CONSOLE_UNIT" ] || [ -n "$(marked "$ROOT/etc/rc.local" "$PALETTE_MARK")" ]; }; then
+            chk theme fail "THEME=none, but a palette is still set at boot" "spark-shell on"
+        else chk theme ok "none: the console's and the terminal's default colors"; fi
+        return
+    fi
+    if ! palette_render "$THEME"; then chk theme fail "THEME=$THEME: $(cat "$TMP/palette.why")" "spark-shell theme list"; return; fi
+    cmp -s "$TMP/theme.env" "$THEME_ENV" || { chk theme fail "$THEME: theme.env is not the palette's" "spark-shell on"; return; }
+    if [ "$OS" = Darwin ]; then
+        if [ "$(cat "$TERMINAL_SEEN" 2>/dev/null)" != "$(cksum < "$THEME_ENV" | cut -d' ' -f1) $(term_font)" ]; then
+            chk theme warn "$THEME: Terminal.app's profile is not the palette's yet" "spark-shell on"; return
+        fi
+        terminal_has || { chk theme warn "$THEME: Terminal.app has no spark-shell profile" "spark-shell on"; return; }
+        chk theme ok "$THEME: theme.env and Terminal.app's profile are current"; return
+    fi
+    if console_linux; then
+        { cmp -s "$TMP/console-colors" "$CONSOLE_COLORS" && cmp -s "$TMP/console-colors.rgb" "$CONSOLE_RGB"; } \
+            || { chk theme fail "$THEME: console-colors is not the palette's" "spark-shell on"; return; }
+        case $(init_shape) in
+            systemd) unit_render
+                { cmp -s "$TMP/unit" "$ROOT/$CONSOLE_UNIT" && unit_enabled spark-shell-console.service; } \
+                    || { chk theme fail "$THEME: spark-shell-console.service does not set it at boot" "spark-shell on (sudo once)"; return; } ;;
+            runit) [ "$(marked "$ROOT/etc/rc.local" "$PALETTE_MARK")" = "$(palette_line)" ] \
+                    || { chk theme fail "$THEME: no line in /etc/rc.local sets it at boot" "spark-shell on (sudo once)"; return; } ;;
+        esac
+        if vt_here && [ "$(vt_live)" != "$(head -1 "$CONSOLE_RGB")" ]; then
+            chk theme warn "$THEME: the console uses another palette until the next boot" "spark-shell on"; return
+        fi
+    fi
+    chk theme ok "$THEME: theme.env and the console's palette are current"
+}

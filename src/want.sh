@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the want
+# sets: LOCAL_RISK US WANT_ATTACH_MAX
+# reads: APPS DESK_NOT_APPS LAYOUTS_DIR OS PANEL_CROSS PANEL_GO PANEL_TICK PROVIDE_TOOLS TAB TMP
 panel_brief_sections() {   # -> the sections the want path offers here, in the brief's order
     for p in layout apps printers window bar notes reminders display keyboard notifications storage power $(panel_blocks_here); do
         case $p in lan|bat|clock) continue ;; window|bar|display|keyboard|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; printers) command -v lpstat >/dev/null 2>&1 || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac

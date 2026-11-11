@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # ------------------------------------------------------------------ verbs
+# sets: DESK_SEEN SEEN
+# reads: APPS CONFIG DESKTOP_RENDERED DIALOG_BIN DIALOG_URL DISTRO FAMILIES_SAID LAYOUTS_DIR LOGIN_ETC MODE NEON NEON_OLD NEON_VERSION OS PM PROVIDE_SECTIONS RENDERED REPO SEMANTIC_MODEL SPARK_CONFIG_DIR THEME_ENV TMP YES
 # `on` is the terminal seat, `on desktop` the seat and the desktop; `off
 # desktop` takes the desktop back, `off` everything. The nouns are desktop
 # and login; any other word is refused before a thing is touched.

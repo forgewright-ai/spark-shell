@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # the gsettings color-scheme is yours: put back only while spark-shell's
+# sets: GREETD_CONF LOGIN_ETC LOGIN_FILES LOGIN_FONTS LOGIN_ICONS LOGIN_LIB LOGIN_MARK LOGIN_SUDOERS OLD_GREETD_CONF OLD_GREETD_DIRS OLD_GREETD_FILES
+# reads: DIALOG_BIN DISTRO FACES_OTHER FAMILIES_SAID MODE NEON_STYLES NL OS POINTER_DIR POINTER_THEMES RENDERED REPO ROOT SCREENS_CONF SOUND_CONF SOUND_SV SPARK_CONFIG_DIR STATE_DIR TMP
 # last value still holds; an outside change takes it back
 portal_ready() {
     [ "$OS" != Darwin ] && notify_bus && command -v gsettings >/dev/null 2>&1 &&

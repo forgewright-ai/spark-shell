@@ -1,5 +1,16 @@
 # shellcheck extended-analysis=false
-# ------------------------------------------------------------------ rows
+# --- core: the paths, the rows, the flags, the temp folder and the traps
+# sets: CONFIG CONFIG_DIR MODE NL OS PLAYER PULSE ROOT SPARK_CONFIG_DIR STATE_DIR TAB THEME_ENV TMP VERBOSE YES
+OS=$(uname -s)
+CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/spark-shell
+CONFIG=$CONFIG_DIR/config
+SPARK_CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/spark
+THEME_ENV=$SPARK_CONFIG_DIR/theme.env
+STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell
+mkdir_private() { [ -d "$1" ] || (umask 077 && mkdir -p "$1"); }   # mkdir_private DIR -- 0700, when absent
+TAB=$(printf '\t')
+NL='
+'
 # rows: ok | would | skip | todo; apply says what changed, --dry-run says all
 MODE=apply
 VERBOSE=0

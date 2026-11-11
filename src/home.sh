@@ -1,5 +1,6 @@
 # shellcheck extended-analysis=false
 # --- the window
+# reads: BAR_FULL CONFIG_DIR OS PANEL_APP PANEL_CROSS PANEL_DOWN PANEL_IN PANEL_LOOKS PANEL_MARK PANEL_ORDER PANEL_PROMPT PANEL_SEP PANEL_TICK PANEL_UP PULSE REPO TAB THEME_KEYS TMP
 panel_quit() { kill "${FZF:-}" 2>/dev/null || :; panel_tick_stop; panel_pulse_kill; stty echo 2>/dev/null || :; }
 panel_tick_start() {   # panel_tick_start ROW -- the time drawn again at ROW as each minute turns, until panel_tick_stop
     [ -t 1 ] || return 0

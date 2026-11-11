@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # the seat on Void: no logind, so sway takes the screen through seatd (a
+# sets: SEATD_LINK SEATD_SV
+# reads: DISTRO OS ROOT STATE_DIR
 # runit service, group _seatd). STATE_DIR records the steps spark-shell
 # took; off undoes those, and leaves seatd while a desktop runs
 SEATD_SV=etc/sv/seatd

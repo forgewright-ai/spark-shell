@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # --------------------------------------------------------- the console font
+# sets: FACES_OTHER FONT_FACES MAC_FACES MAC_SYSTEM_FACES NEON NEON_MOVED NEON_OLD NEON_PS NEON_PS_OLD NEON_SHA256 NEON_STYLES NEON_URL NEON_VERSION NEON_WOULD
+# reads: CONFIG MODE OS REPO ROOT STATE_DIR THEME_ENV TMP
 # By mechanism: console-setup's FONTFACE and FONTSIZE (Debian),
 # vconsole.conf's FONT= (Arch), rc.conf's FONT= beside /etc/runit (Void).
 # The first copy is FILE.spark-shell-orig; off puts its font lines back.
@@ -294,3 +296,78 @@ faces_install() {   # the faces row of `on`: the four beside Neon, where FONT is
     ok faces "Monaspace Argon, Xenon, Radon and Krypton installed in $(dirname "$(face_dir argon)"), the zip's sha256 checked"
 }
 
+
+cmd_font() {   # font [FACE SIZE|list|none]
+    config_load
+    pm_detect
+    case ${1:-show} in
+        show) [ $# -le 1 ] || refuse_in font "show takes no word"; font_show; return ;;
+        list) [ $# -le 1 ] || refuse_in font "list takes no word"; font_list; return ;;
+        none)
+            [ $# -eq 1 ] || refuse_in font "none takes no word"
+            [ "$MODE" = dry ] || [ -z "$CONSOLE_FONT" ] || config_set CONSOLE_FONT ''
+            CONSOLE_FONT=''
+            if [ "$OS" = Darwin ]; then terminal_apply; else font_off; fi
+            verb_close "The console keeps its own font."; return ;;
+    esac
+    [ $# -eq 2 ] || refuse_in font "a face and a size: spark-shell font FACE SIZE (spark-shell font list shows them)"
+    face=$1; size=$2
+    printf '%s' "$face" | grep -qE '^[A-Za-z0-9._-]+$' || refuse_in font "$face is not a font name (spark-shell font list shows them)"
+    if [ "$OS" = Darwin ]; then
+        printf '%s' "$size" | grep -qE '^[0-9]{1,2}(\.[0-9])?$' && [ "${size%%.*}" -ge 6 ] && [ "${size%%.*}" -le 72 ] \
+            || refuse_in font "$size is not a size: points on macOS, 6 to 72 (13)"
+        mac_face_here "$face" || refuse_in font "no font named $face is installed here (spark-shell font list shows them)"
+    else
+        is_wsl && refuse_in font "WSL has no console: the font is Windows Terminal's."
+        [ -n "$(console_shape)" ] || refuse_in font "this Linux has no console-setup, vconsole.conf or rc.conf."
+        printf '%s' "$size" | grep -qE '^[0-9]+x[0-9]+$' || refuse_in font "$size is not a size: WxH on the console (16x32)"
+        console_fonts > "$TMP/fonts"
+        if [ -s "$TMP/fonts" ]; then
+            grep -q "^$face " "$TMP/fonts" || refuse_in font "no console font named $face here (spark-shell font list shows them)"
+            grep -qx "$face $size" "$TMP/fonts" || refuse_in font "$face comes in $(sed -n "s/^$face //p" "$TMP/fonts" | paste -sd' ' -), not $size"
+        fi
+    fi
+    [ "$MODE" = dry ] || [ "$CONSOLE_FONT" = "$face $size" ] || config_set CONSOLE_FONT "$face $size"
+    CONSOLE_FONT="$face $size"; export CONSOLE_FONT
+    if [ "$OS" = Darwin ]; then
+        [ -f "$THEME_ENV" ] && [ -n "$THEME" ] && [ "$THEME" != none ] \
+            || { verb_close "On a Mac the font is part of the Terminal.app profile, which spark-shell theme NAME makes."; return 0; }
+        terminal_apply
+    else
+        font_apply
+    fi
+    verb_close "The console's font is $face $size."
+}
+font_show() {
+    if [ "$OS" = Darwin ]; then
+        echo "font  $(term_font): Terminal.app's profile$([ -n "$CONSOLE_FONT" ] || printf ' (the default)')"
+    elif is_wsl; then echo "font  WSL has no console: the font is Windows Terminal's"
+    elif [ -z "$(console_shape)" ]; then echo "font  there is no console-setup, vconsole.conf or rc.conf here"
+    elif [ -z "$CONSOLE_FONT" ]; then echo "font  unset: the console keeps its font (spark-shell font list shows the faces)"
+    else echo "font  $CONSOLE_FONT ($(font_file "$(console_shape)"))"; fi
+}
+font_list() {
+    if [ "$OS" = Darwin ]; then
+        echo "The monospace faces here, by PostScript name (the size is points, 13):"
+        for f in $MAC_FACES; do mac_face_here "$f" && printf '  %s\n' "$f"; done
+        echo "Font Book shows any other font's PostScript name."
+        return 0
+    fi
+    is_wsl && { echo "WSL has no console: the font is Windows Terminal's."; return 0; }
+    shape=$(console_shape)
+    [ -n "$shape" ] || { echo "There is no console-setup, vconsole.conf or rc.conf here."; return 0; }
+    console_fonts > "$TMP/fonts"
+    if [ ! -s "$TMP/fonts" ]; then echo "No console fonts under /usr/share/kbd/consolefonts or /usr/share/consolefonts."; return 0; fi
+    echo "The console fonts in $(consolefonts_dir), as spark-shell font takes them:"
+    awk '{ s[$1] = s[$1] " " $2 } END { for (f in s) printf "  %-24s%s\n", f, s[f] }' "$TMP/fonts" | sort
+    echo "spark-shell font FACE SIZE puts one in $(font_file "$shape")."
+}
+check_font() {
+    if [ -z "$CONSOLE_FONT" ]; then chk font ok "na (CONSOLE_FONT unset: the console keeps its font)"; return; fi
+    if [ "$OS" = Darwin ]; then chk font ok "$CONSOLE_FONT in Terminal.app's profile"; return; fi
+    if is_wsl; then chk font ok "na (WSL has no console)"; return; fi
+    shape=$(console_shape)
+    if [ -z "$shape" ]; then chk font warn "no console-setup, vconsole.conf or rc.conf here" "spark-shell font none"; return; fi
+    if [ "$(font_now "$shape")" = "$(font_want "$shape")" ]; then chk font ok "$CONSOLE_FONT ($(font_file "$shape"))"
+    else chk font fail "$(font_file "$shape") says $(font_now "$shape")" "spark-shell on (sudo once)"; fi
+}

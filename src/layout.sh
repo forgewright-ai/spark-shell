@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # ------------------------------------------------------------------ desks
+# sets: DESK_LAST DESK_NOT_APPS DESK_PENDING DESK_SMALL_WORDS DESK_VERBS DESK_WAIT LAYOUTS_DIR REFUSE_AS
+# reads: APPS CONFIG_DIR DIALOG_BIN KEPT_LAYOUTS NOTES_DIR OS PANEL_APP PLAYER REPO TAB TMP VERBOSE
 # a layout (a desk, in the code): the windows for one need, laid out by the
 # model from the need's words, the screen and the inventory, nothing else;
 # every rendered line passes the gate before sway sees it
@@ -568,7 +570,6 @@ desk_open() {   # desk_open FILE -> '' when it may open, else one sentence
 desk_name_of() {   # desk_name_of WORDS... -> a file name: lowercase, the words joined by -, 40 at most
     printf '%s' "$*" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | sed 's/--*/-/g; s/^-//; s/-$//' | cut -c1-40
 }
-desk_name_ok() { case $1 in ''|*[!A-Za-z0-9_-]*) return 1 ;; *) return 0 ;; esac; }
 desk_ws_label() {   # desk_ws_label WORDS... -> what a workspace is named after: lowercase words, letters and digits, whole words up to 24
     printf '%s' "$*" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' ' ' | awk '{ s = ""; for (i = 1; i <= NF; i++) { t = (s == "" ? $i : s " " $i); if (length(t) > 24 && s != "") break; s = t } print s }' | cut -c1-24
 }

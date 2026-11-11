@@ -141,19 +141,14 @@ while [ -L "$SELF" ]; do
     case $_t in /*) SELF=$_t ;; *) SELF=$(dirname "$SELF")/$_t ;; esac
 done
 REPO=$(cd "$(dirname "$SELF")" && pwd)
-OS=$(uname -s)
-CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/spark-shell
-CONFIG=$CONFIG_DIR/config
-SPARK_CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/spark
-THEME_ENV=$SPARK_CONFIG_DIR/theme.env
 
 # the modules, sourced in this order
+# shellcheck source=src/core.sh
+. "$REPO/src/core.sh"
 # shellcheck source=src/read.sh
 . "$REPO/src/read.sh"
 # shellcheck source=src/look.sh
 . "$REPO/src/look.sh"
-# shellcheck source=src/rows.sh
-. "$REPO/src/rows.sh"
 # shellcheck source=src/packages.sh
 . "$REPO/src/packages.sh"
 # shellcheck source=src/render.sh
@@ -182,8 +177,8 @@ THEME_ENV=$SPARK_CONFIG_DIR/theme.env
 . "$REPO/src/panel.sh"
 # shellcheck source=src/probes.sh
 . "$REPO/src/probes.sh"
-# shellcheck source=src/sources.sh
-. "$REPO/src/sources.sh"
+# shellcheck source=src/sections.sh
+. "$REPO/src/sections.sh"
 # shellcheck source=src/notes.sh
 . "$REPO/src/notes.sh"
 # shellcheck source=src/reminders.sh
@@ -198,8 +193,14 @@ THEME_ENV=$SPARK_CONFIG_DIR/theme.env
 . "$REPO/src/provide.sh"
 # shellcheck source=src/tools.sh
 . "$REPO/src/tools.sh"
+# shellcheck source=src/mcp.sh
+. "$REPO/src/mcp.sh"
 # shellcheck source=src/files.sh
 . "$REPO/src/files.sh"
+# shellcheck source=src/preview.sh
+. "$REPO/src/preview.sh"
+# shellcheck source=src/files_provider.sh
+. "$REPO/src/files_provider.sh"
 # shellcheck source=src/dialog.sh
 . "$REPO/src/dialog.sh"
 # shellcheck source=src/pad.sh
@@ -212,8 +213,6 @@ THEME_ENV=$SPARK_CONFIG_DIR/theme.env
 . "$REPO/src/theme.sh"
 # shellcheck source=src/gallery.sh
 . "$REPO/src/gallery.sh"
-# shellcheck source=src/font_quiet.sh
-. "$REPO/src/font_quiet.sh"
 # shellcheck source=src/layout.sh
 . "$REPO/src/layout.sh"
 # shellcheck source=src/sbom.sh
@@ -224,8 +223,6 @@ THEME_ENV=$SPARK_CONFIG_DIR/theme.env
 . "$REPO/src/screen.sh"
 # shellcheck source=src/window.sh
 . "$REPO/src/window.sh"
-# shellcheck source=src/session.sh
-. "$REPO/src/session.sh"
 
 usage() {
     sed -n '2,/^# The one interface/p' "$0" | sed '$d' | sed '$d' | sed 's/^# \{0,1\}//'   # the command list

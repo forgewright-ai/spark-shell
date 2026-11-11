@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # The window keys: a place is a half or a quarter of the workspace's area, a two by two grid;
+# sets: DESK_PLACE_SLACK
+# reads: OS REPO TMP
 # past the top the window fills the area, past the bottom it goes to the pad with its place
 desk_window_at() {   # desk_window_at PLACE X Y W H -> "X Y W H" of PLACE on that area: L R F a column, T B F a row (FF fills it)
     case $1 in L?) _wx=$2; _ww=$(($4 / 2)) ;; R?) _wx=$(($2 + $4 / 2)); _ww=$(($4 - $4 / 2)) ;; *) _wx=$2; _ww=$4 ;; esac

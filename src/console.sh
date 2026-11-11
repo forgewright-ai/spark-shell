@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # ------------------------------------------------------------- the console
+# sets: CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT CURSOR_ON PALETTE_MARK POINTER_SEEN QUIET_MARK QUIET_WORDS REBUILD SPLASH_MARK TERMINAL_SEEN
+# reads: CONFIG_DIR MODE NOTES_DIR OS PALETTE_DIR ROOT STATE_DIR
 # Four config keys, each written by its verb and applied by `on`: THEME
 # (a palette name, or none), CONSOLE_FONT ("FACE SIZE", empty: the console
 # keeps its font), QUIET_LOGIN and QUIET_BOOT (yes|no). `off` hands every
@@ -10,11 +12,8 @@
 #   zz-spark-shell-quiet.*        the GRUB and the kernel image drop-ins
 # Every root path is under ROOT (SPARK_SHELL_ROOT in the tests), even the
 # ones only read (/run/systemd, /sys, /proc), so a fixture pins the shape.
-PALETTE_DIR=$CONFIG_DIR/themes                     # your NAME.env wins over gallery/theme/
 CONSOLE_COLORS=$CONFIG_DIR/console-colors          # the escapes, sent at a console login
 CONSOLE_RGB=$CONFIG_DIR/console-colors.rgb         # setvtrgb's three lines, read by root at boot
-STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell
-mkdir_private() { [ -d "$1" ] || (umask 077 && mkdir -p "$1"); }   # mkdir_private DIR -- 0700, when absent
 mkdir_state() { mkdir_private "$STATE_DIR" && mkdir -p "$@"; }     # mkdir_state DIR... -- under the state, made 0700 first
 # a lock is a file made with O_EXCL (set -C), never mkdir's answer: uutils' mkdir before
 # 0.11 (Ubuntu 26.04) says yes to a folder that is there
@@ -103,3 +102,15 @@ marked_text() {   # marked_text FILE MARK [LINESFILE [exit]] -> FILE without MAR
         }' "$1"
 }
 
+
+status_console() {   # the font and quiet rows of status
+    if [ "$OS" = Darwin ]; then printf '  font  %-16s %s\n' "$(term_font)" "Terminal.app's profile (spark-shell font FACE SIZE)"
+    elif is_wsl; then printf '  font  %-16s %s\n' na "WSL has no console"
+    elif [ -z "$CONSOLE_FONT" ]; then printf '  font  %-16s %s\n' unset "the console keeps its font (spark-shell font list)"
+    else printf '  font  %-16s %s\n' "$CONSOLE_FONT" "$(font_file "$(console_shape)")"; fi
+    if [ "$OS" = Darwin ]; then printf '  quiet %-16s %s\n' na "macOS has no login notice or boot menu"; return 0; fi
+    l=off; [ "$QUIET_LOGIN" != yes ] || l=on
+    b=off; [ "$QUIET_BOOT" != yes ] || b=on
+    [ -z "$(boot_refusal "$(boot_shape)")" ] || b=na
+    printf '  quiet %-16s %s\n' "login $l" "boot $b (spark-shell quiet login|boot on|off)"
+}

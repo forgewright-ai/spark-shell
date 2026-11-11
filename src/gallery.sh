@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the gallery
+# sets: GALLERY_FLOOR GALLERY_FORMAT GALLERY_GIT GALLERY_KEYS GALLERY_PICTURE_MAX GALLERY_PIXELS_MAX GALLERY_URL GALLERY_WALLS
+# reads: ANIMATION_NAMES OS PALETTE_DIR PATH_REFUSED REPO STATE_DIR TAB THEME_KEYS THEME_WORDS TMP
 # a release is a tag gallery-vN signed by a key in allowed-signers, read only through its
 # tree's object id; one older than the floor is never taken. Data alone: no SVG, no GIF, no
 # font, never code, and nothing it names runs.

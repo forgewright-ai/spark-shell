@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # --- reminders
+# sets: CAL_DIR REM_CHIME REM_DONE_DAYS REM_FIRED
+# reads: REPO STATE_DIR TAB TMP US
 CAL_DIR=$HOME/calendar
 REM_FIRED=$STATE_DIR/reminders.fired
 REM_CHIME=$REPO/asset/chime.wav

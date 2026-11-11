@@ -1,5 +1,8 @@
 # shellcheck extended-analysis=false
 # the sound on the desktop: PipeWire, WirePlumber and its PulseAudio
+# sets: BAR_ASOUNDRC LIGHT_GROUPS SOUND_ALSA SOUND_CONF SOUND_FILES SOUND_PW SOUND_PW_CONF SOUND_SHARE SOUND_SV
+# reads: MODE NL OS REPO ROOT SPARK_CONFIG_DIR STATE_DIR TMP
+BAR_ASOUNDRC=$HOME/.config/alsa/asoundrc   # ALSA reads it after ~/.asoundrc; ours only with the marker line
 # server. Under systemd the packages' user units start them; on runit
 # they run from boot under spark's supervisor, else beside sway. Void
 # leaves the two ALSA files out of /etc/alsa/conf.d, so on desktop links

@@ -1,5 +1,6 @@
 # shellcheck extended-analysis=false
 # --- the probes
+# reads: BAR_SHADE BAR_STEPS DISTRO MODE OS REPO ROOT STATE_DIR TAB TMP YES
 panel_lower() { printf '%s' "$*" | tr 'A-Z' 'a-z'; }
 panel_bars() { bar_bars_plain "$1"; }
 bar_bars_plain() {   # bar_bars_plain LEVEL (0-4) -> the four rising bars as text, the unlit ones as a light shade

@@ -1,5 +1,8 @@
 # shellcheck extended-analysis=false
 # --------------------------------------------------------------- readers
+# sets: ANIMATION_NAMES ANIM_PAIRED CONFIG_UNSET GLYPH_FAMILIES KB_RE PATH_REFUSED PATH_SAID SAVER_NAMES THEME_KEYS
+# reads: CONFIG CONFIG_DIR OS REPO TMP
+GLYPH_FAMILIES='stone star banner'
 # load_env FILE [env] -> each KEY=value exported; the file wins over the
 # environment (sway's children inherit login's keys), `env` keeps a set key
 load_env() {

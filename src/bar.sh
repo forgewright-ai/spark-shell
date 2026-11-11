@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # ---------------------------------------------------------------- the bar
+# sets: BAR_BT BAR_BT_OFF BAR_DEV BAR_DND BAR_DUE BAR_FULL BAR_GAP BAR_GROUP_GAP BAR_KB BAR_LAN BAR_LIGHT BAR_MIC BAR_MIC_OFF BAR_NOTE BAR_OUT BAR_OUT_OFF BAR_PAD BAR_PALETTE BAR_PID BAR_PROC BAR_SHADE BAR_STEPS BAR_SYS BAR_WIFI BAR_WS_ORDER
+# reads: BAR_ASOUNDRC CONFIG GLYPH_FAMILIES NOTIFY_MODE OS PANEL_DOT PANEL_PROMPT PANEL_SEP PANEL_WARN PLAYER REPO STATE_DIR TAB THEME_KEYS TMP
 # swaybar reads `spark-shell bar status`: i3bar JSON, a line every 15 s
 # and at once on SIGUSR1 to the pid in STATE_DIR/bar.pid.
 # The glyphs are built from their bytes: this file stays ASCII.
@@ -7,7 +9,6 @@ BAR_SYS=${SPARK_SHELL_SYS:-/sys}      # tests: a fixture tree in place of /sys a
 BAR_PROC=${SPARK_SHELL_PROC:-/proc}
 BAR_DEV=${SPARK_SHELL_DEV:-/dev}      # tests: the i2c devices a DDC/CI screen is reached through
 BAR_PID=$STATE_DIR/bar.pid            # the running `bar status`, for the redraw signal
-BAR_ASOUNDRC=$HOME/.config/alsa/asoundrc   # ALSA reads it after ~/.asoundrc; ours only with the marker line
 BAR_GAP=14                            # px between blocks of a group
 BAR_GROUP_GAP=28                      # px between groups: air, no divider
 BAR_FULL=$(printf '\342\226\210')     # U+2588 full block: the glance's level
@@ -27,7 +28,6 @@ BAR_DND=$(printf '\342\217\276')      # U+23FE power sleep symbol: do not distur
 BAR_NOTE=$(printf '\342\232\221')     # U+2691 black flag: notifications that came while nobody looked
 BAR_PAD=$(printf '\342\212\237')      # U+229F squared minus: windows on the pad
 # the glyph families: every glyph one cell wide (test/glyph_check.py holds the build to that)
-GLYPH_FAMILIES='stone star banner'
 family_set() {   # family_set FAMILY -- sets FAM_NOW (stone for any other word), FAM_ON FAM_OFF (the gauge pair), FAM_THINK, FAM_DOT, FAM_WS_OPEN FAM_WS_CLOSE (empty for banner)
     case $1 in star|banner) ;; *) set -- stone ;; esac
     [ "${FAM_NOW:-}" != "$1" ] || return 0
@@ -59,9 +59,6 @@ bar_esc() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\\
 bar_span() { printf "<span foreground='#%s'>%s</span>" "$1" "$2"; }   # bar_span RRGGBB MARKUP
 bar_block() {   # bar_block NAME INSTANCE MARKUP [GAP] -> one block; swaybar's own separator off (the dividers are blocks)
     printf '{"name":"%s","instance":"%s","full_text":"%s","markup":"pango","separator":false,"separator_block_width":%s}' "$1" "$2" "$3" "${4:-$BAR_GAP}"
-}
-bar_short() {   # bar_short NAME -> lowercase, whole words up to 12 characters
-    printf '%s' "$1" | tr 'A-Z' 'a-z' | awk '{ s = ""; for (i = 1; i <= NF; i++) { t = (s == "" ? $i : s " " $i); if (length(t) > 12 && s != "") break; s = t } print s }' | cut -c1-12
 }
 bar_gauge() {   # bar_gauge LEVEL MUTED [CELLS] [COLOR] -> CELLS cells (5), the level lit in COLOR (the accent; muted when MUTED=1)
     cells=${3:-5}; n=$(( ($1 * cells + 50) / 100 )); [ "$1" -le 0 ] || [ "$n" -gt 0 ] || n=1; [ "$n" -le "$cells" ] || n=$cells
@@ -213,7 +210,6 @@ al_control() {   # al_control N p|c -> the mixer control to read and set: Master
 }
 al_level() { amixer -c "$1" sget "$2" 2>/dev/null | grep -o '\[[0-9]*%\]' | head -1 | tr -d '[]%'; }   # al_level N CONTROL -> 0..100 or nothing
 al_muted() { amixer -c "$1" sget "$2" 2>/dev/null | grep -o '\[\(on\|off\)\]' | head -1 | grep -q off && echo 1 || echo 0; }
-al_set_default() { al_write "$1" "$(al_bt_routed p)" "$(al_bt_routed c)"; }   # al_set_default N -- card N for programs started from now; a Bluetooth way picked stays
 al_write() {   # al_write N [PLAYDEV] [CAPDEV] -- spark-shell's own asoundrc: card N, and a Bluetooth device when picked; refused when the file is yours
     id=$(al_cards | awk -F '\t' -v n="$1" '$1 == n {print $2; exit}')
     if [ -f "$BAR_ASOUNDRC" ] && ! grep -q 'rendered by spark-shell' "$BAR_ASOUNDRC"; then echo "asoundrc is yours"; return 1; fi
@@ -339,10 +335,6 @@ snd_settable() {   # snd_settable out|mic -> exit 0 when its level and mute can 
     [ -n "$_so" ] || { if [ "$1" = out ]; then echo "out: no output found"; else echo "mic: no microphone found"; fi; return 1; }
     [ "$_sl" = - ] || [ -z "$_sl" ] || return 0
     echo "$1: $(printf '%s\n' "$_so" | sed -n 1p) has no volume control here, so it cannot be muted or set"; return 1
-}
-snd_said() {   # snd_said out|mic muted|unmuted -> the state read back, one line; exit 1 when the audio system did not take it
-    if [ "$1" = out ]; then _m=$(snd_out | sed -n 3p); else _m=$(snd_mic | sed -n 3p); fi
-    case $2:$_m in muted:1|unmuted:0) echo "$1 $2" ;; *) echo "$1 is not $2: the audio system did not take it"; return 1 ;; esac
 }
 snd_apply() {   # snd_apply out|mic LEVEL|muted|unmuted -> the state read back, or exit 1
     snd_set "$1" "$2" || { echo "$1 could not be changed; check its current state"; return 1; }

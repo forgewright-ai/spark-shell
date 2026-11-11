@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the notifications
+# sets: APP_GROUPS NOTIFY_MODE NOTIFY_SEEN POWER_SUDOERS STORAGE_RULE STORAGE_SEEN
+# reads: BAR_PROC BAR_SYS DESK_LAST DESK_WAIT LAYOUTS_DIR MODE OS PANEL_APP PANEL_CACHE PANEL_CROSS PANEL_SEP PANEL_TICK REPO ROOT STATE_DIR TAB THEME_KEYS TMP US WALL_NAMES
 NOTIFY_MODE=do-not-disturb
 mako_here() { [ -z "${SPARK_SHELL_NO_MAKO:-}" ] && command -v mako >/dev/null 2>&1; }   # mako is installed (SPARK_SHELL_NO_MAKO, tests: as if it were not)
 notify_mode() { read_once notify.mode makoctl mode; }   # -> the modes on now; false when mako does not answer

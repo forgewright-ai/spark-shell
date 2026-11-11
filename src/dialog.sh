@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the dialog
+# sets: DIALOG_BIN DIALOG_URL PLAYER_BIN SEMANTIC_LOG SEMANTIC_MODEL SEMANTIC_SHA256 SEMANTIC_SIZE SEMANTIC_URL
+# reads: MODE REPO STATE_DIR TMP
 DIALOG_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-dialog
 DIALOG_URL=${SPARK_SHELL_DIALOG_URL:-https://github.com/forgewright-ai/spark-shell/releases/download}   # the release assets; file:// or none in the tests
 # the embedding model, pinned by its sha256 and size

@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # -------------------------------------------------------------- packages
+# sets: DISTRO FAMILIES FAMILIES_SAID PM
+# reads: OS REPO
 PM=
 DISTRO=
 pm_detect() {

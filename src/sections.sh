@@ -1,5 +1,6 @@
 # shellcheck extended-analysis=false
-# --- the sources
+# --- the sections: a title, the rows and the act each
+# reads: APPS BAR_SYS DESK_LAST LAYOUTS_DIR OS PALETTE_DIR PANEL_CACHE PANEL_DOT PANEL_GO PANEL_MARK PANEL_RING PANEL_SEP PANEL_TICK PANEL_WARN SAVER_NAMES TAB TMP US WALL_GROUND_SAID
 # a row is MARK<tab>TEXT<tab>ACTION [ARG]: the mark a sign or -, a
 # look-only row carries `show`
 panel_title() {   # panel_title SECTION -> the lines that say what opened the panel; glance: the date, the facts, an alarm line

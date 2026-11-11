@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # --------------------------------------------------------------- renders
+# sets: DESKTOP_RENDERED RENDERED USER_DIRS USER_DIRS_ROLES
+# reads: CONFIG_DIR HEX_KEYS MODE NEON NEON_OLD NL OS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_SEEN POINTER_THEMES REPO SCREENS_CONF SLOT_KEYS STATE_DIR TAB THEME_KEYS TMP WALL_COVER WALL_KEYS WIN_KEYS
 # a symlink for a file used as-is, a rendered file where a value is baked
 # in. A file marked `rendered by spark-shell` is ours to render again; any
 # other is yours and moves to <path>.bak. The first .bak stays for off; a
@@ -59,8 +61,6 @@ bar_screen_rows() {   # -> the rows of the shortest screen on, its shorter side 
     [ -S "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
     swaymsg -t get_outputs 2>/dev/null | jq -r '[.[] | select(.active) | [.rect.width, .rect.height] | min] | min // empty' 2>/dev/null || :
 }
-NL='
-'
 render_expr() {   # -> the sed script that renders a template, one s command a line: BSD sed reads a -e script of 2048 bytes at most, and the swayidle line alone passed it
     e="s|@HOME@|$(esc "$HOME")|g${NL}s|@USER@|$(esc "$(id -un)")|g${NL}s|@NAME@|$(esc "$(short_host)")|g${NL}s|@REPO@|$(esc "$REPO")|g"
     for k in $THEME_KEYS; do

@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # Screens: each by its make, model and serial (its place on any port), in screens.conf
+# sets: SCREENS_CONF SCREEN_MAIN_MARK
+# reads: CONFIG_DIR TAB TMP
 SCREENS_CONF=$CONFIG_DIR/screens.conf
 screen_scale_valid() { [ "${#1}" -le 16 ] && printf '%s\n' "$1" | awk '/^[0-9]+([.][0-9]+)?$/ && $0 + 0 > 0 {ok=1} END {exit !ok}'; }
 screen_action() (   # screen_action ACTION ARGS [check]

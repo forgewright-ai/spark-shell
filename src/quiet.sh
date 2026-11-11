@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # --------------------------------------------------------- a quiet login
+# sets: BOOT_LOUD CMDLINE_DROPIN GETTY_CONF GRUB_DROPIN LOADER_CONF UNAME_OFF
+# reads: CURSOR_ON DISTRO MODE OS QUIET_MARK QUIET_WORDS REBUILD ROOT SPLASH_MARK STATE_DIR TMP
 # A bare `login:`: /etc/motd empty, update-motd.d/10-uname not executable,
 # /etc/issue the cursor-on escape alone (a console that lost its cursor
 # gets it back). The first copies are FILE.spark-shell-orig and 10-uname's
@@ -238,3 +240,82 @@ console_off() {   # off: every one handed back
     boot_off
 }
 
+
+cmd_quiet() {   # quiet [login|boot [on|off]]
+    config_load
+    pm_detect
+    case ${1:-} in
+        '') quiet_show login; quiet_show boot; return ;;
+        login|boot) ;;
+        *) refuse_in quiet "$1 is not known here (login or boot)" ;;
+    esac
+    what=$1
+    case ${2:-} in
+        '') quiet_show "$what"; return ;;
+        on|off) [ $# -eq 2 ] || refuse_in quiet "one switch at a time: spark-shell quiet $what on|off" ;;
+        *) refuse_in quiet "$2 is not known here (on or off)" ;;
+    esac
+    [ "$OS" != Darwin ] || refuse_in quiet "macOS has no login notice or boot menu to quiet."
+    if [ "$what" = boot ] && [ "$2" = on ]; then
+        why=$(boot_refusal "$(boot_shape)"); [ -z "$why" ] || refuse_in quiet "$why"
+        boot_warning "$(boot_shape)"
+    fi
+    if [ "$2" = on ]; then val=yes; else val=no; fi
+    if [ "$what" = login ]; then
+        [ "$MODE" = dry ] || [ "$QUIET_LOGIN" = "$val" ] || config_set QUIET_LOGIN "$val"
+        QUIET_LOGIN=$val; export QUIET_LOGIN; login_apply
+    else
+        [ "$MODE" = dry ] || [ "$QUIET_BOOT" = "$val" ] || config_set QUIET_BOOT "$val"
+        QUIET_BOOT=$val; export QUIET_BOOT; boot_apply
+    fi
+    case $what$val in
+        loginyes) verb_close "The login is quiet: a bare login prompt from the next login." ;;
+        loginno) verb_close "The login is as the distro made it from the next login." ;;
+        bootyes) verb_close "The boot is quiet from the next boot." ;;
+        *) verb_close "The boot is as the distro made it from the next boot." ;;
+    esac
+}
+quiet_show() {   # quiet_show login|boot -- one row
+    if [ "$OS" = Darwin ]; then printf '%-6s na: macOS has no login notice or boot menu to quiet\n' "$1"; return 0; fi
+    if [ "$1" = login ]; then
+        if [ "$QUIET_LOGIN" = yes ]; then echo "login  on: a bare login prompt, no notice, no kernel line"
+        else echo "login  off: the distro's notice and the kernel line (spark-shell quiet login on)"; fi
+        return 0
+    fi
+    why=$(boot_refusal "$(boot_shape)")
+    if [ -n "$why" ]; then echo "boot   na: $why"
+    elif [ "$QUIET_BOOT" = yes ]; then echo "boot   on: no boot menu, no kernel messages"
+    else echo "boot   off: the boot menu and the kernel's messages (spark-shell quiet boot on)"; fi
+}
+check_quiet() {
+    if [ "$OS" = Darwin ]; then chk quiet ok "na (macOS)"; return; fi
+    st=ok; say=''
+    if [ "$QUIET_LOGIN" = yes ]; then
+        if login_quiet; then say="login quiet"; else say="login loud"; st=fail; fi
+    elif login_traces; then say="login still quiet (QUIET_LOGIN=no)"; st=fail
+    else say="login loud"; fi
+    shape=$(boot_shape); kind=$(boot_kind "$shape")
+    if [ "$QUIET_BOOT" = yes ]; then
+        case $shape in
+            wsl) say="$say, boot na (WSL)" ;;
+            arch) say="$say, boot na (no unified kernel image)" ;;
+            grub2) say="$say, boot na (grub2-mkconfig)" ;;
+            nogrub) say="$say, boot na (no GRUB)" ;;
+            *)
+                if ! boot_quiet "$shape"; then say="$say, boot loud"; st=fail
+                elif pending_has "$kind"; then say="$say, boot quiet but its rebuild failed"; st=fail
+                elif [ "$kind" = grub ] && [ -r "$ROOT/boot/grub/grub.cfg" ] && ! grep -q 'loglevel=3' "$ROOT/boot/grub/grub.cfg"; then say="$say, boot loud (grub.cfg lacks the quiet line)"; st=fail
+                elif [ -r "$ROOT/proc/cmdline" ] && ! grep -q 'loglevel=3' "$ROOT/proc/cmdline"; then
+                    say="$say, boot quiet after a reboot"; [ "$st" = fail ] || st=warn
+                else say="$say, boot quiet"; fi ;;
+        esac
+    elif [ -e "$ROOT/$GRUB_DROPIN" ] || [ -e "$ROOT/$CMDLINE_DROPIN" ] || pending_has grub || pending_has uki \
+         || [ -n "$(marked "$ROOT/etc/default/grub" "$QUIET_MARK")$(marked "$ROOT/etc/rc.conf" "$QUIET_MARK")" ]; then
+        say="$say, boot still quiet (QUIET_BOOT=no)"; st=fail
+    else say="$say, boot loud"; fi
+    case $st in
+        ok) chk quiet ok "$say" ;;
+        warn) chk quiet warn "$say" "reboot: the next boot is quiet" ;;
+        *) chk quiet fail "$say" "spark-shell on (sudo once)" ;;
+    esac
+}

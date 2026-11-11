@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # ------------------------------------------------------------------- sbom
+# sets: APPS SBOM_JSON
+# reads: CONFIG_DIR DISTRO OS PM REPO ROOT TMP
 # the machine's packages as the package manager says them: an app has a
 # desktop entry, a tool a command without one, a part neither
 SBOM_JSON=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/sbom.cdx.json

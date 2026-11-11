@@ -1,5 +1,6 @@
 # shellcheck extended-analysis=false
 # --- the step
+# reads: ANIMATION_NAMES BAR_FULL BAR_SYS CONFIG DESK_LAST FONT_FACES GLYPH_FAMILIES KEPT_LAYOUTS LAYOUTS_DIR MODE OS ROOT TAB TMP US WALL_NAMES WORDS_TAKE YES
 panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORDS" that takes the step back, or nothing
     _p=$1; _a=$2; shift 2; _arg=$*
     case $_p:$_a in

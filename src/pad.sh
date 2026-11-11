@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the pad
+# sets: PAD_BIN
+# reads: BAR_PID DIALOG_URL OS PANEL_SEP REPO STATE_DIR TMP
 PAD_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-pad
 pad_lock() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-pad.pid"; }   # the pad's lock, its pid inside
 pad_state() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-pad.state"; }   # what the pad says of itself: hidden 0|1, count N

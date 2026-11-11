@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the providers
+# sets: PROVIDE_CLIENT PROVIDE_LINE_MAX PROVIDE_PROTOCOL PROVIDE_SECTIONS PROVIDE_TOOLS SCRUB_JQ
+# reads: ANIMATION_NAMES DESK_LAST KEPT_LAYOUTS LAYOUTS_DIR PANEL_CROSS PANEL_DOT PANEL_GO PANEL_RING PANEL_SEP PANEL_TICK REPO SAVER_NAMES TAB THUMB_DIR TMP US WALL_TYPES
 # a section as an MCP server on stdio, JSON-RPC a line. Every JSON value
 # is built by jq with --arg, every request is parsed by jq; a method or a
 # tool name is matched by case, never run as a name

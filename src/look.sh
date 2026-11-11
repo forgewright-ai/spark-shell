@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # ------------------------------------------------------------- the slots
+# sets: FOOT_HEX HEX_KEYS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_THEMES SCENE_MAKE SCENE_READY SLOT_KEYS THUMB_DIR VGA_HEX WALL_GROUND_SAID WALL_KEYS WALL_NAMES WALL_SCENES WALL_SHIPPED WALL_TYPES WIN_KEYS
+# reads: MODE PATH_REFUSED PM POINTER_SEEN REPO STATE_DIR THEME_ENV THEME_KEYS TMP WALL_CACHE
 # the rendered look names colors by palette slot (0-15), never by hex, so
 # one file is right on the console and plain in an emulator. ACCENT and
 # MUTED, hex in theme.env, become the nearest slot by RGB distance (the
@@ -74,13 +76,7 @@ theme_load() {
 HEX_KEYS="HEX_BG HEX_FG HEX_ACCENT HEX_MUTED HEX_ANSI_0 HEX_ANSI_1 HEX_ANSI_2 HEX_ANSI_3 HEX_ANSI_4 HEX_ANSI_5 HEX_ANSI_6 HEX_ANSI_7 HEX_ANSI_8 HEX_ANSI_9 HEX_ANSI_10 HEX_ANSI_11 HEX_ANSI_12 HEX_ANSI_13 HEX_ANSI_14 HEX_ANSI_15"
 VGA_HEX="000000 aa0000 00aa00 aa5500 0000aa aa00aa 00aaaa aaaaaa 555555 ff5555 55ff55 ffff55 5555ff ff55ff 55ffff ffffff"
 FOOT_HEX="242424 f62b5a 47b413 e3c401 24acd4 f2affd 13c299 e6e6e6 616161 ff4d51 35d450 e9e836 5dc5f8 feabf2 24dfc4 ffffff"   # foot's defaults (the starlight theme, foot.ini(5)); its text ffffff on its ground 242424"
-hex_or() {   # hex_or COLOR FALLBACK -> rrggbb, lowercase
-    case $1 in
-        \#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]) printf '%s' "${1#\#}" | tr 'A-F' 'a-f' ;;
-        *) printf '%s' "$2" ;;
-    esac
-}
-hex_put() {   # hex_put VAR COLOR FALLBACK -- VAR is what hex_or says, with no subshell for a color already in lowercase (the palettes' own)
+hex_put() {   # hex_put VAR COLOR FALLBACK -- VAR is the color as rrggbb, lowercase, with no subshell for a color already in lowercase (the palettes' own)
     case $2 in
         \#[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) _hp=${2#\#} ;;
         \#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]) _hp=$(printf '%s' "${2#\#}" | tr 'A-F' 'a-f') ;;
@@ -364,15 +360,5 @@ hex_bg_sgr() {   # hex_bg_sgr rrggbb -> the SGR of that color as a ground
 hex_sgr() {   # hex_sgr rrggbb -> the SGR of that color as text
     # shellcheck disable=SC2046   # three numbers, split on purpose
     set -- $(hex_rgb "#$1"); printf '38;2;%s;%s;%s' "$1" "$2" "$3"
-}
-panel_foot() {   # panel_foot ARGS... -- the desktop window as Super+d opens it: foot with dialog.ini running spark-shell dialog ARGS (PANEL_LEAD before it); before dialog.ini is rendered, the same from options
-    if [ -f "$HOME/.config/foot/dialog.ini" ]; then
-        # shellcheck disable=SC2086   # the leader, or nothing
-        ${PANEL_LEAD:-} foot --config "$HOME/.config/foot/dialog.ini" --app-id "$PANEL_APP" -e "$REPO/spark-shell" dialog "$@"
-    else
-        _fc=$(foot_colors)
-        # shellcheck disable=SC2086   # the leader, or nothing
-        ${PANEL_LEAD:-} foot --app-id "$PANEL_APP" -T spark -W "$PANEL_SIZE" -o "pad=$PANEL_PAD" -o "$_fc.background=$PANEL_BG" -o "$_fc.alpha=1.0" -e "$REPO/spark-shell" dialog "$@"
-    fi
 }
 

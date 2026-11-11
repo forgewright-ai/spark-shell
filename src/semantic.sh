@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the dialog's search by meaning
+# sets: MCP_ENV
+# reads: DIALOG_BIN MODE OS PROVIDE_SECTIONS REPO SEMANTIC_LOG SEMANTIC_MODEL SEMANTIC_SHA256 SEMANTIC_SIZE SEMANTIC_URL SPARK_CONFIG_DIR STATE_DIR TMP
 semantic_engine() {   # -> spark's llama-server: SPARK_ENGINE_DIR's, else the newest engine (the highest -bNNNN); false when none
     _sed=$(sed -n 's/^SPARK_ENGINE_DIR=//p' "$SPARK_CONFIG_DIR/spark.env" 2>/dev/null | tail -1 | sed 's/^"\(.*\)"$/\1/')
     tilde='~'; case $_sed in "$tilde"|"$tilde/"*) _sed=$HOME${_sed#"$tilde"} ;; esac

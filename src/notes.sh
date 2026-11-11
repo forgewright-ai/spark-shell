@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # --- notes
+# sets: NOTES_DIR
+# reads: PANEL_SEP TAB TMP
 NOTES_DIR=$HOME/notes
 when_of() { date -d "@$1" "+$2" 2>/dev/null || date -r "$1" "+$2" 2>/dev/null; }   # when_of EPOCH FORMAT (GNU date, else BSD's)
 mtime_of() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }

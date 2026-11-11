@@ -1,5 +1,8 @@
 # shellcheck extended-analysis=false
 # ------------------------------------------------------------ the palette
+# sets: CONSOLE_NOW KEPT_LAYOUTS KEPT_MAX LOOKS_DIR LOOK_FORMAT PALETTE_DIR PTS_DIR VT_SYSFS WALL_CACHE WALL_COVER
+# reads: ANIMATION_NAMES CONFIG_DIR CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GLYPH_FAMILIES MODE OS PALETTE_MARK PATH_SAID REPO ROOT STATE_DIR TAB TERMINAL_SEEN THEME_ENV THEME_KEYS TMP VGA_HEX WALL_TYPES
+PALETTE_DIR=$CONFIG_DIR/themes                     # your NAME.env wins over gallery/theme/
 # A palette is a KEY=value file: the 20 THEME_* keys, each #rrggbb, and
 # THEME_LOGO. From it: theme.env (what spark and every render read),
 # console-colors (\033]P<n><rrggbb> for the 16 slots, sent at a console

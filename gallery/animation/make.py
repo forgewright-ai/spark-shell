@@ -59,7 +59,7 @@ def rgb(h):
 
 
 def hex_or(v, fallback):
-    """#rrggbb as rrggbb in lowercase, else the fallback: spark-shell's hex_or."""
+    """#rrggbb as rrggbb in lowercase, else the fallback."""
     v = v.strip().strip("\"'")
     if len(v) == 7 and v[0] == "#" and all(c in "0123456789abcdefABCDEF" for c in v[1:]):
         return v[1:].lower()

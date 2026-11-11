@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the signs and the sizes
+# sets: PANEL_APP PANEL_BLOCKS PANEL_CACHE PANEL_COL PANEL_CROSS PANEL_DOT PANEL_DOWN PANEL_GO PANEL_IN PANEL_LOOKS PANEL_MARK PANEL_ORDER PANEL_PROMPT PANEL_RING PANEL_SEP PANEL_SIZE PANEL_TICK PANEL_UP PANEL_WARN PULSE_W
+# reads: BAR_SYS CONFIG_DIR OS PALETTE_DIR PULSE REPO STATE_DIR TMP
 PANEL_APP='spark-dialog'              # the desktop window's app id: the dialog's
 PANEL_SIZE=60x40                      # columns x rows of the desktop window
 PANEL_COL=9                           # the section column: as wide as reminders
@@ -9,7 +11,6 @@ panel_col() { printf "%-${PANEL_COL}s  " "$1"; }   # panel_col SECTION -> the na
 panel_sign() { case $1 in "$PANEL_DOT"|"$PANEL_TICK") printf '%s%s%s' "${PANEL_MARK:-}" "$1" "${PANEL_UNMARK:-}" ;; "$PANEL_CROSS") printf '%s%s%s' "${PANEL_RED:-}" "$1" "${PANEL_UNMARK:-}" ;; *) printf '%s' "$1" ;; esac; }   # panel_sign SIGN -> colored: what is current in the accent, a refusal red
 panel_indent() { sed "s/^/$(printf "%${PANEL_IN}s" '')/"; }   # the glance's lines, in from the edge
 panel_line_sign() { case $1 in "$PANEL_DOT "*|"$PANEL_TICK "*|"$PANEL_CROSS "*) printf '%s %s' "$(panel_sign "${1%% *}")" "${1#* }" ;; *) printf '%s' "$1" ;; esac; }   # panel_line_sign LINE -> the line, its leading sign colored
-TAB=$(printf '\t')
 PANEL_DOT=$(printf '\342\227\217')    # U+25CF, a filled circle: in use, connected
 PANEL_RING=$(printf '\342\227\213')   # U+25CB, an empty circle: available
 PANEL_TICK=$(printf '\342\234\223')   # U+2713, a check: current, saved; a step done

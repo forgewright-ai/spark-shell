@@ -1,5 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the machine folder
+# sets: MACHINE_AT_NOW MACHINE_FACTS_EVERY MACHINE_NAME MACHINE_NOW_EVERY MACHINE_NOW_SOON MACHINE_NO_TOOL MACHINE_READS
+# reads: BAR_SYS LAYOUTS_DIR NOTES_DIR OS PANEL_APP PANEL_CACHE SAVER_NAMES TAB TMP WALL_SCENES WALL_SHIPPED
 # spark reads two files there. NAME.facts: what holds while the machine
 # stays as it is, every name as its tool takes it, written only when it
 # changed (spark keeps it in the cached part of its prompt). NAME.now:
