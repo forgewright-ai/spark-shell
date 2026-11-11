@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A fixed test lease, confined by dhcpcd_proof.sh to its private network."""
+"""A fixed test lease, confined by dhcp_proof.sh to its private network."""
 import socket
 import struct
 

@@ -49,7 +49,7 @@ provide_input() {   # stdin -> the FIFO; a pairing answer goes to the agent inst
     while IFS= read -r _l || [ -n "$_l" ]; do
         if [ -S "$TMP/bt.sock" ] && [ "${#_l}" -le "$PROVIDE_LINE_MAX" ]; then
             if printf '%s' "$_l" | jq -e '(.id | type) == "string" and (.id | startswith("bt-pair-")) and (has("method") | not)' >/dev/null 2>&1; then
-                printf '%s\n' "$_l" | python3 "$REPO/lib/bt_agent.py" --reply "$TMP" || :
+                printf '%s\n' "$_l" | python3 "$REPO/lib/bluetooth.py" --reply "$TMP" || :
                 _l=''; continue
             fi
             if printf '%s' "$_l" | jq -e --slurpfile id "$TMP/bt.call-id" '.method == "notifications/cancelled" and .params.requestId == $id[0]' >/dev/null 2>&1; then

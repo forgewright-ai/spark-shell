@@ -192,7 +192,7 @@ layout_gate() {   # the gate: layout_gate LINE -> '' or why not
         [ $# -gt 1 ] || return 0
         [ "${2:-}" != -e ] || shift 2
     fi
-    if [ "${1:-}" = python3 ] && [ "${2:-}" = "$REPO/lib/layout_terminal.py" ]; then
+    if [ "${1:-}" = python3 ] && [ "${2:-}" = "$REPO/lib/layout.py" ]; then
         [ "$#" -ge 6 ] || { echo "invalid terminal launch"; return; }
         case $3 in "$TMP"/term.*) ;; *) echo "invalid terminal lease"; return ;; esac
         case $4:$5 in *[!0-9:]*) echo "invalid terminal size"; return ;; esac
@@ -240,7 +240,7 @@ layout_term_line() {   # layout_term_line JSON INDEX APP ARGS -> the exec foot l
         if all(.[]; type == "number" and . == floor) and .[0] >= 20 and .[0] <= 240 and .[1] >= 5 and .[1] <= 100 then "\(.[0]) \(.[1])" else empty end' "$1")
     if [ -n "$_min" ]; then
         _lease=$(mktemp "$TMP/term.XXXXXX"); echo wait > "$_lease"
-        printf 'exec foot -e python3 %s/lib/layout_terminal.py %s %s %s\n' "$REPO" "$_lease" "$_min" "$(layout_launch "$3" "$4")"
+        printf 'exec foot -e python3 %s/lib/layout.py %s %s %s\n' "$REPO" "$_lease" "$_min" "$(layout_launch "$3" "$4")"
     else printf 'exec foot -e %s\n' "$(layout_launch "$3" "$4")"; fi
 }
 layout_terminal_ready() {   # false when a lease did not confirm
@@ -439,7 +439,7 @@ layout_play() {   # layout_play FILE -> the lines sent to sway
         case $line in exec*)
             # until its window maps; 3 s grace for a program that ended
             set -- $line; shift; [ "${1:-}" = foot ] && [ "${2:-}" = -e ] && shift 2
-            if [ "${1:-}" = python3 ] && [ "${2:-}" = "$REPO/lib/layout_terminal.py" ]; then shift 5; fi
+            if [ "${1:-}" = python3 ] && [ "${2:-}" = "$REPO/lib/layout.py" ]; then shift 5; fi
             prog=${1##*/}; shown=$*; t=0
             layout_pulse
             while [ "$(layout_windows "$_ws")" -le "$before" ] && [ "$t" -lt $((LAYOUT_WAIT * 4)) ]; do

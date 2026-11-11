@@ -290,7 +290,7 @@ palette_off() {   # palette_off all|ours -- VGA again, the files gone
 }
 
 # macOS: the stamp says what Terminal.app got; imported again on change
-terminal_has() { python3 "$REPO/lib/terminal_profile.py" has-profile >/dev/null 2>&1; }
+terminal_has() { python3 "$REPO/lib/terminal.py" has-profile >/dev/null 2>&1; }
 terminal_apply() {
     [ "$OS" = Darwin ] || return 0
     [ -f "$THEME_ENV" ] && [ -n "$THEME" ] && [ "$THEME" != none ] || return 0
@@ -304,7 +304,7 @@ terminal_apply() {
         _why="Terminal.app lost the spark-shell profile: import it again, in $_face $_size"
     fi
     need terminal "$_why" || return 0
-    if python3 "$REPO/lib/terminal_profile.py" apply "$THEME_ENV" "$_face" "$_size"; then
+    if python3 "$REPO/lib/terminal.py" apply "$THEME_ENV" "$_face" "$_size"; then
         mkdir_private "$STATE_DIR"; printf '%s\n' "$_want" > "$TERMINAL_SEEN"
         ok terminal "Terminal.app's profile is the palette, in $_face $_size"
     else
@@ -314,7 +314,7 @@ terminal_apply() {
 terminal_off() {
     [ "$OS" = Darwin ] && [ -f "$TERMINAL_SEEN" ] || return 0
     if [ "$MODE" = dry ]; then row would terminal "Terminal.app's spark-shell profile removed"; return 0; fi
-    if python3 "$REPO/lib/terminal_profile.py" remove; then
+    if python3 "$REPO/lib/terminal.py" remove; then
         rm -f "$TERMINAL_SEEN"; row ok terminal "Terminal.app's spark-shell profile removed, open windows keep their look"
     else
         row todo terminal "Terminal.app kept the profile: Terminal > Settings > Profiles removes it"

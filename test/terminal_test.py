@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tests for lib/terminal_profile.py -- plain asserts, standard library only,
+# tests for lib/terminal.py -- plain asserts, standard library only,
 # runnable with Apple's /usr/bin/python3. SPARK_SHELL_NO_APPLY=1 on every
 # run of the helper: Terminal.app is never touched, and HOME is a throwaway.
 
@@ -12,9 +12,9 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-HELPER = os.path.join(REPO, "lib", "terminal_profile.py")
+HELPER = os.path.join(REPO, "lib", "terminal.py")
 sys.path.insert(0, os.path.join(REPO, "lib"))
-import terminal_profile as tp  # noqa: E402
+import terminal as tp  # noqa: E402
 
 TMP = tempfile.mkdtemp(prefix="spark-shell-profile-")
 passed = 0
@@ -169,4 +169,4 @@ if saved[1] is not None:
 rc, out, err = helper("nonsense")
 ok(rc == 2 and "usage" in err, "an unknown verb: the usage, exit 2")
 
-print("profile_test: %d passed" % passed)
+print("terminal_test: %d passed" % passed)

@@ -112,7 +112,7 @@ mac_face_here() {   # mac_face_here FACE; tests pin SPARK_SHELL_MAC_FONTS
     case " $MAC_SYSTEM_FACES " in *" $1 "*) return 0 ;; esac
     for _d in "$HOME/Library/Fonts" /Library/Fonts; do for _x in otf ttf ttc; do [ ! -f "$_d/$1.$_x" ] || return 0; done; done
     [ -n "$(mdfind "kMDItemFonts == '$1'" 2>/dev/null | head -1)" ] && return 0
-    python3 "$REPO/lib/terminal_profile.py" has-font "$1" >/dev/null 2>&1   # when Spotlight is off
+    python3 "$REPO/lib/terminal.py" has-font "$1" >/dev/null 2>&1   # when Spotlight is off
 }
 
 # ---------------------------------------------------- the terminal's font

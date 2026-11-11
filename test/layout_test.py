@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("layout_terminal", REPO / "lib/layout_terminal.py")
+spec = importlib.util.spec_from_file_location("layout", REPO / "lib/layout.py")
 terminal = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(terminal)
 
@@ -54,7 +54,7 @@ class Terminal(unittest.TestCase):
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
             app = root / "app.py"
             app.write_text("from pathlib import Path\nimport sys\nPath(sys.argv[1]).write_text('started')\n")
-            child = subprocess.Popen([sys.executable, str(REPO / "lib/layout_terminal.py"), str(lease), "80", "24", sys.executable, str(app), str(output)], stdin=slave, stdout=slave, stderr=slave)
+            child = subprocess.Popen([sys.executable, str(REPO / "lib/layout.py"), str(lease), "80", "24", sys.executable, str(app), str(output)], stdin=slave, stdout=slave, stderr=slave)
             try:
                 time.sleep(0.2)
                 self.assertIsNone(child.poll())

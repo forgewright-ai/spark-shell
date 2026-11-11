@@ -92,7 +92,7 @@ def main():
                 lease.write_text("wait\n")
                 result.unlink(missing_ok=True)
                 app = "import os,json,time; from pathlib import Path; Path('" + str(result) + "').write_text(json.dumps(list(os.get_terminal_size(0)))); time.sleep(30)"
-                target = subprocess.Popen(["foot", "--app-id", "proof-target", "python3", str(REPO / "lib/layout_terminal.py"), str(lease), "80", "24", "python3", "-c", app], env=env, stdout=log, stderr=log)
+                target = subprocess.Popen(["foot", "--app-id", "proof-target", "python3", str(REPO / "lib/layout.py"), str(lease), "80", "24", "python3", "-c", app], env=env, stdout=log, stderr=log)
                 children.append(target)
                 wait_for(lambda: window("proof-target"), "target")
                 lease.write_text("ready\n")

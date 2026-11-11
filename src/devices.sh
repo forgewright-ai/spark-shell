@@ -114,7 +114,7 @@ wifi_connect() {   # wifi_connect NAME [PASSWORD] [hidden] -> one line
         nmcli) if [ -n "$_id" ]; then _o=$(nmcli con up id "$_id" 2>&1 </dev/null) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }
                elif [ -n "${2:-}" ]; then _o=$(printf '%s\n' "$2" | nmcli --ask dev wifi connect "$1" ifname "$_i" hidden "$(if [ "$_hidden" = hidden ]; then echo yes; else echo no; fi)" 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }
                else _o=$(nmcli dev wifi connect "$1" ifname "$_i" hidden "$(if [ "$_hidden" = hidden ]; then echo yes; else echo no; fi)" 2>&1 </dev/null) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }; fi ;;
-        iwctl) if [ -n "${2:-}" ]; then _o=$(printf '%s\n' "$2" | python3 "$REPO/lib/wifi_connect.py" "$_i" "$1" ${_hidden:+--hidden} 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }
+        iwctl) if [ -n "${2:-}" ]; then _o=$(printf '%s\n' "$2" | python3 "$REPO/lib/wifi.py" "$_i" "$1" ${_hidden:+--hidden} 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }
                else _o=$(iwctl station "$_i" "$_join" "$1" 2>&1 </dev/null) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }; fi ;;
         wpa_cli) if [ -z "$_id" ]; then
                 _psk=''
@@ -282,8 +282,8 @@ bt_act() {   # bt_act connect|disconnect|pair|remove NAME | scan | power on|off 
                 connect) bar_timeout bluetoothctl connect "$_m" 2>&1 | grep -q 'successful' && echo "connected $2" || { echo "could not connect $2 (is it on, and near?)"; return 1; } ;;
                 disconnect) bar_timeout bluetoothctl disconnect "$_m" 2>&1 | grep -q 'Successful' && echo "disconnected $2" || { echo "could not disconnect $2"; return 1; } ;;
                 remove) bar_timeout bluetoothctl remove "$_m" 2>&1 | grep -q 'removed' && echo "removed $2" || { echo "could not remove $2"; return 1; } ;;
-                pair) if [ -n "${BT_BRIDGE:-}" ]; then python3 "$REPO/lib/bt_agent.py" "$_m" --bridge "$BT_BRIDGE" || return 1
-                      else python3 "$REPO/lib/bt_agent.py" "$_m" || return 1; fi
+                pair) if [ -n "${BT_BRIDGE:-}" ]; then python3 "$REPO/lib/bluetooth.py" "$_m" --bridge "$BT_BRIDGE" || return 1
+                      else python3 "$REPO/lib/bluetooth.py" "$_m" || return 1; fi
                       bar_timeout bluetoothctl trust "$_m" >/dev/null 2>&1
                       bar_timeout bluetoothctl connect "$_m" >/dev/null 2>&1 && echo "paired and connected $2" || echo "paired $2" ;;
             esac ;;

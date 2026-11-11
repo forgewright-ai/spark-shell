@@ -17,7 +17,7 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("bt_agent", REPO / "lib/bt_agent.py")
+spec = importlib.util.spec_from_file_location("bluetooth", REPO / "lib/bluetooth.py")
 agent = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(agent)
 
@@ -177,12 +177,12 @@ class ProviderPairing(unittest.TestCase):
                 shutil.copy2(REPO / "component/dialog/dialog.env", repo / "component/dialog/dialog.env")
                 (repo / "lib").mkdir()
                 # A native-agent stand-in asks through the real socket bridge.
-                (repo / "lib/bt_agent.py").write_text(
-                    "import sys\nsys.path.insert(0, %r)\nimport bt_agent\n" % str(REPO / "lib") +
-                    "if '--reply' in sys.argv: sys.exit(bt_agent.main())\n"
-                    "b = bt_agent.Bridge(sys.argv[sys.argv.index('--bridge') + 1])\n"
+                (repo / "lib/bluetooth.py").write_text(
+                    "import sys\nsys.path.insert(0, %r)\nimport bluetooth\n" % str(REPO / "lib") +
+                    "if '--reply' in sys.argv: sys.exit(bluetooth.main())\n"
+                    "b = bluetooth.Bridge(sys.argv[sys.argv.index('--bridge') + 1])\n"
                     "try: b.ask('pin', 'Enter the code from the chosen device')\n"
-                    "except bt_agent.Rejected: sys.exit(1)\n"
+                    "except bluetooth.Rejected: sys.exit(1)\n"
                     "finally: b.close()\n")
                 home = root / "home"
                 config = home / ".config/spark-shell"

@@ -61,7 +61,7 @@ jobs:
       - name: ascii docs
         run: |
           tab=$(printf '\t')
-          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell src/*.sh test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/pad_build.sh test/desktop_proof.sh test/dialog_pty.py lib/terminal_profile.py test/profile_test.py lib/saver.py test/saver_test.py lib/office.py test/office_test.py $(find template distro gallery/theme component/dialog/src component/dialog/tests component/wallpaper/src component/pad/src -type f ! -name '*.txt' | sort) component/dialog/Cargo.toml component/dialog/deny.toml component/dialog/dialog.env component/dialog/rust-toolchain.toml component/wallpaper/Cargo.toml component/wallpaper/deny.toml component/wallpaper/wallpaper.env component/wallpaper/rust-toolchain.toml component/pad/Cargo.toml component/pad/deny.toml component/pad/pad.env component/pad/rust-toolchain.toml; do
+          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell src/*.sh test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/pad_build.sh test/desktop_proof.sh test/dialog_pty.py lib/terminal.py test/terminal_test.py lib/saver.py test/saver_test.py lib/office.py test/office_test.py $(find template distro gallery/theme component/dialog/src component/dialog/tests component/wallpaper/src component/pad/src -type f ! -name '*.txt' | sort) component/dialog/Cargo.toml component/dialog/deny.toml component/dialog/dialog.env component/dialog/rust-toolchain.toml component/wallpaper/Cargo.toml component/wallpaper/deny.toml component/wallpaper/wallpaper.env component/wallpaper/rust-toolchain.toml component/pad/Cargo.toml component/pad/deny.toml component/pad/pad.env component/pad/rust-toolchain.toml; do
             if LC_ALL=C grep -n "[^ -~${tab}]" "$f"; then
               echo "non-ASCII in $f"; exit 1; fi; done
       - name: no hex color in a template (the look is the 16 slots)
@@ -73,7 +73,7 @@ jobs:
         # analysis: 0.11.0's took over 10 GB on them and stopped the box
         # twice. The runner's 0.9.0 has none and calls that directive
         # unknown (SC1107), so the line leaves that one out.
-        run: shellcheck -x -S warning -e SC1107 spark-shell lib/apps-terminal/xterm test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/pad_build.sh test/desktop_proof.sh test/wifi_proof.sh test/greetd_upgrade_proof.sh test/dhcpcd_proof.sh test/gate.sh test/semantic_measure.sh .githooks/pre-push
+        run: shellcheck -x -S warning -e SC1107 spark-shell lib/shim/xterm test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/pad_build.sh test/desktop_proof.sh test/wifi_proof.sh test/login_upgrade_proof.sh test/dhcp_proof.sh test/gate.sh test/semantic_measure.sh .githooks/pre-push
       - name: zizmor over .github/workflows
         # the workflows are code too: zizmor (pinned, in a venv of its own)
         # reads every file under .github/workflows; medium and above fail.
@@ -95,7 +95,7 @@ jobs:
         run: |
           timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
           python3 test/apps_test.py
-          python3 test/bt_agent_test.py
+          python3 test/bluetooth_test.py
           python3 test/provider_acceptance.py
       - name: every glyph of every family is in the curated fonts and one cell wide (#248)
         # the release zip spark-shell pins, fetched and held to its sha256;
@@ -111,15 +111,15 @@ jobs:
           python3 -I test/battery_test.py
           python3 -I test/cleanup_test.py
           python3 -I test/printers_test.py
-          python3 -I test/open_path_test.py
+          python3 -I test/launch_test.py
           python3 -I test/office_test.py
           python3 -I test/network_test.py
           python3 -I test/install_test.py
-          python3 -I test/network_dhcpcd_test.py
+          python3 -I test/dhcp_test.py
           python3 -I test/display_test.py
-          python3 -I test/layout_terminal_test.py
+          python3 -I test/layout_test.py
           python3 -I test/home_test.py
-          python3 -I test/wifi_connect_test.py
+          python3 -I test/wifi_test.py
   debian:
     # the same suite on Debian itself, where distro/debian.env's names are
     # looked up. The privacy and ascii gates ran once, on linux.
@@ -139,7 +139,7 @@ jobs:
           timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
           python3 test/apps_test.py
           python3 -I test/install_test.py
-          python3 test/bt_agent_test.py
+          python3 test/bluetooth_test.py
           python3 test/provider_acceptance.py
   ubuntu:
     # the same suite on Ubuntu 26.04, where sudo is sudo-rs and the
@@ -166,7 +166,7 @@ jobs:
           timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
           python3 test/apps_test.py
           python3 -I test/install_test.py
-          python3 test/bt_agent_test.py
+          python3 test/bluetooth_test.py
           python3 test/provider_acceptance.py
   arch:
     # the same suite where the tools come from pacman
@@ -186,7 +186,7 @@ jobs:
           timeout --foreground 900 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 15 minutes, before the job's 20, so the parts say where they are
           python3 test/apps_test.py
           python3 -I test/install_test.py
-          python3 test/bt_agent_test.py
+          python3 test/bluetooth_test.py
           python3 test/provider_acceptance.py
   void:
     # the third family: xbps (glibc), the desktop's names too. xbps itself
@@ -222,7 +222,7 @@ jobs:
           timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
           python3 test/apps_test.py
           python3 -I test/install_test.py
-          python3 test/bt_agent_test.py
+          python3 test/bluetooth_test.py
           python3 test/provider_acceptance.py
   fedora:
     # the fourth family: dnf over rpm, the names of distro/fedora.env looked
@@ -243,7 +243,7 @@ jobs:
           timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
           python3 test/apps_test.py
           python3 -I test/install_test.py
-          python3 test/bt_agent_test.py
+          python3 test/bluetooth_test.py
           python3 test/provider_acceptance.py
   opensuse:
     # the fifth family: zypper over rpm, the names of distro/opensuse.env
@@ -266,7 +266,7 @@ jobs:
           timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
           python3 test/apps_test.py
           python3 -I test/install_test.py
-          python3 test/bt_agent_test.py
+          python3 test/bluetooth_test.py
           python3 test/provider_acceptance.py
   desktop:
     # the desktop for real, per family: its packages installed in the
@@ -394,10 +394,10 @@ jobs:
           sh test/shell_test.sh --parallel
           python3 test/apps_test.py
           python3 -I test/install_test.py
-          python3 test/bt_agent_test.py
+          python3 test/bluetooth_test.py
           python3 test/provider_acceptance.py
       - name: the Terminal.app helper, built and never applied
-        run: SPARK_SHELL_NO_APPLY=1 /usr/bin/python3 test/profile_test.py
+        run: SPARK_SHELL_NO_APPLY=1 /usr/bin/python3 test/terminal_test.py
   dialog:
     # the dialog (component/dialog/): the format, clippy, its tests (the golden
     # renders in two palettes, the host against stub providers), the

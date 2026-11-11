@@ -62,6 +62,6 @@ ip link add proof0 type veth peer name server0
 ip addr add 192.0.2.1/24 dev server0
 ip link set server0 up
 ip link set proof0 up
-python3 "$repo/test/dhcpcd_server.py" &
+python3 "$repo/test/dhcp_server.py" &
 dhcpcd -B -d -M proof0 > "$work/native.log" 2>&1 &
-python3 -I "$repo/test/dhcpcd_native.py"
+python3 -I "$repo/test/dhcp_native.py"

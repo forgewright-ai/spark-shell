@@ -186,7 +186,7 @@ files_open_with() {   # files_open_with ID PATH [--reveal] -- the path through t
         if { [ -d "$2" ] || [ "${3:-}" = --reveal ]; } && [ -z "$(xdg-mime query default inode/directory 2>/dev/null)" ]; then provide_refuse "$1" "files: no system file manager is configured; folders can still be browsed here"; return 0; fi
     fi
     _before=''; [ -z "${SWAYSOCK:-}" ] || _before=$(layout_windows_all)
-    if ! python3 "$REPO/lib/open_path.py" "$OS" "$2" ${3:-} > "$TMP/open.result" 2> "$TMP/open.error"; then provide_refuse "$1" "$(scrub_text < "$TMP/open.error")"; return 0; fi
+    if ! python3 "$REPO/lib/launch.py" "$OS" "$2" ${3:-} > "$TMP/open.result" 2> "$TMP/open.error"; then provide_refuse "$1" "$(scrub_text < "$TMP/open.error")"; return 0; fi
     files_opened "$1" "$_before" "$TMP/open.result"
 }
 provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a path files_ok allows; a write answers with its undo

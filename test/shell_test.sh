@@ -297,7 +297,7 @@ else echo 'linux /vmlinuz' > "$H/root/boot/grub/grub.cfg"; fi
 EOF
     printf '#!/bin/sh\necho "mkinitcpio $*" >> "%s/log"\n[ ! -e "%s/fail" ]\n' "$H" "$H" > "$H/lx/mkinitcpio"
     # the helper: has-profile fails once $H/gone is there, remove once $H/stuck is
-    printf '#!/bin/sh\ncase $1 in */lib/reminder_time.py) exec "%s" "$@" ;; esac\necho "python3 $*" >> "%s/log"\ncase $2 in has-profile) [ ! -e "%s/gone" ] ;; remove) [ ! -e "%s/stuck" ] ;; esac\n' "$fixture_python" "$H" "$H" "$H" > "$H/lx/python3"
+    printf '#!/bin/sh\ncase $1 in */lib/reminders.py) exec "%s" "$@" ;; esac\necho "python3 $*" >> "%s/log"\ncase $2 in has-profile) [ ! -e "%s/gone" ] ;; remove) [ ! -e "%s/stuck" ] ;; esac\n' "$fixture_python" "$H" "$H" "$H" > "$H/lx/python3"
     cat > "$H/lx/systemctl" <<'EOF'
 #!/bin/sh
 st=${SPARK_SHELL_ROOT:-$HOME/root}/units
@@ -4110,27 +4110,27 @@ fresh
 console_stubs Darwin
 palette_fixture test '#fe8019'
 L theme test >/dev/null
-grep -qx "python3 $REPO/lib/terminal_profile.py apply $HOME/.config/spark/theme.env Menlo-Regular 13" "$H/log" && [ ! -e "$H/root/etc" ] \
+grep -qx "python3 $REPO/lib/terminal.py apply $HOME/.config/spark/theme.env Menlo-Regular 13" "$H/log" && [ ! -e "$H/root/etc" ] \
     && ok "macOS: theme test runs the helper with theme.env, Menlo-Regular 13, no root file" || bad "mac theme" "$(cat "$H/log")"
 : > "$H/log"; L theme test >/dev/null
-[ "$(cat "$H/log")" = "python3 $REPO/lib/terminal_profile.py has-profile" ] && ok "macOS: theme test again asks the helper, and leaves the profile alone" || bad "mac idempotent" "$(cat "$H/log")"
+[ "$(cat "$H/log")" = "python3 $REPO/lib/terminal.py has-profile" ] && ok "macOS: theme test again asks the helper, and leaves the profile alone" || bad "mac idempotent" "$(cat "$H/log")"
 : > "$H/gone"; : > "$H/log"
 ck=$(L check || true)
 printf '%s\n' "$ck" | grep -q "^warn   theme        test: Terminal.app has no spark-shell profile -- spark-shell on$" && ok "macOS: check warns when the profile is gone, the stamp alone is not enough" || bad "mac check gone" "$(printf '%s\n' "$ck" | grep theme)"
 L theme test >/dev/null
-grep -qx "python3 $REPO/lib/terminal_profile.py apply $HOME/.config/spark/theme.env Menlo-Regular 13" "$H/log" && ok "macOS: theme test imports the profile again when it is gone" || bad "mac reimport" "$(cat "$H/log")"
+grep -qx "python3 $REPO/lib/terminal.py apply $HOME/.config/spark/theme.env Menlo-Regular 13" "$H/log" && ok "macOS: theme test imports the profile again when it is gone" || bad "mac reimport" "$(cat "$H/log")"
 rm -f "$H/gone"
 rc=0; out=$(SPARK_SHELL_MAC_FONTS="Menlo-Regular Monaco" L font VGA 14 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = "spark-shell font: no font named VGA is installed here (spark-shell font list shows them)" ] && ok "macOS: a face this Mac lacks is refused" || bad "mac font refused" "rc=$rc $out"
 SPARK_SHELL_MAC_FONTS="Menlo-Regular Monaco" L font Monaco 14 >/dev/null
-grep -qx "python3 $REPO/lib/terminal_profile.py apply $HOME/.config/spark/theme.env Monaco 14" "$H/log" && ok "macOS: font Monaco 14 rewrites the profile" || bad "mac font" "$(cat "$H/log")"
+grep -qx "python3 $REPO/lib/terminal.py apply $HOME/.config/spark/theme.env Monaco 14" "$H/log" && ok "macOS: font Monaco 14 rewrites the profile" || bad "mac font" "$(cat "$H/log")"
 rc=0; out=$(L quiet login on 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = "spark-shell quiet: macOS has no login notice or boot menu to quiet." ] && ok "macOS: quiet login on is one sentence" || bad "mac quiet" "rc=$rc $out"
 : > "$H/stuck"; out=$(L theme none)
 printf '%s\n' "$out" | grep -q '^todo   terminal     Terminal.app kept the profile' && [ -f "$HOME/.local/state/spark-shell/terminal.seen" ] \
     && ok "macOS: a remove that failed is a todo, and the stamp stays" || bad "mac remove stuck" "$out"
 rm -f "$H/stuck"; : > "$H/log"; L theme none >/dev/null
-grep -qx "python3 $REPO/lib/terminal_profile.py remove" "$H/log" && [ ! -e "$HOME/.config/spark/theme.env" ] && [ ! -e "$HOME/.local/state/spark-shell/terminal.seen" ] \
+grep -qx "python3 $REPO/lib/terminal.py remove" "$H/log" && [ ! -e "$HOME/.config/spark/theme.env" ] && [ ! -e "$HOME/.local/state/spark-shell/terminal.seen" ] \
     && ok "macOS: theme none removes the profile and theme.env" || bad "mac none" "$(cat "$H/log")"
 rc=0; out=$(L theme -h 2>&1) || rc=$?
 [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^  spark-shell theme NAME|none  ' && ok "theme -h: the help answers first" || bad "theme -h" "rc=$rc $out"

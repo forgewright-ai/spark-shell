@@ -269,7 +269,7 @@ os.execv(''' + repr(shutil.which("cat")) + ''', ['cat']+a)
         self.assertNotIn(payload, json.dumps(result))
 
     def test_missing_zone_file_accepts_only_native_utc_without_dst(self):
-        spec = importlib.util.spec_from_file_location("reminder_time", REPO / "lib/reminder_time.py")
+        spec = importlib.util.spec_from_file_location("reminders", REPO / "lib/reminders.py")
         helper = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(helper)
         with patch.dict(os.environ, {}, clear=True), patch.object(helper.Path, "open", side_effect=FileNotFoundError):

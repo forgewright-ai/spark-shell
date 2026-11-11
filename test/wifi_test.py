@@ -26,7 +26,7 @@ class WifiPrompt(unittest.TestCase):
 
     def test_native_failure_never_echoes_a_secret(self):
         _, env = self.fixture("print('synthetic-password: rejected'); raise SystemExit(1)\n")
-        run = subprocess.run([sys.executable, str(REPO / "lib/wifi_connect.py"), "wlan0", "cafe"],
+        run = subprocess.run([sys.executable, str(REPO / "lib/wifi.py"), "wlan0", "cafe"],
                              input="synthetic-password\n", text=True, capture_output=True, env=env, timeout=5)
         self.assertEqual(run.returncode, 1)
         self.assertNotIn("synthetic-password", run.stdout + run.stderr)
@@ -34,7 +34,7 @@ class WifiPrompt(unittest.TestCase):
 
     def test_cancel_stops_and_reaps_the_prompt_process(self):
         root, env = self.fixture("import os,time\nfrom pathlib import Path\nPath(os.environ['WIFI_TEST_ROOT'], 'pid').write_text(str(os.getpid()))\ntime.sleep(60)\n")
-        child = subprocess.Popen([sys.executable, str(REPO / "lib/wifi_connect.py"), "wlan0", "cafe"],
+        child = subprocess.Popen([sys.executable, str(REPO / "lib/wifi.py"), "wlan0", "cafe"],
                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         try:
             child.stdin.write(b"synthetic-password\n")
@@ -58,7 +58,7 @@ class WifiPrompt(unittest.TestCase):
     def test_unsupported_password_never_starts_iwctl(self):
         root, env = self.fixture("from pathlib import Path\nimport os\nPath(os.environ['WIFI_TEST_ROOT'], 'started').touch()\n")
         for password in (b"x" * 64, b"first\nsecond\n", b"\n", b"short", b"caf\xc3\xa9-password"):
-            run = subprocess.run([sys.executable, str(REPO / "lib/wifi_connect.py"), "wlan0", "cafe"],
+            run = subprocess.run([sys.executable, str(REPO / "lib/wifi.py"), "wlan0", "cafe"],
                                  input=password, capture_output=True, env=env, timeout=5)
             self.assertEqual(run.returncode, 1)
         self.assertFalse((root / "started").exists())

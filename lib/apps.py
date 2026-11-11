@@ -305,7 +305,7 @@ class Desktop:
             elif mode not in ("default", "new"):
                 raise ValueError("Unknown launch preference")
             if self.gio.g_desktop_app_info_get_boolean(info, b"Terminal") and foot_fallback():
-                os.environ["PATH"] = str(Path(__file__).resolve().parent / "apps-terminal") + os.pathsep + os.environ["PATH"]
+                os.environ["PATH"] = str(Path(__file__).resolve().parent / "shim") + os.pathsep + os.environ["PATH"]
                 os.environ["SPARK_APPS_TERMINAL_ID"] = ident.removesuffix(".desktop")
             context = self.gio.g_app_launch_context_new()
             with launch_stdio():

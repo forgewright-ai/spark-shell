@@ -189,7 +189,7 @@ rem_match() {   # rem_match ID -> the line by UID or unique title
 rem_find() { rem_list | rem_match "$1"; }   # rem_find NAME|UID -> one line
 rem_time_check() {   # rem_time_check START [TEXT] -> 0 when the local time is unambiguous
     command -v python3 >/dev/null 2>&1 || { echo 'Reminders need Python 3 to verify the local time before saving.'; return 1; }
-    if _rtc=$(python3 "$REPO/lib/reminder_time.py" "$1" "${2:-}" 2>/dev/null) && [ "$_rtc" = ok ]; then return 0; fi
+    if _rtc=$(python3 "$REPO/lib/reminders.py" "$1" "${2:-}" 2>/dev/null) && [ "$_rtc" = ok ]; then return 0; fi
     printf '%s\n' "${_rtc:-The local time could not be verified; check the time settings before saving.}"
     return 1
 }
@@ -222,7 +222,7 @@ rem_act() {   # rem_act add|done|snooze|restore ARG
             rem_time_check "$_s" "$_t" || return 1
             [ "$_s" -gt "$(date +%Y%m%d%H%M)" ] || { echo "$(rem_said "$_s") has passed: say a time to come"; return 1; }
             _rd=$(rem_list | awk -F '\t' -v s="$_s" -v t="$(panel_lower "$_t")" '$1 == s && tolower($3) == t { print $3; exit }'); [ -z "$_rd" ] || { echo "$(rem_said "$_s") $_rd is a reminder already"; return 1; }   # the same words at the same minute: once
-            _u=$(python3 "$REPO/lib/reminder_time.py" --uid 2>/dev/null) || { echo 'could not create a private reminder identity; nothing saved'; return 1; }
+            _u=$(python3 "$REPO/lib/reminders.py" --uid 2>/dev/null) || { echo 'could not create a private reminder identity; nothing saved'; return 1; }
             [ "${#_u}" = 48 ] && printf '%s\n' "$_u" | LC_ALL=C grep -Eq '^spark-shell-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' || { echo 'could not create a private reminder identity; nothing saved'; return 1; }
             mkdir_private "$CAL_DIR"
             _rb=$CAL_DIR/$(date +%s)-$$; _f=$_rb.ics; _rn=2

@@ -332,7 +332,7 @@ tools_space_view() {   # tools_space_view caches|folder:NAME -> a page of its la
 tools_running_read() {   # -> $TMP/running.tsv, the programs now, sway's windows by process id
     : > "$TMP/running.windows"
     ! layout_in_sway || swaymsg -t get_tree 2>/dev/null | jq -r '.. | objects | select((.type == "con" or .type == "floating_con") and (.pid // 0) > 0) | "\(.pid)\t\(.id)"' > "$TMP/running.windows" 2>/dev/null || :
-    python3 -I "$REPO/lib/tools_running.py" list "$BAR_PROC" "$TMP/running.state" "$TMP/running.windows" > "$TMP/running.tsv" 2>/dev/null
+    python3 -I "$REPO/lib/running.py" list "$BAR_PROC" "$TMP/running.state" "$TMP/running.windows" > "$TMP/running.tsv" 2>/dev/null
 }
 tools_users() { awk -F: '{ printf "%s\t%s\n", $3, $1 }' /etc/passwd 2>/dev/null | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add // {}'; }   # -> {"0": "root",...}
 TOOLS_KEEP='sway swaybar swaybg swayidle swaylock spark-shell spark-dialog dbus-daemon pipewire pipewire-pulse wireplumber'   # never ended from here: the desktop's own parts and the dialog
@@ -377,7 +377,7 @@ tools_dialog_tree() {   # -> the pids never ended from here: this provider's anc
         [ "$(cat "$BAR_PROC/$_tdp/comm" 2>/dev/null)" != spark-dialog ] || _tdd=$_tdp
         _tdp=$(awk '{ sub(/^.*\) /, ""); print $2 }' "$BAR_PROC/$_tdp/stat" 2>/dev/null)
     done
-    [ -z "$_tdd" ] || python3 -I "$REPO/lib/tools_running.py" tree "$BAR_PROC" "$_tdd" 2>/dev/null
+    [ -z "$_tdd" ] || python3 -I "$REPO/lib/running.py" tree "$BAR_PROC" "$_tdd" 2>/dev/null
 }
 tools_gate() {   # tools_gate ACTION [ARG] -> ARG as the step takes it (exit 0), or why not (exit 1)
     case $1 in
