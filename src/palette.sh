@@ -2,48 +2,40 @@
 # ------------------------------------------------------------ the palette
 # sets: CONSOLE_NOW KEPT_LAYOUTS KEPT_MAX LOOKS_DIR LOOK_FORMAT PALETTE_DIR PTS_DIR VT_SYSFS WALL_CACHE WALL_COVER
 # reads: ANIMATION_NAMES CONFIG_DIR CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GLYPH_FAMILIES MODE OS PALETTE_MARK PATH_SAID REPO ROOT STATE_DIR TAB TERMINAL_SEEN THEME_ENV THEME_KEYS TMP VGA_HEX WALL_TYPES
-PALETTE_DIR=$CONFIG_DIR/themes                     # your NAME.env wins over gallery/theme/
-# A palette is a KEY=value file: the 20 THEME_* keys, each #rrggbb, and
-# THEME_LOGO. From it: theme.env (what spark and every render read),
-# console-colors (\033]P<n><rrggbb> for the 16 slots, sent at a console
-# login) and console-colors.rgb (setvtrgb's decimal lines, set at boot).
-palette_file() {   # palette_file NAME -> the first of: a saved theme's or a kept look's palette.env, your NAME.env, the repository's; false when none
+PALETTE_DIR=$CONFIG_DIR/themes
+# theme.env, rendered from the palette, is what spark and every render read
+palette_file() {   # palette_file NAME -> the palette's file; false when none
     case $1 in ''|.*|*[!A-Za-z0-9._-]*) return 1 ;; esac
     for _p in "$PALETTE_DIR/$1/palette.env" "$LOOKS_DIR/$1/palette.env" "$PALETTE_DIR/$1.env" "$REPO/gallery/theme/$1.env"; do
         [ -f "$_p" ] && { printf '%s' "$_p"; return 0; }
     done
     return 1
 }
-# A saved theme is a folder ~/.config/spark-shell/themes/NAME/: palette.env, look.env
-# and the wallpaper's files. look.env (FORMAT=2, its first line): PALETTE, WORDS,
-# WALLPAPER, DRAWING, PICTURE (a file name in the folder), FACE, TEXT_SIZE, ALPHA,
-# POINTER, ANIMATION, GLYPH_FAMILY, BAR_GLYPHS, WALLPAPER_MOTION, DIALOG_ICONS and
-# DIALOG_SPACING. Format 1 (no FORMAT line) holds FONT instead of FACE and TEXT_SIZE
-# and still loads. A look not saved yet is the same folder under LOOKS_DIR.
-LOOK_FORMAT=2   # the look.env written; a newer format is refused, never half read
-theme_dir() {   # theme_dir NAME -> the folder of a saved theme or of a kept look, or nothing
+# look.env format 1 (no FORMAT line) has FONT for FACE and TEXT_SIZE
+LOOK_FORMAT=2   # a newer format is refused, not half read
+theme_dir() {   # theme_dir NAME -> its folder, or nothing
     case $1 in ''|.*|*[!A-Za-z0-9._-]*) return 0 ;; esac
     for _d in "$PALETTE_DIR/$1" "$LOOKS_DIR/$1"; do [ -f "$_d/palette.env" ] && { printf '%s' "$_d"; return 0; }; done
     return 0
 }
-theme_kind() {   # theme_kind NAME -> saved | look | yours | shipped | none | nothing (no such theme)
+theme_kind() {   # theme_kind NAME -> saved | look | yours | shipped | none
     case $1 in none) echo none; return ;; ''|.*|*[!A-Za-z0-9._-]*) return 0 ;; esac
     if [ -f "$PALETTE_DIR/$1/palette.env" ]; then echo saved
     elif [ -f "$LOOKS_DIR/$1/palette.env" ]; then echo look
     elif [ -f "$PALETTE_DIR/$1.env" ]; then echo yours
     elif [ -f "$REPO/gallery/theme/$1.env" ]; then echo shipped; fi
 }
-theme_saved_names() { for _d in "$PALETTE_DIR"/*/; do [ -f "${_d}palette.env" ] || continue; _d=${_d%/}; printf '%s\n' "${_d##*/}"; done | sort; }   # -> the saved themes, by name
-theme_enum() { dirs_cached theme.enum "$(THEME_DIRS)" theme_enum_now; }   # -> every name theme NAME takes, as a|b|c: the schema's enum
-theme_enum_now() { { palette_names; theme_saved_names; echo none; } | LC_ALL=C grep -E '^[A-Za-z0-9._-]+$' | sort -u | paste -sd'|' -; }   # the enum, when the themes changed
-look_get() { sed -n "s/^$2=//p" "$1/look.env" 2>/dev/null | head -1 | tr -d '\001-\037\177'; }   # look_get DIR KEY -> a line of the folder's look.env, no control character in it
-look_set() {   # look_set DIR KEY VALUE -- that line of look.env set (added when absent), the others kept
+theme_saved_names() { for _d in "$PALETTE_DIR"/*/; do [ -f "${_d}palette.env" ] || continue; _d=${_d%/}; printf '%s\n' "${_d##*/}"; done | sort; }
+theme_enum() { dirs_cached theme.enum "$(THEME_DIRS)" theme_enum_now; }   # -> the schema's enum, a|b|c
+theme_enum_now() { { palette_names; theme_saved_names; echo none; } | LC_ALL=C grep -E '^[A-Za-z0-9._-]+$' | sort -u | paste -sd'|' -; }
+look_get() { sed -n "s/^$2=//p" "$1/look.env" 2>/dev/null | head -1 | tr -d '\001-\037\177'; }   # look_get DIR KEY -> the value, control characters dropped
+look_set() {   # look_set DIR KEY VALUE
     mkdir -p "$1"; { [ ! -f "$1/look.env" ] || grep -v "^$2=" "$1/look.env"; printf '%s=%s\n' "$2" "$3"; } > "$1/look.env.new" && mv "$1/look.env.new" "$1/look.env"
 }
-# a saved theme may come from another machine: every value is held to the config's shape
-look_ok() {   # look_ok DIR -> 0 when the folder's look.env may be used; else one line, the key and why, and 1
+# a saved theme may come from another machine
+look_ok() {   # look_ok DIR -> 0, or why and 1
     _lf=$1/look.env
-    [ -f "$_lf" ] || return 0   # a palette alone: colors only
+    [ -f "$_lf" ] || return 0
     _lb=$(grep -nEv '^[[:space:]]*(#|$)|^[A-Z_0-9]+=[^;`$()|&<>]*$' "$_lf" | head -1 | cut -d: -f1)
     [ -z "$_lb" ] || { echo "line $_lb of its look.env is not KEY=value"; return 1; }
     ! LC_ALL=C grep -q '[[:cntrl:]]' "$_lf" || { echo "its look.env holds a control character"; return 1; }
@@ -52,7 +44,7 @@ look_ok() {   # look_ok DIR -> 0 when the folder's look.env may be used; else on
     _lv=$(look_get "$1" FACE); case $_lv in *[!a-z]*) _lv=-- ;; esac; case " $FONT_FACES " in *" ${_lv:-neon} "*) ;; *) echo "its FACE is not neon, argon, xenon, radon or krypton"; return 1 ;; esac
     _lv=$(look_get "$1" TEXT_SIZE); case $_lv in ''|[6-9]|[1-3][0-9]|40) ;; *) echo "its TEXT_SIZE is not 6 to 40"; return 1 ;; esac
     _lv=$(look_get "$1" ANIMATION); case $_lv in *[!a-z]*) _lv=-- ;; esac; case " none $ANIMATION_NAMES " in *" ${_lv:-none} "*) ;; *) echo "its ANIMATION is not none or one of $(printf '%s' "$ANIMATION_NAMES" | sed 's/ /, /g')"; return 1 ;; esac
-    _lv=$(look_get "$1" GALLERY); [ -z "$_lv" ] || gallery_num "$_lv" >/dev/null || { echo "its GALLERY is not a gallery release (gallery-v1, gallery-v2...)"; return 1; }   # the gallery's release it was installed from
+    _lv=$(look_get "$1" GALLERY); [ -z "$_lv" ] || gallery_num "$_lv" >/dev/null || { echo "its GALLERY is not a gallery release (gallery-v1, gallery-v2...)"; return 1; }
     _lv=$(look_get "$1" ALPHA); [ -z "$_lv" ] || alpha_ok "$_lv" || { echo "its ALPHA is not 0 to 1"; return 1; }
     _lv=$(look_get "$1" POINTER); pointer_ok "$_lv" || { echo "its POINTER is not a cursor theme's NAME and SIZE"; return 1; }
     _lv=$(look_get "$1" DRAWING); [ -z "$_lv" ] || wall_shipped "$_lv" || { echo "its DRAWING is not one of the drawings"; return 1; }
@@ -72,32 +64,31 @@ look_ok() {   # look_ok DIR -> 0 when the folder's look.env may be used; else on
         *) wall_value_ok "$_lv" || { echo "its WALLPAPER is not default, a drawing's name, #rrggbb or a picture's full path with $PATH_SAID"; return 1; } ;;
     esac
 }
-theme_source_of() {   # theme_source_of DIR -> the palette's name, the words that made it, or the picture's file
+theme_source_of() {   # theme_source_of DIR -> palette name, words or picture
     _ps=$(look_get "$1" PALETTE)
     case $_ps in words) _ps=$(look_get "$1" WORDS) ;; picture) _ps=$(look_get "$1" PICTURE) ;; esac
     printf '%s' "${_ps:-palette}"
 }
-theme_words_of() {   # theme_words_of NAME -> the words that made a kept look, else its name
+theme_words_of() {   # theme_words_of NAME -> its words, else NAME
     _td=$(theme_dir "$1"); _tw=''
     case $_td in "$LOOKS_DIR"/*) _tw=$(look_get "$_td" WORDS) ;; esac
     printf '%s' "${_tw:-$1}"
 }
-# The kept kinds, theme and layout: saved under a name in ~/.config/spark-shell, the last
-# ten applied in the state's KIND.history (EPOCH TAB NAME a line, newest first).
-LOOKS_DIR=$STATE_DIR/looks            # a look not saved yet: a theme folder, kept while its history line lives
-KEPT_LAYOUTS=$STATE_DIR/layouts       # a layout not saved yet: its JSON, kept the same way
-WALL_CACHE=$STATE_DIR/wallpapers      # a shipped drawing rendered in a palette not its own: DRAWING-PALETTE.svg and.png
+# a kept kind: the last ten applied, in KIND.history
+LOOKS_DIR=$STATE_DIR/looks            # looks not saved
+KEPT_LAYOUTS=$STATE_DIR/layouts       # layouts not saved
+WALL_CACHE=$STATE_DIR/wallpapers      # DRAWING-PALETTE.svg and .png
 KEPT_MAX=10
-kept_hist() { printf '%s/%s.history' "$STATE_DIR" "$1"; }   # kept_hist KIND -> the history file
+kept_hist() { printf '%s/%s.history' "$STATE_DIR" "$1"; }   # kept_hist KIND -> its file
 kept_history() { [ ! -f "$(kept_hist "$1")" ] || cat "$(kept_hist "$1")"; }   # kept_history KIND -> "EPOCH<tab>NAME" lines, newest first
 kept_names() { kept_history "$1" | cut -f2; }
-kept_note() {   # kept_note KIND NAME -- NAME newest in the history, once; ten lines kept; the back cursor reset; the rest pruned
+kept_note() {   # kept_note KIND NAME -- NAME newest; the back cursor reset
     _kh=$(kept_hist "$1"); mkdir_private "$STATE_DIR"
     { printf '%s\t%s\n' "$(date +%s)" "$2"; [ ! -f "$_kh" ] || awk -F '\t' -v n="$2" '$2 != n' "$_kh"; } | head -n "$KEPT_MAX" > "$_kh.new" && mv "$_kh.new" "$_kh"
     rm -f "$_kh.back"
     kept_prune "$1"
 }
-kept_prune() {   # kept_prune KIND -- a kept look or layout the history no longer names is removed (the theme in use stays)
+kept_prune() {   # kept_prune KIND -- the theme in use stays
     if [ "$1" = theme ]; then _kd=$LOOKS_DIR; else _kd=$KEPT_LAYOUTS; fi
     [ -d "$_kd" ] || return 0
     kept_names "$1" > "$TMP/kept.names"
@@ -109,7 +100,7 @@ kept_prune() {   # kept_prune KIND -- a kept look or layout the history no longe
         rm -rf "$_f"
     done
 }
-kept_back() {   # kept_back KIND [CURRENT] -> the name before the one in use, a step further each call; 1 at the end; the newest line first when CURRENT is not it
+kept_back() {   # kept_back KIND [CURRENT] -> the previous name, one further each call
     _kh=$(kept_hist "$1"); [ -f "$_kh" ] || return 1
     if [ -f "$_kh.back" ]; then _i=$(cat "$_kh.back")
     elif [ $# -ge 2 ] && [ "$(sed -n 1p "$_kh" | cut -f2)" != "$2" ]; then _i=0
@@ -118,14 +109,14 @@ kept_back() {   # kept_back KIND [CURRENT] -> the name before the one in use, a 
     _n=$(sed -n "${_i}p" "$_kh" | cut -f2); [ -n "$_n" ] || return 1
     printf '%s' "$_i" > "$_kh.back"; printf '%s' "$_n"
 }
-kept_when() {   # kept_when EPOCH -> today 10:12, yesterday 18:40, monday 09:15 (this week), else 3 oct
+kept_when() {   # kept_when EPOCH -> today 10:12, yesterday 18:40, monday 09:15, else 3 oct
     _kd=$(when_of "$1" %Y%m%d); _kt=$(when_of "$1" %H:%M); _now=$(date +%s)
     if [ "$_kd" = "$(date +%Y%m%d)" ]; then printf 'today %s' "$_kt"
     elif [ "$_kd" = "$(when_of $((_now - 86400)) %Y%m%d)" ]; then printf 'yesterday %s' "$_kt"
     elif [ $((_now - $1)) -lt $((6 * 86400)) ]; then printf '%s %s' "$(when_of "$1" %A | tr 'A-Z' 'a-z')" "$_kt"
     else printf '%s' "$(when_of "$1" '%e %b' | sed 's/^ *//' | tr 'A-Z' 'a-z')"; fi
 }
-kept_delete_ok() {   # kept_delete_ok KIND NAME -> 0 to go on: at a terminal it asks first (type y), on a pipe it goes
+kept_delete_ok() {   # kept_delete_ok KIND NAME -> 0 to go on; a terminal asks
     [ -t 0 ] && { : < /dev/tty; } 2>/dev/null || return 0
     printf 'delete the %s %s? [y/N] ' "$1" "$2" > /dev/tty; IFS= read -r _y < /dev/tty || _y=''
     case $_y in y|Y|yes) return 0 ;; *) echo "kept"; return 1 ;; esac
@@ -133,13 +124,13 @@ kept_delete_ok() {   # kept_delete_ok KIND NAME -> 0 to go on: at a terminal it 
 palette_names() { for _p in "$REPO"/gallery/theme/*.env "$PALETTE_DIR"/*.env; do [ -f "$_p" ] || continue; _n=${_p##*/}; printf '%s\n' "${_n%.env}"; done | sort -u; }
 palette_get() { sed -n "s/^$2=//p" "$1" | tail -1 | tr -d '"\r'; }   # palette_get FILE KEY
 PALETTE_NONE="terminal default colors"   # palette none's row
-palette_darks() { dirs_cached theme.darks "$(THEME_DIRS)" palette_darks_now; }   # -> the palettes whose ground is dark, one a line
+palette_darks() { dirs_cached theme.darks "$(THEME_DIRS)" palette_darks_now; }   # -> the dark palettes
 palette_darks_now() {   # the background's luminance under half
     palette_names | while IFS= read -r _n; do _f=$(palette_file "$_n") && printf '%s\t%s\n' "$_n" "$(palette_get "$_f" THEME_BG)"; done \
         | awk -F '\t' 'function hx(s, i) { return (index("0123456789abcdef", substr(s, i, 1)) - 1) * 16 + index("0123456789abcdef", substr(s, i + 1, 1)) - 1 }
             { c = tolower($2); sub(/^#/, "", c); if ((hx(c, 1) * 299 + hx(c, 3) * 587 + hx(c, 5) * 114) / 1000 < 128) print $1 }'
 }
-palette_chip() {   # palette_chip NAME -> nine colors: the ground, the text, the accent and six hues (red to cyan); false with no palette
+palette_chip() {   # palette_chip NAME -> bg, fg, accent, ANSI 1 to 6; false when none
     _f=$(palette_file "$1") || return 1
     awk -F= '{ v[$1] = $2; gsub(/["\r]/, "", v[$1]) } END { printf "%s %s %s %s %s %s %s %s %s\n", v["THEME_BG"], v["THEME_FG"], v["THEME_ACCENT"], v["THEME_ANSI_1"], v["THEME_ANSI_2"], v["THEME_ANSI_3"], v["THEME_ANSI_4"], v["THEME_ANSI_5"], v["THEME_ANSI_6"] }' "$_f"
 }
@@ -154,7 +145,7 @@ console_render() {   # console_render RRGGBB... (16) -> $TMP/console-colors and 
     printf '%s' "$_esc" > "$TMP/console-colors"
     printf '%s\n%s\n%s\n' "${_r#,}" "${_g#,}" "${_b#,}" > "$TMP/console-colors.rgb"
 }
-palette_render() {   # palette_render NAME -> the three files in $TMP; false, and why in $TMP/palette.why, when it cannot
+palette_render() {   # palette_render NAME -> $TMP's three files, or why not in $TMP/palette.why
     if ! _f=$(palette_file "$1"); then echo "no palette named $1 (spark-shell theme list)" > "$TMP/palette.why"; return 1; fi
     printf '# rendered by spark-shell from the palette %s -- spark-shell theme NAME changes it\n' "$1" > "$TMP/theme.env"
     awk -F= '{ k = $1; sub(/^[^=]*=/, ""); gsub(/["\r]/, ""); v[k] = $0 } END { for (k in v) print k "=" v[k] }' "$_f" > "$TMP/palette.kv"   # the last line of a key wins
@@ -173,28 +164,28 @@ palette_render() {   # palette_render NAME -> the three files in $TMP; false, an
     console_render $_hexes
 }
 theme_ours() { [ -f "$THEME_ENV" ] && grep -q 'rendered by spark-shell' "$THEME_ENV"; }
-console_send() {   # console_send FILE -- the escapes to this console, then a redraw; a console login at a tty only
+console_send() {   # console_send FILE -- a tty console only
     [ "${TERM:-}" = linux ] && [ -t 1 ] && console_linux || return 0
     [ "$MODE" != dry ] || return 0
     cat "$1" 2>/dev/null || return 0
-    [ "$todos" -gt 0 ] || printf '\033[2J\033[H'   # a todo row stays on screen for the closing line to point at
+    [ "$todos" -gt 0 ] || printf '\033[2J\033[H'   # a todo row stays
 }
-# a framebuffer console paints a new palette only into cells drawn after
-# it, so the escapes go at the end of the run, before the closing line
+# a framebuffer console paints a new palette only into cells drawn
+# after it: so the escapes go last
 CONSOLE_NOW=''
 console_now() { [ -z "$CONSOLE_NOW" ] || console_send "$CONSOLE_NOW"; }
-root_path_ok() { case $1 in *[!A-Za-z0-9/._-]*) return 1 ;; *) return 0 ;; esac; }   # a path a root file may carry
+root_path_ok() { case $1 in *[!A-Za-z0-9/._-]*) return 1 ;; *) return 0 ;; esac; }
 unit_render() { sed -e "s|@CONSOLE_RGB@|$(esc "$CONSOLE_RGB")|g" "$REPO/template/$CONSOLE_UNIT" > "$TMP/unit"; }
 palette_line() { printf "[ -r '%s' ] && setvtrgb '%s'" "$CONSOLE_RGB" "$CONSOLE_RGB"; }   # the rc.local line (runit)
 VT_SYSFS=$ROOT/sys/module/vt/parameters/default_red
-vt_here() { [ -r "$VT_SYSFS" ]; }                              # a kernel with consoles (not a container)
-vt_live() { head -1 "$VT_SYSFS" 2>/dev/null || true; }         # the kernel's default reds, now
-vt_vga_rgb() {   # -> $TMP/vga.rgb: the VGA sixteen in setvtrgb's form
+vt_here() { [ -r "$VT_SYSFS" ]; }                              # not a container
+vt_live() { head -1 "$VT_SYSFS" 2>/dev/null || true; }         # the kernel's reds now
+vt_vga_rgb() {   # -> $TMP/vga.rgb, VGA for setvtrgb
     # shellcheck disable=SC2086
     console_render $VGA_HEX; cp "$TMP/console-colors.rgb" "$TMP/vga.rgb"
 }
 
-theme_files() {   # before the renders: theme.env and the console's two files, as THEME says
+theme_files() {   # the three files, as THEME says
     [ -n "$THEME" ] || { skip theme "THEME unset: the palette stays as it is (spark-shell theme NAME)"; return 0; }
     if [ "$THEME" = none ]; then
         if [ -f "$THEME_ENV" ] && need theme "remove $THEME_ENV (THEME=none)"; then
@@ -214,9 +205,9 @@ theme_files() {   # before the renders: theme.env and the console's two files, a
     done
 }
 
-palette_boot() {   # Linux: the palette at boot, root's; the kernel's defaults set now
+palette_boot() {   # the boot palette, root's; the kernel's now
     [ -n "$THEME" ] && [ "$THEME" != none ] && [ -f "$CONSOLE_RGB" ] || return 0
-    if ! console_linux; then   # the skip, by name
+    if ! console_linux; then
         if [ "$OS" = Darwin ]; then skip palette "macOS has no Linux console: Terminal.app takes the palette"
         else skip palette "WSL has no console: the palette is Windows Terminal's"; fi
         return 0
@@ -245,7 +236,6 @@ palette_boot() {   # Linux: the palette at boot, root's; the kernel's defaults s
             ok palette "a line in /etc/rc.local sets it at boot"
         fi
     fi
-    # the kernel's defaults now, before the next boot
     vt_here && [ "$(vt_live)" != "$(head -1 "$CONSOLE_RGB")" ] || return 0
     need palette "setvtrgb: every console uses the palette now (sudo)" || return 0
     root_ready palette || return 0
@@ -253,7 +243,7 @@ palette_boot() {   # Linux: the palette at boot, root's; the kernel's defaults s
     else row todo palette "setvtrgb failed -- the next boot sets the palette"; acting=0; fi
 }
 
-palette_off() {   # palette_off all|ours -- VGA again, the boot's palette gone, the files gone once root held
+palette_off() {   # palette_off all|ours -- VGA again, the files gone
     _unit=0; [ -e "$ROOT/$CONSOLE_UNIT" ] && _unit=1
     _line=$(marked "$ROOT/etc/rc.local" "$PALETTE_MARK")
     _files=0; [ -e "$CONSOLE_COLORS" ] || [ -e "$CONSOLE_RGB" ] && _files=1
@@ -263,12 +253,12 @@ palette_off() {   # palette_off all|ours -- VGA again, the boot's palette gone, 
     if console_linux && { [ "$_unit" = 1 ] || [ -n "$_line" ] || [ "$_files" = 1 ]; }; then
         vt_vga_rgb
         if [ "$_unit" = 0 ] && [ -z "$_line" ]; then
-            # no root file: this console takes VGA by its escapes
+            # no root file: escapes alone
             cp "$TMP/console-colors" "$TMP/vga-colors"; CONSOLE_NOW=$TMP/vga-colors
         elif [ "$MODE" = dry ]; then
             row would palette "the console's default colors again, nothing sets a palette at boot (sudo)"
         elif root_ready palette; then
-            cp "$TMP/console-colors" "$TMP/vga-colors"; CONSOLE_NOW=$TMP/vga-colors   # VGA on this console at the end
+            cp "$TMP/console-colors" "$TMP/vga-colors"; CONSOLE_NOW=$TMP/vga-colors
             if [ "$_unit" = 1 ]; then
                 root_do systemctl disable spark-shell-console.service >/dev/null 2>&1 || true
                 root_do rm -f "$ROOT/$CONSOLE_UNIT" && root_do systemctl daemon-reload >/dev/null 2>&1 || true
@@ -299,8 +289,7 @@ palette_off() {   # palette_off all|ours -- VGA again, the boot's palette gone, 
     return 0
 }
 
-# macOS: the palette and the font are a Terminal.app profile; the stamp
-# says what it had, so `on` imports it again only when it changed or went
+# macOS: the stamp says what Terminal.app got; imported again on change
 terminal_has() { python3 "$REPO/lib/terminal_profile.py" has-profile >/dev/null 2>&1; }
 terminal_apply() {
     [ "$OS" = Darwin ] || return 0
@@ -332,13 +321,10 @@ terminal_off() {
     fi
 }
 
-# The open terminals (Linux): a look change sends OSC 4 (the 16 slots),
-# 10, 11 and 12 (the cursor, else 112) to each /dev/pts/N you own and can
-# write. A tmux pane is left out: tmux would keep the codes for that pane
-# alone, and its clients are among your ptys. SPARK_SHELL_PTS_DIR (tests
-# only) is the directory the ptys are read from, plain files standing in.
+# a tmux pane is left out: tmux would keep the codes to that pane;
+# tests set SPARK_SHELL_PTS_DIR
 PTS_DIR=${SPARK_SHELL_PTS_DIR:-/dev/pts}
-osc_render() {   # osc_render plain|foot|dialog -> $TMP/osc.KIND: the loaded look as that kind of terminal's codes, each ended by ST
+osc_render() {   # osc_render plain|foot|dialog -> $TMP/osc.KIND: OSC 4, 10, 11 and 12
     _o=$TMP/osc.$1; : > "$_o"
     _i=0
     while [ "$_i" -le 15 ]; do
@@ -348,16 +334,16 @@ osc_render() {   # osc_render plain|foot|dialog -> $TMP/osc.KIND: the loaded loo
     done
     [ "$1" = plain ] || printf '\033]4;16;#%s\033\\\033]4;17;#%s\033\\\033]4;18;#%s\033\\\033]4;19;#%s\033\\\033]4;20;#%s\033\\\033]4;21;#%s\033\\' "$HEX_ACCENT" "$HEX_MUTED" "$PANEL_BG" "$PANEL_HI" "$PANEL_MUTED" "$PANEL_BAND" >> "$_o"
     case $1 in
-        foot) _bg="[$(awk -v a="$FOOT_ALPHA" 'BEGIN { printf "%d", a * 100 + 0.5 }')]#$HEX_BG" ;;   # foot's own words: the opacity in percent before the color
-        dialog) _bg="#$PANEL_BG" ;;   # the dialog's surface, opaque
+        foot) _bg="[$(awk -v a="$FOOT_ALPHA" 'BEGIN { printf "%d", a * 100 + 0.5 }')]#$HEX_BG" ;;   # foot's form: opacity in percent, then the color
+        dialog) _bg="#$PANEL_BG" ;;
         *) _bg="#$HEX_BG" ;;
     esac
     printf '\033]10;#%s\033\\\033]11;%s\033\\' "$HEX_FG" "$_bg" >> "$_o"
     _c=''; if [ -n "${THEME:-}" ] && [ "$THEME" != none ] && _pf=$(palette_file "$THEME"); then _c=$(palette_get "$_pf" THEME_CURSOR); fi
     if hex_rgb "$_c" >/dev/null; then printf '\033]12;%s\033\\' "$(printf '%s' "$_c" | tr 'A-F' 'a-f')" >> "$_o"
-    else printf '\033]112\033\\' >> "$_o"; fi   # no cursor color of its own: the terminal's
+    else printf '\033]112\033\\' >> "$_o"; fi   # 112: the terminal's own cursor color
 }
-pts_mine() {   # -> the ptys to paint, one a line: yours, writable, not a tmux pane
+pts_mine() {   # -> yours, writable, not a tmux pane
     _me=$(id -u)
     _panes=''
     if command -v tmux >/dev/null 2>&1; then _panes=$(tmux list-panes -a -F '#{pane_tty}' 2>/dev/null || true); fi
@@ -369,15 +355,15 @@ pts_mine() {   # -> the ptys to paint, one a line: yours, writable, not a tmux p
         printf '%s\n' "$_p"
     done
 }
-pts_write() {   # pts_write PTY FILE -- the codes to one terminal, given 2 seconds (a stopped terminal never hangs the verb)
+pts_write() {   # pts_write PTY FILE -- 2 seconds: a stopped terminal cannot hang it
     if command -v timeout >/dev/null 2>&1; then timeout 2 sh -c 'cat "$1" > "$2"' sh "$2" "$1" 2>/dev/null
     else cat "$2" > "$1" 2>/dev/null; fi
 }
-pts_kinds() {   # -> "PTY<tab>KIND" a terminal: dialog (its own window), foot (a window of the desktop), plain (any other)
+pts_kinds() {   # -> "PTY<tab>KIND" lines; KIND dialog, foot or plain
     pts_mine > "$TMP/pts"
     [ -s "$TMP/pts" ] || return 0
     _fk=plain; ! desktop_wanted || _fk=foot
-    ps -eo pid=,ppid=,tty=,comm= > "$TMP/ps" 2>/dev/null || : > "$TMP/ps"   # one look at the processes
+    ps -eo pid=,ppid=,tty=,comm= > "$TMP/ps" 2>/dev/null || : > "$TMP/ps"
     awk -v d="$PTS_DIR" -v fk="$_fk" 'NR == FNR { pp[$1] = $2; cm[$1] = $4; next }
         $3 ~ /^pts\/[0-9]+$/ { t = d "/" substr($3, 5)
             if ($4 == "spark-dialog") { k[t] = "dialog"; next }
@@ -386,7 +372,7 @@ pts_kinds() {   # -> "PTY<tab>KIND" a terminal: dialog (its own window), foot (a
             while (p != "" && p > 1 && n < 16) { if (cm[p] == "foot") { k[t] = fk; break }; p = pp[p]; n++ } }
         END { while ((getline l < pts) > 0) printf "%s\t%s\n", l, (l in k) ? k[l] : "plain" }' pts="$TMP/pts" "$TMP/ps" "$TMP/ps"
 }
-look_terms() {   # look_terms prepare|send -- prepare finds the terminals and writes their codes, send writes to all at once; _painted counts those that took it
+look_terms() {   # look_terms prepare|send -- send writes all at once; _painted counts the takers
     case $1 in
         prepare)
             : > "$TMP/pts.todo"
@@ -399,13 +385,13 @@ look_terms() {   # look_terms prepare|send -- prepare finds the terminals and wr
             while IFS="$TAB" read -r _p _k; do
                 pts_write "$_p" "$TMP/osc.$_k" & _pids="$_pids $!"   # a terminal that hangs holds no other
             done < "$TMP/pts.todo"
-            for _lw in $_pids; do if wait "$_lw"; then _painted=$((_painted + 1)); fi; done ;;   # _lw, not _w: sh has no locals and the caller's _w is in use
+            for _lw in $_pids; do if wait "$_lw"; then _painted=$((_painted + 1)); fi; done ;;   # not _w: the caller's _w is in use
     esac
 }
-# sway stops its swaybg before the new one draws, about 100 ms of black; so a swaybg of
-# ours shows the new picture first, on top, and goes once sway's own has drawn
+# sway stops its swaybg before the new one draws, 100 ms of black;
+# ours covers that and goes once sway's own has drawn
 WALL_COVER=''
-wall_cover() {   # WALL_BG drawn on top of what shows now
+wall_cover() {   # WALL_BG on top, now
     WALL_COVER=''
     [ "$MODE" = apply ] && [ -n "${SWAYSOCK:-}" ] && [ -n "${WAYLAND_DISPLAY:-}" ] && command -v swaybg >/dev/null 2>&1 || return 0
     case $WALL_BG in
@@ -414,57 +400,57 @@ wall_cover() {   # WALL_BG drawn on top of what shows now
     esac
     swaybg -o '*' "$@" >/dev/null 2>&1 </dev/null & WALL_COVER=$!   # it draws in 100 to 200 ms
 }
-wall_uncover() {   # wall_uncover [WALL_BG] -- sway takes the picture under ours once ours is drawn, then ours goes once sway's own is
+wall_uncover() {   # wall_uncover [WALL_BG] -- sway's under ours, then ours goes
     [ -n "$WALL_COVER" ] || return 0
     ( sleep 0.25; [ -z "${1:-}" ] || swaymsg -- "output * bg $1" >/dev/null 2>&1; sleep 0.6; kill "$WALL_COVER" 2>/dev/null ) >/dev/null 2>&1 </dev/null &
     WALL_COVER=''
 }
-wall_shown() { sed -n 's/^output \* bg //p' "$HOME/.config/sway/config" 2>/dev/null | head -1; }   # -> the wallpaper a running sway shows (the config's)
-sway_live_cmd() {   # -> one swaymsg command giving a running sway the look, no reload: the edges, the bar, the pointer; not the wallpaper
+wall_shown() { sed -n 's/^output \* bg //p' "$HOME/.config/sway/config" 2>/dev/null | head -1; }   # -> the config's wallpaper
+sway_live_cmd() {   # -> one swaymsg command; not the wallpaper
     [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || return 0
-    _c="client.focused #$BORDER_HEX #$PANEL_HI #$HEX_FG #$DROP_HEX #$BORDER_HEX; client.focused_inactive #$BORDER_HEX #$PANEL_BG #$HEX_FG #$BORDER_HEX #$BORDER_HEX"   # the focused indicator: the drop area, the accent at a quarter
+    _c="client.focused #$BORDER_HEX #$PANEL_HI #$HEX_FG #$DROP_HEX #$BORDER_HEX; client.focused_inactive #$BORDER_HEX #$PANEL_BG #$HEX_FG #$BORDER_HEX #$BORDER_HEX"   # the indicator: the accent at a quarter
     _c="$_c; client.unfocused #$BORDER_HEX #$HEX_BG #$HEX_MUTED #$BORDER_HEX #$BORDER_HEX; client.urgent #$HEX_ANSI_1 #$HEX_ANSI_1 #$HEX_BG #$HEX_ANSI_1 #$HEX_ANSI_1"
     _c="$_c; $(pointer_fresh)seat * xcursor_theme $POINTER_NAME $POINTER_SIZE; gaps inner all set $GAPS_INNER; gaps outer all set $GAPS_OUTER; [tiling] border $BORDER"
     _b=$(swaymsg -t get_bar_config 2>/dev/null | tr -d '[]" \n' | cut -d, -f1)   # the bar's id, bar-0
     [ -z "$_b" ] || _c="$_c; bar $_b mode $(bar_mode); bar $_b font pango:$(bar_line_font "$(font_spec)"); bar $_b colors background #$HEX_BG$BAR_ALPHA; bar $_b colors statusline #$HEX_FG; bar $_b colors separator #$HEX_MUTED; bar $_b colors focused_workspace #$HEX_ACCENT #$HEX_ACCENT #$HEX_BG; bar $_b colors active_workspace #$HEX_MUTED #$HEX_MUTED #$HEX_BG; bar $_b colors inactive_workspace #$HEX_BG$BAR_ALPHA #$HEX_BG$BAR_ALPHA #$HEX_MUTED; bar $_b colors urgent_workspace #$HEX_ANSI_1 #$HEX_ANSI_1 #$HEX_BG; bar $_b colors binding_mode #$HEX_ACCENT #$HEX_ACCENT #$HEX_BG"
     printf '%s' "$_c"
 }
-theme_preview() (   # theme_preview NAME|off -- a palette on the screen, nothing written; off puts the look in use back. A subshell: the caller keeps the palette in use
+theme_preview() (   # theme_preview NAME|off -- nothing written; a subshell: the caller's palette stays
     case ${1:-} in '') echo "preview takes a palette's name, or off"; exit 1 ;; esac
     MODE=apply; LOOK_PREVIEW=1
     if [ "$1" = off ]; then config_load; theme_load
     else
         [ "$1" != none ] || { echo "none has no colors to show"; exit 1; }
         palette_render "$1" || { cat "$TMP/palette.why"; exit 1; }
-        [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || wall_yours || ! _pw=$(wall_for_palette "$1") || WALLPAPER=$_pw   # its own drawing, unless a picture of yours is on
+        [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || wall_yours || ! _pw=$(wall_for_palette "$1") || WALLPAPER=$_pw   # its own drawing, unless your picture is on
         for _k in $THEME_KEYS; do unset "$_k"; done
         THEME=$1; THEME_ENV=$TMP/theme.env; theme_load
     fi
     wall_follow >/dev/null 2>&1 || :
     look_burst
-    # the colors on the screen, for the dialog to wear
+    # for the dialog to wear
     [ "$1" = off ] || { panel_load; jq -cn --arg f "$HEX_FG" --arg a "$HEX_ACCENT" --arg m "$PANEL_MUTED" --arg b "$PANEL_BG" --arg h "$PANEL_HI" --arg r "${HEX_ANSI_1:-}" --arg g "${HEX_ANSI_2:-}" \
         '{HEX_FG: $f, HEX_ACCENT: $a, PANEL_MUTED: $m, PANEL_BG: $b, PANEL_HI: $h, HEX_ANSI_1: $r, HEX_ANSI_2: $g}' > "$TMP/preview.palette" 2>/dev/null || :; }
     if [ "$1" = off ]; then echo "the look in use is on the screen again"; else echo "$1 on the screen"; fi
 )
-look_burst() {   # the look on the screen in one frame: all made ready, then the wallpaper, and sway, the bar and the terminals in the 90 ms it draws
+look_burst() {   # one frame: all made ready, then sent while the wallpaper draws
     _painted=0
     [ "$MODE" = apply ] && [ "$OS" != Darwin ] || return 0
-    [ -n "${LOOK_PREVIEW:-}" ] || portal_look   # a palette looked at leaves the apps' light or dark as it is
+    [ -n "${LOOK_PREVIEW:-}" ] || portal_look   # a preview leaves the apps' mode alone
     _wn=''; ! desktop_wanted || [ -z "${SWAYSOCK:-}" ] || [ "$WALL_BG" = "$(wall_shown)" ] || _wn=1
     look_terms prepare
     ! desktop_wanted || bar_palette
-    _sc=''; ! desktop_wanted || _sc=$(sway_live_cmd)   # the wallpaper is not in it: sway takes it under the cover
+    _sc=''; ! desktop_wanted || _sc=$(sway_live_cmd)   # the wallpaper goes under the cover
     [ -z "$_wn" ] || wall_cover
     if [ -n "$WALL_COVER" ]; then sleep 0.09   # the new picture draws meanwhile
-    elif [ -n "$_wn" ]; then _sc="$_sc; output * bg $WALL_BG"; fi   # no swaybg of ours to cover it: sway's own way, black frame and all
+    elif [ -n "$_wn" ]; then _sc="$_sc; output * bg $WALL_BG"; fi   # no cover: sway's own way, black frame
     _sw=''
-    if [ -n "$_sc" ]; then swaymsg -- "$_sc" >/dev/null 2>&1 & _sw=$!; bar_redraw; fi   # the status line in its new colors
+    if [ -n "$_sc" ]; then swaymsg -- "$_sc" >/dev/null 2>&1 & _sw=$!; bar_redraw; fi
     look_terms send
-    [ -z "$_sw" ] || wait "$_sw" 2>/dev/null || :   # that one alone: the cover's swaybg is a child too, and runs on
+    [ -z "$_sw" ] || wait "$_sw" 2>/dev/null || :   # the cover's swaybg is a child too
     [ -z "$_sc" ] || pointer_seen
     wall_uncover "$WALL_BG"
-    [ -n "${LOOK_PREVIEW:-}" ] || ! desktop_wanted || motion_follow   # a look leaves the moving wallpaper as it is
-    [ -n "${LOOK_PREVIEW:-}" ] || ! desktop_wanted || pad_again   # the pad in the new palette, font and bar place
+    [ -n "${LOOK_PREVIEW:-}" ] || ! desktop_wanted || motion_follow   # a preview leaves the motion alone
+    [ -n "${LOOK_PREVIEW:-}" ] || ! desktop_wanted || pad_again
 }
 

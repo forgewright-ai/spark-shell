@@ -2,10 +2,8 @@
 # --------------------------------------------------------- the console font
 # sets: FACES_OTHER FONT_FACES MAC_FACES MAC_SYSTEM_FACES NEON NEON_MOVED NEON_OLD NEON_PS NEON_PS_OLD NEON_SHA256 NEON_STYLES NEON_URL NEON_VERSION NEON_WOULD
 # reads: CONFIG MODE OS REPO ROOT STATE_DIR THEME_ENV TMP
-# By mechanism: console-setup's FONTFACE and FONTSIZE (Debian),
-# vconsole.conf's FONT= (Arch), rc.conf's FONT= beside /etc/runit (Void).
-# The first copy is FILE.spark-shell-orig; off puts its font lines back.
-console_shape() {   # -> setup | vconsole | rcconf, or nothing
+# console-setup (Debian), vconsole.conf (Arch), rc.conf (Void).
+console_shape() {   # -> setup | vconsole | rcconf
     console_linux || return 0
     if [ -f "$ROOT/etc/default/console-setup" ]; then echo setup
     elif [ -f "$ROOT/etc/vconsole.conf" ]; then echo vconsole
@@ -14,28 +12,27 @@ console_shape() {   # -> setup | vconsole | rcconf, or nothing
 font_file() { case $1 in setup) echo "$ROOT/etc/default/console-setup" ;; rcconf) echo "$ROOT/etc/rc.conf" ;; *) echo "$ROOT/etc/vconsole.conf" ;; esac; }
 font_keys() { if [ "$1" = setup ]; then echo "FONTFACE FONTSIZE"; else echo FONT; fi; }
 font_value() { sed -n "s/^$2=\"\{0,1\}\([^\"]*\)\"\{0,1\}\$/\1/p" "$1" 2>/dev/null | head -1; }   # font_value FILE KEY
-font_now() {   # font_now SHAPE -> what the file says: FACE SIZE (console-setup), FACE (the others)
+font_now() {   # font_now SHAPE -> FACE SIZE (setup) or FACE
     _ff=$(font_file "$1")
     if [ "$1" = setup ]; then printf '%s %s' "$(font_value "$_ff" FONTFACE)" "$(font_value "$_ff" FONTSIZE)"
     else font_value "$_ff" FONT; fi
 }
 font_want() { if [ "$1" = setup ]; then printf '%s' "$CONSOLE_FONT"; else printf '%s' "${CONSOLE_FONT%% *}"; fi; }
-font_text() {   # font_text FILE LINE[|LINE] [SEP] -- FILE with each KEY line set (a #KEY one when none is), added when absent
-    # SEP is what follows the key (= in the font files, a space in loader.conf)
+font_text() {   # font_text FILE LINE[|LINE] [SEP] -> FILE with each KEY or #KEY line set, else appended
     LC_ALL=C awk -v kv="$2" -v sep="${3:-=}" '
         BEGIN { n = split(kv, a, "|"); for (i = 1; i <= n; i++) { key[i] = substr(a[i], 1, index(a[i], sep) - 1) } }
         NR == FNR { for (i = 1; i <= n; i++) { if (index($0, key[i] sep) == 1) on[i] = 1; else if (!(i in off) && index($0, "#" key[i] sep) == 1) off[i] = FNR }; next }
         { for (i = 1; i <= n; i++) if ((on[i] && index($0, key[i] sep) == 1) || (!on[i] && off[i] == FNR)) { print a[i]; seen[i] = 1; next } ; print }
         END { for (i = 1; i <= n; i++) if (!seen[i]) print a[i] }' "$1" "$1"
 }
-font_restored() {   # font_restored FILE ORIG KEYS SEP -- FILE with its KEY lines as ORIG had them, every other line as it is
+font_restored() {   # font_restored FILE ORIG KEYS SEP -> FILE with ORIG's KEY lines
     LC_ALL=C awk -v keys="$3" -v sep="$4" '
         function keyof(l,   i) { for (i = 1; i <= n; i++) if (index(l, k[i] sep) == 1 || index(l, "#" k[i] sep) == 1) return k[i]; return "" }
         BEGIN { n = split(keys, k, " ") }
         NR == FNR { x = keyof($0); if (x != "") old[x, ++no[x]] = $0; next }
         { x = keyof($0); if (x == "") { print; next } ; if (used[x] < no[x]) print old[x, ++used[x]] }' "$2" "$1"
 }
-font_redraw() {   # font_redraw SHAPE FACE -- the console takes the file's font now
+font_redraw() {   # font_redraw SHAPE FACE
     case $1 in
         setup) root_do setupcon --force >/dev/null 2>&1 || true ;;
         vconsole) root_do systemctl restart systemd-vconsole-setup >/dev/null 2>&1 || true ;;
@@ -53,7 +50,7 @@ font_apply() {
     changes=$((changes + 1))
     need font "$CONSOLE_FONT in $file, the console redrawn (sudo)" || return 0
     root_ready font || return 0
-    [ -e "$file.spark-shell-orig" ] || root_do cp "$file" "$file.spark-shell-orig"   # the original, once: off puts it back
+    [ -e "$file.spark-shell-orig" ] || root_do cp "$file" "$file.spark-shell-orig"   # off puts it back
     case $shape in
         setup) lines="FONTFACE=\"$face\"|FONTSIZE=\"$size\"" ;;
         vconsole) lines="FONT=$face" ;;
@@ -65,7 +62,7 @@ font_apply() {
     if [ "$shape" = rcconf ]; then ok font "$CONSOLE_FONT ($file): the console has it now and at every boot"
     else ok font "$CONSOLE_FONT ($file)"; fi
 }
-font_off() {   # every font file with a.spark-shell-orig: its font lines back, the copy gone, the console redrawn
+font_off() {   # the font lines back from every .spark-shell-orig
     for shape in setup vconsole rcconf; do
         file=$(font_file "$shape")
         [ -e "$file.spark-shell-orig" ] || continue
@@ -82,11 +79,9 @@ font_off() {   # every font file with a.spark-shell-orig: its font lines back, t
     done
 }
 
-# Linux: what `spark-shell font list` may name. console-setup composes a
-# face from the file names in /usr/share/consolefonts (<codeset>-<Face>
-# <Size>); the other shapes read a kbd font's cell size from its header.
+# console-setup names a face by file, <codeset>-<Face><Size>.
 consolefonts_dir() { for _d in "$ROOT/usr/share/kbd/consolefonts" "$ROOT/usr/share/consolefonts"; do [ -d "$_d" ] && { printf '%s' "$_d"; return 0; }; done; return 1; }
-psf_size() {   # psf_size FILE -> WxH from its header (PSF1 or PSF2, gzip or plain), or nothing
+psf_size() {   # psf_size FILE -> WxH (PSF1 or PSF2)
     case $1 in *.gz) _hd=$(gzip -dc "$1" 2>/dev/null | od -An -tu1 -N32) ;; *) _hd=$(od -An -tu1 -N32 "$1" 2>/dev/null) ;; esac
     # shellcheck disable=SC2086   # the header's bytes, one word each
     set -- $_hd
@@ -95,7 +90,7 @@ psf_size() {   # psf_size FILE -> WxH from its header (PSF1 or PSF2, gzip or pla
         shift 24; _h=$(($1 + $2 * 256)); shift 4; echo "$(($1 + $2 * 256))x$_h"
     fi
 }
-console_fonts() {   # -> "FACE SIZE" lines, sorted; nothing when the fonts dir is not here
+console_fonts() {   # -> "FACE SIZE" lines, sorted
     _d=$(consolefonts_dir) || return 0
     if [ "$(console_shape)" = setup ]; then
         for _f in "$_d"/*; do
@@ -112,43 +107,40 @@ console_fonts() {   # -> "FACE SIZE" lines, sorted; nothing when the fonts dir i
 }
 MAC_FACES="MonaspaceNeon-Regular Menlo-Regular Monaco SFMono-Regular Courier CourierNewPSMT AndaleMono JetBrainsMono-Regular FiraCode-Regular Hack-Regular SourceCodePro-Regular CascadiaCode-Regular UbuntuMono-Regular DejaVuSansMono IBMPlexMono"
 MAC_SYSTEM_FACES="Menlo-Regular Monaco SFMono-Regular Courier CourierNewPSMT AndaleMono"
-mac_face_here() {   # mac_face_here FACE: shipped, a file in a Fonts folder, Spotlight's, or the helper's word (SPARK_SHELL_MAC_FONTS pins it in tests)
+mac_face_here() {   # mac_face_here FACE; tests pin SPARK_SHELL_MAC_FONTS
     if [ -n "${SPARK_SHELL_MAC_FONTS:-}" ]; then case " $SPARK_SHELL_MAC_FONTS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; fi
     case " $MAC_SYSTEM_FACES " in *" $1 "*) return 0 ;; esac
     for _d in "$HOME/Library/Fonts" /Library/Fonts; do for _x in otf ttf ttc; do [ ! -f "$_d/$1.$_x" ] || return 0; done; done
     [ -n "$(mdfind "kMDItemFonts == '$1'" 2>/dev/null | head -1)" ] && return 0
-    python3 "$REPO/lib/terminal_profile.py" has-font "$1" >/dev/null 2>&1   # Spotlight off: the helper does not refuse on no evidence
+    python3 "$REPO/lib/terminal_profile.py" has-font "$1" >/dev/null 2>&1   # when Spotlight is off
 }
 
 # ---------------------------------------------------- the terminal's font
-# Monaspace Neon (SIL OFL 1.1) is the terminal's face. `on` installs it
-# where foot is wanted and on a Mac: the distro's package where PKG_DESKTOP
-# has one, else the release's zip, refused unless its sha256 is the one
-# pinned here. Until it is there FONT keeps the old face (font_spec), since
-# fontconfig draws a missing face in a proportional one. off leaves it.
-NEON='Monaspace Neon'                      # the family: fontconfig's word, FONT's face
-NEON_PS=MonaspaceNeon-Regular              # its PostScript name: Terminal.app's word
-NEON_OLD='DejaVu Sans Mono'                # FONT's default face
+# Monaspace Neon (SIL OFL 1.1). Until it is installed FONT keeps the
+# old face: fontconfig draws a missing face in a proportional one.
+NEON='Monaspace Neon'                      # FONT's face
+NEON_PS=MonaspaceNeon-Regular              # its PostScript name
+NEON_OLD='DejaVu Sans Mono'                # FONT's old face
 NEON_PS_OLD=Menlo-Regular                  # Terminal.app's default face
 NEON_VERSION=1.400
-NEON_URL=${SPARK_SHELL_FONT_URL:-https://github.com/githubnext/monaspace/releases/download/v1.400/monaspace-static-v1.400.zip}   # the release's static OTF zip; the tests point it at a file:// zip, or none
-NEON_SHA256=ab66d71be751495f679727332a3345597943bd4d7beebca03f5cde04bf994de7   # that zip's sha256, the one GitHub lists for it
-NEON_STYLES='Regular Bold Italic BoldItalic'   # the four styles foot uses
-NEON_MOVED=$STATE_DIR/font.moved           # the move is done: an old face in FONT after it is a choice
+NEON_URL=${SPARK_SHELL_FONT_URL:-https://github.com/githubnext/monaspace/releases/download/v1.400/monaspace-static-v1.400.zip}   # tests: a file:// zip, or none
+NEON_SHA256=ab66d71be751495f679727332a3345597943bd4d7beebca03f5cde04bf994de7   # the zip's sha256 (GitHub's listing)
+NEON_STYLES='Regular Bold Italic BoldItalic'   # the styles foot uses
+NEON_MOVED=$STATE_DIR/font.moved           # after the move an old face is a choice
 if [ "$OS" = Darwin ]; then NEON_DIR=$HOME/Library/Fonts; else NEON_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/fonts/monaspace-neon; fi
-NEON_WOULD=0                               # a dry run would fetch: the move is said too
-neon_ours() { for _s in $NEON_STYLES; do [ -f "$NEON_DIR/MonaspaceNeon-$_s.otf" ] || return 1; done; }   # the four faces in NEON_DIR
-neon_here() {   # can the terminal draw Neon? NEON_DIR, a Mac's /Library/Fonts, or fontconfig finds the family
+NEON_WOULD=0                               # a dry run would fetch: say the move too
+neon_ours() { for _s in $NEON_STYLES; do [ -f "$NEON_DIR/MonaspaceNeon-$_s.otf" ] || return 1; done; }   # all four in NEON_DIR
+neon_here() {
     neon_ours && return 0
     if [ "$OS" = Darwin ]; then [ -f "/Library/Fonts/$NEON_PS.otf" ]; return; fi
-    [ ! -d "$NEON_DIR" ] || return 1   # spark-shell's own folder with a face missing: installed again
+    [ ! -d "$NEON_DIR" ] || return 1   # our folder, incomplete: install again
     command -v fc-list >/dev/null 2>&1 && [ -n "$(fc-list "$NEON" family 2>/dev/null)" ]
 }
-neon_pkg() { for _p in $PKG_DESKTOP; do case $_p in *monaspace*) printf '%s' "$_p"; return 0 ;; esac; done; return 1; }   # -> the distro's package of the font, when its list has one (after pm_detect)
-font_spec() {   # -> FONT as foot can draw it: a FONT on Monaspace Neon before it is installed is the old face at its size
+neon_pkg() { for _p in $PKG_DESKTOP; do case $_p in *monaspace*) printf '%s' "$_p"; return 0 ;; esac; done; return 1; }   # -> the distro's package, after pm_detect
+font_spec() {   # -> FONT as foot can draw it
     case $FONT in
         "$NEON"|"$NEON":*) neon_here || { printf '%s%s' "$NEON_OLD" "${FONT#"$NEON"}"; return 0; } ;;
-        'Monaspace '*)   # a curated face not installed yet: Neon at its size, or the old face
+        'Monaspace '*)   # not installed: Neon, else the old face
             _fsf=${FONT%%:*}
             if _fsw=$(face_word "$_fsf") && ! face_ours "$_fsw" && ! { command -v fc-list >/dev/null 2>&1 && [ -n "$(fc-list "$_fsf" family 2>/dev/null)" ]; }; then
                 if neon_here; then printf '%s%s' "$NEON" "${FONT#"$_fsf"}"; else printf '%s%s' "$NEON_OLD" "${FONT#"$_fsf"}"; fi
@@ -157,14 +149,14 @@ font_spec() {   # -> FONT as foot can draw it: a FONT on Monaspace Neon before i
     esac
     printf '%s' "$FONT"
 }
-term_font() {   # -> Terminal.app's "FACE SIZE": CONSOLE_FONT, else Monaspace Neon at 13 once it is installed, Menlo before
+term_font() {   # -> Terminal.app's "FACE SIZE" (13 points)
     # shellcheck disable=SC2086   # FACE SIZE, split on purpose
     set -- $CONSOLE_FONT
     if [ -n "${1:-}" ]; then printf '%s %s' "$1" "${2:-13}"
     elif neon_here; then printf '%s 13' "$NEON_PS"
     else printf '%s 13' "$NEON_PS_OLD"; fi
 }
-neon_unzip() {   # neon_unzip ZIP DIR -- the four styles into DIR: unzip where it is, else python3 (Void has no unzip)
+neon_unzip() {   # neon_unzip ZIP DIR (Void has no unzip)
     _nmiss=0
     if command -v unzip >/dev/null 2>&1; then
         for _s in $NEON_STYLES; do unzip -p "$1" "Static Fonts/Monaspace Neon/MonaspaceNeon-$_s.otf" > "$2/MonaspaceNeon-$_s.otf" 2>/dev/null || :; done
@@ -181,7 +173,7 @@ for s in sys.argv[3:]:
     fi
     for _s in $NEON_STYLES; do [ -s "$2/MonaspaceNeon-$_s.otf" ] || return 1; done
 }
-neon_wanted() {   # is Neon wanted? FONT (a Mac: CONSOLE_FONT) is it, or the old default face before the move
+neon_wanted() {   # Neon, or the old face before the move
     if [ "$OS" = Darwin ]; then
         # shellcheck disable=SC2086   # FACE SIZE, split on purpose
         set -- $CONSOLE_FONT
@@ -189,7 +181,7 @@ neon_wanted() {   # is Neon wanted? FONT (a Mac: CONSOLE_FONT) is it, or the old
     fi
     case $FONT in "$NEON"|"$NEON":*) return 0 ;; "$NEON_OLD"|"$NEON_OLD":*) [ ! -e "$NEON_MOVED" ]; return ;; *) return 1 ;; esac
 }
-neon_install() {   # the font row of `on`: Monaspace Neon where foot is wanted, and on a Mac
+neon_install() {   # the font row of `on`
     if [ "$OS" != Darwin ] && ! desktop_wanted && ! login_wanted; then skip font "DESKTOP=none: Monaspace Neon is for foot, the desktop's terminal"; return 0; fi
     if neon_ours; then ok font "$NEON is in $NEON_DIR"; return 0; fi
     if ! neon_wanted; then
@@ -217,7 +209,7 @@ neon_install() {   # the font row of `on`: Monaspace Neon where foot is wanted, 
     [ "$OS" = Darwin ] || ! command -v fc-cache >/dev/null 2>&1 || fc-cache -f "$NEON_DIR" >/dev/null 2>&1 || :
     ok font "$NEON $NEON_VERSION installed in $NEON_DIR, its sha256 checked"
 }
-neon_move() {   # once: a FONT on the old default face (a Mac: CONSOLE_FONT on Menlo) moves to Neon at its size, once Neon is installed
+neon_move() {   # once: the old face moves to Neon
     [ ! -e "$NEON_MOVED" ] || return 0
     if [ "$OS" = Darwin ]; then
         # shellcheck disable=SC2086   # FACE SIZE, split on purpose
@@ -230,7 +222,7 @@ neon_move() {   # once: a FONT on the old default face (a Mac: CONSOLE_FONT on M
         case $_nwas in "$NEON_OLD"|"$NEON_OLD":*) _nkey=FONT; _nval="$NEON${_nwas#"$NEON_OLD"}" ;; *) _nkey='' ;; esac
     fi
     if [ -n "$_nkey" ]; then
-        neon_here || [ "$NEON_WOULD" = 1 ] || return 0   # not installed: the old face stays, and the move waits for it
+        neon_here || [ "$NEON_WOULD" = 1 ] || return 0   # not installed: the move waits
         need font "$_nkey=$_nval, the new default face at your size ($_nold was the old one)" || return 0
         config_set "$_nkey" "$_nval" >/dev/null
         eval "$_nkey=\$_nval"; export "${_nkey?}"
@@ -239,25 +231,23 @@ neon_move() {   # once: a FONT on the old default face (a Mac: CONSOLE_FONT on M
     [ "$MODE" = dry ] || { mkdir_private "$STATE_DIR"; printf '%s\n' "${_nkey:-nothing}${_nkey:+ moved to $_nval}" > "$NEON_MOVED"; }
 }
 
-# The curated faces: Neon and the four beside it in the same zip, under
-# the same sha256. They share Neon's cell (2000 to the em, ascent 1890,
-# descent 400, gap 200, advance 1240), and every glyph of every family is
-# in each.
-FONT_FACES='neon argon xenon radon krypton'   # in the order Settings > theme steps through them
-face_name() { printf 'Monaspace %s' "$(printf '%s' "$1" | awk '{ print toupper(substr($0, 1, 1)) substr($0, 2) }')"; }   # face_name argon -> Monaspace Argon: FONT's face
-face_word() { case $1 in 'Monaspace '*) _fw=${1#Monaspace }; case " $FONT_FACES " in *" $(printf '%s' "$_fw" | tr 'A-Z' 'a-z') "*) printf '%s' "$_fw" | tr 'A-Z' 'a-z'; return 0 ;; esac ;; esac; return 1; }   # face_word "Monaspace Argon" -> argon; 1 for a face that is none of the five
-face_dir() { if [ "$OS" = Darwin ]; then printf '%s' "$NEON_DIR"; else printf '%s/fonts/monaspace-%s' "${XDG_DATA_HOME:-$HOME/.local/share}" "$1"; fi; }   # face_dir argon -> the folder its four styles go in
+# The five faces share Neon's cell: 2000 to the em, ascent 1890, descent
+# 400, gap 200, advance 1240.
+FONT_FACES='neon argon xenon radon krypton'   # in theme's order
+face_name() { printf 'Monaspace %s' "$(printf '%s' "$1" | awk '{ print toupper(substr($0, 1, 1)) substr($0, 2) }')"; }   # face_name argon -> Monaspace Argon
+face_word() { case $1 in 'Monaspace '*) _fw=${1#Monaspace }; case " $FONT_FACES " in *" $(printf '%s' "$_fw" | tr 'A-Z' 'a-z') "*) printf '%s' "$_fw" | tr 'A-Z' 'a-z'; return 0 ;; esac ;; esac; return 1; }   # face_word "Monaspace Argon" -> argon, or 1
+face_dir() { if [ "$OS" = Darwin ]; then printf '%s' "$NEON_DIR"; else printf '%s/fonts/monaspace-%s' "${XDG_DATA_HOME:-$HOME/.local/share}" "$1"; fi; }   # face_dir argon -> its folder
 face_file() { _ff=$(face_name "$1"); printf 'Monaspace%s-%s.otf' "${_ff#Monaspace }" "$2"; }   # face_file argon Bold -> MonaspaceArgon-Bold.otf
-face_ours() { for _s in $NEON_STYLES; do [ -f "$(face_dir "$1")/$(face_file "$1" "$_s")" ] || return 1; done; }   # face_ours argon -> its four styles in its folder
-font_with() {   # font_with FACE SIZE -> FONT with that face and size, each kept as it is when empty, the rest of the spec kept
+face_ours() { for _s in $NEON_STYLES; do [ -f "$(face_dir "$1")/$(face_file "$1" "$_s")" ] || return 1; done; }   # face_ours argon -> four styles in place
+font_with() {   # font_with FACE SIZE -> FONT with them set, empty ones kept
     _fwf=${FONT%%:*}; _fwr=${FONT#"$_fwf"}
     [ -z "$1" ] || _fwf=$(face_name "$1")
     if [ -n "$2" ]; then case $_fwr in *size=[0-9]*) _fwr=$(printf '%s' "$_fwr" | sed "s/size=[0-9][0-9.]*/size=$2/") ;; *) _fwr="$_fwr:size=$2" ;; esac; fi
     printf '%s%s' "$_fwf" "$_fwr"
 }
-FACES_OTHER='argon xenon radon krypton'   # the four beside Neon, which the font row installs
+FACES_OTHER='argon xenon radon krypton'   # the four beside Neon
 faces_ours() { for _fo in $FACES_OTHER; do face_ours "$_fo" || return 1; done; }
-faces_unzip() {   # faces_unzip ZIP DIR -- the four faces' styles into DIR: unzip where it is, else python3
+faces_unzip() {   # faces_unzip ZIP DIR
     for _fo in $FACES_OTHER; do
         _fn=$(face_name "$_fo")
         for _s in $NEON_STYLES; do
@@ -269,16 +259,16 @@ open(sys.argv[3], "wb").write(zipfile.ZipFile(sys.argv[1]).read(sys.argv[2]))' "
         done
     done
 }
-faces_install() {   # the faces row of `on`: the four beside Neon, where FONT is one of the five
-    [ "$OS" != Darwin ] || return 0   # a Mac's text is Terminal.app's, CONSOLE_FONT
+faces_install() {   # the faces row of `on`
+    [ "$OS" != Darwin ] || return 0   # a Mac draws CONSOLE_FONT
     desktop_wanted || login_wanted || return 0
-    face_word "${FONT%%:*}" >/dev/null || return 0   # a FONT of your own stays yours: nothing fetched
+    face_word "${FONT%%:*}" >/dev/null || return 0   # your own FONT: nothing fetched
     if faces_ours; then ok faces "Monaspace Argon, Xenon, Radon and Krypton are in $(dirname "$(face_dir argon)")"; return 0; fi
     [ "$NEON_URL" != none ] || { skip faces "no release to fetch them from (SPARK_SHELL_FONT_URL=none): theme face takes neon alone"; return 0; }
     command -v curl >/dev/null 2>&1 || { row todo faces "curl is not installed, so Monaspace Argon, Xenon, Radon and Krypton cannot be fetched -- spark-shell on desktop installs curl"; return 0; }
     need faces "put Monaspace Argon, Xenon, Radon and Krypton, four styles each, in $(dirname "$(face_dir argon)"), from the zip the font row checks" || return 0
     _nz=$TMP/monaspace.zip; _fd=$TMP/faces; mkdir -p "$_fd"
-    if [ ! -s "$_nz" ] || [ "$(sha256_of "$_nz")" != "$NEON_SHA256" ]; then   # the font row fetched it this run, unless Neon was in place
+    if [ ! -s "$_nz" ] || [ "$(sha256_of "$_nz")" != "$NEON_SHA256" ]; then   # unless the font row fetched it
         if ! curl -fsSL --proto '=https,file' --proto-redir '=https' --connect-timeout 30 -o "$_nz" "$NEON_URL" 2>/dev/null; then
             rm -f "$_nz"; row todo faces "could not fetch the faces: theme face takes neon until spark-shell on fetches them"; acting=0; return 0
         fi

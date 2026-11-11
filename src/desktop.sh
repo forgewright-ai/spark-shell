@@ -1,10 +1,9 @@
 # shellcheck extended-analysis=false
-# on_console -> 0 on /dev/tty1 and up (not XDG_VTNR: logind's, and Void has none)
+# on_console -> 0 on /dev/tty1 and up (not XDG_VTNR: Void has no logind)
 # sets: IDLE_ALPHA IDLE_APP IDLE_FROM
 # reads: BAR_WS_ORDER CONFIG_DIR CONFIG_UNSET DESK_PENDING DESK_SEEN KB_RE NOTIFY_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SCREENS_CONF STATE_DIR TAB TMP US
 on_console() { case $(tty 2>/dev/null) in /dev/tty[1-9]*) return 0 ;; *) return 1 ;; esac; }
-# runtime_dir -- XDG_RUNTIME_DIR when unset (sway needs it; Void has no logind):
-# a 0700 directory of yours under TMPDIR, never a symlink
+# runtime_dir -- XDG_RUNTIME_DIR when unset (Void has no logind)
 runtime_dir() {
     [ -z "${XDG_RUNTIME_DIR:-}" ] || return 0
     _uid=$(id -u); _rd=${TMPDIR:-/tmp}; _rd=${_rd%/}/$_uid-runtime-dir
@@ -14,8 +13,7 @@ runtime_dir() {
     fi
     refuse "$_rd is not a private directory of yours, and the desktop needs one (XDG_RUNTIME_DIR)"
 }
-# runtime_adopt -- outside the desktop (ssh, a service) takes the directory
-# runtime_dir made, where the sound lives, only when yours and 0700; never makes it
+# runtime_adopt -- from ssh or a service; never makes the directory
 runtime_adopt() {
     [ -z "${XDG_RUNTIME_DIR:-}" ] && [ "$OS" != Darwin ] || return 0
     _uid=$(id -u); _rd=${TMPDIR:-/tmp}; _rd=${_rd%/}/$_uid-runtime-dir
@@ -23,26 +21,25 @@ runtime_adopt() {
     case $(ls -ldn "$_rd" | awk '{print $1, $3}') in "drwx------ $_uid"|"drwx------. $_uid") XDG_RUNTIME_DIR=$_rd; export XDG_RUNTIME_DIR ;; esac
 }
 
-# cmd_desktop [WORDS] -- the desktop verb; alone, sway now on this console,
-# as a child, never exec: the EXIT trap still cleans TMP and the cursor comes back
+# cmd_desktop [WORDS] -- sway as a child, never exec: the EXIT trap cleans TMP
 cmd_desktop() {
     config_load
     [ "$OS" = Darwin ] || pm_detect
     case ${1:-} in
         on) shift; cmd_on desktop "$@"; return ;;
         off) shift; cmd_off desktop "$@"; return ;;
-        wallpaper) refuse "the wallpaper is a theme word now: spark-shell theme wallpaper ${2:-X}" ;;   # an older spelling
-        apps|tools) cmd_apps_verb; return ;;   # older spellings of apps
-        keep) shift; desk_save "$@"; return ;;       # older spellings of layout save and layout delete
+        wallpaper) refuse "the wallpaper is a theme word now: spark-shell theme wallpaper ${2:-X}" ;;
+        apps|tools) cmd_apps_verb; return ;;
+        keep) shift; desk_save "$@"; return ;;
         forget) shift; desk_delete "$@"; return ;;
-        --ask) cmd_panel layout; return ;;           # older spellings of layout --ask and layout --pending
+        --ask) cmd_panel layout; return ;;
         --pending) desk_pending; return ;;
-        --motion) theme_load 2>/dev/null || :; motion_follow; return ;;   # the moving wallpaper at the desktop's start
-        --chat) python3 "$REPO/lib/home.py" open "$REPO/spark-shell" chat; return ;;   # an older spelling of home chat
+        --motion) theme_load 2>/dev/null || :; motion_follow; return ;;
+        --chat) python3 "$REPO/lib/home.py" open "$REPO/spark-shell" chat; return ;;
         home) python3 "$REPO/lib/home.py" open "$REPO/spark-shell" "${2:-}"; return ;;
-        keys) desk_keys; return ;;   # the key list, from the template
+        keys) desk_keys; return ;;
         lock) theme_load 2>/dev/null || :; desk_lock; return ;;
-        idle) shift; theme_load 2>/dev/null || :; desk_idle "$@"; return ;;   # swayidle runs both   # a palette that fails to load must not keep the lock away
+        idle) shift; theme_load 2>/dev/null || :; desk_idle "$@"; return ;;   # a failed palette must not keep the lock away
         network) shift; desk_network "$@"; return ;;
         time) shift; desk_time "$@"; return ;;
         display) shift; desk_display "$@"; return ;;
@@ -52,7 +49,7 @@ cmd_desktop() {
             if [ "$#" = 0 ]; then panel_title pointer; else [ "$#" = 2 ] || refuse "pointer takes tap on|off, scroll on|off or speed N"; input_setting pointer "$1" "$2"; fi
             return ;;
         portals) desk_portals; return ;;
-        --machine) case ${2:-all} in all|now|tick) machine_write "${2:-all}"; return ;; *) refuse "--machine takes all, now or tick" ;; esac ;;   # the machine files now, as the start (all) and the bar (now, tick) write them: the tests' door
+        --machine) case ${2:-all} in all|now|tick) machine_write "${2:-all}"; return ;; *) refuse "--machine takes all, now or tick" ;; esac ;;   # the tests' door to machine_write
         screen|screens) shift; desk_screen "$@"; return ;;
         window) shift; desk_window "$@"; return ;;
         pad) shift; desk_pad "$@"; return ;;
@@ -60,37 +57,35 @@ cmd_desktop() {
         notifications) shift; desk_notifications "$@"; return ;;
         storage) shift; desk_storage "$@"; return ;;
         power) shift; desk_power "$@"; return ;;
-        --first)   # the desktop's first window: home once, then your shell, always
+        --first)   # home once, then your shell
             if [ ! -f "$DESK_SEEN" ]; then
                 { mkdir_private "$(dirname "$DESK_SEEN")" && : > "$DESK_SEEN"; } 2>/dev/null || true
                 if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v foot >/dev/null 2>&1; then bar_panel_open ''; fi
             fi
-            # the config's exports stay out of the shell (PROMPT is zsh's prompt string)
+            # the config's exports stay out of the shell (PROMPT is zsh's)
             # shellcheck disable=SC2086   # the -u words, split on purpose
             rm -rf "$TMP"; trap - EXIT; exec env $CONFIG_UNSET "${SHELL:-/bin/sh}" ;;
         ''|-*) ;;
-        *) desk_need "$@"; return ;;   # an older spelling of layout WORDS
+        *) desk_need "$@"; return ;;
     esac
     desk_start ''
 }
-# The display: DISPLAY_IDLE and DISPLAY_LOCK in minutes, 0 never. The idle screen goes
-# once the lock is up (swaylock --daemonize returns then), so no saver runs behind it
-idle_exec() {   # -> the swayidle command the template and a live change run
+# the idle screen goes once the lock is up (swaylock --daemonize returns then)
+idle_exec() {   # idle_exec -> the swayidle command
     _l="$REPO/spark-shell desktop lock || swaylock -f"
     printf 'swayidle -w'
     [ "${DISPLAY_IDLE:-10}" = 0 ] || printf " timeout %s '%s desktop idle' resume '%s desktop idle off'" "$((DISPLAY_IDLE * 60))" "$REPO/spark-shell" "$REPO/spark-shell"
     [ "${DISPLAY_LOCK:-15}" = 0 ] || printf " timeout %s '%s; %s desktop idle off' timeout %s 'swaymsg \"output * power off\"' resume 'swaymsg \"output * power on\"'" "$((DISPLAY_LOCK * 60))" "$_l" "$REPO/spark-shell" "$((DISPLAY_LOCK * 60))"
     printf " before-sleep '%s'" "$_l"
 }
-# The idle screen: one foot window a screen, tiled alone on a workspace named idle or
-# "idle PORT" with no gaps (a fullscreen foot window would be solid: foot's own rule)
+# a foot window a screen, tiled alone, no gaps: fullscreen foot is solid
 IDLE_APP="spark-idle"
 IDLE_ALPHA=0.8
-IDLE_FROM=$STATE_DIR/idle.from   # PORT<tab>NAME a line: each screen's workspace before the idle screen, the focused one last
-desk_idle() {   # desk_idle [off|--clock|--side] -- the idle screen up, down, or what a window draws: the clock, or a side screen
+IDLE_FROM=$STATE_DIR/idle.from   # PORT<tab>NAME a line, the focused screen last
+desk_idle() {   # desk_idle [off|--clock|--side]
     case ${1:-} in
-        --clock) trap 'idle_back; exit 0' INT TERM HUP; idle_clock; idle_back; return ;;   # any end of the window brings the desktop back
-        --side) trap 'idle_back; exit 0' INT TERM HUP; idle_side; idle_back; return ;;   # a screen beside the main one
+        --clock) trap 'idle_back; exit 0' INT TERM HUP; idle_clock; idle_back; return ;;
+        --side) trap 'idle_back; exit 0' INT TERM HUP; idle_side; idle_back; return ;;
         off) desk_in_sway || return 0
             idle_back
             return 0 ;;
@@ -103,13 +98,13 @@ desk_idle() {   # desk_idle [off|--clock|--side] -- the idle screen up, down, or
     ! idle_up || return 0
     theme_load
     _sz=$(look_font_size); : "${_sz:=12}"; _fc=$(foot_colors)
-    # each screen's workspace, the focused screen's last so the focus ends there
+    # the focused screen's last, so the focus ends there
     screens_json | jq -r '[.[] | select(.active and (.current_workspace // "") != "" and .current_workspace != "idle" and (.current_workspace | startswith("idle ") | not))]
         | (map(select(.focused | not)) + map(select(.focused)))[] | [.name, .current_workspace] | @tsv' > "$TMP/idle.from" 2>/dev/null || :
     [ ! -s "$TMP/idle.from" ] || { mkdir_private "$STATE_DIR"; cat "$TMP/idle.from" > "$IDLE_FROM"; }
     swaymsg -- "bar mode invisible" >/dev/null 2>&1 || :
     _fs=$(font_spec); _foot="foot --app-id $IDLE_APP -o 'font=${_fs%%:*}:size=$((_sz * 2))' -o $_fc.alpha=$IDLE_ALPHA -o $_fc.background=$HEX_BG -o pad=0x0 -e $REPO/spark-shell desktop idle"
-    # the other screens first, the main one last so the focus ends on the clock; exec opens where it ran
+    # the main screen last: the focus ends on the clock
     _main=$(idle_main)
     screens_json | jq -r --arg m "$_main" '.[] | select(.active and .name != $m) | .name' 2>/dev/null | while IFS= read -r _o; do
         case $_o in *[\"\\]*) continue ;; esac
@@ -118,34 +113,34 @@ desk_idle() {   # desk_idle [off|--clock|--side] -- the idle screen up, down, or
     _at=''; case $_main in ''|*[\"\\]*) ;; *) _at="focus output \"$_main\"; " ;; esac
     swaymsg -- "mouse_warping none; ${_at}workspace idle; exec $_foot --clock; mouse_warping output" >/dev/null 2>&1 || refuse "could not open the idle screen"
 }
-idle_main() {   # -> the port the clock goes on: the main screen while it is on, else the focused one
+idle_main() {   # -> the main screen when on, else the focused one
     screens_json | jq -r --arg m "$(screen_main || :)" '[.[] | select(.active)] as $on
         | ([$on[] | select($m != "" and (.name == $m or ([.make, .model, .serial] | map(if . == null or . == "" then "Unknown" else . end) | join(" ")) == $m))]
            + [$on[] | select(.focused)] + $on)[0].name // empty' 2>/dev/null || :
 }
-idle_up() { swaymsg -t get_tree 2>/dev/null | jq -e --arg a "$IDLE_APP" '[.. | objects | select(.app_id? == $a)] | length > 0' >/dev/null 2>&1; }   # the idle window is on the screen
-idle_back() {   # idle_back -- each screen's workspace back by name (never a toggle: off and each window's end may all run it), the bar, then the other idle windows go
+idle_up() { swaymsg -t get_tree 2>/dev/null | jq -e --arg a "$IDLE_APP" '[.. | objects | select(.app_id? == $a)] | length > 0' >/dev/null 2>&1; }
+idle_back() {   # never a toggle: off and each window's end may all run it
     desk_in_sway || return 0
     if swaymsg -t get_workspaces 2>/dev/null | jq -e '[.[] | select((.visible or .focused) and (.name == "idle" or (.name | startswith("idle "))))] | length > 0' >/dev/null 2>&1; then
         _ib=''
         [ -f "$IDLE_FROM" ] && while IFS="$TAB" read -r _io _iw; do
-            [ -n "$_iw" ] || { _iw=$_io; _io=''; }   # a name alone: no port
-            case $_io$_iw in *[\"\\]*) continue ;; esac   # a name sway could not take in quotes
+            [ -n "$_iw" ] || { _iw=$_io; _io=''; }
+            case $_io$_iw in *[\"\\]*) continue ;; esac   # sway cannot quote it
             case $_iw in ''|idle|'idle '*) continue ;; esac
             [ -z "$_io" ] || _ib="$_ib focus output \"$_io\";"
             _ib="$_ib workspace \"$_iw\";"
         done < "$IDLE_FROM" || :
-        if [ -n "$_ib" ]; then swaymsg -- "mouse_warping none;$_ib mouse_warping output" >/dev/null 2>&1 || :   # one command: two ways out at once cannot cross
-        else swaymsg -- "workspace back_and_forth" >/dev/null 2>&1 || :; fi   # no name kept
+        if [ -n "$_ib" ]; then swaymsg -- "mouse_warping none;$_ib mouse_warping output" >/dev/null 2>&1 || :   # one command: two ways out cannot cross
+        else swaymsg -- "workspace back_and_forth" >/dev/null 2>&1 || :; fi
     fi
     [ "$DESKTOP_BAR" != yes ] || swaymsg -- "bar mode dock" >/dev/null 2>&1 || :
     idle_close
 }
-idle_close() {   # every idle window but this one (its foot is this shell's parent)
+idle_close() {   # all but this shell's parent foot
     swaymsg -t get_tree 2>/dev/null | jq -r --arg a "$IDLE_APP" --argjson p "${PPID:-0}" '.. | objects | select(.app_id? == $a and .pid != $p) | .id' 2>/dev/null \
         | while IFS= read -r _ic; do swaymsg -- "[con_id=$_ic] kill" >/dev/null 2>&1 || :; done
 }
-idle_wait() {   # idle_wait SECONDS -> 0 when a key or a mouse move came first, 1 when the time ran out (stty min 0 time 10: a byte or nothing a second)
+idle_wait() {   # idle_wait SECONDS -> 0 on input, 1 when the time ran out
     _iw=0
     while [ "$_iw" -lt "$1" ]; do
         [ -z "$(dd bs=1 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')" ] || return 0
@@ -153,20 +148,20 @@ idle_wait() {   # idle_wait SECONDS -> 0 when a key or a mouse move came first, 
     done
     return 1
 }
-idle_clock_end() { { printf '\033[?1003l\033[?25h\033[0m'; [ -z "${_ist:-}" ] || stty "$_ist"; } 2>/dev/null || :; }   # the mouse unreported, the cursor and the terminal as they were
+idle_clock_end() { { printf '\033[?1003l\033[?25h\033[0m'; [ -z "${_ist:-}" ] || stty "$_ist"; } 2>/dev/null || :; }   # mouse reports off, cursor back
 saver_version() { sed -n 's/^VERSION = "\(.*\)".*/\1/p' "$REPO/lib/saver.py" 2>/dev/null; }   # read without python3
-saver_can() { case ${SAVER_CAN_NOW:-} in 1) return 0 ;; 0) return 1 ;; esac; _sver=$(saver_version); [ -n "$_sver" ] && [ "$(python3 "$REPO/lib/saver.py" --version 2>/dev/null)" = "$_sver" ]; }   # a python3 that runs the savers (not a stub, not missing)
-saver_known() { for _sn in clock $SAVER_NAMES; do [ "$_sn" != "$1" ] || return 0; done; return 1; }   # saver_known NAME -> a whole word of the list, never a part of one
+saver_can() { case ${SAVER_CAN_NOW:-} in 1) return 0 ;; 0) return 1 ;; esac; _sver=$(saver_version); [ -n "$_sver" ] && [ "$(python3 "$REPO/lib/saver.py" --version 2>/dev/null)" = "$_sver" ]; }   # a real python3, not a stub
+saver_known() { for _sn in clock $SAVER_NAMES; do [ "$_sn" != "$1" ] || return 0; done; return 1; }   # saver_known NAME
 saver_words() { if [ "$1" = clock ]; then echo "the clock alone"; else echo "the $1 saver"; fi; }   # saver_words NAME
-saver_problem() {   # saver_problem NAME -> why it cannot be the idle screen's, in one line; nothing when it can
+saver_problem() {   # saver_problem NAME -> why not, or nothing
     if ! saver_known "$1"; then echo "saver takes clock, spark, starfield or drift"; return 0; fi
     [ "$1" = clock ] || saver_can || echo "saver $1 needs python3, which cannot run it here"
 }
-idle_clock() {   # idle_clock -- the time large at the lower left, the date under it, drawn again each minute until the window goes; under 9 rows or 38 columns, on one line
-    if [ "${DISPLAY_SAVER:-clock}" != clock ] && saver_can; then python3 "$REPO/lib/saver.py" "$DISPLAY_SAVER" && return 0; fi   # a signal ends it cleanly; a failure falls through to the clock
+idle_clock() {   # the time and the date, each minute
+    if [ "${DISPLAY_SAVER:-clock}" != clock ] && saver_can; then python3 "$REPO/lib/saver.py" "$DISPLAY_SAVER" && return 0; fi   # a failure falls through to the clock
     printf '\033[?25l'; trap 'idle_clock_end; idle_back; exit 0' INT TERM HUP
-    _a='38;5;16'; _m='38;5;20'   # foot.ini's slots 16 and 20: the accent, and the muted color that reads on a panel
-    _ist=''   # a byte at a time, every mouse move reported: a key or a move ends the clock
+    _a='38;5;16'; _m='38;5;20'   # foot.ini's slots 16 and 20: accent and muted
+    _ist=''   # a byte at a time, every mouse move reported
     if [ -t 0 ]; then _ist=$(stty -g 2>/dev/null) && stty -icanon -echo min 0 time 10 2>/dev/null && printf '\033[?1003h' || _ist=''; fi
     while :; do
         # shellcheck disable=SC2046   # two numbers, split on purpose
@@ -185,9 +180,9 @@ idle_clock() {   # idle_clock -- the time large at the lower left, the date unde
     done
     idle_clock_end
 }
-idle_side() {   # idle_side -- a side screen's window: the saver without its clock, or the dimmed wallpaper alone
+idle_side() {   # the saver without its clock, or nothing
     case ${DISPLAY_SAVER:-clock} in
-        clock|drift) ;;   # the clock alone, or the clock bouncing: nothing to draw without the clock
+        clock|drift) ;;   # nothing to draw without the clock
         *) if saver_can; then python3 "$REPO/lib/saver.py" "$DISPLAY_SAVER" --no-clock && return 0; fi ;;
     esac
     printf '\033[?25l\033[2J'; trap 'idle_clock_end; idle_back; exit 0' INT TERM HUP
@@ -199,16 +194,16 @@ idle_side() {   # idle_side -- a side screen's window: the saver without its clo
     done
     idle_clock_end
 }
-idle_restart() {   # the running desktop's swayidle, again with the settings now
+idle_restart() {
     desk_in_sway || return 0
-    # only the swayidle that locks with spark-shell, never another session's
+    # never another session's swayidle
     pkill -u "$(id -u)" -f "^swayidle .*$(printf '%s' "$REPO/spark-shell desktop lock" | sed 's/[][\.*^$+?(){}|]/\\&/g')" 2>/dev/null || :
     swaymsg -- exec "$(idle_exec)" >/dev/null 2>&1 || :
 }
 idle_words() { if [ "$1" = 0 ]; then echo never; elif [ "$1" = 1 ]; then echo "after 1 minute"; else echo "after $1 minutes"; fi; }   # idle_words MINUTES
 desk_display() {   # desk_display [idle|lock N | saver [NAME] | brightness N|up|down]
     case ${1:-} in
-        '') _sv=''; [ "$DISPLAY_SAVER" = clock ] || _sv=" $PANEL_SEP $DISPLAY_SAVER saver"   # a saver is said only when one is chosen
+        '') _sv=''; [ "$DISPLAY_SAVER" = clock ] || _sv=" $PANEL_SEP $DISPLAY_SAVER saver"
             echo "idle screen $(idle_words "$DISPLAY_IDLE")$_sv $PANEL_SEP lock and display off $(idle_words "$DISPLAY_LOCK")"
             [ "$OS" = Darwin ] || { _b=$(light_get); [ -z "$_b" ] || echo "brightness ${_b%% *}%"; } ;;
         idle|lock) _k=DISPLAY_IDLE; [ "$1" = idle ] || _k=DISPLAY_LOCK
@@ -217,11 +212,11 @@ desk_display() {   # desk_display [idle|lock N | saver [NAME] | brightness N|up|
             config_set "$_k" "$2" >/dev/null; eval "$_k=\$2"; export "${_k?}"
             sway_file_apply; idle_restart
             if [ "$1" = idle ]; then echo "idle screen $(idle_words "$2")"; else echo "lock and display off $(idle_words "$2")"; fi ;;
-        saver) if [ -z "${2:-}" ]; then   # the savers, the one in use ticked
+        saver) if [ -z "${2:-}" ]; then
                 for _x in clock $SAVER_NAMES; do if [ "$_x" = "$DISPLAY_SAVER" ]; then echo "$PANEL_TICK $_x"; else echo "  $_x"; fi; done; return 0; fi
             _p=$(saver_problem "$2"); [ -z "$_p" ] || refuse "display $_p"
             [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
-            config_set DISPLAY_SAVER "$2" >/dev/null; DISPLAY_SAVER=$2; export DISPLAY_SAVER   # the idle window reads it as it starts: nothing to restart
+            config_set DISPLAY_SAVER "$2" >/dev/null; DISPLAY_SAVER=$2; export DISPLAY_SAVER   # the idle window reads it at start: nothing to restart
             echo "idle screen shows $(saver_words "$2")" ;;
         brightness) light_set "${2:-}" ;;
         *) refuse "display takes idle N, lock N, saver NAME or brightness N|up|down" ;;
@@ -277,9 +272,8 @@ input_setting() {
     echo "$1 $2 $3"
 }
 
-# The keyboard: KEYBOARD is the layouts by their xkb names, a variant after
-# a plus (us br+intl); the first is in use at start, empty leaves sway's own
-kb_line() {   # kb_line layout|variant -> the template's input line, or a comment when KEYBOARD is empty
+# KEYBOARD: layouts by xkb name, a variant after a plus (us br+intl)
+kb_line() {   # kb_line layout|variant -> the template's input line
     if [ -z "${KEYBOARD:-}" ]; then echo "# the keyboard: sway's own layout (spark-shell desktop keyboard us br sets some)"; return; fi
     _ls=''; _vs=''; _any=''
     for _x in $KEYBOARD; do
@@ -291,8 +285,8 @@ kb_line() {   # kb_line layout|variant -> the template's input line, or a commen
     elif [ -n "$_any" ]; then echo "input type:keyboard xkb_variant \"$_vs\""
     else echo "# no variant"; fi
 }
-kb_names() { swaymsg -t get_inputs 2>/dev/null | jq -r '[.[] | select(.type == "keyboard" and (.xkb_layout_names // [] | length) > 0)][0] | if . == null then empty else (.xkb_active_layout_index | tostring) + "\t" + (.xkb_layout_names | join("\t")) end' 2>/dev/null || :; }   # -> ACTIVE<tab>NAME<tab>NAME..., the long names sway knows
-kb_known() {   # kb_known LAYOUT -> 0 when xkb lists it (no list to read: every name passes)
+kb_names() { swaymsg -t get_inputs 2>/dev/null | jq -r '[.[] | select(.type == "keyboard" and (.xkb_layout_names // [] | length) > 0)][0] | if . == null then empty else (.xkb_active_layout_index | tostring) + "\t" + (.xkb_layout_names | join("\t")) end' 2>/dev/null || :; }   # -> ACTIVE<tab>NAME<tab>NAME..., sway's long names
+kb_known() {   # kb_known LAYOUT -> 0 when xkb lists it (or has no list)
     _lst=${SPARK_SHELL_XKB_LST:-/usr/share/X11/xkb/rules/evdev.lst}
     [ -r "$_lst" ] || return 0
     awk -v n="${1%%+*}" '/^! layout/ {on = 1; next} /^!/ {on = 0} on && $1 == n {f = 1} END {exit !f}' "$_lst"
@@ -318,8 +312,7 @@ desk_keyboard() {   # desk_keyboard [next | LAYOUT...]
 }
 
 
-# screen_x11_main -- the main screen as X11's primary (Wine takes it as its first screen;
-# Xwayland names none); nothing without xrandr, Xwayland or a main screen
+# screen_x11_main -- the main screen as X11's primary (Xwayland names none)
 screen_x11_main() {
     [ -n "${DISPLAY:-}" ] && command -v xrandr >/dev/null 2>&1 || return 0
     _xm=$(screen_main); [ -n "$_xm" ] || return 0
@@ -328,9 +321,8 @@ screen_x11_main() {
     ! xrandr --listmonitors 2>/dev/null | grep -qF " +*$_xp " || return 0   # named already
     xrandr --output "$_xp" --primary >/dev/null 2>&1 || :
 }
-# The layout's origin at 0,0: X11 has nothing left of or above 0, so an X11 window on a
-# screen placed there takes no click; every screen moves by the same amount, kept in screens.conf
-screen_origin() {   # -> the screens moved, one line each, or nothing when none sat left of or above 0
+# X11 has nothing left of or above 0: a window there takes no click
+screen_origin() {   # -> the screens moved, one line each
     screen_rows | awk -F '\t' '$3 == "on"' > "$TMP/origin"
     _sox=$(awk -F '\t' 'NR == 1 || $6 + 0 < m { m = $6 + 0 } END { print m + 0 }' "$TMP/origin")
     _soy=$(awk -F '\t' 'NR == 1 || $7 + 0 < m { m = $7 + 0 } END { print m + 0 }' "$TMP/origin")
@@ -338,7 +330,7 @@ screen_origin() {   # -> the screens moved, one line each, or nothing when none 
     [ "$_sox" -lt 0 ] || _sox=0; [ "$_soy" -lt 0 ] || _soy=0
     while IFS="$TAB" read -r _son _soi _ _ _ _sx _sy _; do
         _snx=$((_sx - _sox)); _sny=$((_sy - _soy))
-        [ "$(awk -F '\t' -v i="$_soi" '$2 == i' "$TMP/origin" | grep -c .)" -eq 1 ] || _soi=$_son   # a name two screens share: the port's
+        [ "$(awk -F '\t' -v i="$_soi" '$2 == i' "$TMP/origin" | grep -c .)" -eq 1 ] || _soi=$_son   # a shared name: the port's
         swaymsg -- output "\"$_soi\"" position "$_snx" "$_sny" >/dev/null 2>&1 || swaymsg -- output "$_son" position "$_snx" "$_sny" >/dev/null 2>&1 || continue
         mkdir -p "$CONFIG_DIR"
         { [ ! -f "$SCREENS_CONF" ] || grep -v -F -e "output \"$_soi\" position " -e '# rendered' "$SCREENS_CONF" || :; } > "$TMP/screens"
@@ -365,8 +357,8 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | transform normal|90|
         done; return 0
     fi
     _r=$(screen_find "$1"); [ -n "$_r" ] || refuse "no screen named $1 (spark-shell desktop screen lists them)"
-    _n=$(printf '%s' "$_r" | cut -f1); _id=$(printf '%s' "$_r" | cut -f2); _kind=${2:-}   # the kind, kept: a place replaces the positional parameters
-    [ "$(screen_rows | awk -F '\t' -v i="$_id" '$2 == i' | grep -c .)" -eq 1 ] || _id=$_n   # a name two screens share (no serial, the same model) would set both: the port's name instead
+    _n=$(printf '%s' "$_r" | cut -f1); _id=$(printf '%s' "$_r" | cut -f2); _kind=${2:-}   # kept: a place replaces $2
+    [ "$(screen_rows | awk -F '\t' -v i="$_id" '$2 == i' | grep -c .)" -eq 1 ] || _id=$_n   # a shared name (no serial) would set both: the port's
     case ${2:-} in
         scale) screen_scale_valid "${3:-}" || refuse "scale takes a positive decimal"
             _cmd="scale $3"; _said="$_n scale $3" ;;
@@ -375,7 +367,7 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | transform normal|90|
         transform) case ${3:-} in normal|90|180|270) ;; *) refuse "transform takes normal, 90, 180 or 270 (clockwise); no mirrored orientation" ;; esac
             _cmd="transform $3"; if [ "$3" = normal ]; then _said="$_n upright"; else _said="$_n turned $3"; fi ;;
         main) [ "$(printf '%s' "$_r" | cut -f3)" = on ] || refuse "$_n is off: a screen off is no main one"
-            screen_main_save "$_id"; swaymsg -- workspace 1 output "\"$_id\"" >/dev/null 2>&1 || :   # the next start's, and sway's now for a workspace 1 made anew
+            screen_main_save "$_id"; swaymsg -- workspace 1 output "\"$_id\"" >/dev/null 2>&1 || :   # sway's now too, for a new workspace 1
             login_screens_follow; screen_x11_main
             echo "$_n is the main screen: workspace 1 and the login screen go to it from the next start"; return 0 ;;
         on) _cmd=enable; _said="$_n on" ;;
@@ -396,10 +388,10 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | transform normal|90|
     swaymsg -- output "\"$_id\"" "$_cmd" >/dev/null 2>&1 || swaymsg -- output "$_n" "$_cmd" >/dev/null 2>&1 || refuse "sway refused: output $_n $_cmd"
     case $_kind in left-of|right-of|above|below) _oi=$(printf '%s' "$_o" | cut -f2); [ "$(screen_rows | awk -F '\t' -v i="$_oi" '$2 == i' | grep -c .)" -eq 1 ] || _oi=$(printf '%s' "$_o" | cut -f1); screen_save "$_id" "$_cmd" "$_kind" "$_oi" ;;
         *) screen_save "$_id" "$_cmd" ;; esac
-    [ "$_kind" != transform ] || screen_beside_again "$_id"   # its width changed: the screens placed beside it, and it beside another, placed again
+    [ "$_kind" != transform ] || screen_beside_again "$_id"   # its width changed: the screens beside it move
     screen_origin > "$TMP/origin.said"
     login_screens_follow
-    desk_refit_soon   # another size or place: the windows the keys placed take their places on it
+    desk_refit_soon
     echo "$_said"
     [ ! -s "$TMP/origin.said" ] || echo "every screen moved by the same amount, so none sits left of or above 0 (X11 apps take clicks there)"
 }
@@ -447,19 +439,18 @@ desk_power() {   # desk_power [lock|suspend|logout|restart|shutdown]
     esac
 }
 
-# desk_lock -- swaylock over the wallpaper, in the palette; a lock already up stays
+# desk_lock -- swaylock in the palette
 desk_lock() {
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own lock"
     [ -n "${WAYLAND_DISPLAY:-}" ] || refuse "locks the desktop: run it inside it (Super+Escape)"
     command -v swaylock >/dev/null 2>&1 || refuse "swaylock is not installed (spark-shell on desktop)"
     ! pgrep -u "$(id -u)" -x swaylock >/dev/null 2>&1 || return 0
-    : "${HEX_BG:=242424}" "${HEX_FG:=ffffff}" "${HEX_ACCENT:=24acd4}" "${HEX_MUTED:=616161}" "${HEX_ANSI_1:=f62b5a}" "${HEX_ANSI_3:=e3c401}"   # foot's own, when the palette did not load
+    : "${HEX_BG:=242424}" "${HEX_FG:=ffffff}" "${HEX_ACCENT:=24acd4}" "${HEX_MUTED:=616161}" "${HEX_ANSI_1:=f62b5a}" "${HEX_ANSI_3:=e3c401}"   # foot's own, when no palette loaded
     if wall_there; then set -- --image "$(wall_path)" --scaling fill
     elif [ "$WALLPAPER" = default ]; then set -- --color "$(wall_ground | tr -d '#')"
     elif wall_color; then set -- --color "$(wall_hex "$WALLPAPER" | tr -d '#')"
     else set -- --color "$HEX_BG"; fi
-    # the inside at 90% of the background, the layout box on it too:
-    # swaylock's own box is black, and a light palette's dark text vanished on it
+    # e6: 90% of the background, the layout box too (swaylock's own is black)
     _in=${HEX_BG}e6
     rm -rf "$TMP"; trap - EXIT
     _sz=$(look_font_size); : "${_sz:=12}"; _fs=$(font_spec)
@@ -473,8 +464,7 @@ desk_lock() {
         --caps-lock-key-hl-color "$HEX_ANSI_3" --text-caps-lock-color "$HEX_ANSI_3" \
         --ring-caps-lock-color "$HEX_ANSI_3" --inside-caps-lock-color "$_in" --line-caps-lock-color 00000000 --caps-lock-bs-hl-color "$HEX_ANSI_1"
 }
-# Screen capture: grim, slurp for an area, sway's tree for the window in front; a PNG in
-# screenshots under the pictures folder user-dirs.dirs names, so ~/Pictures gets no twin
+# under the pictures folder user-dirs.dirs names, so ~/Pictures gets no twin
 desk_capture() {   # desk_capture screen|area|window [--wait N]
     CAPTURE_DIR=$(user_pictures)/screenshots
     _what=${1:-screen}; _wait=0
@@ -490,7 +480,7 @@ desk_capture() {   # desk_capture screen|area|window [--wait N]
     _b=$(date +%Y-%m-%d-%H%M%S); _f=$CAPTURE_DIR/$_b.png; _n=2
     while [ -e "$_f" ]; do _f=$CAPTURE_DIR/$_b-$_n.png; _n=$((_n + 1)); done
     case $_what in
-        screen) _o=$(swaymsg -t get_outputs 2>/dev/null | jq -r '.[] | select(.focused) | .name' 2>/dev/null | head -1)   # the screen in use, with more than one
+        screen) _o=$(swaymsg -t get_outputs 2>/dev/null | jq -r '.[] | select(.focused) | .name' 2>/dev/null | head -1)
             if [ -n "$_o" ]; then set -- -o "$_o"; else set --; fi ;;
         area) _g=$(slurp 2>/dev/null) && [ -n "$_g" ] || { echo "no area picked: nothing captured"; return 1; }
             set -- -g "$_g" ;;
@@ -498,17 +488,16 @@ desk_capture() {   # desk_capture screen|area|window [--wait N]
             [ -n "$_g" ] || refuse "no window in front to capture"
             set -- -g "$_g" ;;
     esac
-    grim -c "$@" "$_f" 2>/dev/null || { rm -f "$_f"; refuse "grim could not take the picture"; }   # -c: the pointer in the picture, as it is on the screen
+    grim -c "$@" "$_f" 2>/dev/null || { rm -f "$_f"; refuse "grim could not take the picture"; }   # -c: the pointer in the picture
     _c=''
     if command -v wl-copy >/dev/null 2>&1 && wl-copy --type image/png < "$_f" 2>/dev/null; then _c=', and on the clipboard'; fi
     # shellcheck disable=SC2088   # the path as you read it, a tilde and all
     echo "~/${_f#"$HOME"/}$_c"
 }
-# PENDING: words a layout waits with for the sway about to start
-desk_start() {   # desk_start PENDING -- sway now on this console; inside the desktop, the saved layouts
+desk_start() {   # desk_start PENDING -- sway on this console, PENDING a layout's words
     pending=$1
     [ -z "$(desktop_na)" ] || refuse "$(desktop_na)"
-    # the desktop off, but a login screen runs this until the next boot: your shell, never a dead end
+    # the login screen still runs this: your shell, not a dead end
     if [ "$DESKTOP" != sway ] && on_console && [ -z "${WAYLAND_DISPLAY:-}" ]; then
         echo "The desktop is off (spark-shell on desktop brings it back). This is your shell."
         rm -rf "$TMP"; trap - EXIT
@@ -524,21 +513,21 @@ desk_start() {   # desk_start PENDING -- sway now on this console; inside the de
     log_dir=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell
     mkdir_private "$log_dir"
     [ -z "${pending:-}" ] || printf '%s\n' "$pending" > "$DESK_PENDING"
-    rm -f "$BAR_WS_ORDER" "$STATE_DIR/ws-pool" "$NOTIFY_SEEN"   # gone at a new login; mako's ids start again
+    rm -f "$BAR_WS_ORDER" "$STATE_DIR/ws-pool" "$NOTIFY_SEEN"   # a new login; mako's ids start again
     st=0
     sound_start "$log_dir/sound.log"
-    # no session bus from logind (Void): sway inside dbus-run-session, so notifications reach mako
+    # no session bus from logind (Void): dbus-run-session, so notifications reach mako
     _bus=''; notify_bus || ! command -v dbus-run-session >/dev/null 2>&1 || _bus=dbus-run-session
     # shellcheck disable=SC2086   # the -u words and the bus, split on purpose: sway and all it starts read the file, never a key from this login
     XDG_CURRENT_DESKTOP=sway PATH=$HOME/.local/bin:$PATH env $CONFIG_UNSET $_bus sway 2>"$log_dir/sway.log" || st=$?
     sound_stop
-    semantic_stop   # the server of the dialog's search ends with the session
-    machine_rm now   # the session is over: nothing is open or in use any more
+    semantic_stop
+    machine_rm now
     [ "${TERM:-}" != linux ] || printf '\033[?25h'
     exit "$st"
 }
 
-# cmd_login [on|off] -- spellings of `on login` and `off login`; alone, the login row of status
+# cmd_login [on|off]
 cmd_login() {
     case ${1:-} in
         on) shift; cmd_on login "$@" ;;

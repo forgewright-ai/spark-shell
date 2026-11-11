@@ -2,26 +2,24 @@
 # --- the wire: the MCP server on stdio, one process on fd 3
 # sets: PROVIDE_POLL PROVIDE_WATCHED
 # reads: ANIMATION_NAMES CONFIG FONT_FACES GLYPH_FAMILIES NOTES_DIR OS PROVIDE_LINE_MAX PROVIDE_PROTOCOL PROVIDE_SECTIONS REPO TAB THEME_ENV THEME_KEYS TMP TOOLS_CHECK
-# the wire: only MCP reaches stdout, fd 3; fd 1 goes to stderr before any
-# step runs. One process writes fd 3, the loop; the reader ("in LINE") and
-# the watcher ("poke") feed it through one FIFO, a line under a lock
-rpc_send() { ( printf '%s\n' "$1" >&3 ) 2>/dev/null || :; }   # from a subshell: a closed wire (the dialog gone) ends the subshell, never the provider mid-request
-rpc_result() { printf '%s' "$2" | jq -c --argjson id "$1" '{jsonrpc: "2.0", id: $id, result: .}' >&3; }   # rpc_result ID JSON (the result on stdin to jq: no argument grows past a limit)
+# only MCP on the wire: fd 1 goes to stderr; the loop alone writes fd 3
+rpc_send() { ( printf '%s\n' "$1" >&3 ) 2>/dev/null || :; }   # a subshell: a closed wire ends it, never the provider
+rpc_result() { printf '%s' "$2" | jq -c --argjson id "$1" '{jsonrpc: "2.0", id: $id, result: .}' >&3; }   # rpc_result ID JSON -- by stdin: no argument limit
 rpc_error() { rpc_send "$(jq -cn --argjson id "$1" --argjson c "$2" --arg m "$3" '{jsonrpc: "2.0", id: $id, error: {code: $c, message: $m}}')"; }   # rpc_error ID CODE MESSAGE
-rpc_note() { rpc_send "$(jq -cn --arg m "$1" --argjson p "$2" '{jsonrpc: "2.0", method: $m, params: $p}')"; }   # rpc_note METHOD PARAMS -- a notification
-fifo_put() {   # fifo_put LINE -- one line into the loop's FIFO (fd 5), under the lock, so a long line is never cut by a poke
-    # a lock older than two seconds was left by a writer killed mid-line, and is taken
+rpc_note() { rpc_send "$(jq -cn --arg m "$1" --argjson p "$2" '{jsonrpc: "2.0", method: $m, params: $p}')"; }   # rpc_note METHOD PARAMS
+fifo_put() {   # fifo_put LINE -- to fd 5 under the lock; lines never interleave
+    # a lock older than two seconds is a dead writer's: taken
     _fpw=0; until lock_take "$PLOCK"; do _fpw=$((_fpw + 1)); [ "$_fpw" -lt 200 ] || { lock_drop "$PLOCK"; _fpw=0; }; sleep 0.01; done
     printf '%s\n' "$1" >&5 || :; lock_drop "$PLOCK"
 }
-PROVIDE_POLL=${SPARK_SHELL_PROVIDE_POLL:-}   # the watcher's seconds between looks; the tests set it
-# the sections the desktop changes behind the dialog; every other changes only by a step, whose answer carries its rows
+PROVIDE_POLL=${SPARK_SHELL_PROVIDE_POLL:-}   # the watcher's poll seconds; the tests set it
+# the sections that change behind the dialog; the rest only by a step
 PROVIDE_WATCHED=${SPARK_SHELL_PROVIDE_WATCHED:-wifi bt out mic storage window notifications}
-provide_seen() { cksum < "$TMP/rows.last" > "$TMP/rows.seen"; }   # the rows the host was last sent, as the watcher compares them
-provide_watch() {   # provide_watch SECTION [PAGE] -- the rows, or a page, read again every few seconds; a change pokes the loop. Its own TMP
+provide_seen() { cksum < "$TMP/rows.last" > "$TMP/rows.seen"; }   # the sum of the rows the host has
+provide_watch() {   # provide_watch SECTION [PAGE] -- polls; a change pokes the loop
     _seen=$TMP/rows.seen; _wpage=${2:-}; TMP=$TMP/watch; mkdir -p "$TMP"
     _every=$PROVIDE_POLL; [ -n "$_every" ] || case $(panel_cost "$1") in slow) _every=15 ;; fast) _every=5 ;; *) _every=3 ;; esac
-    if [ -n "$_wpage" ]; then   # a page: every change pokes
+    if [ -n "$_wpage" ]; then
         _last=$(provide_tools_page "$_wpage" 2>/dev/null | cksum)
         while :; do
             sleep "$_every"
@@ -34,12 +32,12 @@ provide_watch() {   # provide_watch SECTION [PAGE] -- the rows, or a page, read 
         sleep "$_every"
         config_load; theme_load
         _now=$(provide_rows "$1" 2>/dev/null | cksum)
-        # a change pokes once; rows the host already has (a call's answer carried them) poke nothing
+        # rows a call's answer already carried poke nothing
         _had=''; [ ! -f "$_seen" ] || IFS= read -r _had < "$_seen" || :
         [ "$_now" = "$_last" ] || { _last=$_now; [ "$_now" = "$_had" ] || fifo_put poke; }
     done
 }
-provide_watch_check() {   # provide_watch_check SUM -- the check's record read again every few seconds; a change pokes the loop. SUM the record as it was before the answer, so a check that ends at once is not missed
+provide_watch_check() {   # provide_watch_check SUM -- polls the check's record; SUM predates the answer so a quick end is not missed
     _every=${PROVIDE_POLL:-3}; _last=$1
     while :; do
         sleep "$_every"
@@ -47,7 +45,7 @@ provide_watch_check() {   # provide_watch_check SUM -- the check's record read a
         [ "$_now" = "$_last" ] || { _last=$_now; fifo_put poke; }
     done
 }
-provide_input() {   # stdin -> the loop's FIFO, a line each; a pairing agent's answers go to it directly
+provide_input() {   # stdin -> the FIFO; a pairing answer goes to the agent instead
     while IFS= read -r _l || [ -n "$_l" ]; do
         if [ -S "$TMP/bt.sock" ] && [ "${#_l}" -le "$PROVIDE_LINE_MAX" ]; then
             if printf '%s' "$_l" | jq -e '(.id | type) == "string" and (.id | startswith("bt-pair-")) and (has("method") | not)' >/dev/null 2>&1; then
@@ -64,21 +62,21 @@ provide_input() {   # stdin -> the loop's FIFO, a line each; a pairing agent's a
     fifo_put eof
 }
 
-provide_main() {   # provide_main SECTION -- serve it until stdin ends
+provide_main() {   # provide_main SECTION
     sec=$1
-    case " $PROVIDE_SECTIONS " in *" $sec "*) ;; *) refuse_in provide "${sec:-a section} is not one: $(printf '%s' "$PROVIDE_SECTIONS" | sed 's/ /, /g')" >&2 ;; esac   # a refusal on stderr: stdout is the wire
+    case " $PROVIDE_SECTIONS " in *" $sec "*) ;; *) refuse_in provide "${sec:-a section} is not one: $(printf '%s' "$PROVIDE_SECTIONS" | sed 's/ /, /g')" >&2 ;; esac   # stdout is the wire
     command -v jq >/dev/null 2>&1 || refuse_in provide "jq is not installed (spark-shell on)" >&2
     command -v mkfifo >/dev/null 2>&1 || refuse_in provide "mkfifo is not installed" >&2
     config_load; [ "$OS" = Darwin ] || pm_detect; theme_load; SND=''; [ "$OS" = Darwin ] || SND=$(snd_tool)
-    PANEL_VERSION_NOW=$(panel_version); PANEL_VERSION_READ=1   # once a provider: the release does not change under it
-    [ "$sec" != display ] || { if saver_can; then SAVER_CAN_NOW=1; else SAVER_CAN_NOW=0; fi; }   # python3 asked once a provider, not twice a read
-    [ "$sec" != tools ] || tools_sbom_warm   # the installed list, ready before software opens
-    exec 3>&1 1>&2 6<&0   # fd 3 the wire out, fd 6 the wire in; whatever a step prints goes to stderr
+    PANEL_VERSION_NOW=$(panel_version); PANEL_VERSION_READ=1   # pinned for the provider's life
+    [ "$sec" != display ] || { if saver_can; then SAVER_CAN_NOW=1; else SAVER_CAN_NOW=0; fi; }   # python3 asked once, not per read
+    [ "$sec" != tools ] || tools_sbom_warm
+    exec 3>&1 1>&2 6<&0   # fd 3 the wire out, fd 6 the wire in
     WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; CLIENT_PAIRING=''; : > "$PROOTS"
-    REM_DELETED=$TMP/deleted   # a reminder deleted here is kept until the provider ends: its undo
-    LAYOUT_DELETED=$TMP/deleted-layouts   # and a layout
-    trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; files_stop; files_sound_stop; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # the reader has ended with stdin: a kill that finds nobody is no failure
-    trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM   # a signal ends the provider through the EXIT trap
+    REM_DELETED=$TMP/deleted   # kept for undo until the provider ends
+    LAYOUT_DELETED=$TMP/deleted-layouts
+    trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; files_stop; files_sound_stop; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # a kill that finds nobody is no failure
+    trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM   # so the EXIT trap runs
     mkfifo "$TMP/in"
     ( provide_input ) <&6 5>"$TMP/in" 3>&- & READER=$!
     exec 4<"$TMP/in" 6<&-
@@ -90,9 +88,9 @@ provide_main() {   # provide_main SECTION -- serve it until stdin ends
         esac
     done
 }
-provide_one() {   # provide_one LINE -- one message: a request answered, a notification taken, anything else refused
+provide_one() {   # provide_one LINE -- one JSON-RPC message
     [ "${#1}" -le "$PROVIDE_LINE_MAX" ] || { rpc_error null -32600 "a message is $PROVIDE_LINE_MAX bytes at most"; return 0; }
-    # one jq reads the message, a line each: compact JSON holds no newline, a method's control characters are spaces
+    # a line each: compact JSON holds no newline, controls become spaces
     _parts=$(printf '%s' "$1" | jq -r 'if type != "object" or .jsonrpc != "2.0" then "bad", "null", "", "{}", "{}"
         else (if (has("method") | not) then "answer" elif has("id") then "request" else "note" end),
             (.id | tojson), (.method // "" | tostring | gsub("[\u0000-\u001f]"; " ")), (.params // {} | tojson), (.result // {} | tojson) end' 2>/dev/null) \
@@ -102,9 +100,9 @@ $_parts
 EOF
     case $_kind in
         request) ;;
-        answer)   # the one question this server asks: the host's roots
+        answer)   # the one question asked: roots
             [ "$_id" = '"roots"' ] && provide_roots "$_result"; return 0 ;;
-        note)   # ask the host for its roots when it has them
+        note)
             case $_method in notifications/initialized|notifications/roots/list_changed)
                 [ -z "$CLIENT_ROOTS" ] || rpc_send "$(jq -cn '{jsonrpc: "2.0", id: "roots", method: "roots/list"}')" ;; esac
             return 0 ;;
@@ -126,12 +124,12 @@ EOF
             else rpc_result "$_id" "$(jq -cn --arg s "$sec" '{resourceTemplates: ([{uriTemplate: ("spark-shell://" + $s + "/page/{row}"), name: "page", title: "a row shown as a page", mimeType: "application/json"}] + (if $s == "notes" then [{uriTemplate: "spark-shell://notes/rows/find/{words}", name: "find", title: "the notes whose text holds the words", mimeType: "application/json"}] else [] end))}')"; fi ;;
         resources/read|resources/subscribe|resources/unsubscribe)
             _uri=$(printf '%s' "$_params" | jq -r '.uri // "" | tostring')
-            if [ "$sec" = files ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://files/rows/?*) true ;; *) false ;; esac; then   # a folder under the roots, or the trash
+            if [ "$sec" = files ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://files/rows/?*) true ;; *) false ;; esac; then
                 if provide_files_rows "$_uri" > "$TMP/folder.json"; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/folder.json")"
                 else rpc_error "$_id" -32002 "no folder at that uri"; fi
                 return 0
             fi
-            if [ "$sec" = files ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://files/preview/?*) true ;; *) false ;; esac; then   # a file shown as a page
+            if [ "$sec" = files ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://files/preview/?*) true ;; *) false ;; esac; then
                 _pu=${_uri#spark-shell://files/preview/}; _ppg=1; _ppf=''
                 case $_pu in *'?'*) _pq=${_pu#*'?'}; _pu=${_pu%%'?'*}
                     case "&$_pq&" in *'&page='*) _ppg=${_pq#*page=}; _ppg=${_ppg%%'&'*} ;; esac
@@ -141,11 +139,11 @@ EOF
                 else rpc_error "$_id" -32002 "no file at that uri"; fi
                 return 0
             fi
-            if [ "$sec" = theme ] && [ "$_uri" = "spark-shell://theme/rows/wallpapers" ] && [ "$_method" = resources/read ]; then   # the wallpaper list
-                provide_wall_rows > "$TMP/wall.last"   # the rows the host has: the gate's
+            if [ "$sec" = theme ] && [ "$_uri" = "spark-shell://theme/rows/wallpapers" ] && [ "$_method" = resources/read ]; then
+                provide_wall_rows > "$TMP/wall.last"   # for the gate
                 rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/wall.last")"; return 0
             fi
-            if [ "$sec" = theme ] && [ "$_uri" = "spark-shell://theme/rows/animations" ] && [ "$_method" = resources/read ]; then   # the animation list
+            if [ "$sec" = theme ] && [ "$_uri" = "spark-shell://theme/rows/animations" ] && [ "$_method" = resources/read ]; then
                 rpc_result "$_id" "$(provide_anim_rows | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
             fi
             if [ "$sec" = display ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://display/rows/screen/?*) true ;; *) false ;; esac; then
@@ -158,10 +156,10 @@ EOF
                 else rpc_error "$_id" -32002 "no network interface at that uri"; fi
                 return 0
             fi
-            if [ "$sec" = window ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://window/rows/?*) true ;; *) false ;; esac; then   # a picker of the workspace place
+            if [ "$sec" = window ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://window/rows/?*) true ;; *) false ;; esac; then
                 rpc_result "$_id" "$(provide_window_rows "$_uri" | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
             fi
-            if [ "$sec" = tools ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://tools/rows/?*) true ;; *) false ;; esac; then   # a tool's page
+            if [ "$sec" = tools ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://tools/rows/?*) true ;; *) false ;; esac; then
                 if provide_tools_page "${_uri#spark-shell://tools/rows/}" > "$TMP/tools.page" 2>/dev/null && [ -s "$TMP/tools.page" ]; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/tools.page")"
                 else rpc_error "$_id" -32002 "no tool page at that uri"; fi
                 return 0
@@ -169,19 +167,19 @@ EOF
             if [ "$sec" = clock ] && [ "$_method" = resources/read ] && [ "$_uri" = "spark-shell://clock/rows/settings" ]; then
                 rpc_result "$_id" "$(provide_rows clock settings | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
             fi
-            if [ "$_method" = resources/read ] && case $_uri in "spark-shell://$sec/page/"?*) true ;; *) false ;; esac; then   # a row shown as a page, Space's
+            if [ "$_method" = resources/read ] && case $_uri in "spark-shell://$sec/page/"?*) true ;; *) false ;; esac; then
                 if _pid=$(files_unb64 "${_uri#"spark-shell://$sec/page/"}") && provide_page "$sec" "$_pid" > "$TMP/rowpage.json" 2>/dev/null && [ -s "$TMP/rowpage.json" ]; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/rowpage.json")"
                 else rpc_error "$_id" -32002 "no page at that uri"; fi
                 return 0
             fi
-            if [ "$sec" = notes ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://notes/rows/find/?*) true ;; *) false ;; esac; then   # the notes whose text holds every word, for a search from Home
+            if [ "$sec" = notes ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://notes/rows/find/?*) true ;; *) false ;; esac; then
                 if NOTES_WORDS=$(files_unb64 "${_uri##*/}") && [ -n "$NOTES_WORDS" ] && provide_rows notes > "$TMP/notes.found.json"; then
                     rpc_result "$_id" "$(jq -c --arg u "$_uri" '.rows |= map(select(.tool.name == "notes_open")) | .short = [] | {contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/notes.found.json")"
                 else rpc_error "$_id" -32002 "no search at that uri"; fi
                 NOTES_WORDS=''
                 return 0
             fi
-            if [ "$sec" = tools ] && [ "$_uri" = "spark-shell://tools/rows/running" ]; then   # running, read again every 3 seconds while it is on screen
+            if [ "$sec" = tools ] && [ "$_uri" = "spark-shell://tools/rows/running" ]; then   # polled while on screen
                 case $_method in
                     resources/subscribe) SUBSCRIBED=1; [ -n "$WATCH" ] || { provide_watch tools running 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; }; rpc_result "$_id" '{}' ;;
                     resources/unsubscribe) SUBSCRIBED=''; [ -z "$WATCH" ] || { kill "$WATCH" 2>/dev/null || :; wait "$WATCH" 2>/dev/null || :; WATCH=''; }; rpc_result "$_id" '{}' ;;
@@ -190,7 +188,7 @@ EOF
             fi
             [ "$_uri" = "spark-shell://$sec/rows" ] || { rpc_error "$_id" -32002 "no resource at that uri"; return 0; }
             case $_method in
-                resources/read) provide_rows "$sec" > "$TMP/rows.last"; provide_seen   # the rows the host has: the gate's, the watcher's
+                resources/read) provide_rows "$sec" > "$TMP/rows.last"; provide_seen   # the gate's and the watcher's
                     rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/rows.last")" ;;
                 resources/subscribe) SUBSCRIBED=1
                     case " $PROVIDE_WATCHED " in *" $sec "*) [ -n "$WATCH" ] || { provide_watch "$sec" 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; } ;; esac
@@ -201,7 +199,7 @@ EOF
         *) rpc_error "$_id" -32601 "no method $_method here" ;;
     esac
 }
-provide_notes_append() {   # two typed arguments; note contents never travel through the panel's token grammar
+provide_notes_append() {   # provide_notes_append ID ARGS -- the text skips the token grammar
     printf '%s' "$2" | jq -e 'type == "object" and keys == ["name","text"]
         and (.name | type == "string" and length > 0 and length <= 255 and (test("[\u0000-\u001f\u007f-\u009f/]") | not))
         and (.text | type == "string" and length > 0 and length <= 16384 and (test("[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]") | not))' >/dev/null 2>&1 \
@@ -219,7 +217,7 @@ provide_notes_append() {   # two typed arguments; note contents never travel thr
         provide_refuse "$1" "${_pna_out:-could not append the text; check the note before trying again}"
     fi
 }
-provide_notes_step() {   # provide_notes_step ID TOOL ARGS -- a note renamed, put in the trash or brought back: by its exact filename, the undo in its result
+provide_notes_step() {   # provide_notes_step ID TOOL ARGS -- rename, trash or restore by exact filename
     printf '%s' "$3" | jq -e --arg t "$2" 'type == "object" and (.name | type == "string" and length <= 255 and test("^[^./\u0000-\u001f\u007f][^/\u0000-\u001f\u007f]*[.]md$"))
         and (if $t == "notes_rename" then keys == ["name","to"] and (.to | type == "string" and length > 0 and length <= 255 and (test("[\u0000-\u001f\u007f-\u009f]") | not)) else keys == ["name"] end)' >/dev/null 2>&1 \
         || { rpc_error "$1" -32602 "$2 takes a note's exact filename$([ "$2" != notes_rename ] || echo ', and a title of 1 to 255 characters')"; return 0; }
@@ -227,11 +225,11 @@ provide_notes_step() {   # provide_notes_step ID TOOL ARGS -- a note renamed, pu
     _nsd=$(realpath "$NOTES_DIR" 2>/dev/null) || { provide_refuse "$1" "notes: there is no ~/notes"; return 0; }
     _nsf=$_nsd/$_nsn
     case $2 in notes_rename|notes_trash) [ -f "$_nsf" ] && [ ! -L "$_nsf" ] || { provide_refuse "$1" "notes: no note is called $_nsn now"; return 0; } ;; esac
-    _nsp=${PROOTS:-}; files_home_root > "$TMP/notes.roots"; PROOTS=$TMP/notes.roots   # the trash a note goes to is your home's, whatever roots the host gave
+    _nsp=${PROOTS:-}; files_home_root > "$TMP/notes.roots"; PROOTS=$TMP/notes.roots   # the home's trash, whatever roots the host gave
     case $2 in
         notes_rename)
             _nst=$(printf '%s' "$3" | jq -r .to)
-            _nso=$(awk 'NF { sub(/^#+[ \t]*/, ""); print; exit }' "$_nsf"); [ -n "$_nso" ] || _nso=${_nsn%.md}   # the old title as written, for the undo
+            _nso=$(awk 'NF { sub(/^#+[ \t]*/, ""); print; exit }' "$_nsf"); [ -n "$_nso" ] || _nso=${_nsn%.md}   # for the undo
             _nsw=$(note_name "$_nsf")
             if note_retitle "$_nsf" "$_nst"; then files_result "$1" "$_nsw renamed to $(note_name "$_nsf")" notes_rename "$(jq -cn --arg n "$_nsn" --arg t "$_nso" '{name: $n, to: $t}')"
             else provide_refuse "$1" "notes: could not rename $_nsw"; fi ;;
@@ -245,19 +243,19 @@ provide_notes_step() {   # provide_notes_step ID TOOL ARGS -- a note renamed, pu
     esac
     PROOTS=$_nsp
 }
-note_retitle() {   # note_retitle FILE TITLE -- the first line that says something becomes TITLE, its hashes kept; none: TITLE as a heading
+note_retitle() {   # note_retitle FILE TITLE -- the first non-blank line becomes TITLE, hashes kept
     _nrt=$(mktemp "${1%/*}/.retitle.XXXXXX") || return 1
     T=$2 awk 'BEGIN { t = ENVIRON["T"] } !done && NF { if (match($0, /^#+[ \t]*/)) print substr($0, 1, RLENGTH) t; else print t; done = 1; next } { print } END { if (!done) print "# " t }' "$1" > "$_nrt" \
         && mv "$_nrt" "$1" || { rm -f "$_nrt"; return 1; }
 }
-provide_ask() {   # provide_ask CALL-ID MESSAGE FIELD TITLE -> what the person typed for FIELD (MCP elicitation); false when declined, cancelled or unanswered in five minutes
+provide_ask() {   # provide_ask CALL-ID MESSAGE FIELD TITLE -> the answer; false after a decline or five minutes
     _aid="ask-$1"
     rpc_send "$(jq -cn --arg i "$_aid" --arg m "$2" --arg f "$3" --arg t "$4" '{jsonrpc: "2.0", id: $i, method: "elicitation/create", params: {message: $m, requestedSchema: {type: "object", properties: {($f): {type: "string", title: $t, maxLength: 256}}, required: [$f]}}}')"
-    ( sleep 300; fifo_put "in $(jq -cn --arg i "$_aid" '{jsonrpc: "2.0", id: $i, result: {action: "cancel"}}')" ) >/dev/null 2>&1 3>&- 4<&- & _ag=$!   # its own fds: this function runs in a command substitution, and a child holding its stdout would hold the answer five minutes
+    ( sleep 300; fifo_put "in $(jq -cn --arg i "$_aid" '{jsonrpc: "2.0", id: $i, result: {action: "cancel"}}')" ) >/dev/null 2>&1 3>&- 4<&- & _ag=$!   # a child holding this substitution's stdout would hold the answer five minutes
     _ans=''; _ast=1
-    while IFS= read -r _am <&4; do   # the loop's lines until the answer: a poke is dropped, another request is told to wait, eof ends the provider
+    while IFS= read -r _am <&4; do
         case $_am in
-            eof) kill "$_ag" 2>/dev/null || :; exit 0 ;;   # the wire ended: the provider with it
+            eof) kill "$_ag" 2>/dev/null || :; exit 0 ;;   # the wire ended
             poke) continue ;;
             "in "*) _al=${_am#in }
                 case $(printf '%s' "$_al" | jq -r --arg i "$_aid" 'if .id == $i and (has("method") | not) then "mine" elif has("method") and has("id") then "request" else "other" end' 2>/dev/null) in
@@ -272,19 +270,19 @@ provide_ask() {   # provide_ask CALL-ID MESSAGE FIELD TITLE -> what the person t
     [ "$_ast" -eq 0 ] || return 1
     printf '%s' "$_ans"
 }
-provide_call() {   # provide_call ID PARAMS -- the step: the tool, its arguments checked, the row, the gate, then the step
-    # the name, the arguments and the progress token in one jq: a line each, compact JSON holds no newline
+provide_call() {   # provide_call ID PARAMS -- a tool call: arguments, row, gate, step
+    # a line each: compact JSON holds no newline
     _parts=$(printf '%s' "$2" | jq -r '(.name // "" | tostring | gsub("[\u0000-\u001f]"; " ")), (.arguments // {} | tojson), (._meta.progressToken // "" | if . == "" then "" else tojson end)')
     { IFS= read -r _name; IFS= read -r _args; IFS= read -r _tok; } <<EOF
 $_parts
 EOF
     case $_name in *[!a-z0-9_]*|[!a-z]*|'') rpc_error "$1" -32602 "no tool by that name"; return 0 ;; esac
-    WIN_LABELS_READ=''   # a call's own read of the windows is its alone
+    WIN_LABELS_READ=''   # each call reads the windows anew
     { tool_spec "$_name" && [ "$_ts" = "$sec" ]; } || { rpc_error "$1" -32602 "no tool $_name in $sec"; return 0; }
     case $_th in *p*) provide_person_ok || { rpc_error "$1" -32602 "$_name runs from its row in the dialog, never from a plan"; return 0; } ;; esac
-    _title=$_tt   # the call's own title: the undo's tool_spec below sets _tt to its own
+    _title=$_tt   # saved: the undo's tool_spec below resets _tt
     [ "$_name" != notes_append ] || { provide_notes_append "$1" "$_args"; return 0; }
-    case $_name in notes_rename|notes_trash|notes_restore) provide_notes_step "$1" "$_name" "$_args"; return 0 ;; esac   # a note's file by its exact name, as the append
+    case $_name in notes_rename|notes_trash|notes_restore) provide_notes_step "$1" "$_name" "$_args"; return 0 ;; esac
     _bad=$(printf '%s' "$_args" | jq -r --arg p "$_tp" --arg k "$_tk" --arg q "$_tq" --arg x "$_te" '
         def plain: test("^[^\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff\u2028\u2029]{1,256}$");
         ($x | split(" ") | map(select(. != "") | split(":") | [(.[0] | rtrimstr("?")), .[1], (.[0] | endswith("?"))])) as $xs | ($xs | map(.[0])) as $xk | . as $a |
@@ -318,35 +316,35 @@ EOF
         else "" end
         + (if $q != "" and has($q) and ((.[$q] | type) != "string" or (.[$q] | length) > 256) then "; " + $q + " is text, 256 characters at most" else "" end)')
     [ -z "$_bad" ] || { rpc_error "$1" -32602 "$_name: $_bad"; return 0; }
-    [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_args"; return 0; }   # files: the four lines, not the panel's gate; a name whole, never its slug
-    # the step's value (a text extra as its slug) and the arguments without the secret: one jq, a line each
+    [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_args"; return 0; }   # files: not the panel's gate
+    # the value (text extras slugged) and the arguments less the secret
     _parts=$(printf '%s' "$_args" | jq -r --arg p "$_tp" --arg x "$_te" --arg q "$_tq" '. as $a
         | (if $p == "" then "" else [$a[$p] | tostring] + [$x | split(" ")[] | select(. != "") | split(":") | [(.[0] | rtrimstr("?")), .[1]] | . as $e | select($a[$e[0]] != null) | $e[0] + "=" + (($a[$e[0]] | tostring) | if $e[1] == "text" or $e[1] == "name" then ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-+|-+$"; "") | .[0:40] else . end)] | join(" ") end),
           (if $q == "" then . else del(.[$q]) end | tojson)')
     { IFS= read -r _v; IFS= read -r _plain; } <<EOF
 $_parts
 EOF
-    PANEL_PASS=''; [ -z "$_tq" ] || PANEL_PASS=$(printf '%s' "$_args" | jq -r --arg q "$_tq" '.[$q] // ""')   # a password: a shell variable for the step, never a file, never a line out
+    PANEL_PASS=''; [ -z "$_tq" ] || PANEL_PASS=$(printf '%s' "$_args" | jq -r --arg q "$_tq" '.[$q] // ""')   # a password: never a file, never a line out
     case $_name in
         notes_open) _resolved=$(note_file "$_v") || { provide_refuse "$1" 'select one note by its filename; that name is missing or ambiguous'; return 0; }; _v=${_resolved##*/} ;;
         reminders_done|reminders_snooze|reminders_delete) _resolved=$(rem_find "$_v") || { provide_refuse "$1" 'select one reminder by its UID; that name is missing or ambiguous'; return 0; }; _v=$(printf '%s' "$_resolved" | cut -f2) ;;
-        window_focus|window_close) win_label > "$TMP/win.labels"; WIN_LABELS_READ=1   # the windows read once for the call: its check, its name, the step's
+        window_focus|window_close) win_label > "$TMP/win.labels"; WIN_LABELS_READ=1   # read once for check, name and step
             _v=$(win_named "$_v") || { provide_refuse "$1" 'select one open window by its ID; that name is missing or ambiguous'; return 0; } ;;
     esac
     case $_name in notes_open|reminders_done|reminders_snooze|reminders_delete|window_focus|window_close) _plain=$(jq -cn --arg n "$_v" '{name:$n}') ;; esac
     _act=$_ta; _arg=$_v; [ "$_ta" != '=' ] || { _act=$_v; _arg=''; }   # a palette's step is its name alone
-    if [ "$_name" = reminders_add ] && ! rem_parse "$_v" >/dev/null 2>&1; then   # no day and time in the words: one question, then the step with the answer in front
-        case $(printf '%s' "$_v" | tr 'A-Z' 'a-z') in "remind me to "*) _v=$(printf '%s' "$_v" | cut -c14-) ;; "remind me "*) _v=$(printf '%s' "$_v" | cut -c11-) ;; esac   # the title is what follows
+    if [ "$_name" = reminders_add ] && ! rem_parse "$_v" >/dev/null 2>&1; then   # no time in the words: one question first
+        case $(printf '%s' "$_v" | tr 'A-Z' 'a-z') in "remind me to "*) _v=$(printf '%s' "$_v" | cut -c14-) ;; "remind me "*) _v=$(printf '%s' "$_v" | cut -c11-) ;; esac
         _when=$(provide_ask "$1" "When" when "5pm, tomorrow 9:00, in 20 min") || { provide_refuse "$1" "not done: no time given"; return 0; }
         _v="$_when $_v"; _arg=$_v
     fi
     PANEL_ROW_MATCHED=''
-    case $_th in *f*) ;; *)   # the rows are the allowlist: the ones the host was last sent, else read now
+    case $_th in *f*) ;; *)   # the rows the host has are the allowlist
         provide_quick "$sec" "$_name" "$_v" && _quick=1 || _quick=''
         if [ -z "$_quick" ]; then
             [ -s "$TMP/rows.last" ] || provide_rows "$sec" > "$TMP/rows.last"
             cat "$TMP/rows.last" > "$TMP/rows.json"
-            if [ "$sec" = theme ]; then   # the wallpaper list's rows are the theme's too
+            if [ "$sec" = theme ]; then   # the wallpaper rows count too
                 [ -s "$TMP/wall.last" ] || provide_wall_rows > "$TMP/wall.last"
                 cat "$TMP/wall.last" >> "$TMP/rows.json"
             fi
@@ -358,7 +356,7 @@ EOF
     esac
     _g=$(panel_gate "$sec" "$_act" "$_arg") || { PANEL_ROW_MATCHED=''; provide_refuse "$1" "$(printf '%s' "$_g" | scrub_text)"; return 0; }
     PANEL_ROW_MATCHED=''
-    # the inverse read once, before the step: the state now is what undo puts back; panel_step takes it as it is
+    # read before the step: undo puts back the state now
     _undo='null'; PANEL_INV=$(panel_inverse "$sec" "$_act" "$_g"); PANEL_INV_READ=1; _inv=${PANEL_INV%%"$TAB"*}
     if [ -n "$_inv" ] && action_tool "$sec" "$_inv"; then _undo=$(tool_call_json "$_tool" "$_tv") || _undo='null'; fi
     BT_BRIDGE=''
@@ -370,8 +368,8 @@ EOF
     fi
     export BT_BRIDGE
     rm -f "$TMP/opened" "$TMP/action.effect"
-    : > "$TMP/step.mark"   # the settings read again after the step only when it wrote them
-    PROVIDE_EFFECT=1; PANEL_JOURNAL=off   # the terminal panel's recent picks and undo journal are its own: a host's step writes neither
+    : > "$TMP/step.mark"   # reread settings only when the step wrote them
+    PROVIDE_EFFECT=1; PANEL_JOURNAL=off   # the panel's recent picks and undo journal are its own
     ( set +e; panel_step "$sec" "$_act" "$_g" > "$TMP/call.out" 2>&1; echo $? > "$TMP/call.rc" ) 3>&- 4<&- 5>&- & _w=$!
     if [ -n "$_tok$BT_BRIDGE" ]; then
         _i=0
@@ -384,25 +382,25 @@ EOF
     wait "$_w" 2>/dev/null || :
     PANEL_PASS=''; BT_BRIDGE=''; PANEL_INV=''; PANEL_INV_READ=''; PANEL_JOURNAL=''; WIN_LABELS_READ=''; rm -f "$TMP/bt.call-id" "$TMP/bt.ask"
     _rc=$(cat "$TMP/call.rc" 2>/dev/null || echo 1); _out=$(scrub_text < "$TMP/call.out")
-    if [ -n "$(find "$CONFIG" "$THEME_ENV" -newer "$TMP/step.mark" 2>/dev/null)" ]; then   # the step changed the settings: the rows read them anew
+    if [ -n "$(find "$CONFIG" "$THEME_ENV" -newer "$TMP/step.mark" 2>/dev/null)" ]; then
         for _k in $THEME_KEYS; do unset "$_k"; done; config_load; theme_load
     fi
     if [ "$_rc" -ne 0 ]; then provide_refuse "$1" "${_out:-$sec: $_title did not work}"; return 0; fi
     case $_name in notes_add|reminders_*|out_level|out_adjust|out_mute|out_unmute|mic_level|mic_adjust|mic_mute|mic_unmute|window_focus|window_close)
         [ -s "$TMP/action.effect" ] || { provide_refuse "$1" 'the action may have happened, but its result could not be read back; check the current state before trying again'; return 0; } ;;
     esac
-    _pal='null'; _trn='null'   # a theme step: the palette now, so the dialog repaints itself
-    [ "$sec" != theme ] || { _trn=$(dialog_transitions); _trn=$(jq -cn --arg t "$_trn" '$t'); }   # and its animation now, read again by an open dialog: "" plays none
-    if [ "$_name" = theme_preview ]; then   # a look: the colors on the screen, no animation changed, nothing to undo
+    _pal='null'; _trn='null'   # the palette now, for the dialog to repaint
+    [ "$sec" != theme ] || { _trn=$(dialog_transitions); _trn=$(jq -cn --arg t "$_trn" '$t'); }   # and the animation: "" plays none
+    if [ "$_name" = theme_preview ]; then   # a look: nothing to undo
         _trn=null; _undo=null; _pal=$(cat "$TMP/preview.palette" 2>/dev/null || :); [ -n "$_pal" ] || _pal=null; rm -f "$TMP/preview.palette"
     fi
     [ "$sec" != theme ] || [ "$_name" = theme_preview ] || { panel_load; _pal=$(jq -cn --arg f "$HEX_FG" --arg a "$HEX_ACCENT" --arg m "$PANEL_MUTED" --arg b "$PANEL_BG" --arg h "$PANEL_HI" --arg r "${HEX_ANSI_1:-}" --arg g "${HEX_ANSI_2:-}" --arg y "$(bar_style GLYPH_FAMILY stone)" '{HEX_FG: $f, HEX_ACCENT: $a, PANEL_MUTED: $m, PANEL_BG: $b, PANEL_HI: $h, HEX_ANSI_1: $r, HEX_ANSI_2: $g, GLYPH_FAMILY: $y}
-        + ($ENV | with_entries(select(.key | test("^HEX_ANSI_([0-9]|1[0-5])$"))))'); }   # and the glyph family and the 16 colors, for a piece the dialog draws
+        + ($ENV | with_entries(select(.key | test("^HEX_ANSI_([0-9]|1[0-5])$"))))'); }   # for the pieces the dialog draws
     if [ -s "$TMP/network.undo" ]; then _undo=$(tool_call_json "${sec}_restore" "$(cat "$TMP/network.undo")"); fi
     if [ -s "$TMP/sound.undo" ]; then _undo=$(tool_call_json "${sec}_level" "$(cat "$TMP/sound.undo")"); fi
-    # the rows as the step left them go with the answer: the host reads nothing again, the gate and the watcher take them as seen
+    # the rows go with the answer; gate and watcher take them as seen
     [ -s "$TMP/action.effect" ] || printf 'null' > "$TMP/action.effect"
-    if [ -f "$TMP/opened" ] || [ "$sec" = tools ]; then printf 'null' > "$TMP/rows.last.new"   # tools: the page on screen changed, not the six; with no rows the host reads both again
+    if [ -f "$TMP/opened" ] || [ "$sec" = tools ]; then printf 'null' > "$TMP/rows.last.new"   # tools: no rows; the host reads again
     else provide_rows "$sec" > "$TMP/rows.last.new" && cp "$TMP/rows.last.new" "$TMP/rows.last" && provide_seen; fi
     rpc_result "$1" "$(jq -cn --arg r "$_out" --argjson u "$_undo" --argjson p "$_pal" --argjson t "$_trn" --argjson o "$([ -f "$TMP/opened" ] && echo true || echo false)" \
         --slurpfile e "$TMP/action.effect" --slurpfile rows "$TMP/rows.last.new" '
@@ -413,14 +411,14 @@ EOF
         | {content: [{type: "text", text: (del(.rows) | tojson)}], structuredContent: ., isError: false}')"
     rm -f "$TMP/action.effect" "$TMP/rows.last.new"
 }
-provide_quick() {   # provide_quick SECTION TOOL VALUE -> 0 for a pick the theme's rows always list, without drawing them
+provide_quick() {   # provide_quick SECTION TOOL VALUE -> 0 when the rows always list it
     [ "$1" = theme ] || return 1
     case $2 in
         theme_palette) case $(theme_kind "$3") in shipped|yours|saved|none) return 0 ;; look) [ "$3" = "${THEME:-}" ] ;; *) return 1 ;; esac ;;
         theme_wallpaper) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && { wall_shipped "$3" || [ "$3" = default ]; } ;;
-        theme_text) case $3 in bigger|smaller|[6-9]|[1-3][0-9]|40) [ -n "$(look_font_size)" ] ;; *) return 1 ;; esac ;;   # a size as it is, the dialog's step
+        theme_text) case $3 in bigger|smaller|[6-9]|[1-3][0-9]|40) [ -n "$(look_font_size)" ] ;; *) return 1 ;; esac ;;
         theme_transparency) case ${3%\%} in more|less|[0-9]|[1-4][0-9]|50) return 0 ;; *) return 1 ;; esac ;;
-        theme_preview) [ "$3" = off ] || case $(theme_kind "$3") in shipped|yours) return 0 ;; *) return 1 ;; esac ;;   # a palette's look, or the look in use again
+        theme_preview) [ "$3" = off ] || case $(theme_kind "$3") in shipped|yours) return 0 ;; *) return 1 ;; esac ;;
         theme_animation) case " next back none $ANIMATION_NAMES " in *" $3 "*) return 0 ;; *) return 1 ;; esac ;;
         theme_glyphs) case $3 in signs|words) return 0 ;; *) return 1 ;; esac ;;
         theme_icons) case $3 in on|off) return 0 ;; *) return 1 ;; esac ;;
@@ -431,8 +429,8 @@ provide_quick() {   # provide_quick SECTION TOOL VALUE -> 0 for a pick the theme
         *) return 1 ;;
     esac
 }
-provide_refuse() { rpc_result "$1" "$(jq -cn --arg t "$2" '{content: [{type: "text", text: $t}], isError: true}')"; }   # provide_refuse ID SENTENCE -- a tool's refusal, in the result
-cmd_provide() {   # cmd_provide SECTION -- the verb
+provide_refuse() { rpc_result "$1" "$(jq -cn --arg t "$2" '{content: [{type: "text", text: $t}], isError: true}')"; }   # provide_refuse ID SENTENCE -- a result with isError
+cmd_provide() {   # cmd_provide SECTION
     [ $# -eq 1 ] || refuse_in provide "one section: $(printf '%s' "$PROVIDE_SECTIONS" | sed 's/ /, /g')" >&2
     provide_main "$1"
 }
