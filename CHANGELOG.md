@@ -14,6 +14,8 @@ files carry the layout's name. No change in behavior.
 - The layout's state files are layout.last and layout.pending; a file
   under the old name is moved to the new one once, on the next run.
 - The credits name the five Monaspace faces the setup installs.
+- The brand animation's frames and the script that drew them leave the
+  tree: nothing in spark-shell used them.
 
 ## v0.137
 
@@ -58,8 +60,8 @@ change in behavior apart from a few words in the help text and rows.
 - The help text and user-facing rows refer to the desktop, the terminal
   and the login screen instead of the underlying programs; rows that
   name a package to install keep the package name.
-- The animation scripts move to lib/animation.py and lib/brand.py and
-  write to gallery/animation and asset/brand-transitions by default.
+- The animation scripts move to lib/ and write to gallery/animation and
+  the brand frames' folder by default.
 - Comments in the ten largest modules are cut by half.
 
 ## v0.135
