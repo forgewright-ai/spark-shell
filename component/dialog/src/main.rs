@@ -11,18 +11,16 @@ use ratatui::crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScr
 use ratatui::crossterm::{execute, queue};
 use ratatui::layout::Rect;
 use ratatui::Terminal;
+use spark_dialog::animation::{self, Reel};
 use spark_dialog::app::{App, Config, Helper, Job, View};
 use spark_dialog::mcp::{Incoming, Server};
 use spark_dialog::palette::{slots_here, Palette};
 use spark_dialog::sixel::Image;
-use spark_dialog::transition::{self, Reel};
 use spark_dialog::{preview, sixel, ui};
 use std::io::Write;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-
-mod login_run;
 
 const USAGE: &str = "spark-dialog -- the spark dialog, one window for every domain (run by spark-shell dialog)
 
@@ -42,7 +40,7 @@ enum Ev {
     Tick,
     Helper(Helper, Result<String, String>),
     /// The transitions' piece, decoded (#122): None when it could not be.
-    Films(Option<transition::Films>),
+    Films(Option<animation::Films>),
 }
 
 struct Args {
@@ -325,7 +323,7 @@ type Tinted = (String, [[u8; 3]; 4], (u32, u32), Image);
 /// A piece's three films from its folder; @2x where a cell is twice the usual height. None where one is
 /// missing or no GIF. `draw:PIECE` draws the piece in the palette the window wears (pieces.rs): a palette
 /// with no GIFs of its own, a theme from a picture or from words.
-fn decode_films(dir: &str, palette: &std::collections::HashMap<String, String>) -> Option<transition::Films> {
+fn decode_films(dir: &str, palette: &std::collections::HashMap<String, String>) -> Option<animation::Films> {
     let double = cell_px().is_some_and(|(_, ch)| ch >= 30);
     if let Some(name) = dir.strip_prefix("draw:") {
         let roles = spark_dialog::pieces::Roles::from(|k| palette.get(k).cloned())?;
@@ -334,9 +332,9 @@ fn decode_films(dir: &str, palette: &std::collections::HashMap<String, String>) 
     let one = |reel: &str| {
         let f = format!("{}/{}{}.gif", dir, reel, if double { "@2x" } else { "" });
         let bytes = std::fs::read(&f).ok().filter(|b| b.len() <= 4 << 20)?;
-        transition::film(&bytes)
+        animation::film(&bytes)
     };
-    Some(transition::Films {
+    Some(animation::Films {
         open: one("open")?,
         wait: one("wait")?,
         close: one("close")?,
@@ -460,7 +458,7 @@ fn invalidate_frame(term: &mut Terminal<CrosstermBackend<std::io::Stdout>>) {
 
 fn main() {
     if std::env::args().nth(1).as_deref() == Some("login") {
-        login_run::main();
+        spark_dialog::login::run::main();
     }
     let a = match args() {
         Ok(a) => a,
@@ -580,7 +578,7 @@ fn main() {
     let mut pointer = "";
     // where the mouse was last over the window: the pointer's shape is asked again there as the work starts and ends (#183)
     let mut mouse_at: Option<(u16, u16)> = None;
-    let mut films: Option<transition::Films> = None;
+    let mut films: Option<animation::Films> = None;
     // the transition drawn now: its box, which one, its frame
     let mut shown_film: Option<ShownFilm> = None;
     let mut film_due: Option<Duration> = None;

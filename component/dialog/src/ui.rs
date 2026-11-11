@@ -4,6 +4,7 @@
 //! turn first, then the view's list), scrolled as it needs; a rule; the footer's controls (Attach, the
 //! model, the mic).
 
+use crate::animation::Reel;
 use crate::app::{App, FolderShape, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, SETTINGS, WIDTH};
 use crate::files::{Pane, Side};
 use crate::page::Line as PageLine;
@@ -12,7 +13,6 @@ use crate::progress;
 use crate::reply::Mark;
 use crate::scrub::{cells, cut, cut_middle, cut_words};
 use crate::sixel::Viewport;
-use crate::transition::Reel;
 use ratatui::buffer::{Buffer, CellDiffOption};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};

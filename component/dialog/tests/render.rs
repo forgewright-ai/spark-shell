@@ -1465,7 +1465,7 @@ fn full_screen_home_on_a_tall_screen_keeps_the_column_in_the_middle() {
 #[test]
 fn the_opening_plays_alone_then_the_whole_dialog() {
     let mut app = full();
-    app.motion = Some((spark_dialog::transition::Reel::Open, std::time::Instant::now()));
+    app.motion = Some((spark_dialog::animation::Reel::Open, std::time::Instant::now()));
     let p = palette("tokyonight-night");
     let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
     let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);

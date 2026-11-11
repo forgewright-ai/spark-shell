@@ -8,8 +8,8 @@
 //! mixed onto the dialog's surface in order; a pixel inked less than 1/48 is left undrawn, so the frame lies on
 //! the window's own ground. 180 by 120 cells' worth of pixels at 1x, twice that at 2x.
 
+use crate::animation::{Film, Films, FRAME_MIN_MS};
 use crate::sixel::{show, Image, Viewport};
-use crate::transition::{Film, Films, FRAME_MIN_MS};
 use std::f64::consts::PI;
 
 /// The pieces, in the order the theme's row steps through them (spark-shell's ANIMATION_NAMES).
@@ -1042,7 +1042,7 @@ mod tests {
                     name,
                     reel
                 );
-                crate::transition::film(&std::fs::read(p).unwrap()).unwrap();
+                crate::animation::film(&std::fs::read(p).unwrap()).unwrap();
             }
             eprintln!("draw_time {}: drawn {} ms, its GIFs decoded {} ms, at 2x", name, drawn, t.elapsed().as_millis());
         }

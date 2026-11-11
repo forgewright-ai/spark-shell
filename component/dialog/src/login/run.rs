@@ -3,15 +3,15 @@
 //! the machine's facts (its name, its distro, the clock, spark's port);
 //! the state is login.rs, the drawing login_ui.rs, greetd greetd.rs.
 
+use crate::greetd::{self, Outcome};
+use crate::login::ui as login_ui;
+use crate::login::{self, Action, Key, Login, Power, Session};
+use crate::palette::Palette;
 use ratatui::backend::CrosstermBackend;
 use ratatui::crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::Terminal;
-use spark_dialog::greetd::{self, Outcome};
-use spark_dialog::login::{self, Action, Key, Login, Power, Session};
-use spark_dialog::login_ui;
-use spark_dialog::palette::Palette;
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -95,7 +95,7 @@ fn distro() -> String {
 /// "Sunday, October 18 \u{b7} 14:32", by the machine's own clock and zone.
 fn clock() -> String {
     unsafe {
-        spark_dialog::preferences::refresh_zone();
+        crate::preferences::refresh_zone();
         let t = libc::time(std::ptr::null_mut());
         let mut tm: libc::tm = std::mem::zeroed();
         libc::localtime_r(&t, &mut tm);
@@ -109,11 +109,7 @@ fn clock() -> String {
             "{} {} \u{b7} {}",
             f(b"%A, %B\0"),
             tm.tm_mday,
-            f(if spark_dialog::preferences::read().twelve {
-                b"%I:%M %p\0"
-            } else {
-                b"%H:%M\0"
-            })
+            f(if crate::preferences::read().twelve { b"%I:%M %p\0" } else { b"%H:%M\0" })
         )
     }
 }

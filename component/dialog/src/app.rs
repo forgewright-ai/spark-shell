@@ -38,6 +38,7 @@ pub enum HintKey {
     Pane,
 }
 
+use crate::animation::Reel;
 use crate::gate;
 use crate::mcp::{self, Incoming, Kind, Server};
 use crate::model::{self, Call, Rows, Tool};
@@ -47,7 +48,6 @@ use crate::reply::{Mark, Reply};
 use crate::scrub::{cells, scrub};
 use crate::search;
 use crate::semantic;
-use crate::transition::Reel;
 use serde_json::{json, Map, Value};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -7432,7 +7432,7 @@ impl App {
         let ms = now.duration_since(since).as_millis();
         match reel {
             Reel::Open if ms >= open => self.motion = (!self.home_ready()).then_some((Reel::Wait, now)),
-            Reel::Wait if self.home_ready() || ms >= crate::transition::WAIT_MAX_MS => self.motion = None,
+            Reel::Wait if self.home_ready() || ms >= crate::animation::WAIT_MAX_MS => self.motion = None,
             Reel::Close if ms >= close => self.quit = Some(0),
             _ => {}
         }

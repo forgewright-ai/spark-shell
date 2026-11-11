@@ -8,8 +8,8 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use serde_json::{json, Value};
 use spark_dialog::greetd::{self, Outcome, Secret};
+use spark_dialog::login::ui as login_ui;
 use spark_dialog::login::{Field, Key, Login, Note, Power, Session, Spot, View};
-use spark_dialog::login_ui;
 use std::os::unix::net::UnixStream;
 
 /// A stub greetd: `answers` is what it says after each message it reads,
