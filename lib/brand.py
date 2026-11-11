@@ -4,7 +4,7 @@ the set chosen is in gallery/animation/): the logo (asset/logo.svg)
 catching fire, waiting and going out, as GIFs in a palette's own colors,
 nothing behind them.
 
-    python3 asset/brand-transitions/make.py [PALETTE.env ...] [--out DIR]
+    python3 lib/brand.py [PALETTE.env ...] [--out DIR]
 
 Each palette (by default every gallery/theme/*.env) gets DIR/NAME/ (by default
 asset/brand-transitions/NAME/):
@@ -35,7 +35,7 @@ import xml.etree.ElementTree as ET
 from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(os.path.dirname(HERE))
+REPO = os.path.dirname(HERE)
 FRAME_MS = 40  # 25 a second: GIF counts in hundredths, and browsers slow anything under 20
 SCALES = (1, 2)
 # foot's defaults, as spark-shell's FOOT_HEX: a palette's missing ANSI color
@@ -415,7 +415,7 @@ ANIMS = (("open", open_frames, False), ("wait", wait_frames, True), ("close", cl
 
 
 def main(argv):
-    out_dir, paths = HERE, []
+    out_dir, paths = os.path.join(REPO, "asset", "brand-transitions"), []
     it = iter(argv)
     for a in it:
         if a == "--out":

@@ -2,7 +2,7 @@
 # spark-shell -- sets up the terminal, its colors and a simple desktop
 #
 #   spark-shell on                    set up the terminal (asks first)
-#   spark-shell on desktop            add the sway desktop on Linux (asks first)
+#   spark-shell on desktop            add the desktop on Linux (asks first)
 #   spark-shell off desktop           remove the desktop, keep the terminal
 #   spark-shell on login              a login screen on tty1 (Linux, asks)
 #   spark-shell off login             the console login on tty1 again
@@ -117,7 +117,7 @@
 #   spark-shell sbom [NAME]           list the installed software, or one
 #   spark-shell sbom --json           write the list as a CycloneDX 1.5 file
 #
-# A layout opens as sway windows on the desktop and as tmux windows
+# A layout opens as windows on the desktop and as terminal windows
 # anywhere else: add --desktop or --terminal to choose. Add -v to see
 # every step.
 #

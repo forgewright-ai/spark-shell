@@ -47,7 +47,7 @@ on_warning() {   # on_warning [desktop|login] -- at the very start of on: what i
         # shellcheck disable=SC2086
         [ -z "$PKG_LOGIN$PKG_DESKTOP" ] || warn_wrap packages $PKG_LOGIN $PKG_DESKTOP '(sudo)'
         [ "$PM" != pacman ] || warn_wrap upgrade 'missing packages require a full system upgrade; pacman asks before applying it'
-        warn_wrap login 'tty1 shows the login screen from the next boot (greetd)'
+        warn_wrap login 'tty1 shows the login screen from the next boot'
         warn_wrap '' 'tty2 keeps the console login (Alt+F2)'
         warn_wrap files "/$LOGIN_ETC, greetd's config.toml (sudo)"
         if [ "$DISTRO" = void ]; then

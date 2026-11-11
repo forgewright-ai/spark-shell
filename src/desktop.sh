@@ -12,7 +12,7 @@ runtime_dir() {
     if [ -d "$_rd" ] && [ ! -L "$_rd" ] && [ "$(ls -ldn "$_rd" | awk '{print $3}')" = "$_uid" ] && chmod 0700 "$_rd"; then
         XDG_RUNTIME_DIR=$_rd; export XDG_RUNTIME_DIR; return 0
     fi
-    refuse "$_rd is not a private directory of yours, and sway needs one (XDG_RUNTIME_DIR)"
+    refuse "$_rd is not a private directory of yours, and the desktop needs one (XDG_RUNTIME_DIR)"
 }
 # runtime_adopt -- outside the desktop (ssh, a service) takes the directory
 # runtime_dir made, where the sound lives, only when yours and 0700; never makes it

@@ -61,8 +61,8 @@ portal_check() {
 notify_check() {   # the notify row of check, on a desktop machine
     if ! mako_here; then chk notify warn "mako is not installed, so no notification shows" "spark-shell on desktop"
     elif ! command -v notify-send >/dev/null 2>&1; then chk notify warn "notify-send is not installed, so a reminder or a drive plugged in says nothing" "spark-shell on desktop"
-    elif [ -z "${WAYLAND_DISPLAY:-}" ]; then chk notify ok "mako shows the notifications on the desktop"
-    elif notify_up; then _nw=''; ! notify_dnd || _nw=', do not disturb on'; chk notify ok "mako shows the notifications$_nw"
+    elif [ -z "${WAYLAND_DISPLAY:-}" ]; then chk notify ok "the notifications show on the desktop"
+    elif notify_up; then _nw=''; ! notify_dnd || _nw=', do not disturb on'; chk notify ok "the notifications show$_nw"
     else chk notify warn "$(notify_why)" "log out and in again"; fi
 }
 storage_check() {   # the storage row of check
@@ -112,8 +112,8 @@ unit_enabled() { systemctl is-enabled "$1" >/dev/null 2>&1; }
 old_greetd_here() { grep -q 'rendered by spark-shell from templates/etc/greetd' "$ROOT/$OLD_GREETD_CONF" 2>/dev/null || [ -e "$ROOT/$OLD_GREETD_CONF.spark-orig" ]; }
 old_greetd_off() {
     [ "$OS" != Darwin ] && old_greetd_here || return 0
-    need login "the normal console login on tty1 from the next boot: greetd turned off, its spark-shell files removed (sudo)" || return 0
-    if ! root_can; then row todo login "the old login screen (greetd) stays -- spark-shell on at a terminal (sudo once)"; acting=0; return 0; fi
+    need login "the normal console login on tty1 from the next boot: the login screen turned off, its files removed (sudo)" || return 0
+    if ! root_can; then row todo login "the old login screen stays -- spark-shell on at a terminal (sudo once)"; acting=0; return 0; fi
     root_sudo_once "the login screen on tty1" || { row todo login "sudo refused -- spark-shell on at a terminal (sudo once)"; acting=0; return 0; }
     # getty first: tty1 never loses its login
     root_do systemctl enable getty@tty1.service >/dev/null 2>&1 || true
@@ -124,7 +124,7 @@ old_greetd_off() {
     for rel in $OLD_GREETD_FILES; do [ ! -e "$ROOT/$rel" ] || root_do rm -f "$ROOT/$rel"; done
     for d in $OLD_GREETD_DIRS; do [ -d "$ROOT/$d" ] && root_do rmdir "$ROOT/$d" 2>/dev/null || true; done
     root_do systemctl daemon-reload >/dev/null 2>&1 || true
-    ok login "the normal console login is back on tty1 from the next boot: greetd is off, its packages stay"
+    ok login "the normal console login is back on tty1 from the next boot: the login screen is off, its packages stay"
 }
 
 # the login screen (LOGIN=yes): greetd on tty1 runs sway as its own
@@ -351,7 +351,7 @@ login_screen_off() {   # by the records alone: the boot back to getty, the scree
     root_do rm -rf "$ROOT/$LOGIN_FONTS"
     root_do rm -f "$ROOT/$LOGIN_LIB/spark-dialog" "$ROOT/$LOGIN_LIB/login-boot"
     for d in "$LOGIN_ETC" etc/spark-shell "$LOGIN_LIB"; do [ ! -d "$ROOT/$d" ] || root_do rmdir "$ROOT/$d" 2>/dev/null || true; done
-    row ok login "the console login is back on tty1 from the next boot, the login screen's files are gone (greetd's package stays)"
+    row ok login "the console login is back on tty1 from the next boot, the login screen's files are gone (its package stays)"
 }
 
 render_all() {

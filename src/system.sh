@@ -36,7 +36,7 @@ notify_start() {   # the notify row of on desktop: mako started now when it is n
     [ "$MODE" = apply ] && mako_here && notify_bus && desk_in_sway || return 0
     ! notify_up || return 0
     swaymsg -- exec mako >/dev/null 2>&1 || return 0
-    ok notify "mako shows the notifications now"
+    ok notify "the notifications show now"
 }
 notify_list() { read_once "notify.$1" notify_list_now "$1"; }   # notify_list list|history -> ID US APP US SUMMARY, newest first: makoctl's lines (mako 1.9 on), or busctl's JSON (mako 1.7 and 1.8)
 notify_list_now() {
@@ -59,7 +59,7 @@ notify_send() {   # notify_send CATEGORY SUMMARY [BODY] -- a notification under 
 notify_why() {   # -> why no notification shows here, in a few words
     if ! mako_here; then echo "mako is not installed (spark-shell on desktop)"
     elif ! notify_bus; then echo "no session bus yet: notifications start at your next login"
-    else echo "mako is not running: notifications start at your next login"; fi
+    else echo "the notifications are not running: they start at your next login"; fi
 }
 notify_act() {   # notify_act do-not-disturb on|off | dismiss | restore -> one line
     notify_up || { notify_why; return 1; }

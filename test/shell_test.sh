@@ -2975,11 +2975,11 @@ if want 19b; then
 # off desktop and off -- greetd is disabled, never stopped
 old_greetd
 out=$(L on --dry-run </dev/null)
-printf '%s\n' "$out" | grep -q "^would  login        the normal console login on tty1 from the next boot: greetd turned off, its spark-shell files removed (sudo)\$" \
+printf '%s\n' "$out" | grep -q "^would  login        the normal console login on tty1 from the next boot: the login screen turned off, its files removed (sudo)\$" \
     && [ -f "$H/root/etc/greetd/config.toml" ] && [ -e "$H/root/units/greetd.service" ] && ok "v0.41 upgrade: on --dry-run says the login screen goes back to getty, touches nothing" || bad "upgrade dry-run" "$out"
 out=$(L on --yes </dev/null 2>&1)
 old_gone && [ ! -e "$H/root/etc/greetd/config.toml" ] && ok "v0.41 upgrade: on hands tty1 back to getty at the next boot, greetd disabled (never stopped), its files gone" || bad "upgrade on" "$(find "$H/root/etc" "$H/root/units"; cat "$H/log")"
-[ "$(printf '%s\n' "$out" | grep -c '^ok     login ')" = 1 ] && printf '%s\n' "$out" | grep -q '^ok     login        the normal console login is back on tty1 from the next boot: greetd is off, its packages stay$' \
+[ "$(printf '%s\n' "$out" | grep -c '^ok     login ')" = 1 ] && printf '%s\n' "$out" | grep -q '^ok     login        the normal console login is back on tty1 from the next boot: the login screen is off, its packages stay$' \
     && ok "v0.41 upgrade: one plain line says so" || bad "upgrade line" "$out"
 : > "$H/log"; out=$(L on --yes </dev/null 2>&1)
 ! printf '%s\n' "$out" | grep -q 'login ' && ! grep -q greetd "$H/log" && ok "v0.41 upgrade: on again has nothing to hand back" || bad "upgrade twice" "$out"
@@ -3020,7 +3020,7 @@ rc=0; out=$(TEST_TTY=/dev/tty1 env -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR TMPDIR=
 [ "$rc" = 0 ] && grep -qx "XDG_RUNTIME_DIR=$rd" "$slog" && [ "$(ls -ld "$rd" | cut -c1-10)" = drwx------ ] && ok "desktop: the same directory again, back to 0700" || bad "runtime dir again" "rc=$rc $out"
 rm -rf "$rd"; mkdir -p "$H/elsewhere"; ln -s "$H/elsewhere" "$rd"
 rc=0; out=$(TEST_TTY=/dev/tty1 env -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR TMPDIR="$H/tmp" PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
-[ "$rc" = 1 ] && [ "$out" = "spark-shell desktop: $rd is not a private directory of yours, and sway needs one (XDG_RUNTIME_DIR)" ] && ok "desktop: a symlink in its place is refused, sway never starts" || bad "runtime dir symlink" "rc=$rc $out"
+[ "$rc" = 1 ] && [ "$out" = "spark-shell desktop: $rd is not a private directory of yours, and the desktop needs one (XDG_RUNTIME_DIR)" ] && ok "desktop: a symlink in its place is refused, sway never starts" || bad "runtime dir symlink" "rc=$rc $out"
 rc=0; out=$(TEST_TTY=/dev/tty1 XDG_RUNTIME_DIR=$H/run env -u WAYLAND_DISPLAY PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
 [ "$rc" = 0 ] && grep -qx "XDG_RUNTIME_DIR=$H/run" "$slog" && ok "desktop: an XDG_RUNTIME_DIR a login manager set is kept" || bad "runtime dir kept" "rc=$rc $out $(cat "$slog")"
 # no systemd: PipeWire, WirePlumber and the PulseAudio server start before
@@ -6598,7 +6598,7 @@ else
         && ok "Void: at the next boot the hook gives tty1 back to getty" || bad "void hook off" "$(ls -la "$H/root/etc/runit/runsvdir/default")"
     out=$(LC off login 2>&1)
     [ ! -e "$le" ] && [ ! -e "$ll" ] && ! grep -q 'spark-shell-login' "$H/root/etc/rc.local" 2>/dev/null && grep -q agreety "$H/root/etc/greetd/config.toml" && [ ! -e "$H/root/etc/greetd/config.toml.spark-shell-orig" ] \
-        && printf '%s\n' "$out" | grep -q "^ok     login        the console login is back on tty1 from the next boot, the login screen's files are gone (greetd's package stays)$" \
+        && printf '%s\n' "$out" | grep -q "^ok     login        the console login is back on tty1 from the next boot, the login screen's files are gone (its package stays)$" \
         && ok "Void: off login after it: every file gone, the package's config.toml back" || bad "void off" "$out $(find "$H/root/etc/spark-shell" "$H/root/usr/local" 2>&1)"
     out=$(LC off login 2>&1); ! printf '%s\n' "$out" | grep -q '^\(ok\|todo\) *login' && ok "Void: off login twice: nothing left, nothing said" || bad "void off twice" "$out"
     # visudo refuses: nothing written
@@ -7579,7 +7579,7 @@ STUB
     out=$(env -u DBUS_SESSION_BUS_ADDRESS sh "$SH" panel notifications --list 2>&1 | sed -n 2p)
     [ "$out" = "  notifications  no session bus yet: notifications start at your next login	notifications show" ] && ok "notifications: no session bus, the next login says when" || bad "notifications no bus" "$out"
     out=$(DBUS_SESSION_BUS_ADDRESS=unix:path=/nowhere sh "$SH" panel notifications --list 2>&1 | sed -n 2p)
-    [ "$out" = "  notifications  mako is not running: notifications start at your next login	notifications show" ] && ok "notifications: a bus but no mako answering, said so" || bad "notifications not running" "$out"
+    [ "$out" = "  notifications  the notifications are not running: they start at your next login	notifications show" ] && ok "notifications: a bus but no mako answering, said so" || bad "notifications not running" "$out"
     touch "$HOME/mako.up"
     printf 'Notification 9: Download complete\n  App name: firefox\n  Urgency: normal\n' > "$HOME/mako.list"
     printf 'Notification 5: Build passed\n  App name: \nNotification 4: New mail from Ada\n  App name: aerc\n  Category: email\nNotification 3: New mail from Ada\n  App name: aerc\n' > "$HOME/mako.history"
@@ -7773,7 +7773,7 @@ EOF
     [ "$out" = 'the desktop could not be locked, so the machine did not suspend' ] && ! grep -q zzz "$HOME/power.log" 2>/dev/null \
         && ok "desktop power suspend from outside the desktop (ssh): a desktop it cannot lock keeps the machine up" || bad "power suspend unlocked" "$out $(cat "$HOME/power.log" 2>&1)"
     out=$(sh "$SH" check 2>&1 || :)
-    printf '%s\n' "$out" | grep -q '^ok     storage      udisks2 mounts and ejects drives for you$' && printf '%s\n' "$out" | grep -q '^ok     power        lock, log out' && printf '%s\n' "$out" | grep -q '^ok     notify       mako shows the notifications on the desktop$' \
+    printf '%s\n' "$out" | grep -q '^ok     storage      udisks2 mounts and ejects drives for you$' && printf '%s\n' "$out" | grep -q '^ok     power        lock, log out' && printf '%s\n' "$out" | grep -q '^ok     notify       the notifications show on the desktop$' \
         && ok "check: the notify, storage and power rows" || bad "check rows" "$out"
     sh "$SH" off desktop >/dev/null 2>&1 || :
     [ ! -e "$sud" ] && [ ! -e "$pol" ] && [ ! -e "$HOME/.local/state/spark-shell/power.sudoers" ] && [ ! -e "$HOME/.local/state/spark-shell/storage.polkit" ] && [ ! -e "$mk" ] \

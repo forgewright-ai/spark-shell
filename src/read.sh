@@ -64,7 +64,7 @@ config_load() {
     : "${BAR_TEXT:=auto}"                  # the bar's text size: auto (the text size, larger on a screen of many pixels) or 6 to 40
     : "${BAR_TRAY:=no}"                    # the apps' own icons (the tray) at the bar's end: yes or no
     : "${WINDOWS:=split}"                  # how new windows sit on a workspace: split (side by side), tabs or stacked
-    : "${LOGIN:=no}"                       # the login screen on tty1 (greetd): yes or no
+    : "${LOGIN:=no}"                       # the login screen on tty1: yes or no
     case $WINDOWS in split|tabs|stacked) ;;
         *) echo "spark-shell: WINDOWS=$WINDOWS in $CONFIG: split, tabs or stacked" >&2; exit 1 ;; esac
     case $BAR_POSITION in top|bottom) ;; *) echo "spark-shell: BAR_POSITION=$BAR_POSITION in $CONFIG: top or bottom" >&2; exit 1 ;; esac

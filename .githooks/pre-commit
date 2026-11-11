@@ -64,7 +64,7 @@ if command -v shellcheck >/dev/null 2>&1; then
     # -e SC1107: a shellcheck before 0.10 (Ubuntu 24.04's) calls the extended-analysis directive unknown
     shellcheck -x -S warning -e SC1107 spark-shell test/shell_test.sh test/wifi_proof.sh test/greetd_upgrade_proof.sh test/dhcpcd_proof.sh || bad "shellcheck"
 else notice "shellcheck not found; skipped"; fi
-python3 -m py_compile test/layout_desktop_proof.py lib/wifi_connect.py test/wifi_connect_test.py lib/layout_terminal.py test/layout_terminal_test.py test/display_test.py lib/terminal_profile.py test/profile_test.py lib/bt_agent.py test/bt_agent_test.py lib/printers.py test/printers_test.py lib/open_path.py test/open_path_test.py lib/network.py test/network_test.py lib/network_dhcpcd.py test/network_dhcpcd_test.py test/dhcpcd_native.py test/dhcpcd_server.py lib/reminder_time.py test/provider_acceptance.py gallery/animation/make.py lib/office.py test/office_test.py || bad "python syntax"
+python3 -m py_compile test/layout_desktop_proof.py lib/wifi_connect.py test/wifi_connect_test.py lib/layout_terminal.py test/layout_terminal_test.py test/display_test.py lib/terminal_profile.py test/profile_test.py lib/bt_agent.py test/bt_agent_test.py lib/printers.py test/printers_test.py lib/open_path.py test/open_path_test.py lib/network.py test/network_test.py lib/network_dhcpcd.py test/network_dhcpcd_test.py test/dhcpcd_native.py test/dhcpcd_server.py lib/reminder_time.py test/provider_acceptance.py lib/animation.py lib/office.py test/office_test.py || bad "python syntax"
 if [ "$(uname)" = Darwin ]; then
     SPARK_SHELL_NO_APPLY=1 /usr/bin/python3 test/profile_test.py >/dev/null || bad "profile_test"
 fi

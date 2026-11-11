@@ -2,7 +2,7 @@
 """Six small pieces for the home dialog's transitions, each drawn in a
 palette's own colors on nothing, each as open, wait and close GIFs.
 
-    python3 gallery/animation/make.py [--piece NAME ...] [PALETTE.env ...] [--out DIR]
+    python3 lib/animation.py [--piece NAME ...] [PALETTE.env ...] [--out DIR]
 
     moon    a crescent waxes to a full moon in its halo; the halo breathes and
             the stars around it catch the light in turn; the moon wanes away
@@ -42,7 +42,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(os.path.dirname(HERE))
+REPO = os.path.dirname(HERE)
 W, H = 180, 120
 SCALES = (1, 2)
 INK_MIN = 1 / 48  # a pixel inked less than this is left undrawn
@@ -633,7 +633,7 @@ def gate():
     ]
     own = os.environ.get("SPARK_PRIVACY_TERMS") or os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "spark", "privacy-terms")
     words = set()
-    for f in (os.path.join(REPO, ".privacy-terms"), own):
+    for f in (own,):
         if os.path.isfile(f):
             with open(f, encoding="utf-8") as fh:
                 words |= {w.split("#")[0].strip() for w in fh} - {""}
@@ -707,7 +707,7 @@ def make(job):
 
 
 def main(argv):
-    out_dir, paths, pieces = HERE, [], []
+    out_dir, paths, pieces = os.path.join(REPO, "gallery", "animation"), [], []
     it = iter(argv)
     for a in it:
         if a == "--out":

@@ -1,5 +1,5 @@
 //! The six transitions drawn here, in the palette the dialog wears (#247, arc 2): moon, ripple, tide, embers,
-//! sun and flight, as gallery/animation/make.py draws them, shape for shape. The shipped palettes play the GIFs
+//! sun and flight, as lib/animation.py draws them, shape for shape. The shipped palettes play the GIFs
 //! make.py drew ahead; a palette with none (a theme from a picture or from words, a palette file of yours)
 //! plays these, drawn when the dialog opens or its look changes, from the colors it already has: no file, no
 //! cache, no package. spark-shell names one as `draw:PIECE` where it would name a folder.
