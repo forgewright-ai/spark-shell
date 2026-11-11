@@ -22,7 +22,7 @@
 # faces instead of asking Spotlight (tests).
 #
 # Python 3 standard library only: Apple's /usr/bin/python3 (3.9) runs it.
-# Ported from spark 1.61 (lib/spark/theme.py, lib/spark/site.py).
+# Ported from spark 1.61 (its theme.py and site.py).
 
 import os
 import plistlib

@@ -104,6 +104,7 @@ jobs:
           command -v fc-query >/dev/null 2>&1 || { sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fontconfig >/dev/null; }
           python3 -I test/glyph_check.py
           python3 -I test/modules_check.py
+          python3 -I test/paths_check.py
       - name: the idle screen's savers
         run: |
           python3 -I test/saver_test.py
