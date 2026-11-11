@@ -1,0 +1,148 @@
+//! The scrubber: every string a provider hands the dialog passes it
+//! before the screen, the brief or a record. The twin of spark-shell's
+//! SCRUB_JQ. Each class is a named line, so it can be argued with.
+
+/// The characters that can redraw, retitle or reorder a screen.
+pub const DROP: &[(char, char, &str)] = &[
+    ('\u{0000}', '\u{0008}', "C0 before the tab"),
+    ('\u{000a}', '\u{001f}', "C0 after the tab: a row is one line"),
+    ('\u{007f}', '\u{009f}', "DEL and C1"),
+    ('\u{200e}', '\u{200f}', "the bidi marks"),
+    ('\u{202a}', '\u{202e}', "the bidi embeddings and overrides"),
+    ('\u{2066}', '\u{2069}', "the bidi isolates"),
+    ('\u{200b}', '\u{200d}', "the zero-width space and joiners"),
+    ('\u{2060}', '\u{2060}', "the word joiner"),
+    ('\u{feff}', '\u{feff}', "the zero-width no-break space"),
+    ('\u{2028}', '\u{2029}', "the line and paragraph separators"),
+];
+
+/// The text with every DROP class gone and a tab as a space.
+pub fn scrub(s: &str) -> String {
+    s.chars()
+        .map(|c| if c == '\t' { ' ' } else { c })
+        .filter(|c| !DROP.iter().any(|(a, b, _)| c >= a && c <= b))
+        .collect()
+}
+
+/// The text cut to `cells` terminal cells, a wide character never split.
+pub fn cut(s: &str, cells: usize) -> String {
+    let mut out = String::new();
+    let mut w = 0;
+    for c in s.chars() {
+        let cw = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
+        if w + cw > cells {
+            break;
+        }
+        w += cw;
+        out.push(c);
+    }
+    out
+}
+
+/// A file's name cut to `n` cells in its middle, its end and its type kept, as a file manager cuts one (#140):
+/// "quarterly-repor\u{2026}nal-v3.pdf". The end kept is the extension and six cells before it, two fifths of the
+/// room at least; a name that fits stays whole.
+pub fn cut_middle(s: &str, n: usize) -> String {
+    if cells(s) <= n {
+        return s.to_string();
+    }
+    if n < 4 {
+        return cut(s, n);
+    }
+    let ext = s.rfind('.').filter(|&i| i > 0 && s.len() - i <= 9).map(|i| cells(&s[i..])).unwrap_or(0);
+    let tail_cells = (ext + 6).max(n * 2 / 5).min(n - 2);
+    // the end: the last characters that fit tail_cells
+    let mut tail: Vec<char> = vec![];
+    let mut w = 0;
+    for c in s.chars().rev() {
+        let cw = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
+        if w + cw > tail_cells {
+            break;
+        }
+        w += cw;
+        tail.push(c);
+    }
+    tail.reverse();
+    let head = cut(s, n - 1 - w);
+    format!("{}\u{2026}{}", head, tail.into_iter().collect::<String>())
+}
+
+/// The text cut to `n` cells at a word, with an ellipsis where words were left out; a first word
+/// longer than the room is cut where it must be (#27).
+pub fn cut_words(s: &str, n: usize) -> String {
+    if cells(s) <= n {
+        return s.to_string();
+    }
+    if n == 0 {
+        return String::new();
+    }
+    // the first word taken, not an empty one: a state that opens with the separator's space keeps it
+    let mut out = String::new();
+    let mut first = true;
+    for w in s.split(' ') {
+        let next = if first { w.to_string() } else { format!("{} {}", out, w) };
+        if cells(&next) + 1 > n {
+            break;
+        }
+        out = next;
+        first = false;
+    }
+    let out = out.trim_end_matches([' ', '\u{b7}']).trim_end().to_string();
+    if out.is_empty() {
+        return format!("{}\u{2026}", cut(s, n - 1));
+    }
+    format!("{}\u{2026}", out)
+}
+
+/// How many cells the text takes.
+pub fn cells(s: &str) -> usize {
+    unicode_width::UnicodeWidthStr::width(s)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_long_file_name_is_cut_in_its_middle_and_keeps_its_type() {
+        let c = cut_middle("quarterly-report-for-the-board-final-v3.pdf", 26);
+        assert_eq!(cells(&c), 26, "{}", c);
+        assert!(c.starts_with("quarterly-repor") && c.ends_with("nal-v3.pdf") && c.contains('\u{2026}'), "{}", c);
+        assert_eq!(cut_middle("notes.md", 26), "notes.md", "a name that fits stays whole");
+        let d = cut_middle("a-folder-with-a-very-long-name-and-no-type", 26);
+        assert!(cells(&d) == 26 && d.ends_with("-no-type"), "a folder keeps its end too: {}", d);
+    }
+
+    #[test]
+    fn every_class_goes() {
+        for (a, b, why) in DROP {
+            for c in [*a, *b] {
+                let s = format!("x{}y", c);
+                assert_eq!(scrub(&s), "xy", "{} ({:?}) stayed", why, c);
+            }
+        }
+    }
+
+    #[test]
+    fn plain_text_stays() {
+        assert_eq!(scrub("caf\u{e9} \u{25cf} 5 GHz"), "caf\u{e9} \u{25cf} 5 GHz");
+        assert_eq!(scrub("a\tb"), "a b");
+        assert_eq!(scrub("\u{1b}[2Jev\u{202e}il"), "[2Jevil");
+    }
+
+    #[test]
+    fn a_long_state_cut_keeps_the_space_before_its_dot() {
+        assert_eq!(
+            cut_words(" \u{b7} 2 drives \u{b7} 190.7 GB free on this computer", 20),
+            " \u{b7} 2 drives \u{b7} 190.7\u{2026}"
+        );
+        assert_eq!(cut_words("on \u{b7} 3 on the screen", 6), "on\u{2026}", "a separator at the cut goes with it");
+    }
+
+    #[test]
+    fn a_cut_never_splits_a_wide_character() {
+        assert_eq!(cut("\u{4e2d}\u{6587}x", 3), "\u{4e2d}");
+        assert_eq!(cut("abcdef", 4), "abcd");
+        assert_eq!(cells("\u{4e2d}a"), 3);
+    }
+}

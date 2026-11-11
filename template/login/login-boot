@@ -1,0 +1,19 @@
+#!/bin/sh
+# rendered by spark-shell from templates/login/login-boot -- spark-shell off login removes it
+# Void: run by /etc/rc.local before runit starts its services, so tty1
+# changes hands at boot and never under a login that is running. With
+# /@LOGIN_ETC@/boot saying on, greetd takes tty1 from its getty; else
+# what this script changed goes back. Each change leaves a record here.
+d=/@LOGIN_ETC@
+sv=/etc/runit/runsvdir/default
+if [ "$(cat "$d/boot" 2>/dev/null)" = on ] && [ -d /etc/sv/greetd ]; then
+    if [ -L "$sv/agetty-tty1" ]; then rm -f "$sv/agetty-tty1" && : > "$d/getty.off"; fi
+    if [ ! -e "$sv/greetd" ]; then ln -s /etc/sv/greetd "$sv/greetd" && : > "$d/greetd.on"; fi
+else
+    if [ -e "$d/greetd.on" ]; then rm -f "$sv/greetd" "$d/greetd.on"; fi
+    if [ -e "$d/getty.off" ]; then
+        [ -e "$sv/agetty-tty1" ] || ln -s /etc/sv/agetty-tty1 "$sv/agetty-tty1"
+        rm -f "$d/getty.off"
+    fi
+fi
+exit 0

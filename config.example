@@ -1,0 +1,235 @@
+# spark-shell config -- copied to ~/.config/spark-shell/config.
+#
+# Plain KEY=value, one per line. Every key is optional. A missing key
+# uses the default shown here.
+
+# The prompt: starship, or plain (the shell's own). Debian, Ubuntu and
+# Fedora have no starship package, so there the prompt is the shell's own.
+PROMPT=starship
+
+# The starship prompt: minimal (one short line) or full.
+PROMPT_STYLE=minimal
+
+# The desktop (Linux): none or sway. With sway, sway and foot are
+# installed, and a login on tty1 starts the desktop. spark-shell on
+# desktop sets this to sway, and spark-shell off desktop sets it to none.
+DESKTOP=none
+
+# The font in foot, the desktop's terminal, in foot's own form (the
+# font name, then :size=N). The size is the text size everywhere: the
+# bar, the dialog, the login, the lock and the idle screen take it, and
+# the pointer grows with it. spark-shell theme text N sets the size.
+# Monaspace Neon is the type of spark's page; spark-shell on installs it,
+# and until it is in, foot draws DejaVu Sans Mono at the same size. Its
+# four sisters, Monaspace Argon, Xenon, Radon and Krypton, come with it:
+# spark-shell theme face NAME picks one and keeps the size.
+FONT=Monaspace Neon:size=11
+
+# The wallpaper: default is the ground, the palette's background a shade
+# darker than the windows, following the palette; or a picture's full
+# path, or a color as #rrggbb (none, the word before v0.89, is the
+# ground). Over every one the windows stand apart, as transparent as
+# ALPHA says. A shipped drawing's name follows the palette: a palette
+# with a drawing of its own brings it, any other has the drawing drawn
+# again in its colors. spark-shell theme wallpaper sets this, and it
+# saves a color's name as its #rrggbb.
+WALLPAPER=default
+
+# A moving wallpaper: on, a drawing that has a motion (orbit) moves on
+# the desktop, a loop made from the drawing in the palette in use and
+# played by mpvpaper; off, every wallpaper is still. Settings > theme
+# changes it, and a saved theme keeps it.
+WALLPAPER_MOTION=off
+
+# The pointer: empty for the spark pointer, white on a dark palette and
+# black on a light one; or a cursor theme's name and, after a space, its
+# size in pixels (24 when left out): spark-black 32, Adwaita.
+POINTER=
+
+# How solid foot is over the wallpaper: 0 to 1, where 1 is solid.
+# 0.85 suits a dark picture. A bright one needs more. spark-shell theme
+# transparency N says it as a percent: 0.85 is 15% transparency, and
+# the open windows take it at once.
+ALPHA=0.85
+
+# How new windows sit on a workspace: split (side by side), tabs or
+# stacked. The panel's window section sets this, and the keys change
+# the workspace you are on.
+WINDOWS=split
+
+# The login screen on tty1: yes or no. With yes, greetd shows a login
+# screen in your palette, over your wallpaper, from the next boot; tty2
+# keeps the console login. spark-shell on login and off login set this.
+LOGIN=no
+
+# The display: idle minutes before the idle screen (the wallpaper dimmed,
+# the time at the lower left), and before the screen locks and the
+# display turns off (0: never). spark-shell desktop display idle|lock N
+# sets these.
+DISPLAY_IDLE=10
+DISPLAY_LOCK=15
+
+# What the idle screen shows behind its clock: clock (the clock alone), or
+# a calm animation: spark, starfield or drift. A saver needs python3, and
+# it stops when the lock comes. spark-shell desktop display saver NAME sets
+# this, and spark-shell desktop idle shows the idle screen now.
+DISPLAY_SAVER=clock
+
+# The keyboard's layouts on the desktop, by their xkb names, a space
+# between, a variant after a plus (us us+intl); the first is the one in
+# use at start, and Super+Ctrl+space goes to the next. Empty keeps
+# sway's own. spark-shell desktop keyboard sets this.
+KEYBOARD=
+
+# Key repeat: delay in milliseconds (100 to 2000), rate per second
+# (0 to 100, 0 disables repeat). Caps Lock can be caps, control or escape.
+KEY_REPEAT_DELAY=600
+KEY_REPEAT_RATE=25
+KEY_CAPS=caps
+
+# Mouse and touchpad: tap to click on touchpads, natural scrolling for
+# both, and acceleration from -1 to 1 (0 keeps the default speed).
+POINTER_TAP=on
+POINTER_SCROLL=off
+POINTER_SPEED=0
+
+# Do not disturb: yes keeps the desktop's notifications out of sight (a
+# critical one still shows) until you turn it off, logins included.
+# spark-shell desktop notifications do-not-disturb on or off sets this.
+DO_NOT_DISTURB=no
+
+# The bar on the desktop's screen: yes (shown) or no (hidden). It shows
+# the workspaces, then lan, wifi, bluetooth, sound out and mic, the
+# notifications that came while nobody looked, battery, and the date and
+# time, each only when this machine has it. spark-shell bar on|off
+# --desktop sets this.
+DESKTOP_BAR=yes
+
+# Where the bar sits: top or bottom. The notifications come in the right
+# corner by it. spark-shell bar top|bottom sets this.
+BAR_POSITION=top
+
+# The bar's text size: auto (the text size on a screen of 1080 rows or
+# fewer, larger on a taller one) or a size from 6 to 40. spark-shell bar
+# text sets this.
+BAR_TEXT=auto
+
+# The icons apps put in the tray (Steam, a chat app) at the bar's end:
+# yes or no. No keeps the bar in its own glyphs; the apps run the same.
+# spark-shell bar tray on|off sets this.
+BAR_TRAY=no
+
+# The pad, where minimized windows wait as icons: where it sits. An
+# edge, top, bottom, left or right, then where along it: center, start,
+# end, or pixels from the edge's start; or free X Y, anywhere on the
+# screen. The pad writes these four when you drag it, or resize it from
+# a corner or a side. The bar's edge starts at the bar.
+PAD_PLACE=bottom center
+
+# The most width the pad takes at the top, the bottom or floating, in
+# pixels; 0 is as wide as the screen allows. The width sets its columns
+# of icons, 36 pixels each.
+PAD_WIDTH=0
+
+# The most width the pad takes at the left or the right edge: 36 is one
+# column of icons.
+PAD_SIDE_WIDTH=36
+
+# The most height the pad takes, in pixels, which sets its rows of
+# icons; 0 is as many rows as its windows need. When the pad is too
+# small for its windows, the windows of one app fold into one icon,
+# until the icons fit.
+PAD_HEIGHT=0
+
+# How the pad shows its windows: icons, one icon a window, its app and
+# its title in a label beside the pad while the pointer is on it; or
+# titles, a slot a window with its icon, its app and its title, as in
+# v0.134.1. spark-shell desktop pad view icons|titles sets this; a saved
+# theme does not carry it.
+PAD_VIEW=icons
+
+# The pad's band, which says pad and how many windows wait, under the
+# handle across its top: on or off. Off, the pad has its handle alone,
+# and the lit window's title shows in a label beside it. spark-shell
+# desktop pad band on|off sets this; a saved theme does not carry it.
+PAD_BAND=off
+
+# The theme: none (the terminal's own colors: foot's own sixteen on the
+# desktop, the console's at the console), a palette's name, or a
+# saved theme's (a folder under ~/.config/spark-shell/themes, the whole
+# look), as spark-shell theme list shows them. spark-shell theme NAME
+# sets this; theme save NAME keeps the look in use.
+THEME=none
+
+# The console font on Linux, or the Terminal.app font on a Mac: the name
+# and the size (Terminus 16x32, or MonaspaceNeon-Regular 13). Empty keeps
+# the console's own font on Linux; on a Mac it is Monaspace Neon at 13
+# once spark-shell on has installed it. spark-shell font sets this.
+CONSOLE_FONT=
+
+# Linux only. yes hides the distro's notice and the kernel line before
+# the login prompt. spark-shell quiet login on|off sets this.
+QUIET_LOGIN=no
+
+# Linux only. yes hides the boot menu and the boot messages.
+# spark-shell quiet boot on|off sets this.
+QUIET_BOOT=no
+
+# The dialog's composer (the desktop, from v0.64). Plus attaches a file to
+# what you ask: yes or no, and the types it lists, lower case with a space
+# between. spark reads text, so the first version takes text files only.
+DIALOG_ATTACH=yes
+DIALOG_ATTACH_TYPES=txt md
+
+# The model chip, which shows the model spark uses and picks another: yes
+# or no.
+DIALOG_MODEL=yes
+
+# Talk, which speaks to spark through its own voice: yes or no. It is
+# hidden while spark's voice is off.
+DIALOG_TALK=yes
+
+# Search by meaning: with spark, the dialog ranks its rows by what you
+# mean, through a small model kept on your disk (EmbeddingGemma 2,
+# 310 MB, fetched by spark-shell on desktop). yes, or no for the plain
+# word search alone.
+DIALOG_SEMANTIC=yes
+
+# The dialog's animation as it opens, waits and closes: moon, ripple,
+# tide, embers, sun or flight, or none for no motion. Empty, the one the
+# palette brings (dracula's embers, nord's tide); a new palette brings
+# its own, as it brings its drawing, and none stays none. Settings >
+# theme changes it.
+DIALOG_ANIMATION=
+
+# Each app's icon before its name in home's apps: on or off. Off, or in
+# a terminal that draws no pictures, the apps are listed by name alone.
+# Settings > theme changes it, and a saved theme keeps it.
+DIALOG_ICONS=on
+
+# The space around home's apps where they show icons: none, groups (two
+# rows over a category's name and one under it) or rows (a blank row
+# between the apps too). Settings > theme changes it, and a saved theme
+# keeps it.
+DIALOG_SPACING=groups
+
+# The bar's glyphs: signs (each one the bar's font's own) or words (the
+# kind words: lan, wifi, bt, out, mic, light, kb, bat). Settings > theme
+# changes it, and a saved theme keeps it.
+BAR_GLYPHS=signs
+
+# The glyph family: stone (the default), star or banner. It sets the
+# dialog's signs, the bar's gauges and workspaces, and the animations
+# while the dialog waits. Settings > theme changes it, and a saved theme
+# keeps it. BAR_WORKSPACES, the setting before it, is ignored.
+GLYPH_FAMILY=stone
+
+# Clock presentation on the bar, Calendar and idle screen.
+CLOCK_FORMAT=24
+WEEK_START=sunday
+
+# Home and desktop shortcuts use named actions in separate JSON files beside
+# this config: home-keys.json and desktop-keys.json. See Home's Help and
+# `spark-shell desktop keys`. Default home entry: Super+Space; floating/tiled
+# focus toggle: Super+Alt+Space. Unknown actions and managed conflicts fail
+# validation; reload home for its keys, and render/reload Sway for desktop keys.

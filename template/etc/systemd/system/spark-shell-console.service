@@ -1,0 +1,15 @@
+# rendered by spark-shell from templates/etc/systemd/system/spark-shell-console.service -- edit the template, then spark-shell on
+# The palette at boot: setvtrgb sets the kernel's default palette from
+# the file spark-shell theme NAME wrote, so every console and the login
+# prompt wear it before a shell runs. spark-shell off removes this unit.
+[Unit]
+Description=spark-shell: the console palette (setvtrgb)
+After=console-setup.service systemd-vconsole-setup.service
+ConditionPathExists=@CONSOLE_RGB@
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/setvtrgb @CONSOLE_RGB@
+
+[Install]
+WantedBy=multi-user.target

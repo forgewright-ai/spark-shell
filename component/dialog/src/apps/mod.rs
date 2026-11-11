@@ -1,0 +1,547 @@
+//! Apps: the applications installed, browsed, searched and opened inside home, drawn with the dialog's own
+//! rows. A change to a preference applies at once and Undo on the status row takes it back; nothing is a
+//! draft, and nothing asks before you leave.
+pub mod preferences;
+mod presentation;
+pub use presentation::AIRY_ROOM;
+mod surface;
+
+use crate::scrub::scrub;
+use preferences::{Preference, Preferences, OTHER};
+use serde_json::{json, Value};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Entry {
+    pub id: String,
+    /// The name as the desktop entry writes it: supplied, and kept in its spelling.
+    pub name: String,
+    pub display_name: String,
+    pub description: String,
+    pub generic_name: String,
+    pub categories: Vec<String>,
+    pub launcher: String,
+    pub focus: bool,
+    pub new_window: bool,
+    /// The app's icon as the apps adapter cached it at the cell's size (#230): a PNG under icon_dir(), or nothing.
+    pub icon: String,
+}
+
+/// Where the apps adapter keeps the icons it drew, one folder a size (#230): the state's, never a path a
+/// desktop entry names. The dialog reads an icon from here alone.
+pub fn icon_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))?;
+    Some(base.join("spark-shell/icons"))
+}
+
+/// An icon path the adapter answered, kept only when it is one of the cache's PNGs: absolute, under icon_dir(),
+/// no part that climbs out, no control character.
+fn cached_icon(path: &str) -> Option<String> {
+    let dir = icon_dir()?;
+    let p = std::path::Path::new(path);
+    let inside = p.is_absolute()
+        && p.starts_with(&dir)
+        && p.extension().is_some_and(|e| e == "png")
+        && !p
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir | std::path::Component::CurDir))
+        && !path.chars().any(char::is_control);
+    inside.then(|| path.to_string())
+}
+
+impl Entry {
+    fn read(v: &Value) -> Option<Self> {
+        let id = v["id"].as_str()?;
+        if !id.ends_with(".desktop") || id.contains('/') || id.chars().any(char::is_control) {
+            return None;
+        }
+        Some(Self {
+            icon: v["icon"].as_str().and_then(cached_icon).unwrap_or_default(),
+            id: id.into(),
+            name: scrub(v["name"].as_str()?),
+            display_name: scrub(v["display_name"].as_str().unwrap_or("")),
+            description: scrub(v["description"].as_str().unwrap_or("")),
+            generic_name: scrub(v["generic_name"].as_str().unwrap_or("")),
+            categories: v["categories"]
+                .as_array()
+                .map(|a| a.iter().filter_map(Value::as_str).map(scrub).collect())
+                .unwrap_or_default(),
+            launcher: v["launcher"].as_str().unwrap_or("").into(),
+            focus: v["focus"].as_bool().unwrap_or(false),
+            new_window: v["new_window"].as_str().is_some_and(|x| !x.is_empty()),
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Form {
+    AddCategory,
+    RenameCategory(String),
+    AddMapping,
+}
+
+/// The pages: the list, the hidden apps, an app's details and its technical details, the lists a choice
+/// opens, the categories and their mappings, and a form that types in the prompt.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum Page {
+    #[default]
+    List,
+    Hidden,
+    Details(String),
+    Technical(String),
+    CategoryPicker(String),
+    LaunchPicker(String),
+    Categories,
+    Category(String),
+    Mappings,
+    Mapping(String),
+    Form(Form),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Action {
+    Launch(String),
+    Details(String),
+    Technical(String),
+    SetFilter(Option<String>),
+    Hidden,
+    Categories,
+    Category(String),
+    Rename(String),
+    Delete(String),
+    /// A category one place up (true) or down (false) the list (#233).
+    MoveCategory(String, bool),
+    AddCategory,
+    Mappings,
+    Mapping(String),
+    Map(String, Option<String>),
+    AddMapping,
+    Submit,
+    ChooseCategory(String),
+    SetCategory(String, Option<String>),
+    Visibility(String),
+    ChooseLaunch(String),
+    SetLaunch(String, String),
+    Refresh,
+    Copy(String),
+    RetryDetails(String),
+    /// The preferences as they were before the last change: Undo on the status row.
+    Undo(Box<Preferences>),
+}
+
+/// One line of a page, in the row shapes the dialog has (crate::page::Line): a group's heading, the page's
+/// subject, a note, a fact (a label and a value, no action), or a row with a sign, a label, a value and an
+/// arrow. A switch is a row whose sign is a dot or a ring and whose value is on or off, drawn at the value
+/// column as a setting's is.
+pub type Line = crate::page::Line<Action>;
+
+pub use crate::page::Navigation;
+
+#[derive(Default)]
+pub struct Outcome {
+    pub navigation: Option<Navigation>,
+    pub request: Option<Value>,
+    pub notice: Option<String>,
+    /// The notice's change can be taken back: Undo stands at its end.
+    pub undo: bool,
+    pub copy: Option<String>,
+}
+
+pub struct State {
+    pub entries: Vec<Entry>,
+    pub prefs: Preferences,
+    pub path: PathBuf,
+    pub preference_error: Option<String>,
+    pub page: Page,
+    pub filter: Option<String>,
+    /// A refresh asked by the person: its read says how many apps it found.
+    pub refreshing: bool,
+    pub details: BTreeMap<String, Value>,
+    pub loaded: bool,
+    pub failed: bool,
+    pub pending: Option<(u64, String)>,
+    /// When the pending operation began, and the app a launch is of, lowercase: the status row says "opening NAME"
+    /// with the march once the wait is felt (the dialog design notes).
+    pub pending_since: Option<std::time::Instant>,
+    pub pending_name: String,
+    /// What the receipt of a copy says where the words are the asker's (files: `path copied`).
+    pub copy_said: Option<String>,
+    pub serial: u64,
+    /// The preferences before the last change, while Undo stands on the status row.
+    pub undo: Option<Preferences>,
+    /// Icons shown before the apps' names (#230): DIALOG_ICONS on, in a terminal that draws sixel. main.rs sets it.
+    pub icons: bool,
+    /// The icon's side in pixels, as the cell's size gives it: what a catalog read asks the adapter to draw.
+    pub icon_px: u32,
+    /// The room around the apps where they wear their icons (#232): DIALOG_SPACING. main.rs sets it.
+    pub spacing: crate::preferences::Spacing,
+    stack: Vec<(Page, Navigation)>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        let path = Preferences::path();
+        let loaded = Preferences::load(&path);
+        let preference_error = loaded.as_ref().err().cloned();
+        Self {
+            entries: vec![],
+            prefs: loaded.unwrap_or_default(),
+            path,
+            preference_error,
+            page: Page::List,
+            filter: None,
+            refreshing: false,
+            details: BTreeMap::new(),
+            loaded: false,
+            failed: false,
+            pending: None,
+            pending_since: None,
+            pending_name: String::new(),
+            copy_said: None,
+            serial: 0,
+            undo: None,
+            icons: false,
+            icon_px: 0,
+            spacing: crate::preferences::Spacing::default(),
+            stack: vec![],
+        }
+    }
+}
+
+impl State {
+    pub fn form(&self) -> bool {
+        matches!(self.page, Page::Form(_))
+    }
+    pub fn preference(&self, id: &str) -> Preference {
+        self.prefs.apps.get(id).cloned().unwrap_or_else(|| Preference {
+            hidden: matches!(id, "footclient.desktop" | "foot-server.desktop"),
+            ..Preference::default()
+        })
+    }
+    pub fn entry(&self, id: &str) -> Option<&Entry> {
+        self.entries.iter().find(|a| a.id == id)
+    }
+    /// An app's category: its own choice, else the first of its desktop categories that is mapped, else Other.
+    pub fn category_of(&self, a: &Entry) -> String {
+        self.prefs.category(&a.id, &a.categories)
+    }
+
+    fn sorted<'a>(&self, apps: impl Iterator<Item = &'a Entry>) -> Vec<&'a Entry> {
+        let mut apps: Vec<&Entry> = apps.collect();
+        apps.sort_by_key(|a| {
+            (
+                self.prefs.categories.iter().position(|c| *c == self.category_of(a)).unwrap_or(usize::MAX),
+                a.name.to_lowercase(),
+                a.id.clone(),
+            )
+        });
+        apps
+    }
+
+    /// The apps shown: never a hidden one; the category filtered while nothing is typed, every category for words.
+    pub fn visible(&self, query: &str) -> Vec<&Entry> {
+        let words = query.to_lowercase();
+        self.sorted(self.entries.iter().filter(|a| {
+            if self.preference(&a.id).hidden {
+                return false;
+            }
+            if words.trim().is_empty() {
+                self.filter.as_ref().is_none_or(|c| *c == self.category_of(a))
+            } else {
+                let text = format!("{} {} {} {}", a.name, a.display_name, a.generic_name, a.description).to_lowercase();
+                words.split_whitespace().all(|w| text.contains(w))
+            }
+        }))
+    }
+
+    /// The apps hidden, a list of their own.
+    pub fn hidden(&self) -> Vec<&Entry> {
+        self.sorted(self.entries.iter().filter(|a| self.preference(&a.id).hidden))
+    }
+
+    /// The desktop categories the installed apps carry that no mapping places yet, sorted, each once: what add
+    /// mapping offers to pick (the dialog design notes, v0.124.4).
+    pub fn unmapped_sources(&self) -> Vec<String> {
+        let mut v: Vec<String> = self
+            .entries
+            .iter()
+            .flat_map(|a| a.categories.iter().cloned())
+            .filter(|c| !c.is_empty() && !self.prefs.mappings.contains_key(c))
+            .collect();
+        v.sort();
+        v.dedup();
+        v
+    }
+
+    /// The hidden apps the words name, every one of them with nothing typed: the hidden list is searched as the
+    /// list is (the dialog design notes, v0.124.4).
+    pub fn hidden_matching(&self, query: &str) -> Vec<&Entry> {
+        let words = query.to_lowercase();
+        self.sorted(self.entries.iter().filter(|a| {
+            if !self.preference(&a.id).hidden {
+                return false;
+            }
+            let text = format!("{} {} {} {}", a.name, a.display_name, a.generic_name, a.description).to_lowercase();
+            words.split_whitespace().all(|w| text.contains(w))
+        }))
+    }
+
+    fn navigate(&mut self, page: Page, nav: Navigation) -> Navigation {
+        self.stack.push((self.page.clone(), nav));
+        self.page = page;
+        Navigation::default()
+    }
+
+    pub fn back(&mut self) -> Option<Navigation> {
+        self.stack.pop().map(|(page, nav)| {
+            self.page = page;
+            nav
+        })
+    }
+
+    /// Whether a page stands under this one to go back to.
+    pub fn has_back(&self) -> bool {
+        !self.stack.is_empty()
+    }
+
+    fn save(&mut self, prefs: Preferences) -> Result<(), String> {
+        if let Some(error) = &self.preference_error {
+            return Err(error.clone());
+        }
+        prefs.save(&self.path)?;
+        self.prefs = prefs;
+        if self.filter.as_ref().is_some_and(|c| !self.prefs.categories.contains(c)) {
+            self.filter = None;
+        }
+        Ok(())
+    }
+
+    /// A change applied at once: saved, said in a few words, and Undo stands for it.
+    fn change(&mut self, prefs: Preferences, words: String, out: &mut Outcome) -> Result<(), String> {
+        let before = self.prefs.clone();
+        self.save(prefs)?;
+        self.undo = Some(before);
+        out.notice = Some(words);
+        out.undo = true;
+        Ok(())
+    }
+
+    fn pref_mut<'a>(prefs: &'a mut Preferences, id: &str, current: Preference) -> &'a mut Preference {
+        prefs.apps.entry(id.to_string()).or_insert(current);
+        prefs.apps.get_mut(id).unwrap()
+    }
+
+    pub fn activate(&mut self, action: Action, nav: Navigation) -> Result<Outcome, String> {
+        let mut out = Outcome::default();
+        // a receipt names the app as a label, lowercase (the dialog design notes)
+        let name = |s: &Self, id: &str| s.entry(id).map(|a| a.name.to_lowercase()).unwrap_or_else(|| id.to_string());
+        match action {
+            Action::Launch(id) => {
+                if self.pending.is_some() {
+                    return Err("the apps are busy: a moment".into());
+                }
+                let app = self.entry(&id).ok_or("this app is no longer installed")?;
+                let pref = self.preference(&id);
+                if pref.mode() == "focus" && !app.focus {
+                    return Err("focus existing is unavailable here; choose application default in its details".into());
+                }
+                if pref.mode() == "new" && !app.new_window {
+                    return Err("new window is no longer declared; choose application default in its details".into());
+                }
+                out.request = Some(json!({"op":"launch","id":id,"mode":pref.mode()}));
+            }
+            Action::Details(id) => {
+                if self.pending.is_some() {
+                    return Err("the apps are busy: a moment".into());
+                }
+                self.entry(&id).ok_or("this app is no longer installed")?;
+                out.navigation = Some(self.navigate(Page::Details(id.clone()), nav));
+                // the cached facts stay readable while fresh ones come: packages and windows change
+                out.request = Some(json!({"op":"details","id":id}));
+            }
+            Action::Technical(id) => out.navigation = Some(self.navigate(Page::Technical(id), nav)),
+            Action::SetFilter(category) => {
+                self.filter = category;
+                out.navigation = self.back().map(|n| Navigation {
+                    selected: 0,
+                    in_list: false,
+                    scroll: 0,
+                    ..n
+                });
+            }
+            Action::Hidden => out.navigation = Some(self.navigate(Page::Hidden, nav)),
+            Action::Categories => out.navigation = Some(self.navigate(Page::Categories, nav)),
+            Action::Category(name) => out.navigation = Some(self.navigate(Page::Category(name), nav)),
+            Action::Rename(name) => out.navigation = Some(self.navigate(Page::Form(Form::RenameCategory(name)), nav)),
+            Action::AddCategory => out.navigation = Some(self.navigate(Page::Form(Form::AddCategory), nav)),
+            Action::AddMapping => out.navigation = Some(self.navigate(Page::Form(Form::AddMapping), nav)),
+            Action::Mappings => out.navigation = Some(self.navigate(Page::Mappings, nav)),
+            Action::Mapping(name) => out.navigate_to(self, Page::Mapping(name), nav),
+            Action::Map(source, target) => {
+                let mut prefs = self.prefs.clone();
+                let words = match &target {
+                    Some(t) => {
+                        prefs.mappings.insert(source.clone(), t.clone());
+                        format!("{} maps to {}", source, t.to_lowercase())
+                    }
+                    None => {
+                        prefs.mappings.remove(&source);
+                        format!("{} unmapped", source)
+                    }
+                };
+                self.change(prefs, words, &mut out)?;
+                out.navigation = self.back();
+            }
+            Action::Submit => {
+                let typed = nav.query.trim().to_string();
+                match self.page.clone() {
+                    Page::Form(Form::AddCategory) => {
+                        let mut prefs = self.prefs.clone();
+                        prefs.add(&typed)?;
+                        self.change(prefs, format!("{} added", typed.to_lowercase()), &mut out)?;
+                        out.navigation = self.back();
+                    }
+                    Page::Form(Form::RenameCategory(from)) => {
+                        let mut prefs = self.prefs.clone();
+                        prefs.rename(&from, &typed)?;
+                        let filtered = self.filter.as_deref() == Some(from.as_str());
+                        self.change(prefs, format!("{} renamed to {}", from.to_lowercase(), typed.to_lowercase()), &mut out)?;
+                        if filtered {
+                            self.filter = Some(typed.clone());
+                        }
+                        // back to the category's own page, under its new name
+                        self.back();
+                        self.page = Page::Category(typed);
+                        out.navigation = Some(Navigation::default());
+                    }
+                    Page::Form(Form::AddMapping) => {
+                        if typed.is_empty() || typed.len() > 80 || !typed.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
+                            return Err("a desktop category is one word, such as Network".into());
+                        }
+                        self.page = Page::Mapping(typed);
+                        out.navigation = Some(Navigation::default());
+                    }
+                    _ => {}
+                }
+            }
+            Action::Delete(name) => {
+                let mut prefs = self.prefs.clone();
+                prefs.delete(&name)?;
+                self.change(prefs, format!("{} deleted", name.to_lowercase()), &mut out)?;
+                if matches!(&self.page, Page::Category(c) if *c == name) {
+                    out.navigation = self.back();
+                }
+            }
+            Action::MoveCategory(name, up) => {
+                // the page stays, its row lit: Enter again moves it another place (#233)
+                let mut prefs = self.prefs.clone();
+                prefs.shift(&name, up)?;
+                let words = format!("{} moved {}", name.to_lowercase(), if up { "up" } else { "down" });
+                self.change(prefs, words, &mut out)?;
+            }
+            Action::ChooseCategory(id) => out.navigation = Some(self.navigate(Page::CategoryPicker(id), nav)),
+            Action::ChooseLaunch(id) => out.navigation = Some(self.navigate(Page::LaunchPicker(id), nav)),
+            Action::SetCategory(id, category) => {
+                let current = self.preference(&id);
+                if current.category != category {
+                    let mut prefs = self.prefs.clone();
+                    Self::pref_mut(&mut prefs, &id, current).category = category.clone();
+                    let words = match &category {
+                        Some(c) => format!("{} in {}", name(self, &id), c.to_lowercase()),
+                        None => format!("{} as mapped", name(self, &id)),
+                    };
+                    self.change(prefs, words, &mut out)?;
+                }
+                out.navigation = self.back();
+            }
+            Action::SetLaunch(id, launch) => {
+                let current = self.preference(&id);
+                if current.mode() != launch {
+                    let mut prefs = self.prefs.clone();
+                    Self::pref_mut(&mut prefs, &id, current).launch = launch.clone();
+                    let words = format!("{}: {}", name(self, &id), launch_name(&launch));
+                    self.change(prefs, words, &mut out)?;
+                }
+                out.navigation = self.back();
+            }
+            Action::Visibility(id) => {
+                let current = self.preference(&id);
+                let hidden = !current.hidden;
+                let mut prefs = self.prefs.clone();
+                Self::pref_mut(&mut prefs, &id, current).hidden = hidden;
+                let words = format!("{} {}", name(self, &id), if hidden { "hidden" } else { "shown" });
+                self.change(prefs, words, &mut out)?;
+            }
+            Action::Undo(prefs) => {
+                self.save(*prefs)?;
+                self.undo = None;
+                out.notice = Some("undone".into());
+            }
+            Action::Refresh => {
+                self.refreshing = true; // the read that follows gets a receipt; the first read at the home does not
+                out.request = Some(json!({"op":"catalog"}));
+            }
+            Action::RetryDetails(id) => out.request = Some(json!({"op":"details","id":id})),
+            Action::Copy(value) => out.copy = Some(value),
+        }
+        Ok(out)
+    }
+
+    pub fn receive(&mut self, serial: u64, value: Value) -> Result<Option<String>, String> {
+        if self.pending.as_ref().is_none_or(|(s, _)| *s != serial) {
+            return Ok(None);
+        }
+        let (_, op) = self.pending.take().unwrap();
+        if let Some(error) = value["error"].as_str() {
+            self.copy_said = None;
+            if op == "catalog" {
+                self.failed = true;
+            }
+            return Err(scrub(error));
+        }
+        match op.as_str() {
+            "catalog" => {
+                self.failed = true;
+                self.entries = value["apps"]
+                    .as_array()
+                    .ok_or("the apps could not be read")?
+                    .iter()
+                    .filter_map(Entry::read)
+                    .collect();
+                self.loaded = true;
+                self.failed = false;
+                self.details.clear();
+                if std::mem::take(&mut self.refreshing) {
+                    let n = self.entries.len();
+                    return Ok(Some(format!("{} app{} read", n, if n == 1 { "" } else { "s" })));
+                }
+            }
+            "details" => {
+                let id = value["id"].as_str().ok_or("the app's details could not be read")?.to_string();
+                self.details.insert(id, value);
+            }
+            "launch" => return Ok(Some(scrub(value["message"].as_str().unwrap_or("launch outcome is unavailable")))),
+            "copy" => return Ok(Some(self.copy_said.take().unwrap_or_else(|| "copied".into()))),
+            _ => return Err("the apps answered something unknown".into()),
+        }
+        Ok(None)
+    }
+}
+
+impl Outcome {
+    fn navigate_to(&mut self, state: &mut State, page: Page, nav: Navigation) {
+        self.navigation = Some(state.navigate(page, nav));
+    }
+}
+
+pub fn launch_name(mode: &str) -> &str {
+    match mode {
+        "focus" => "focus existing",
+        "new" => "new window",
+        _ => "application default",
+    }
+}

@@ -1,0 +1,87 @@
+#!/bin/sh
+# spark-shell pre-commit gate: the privacy patterns spark uses, syntax,
+# and ASCII docs. A missing tool is a NOTICE, never a silent pass.
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+fail=0
+notice() { printf 'NOTICE: %s\n' "$*"; }
+bad() { printf 'pre-commit: %s\n' "$*"; fail=1; }
+
+# --- 1. privacy gate: staged content only -------------------------------
+staged_files=$(git diff --cached --name-only --diff-filter=ACMR)
+if [ -n "$staged_files" ]; then
+    local_terms=${SPARK_PRIVACY_TERMS:-${XDG_CONFIG_HOME:-$HOME/.config}/spark/privacy-terms}
+    terms=$(cat .privacy-terms "$local_terms" 2>/dev/null \
+            | sed 's/#.*//; s/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | sort -u | paste -sd'|' -)
+    [ -n "$terms" ] || notice "no privacy word list ($(printf '%s' "$local_terms" | sed "s|^$HOME|~|")) -- generic patterns only"
+    added=$(git diff --cached --diff-filter=ACMR -U0 -- . ':(exclude).privacy-terms' \
+            | grep '^+' | grep -v '^+++' || true)
+    if [ -n "$added" ]; then
+        if [ -n "$terms" ]; then
+            hit=$(printf '%s\n' "$added" | grep -iEn "\\b($terms)\\b" || true)
+            [ -z "$hit" ] || bad "banned word in staged change:
+$hit"
+        fi
+        # a systemd instance (getty@tty1.service) is not an address
+        hit=$(printf '%s\n' "$added" | sed -E 's/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.(service|socket|timer|target)//g' \
+              | grep -En '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' \
+              | grep -v 'you@example.com' || true)
+        [ -z "$hit" ] || bad "e-mail address in staged change:
+$hit"
+        hit=$(printf '%s\n' "$added" \
+              | grep -En '\b(10\.[0-9]+\.[0-9]+\.[0-9]+|192\.168\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]+\.[0-9]+)\b' || true)
+        [ -z "$hit" ] || bad "private IPv4 address in staged change:
+$hit"
+        hit=$(printf '%s\n' "$added" | grep -En '(^.|[^[:alnum:]/._-])/(home|Users)/[A-Za-z0-9_-]+' || true)
+        [ -z "$hit" ] || bad "home path naming a user in staged change:
+$hit"
+        # secret shapes, spark's own (SECRET_SHAPES in spark's
+        # lib/spark/text.py) as grep -E: a private key block, an AWS key,
+        # a GitHub token, a Slack token, an sk- key. A hit names the shape,
+        # never the line; a line marked `spark:allow-secret` (a test
+        # fixture) is skipped.
+        lines=$(printf '%s\n' "$added" | grep -v 'spark:allow-secret' || true)
+        shapes=
+        for shape in \
+            'a private key=-----BEGIN [A-Z ]*PRIVATE KEY-----' \
+            'an AWS access key=(^|[^[:alnum:]_])AKIA[0-9A-Z]{16}([^[:alnum:]_]|$)' \
+            'a GitHub token=(^|[^[:alnum:]_])(ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{22,})' \
+            'a Slack token=(^|[^[:alnum:]_])xox[baprs]-[A-Za-z0-9-]{10,}' \
+            'an API key=(^|[^[:alnum:]_])sk-[A-Za-z0-9]{20,}'; do
+            if printf '%s\n' "$lines" | grep -Eq -e "${shape#*=}"; then
+                shapes="${shapes:+$shapes, }${shape%%=*}"
+            fi
+        done
+        [ -z "$shapes" ] || bad "a secret shape in the staged diff: $shapes"
+    fi
+fi
+
+# --- 2. syntax ------------------------------------------------------------
+for f in spark-shell src/*.sh test/shell_test.sh .githooks/pre-commit; do
+    sh -n "$f" || bad "sh -n $f"
+done
+if command -v shellcheck >/dev/null 2>&1; then
+    # -e SC1107: a shellcheck before 0.10 (Ubuntu 24.04's) calls the extended-analysis directive unknown
+    shellcheck -x -S warning -e SC1107 spark-shell test/shell_test.sh test/wifi_proof.sh test/greetd_upgrade_proof.sh test/dhcpcd_proof.sh || bad "shellcheck"
+else notice "shellcheck not found; skipped"; fi
+python3 -m py_compile test/layout_desktop_proof.py lib/wifi_connect.py test/wifi_connect_test.py lib/layout_terminal.py test/layout_terminal_test.py test/display_test.py lib/terminal_profile.py test/profile_test.py lib/bt_agent.py test/bt_agent_test.py lib/printers.py test/printers_test.py lib/open_path.py test/open_path_test.py lib/network.py test/network_test.py lib/network_dhcpcd.py test/network_dhcpcd_test.py test/dhcpcd_native.py test/dhcpcd_server.py lib/reminder_time.py test/provider_acceptance.py gallery/animation/make.py lib/office.py test/office_test.py || bad "python syntax"
+if [ "$(uname)" = Darwin ]; then
+    SPARK_SHELL_NO_APPLY=1 /usr/bin/python3 test/profile_test.py >/dev/null || bad "profile_test"
+fi
+
+# --- 3. docs, script and templates stay ASCII (read on a console) -----
+tab=$(printf '\t')
+for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example spark-shell src/*.sh test/shell_test.sh lib/terminal_profile.py test/profile_test.py lib/saver.py test/saver_test.py $(find template distro gallery/theme -type f | sort); do
+    hit=$(LC_ALL=C grep -n "[^ -~${tab}]" "$f" | head -3 || true)
+    [ -z "$hit" ] || bad "non-ASCII in $f:
+$hit"
+done
+
+# --- 4. no hex color in a template: the look is the 16 palette slots ---
+# (the desktop's foot.ini and sway/config carry @HEX_*@ placeholders;
+# the palette's own rrggbb lands at render time, never in the tree)
+hit=$(grep -rnE '#[0-9a-fA-F]{6}' template | head -3 || true)
+[ -z "$hit" ] || bad "hex color in a template (name a slot instead):
+$hit"
+
+[ "$fail" -eq 0 ] || { printf 'pre-commit: refused\n'; exit 1; }

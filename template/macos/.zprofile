@@ -1,0 +1,32 @@
+# spark-shell ~/.zprofile -- a login shell on macOS: Homebrew, then ~/.local/bin first.
+if [ -x /opt/homebrew/bin/brew ]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [ -x /usr/local/bin/brew ]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+fi
+case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac
+export PATH
+
+# The palette at a console login (TERM=linux): the escapes spark-shell
+# theme wrote, then the cursor on. Terminal.app is never one: its
+# profile carries the palette.
+if [ "$TERM" = linux ] && [ -t 1 ]; then
+    [ -r ~/.config/spark-shell/console-colors ] && cat ~/.config/spark-shell/console-colors
+    printf '\033[?25h'
+fi
+
+# The palette at login: when theme.env changed since the last time,
+# spark-shell writes its own files again and never touches yours.
+# Otherwise it is one cksum.
+if [[ -o interactive ]] && [ -t 1 ] && command -v spark-shell >/dev/null 2>&1; then spark-shell follow; fi
+
+# The greeting: once per interactive login on a terminal (every
+# Terminal.app window is one), never for a script. SITE_QUIET_START=yes
+# in site.env silences it (spark quiet start on). The file is read
+# directly, with no python on the login path, so the environment's
+# SITE_QUIET_START is not honoured here.
+if [[ -o interactive ]] && [ -t 1 ] && [ -r ~/.config/spark/banner ]; then
+    if command -v spark >/dev/null 2>&1; then                       # blank row, logo, version, credits
+        grep -qx 'SITE_QUIET_START=yes' ~/.config/spark/site.env 2>/dev/null || spark ver
+    else printf '\n%b\n' "$(cat ~/.config/spark/banner)"; fi        # before bootstrap has linked spark
+fi

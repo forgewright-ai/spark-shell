@@ -1,0 +1,7 @@
+#!/bin/sh
+# rendered by spark-shell from templates/login/run -- spark-shell off login removes it
+# The login screen itself, in the palette spark-shell had when it wrote this.
+export HEX_BG=@HEX_BG@ HEX_FG=@HEX_FG@ HEX_ACCENT=@HEX_ACCENT@ HEX_MUTED=@HEX_MUTED@
+export HEX_ANSI_1=@HEX_ANSI_1@ HEX_ANSI_2=@HEX_ANSI_2@
+export PANEL_BG=@PANEL_BG@ PANEL_HI=@PANEL_HI@ PANEL_MUTED=@PANEL_MUTED@
+exec /@LOGIN_LIB@/spark-dialog login --desktop @LOGIN_DESKTOP@@LOGIN_ARGS@

@@ -1,0 +1,863 @@
+// Mock-ups for the v0.88 review: the dialog drawn by its own code from
+// fixture rows shaped as the providers would send them. Run with
+// MOCKUP_DIR=... cargo test --test mockup -- --nocapture; it writes one HTML
+// page per state and palette. Not a golden: a picture to decide from.
+mod common;
+use ratatui::buffer::{Buffer, CellDiffOption};
+use ratatui::layout::Rect;
+use ratatui::style::{Color, Modifier};
+use serde_json::{json, Value};
+use spark_dialog::app::{App, Config, Provider, Staged, Step, View, Who, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
+use spark_dialog::model;
+use spark_dialog::palette::Palette;
+use spark_dialog::scrub::cells;
+use std::collections::HashMap;
+
+const CLOCK: &str = "Thu 22 Oct \u{b7} 23:30";
+const DRAWINGS: [(&str, &str); 17] = [
+    ("skyline", "tokyonight-night"),
+    ("fjord", "nord"),
+    ("forest", "everforest-dark"),
+    ("sunset", "gruvbox-dark"),
+    ("hills", "catppuccin-mocha"),
+    ("dunes", "dracula"),
+    ("ripples", "rose-pine"),
+    ("contours", "selenized-dark"),
+    ("morning", "solarized-light"),
+    ("meadow", "catppuccin-latte"),
+    ("kites", "tokyonight-day"),
+    ("fields", "gruvbox-light"),
+    ("grove", "everforest-light"),
+    ("arches", "rose-pine-dawn"),
+    ("shore", "selenized-light"),
+    ("flight", "one-light"),
+    ("embers", "any dark palette"),
+];
+
+fn themes() -> Vec<(String, HashMap<String, String>)> {
+    let dir = format!("{}/../../gallery/theme", env!("CARGO_MANIFEST_DIR"));
+    let mut out: Vec<(String, HashMap<String, String>)> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|x| x == "env"))
+        .map(|e| {
+            let name = e.path().file_stem().unwrap().to_string_lossy().to_string();
+            let kv = std::fs::read_to_string(e.path())
+                .unwrap()
+                .lines()
+                .filter_map(|l| l.split_once('='))
+                .map(|(k, v)| (k.to_string(), v.trim().to_string()))
+                .collect();
+            (name, kv)
+        })
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+fn luma(hex: &str) -> u32 {
+    let v = u32::from_str_radix(hex.trim_start_matches('#'), 16).unwrap_or(0);
+    let (r, g, b) = ((v >> 16) & 255, (v >> 8) & 255, v & 255);
+    (299 * r + 587 * g + 114 * b) / 1000
+}
+
+fn chip(kv: &HashMap<String, String>) -> Value {
+    let k = |n: &str| kv.get(n).cloned().unwrap_or_else(|| "#808080".into());
+    json!([
+        k("THEME_BG"),
+        k("THEME_FG"),
+        k("THEME_ACCENT"),
+        k("THEME_ANSI_1"),
+        k("THEME_ANSI_2"),
+        k("THEME_ANSI_3"),
+        k("THEME_ANSI_4"),
+        k("THEME_ANSI_5"),
+        k("THEME_ANSI_6")
+    ])
+}
+
+fn provider(label: &str, title: &str, rows: Value) -> Provider {
+    let mut p = Provider::new(label);
+    p.title = title.into();
+    p.version = "0.88".into();
+    p.rows = model::rows(&rows.to_string()).unwrap();
+    p.ready = true;
+    p
+}
+
+fn row(id: &str, sign: &str, text: &str, tool: Option<(&str, Value)>, group: Option<&str>) -> Value {
+    json!({"id": id, "sign": sign, "text": text, "tool": tool.map(|(n, a)| json!({"name": n, "arguments": a})), "more": [], "columns": [], "children": null, "group": group})
+}
+
+fn theme_rows(cur: &str, drawing: &str, size: &str, transparency: &str) -> Value {
+    // as the provider sends them (#183): the palettes first, dark beside light, each kept in place with a look;
+    // custom; then the settings in three groups, each with its control
+    let mut rows = vec![];
+    let all = themes();
+    for (dark, group) in [(true, "dark"), (false, "light")] {
+        for (name, kv) in all
+            .iter()
+            .filter(|(_, kv)| (luma(kv.get("THEME_BG").map(String::as_str).unwrap_or("#000")) < 128) == dark)
+        {
+            let sign = if name == cur { "check" } else { "blank" };
+            rows.push(json!({"id": format!("theme:{}", name), "sign": sign, "text": name, "tool": {"name": "theme_palette", "arguments": {"name": name}}, "more": [], "columns": [], "children": null, "group": group, "chip": chip(kv),
+                             "quiet": true, "look": {"name": "theme_preview", "arguments": {"name": name}}}));
+        }
+    }
+    rows.push(json!({"id": "theme:save", "sign": "blank", "text": "save this look as", "tool": {"name": "theme_save", "arguments": {}, "ask": ["name"]}, "more": [], "columns": [], "children": null, "group": "custom"}));
+    rows.push(json!({"id": "theme:picture", "sign": "blank", "text": "a theme from a picture", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows", "group": "custom"}));
+    rows.push(json!({"id": "theme:none", "sign": "blank", "text": "terminal default colors", "tool": {"name": "theme_palette", "arguments": {"name": "none"}}, "more": [], "columns": [], "children": null, "group": "custom"}));
+    let sizes: Vec<Value> = (6..=40).map(|n| json!({"shown": n.to_string(), "sent": n.to_string()})).collect();
+    let pcts: Vec<Value> = [0, 10, 20, 25, 30, 40, 50]
+        .iter()
+        .map(|n| json!({"shown": if *n == 0 { "off".to_string() } else { format!("{}%", n) }, "sent": n.to_string()}))
+        .collect();
+    let at_size = size.parse::<usize>().unwrap_or(12).saturating_sub(6);
+    let at_pct = [0, 10, 20, 25, 30, 40, 50].iter().position(|n| format!("{}%", n) == transparency).unwrap_or(3);
+    let switch = |id: &str, text: &str, on: bool, tool: &str, yes: &str, no: &str| {
+        json!({"id": id, "sign": "blank", "text": text, "tool": null, "more": [], "columns": [], "children": null, "group": if tool == "theme_motion" { "screen" } else { "text and bar" },
+               "switch": {"on": on, "turn_on": {"name": tool, "arguments": {"to": yes}}, "turn_off": {"name": tool, "arguments": {"to": no}}}})
+    };
+    rows.push(json!({"id": "theme:wallpaper", "sign": "blank", "text": "Wallpaper", "tool": null, "more": [], "columns": [drawing], "children": "spark-shell://theme/rows/wallpapers", "group": "screen"}));
+    rows.push(switch("theme:show:Moving wallpaper", "Moving wallpaper", false, "theme_motion", "on", "off"));
+    rows.push(json!({"id": "theme:show:Transparency", "sign": "blank", "text": "Transparency", "tool": null, "more": [], "columns": [], "children": null, "group": "screen",
+                     "step": {"values": pcts, "at": at_pct, "set": {"name": "theme_transparency", "arguments": {}}, "key": "amount", "words": ["less", "more"]}}));
+    rows.push(json!({"id": "theme:show:Text size", "sign": "blank", "text": "Text size", "tool": null, "more": [], "columns": [], "children": null, "group": "text and bar",
+                     "step": {"values": sizes, "at": at_size, "set": {"name": "theme_text", "arguments": {}}, "key": "size", "words": ["smaller", "bigger"]}}));
+    rows.push(switch(
+        "theme:show:Words on the bar",
+        "Words on the bar",
+        true,
+        "theme_glyphs",
+        "words",
+        "signs",
+    ));
+    rows.push(switch(
+        "theme:show:Numbered workspaces",
+        "Numbered workspaces",
+        false,
+        "theme_workspaces",
+        "numbers",
+        "symbols",
+    ));
+    rows.push(json!({"id": "theme:show:Animation", "sign": "blank", "text": "Animation", "tool": null, "more": [], "columns": ["moon"], "children": "spark-shell://theme/rows/animations", "group": "dialog"}));
+    json!({"title": cur, "rows": rows, "short": [], "look_back": {"name": "theme_preview", "arguments": {"name": "off"}}})
+}
+
+fn wallpaper_rows(cur: &str, thumbs: &str) -> Value {
+    let mut rows = vec![];
+    for (d, p) in DRAWINGS {
+        let sign = if d == cur { "check" } else { "blank" };
+        let tool = if d == cur {
+            Value::Null
+        } else {
+            json!({"name": "theme_wallpaper", "arguments": {"name": d}})
+        };
+        let said = if p.starts_with("any") {
+            "for any dark palette".to_string()
+        } else {
+            format!("for {}", p)
+        };
+        rows.push(json!({"id": format!("wall:{}", d), "sign": sign, "text": d, "tool": tool, "more": [], "columns": [said], "children": null, "group": "drawings", "preview": format!("{}/{}.png", thumbs, d)}));
+    }
+    rows.push(json!({"id": "wall:picture", "sign": "blank", "text": "a picture", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows", "group": "custom"}));
+    rows.push(json!({"id": "wall:color", "sign": "blank", "text": "a color", "tool": {"name": "theme_wallpaper", "arguments": {}, "ask": ["name"]}, "more": [], "columns": ["a name or #rrggbb"], "children": null, "group": "custom"}));
+    rows.push(json!({"id": "wall:ground", "sign": "blank", "text": "the ground", "tool": {"name": "theme_wallpaper", "arguments": {"name": "default"}}, "more": [], "columns": ["the palette's own, darker"], "children": null, "group": "custom", "chip": ["#13141c"]}));
+    json!({"title": "wallpaper", "rows": rows, "short": []})
+}
+
+fn app(cur: &str, drawing: &str, thumbs: &str) -> App {
+    let cfg = Config {
+        plus: true,
+        model: true,
+        talk: true,
+        close: true,
+        ..Config::default()
+    };
+    let mut app = App::new(cfg, &[]);
+    let apps = provider(
+        "apps",
+        "8 apps",
+        json!({"title": "apps", "rows": [
+            row("apps:terminal", "opens", "terminal", Some(("apps_terminal", json!({}))), None),
+            row("apps:firefox", "opens", "firefox", Some(("apps_open", json!({"name": "firefox"}))), None),
+            row("apps:btop", "opens", "btop", Some(("apps_open", json!({"name": "btop"}))), None),
+            row("apps:aerc", "opens", "aerc", Some(("apps_open", json!({"name": "aerc"}))), None),
+            row("apps:micro", "opens", "micro", Some(("apps_open", json!({"name": "micro"}))), None),
+            row("apps:mpv", "opens", "mpv", Some(("apps_open", json!({"name": "mpv"}))), None),
+            row("apps:pyradio", "opens", "pyradio", Some(("apps_open", json!({"name": "pyradio"}))), None),
+            row("apps:tmux", "opens", "tmux", Some(("apps_open", json!({"name": "tmux"}))), None)
+        ], "short": []}),
+    );
+    let window = provider(
+        "window",
+        "side by side",
+        json!({"title": "window", "rows": [
+            row("window:focus terminal", "opens", "terminal", Some(("window_focus", json!({"name": "terminal"}))), Some("open now")),
+            row("window:focus firefox", "opens", "firefox", Some(("window_focus", json!({"name": "firefox"}))), Some("open now"))
+        ], "short": []}),
+    );
+    let layout = provider(
+        "layout",
+        "3 saved",
+        json!({"title": "layout", "rows": [
+            row("layout:writing", "opens", "writing", Some(("layout_open", json!({"name": "writing"}))), None),
+            row("layout:news", "opens", "news", Some(("layout_open", json!({"name": "news"}))), None),
+            row("layout:music", "opens", "music", Some(("layout_open", json!({"name": "music"}))), None)
+        ], "short": []}),
+    );
+    let notes = provider(
+        "notes",
+        "12 in ~/notes",
+        json!({"title": "notes", "rows": [
+            row("notes:new", "opens", "new note", Some(("notes_new", json!({}))), None),
+            row("notes:groceries", "blank", "groceries", Some(("notes_open", json!({"name": "groceries"}))), None),
+            row("notes:talk", "blank", "ideas for the talk", Some(("notes_open", json!({"name": "ideas for the talk"}))), None),
+            row("notes:box", "blank", "box setup", Some(("notes_open", json!({"name": "box setup"}))), None)
+        ], "short": []}),
+    );
+    let reminders = provider(
+        "reminders",
+        "1 ahead",
+        json!({"title": "reminders", "rows": [
+            row("reminders:new", "opens", "new reminder", Some(("reminders_new", json!({}))), None),
+            json!({"id": "reminders:show:call the dentist", "sign": "ring", "text": "call the dentist", "tool": null, "more": [], "columns": ["9:00"], "children": null, "group": "tomorrow"})
+        ], "short": []}),
+    );
+    let wifi = provider("wifi", "home-wifi", json!({"title": "wifi", "rows": [], "short": []}));
+    let out = provider(
+        "out",
+        "jabra speak \u{b7} 62%",
+        json!({"title": "out", "rows": [
+            row("out:mute", "blank", "mute", Some(("out_mute", json!({}))), None)
+        ], "short": []}),
+    );
+    let display = provider(
+        "display",
+        "brightness 60%",
+        json!({"title": "display", "rows": [
+            row("display:dimmer", "blank", "dimmer", Some(("display_brightness", json!({"level": "down"}))), None)
+        ], "short": []}),
+    );
+    let theme = provider("theme", cur, theme_rows(cur, drawing, "11", "25%"));
+    let files = provider("files", "your home", json!({"title": "files", "rows": [], "short": []}));
+    let clock = provider("clock", "", json!({"title": "clock", "rows": [], "short": []}));
+    let _ = thumbs;
+    app.providers = vec![apps, files, window, layout, notes, reminders, clock, out, wifi, display, theme];
+    app.model_name = Some("gemma4-26b-a4b".into());
+    app.voice_on = true;
+    app
+}
+
+fn hex(c: Color, d: Color) -> String {
+    match if c == Color::Reset { d } else { c } {
+        Color::Rgb(r, g, b) => format!("#{:02x}{:02x}{:02x}", r, g, b),
+        _ => "inherit".into(),
+    }
+}
+
+/// The buffer as one page: the box's font, a 19 px row, the window's own air, the picture where it lies.
+fn page(buf: &Buffer, pal: &Palette, preview: &Option<spark_dialog::ui::Picture>) -> String {
+    let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let (w, h) = (buf.area.width, buf.area.height);
+    let mut rows = String::new();
+    for y in 0..h {
+        let mut skip = 0;
+        for x in 0..w {
+            let c = &buf[(x, y)];
+            if skip > 0 {
+                skip -= 1;
+                continue;
+            }
+            let sym = if c.diff_option == CellDiffOption::Skip { " " } else { c.symbol() };
+            let sym = if sym.is_empty() { " " } else { sym };
+            skip = cells(sym).saturating_sub(1);
+            let bold = if c.modifier.contains(Modifier::BOLD) { "font-weight:700;" } else { "" };
+            rows.push_str(&format!(
+                "<span style=\"color:{};background:{};{}display:inline-block;width:{}ch;height:19px;text-align:center\">{}</span>",
+                hex(c.fg, pal.fg),
+                hex(c.bg, pal.surface),
+                bold,
+                cells(sym).max(1),
+                esc(sym)
+            ));
+        }
+        rows.push('\n');
+    }
+    let img = match preview {
+        Some(spark_dialog::ui::Picture { x, y, w: pw, h: ph, file, .. }) => format!(
+            "<img src=\"file://{}\" style=\"position:absolute;left:calc(2ch + {}ch);top:calc(17px + {}px);width:{}ch;height:{}px;object-fit:cover;border-radius:3px\">",
+            file,
+            x,
+            *y as u32 * 19,
+            pw,
+            *ph as u32 * 19
+        ),
+        None => String::new(),
+    };
+    let fonts = format!("{}/fonts", std::env::var("MOCKUP_DIR").unwrap());
+    format!(
+        "<!doctype html><meta charset=utf-8><style>@font-face{{font-family:DV;src:url(file://{f}/DejaVuSansMono.ttf)}}@font-face{{font-family:DV;font-weight:700;src:url(file://{f}/DejaVuSansMono-Bold.ttf)}}body{{margin:0;padding:0;background:{bg}}}</style><body><div style=\"position:relative;display:inline-block;background:{bg};padding:17px 2ch;font:15px/19px DV;white-space:pre;width:{w}ch\">{rows}{img}</div></body>",
+        f = fonts,
+        bg = hex(pal.surface, pal.surface),
+        w = w,
+        rows = rows,
+        img = img
+    )
+}
+
+fn shot(app: &App, pal: &Palette, name: &str, palname: &str) {
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    let drawn = spark_dialog::ui::draw(app, pal, CLOCK, &mut b);
+    let dir = std::env::var("MOCKUP_DIR").unwrap();
+    std::fs::write(format!("{}/{}-{}.html", dir, name, palname), page(&b, pal, &drawn.preview)).unwrap();
+}
+
+fn type_words(app: &mut App, words: &str) {
+    for c in words.chars() {
+        app.typed(c);
+    }
+}
+
+fn lit(app: &mut App, text: &str) {
+    let picks = app.picks();
+    let i = picks
+        .iter()
+        .position(|it| match it {
+            spark_dialog::app::Item::Row(p, r) => app.providers[*p].rows.rows[*r].text == text,
+            spark_dialog::app::Item::Folder(i) => app.folder.as_ref().is_some_and(|(_, _, rows)| rows.rows[*i].text == text),
+            _ => false,
+        })
+        .unwrap_or_else(|| panic!("no row {}", text));
+    app.in_list = true;
+    app.sel = i;
+}
+
+#[test]
+fn mockups() {
+    let Ok(dir) = std::env::var("MOCKUP_DIR") else { return };
+    let thumbs = format!("{}/thumbs", dir);
+    for (palname, drawing) in [("tokyonight-night", "skyline"), ("solarized-light", "morning")] {
+        let pal = common::palette(palname);
+        let base = app(palname, drawing, &thumbs);
+        let th = base.providers.iter().position(|p| p.label == "theme").unwrap();
+
+        let a = app(palname, drawing, &thumbs);
+        shot(&a, &pal, "1-home", palname);
+
+        let mut a = app(palname, drawing, &thumbs);
+        type_words(&mut a, "nord");
+        shot(&a, &pal, "2-home-nord", palname);
+
+        let mut a = app(palname, drawing, &thumbs);
+        type_words(&mut a, "mute everything and turn the screen down");
+        shot(&a, &pal, "3-home-sentence", palname);
+
+        let mut a = app(palname, drawing, &thumbs);
+        a.view = View::Section(th);
+        a.came_from = vec![View::Home, View::Dest(SETTINGS_DEST)];
+        shot(&a, &pal, "4-theme", palname);
+
+        let mut a = app(palname, drawing, &thumbs);
+        a.view = View::Section(th);
+        a.came_from = vec![View::Home, View::Dest(SETTINGS_DEST)];
+        lit(&mut a, "Text size");
+        shot(&a, &pal, "5-theme-text", palname);
+
+        let mut a = app(palname, drawing, &thumbs);
+        a.view = View::Section(th);
+        a.came_from = vec![View::Home, View::Dest(SETTINGS_DEST)];
+        lit(&mut a, "nord");
+        shot(&a, &pal, "6-theme-nord", palname);
+
+        for (k, l) in [("7-wallpaper", None), ("8-wallpaper-fjord", Some("fjord"))] {
+            let mut a = app(palname, drawing, &thumbs);
+            let uri = "spark-shell://theme/rows/wallpapers".to_string();
+            let rows = model::rows(&wallpaper_rows(drawing, &thumbs).to_string()).unwrap();
+            a.folder = Some((th, uri.clone(), rows));
+            a.view = View::Folder(th, uri);
+            a.came_from = vec![View::Home, View::Dest(SETTINGS_DEST), View::Section(th)];
+            if let Some(l) = l {
+                lit(&mut a, l);
+            }
+            shot(&a, &pal, k, palname);
+        }
+    }
+}
+
+/// A color as the design system's preview names it: a color of the dialog's palette is its token, so the card
+/// follows the theme picker; a cell on a ground of its own (a palette's chip, a sample) keeps the data's hex.
+fn ds_color(c: Color, d: Color, pal: &Palette, data: bool) -> String {
+    let c = if c == Color::Reset { d } else { c };
+    if !data {
+        for (k, v) in [
+            (pal.fg, "fg"),
+            (pal.accent, "accent"),
+            (pal.muted, "panel-muted"),
+            (pal.surface, "panel-bg"),
+            (pal.lit, "panel-hi"),
+            (pal.alarm, "alarm"),
+            (pal.ok, "ansi-2"),
+        ] {
+            if c == k {
+                return format!("var(--{})", v);
+            }
+        }
+    }
+    hex(c, d)
+}
+
+/// One frame of the preview: a caption, then the window's cells as runs of one style a line, a glyph outside
+/// ASCII held to one cell, the picture beside a list where the dialog draws it.
+/// Where the dialog draws a picture (its cells and its file) and the picture's source in the page.
+type Picture<'a> = Option<(&'a spark_dialog::ui::Picture, &'a str)>;
+
+fn ds_frame(buf: &Buffer, pal: &Palette, caption: &str, picture: Picture) -> String {
+    let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let (w, h) = (buf.area.width, buf.area.height);
+    let mut out = String::new();
+    for y in 0..h {
+        let mut run: Option<(String, String)> = None; // (style, text)
+        let mut skip = 0;
+        for x in 0..w {
+            if skip > 0 {
+                skip -= 1;
+                continue;
+            }
+            let c = &buf[(x, y)];
+            let sym = if c.diff_option == CellDiffOption::Skip { " " } else { c.symbol() };
+            let sym = if sym.is_empty() { " " } else { sym };
+            skip = cells(sym).saturating_sub(1);
+            let data = c.bg != Color::Reset && c.bg != pal.surface && c.bg != pal.lit;
+            let style = format!(
+                "color:{};background:{};{}",
+                ds_color(c.fg, pal.fg, pal, data),
+                ds_color(c.bg, pal.surface, pal, data),
+                if c.modifier.contains(Modifier::BOLD) { "font-weight:700;" } else { "" }
+            );
+            let text = if sym.is_ascii() {
+                esc(sym)
+            } else {
+                format!(
+                    "<span style=\"display:inline-block;width:{}ch;text-align:center\">{}</span>",
+                    cells(sym).max(1),
+                    esc(sym)
+                )
+            };
+            match run.as_mut() {
+                Some((st, t)) if *st == style => t.push_str(&text),
+                _ => {
+                    if let Some((st, t)) = run.take() {
+                        out.push_str(&format!("<span style=\"{}\">{}</span>", st, t));
+                    }
+                    run = Some((style, text));
+                }
+            }
+        }
+        if let Some((st, t)) = run.take() {
+            out.push_str(&format!("<span style=\"{}\">{}</span>", st, t));
+        }
+        out.push('\n');
+    }
+    let img = match picture {
+        Some((spark_dialog::ui::Picture { x, y, w: pw, h: ph, .. }, src)) => format!(
+            "<img alt=\"the lit drawing\" src=\"{}\" style=\"position:absolute;left:calc(2ch + {}ch);top:{}px;width:{}ch;height:{}px;object-fit:cover\">",
+            src,
+            x,
+            19 + *y as u32 * 19,
+            pw,
+            *ph as u32 * 19
+        ),
+        None => String::new(),
+    };
+    format!(
+        "<div><p style=\"color:var(--panel-muted);font-size:13px;margin:0 0 8px\">{}</p><div style=\"position:relative;background:var(--panel-bg);padding:19px 2ch;white-space:pre;width:{}ch;line-height:19px\">{}{}</div></div>",
+        esc(caption),
+        w,
+        out,
+        img
+    )
+}
+
+/// The design system's Dialog preview, from this code's own render (DS_PREVIEW=FILE, DS_PICTURE=a PNG of skyline):
+/// the home with each place's state, a palette named and Ask spark, spark's commands in the prompt and a turn with its
+/// The file manager's preview for the design system (#112): the home folder (the recent files, the folders and files, the folder's
+/// own steps, a drive), a file's steps, a folder picked for a move. DS_FILES_PREVIEW names the file to write.
+#[test]
+fn design_system_files_preview() {
+    let Ok(file) = std::env::var("DS_FILES_PREVIEW") else { return };
+    let pal = common::palette("tokyonight-night");
+    let draw = |a: &App| -> Buffer {
+        let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+        spark_dialog::ui::draw(a, &pal, CLOCK, &mut b);
+        b
+    };
+    let mut frames = vec![];
+    let a = files_app();
+    frames.push(ds_frame(
+        &draw(&a),
+        &pal,
+        "files: the recent files, the folders and files, the folder's own steps, a drive",
+        None,
+    ));
+    let mut a = files_app();
+    a.hint_key(spark_dialog::app::HintKey::Actions);
+    a.sel = 7;
+    frames.push(ds_frame(
+        &draw(&a),
+        &pal,
+        "a file's steps, opened with F9: Enter runs one, Esc comes back",
+        None,
+    ));
+    let mut a = files_app();
+    a.hint_key(spark_dialog::app::HintKey::Actions);
+    a.sel = 5;
+    a.enter();
+    frames.push(ds_frame(
+        &draw(&a),
+        &pal,
+        "move to a folder: the folders alone, and the row that lands it here",
+        None,
+    ));
+    let head = "<!-- @dsCard group=\"Files\" height=1740 width=1420 subtitle=\"the file manager from v0.111's own render, bound to the tokens: your home folder with the recent files, a file's steps, a folder picked for a move\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
+    std::fs::write(file, format!("{}<div class=\"d\">{}</div>\n<script></script>\n", head, frames.join(""))).unwrap();
+}
+
+/// The dialog at the files, as the provider lists a home folder in v0.111 (#112).
+fn files_app() -> App {
+    let mut app = app("tokyonight-night", "skyline", "/srv/look/thumbs");
+    app.cfg.plus = true;
+    let mut files = Provider::new("files");
+    files.title = "your home folder".into();
+    files.version = "0.111".into();
+    files.ready = true;
+    files.rows = model::rows(&json!({"title": "files", "rows": [
+        {"id": "files:root:a", "sign": "opens", "text": "~", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows/aG9tZQ", "group": null}
+    ], "short": ["files:root:a"]}).to_string()).unwrap();
+    app.providers.push(files);
+    let f = app.providers.len() - 1;
+    let steps = |p: &str| {
+        json!([
+            {"name": "files_reveal", "arguments": {"path": p}, "said": "reveal in the system file manager"},
+            {"name": "files_rename", "arguments": {"path": p}, "ask": ["name"], "said": "rename"},
+            {"name": "files_move", "arguments": {"path": p}, "pick": "to", "said": "move to a folder"},
+            {"name": "files_copy", "arguments": {"path": p}, "pick": "to", "said": "copy to a folder"},
+            {"name": "files_trash", "arguments": {"path": p}, "said": "trash"}
+        ])
+    };
+    let file = |name: &str, size: &str, when: &str, group: &str, folder: Option<&str>| {
+        let p = format!("/data/me/{}", name);
+        let mut more = vec![
+            json!({"name": "files_preview", "arguments": {"path": p}, "said": "preview"}),
+            json!({"name": "files_attach", "arguments": {"path": p}, "said": "attach"}),
+        ];
+        more.extend(steps(&p).as_array().unwrap().iter().cloned());
+        let mut columns = vec![size.to_string(), when.to_string()];
+        if let Some(fo) = folder {
+            columns.push(fo.to_string());
+        }
+        json!({"id": format!("files:file:{}:{}", group, name), "sign": "blank", "text": name, "tool": {"name": "files_open", "arguments": {"path": p}, "said": "open"}, "more": more, "columns": columns, "children": null, "group": group})
+    };
+    let dir = |name: &str, items: &str| {
+        let p = format!("/data/me/{}", name);
+        json!({"id": format!("files:dir:{}", name), "sign": "opens", "text": name, "tool": {"name": "files_browse", "arguments": {"path": p}, "said": "open in the system file manager"}, "more": steps(&p), "columns": [items], "children": format!("spark-shell://files/rows/{}", name), "group": "home"})
+    };
+    let rows = model::rows(&json!({"title": "~", "here": "/data/me", "rows": [
+        file("invoice-0412.pdf", "120 KB", "today", "recent", Some("downloads")),
+        file("photo-0412.jpg", "4.8 MB", "yesterday", "recent", Some("camera")),
+        file("notes.md", "2 KB", "18 Oct", "recent", Some("~")),
+        dir("documents", "12 items"),
+        dir("downloads", "3 items"),
+        dir("pictures", "40 items"),
+        file("notes.md", "2 KB", "18 Oct", "home", None),
+        file("todo.txt", "1 KB", "2025", "home", None),
+        {"id": "files:total", "sign": "blank", "text": "2 files \u{b7} 3 KB", "tool": null, "more": [], "columns": [], "children": null, "group": "this folder"},
+        {"id": "files:new-folder", "sign": "opens", "text": "new folder", "tool": {"name": "files_new_folder", "arguments": {"path": "/data/me"}, "ask": ["name"], "said": "new folder"}, "more": [], "columns": [], "children": null, "group": "this folder"},
+        {"id": "files:new-text", "sign": "opens", "text": "new file", "tool": {"name": "files_new_text", "arguments": {"path": "/data/me"}, "ask": ["name"], "said": "new file"}, "more": [], "columns": [], "children": null, "group": "this folder"},
+        {"id": "files:browse", "sign": "opens", "text": "open in the system file manager", "tool": {"name": "files_browse", "arguments": {"path": "/data/me"}, "said": "open in the system file manager"}, "more": [], "columns": [], "children": null, "group": "this folder"},
+        {"id": "files:drive:s", "sign": "opens", "text": "STICK", "tool": null, "more": [], "columns": ["14.2 GB free"], "children": "spark-shell://files/rows/c3RpY2s", "group": "drives"}
+    ], "short": []}).to_string()).unwrap();
+    app.view = View::Folder(f, "spark-shell://files/rows/aG9tZQ".into());
+    app.came_from = vec![View::Home];
+    app.folder = Some((f, "spark-shell://files/rows/aG9tZQ".into(), rows));
+    app.in_list = true;
+    app.sel = 0;
+    app
+}
+
+/// Undo (#53), the theme section, a value lit, the wallpaper list.
+#[test]
+fn design_system_preview() {
+    let Ok(file) = std::env::var("DS_PREVIEW") else { return };
+    let picture = std::env::var("DS_PICTURE").ok().map(|p| {
+        let b = std::fs::read(p).unwrap();
+        let mut s = String::from("data:image/png;base64,");
+        const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        for ch in b.chunks(3) {
+            let n = (ch[0] as u32) << 16 | (*ch.get(1).unwrap_or(&0) as u32) << 8 | *ch.get(2).unwrap_or(&0) as u32;
+            for k in 0..4 {
+                if k <= ch.len() {
+                    s.push(T[(n >> (18 - 6 * k) & 63) as usize] as char);
+                } else {
+                    s.push('=');
+                }
+            }
+        }
+        s
+    });
+    let pal = common::palette("tokyonight-night");
+    let base = app("tokyonight-night", "skyline", "/srv/look/thumbs");
+    let th = base.providers.iter().position(|p| p.label == "theme").unwrap();
+    let draw = |a: &App| -> (Buffer, spark_dialog::ui::Drawn) {
+        let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+        let d = spark_dialog::ui::draw(a, &pal, CLOCK, &mut b);
+        (b, d)
+    };
+    let mut frames = vec![];
+    let a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
+    frames.push(ds_frame(&draw(&a).0, &pal, "home: what each place holds", None));
+    let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
+    type_words(&mut a, "nord");
+    frames.push(ds_frame(&draw(&a).0, &pal, "home, nord typed: the palette lit, Enter uses it", None));
+    let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
+    type_words(&mut a, "mute everything and turn the screen down");
+    frames.push(ds_frame(&draw(&a).0, &pal, "home, a request: no row has that name, Ask spark lit", None));
+    // what spark planned for it, in the prompt where the words were typed: Enter runs it, Esc drops it (#53)
+    let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
+    let text = "out mute\ndisplay brightness 30".to_string();
+    a.input = text.clone();
+    a.cursor = text.chars().count();
+    a.staged = Some(Staged {
+        text,
+        steps: vec![],
+        draft: String::new(),
+    });
+    frames.push(ds_frame(
+        &draw(&a).0,
+        &pal,
+        "spark's commands in the prompt: Enter runs them, Esc drops them",
+        None,
+    ));
+    // a typed command's receipt: one reply row under the keys, Undo at its end (#196)
+    let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
+    let mut r = spark_dialog::reply::Reply::new(spark_dialog::reply::Mark::Done, "nord is on");
+    r.undo = true;
+    a.reply = Some(r);
+    a.undo = Some(Step {
+        prov: th,
+        call: model::Call {
+            name: "theme_palette".into(),
+            arguments: json!({"name": "tokyonight-night"}).as_object().unwrap().clone(),
+            ask: vec![],
+            said: None,
+            pick: None,
+            value: None,
+            children: None,
+        },
+        who: Who::Undo,
+        line: "undo theme nord".into(),
+        typed: false,
+    });
+    a.in_list = true;
+    a.sel = 0;
+    frames.push(ds_frame(
+        &draw(&a).0,
+        &pal,
+        "a typed command: its receipt in the reply row, Undo at its end",
+        None,
+    ));
+    let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
+    a.view = View::Section(th);
+    a.came_from = vec![View::Home, View::Dest(SETTINGS_DEST)];
+    frames.push(ds_frame(&draw(&a).0, &pal, "theme: the values, the palettes with their chips, custom", None));
+    let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
+    a.view = View::Section(th);
+    a.came_from = vec![View::Home, View::Dest(SETTINGS_DEST)];
+    lit(&mut a, "Text size");
+    frames.push(ds_frame(&draw(&a).0, &pal, "theme, text size lit: left and right change it", None));
+    let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
+    let uri = "spark-shell://theme/rows/wallpapers".to_string();
+    a.folder = Some((th, uri.clone(), model::rows(&wallpaper_rows("fjord", "/srv/look/thumbs").to_string()).unwrap()));
+    a.view = View::Folder(th, uri);
+    a.came_from = vec![View::Home, View::Dest(SETTINGS_DEST), View::Section(th)];
+    lit(&mut a, "skyline");
+    let (b, d) = draw(&a);
+    let pic = match (&d.preview, &picture) {
+        (Some(p), Some(src)) => Some((p, src.as_str())),
+        _ => None,
+    };
+    frames.push(ds_frame(&b, &pal, "the wallpaper list, skyline lit: its picture in the palette in use", pic));
+    let head = "<!-- @dsCard group=\"Dialog\" height=3420 width=1420 subtitle=\"the dialog from v0.97's own render, bound to the tokens: the home with each place's state, a palette named and Ask spark, spark's commands in the prompt, a turn with its Undo, the theme section, a value lit, the wallpaper list with its picture\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
+    std::fs::write(file, format!("{}<div class=\"d\">{}</div>\n", head, frames.join(""))).unwrap();
+}
+
+/// The design system's Calendar preview, from this code's own render (DS_CALENDAR=FILE): the time in large
+/// figures, the two months, the reminders in their groups (#41).
+#[test]
+fn design_system_calendar_preview() {
+    let Ok(file) = std::env::var("DS_CALENDAR") else { return };
+    let pal = common::palette("tokyonight-night");
+    let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
+    let r = |id: &str, sign: &str, text: &str, when: &str, group: &str, date: &str| json!({"id": id, "sign": sign, "text": text, "tool": null, "more": [], "columns": [when], "children": null, "group": group, "date": date});
+    let rows = json!({"title": "reminders", "rows": [
+        row("reminders:new", "opens", "new reminder", Some(("reminders_new", json!({}))), None),
+        r("reminders:show:bread", "dot", "take the bread out", "18:30", "due", "2026-10-20"),
+        r("reminders:show:gym", "ring", "gym", "19:00", "today", "2026-10-20"),
+        r("reminders:show:dentist", "ring", "call the dentist", "09:00", "tomorrow", "2026-10-21"),
+        r("reminders:show:dinner", "ring", "dinner with ada", "Fri 20:00", "this week", "2026-10-23"),
+        r("reminders:show:vet", "ring", "the vet", "Tue 3 Nov 16:30", "later", "2026-11-03")
+    ], "short": []});
+    if let Some(p) = a.providers.iter_mut().find(|p| p.label == "reminders") {
+        p.rows = model::rows(&rows.to_string()).unwrap();
+    }
+    a.view = View::Dest(CALENDAR_DEST);
+    a.came_from = vec![View::Home];
+    a.today = Some((2026, 10, 20));
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    spark_dialog::ui::draw(&a, &pal, "Tue 20 Oct \u{b7} 18:40", &mut b);
+    let frame = ds_frame(&b, &pal, "calendar: the time in large figures, the months, the reminders", None);
+    let head = "<!-- @dsCard group=\"Calendar\" height=860 width=720 subtitle=\"the Calendar from v0.90's own render: the time in large figures, the months, then the reminders as rows\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
+    std::fs::write(file, format!("{}<div class=\"d\">{}</div>\n<script></script>\n", head, frame)).unwrap();
+}
+
+/// A PNG's bytes as a data URI, for a card that carries its picture.
+fn data_png(path: &str) -> String {
+    let b = std::fs::read(path).unwrap();
+    let mut s = String::from("data:image/png;base64,");
+    const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    for ch in b.chunks(3) {
+        let n = (ch[0] as u32) << 16 | (*ch.get(1).unwrap_or(&0) as u32) << 8 | *ch.get(2).unwrap_or(&0) as u32;
+        for k in 0..4 {
+            s.push(if k <= ch.len() { T[(n >> (18 - 6 * k) & 63) as usize] as char } else { '=' });
+        }
+    }
+    s
+}
+
+/// The dialog at a preview (#120): `name` lit in a folder of three files, its page as its provider answers it.
+fn preview_app(name: &str, place: &str, page: serde_json::Value) -> App {
+    let mut a = files_app();
+    let file = |n: &str| json!({"id": format!("files:file:{}", n), "sign": "blank", "text": n, "tool": {"name": "files_open", "arguments": {"path": format!("/data/me/{}", n)}, "said": "open"}, "more": [], "columns": [], "children": null, "group": "home", "page": format!("spark-shell://files/preview/{}", n)});
+    let rows = model::rows(&json!({"title": place, "rows": [file("before.txt"), file(name), file("after.txt")]}).to_string()).unwrap();
+    let mut pv = spark_dialog::preview::Preview::new(0, place, &rows.rows, &format!("files:file:{}", name)).unwrap();
+    pv.shown = spark_dialog::preview::page(&pv.uri(), &page.to_string());
+    a.preview = Some(pv);
+    a.came_from.push(a.view.clone());
+    a.view = View::Preview;
+    a.in_list = false;
+    a
+}
+
+/// The preview's card for the design system (#120): a Markdown note, a PDF page, a sound playing, a picture zoomed
+/// and turned. DS_PREVIEW_CARD names the file to write; DS_PAGE and DS_SPECTROGRAM are PNGs cut from the real
+/// window on the Linux machine (a page pdftoppm drew, a spectrogram mpv drew), the pictures sixel draws there;
+/// DS_SOUND is the waveform over the spectrogram mpv drew for that sound, the one the dialog reads.
+#[test]
+fn design_system_preview_card() {
+    let Ok(file) = std::env::var("DS_PREVIEW_CARD") else { return };
+    let (page_png, spectrogram) = (
+        data_png(&std::env::var("DS_PAGE").unwrap()),
+        data_png(&std::env::var("DS_SPECTROGRAM").unwrap()),
+    );
+    let pal = common::palette("tokyonight-night");
+    let draw = |a: &App| -> (Buffer, spark_dialog::ui::Drawn) {
+        let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+        let d = spark_dialog::ui::draw(a, &pal, CLOCK, &mut b);
+        (b, d)
+    };
+    let contain = |s: String| s.replace("object-fit:cover", "object-fit:contain");
+    let mut frames = vec![];
+    let note = "# Week of 2 November\n\nThe report goes out on Friday. Ada reviews the numbers on Thursday morning, and the charts follow the same afternoon.\n\n## To do\n\n- send the draft to Ada\n- book the room for Thursday\n\n## Notes\n\nThe new printer is on the second floor.";
+    let lines: Vec<&str> = note.lines().collect();
+    let bold: Vec<usize> = lines.iter().enumerate().filter(|(_, l)| l.starts_with('#')).map(|(i, _)| i).collect();
+    let shown: Vec<String> = lines.iter().map(|l| l.trim_start_matches('#').trim_start().to_string()).collect();
+    let a = preview_app(
+        "plan.md",
+        "~/notes",
+        json!({"title": "plan.md", "facts": ["412 B", "today"], "lines": shown, "bold": bold, "attach": "/run/p/1.txt"}),
+    );
+    frames.push(ds_frame(
+        &draw(&a).0,
+        &pal,
+        "a Markdown note: read only, its headings bold; Attach names it",
+        None,
+    ));
+    let a = preview_app(
+        "ghostscript.pdf",
+        "~/docs",
+        json!({"title": "ghostscript.pdf", "facts": ["4.5 MB", "today"], "picture": "/run/p/2.png", "page": 1, "pages": 477, "size": [816, 1056], "attach": "/run/p/2.txt"}),
+    );
+    let (b, d) = draw(&a);
+    frames.push(contain(ds_frame(
+        &b,
+        &pal,
+        "a PDF: the page drawn, page 1 of 477; left and right turn it",
+        d.preview.as_ref().map(|p| (p, page_png.as_str())),
+    )));
+    let mut a = preview_app(
+        "evening-sketch.flac",
+        "~/music",
+        json!({"title": "evening-sketch.flac", "facts": ["44.1 kHz", "16 bit", "stereo", "FLAC", "866 KB"],
+        "lines": ["Evening sketch", "Ada \u{b7} Proofs"], "bold": [0], "seconds": 20.0, "sound": {"picture": "/run/p/3-sound.png", "wave": 160},
+        "play": {"name": "files_play", "arguments": {"path": "/data/me/evening-sketch.flac"}, "said": "play"}, "stop": {"name": "files_stop", "arguments": {}, "said": "stop"}}),
+    );
+    let sound = std::fs::read(std::env::var("DS_SOUND").unwrap()).unwrap();
+    let pv = a.preview.as_mut().unwrap();
+    pv.heard = spark_dialog::preview::sound(&spark_dialog::sixel::decode(&sound).unwrap(), 160);
+    pv.played = 7.0;
+    pv.playing = Some(std::time::Instant::now());
+    let (b, d) = draw(&a);
+    frames.push(ds_frame(
+        &b,
+        &pal,
+        "a sound playing: its waveform, its spectrum now, its spectrogram",
+        d.preview.as_ref().map(|p| (p, spectrogram.as_str())),
+    ));
+    let mut a = preview_app(
+        "ghostscript.pdf",
+        "~/docs",
+        json!({"title": "ghostscript.pdf", "facts": ["4.5 MB", "today"], "picture": "/run/p/2.png", "page": 1, "pages": 477, "size": [816, 1056], "full": true}),
+    );
+    let pv = a.preview.as_mut().unwrap();
+    (pv.src, pv.px) = ((459, 594), (616, 594));
+    a.typed('+');
+    a.typed('+');
+    let (b, d) = draw(&a);
+    frames.push(ds_frame(
+        &b,
+        &pal,
+        "zoomed: the arrows and a drag move it, Esc fits it again; < and > turn it",
+        d.preview.as_ref().map(|p| (p, page_png.as_str())),
+    ));
+    let head = "<!-- @dsCard group=\"Preview\" height=1740 width=1420 subtitle=\"the preview from v0.113's own render, bound to the tokens: a note, a PDF page, a sound playing, a page zoomed; the pictures are the real window's on the Linux machine\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
+    std::fs::write(file, format!("{}<div class=\"d\">{}</div>\n<script></script>\n", head, frames.join(""))).unwrap();
+}
+
+/// Every palette's chip stands in one column, whatever the length of its name (#195): a name longer than
+/// the list's other names once pushed its own chip to the right.
+#[test]
+fn the_palettes_chips_stand_in_one_column() {
+    let pal = common::palette("tokyonight-night");
+    let mut a = app("tokyonight-night", "skyline", "");
+    let th = a.providers.iter().position(|p| p.label == "theme").unwrap();
+    a.view = View::Section(th);
+    a.came_from = vec![View::Home, View::Dest(SETTINGS_DEST)];
+    let h = 80;
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, h));
+    spark_dialog::ui::draw(&a, &pal, CLOCK, &mut b);
+    let names: Vec<String> = themes().into_iter().map(|(n, _)| n).collect();
+    let mut at = vec![];
+    for y in 0..h {
+        let row: Vec<String> = (0..WIDTH).map(|x| b[(x, y)].symbol().to_string()).collect();
+        let line = row.concat();
+        let Some(name) = names.iter().find(|n| line.split_whitespace().any(|w| w == n.as_str())) else {
+            continue;
+        };
+        if let Some(x) = row.iter().position(|s| s == spark_dialog::ui::DOT) {
+            at.push((name.clone(), x));
+        }
+    }
+    assert!(at.len() >= 10, "the theme view shows the palettes with their chips: {:?}", at);
+    let first = at[0].1;
+    assert!(at.iter().all(|(_, x)| *x == first), "every chip starts in one column: {:?}", at);
+}

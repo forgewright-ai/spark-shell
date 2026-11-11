@@ -1,0 +1,356 @@
+# rendered by spark-shell from templates/.config/sway/config -- your own lines go in ~/.config/sway/config.d
+# sway, kept simple: it tiles windows. The bar at the top shows the
+# workspaces and the hardware you sit at; tmux draws the machine and
+# the AI on its status line inside each window. No title bars. An X11
+# app (Steam, a game) runs through Xwayland, which sway starts only when
+# one opens (#170). A new window is foot running your login shell. The borders,
+# the bar and the background use the palette, or the wallpaper (then
+# with gaps between windows).
+# spark-shell desktop starts the desktop from a console, and
+# spark-shell desktop keys lists the keys. The desktop opens with one
+# terminal, and typing exit there leaves the desktop.
+
+set $mod Mod4
+set $term foot
+
+xwayland enable
+# Give services started by the session bus the running desktop environment.
+exec @REPO@/spark-shell desktop portals
+output * bg @WALL_BG@
+# A scene's still on each portrait screen in its own shape (#188), and the moving wallpaper when the
+# theme has it on: spark-wallpaper plays each screen's loop over the still (#187). At a reload too,
+# since a reload puts the line above back on every screen.
+exec_always @REPO@/spark-shell desktop --motion
+# The screens as spark-shell desktop screen set them (scale, mode, place, on or off)
+include "@SCREENS_CONF@"
+# A disconnected second screen must never leave the remaining one off, and no screen sits
+# left of or above 0, where an X11 app takes no click (#171).
+exec_always @REPO@/spark-shell desktop screen --ensure-visible
+# An X11 window's start names the main screen X11's primary, the first screen a game takes (#173).
+for_window [shell="xwayland"] exec @REPO@/spark-shell desktop screen --x11-main
+# The keyboard's layouts, as spark-shell desktop keyboard set them
+@KB_LAYOUT@
+@KB_VARIANT@
+input type:keyboard repeat_delay @KEY_REPEAT_DELAY@
+input type:keyboard repeat_rate @KEY_REPEAT_RATE@
+input type:keyboard xkb_options @KEY_CAPS@
+# Pointer preferences follow new devices and the next login too.
+input type:touchpad tap @POINTER_TAP@
+input type:touchpad natural_scroll @POINTER_SCROLL@
+input type:pointer natural_scroll @POINTER_SCROLL@
+input type:touchpad pointer_accel @POINTER_SPEED@
+input type:pointer pointer_accel @POINTER_SPEED@
+gaps inner @GAPS_INNER@
+gaps outer @GAPS_OUTER@
+workspace_layout @WS_LAYOUT@
+# Flat windows (#19, #22, #265): no outline. Every window has a two-pixel edge, the same focused or not:
+# between two windows a four-pixel strip the mouse can grab to resize, where the pointer shows the
+# resize arrows. Over a wallpaper the edge is transparent, so only the wallpaper shows there; with
+# none it is the surface shade, so two windows never merge. Never the accent on an edge: nothing
+# outlines in a bright color; urgent keeps the alarm. The focused indicator is the accent at a quarter
+# (#47, #49): a soft tint over the area a moving window would land on, the text under it readable.
+# sway halves the four channels it is given and draws them premultiplied, so the accent goes in with
+# each channel halved and alpha 80. sway also colors with it the side of a window alone in a split,
+# where the next one opens, as a quiet line; a window alone on its workspace has no edge at all.
+default_border @BORDER@
+default_floating_border @BORDER@
+smart_borders on
+floating_modifier $mod normal
+# The pointer (#22): the spark pointer, white on a dark palette and black on a light one, or the theme
+# POINTER names, at its size; sway hands the name and the size to every program it starts
+seat * xcursor_theme @POINTER_NAME@ @POINTER_SIZE@
+
+# border  background  text  indicator  child_border
+client.focused          #@BORDER_HEX@ #@PANEL_HI@ #@HEX_FG@ #@DROP_HEX@ #@BORDER_HEX@
+client.focused_inactive #@BORDER_HEX@ #@PANEL_BG@ #@HEX_FG@ #@BORDER_HEX@ #@BORDER_HEX@
+client.unfocused        #@BORDER_HEX@ #@HEX_BG@ #@HEX_MUTED@ #@BORDER_HEX@ #@BORDER_HEX@
+client.urgent           #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@HEX_BG@ #@HEX_ANSI_1@ #@HEX_ANSI_1@
+
+# The bar, at the top of the screen or at its bottom (BAR_POSITION): the
+# workspaces, then what this machine has of lan, wifi, bluetooth, sound
+# out and mic, notifications waiting, battery, and the date and time.
+# spark-shell bar status draws it every 15 s and at once after a click.
+# The two gauges take the mouse: a click sets, the wheel nudges, a right
+# click mutes. A click on any other block opens its panel. spark-shell
+# bar top|bottom moves it, spark-shell bar off --desktop hides it. Its
+# text is BAR_TEXT's size, or the text size made larger on a screen of
+# many pixels (auto). The apps' own icons (the tray) are off unless
+# BAR_TRAY=yes: each app draws its icon in its own colors and shapes, and
+# the bar's glyphs are the palette's. The AI and the machine stay on
+# tmux's line.
+bar {
+    position @BAR_POSITION@
+    mode @BAR_MODE@
+    font pango:@BAR_LINE_FONT@
+    tray_output @BAR_TRAY@
+    status_command @REPO@/spark-shell bar status
+    workspace_buttons yes
+    # workspaces are named number:glyph (spark-shell bar status names them): the glyph alone
+    strip_workspace_numbers yes
+    status_padding 2
+    status_edge_padding 10
+    colors {
+        background #@HEX_BG@@BAR_ALPHA@
+        statusline #@HEX_FG@
+        separator #@HEX_MUTED@
+        # border background text
+        focused_workspace #@HEX_ACCENT@ #@HEX_ACCENT@ #@HEX_BG@
+        active_workspace #@HEX_MUTED@ #@HEX_MUTED@ #@HEX_BG@
+        inactive_workspace #@HEX_BG@@BAR_ALPHA@ #@HEX_BG@@BAR_ALPHA@ #@HEX_MUTED@
+        urgent_workspace #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@HEX_BG@
+        binding_mode #@HEX_ACCENT@ #@HEX_ACCENT@ #@HEX_BG@
+    }
+}
+
+# key: Super+Return opens a terminal window.
+# action: terminal.open
+bindsym $mod+Return exec $term
+# The dialog: one window in the middle of the screen, 60 by 40 cells, a
+# surface a shade lighter than the palette's background, with air around
+# its text and no frame. spark-shell dialog draws in it; foot reads its
+# size and colors from dialog.ini, so a new look needs no reload; a click
+# on a bar block uses the same open-or-focus action.
+# key: Super+Space opens or focuses home; Ask and conversation stay inside it.
+# action: home.open
+bindsym $mod+space exec @REPO@/spark-shell desktop home
+# the dialog's window maps unseen and the dialog shows it once its opening
+# is drawn, so nothing comes before the animation (#167)
+for_window [app_id="spark-dialog"] floating enable, border none, move position center, opacity 0
+# a video a preview plays (#125): laid over its frame, never taking the keys from the dialog; it maps unseen and is
+# shown where it plays, in one command (#157)
+for_window [app_id="spark-preview"] floating enable, border none, opacity 0
+no_focus [app_id="spark-preview"]
+# key: Super+Shift+q closes the window.
+# action: window.close
+bindsym $mod+Shift+q kill
+# key: Super+Shift+c reloads sway after spark-shell on.
+# action: desktop.reload
+bindsym $mod+Shift+c reload
+# key: Super+Shift+e leaves the desktop.
+# action: desktop.exit
+bindsym $mod+Shift+e exit
+
+# key: Super+h/j/k/l move the focus, and with Shift they move the window.
+# key: Super+Shift+arrow moves the window too.
+# action: default.focus-left
+bindsym $mod+h focus left
+# action: default.focus-down
+bindsym $mod+j focus down
+# action: default.focus-up
+bindsym $mod+k focus up
+# action: default.focus-right
+bindsym $mod+l focus right
+# The focus on arrows again, a modifier away from the snaps (#185): what Super+arrow did before v0.119.
+# key: Super+Alt+arrow moves the focus too, across the screens.
+# action: default.focus-left.left
+bindsym $mod+Mod1+Left focus left
+# action: default.focus-down.down
+bindsym $mod+Mod1+Down focus down
+# action: default.focus-up.up
+bindsym $mod+Mod1+Up focus up
+# action: default.focus-right.right
+bindsym $mod+Mod1+Right focus right
+# The window keys (#182): a snapped window floats at that half of its screen, below the bar and
+# inside the gaps, where a tiled window would sit; a window floated from the tiling opens at two
+# thirds of its screen, centered.
+# Each press reads where the window sits: Super+Up twice maximizes it, Super+Down twice minimizes
+# it, and Super+Right then Super+Down puts it in the bottom right quarter. A minimized window waits
+# on the pad (spark-pad) as its app's icon, its title beside it on hover, until a click or
+# Super+minus brings it back.
+# key: Super+arrow snaps the window to a half, then a quarter of the screen.
+# key: Super+Up twice maximizes the window, and Super+Down twice minimizes it.
+# key: Super+minus puts the keyboard on the pad, where minimized windows wait.
+# key: Super+Shift+space floats the window, or tiles it again.
+# action: desktop.desktop-window-left
+bindsym $mod+Left exec @REPO@/spark-shell desktop window left
+# action: desktop.desktop-window-down
+bindsym $mod+Down exec @REPO@/spark-shell desktop window down
+# action: desktop.desktop-window-up
+bindsym $mod+Up exec @REPO@/spark-shell desktop window up
+# action: desktop.desktop-window-right
+bindsym $mod+Right exec @REPO@/spark-shell desktop window right
+# action: desktop.desktop-window-float
+bindsym $mod+Shift+space exec @REPO@/spark-shell desktop window float
+# action: desktop.desktop-pad-keys
+bindsym $mod+minus exec @REPO@/spark-shell desktop pad keys
+# A new window (#262): on a workspace whose windows the keys placed and that has no tiled window,
+# a window that opens tiled would open under them; it floats to the largest place no window
+# covers instead, a half first, then a quarter, or at two thirds of the screen, centered, when no
+# place is free. Anywhere else it tiles. spark-shell reads the windows once and decides; the
+# dialog, the idle screen and a window sway floats itself open as before.
+for_window [tiling] mark --add _spark-shell.new, exec @REPO@/spark-shell desktop window new
+# action: default.move-left
+bindsym $mod+Shift+h move left
+# action: default.move-down
+bindsym $mod+Shift+j move down
+# action: default.move-up
+bindsym $mod+Shift+k move up
+# action: default.move-right
+bindsym $mod+Shift+l move right
+# action: default.move-left.left
+bindsym $mod+Shift+Left move left
+# action: default.move-down.down
+bindsym $mod+Shift+Down move down
+# action: default.move-up.up
+bindsym $mod+Shift+Up move up
+# action: default.move-right.right
+bindsym $mod+Shift+Right move right
+
+# key: Super+f makes a window fill the screen.
+# key: Super+r resizes the window, until Enter.
+# key: The mouse resizes too: drag the strip between two windows.
+# key: Super+right-drag resizes a window by its corner, Super+left-drag moves it.
+# action: window.fullscreen
+bindsym $mod+f fullscreen
+# key: Super+w makes tabs, Super+Shift+s a stack, Super+e side by side again.
+# key: Super+b puts the next window beside this one, and Super+v below it.
+# action: layout.split-horizontal
+bindsym $mod+b splith
+# action: layout.split-vertical
+bindsym $mod+v splitv
+# action: layout.stack
+bindsym $mod+Shift+s layout stacking
+# action: layout.tabs
+bindsym $mod+w layout tabbed
+# action: layout.toggle-split
+bindsym $mod+e layout toggle split
+# key: Super+Alt+Space switches focus between floating and tiled windows.
+# action: window.focus-mode
+bindsym $mod+Mod1+space focus mode_toggle
+# action: window.focus-parent
+bindsym $mod+a focus parent
+
+# key: Super+1..0 go to workspaces 1 to 10; with Shift the window goes there.
+# action: default.workspace-number-1
+bindsym $mod+1 workspace number 1
+# action: default.workspace-number-2
+bindsym $mod+2 workspace number 2
+# action: default.workspace-number-3
+bindsym $mod+3 workspace number 3
+# action: default.workspace-number-4
+bindsym $mod+4 workspace number 4
+# action: default.workspace-number-5
+bindsym $mod+5 workspace number 5
+# action: default.workspace-number-6
+bindsym $mod+6 workspace number 6
+# action: default.workspace-number-7
+bindsym $mod+7 workspace number 7
+# action: default.workspace-number-8
+bindsym $mod+8 workspace number 8
+# action: default.workspace-number-9
+bindsym $mod+9 workspace number 9
+# action: default.workspace-number-10
+bindsym $mod+0 workspace number 10
+# action: default.move-container-to-workspace-number-1
+bindsym $mod+Shift+1 move container to workspace number 1
+# action: default.move-container-to-workspace-number-2
+bindsym $mod+Shift+2 move container to workspace number 2
+# action: default.move-container-to-workspace-number-3
+bindsym $mod+Shift+3 move container to workspace number 3
+# action: default.move-container-to-workspace-number-4
+bindsym $mod+Shift+4 move container to workspace number 4
+# action: default.move-container-to-workspace-number-5
+bindsym $mod+Shift+5 move container to workspace number 5
+# action: default.move-container-to-workspace-number-6
+bindsym $mod+Shift+6 move container to workspace number 6
+# action: default.move-container-to-workspace-number-7
+bindsym $mod+Shift+7 move container to workspace number 7
+# action: default.move-container-to-workspace-number-8
+bindsym $mod+Shift+8 move container to workspace number 8
+# action: default.move-container-to-workspace-number-9
+bindsym $mod+Shift+9 move container to workspace number 9
+# action: default.move-container-to-workspace-number-10
+bindsym $mod+Shift+0 move container to workspace number 10
+# The workspace before or after, in order across the screens (#185), Windows' and KDE's keys; Shift
+# takes the window along, as it does with the numbers.
+# key: Super+Ctrl+Left/Right go to the previous or next workspace.
+# key: Super+Ctrl+Shift+Left/Right take the window there too.
+# action: default.workspace-prev
+bindsym $mod+Ctrl+Left workspace prev
+# action: default.workspace-next
+bindsym $mod+Ctrl+Right workspace next
+# action: default.move-container-to-workspace-prev-workspace-prev
+bindsym $mod+Ctrl+Shift+Left move container to workspace prev, workspace prev
+# action: default.move-container-to-workspace-next-workspace-next
+bindsym $mod+Ctrl+Shift+Right move container to workspace next, workspace next
+
+# key: Super+Escape locks the screen; it locks by itself after idle minutes.
+# action: desktop.desktop-lock
+bindsym $mod+Escape exec @REPO@/spark-shell desktop lock || swaylock -f
+# After the idle minutes the idle screen: the wallpaper dimmed to the ground and the time
+# at the lower left, one foot window alone on a workspace named idle, no gaps and no border
+# (fullscreen would be solid). After the lock minutes the lock and the display off, as
+# spark-shell desktop display idle|lock N set them (0: never); a key or a move takes the idle
+# screen down and turns the display on. Where logind runs, it locks before the machine
+# sleeps. Plain swaylock when spark-shell cannot run.
+for_window [app_id="spark-idle"] border none
+workspace idle gaps inner 0
+workspace idle gaps outer 0
+exec @IDLE_EXEC@
+
+# The notifications (#71): mako draws them in the right corner by the bar, in the
+# palette (~/.config/mako/config); spark-shell desktop --pending, below, keeps do not
+# disturb as it was left.
+exec mako
+
+# key: Print captures the screen, Shift+Print an area, Super+Print the window.
+# action: desktop.desktop-capture-screen
+bindsym Print exec @REPO@/spark-shell desktop capture screen
+# action: desktop.desktop-capture-area
+bindsym Shift+Print exec @REPO@/spark-shell desktop capture area
+# action: desktop.desktop-capture-window
+bindsym $mod+Print exec @REPO@/spark-shell desktop capture window
+
+# key: Super+Ctrl+space goes to the next keyboard layout.
+# action: desktop.desktop-keyboard-next
+bindsym $mod+Ctrl+space exec @REPO@/spark-shell desktop keyboard next
+
+# key: The volume and mute keys set the sound, and the mic mute key the mic.
+# action: desktop.bar-volume-up
+bindsym XF86AudioRaiseVolume exec @REPO@/spark-shell bar volume up
+# action: desktop.bar-volume-down
+bindsym XF86AudioLowerVolume exec @REPO@/spark-shell bar volume down
+# action: desktop.bar-volume-mute
+bindsym XF86AudioMute exec @REPO@/spark-shell bar volume mute
+# action: desktop.bar-volume-mic
+bindsym XF86AudioMicMute exec @REPO@/spark-shell bar volume mic
+
+# key: The brightness keys set the screen's brightness.
+# action: desktop.bar-light-up
+bindsym XF86MonBrightnessUp exec @REPO@/spark-shell bar light up
+# action: desktop.bar-light-down
+bindsym XF86MonBrightnessDown exec @REPO@/spark-shell bar light down
+
+mode "resize" {
+    # action: resize.resize-shrink-width-10px
+    bindsym h resize shrink width 10px
+    # action: resize.resize-grow-height-10px
+    bindsym j resize grow height 10px
+    # action: resize.resize-shrink-height-10px
+    bindsym k resize shrink height 10px
+    # action: resize.resize-grow-width-10px
+    bindsym l resize grow width 10px
+    # action: resize.resize-shrink-width-10px.left
+    bindsym Left resize shrink width 10px
+    # action: resize.resize-grow-height-10px.down
+    bindsym Down resize grow height 10px
+    # action: resize.resize-shrink-height-10px.up
+    bindsym Up resize shrink height 10px
+    # action: resize.resize-grow-width-10px.right
+    bindsym Right resize grow width 10px
+    # action: resize.finish
+    bindsym Return mode "default"
+    # action: resize.finish.escape
+    bindsym Escape mode "default"
+}
+# action: window.resize
+bindsym $mod+r mode "resize"
+
+exec @REPO@/spark-shell desktop --pending
+# key: Typing exit in the first window also leaves the desktop.
+exec sh -c '$term -e @REPO@/spark-shell desktop --first; swaymsg exit'
+
+# Your own lines (#170): every file in this folder, read last, so a line there wins over one
+# above. spark-shell never writes there, and an update keeps a change made to this file by hand
+# as config.bak.
+include @HOME@/.config/sway/config.d/*

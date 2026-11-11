@@ -1,0 +1,71 @@
+# spark-shell ~/.bashrc -- bash 5 on Linux. It is a symlink into the
+# spark-shell repository: edit it there, and git status shows the change.
+[[ $- == *i* ]] || return
+
+# --- PATH first: everything below may depend on ~/.local/bin ---------------
+case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac
+export PATH
+
+# --- history ---------------------------------------------------------------
+HISTSIZE=20000 HISTFILESIZE=50000 HISTCONTROL=ignoreboth:erasedups
+shopt -s histappend checkwinsize globstar autocd
+bind 'set completion-ignore-case on' 2>/dev/null
+
+# --- the daily tools, by their Debian names where those differ -------------
+command -v fdfind >/dev/null && alias fd=fdfind
+command -v batcat >/dev/null && alias bat=batcat
+if command -v eza >/dev/null; then
+    alias ls='eza --group-directories-first'
+    alias ll='eza -la --group-directories-first --git'
+    alias lt='eza --tree -L 2'
+else
+    alias ll='ls -la'
+fi
+alias g=git
+alias ..='cd ..'
+alias check='spark check'
+
+# --- colors: ASCII and the 16 palette colors, console or terminal app -
+export BAT_THEME=ansi BAT_STYLE=numbers              # 16-color theme, no grid
+export FZF_DEFAULT_OPTS='--no-unicode --color=16'    # fzf >= 0.38
+
+# --- fzf, zoxide -----------------------------------------------------------
+for f in /usr/share/doc/fzf/examples/key-bindings.bash /usr/share/fzf/key-bindings.bash; do
+    [ -r "$f" ] && { . "$f"; break; }
+done
+
+# --- the window's title: the program's name while one runs (sway shows it
+#     on tabs); set before starship, which chains an earlier DEBUG trap
+if [ -z "${TMUX:-}" ]; then
+    __spark_shell_title() { [ -z "${__spark_shell_ran:-}" ] || return 0; case $BASH_COMMAND in _*) return 0 ;; esac; __spark_shell_ran=1; printf '\033]2;%s\033\\' "${BASH_COMMAND%% *}"; }
+    trap '__spark_shell_title' DEBUG
+fi
+
+# --- prompt: starship when PROMPT=starship rendered a config ---------------
+if [ -r ~/.config/starship.toml ] && command -v starship >/dev/null; then
+    eval "$(starship init bash)"
+else
+    PS1='\n\u@\h:\w\$ '   # the blank row is where spark prints its hint
+fi
+
+# --- spark at the prompt: spark's prompt colors (three exports from the
+#     palette, written by spark-shell on), then its one
+#     hook line (the widget, completion, the console palette). It comes
+#     after fzf, so its Enter macro is the one that wins. spark's rc row
+#     sees the marker and never appends a second one.
+[ -r ~/.config/spark-shell/sgr.sh ] && . ~/.config/spark-shell/sgr.sh   # spark-shell: the prompt's color
+[ -r ~/.config/spark/hook.bash ] && . ~/.config/spark/hook.bash   # spark: the AI at the prompt
+
+# zoxide last: its prompt hook has to be the final one, or it complains.
+command -v zoxide >/dev/null && eval "$(zoxide init bash)"
+
+# --- the window's title at the prompt: terminal (the last prompt hook, so
+#     the next command is the one named)
+if [ -z "${TMUX:-}" ]; then
+    __spark_shell_prompt() { printf '\033]2;terminal\033\\'; __spark_shell_ran=''; }
+    PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND;}__spark_shell_prompt"
+fi
+
+# --- yours: ~/.config/spark-shell/rc, sourced last, never written by
+#     spark-shell (your editor, aliases, anything these files do not say)
+[ -r ~/.config/spark-shell/rc ] && . ~/.config/spark-shell/rc

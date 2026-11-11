@@ -1,0 +1,4 @@
+# rendered by spark-shell from templates/login/sudoers -- spark-shell off login removes it
+# The login screen's account may restart and shut down this machine (F11
+# and F12 on the login screen, each after a typed yes), and nothing else.
+@LOGIN_ACCOUNT@ ALL=(root) NOPASSWD: /usr/bin/reboot, /usr/bin/poweroff

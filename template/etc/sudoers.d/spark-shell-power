@@ -1,0 +1,5 @@
+# rendered by spark-shell from templates/etc/sudoers.d/spark-shell-power -- spark-shell off desktop removes it
+# With no logind (runit), the desktop's user may suspend, restart and shut
+# down this machine from the dialog's Power (#72), each with no argument
+# (an empty list: zzz -Z, a hibernate, is not among them), and nothing else.
+@USER@ ALL=(root) NOPASSWD: /usr/bin/zzz "", /usr/bin/reboot "", /usr/bin/poweroff ""

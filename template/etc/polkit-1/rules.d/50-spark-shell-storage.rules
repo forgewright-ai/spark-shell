@@ -1,0 +1,16 @@
+// rendered by spark-shell from templates/etc/polkit-1/rules.d/50-spark-shell-storage.rules -- spark-shell off desktop removes it
+// With no logind to say who sits at the screen (runit), polkit lets the
+// desktop's user mount, eject and power off a removable drive, as logind's
+// session would (#73). A disk of the system's own, another user's mount and
+// an encrypted drive's key stay the administrator's.
+polkit.addRule(function(action, subject) {
+    if (subject.user == "@USER@" &&
+        (action.id == "org.freedesktop.udisks2.filesystem-mount" ||
+         action.id == "org.freedesktop.udisks2.filesystem-mount-other-seat" ||
+         action.id == "org.freedesktop.udisks2.eject-media" ||
+         action.id == "org.freedesktop.udisks2.eject-media-other-seat" ||
+         action.id == "org.freedesktop.udisks2.power-off-drive" ||
+         action.id == "org.freedesktop.udisks2.power-off-drive-other-seat")) {
+        return polkit.Result.YES;
+    }
+});

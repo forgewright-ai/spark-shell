@@ -1,0 +1,9 @@
+#!/bin/sh
+# rendered by spark-shell from templates/.config/spark/sv/spark-shell-sound/finish -- spark-shell off desktop removes it
+# PipeWire stopped: what it started (WirePlumber, the PulseAudio server)
+# stops with it, by its process group. A start that failed waits 10
+# seconds before the next one, so a fault never turns into a loop.
+exec 2>&1
+[ ! -s pipewire.pid ] || kill -TERM "-$(cat pipewire.pid)" 2>/dev/null
+rm -f pipewire.pid
+{ [ "$1" = 0 ] || [ "$2" = 15 ]; } || sleep 10

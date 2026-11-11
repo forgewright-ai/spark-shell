@@ -1,0 +1,8 @@
+#!/bin/sh
+# spark-shell pre-push gate (#155): the fast part of what CI runs (the lint
+# checks, the dialog's fmt, clippy and tests, every python3 test of ci.yml),
+# so a push never costs a CI round on a check this machine can run. The
+# suite takes minutes and is CI's (#194).
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+exec sh test/gate.sh --quick

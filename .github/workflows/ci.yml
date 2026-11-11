@@ -1,0 +1,569 @@
+# spark-shell CI: the render, link and hand-back machinery in a
+# throwaway HOME and a throwaway root -- on Ubuntu 24.04 and 26.04,
+# Debian, Arch, Void, Fedora, openSUSE and macOS. The lint job goes
+# first and alone: the privacy patterns, ASCII docs, shellcheck and
+# zizmor, and every other job needs it. Then the package names of
+# distro/*.env looked up on their own family (nothing installed), and
+# the desktop job: the desktop's packages installed for real in each
+# family's container, spark-shell on as a plain user, the rendered
+# config read by sway, a headless sway with a foot in it. The green job
+# needs them all: the one name a ruleset on main can require.
+name: ci
+on:
+  push:
+    branches: ['**']   # never a tag: its commit ran already
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+# a newer push to the same branch or pull request cancels the older run;
+# main keeps every run
+concurrency:
+  group: ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  lint:
+    # the cheap checks first, on one runner, and every other job needs it:
+    # a privacy, ASCII, shellcheck or workflow finding costs this minute,
+    # not a run on every slot. A pull request from a branch of this
+    # repository is skipped whole: its push already ran, on the same
+    # commit, and the skip reaches every job through the needs.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: privacy gate over the whole tree
+        # the personal word list is a repository secret (one word per line);
+        # each word escaped for grep -E, and -l everywhere: a hit names the
+        # file, never the line -- this log is public. A fork without the
+        # secret gets a NOTICE and the generic patterns only. Each check is
+        # an if/exit 1: a negated pipeline (`! git grep ...`) is exempt from
+        # errexit, so only the last one would decide the step. A systemd
+        # unit name (getty@tty1.service) is not an address.
+        env:
+          SPARK_PRIVACY_TERMS_SECRET: ${{ secrets.SPARK_PRIVACY_TERMS }}
+        run: |
+          printf '%s\n' "$SPARK_PRIVACY_TERMS_SECRET" > "$RUNNER_TEMP/privacy-terms"
+          terms=$(cat .privacy-terms "$RUNNER_TEMP/privacy-terms" | grep -v '^#' | grep -v '^[[:space:]]*$' | sort -u | sed 's,[][\.*^$+?(){}|/],\\&,g' | paste -sd'|' -)
+          if [ -z "$terms" ]; then echo "NOTICE: no privacy word list -- generic patterns only"; else
+            if git grep -l -i -w -E "$terms" -- . ':(exclude).privacy-terms'; then
+              echo "privacy: a listed word is in the tree"; exit 1; fi; fi
+          hits=$(git grep -n -E '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- . | sed -E 's/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.(service|socket|timer|target)//g' | grep -E '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' | grep -v 'you@example.com' | cut -d: -f1 | sort -u || true)
+          if [ -n "$hits" ]; then
+            printf '%s\n' "$hits"; echo "privacy: an e-mail address is in the tree"; exit 1; fi
+          if git grep -l -E '\b(10\.[0-9]+\.[0-9]+\.[0-9]+|192\.168\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]+\.[0-9]+)\b' -- .; then
+            echo "privacy: a private IPv4 is in the tree"; exit 1; fi
+          if git grep -l -E '(^.|[^[:alnum:]/._-])/(home|Users)/[A-Za-z0-9_-]+' -- .; then
+            echo "privacy: a home path naming a user is in the tree"; exit 1; fi
+      - name: ascii docs
+        run: |
+          tab=$(printf '\t')
+          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell src/*.sh test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/player_build.sh test/pad_build.sh test/desktop_proof.sh test/dialog_pty.py lib/terminal_profile.py test/profile_test.py lib/saver.py test/saver_test.py lib/office.py test/office_test.py $(find template distro gallery/theme component/dialog/src component/dialog/tests component/player/src component/pad/src -type f ! -name '*.txt' | sort) component/dialog/Cargo.toml component/dialog/deny.toml component/dialog/dialog.env component/dialog/rust-toolchain.toml component/player/Cargo.toml component/player/deny.toml component/player/player.env component/player/rust-toolchain.toml component/pad/Cargo.toml component/pad/deny.toml component/pad/pad.env component/pad/rust-toolchain.toml; do
+            if LC_ALL=C grep -n "[^ -~${tab}]" "$f"; then
+              echo "non-ASCII in $f"; exit 1; fi; done
+      - name: no hex color in a template (the look is the 16 slots)
+        run: |
+          if grep -rnE '#[0-9a-fA-F]{6}' template; then
+            echo "a hex color is in a template"; exit 1; fi
+      - name: shellcheck
+        # spark-shell and test/shell_test.sh turn off the data flow
+        # analysis: 0.11.0's took over 10 GB on them and stopped the box
+        # twice. The runner's 0.9.0 has none and calls that directive
+        # unknown (SC1107), so the line leaves that one out.
+        run: shellcheck -x -S warning -e SC1107 spark-shell lib/apps-terminal/xterm test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/player_build.sh test/pad_build.sh test/desktop_proof.sh test/wifi_proof.sh test/greetd_upgrade_proof.sh test/dhcpcd_proof.sh test/gate.sh test/semantic_measure.sh .githooks/pre-push
+      - name: zizmor over .github/workflows
+        # the workflows are code too: zizmor (pinned, in a venv of its own)
+        # reads every file under .github/workflows; medium and above fail.
+        run: |
+          python3 -m venv "$RUNNER_TEMP/zizmor"
+          "$RUNNER_TEMP/zizmor/bin/pip" install --quiet zizmor==1.30.1
+          "$RUNNER_TEMP/zizmor/bin/zizmor" --min-severity medium .github/workflows
+  linux:
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: every package name of distro/debian.env exists on Ubuntu, which says ID_LIKE=debian (nothing installed)
+        run: sudo apt-get update -qq >/dev/null && apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/debian.env) >/dev/null
+      - name: the suite in a throwaway HOME
+        run: |
+          timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          python3 test/apps_test.py
+          python3 test/bt_agent_test.py
+          python3 test/provider_acceptance.py
+      - name: every glyph of every family is in the curated fonts and one cell wide (#248)
+        # the release zip spark-shell pins, fetched and held to its sha256;
+        # fc-query reads each face's charset
+        run: |
+          command -v fc-query >/dev/null 2>&1 || { sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fontconfig >/dev/null; }
+          python3 -I test/glyph_check.py
+      - name: the idle screen's savers
+        run: |
+          python3 -I test/saver_test.py
+          python3 -I test/battery_test.py
+          python3 -I test/cleanup_test.py
+          python3 -I test/printers_test.py
+          python3 -I test/open_path_test.py
+          python3 -I test/office_test.py
+          python3 -I test/network_test.py
+          python3 -I test/install_test.py
+          python3 -I test/network_dhcpcd_test.py
+          python3 -I test/display_test.py
+          python3 -I test/layout_terminal_test.py
+          python3 -I test/home_test.py
+          python3 -I test/wifi_connect_test.py
+  debian:
+    # the same suite on Debian itself, where distro/debian.env's names are
+    # looked up. The privacy and ascii gates ran once, on linux.
+    needs: lint
+    runs-on: ubuntu-latest
+    container: debian:13@sha256:9cc080028c43b27d2074d63a5f9caf7166d731494965616c1a6d2827a004585c   # a stable release: pinned, bump the digest with a point release
+    timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
+    steps:
+      - run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 git shellcheck diffutils jq openssh-client curl >/dev/null   # jq: a desk reads the model's answer with it; ssh-keygen: a release tag's signature
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: every package name of distro/debian.env exists on Debian (nothing installed)
+        run: apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/debian.env) >/dev/null
+      - name: the suite in a throwaway HOME
+        run: |
+          timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          python3 test/apps_test.py
+          python3 -I test/install_test.py
+          python3 test/bt_agent_test.py
+          python3 test/provider_acceptance.py
+  ubuntu:
+    # the same suite on Ubuntu 26.04, where sudo is sudo-rs and the
+    # coreutils are uutils' (all but cp, mv and rm): the runners are 24.04,
+    # so this container is the one place spark-shell meets them (#107).
+    needs: lint
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c   # a stable release: pinned, bump the digest with a point release
+    timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
+    steps:
+      - run: sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources && apt-get -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq python3 git shellcheck diffutils jq openssh-client curl sudo >/dev/null   # sudo: the image has none, and 26.04's is sudo-rs
+      - name: the image's sudo is sudo-rs and its coreutils are uutils', or this job proves nothing
+        run: |
+          sudo --version | head -1
+          ls --version | head -1
+          sudo --version | grep -qi 'sudo-rs' && ls --version | grep -qi 'uutils'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: every package name of distro/debian.env exists on Ubuntu 26.04 (nothing installed)
+        run: apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/debian.env) >/dev/null
+      - name: the suite in a throwaway HOME
+        run: |
+          timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          python3 test/apps_test.py
+          python3 -I test/install_test.py
+          python3 test/bt_agent_test.py
+          python3 test/provider_acceptance.py
+  arch:
+    # the same suite where the tools come from pacman
+    needs: lint
+    runs-on: ubuntu-latest
+    container: archlinux:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Arch there is, and -Syu moves it to today anyway
+    timeout-minutes: 20   # the full shell and native provider suites need time for cleanup too
+    steps:
+      - run: pacman -Syu --noconfirm --needed python git diffutils jq openssh >/dev/null   # ssh-keygen: a release tag's signature
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: every package name of distro/arch.env exists on Arch (nothing installed)
+        run: pacman -Sp --needed $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/arch.env) >/dev/null
+      - name: the suite in a throwaway HOME
+        run: |
+          timeout --foreground 900 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 15 minutes, before the job's 20, so the parts say where they are
+          python3 test/apps_test.py
+          python3 -I test/install_test.py
+          python3 test/bt_agent_test.py
+          python3 test/provider_acceptance.py
+  void:
+    # the third family: xbps (glibc), the desktop's names too. xbps itself
+    # first: a rolling distro refuses every install while xbps is behind.
+    # libstdc++ is the runner's node (checkout)
+    needs: lint
+    runs-on: ubuntu-latest
+    container: ghcr.io/void-linux/void-glibc-full:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Void there is, and -Su moves it to today anyway
+    timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
+    steps:
+      # the image asks repo-default.voidlinux.org, which maps to any Tier 1
+      # mirror. The one it mapped to on 2026-10-29 failed two runs
+      # (reposync timeouts), then slowed a 2-minute install past the
+      # desktop job's 25-minute cap. The Fastly CDN is Void's own Tier 1
+      # mirror: pinned first, the handbook's way (xbps/repositories/
+      # mirrors/changing), then three tries, 30 s apart, then the job
+      # fails as it would
+      - run: |
+          mkdir -p /etc/xbps.d
+          cp /usr/share/xbps.d/*-repository-*.conf /etc/xbps.d/ && sed -i 's|https://repo-default.voidlinux.org|https://repo-fastly.voidlinux.org|g' /etc/xbps.d/*-repository-*.conf || echo 'no repository file under /usr/share/xbps.d -- the image default stays'
+          for i in 1 2 3; do
+            xbps-install -Syu xbps >/dev/null 2>&1 || true
+            xbps-install -Syu >/dev/null && xbps-install -Sy python3 git bash diffutils jq gawk gzip libstdc++ openssh curl >/dev/null && break
+            [ "$i" -lt 3 ] && sleep 30 || exit 1
+          done
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: every package name of distro/void.env exists on Void (nothing installed)
+        run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/void.env); do xbps-query -R "$p" >/dev/null || { echo "no package $p"; exit 1; }; done
+      - name: the suite in a throwaway HOME
+        run: |
+          timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          python3 test/apps_test.py
+          python3 -I test/install_test.py
+          python3 test/bt_agent_test.py
+          python3 test/provider_acceptance.py
+  fedora:
+    # the fourth family: dnf over rpm, the names of distro/fedora.env looked
+    # up with repoquery (a provider counts, as rpm -q --whatprovides does)
+    needs: lint
+    runs-on: ubuntu-latest
+    container: fedora:44@sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80   # a versioned release: pinned, bump the digest with the next Fedora
+    timeout-minutes: 15
+    steps:
+      - run: dnf install -y -q python3 git ShellCheck diffutils jq openssh-clients curl >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: every package name of distro/fedora.env exists on Fedora (nothing installed)
+        run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/fedora.env); do dnf -q repoquery --whatprovides "$p" 2>/dev/null | grep -q . || { echo "no package $p"; exit 1; }; done
+      - name: the suite in a throwaway HOME
+        run: |
+          timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          python3 test/apps_test.py
+          python3 -I test/install_test.py
+          python3 test/bt_agent_test.py
+          python3 test/provider_acceptance.py
+  opensuse:
+    # the fifth family: zypper over rpm, the names of distro/opensuse.env
+    # looked up on Tumbleweed itself. libstdc++6 is the runner's node
+    # (checkout); findutils: the image has no find, and the files provider
+    # and the reminders' prune are find
+    needs: lint
+    runs-on: ubuntu-latest
+    container: opensuse/tumbleweed:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Tumbleweed there is, and zypper dup moves it to today anyway
+    timeout-minutes: 15
+    steps:
+      - run: zypper --non-interactive --quiet install python3 git ShellCheck diffutils findutils jq openssh-clients curl gawk tar gzip libstdc++6 >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: every package name of distro/opensuse.env exists on Tumbleweed (nothing installed)
+        run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/opensuse.env); do zypper --non-interactive --no-refresh search --match-exact --provides "$p" >/dev/null 2>&1 || { echo "no package $p"; exit 1; }; done
+      - name: the suite in a throwaway HOME
+        run: |
+          timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          python3 test/apps_test.py
+          python3 -I test/install_test.py
+          python3 test/bt_agent_test.py
+          python3 test/provider_acceptance.py
+  desktop:
+    # the desktop for real, per family: its packages installed in the
+    # family's container, spark-shell on as a plain user (the renders, the
+    # palette, a drawing drawn again in it through rsvg-convert), the sway
+    # config read by sway -C, then a headless sway with a foot in it, asked
+    # through swaymsg, on a session bus of its own; mako's notifications
+    # drawn in it in two palettes, the pictures kept for a look. No seat,
+    # no GPU, no sound card: a proof of the install and the render, said
+    # so; a screen is a machine's proof.
+    needs: [lint, pad]   # the pad's build, proven on each family's sway (test/pad_desktop_proof.py)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - family: debian
+            distro: debian
+            image: debian:13@sha256:4c25275446ca371766b8b093c696782eabce06263fccacb8d5d813b3dc44b308
+            prep: apt-get -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq git jq diffutils >/dev/null
+            install: DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq
+            proof: dbus
+          # an Ubuntu container fetches from azure.archive.ubuntu.com, the mirror inside GitHub's network, and apt
+          # tries three times: archive.ubuntu.com failed to connect from the runners three times in an hour (v0.133)
+          - family: ubuntu   # the Debian family's file: Ubuntu says ID_LIKE=debian
+            distro: debian
+            image: ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
+            prep: sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources && apt-get -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq git jq diffutils >/dev/null
+            install: DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq
+            proof: dbus systemd   # mako 1.8's makoctl asks the bus through systemd's busctl, which a real Ubuntu always has
+          - family: ubuntu-26.04   # sudo-rs and uutils' coreutils (#107)
+            distro: debian
+            image: ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
+            prep: sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources && apt-get -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq git jq diffutils >/dev/null
+            install: DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq
+            proof: dbus systemd   # makoctl asks the bus through systemd's busctl, as on 24.04
+          - family: arch
+            distro: arch
+            image: archlinux:latest   # zizmor: ignore[unpinned-images] a rolling distro
+            prep: pacman -Syu --noconfirm --needed git jq diffutils >/dev/null
+            install: pacman -S --needed --noconfirm
+            proof: dbus
+          - family: void
+            distro: void
+            image: ghcr.io/void-linux/void-glibc-full:latest   # zizmor: ignore[unpinned-images] a rolling distro
+            # the Fastly mirror pinned first, as in the void job above, then the three tries
+            prep: mkdir -p /etc/xbps.d; cp /usr/share/xbps.d/*-repository-*.conf /etc/xbps.d/ && sed -i 's|https://repo-default.voidlinux.org|https://repo-fastly.voidlinux.org|g' /etc/xbps.d/*-repository-*.conf || echo 'no repository file under /usr/share/xbps.d -- the image default stays'; for i in 1 2 3; do xbps-install -Syu xbps >/dev/null 2>&1 || true; xbps-install -Syu >/dev/null && xbps-install -Sy git bash jq gawk gzip libstdc++ shadow >/dev/null && break; [ "$i" -lt 3 ] && sleep 30 || exit 1; done
+            install: xbps-install -Sy
+            proof: dbus
+          - family: fedora
+            distro: fedora
+            image: fedora:44@sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80
+            prep: dnf install -y -q git jq diffutils shadow-utils util-linux >/dev/null
+            install: dnf install -y -q
+            proof: dbus-daemon
+          - family: opensuse
+            distro: opensuse
+            image: opensuse/tumbleweed:latest   # zizmor: ignore[unpinned-images] a rolling distro
+            # a rolling distro: the image is one snapshot, the repository another, and foot's terminfo refused to meet the image's terminfo-base until zypper dup put the two on one snapshot (what spark's distro file says of Tumbleweed)
+            prep: zypper --non-interactive refresh >/dev/null; zypper --non-interactive dup >/dev/null; zypper --non-interactive install git jq diffutils findutils gawk tar gzip libstdc++6 shadow
+            install: zypper --non-interactive --quiet install
+            proof: dbus-1-daemon dbus-1-tools
+    container: ${{ matrix.image }}   # zizmor: ignore[unpinned-images] the matrix above pins each versioned image by digest; the rolling ones are latest by nature
+    env:
+      FAMILY: ${{ matrix.family }}
+      DISTRO: ${{ matrix.distro }}
+      PREP: ${{ matrix.prep }}
+      INSTALL: ${{ matrix.install }}
+      PROOF: ${{ matrix.proof }}
+    steps:
+      - run: sh -c "$PREP"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the family's packages, every list but the login screen's (quiet; a refusal is shown by a second try)
+        run: |
+          pkgs=$(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p' "distro/$DISTRO.env" | tr '\n' ' ')
+          sh -c "$INSTALL $pkgs >/dev/null" || sh -c "$INSTALL $pkgs"
+      - name: the proof's own (a session bus for the headless sway, which a machine's login makes; wtype, the pad proof's keyboard)
+        run: sh -c "$INSTALL $PROOF wtype >/dev/null" || sh -c "$INSTALL $PROOF wtype"
+      - name: the pad's build, the one the pad job made
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333   # v8.0.2
+        with:
+          name: spark-pad-x86_64-linux-gnu
+          path: pad-build
+      - name: spark-shell on as a plain user, the config read by sway, a headless sway with a foot in it
+        # sway's package on Arch, Void and Fedora sets cap_sys_nice on the
+        # binary; a container's bounding set lacks it, so a plain user's
+        # execve of that file says EPERM. A copy carries no capability.
+        run: |
+          set -eu
+          useradd -m -s /bin/bash ada
+          chmod -R a+rX "$GITHUB_WORKSPACE"
+          mkdir -p /opt/nocap && cp "$(command -v sway)" /opt/nocap/sway && chmod 755 /opt/nocap/sway
+          cp test/desktop_proof.sh /tmp/desktop_proof.sh
+          chmod 755 /tmp/desktop_proof.sh
+          su ada -c "PATH=/opt/nocap:\$PATH python3 -I '$GITHUB_WORKSPACE/test/layout_desktop_proof.py'"
+          chmod 755 pad-build/spark-pad
+          # the window keys with the pad's build: its strip changes the space on every family, swaybar or not (openSUSE has none)
+          su ada -c "PATH=/opt/nocap:\$PATH SPARK_SHELL_PAD='$GITHUB_WORKSPACE/pad-build/spark-pad' python3 -I '$GITHUB_WORKSPACE/test/window_desktop_proof.py'"
+          su ada -c "REPO='$GITHUB_WORKSPACE' SWAY_NOCAP=/opt/nocap sh /tmp/desktop_proof.sh"
+          # the pad on this family's sway: windows on the pad by the keys, a click and Super+minus bring them back, the bar's block, hide
+          su ada -c "PATH=/opt/nocap:\$PATH SPARK_SHELL_PAD='$GITHUB_WORKSPACE/pad-build/spark-pad' python3 -I '$GITHUB_WORKSPACE/test/pad_desktop_proof.py' \$HOME/proof/pad"
+      - name: the notifications as drawn, kept for a look
+        if: always()
+        run: mkdir -p proof && cp -R ~ada/proof/. proof/ 2>/dev/null || true   # ~ada: the proof user's home, by its name
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        if: always()
+        with:
+          name: notifications-${{ matrix.family }}
+          path: proof
+          retention-days: 14
+          if-no-files-found: ignore
+  macos:
+    needs: lint
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the suite in a throwaway HOME (Apple's sh)
+        run: |
+          sh test/shell_test.sh --parallel
+          python3 test/apps_test.py
+          python3 -I test/install_test.py
+          python3 test/bt_agent_test.py
+          python3 test/provider_acceptance.py
+      - name: the Terminal.app helper, built and never applied
+        run: SPARK_SHELL_NO_APPLY=1 /usr/bin/python3 test/profile_test.py
+  dialog:
+    # the dialog (component/dialog/): the format, clippy, its tests (the golden
+    # renders in two palettes, the host against stub providers), the
+    # release build twice and its sha256 against component/dialog/dialog.env (the
+    # build is reproducible, so the tree pins the binary), the binary at a
+    # pty against spark-shell's own providers with no network, cargo-deny,
+    # and the binary kept as an artifact for a proof on a machine.
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: the toolchain component/dialog/rust-toolchain.toml pins
+        working-directory: component/dialog
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: the format and clippy
+        working-directory: component/dialog
+        run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings
+      - name: the tests
+        working-directory: component/dialog
+        run: cargo test --locked
+      - name: the release build, twice, the same bytes
+        run: |
+          set -eu
+          one=$(sh test/dialog_build.sh | cut -d' ' -f1)
+          (cd component/dialog && cargo clean --release --target x86_64-unknown-linux-musl)
+          two=$(sh test/dialog_build.sh | cut -d' ' -f1)
+          echo "built $one, from clean again $two"
+          if [ "$one" != "$two" ]; then echo "two builds of one tree differ: the build is not reproducible"; exit 1; fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        with:
+          name: spark-dialog-x86_64-linux-musl
+          path: component/dialog/target/x86_64-unknown-linux-musl/release/spark-dialog
+          retention-days: 14
+      - name: the sha256 component/dialog/dialog.env pins
+        run: |
+          set -eu
+          got=$(sha256sum component/dialog/target/x86_64-unknown-linux-musl/release/spark-dialog | cut -d' ' -f1)
+          want=$(sed -n 's/^DIALOG_SHA256_X86_64_LINUX_MUSL=//p' component/dialog/dialog.env)
+          if [ "$got" != "$want" ]; then echo "the build is not the binary component/dialog/dialog.env pins -- DIALOG_SHA256_X86_64_LINUX_MUSL=$got"; exit 1; fi
+      - name: the binary at a pty against spark-shell's providers, with no network
+        run: sudo unshare -n sudo -u "$(id -un)" env PATH="$PATH" python3 test/dialog_pty.py component/dialog/target/x86_64-unknown-linux-musl/release/spark-dialog
+      - name: cargo-deny (advisories, licences, no network crate)
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
+        with:
+          manifest-path: component/dialog/Cargo.toml
+  player:
+    # the wallpaper player (component/player/, #187): the format, clippy, its tests,
+    # the release build twice and its sha256 against component/player/player.env, all
+    # in one pinned Debian 12 image (glibc 2.36, the oldest a supported
+    # family runs), so the build is reproducible and release.yml builds
+    # the same bytes; the binary kept as an artifact; cargo-deny.
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    container: rust:1.99.1-slim-bookworm@sha256:24707e70a4f1e23d9a7b25202ec43126d28a52294b96aad5c670df1fd1f1d400
+    steps:
+      - name: git, for the checkout
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the format, clippy and the tests
+        working-directory: component/player
+        run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
+      - name: the release build, twice, the same bytes
+        run: |
+          set -eu
+          one=$(sh test/player_build.sh | cut -d' ' -f1)
+          (cd component/player && cargo clean --release --target x86_64-unknown-linux-gnu)
+          two=$(sh test/player_build.sh | cut -d' ' -f1)
+          echo "built $one, from clean again $two"
+          if [ "$one" != "$two" ]; then echo "two builds of one tree differ: the build is not reproducible"; exit 1; fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        with:
+          name: spark-wallpaper-x86_64-linux-gnu
+          path: component/player/target/x86_64-unknown-linux-gnu/release/spark-wallpaper
+          retention-days: 14
+      - name: the sha256 component/player/player.env pins
+        run: |
+          set -eu
+          got=$(sha256sum component/player/target/x86_64-unknown-linux-gnu/release/spark-wallpaper | cut -d' ' -f1)
+          want=$(sed -n 's/^PLAYER_SHA256_X86_64_LINUX_GNU=//p' component/player/player.env)
+          if [ "$got" != "$want" ]; then echo "the build is not the binary component/player/player.env pins -- PLAYER_SHA256_X86_64_LINUX_GNU=$got"; exit 1; fi
+  player-deny:
+    # cargo-deny over the player's crates (advisories, licences), on the
+    # runner: the action is a container of its own
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: cargo-deny (advisories, licences, no network crate)
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
+        with:
+          manifest-path: component/player/Cargo.toml
+  pad:
+    # the pad (component/pad/, v0.133): the format, clippy, its tests, the release
+    # build twice and its sha256 against component/pad/pad.env, all in the pinned
+    # Debian 12 image the player's job uses, so the build is reproducible
+    # and release.yml builds the same bytes; the binary kept as an
+    # artifact. The first build of a new pad prints the sha256 to pin.
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    container: rust:1.99.1-slim-bookworm@sha256:24707e70a4f1e23d9a7b25202ec43126d28a52294b96aad5c670df1fd1f1d400
+    steps:
+      - name: git, for the checkout
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the format, clippy and the tests
+        working-directory: component/pad
+        run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
+      - name: the release build, twice, the same bytes
+        run: |
+          set -eu
+          one=$(sh test/pad_build.sh | cut -d' ' -f1)
+          (cd component/pad && cargo clean --release --target x86_64-unknown-linux-gnu)
+          two=$(sh test/pad_build.sh | cut -d' ' -f1)
+          echo "built $one, from clean again $two"
+          if [ "$one" != "$two" ]; then echo "two builds of one tree differ: the build is not reproducible"; exit 1; fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        with:
+          name: spark-pad-x86_64-linux-gnu
+          path: component/pad/target/x86_64-unknown-linux-gnu/release/spark-pad
+          retention-days: 14
+      - name: the sha256 component/pad/pad.env pins
+        run: |
+          set -eu
+          got=$(sha256sum component/pad/target/x86_64-unknown-linux-gnu/release/spark-pad | cut -d' ' -f1)
+          want=$(sed -n 's/^PAD_SHA256_X86_64_LINUX_GNU=//p' component/pad/pad.env)
+          if [ "$got" != "$want" ]; then echo "the build is not the binary component/pad/pad.env pins -- PAD_SHA256_X86_64_LINUX_GNU=$got"; exit 1; fi
+  pad-deny:
+    # cargo-deny over the pad's crates (advisories, licences), on the
+    # runner: the action is a container of its own
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: cargo-deny (advisories, licences, no network crate)
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
+        with:
+          manifest-path: component/pad/Cargo.toml
+  green:
+    # the one name a ruleset on main can require: it needs every job above
+    # and fails when any of them failed, was cancelled or was skipped. A
+    # pull request from this repository's own branch is the one run whose
+    # jobs are all skipped on purpose, and green skips with them.
+    needs: [lint, linux, debian, ubuntu, arch, void, fedora, opensuse, desktop, macos, dialog, player, player-deny, pad, pad-deny]
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: every job passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          case " $RESULTS " in
+              *" failure "*|*" cancelled "*|*" skipped "*) echo "ci: a job did not pass: $RESULTS"; exit 1 ;;
+          esac
+          echo "ci: green ($RESULTS)"

@@ -1,0 +1,9 @@
+# rendered by spark-shell from templates/login/config.toml -- spark-shell off login puts the package's file back
+# greetd: the login screen on tty1. It runs the session below as the
+# login screen's own account, and after a login your session on tty1.
+[terminal]
+vt = 1
+
+[default_session]
+command = "/@LOGIN_ETC@/session"
+user = "@LOGIN_ACCOUNT@"

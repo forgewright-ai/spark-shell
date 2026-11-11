@@ -1,0 +1,11 @@
+*~
+.*.swp
+*.bak
+__pycache__/
+*.pyc
+.DS_Store
+# Claude Code's state stays out
+.claude/
+component/dialog/target/
+component/pad/target/
+component/player/target/

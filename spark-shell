@@ -1,0 +1,280 @@
+#!/bin/sh
+# spark-shell -- sets up the terminal, its colors and a simple desktop
+#
+#   spark-shell on                    set up the terminal (asks first)
+#   spark-shell on desktop            add the sway desktop on Linux (asks first)
+#   spark-shell off desktop           remove the desktop, keep the terminal
+#   spark-shell on login              a login screen on tty1 (Linux, asks)
+#   spark-shell off login             the console login on tty1 again
+#   spark-shell off                   undo it all (packages stay installed)
+#   spark-shell on --dry-run          show what on would change, change nothing
+#   spark-shell on --yes              do not ask first
+#   spark-shell status                show what is set up
+#   spark-shell check                 test the setup (exit 0 when all is ok)
+#   spark-shell update                move to the newest signed release, then on
+#   spark-shell theme NAME|none       set the colors and the look, or none
+#   spark-shell theme [list]          show the look in use, or list them all
+#   spark-shell theme save [NAME]     keep the look in use as a saved theme
+#   spark-shell theme delete NAME     delete a saved theme
+#   spark-shell theme back            the look before this one, again
+#   spark-shell theme wallpaper X     a drawing, a picture, a color or default
+#   spark-shell theme text N          the text size everywhere; bigger, smaller
+#   spark-shell theme transparency N  the windows' transparency; more, less
+#   spark-shell theme glyphs SET      the bar in signs or in words
+#   spark-shell theme icons on|off    each app's icon in home's apps, or none
+#   spark-shell theme spacing SET     space around the apps: none, groups, rows
+#   spark-shell theme family NAME     the glyph family: stone, star, banner
+#   spark-shell theme face NAME       the text's face, one of Monaspace's five
+#   spark-shell theme motion on|off   a moving wallpaper, where it can move
+#   spark-shell theme picture PATH    a theme from a picture of yours
+#   spark-shell theme "WORDS"         a whole theme from words, read by spark
+#   spark-shell theme gallery         the themes and wallpapers in the gallery
+#   spark-shell theme install NAME    one from the gallery, checked as a release
+#   spark-shell font FACE SIZE|none   set the console font, or use its own
+#   spark-shell font list             list the fonts you can use
+#   spark-shell quiet login on|off    hide the notice before the login (Linux)
+#   spark-shell quiet boot on|off     hide the boot menu and messages (Linux)
+#   spark-shell quiet                 show both settings
+#   spark-shell layout "WORDS"        open apps for that task, picked by spark
+#   spark-shell layout save [NAME]    save the last layout
+#   spark-shell layout [NAME]         list the saved layouts, or open one
+#   spark-shell layout delete NAME    delete a saved layout
+#   spark-shell layout rename NAME NEW
+#                                     give a saved layout a new name
+#   spark-shell layout back           the layout before this one, again
+#   spark-shell apps                  choose the apps a layout may open
+#   spark-shell notes                 list your notes, the newest first
+#   spark-shell notes new|NAME        a new note, or that one, in your editor
+#   spark-shell notes add WORDS       a new note; "NAME: WORDS" adds a line
+#   spark-shell notes find WORDS      the notes that say it, and the line
+#   spark-shell reminders             the reminders ahead, in their groups
+#   spark-shell reminders add DAY TIME WORDS
+#                                     tomorrow 9:00 call the dentist
+#   spark-shell reminders done|snooze|restore NAME
+#                                     done (kept 30 days), in 10 minutes, back
+#   spark-shell desktop               start the desktop now (from a console)
+#   spark-shell desktop keys          list the desktop's keys
+#   spark-shell desktop lock          lock the screen now (Super+Escape)
+#   spark-shell desktop idle [off]    the idle screen now, or down
+#   spark-shell desktop capture screen|area|window
+#                                     a PNG in ~/pictures/screenshots (Print)
+#   spark-shell desktop display       the idle and lock minutes, the brightness
+#   spark-shell desktop display idle|lock N
+#                                     idle screen or lock after N idle minutes
+#   spark-shell desktop display saver [NAME]
+#                                     list the idle screen's savers, or pick one
+#   spark-shell desktop display brightness N|up|down
+#                                     the screen's brightness, 1 to 100
+#   spark-shell desktop keyboard [us br|next]
+#                                     the keyboard's layouts, or the next one
+#   spark-shell desktop keyboard repeat-delay N|repeat-rate N|caps KEY
+#                                     key repeat and caps, control or escape
+#   spark-shell desktop pointer [tap on|off|scroll on|off|speed N]
+#                                     tap to click, natural scroll and speed
+#   spark-shell desktop portals       refresh the desktop portal environment
+#   spark-shell desktop time [format 12|24|week sunday|monday|zone NAME]
+#                                     clock preferences and native time zone
+#   spark-shell desktop screen [NAME scale N|mode WxH|on|off|left-of NAME]
+#                                     list the screens, or set one
+#   spark-shell desktop window float|left|right|up|down|max|min|restore [ID]
+#                                     float or tile the window, snap,
+#                                     maximize or minimize it, or bring back
+#                                     a window from the pad
+#   spark-shell desktop window refit  the windows the keys placed, to their
+#                                     places on the screen as it is now
+#   spark-shell desktop pad [keys|toggle]
+#                                     the minimized windows on the pad, the
+#                                     keyboard on it, or hide it or show it
+#   spark-shell desktop pad place PLACE WIDTH SIDE [HEIGHT]
+#                                     where the pad sits and its size
+#   spark-shell desktop pad view [icons|titles]
+#                                     the pad's icons alone, or with titles
+#   spark-shell desktop pad band [on|off]
+#                                     the pad with its band, or its handle alone
+#   spark-shell desktop notifications [do-not-disturb on|off|dismiss|restore]
+#                                     do not disturb, and the last few
+#   spark-shell desktop storage [mount|unmount|open|eject NAME]
+#                                     the drives plugged in, the free space
+#   spark-shell desktop power [lock|suspend|logout|restart|shutdown]
+#                                     lock, log out, suspend, restart, shut down
+#   spark-shell bar on|off            show or hide the status line and the bar
+#   spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
+#   spark-shell bar top|bottom        the bar at the top or the bottom
+#   spark-shell bar text [auto|N]     the bar's text size, auto: by the screen
+#   spark-shell bar tray [on|off]     the apps' icons at the bar's end
+#   spark-shell dialog [SECTION]      open home (Super+Space), SECTION first
+#   spark-shell dialog chat           conversation inside home
+#   spark-shell dialog about          the version, license and credits
+#   spark-shell semantic start|stop|status
+#                                     the server of home's search by meaning
+#   spark-shell want "WORDS"          ask for it, "mute everything": steps run;
+#                                     a question's are shown, not run
+#   spark-shell want --json "WORDS"   the steps spark picks, as JSON; none run
+#   spark-shell want --attach FILE "WORDS"
+#                                     ask about a text file (txt md)
+#   spark-shell panel [SECTION]       the dialog's list as text, for scripts
+#   spark-shell provide SECTION       a dialog section as an MCP server on stdio
+#   spark-shell sbom [NAME]           list the installed software, or one
+#   spark-shell sbom --json           write the list as a CycloneDX 1.5 file
+#
+# A layout opens as sway windows on the desktop and as tmux windows
+# anywhere else: add --desktop or --terminal to choose. Add -v to see
+# every step.
+#
+# The one interface to spark is ~/.config/spark/theme.env, the palette
+# `spark-shell theme NAME` writes; spark itself is optional. spark-shell
+# is POSIX sh for Linux and macOS: the terminal, its colors and a sway
+# desktop. Its choices live in ~/.config/spark-shell/config, one
+# KEY=value a line. The root files (the console's palette, font, login
+# screen and kernel line) are written with sudo, only when they differ.
+# SPARK_SHELL_ROOT=DIR (tests only) prefixes every root path with DIR.
+# shellcheck extended-analysis=false   # 0.11.0's data flow analysis of this file takes over 10 GB
+set -eu
+
+# echo as printf: dash's echo reads a backslash as an escape (\033, \c)
+echo() { printf '%s\n' "$*"; }
+
+# ~/.local/bin/spark-shell is a symlink into the clone: resolve it
+SELF=$0
+while [ -L "$SELF" ]; do
+    _t=$(readlink "$SELF")
+    case $_t in /*) SELF=$_t ;; *) SELF=$(dirname "$SELF")/$_t ;; esac
+done
+REPO=$(cd "$(dirname "$SELF")" && pwd)
+OS=$(uname -s)
+CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/spark-shell
+CONFIG=$CONFIG_DIR/config
+SPARK_CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/spark
+THEME_ENV=$SPARK_CONFIG_DIR/theme.env
+
+# the modules, sourced in this order
+# shellcheck source=src/read.sh
+. "$REPO/src/read.sh"
+# shellcheck source=src/look.sh
+. "$REPO/src/look.sh"
+# shellcheck source=src/rows.sh
+. "$REPO/src/rows.sh"
+# shellcheck source=src/packages.sh
+. "$REPO/src/packages.sh"
+# shellcheck source=src/render.sh
+. "$REPO/src/render.sh"
+# shellcheck source=src/seat.sh
+. "$REPO/src/seat.sh"
+# shellcheck source=src/sound.sh
+. "$REPO/src/sound.sh"
+# shellcheck source=src/login.sh
+. "$REPO/src/login.sh"
+# shellcheck source=src/console.sh
+. "$REPO/src/console.sh"
+# shellcheck source=src/palette.sh
+. "$REPO/src/palette.sh"
+# shellcheck source=src/font.sh
+. "$REPO/src/font.sh"
+# shellcheck source=src/quiet.sh
+. "$REPO/src/quiet.sh"
+# shellcheck source=src/verbs.sh
+. "$REPO/src/verbs.sh"
+# shellcheck source=src/bar.sh
+. "$REPO/src/bar.sh"
+# shellcheck source=src/machine.sh
+. "$REPO/src/machine.sh"
+# shellcheck source=src/panel.sh
+. "$REPO/src/panel.sh"
+# shellcheck source=src/probes.sh
+. "$REPO/src/probes.sh"
+# shellcheck source=src/sources.sh
+. "$REPO/src/sources.sh"
+# shellcheck source=src/notes.sh
+. "$REPO/src/notes.sh"
+# shellcheck source=src/reminders.sh
+. "$REPO/src/reminders.sh"
+# shellcheck source=src/system.sh
+. "$REPO/src/system.sh"
+# shellcheck source=src/step.sh
+. "$REPO/src/step.sh"
+# shellcheck source=src/want.sh
+. "$REPO/src/want.sh"
+# shellcheck source=src/provide.sh
+. "$REPO/src/provide.sh"
+# shellcheck source=src/tools.sh
+. "$REPO/src/tools.sh"
+# shellcheck source=src/files.sh
+. "$REPO/src/files.sh"
+# shellcheck source=src/dialog.sh
+. "$REPO/src/dialog.sh"
+# shellcheck source=src/pad.sh
+. "$REPO/src/pad.sh"
+# shellcheck source=src/semantic.sh
+. "$REPO/src/semantic.sh"
+# shellcheck source=src/home.sh
+. "$REPO/src/home.sh"
+# shellcheck source=src/theme.sh
+. "$REPO/src/theme.sh"
+# shellcheck source=src/gallery.sh
+. "$REPO/src/gallery.sh"
+# shellcheck source=src/font_quiet.sh
+. "$REPO/src/font_quiet.sh"
+# shellcheck source=src/layout.sh
+. "$REPO/src/layout.sh"
+# shellcheck source=src/sbom.sh
+. "$REPO/src/sbom.sh"
+# shellcheck source=src/desktop.sh
+. "$REPO/src/desktop.sh"
+# shellcheck source=src/screen.sh
+. "$REPO/src/screen.sh"
+# shellcheck source=src/window.sh
+. "$REPO/src/window.sh"
+# shellcheck source=src/session.sh
+. "$REPO/src/session.sh"
+
+usage() {
+    sed -n '2,/^# The one interface/p' "$0" | sed '$d' | sed '$d' | sed 's/^# \{0,1\}//'   # the command list
+}
+
+main() {
+    sub=${1:-status}
+    shift 2>/dev/null || true
+    # the flags out of the words, every other word kept byte-exact;
+    # --windows and --rooms are older spellings of --desktop and --terminal
+    n=$#
+    while [ "$n" -gt 0 ]; do
+        a=$1; shift; n=$((n - 1))
+        case $a in
+            --dry-run) MODE=dry ;; --yes) YES=1 ;; --verbose|-v) VERBOSE=1 ;;
+            --desktop|--windows) PLAYER=windows ;; --terminal|--rooms) PLAYER=rooms ;;
+            *) set -- "$@" "$a" ;;
+        esac
+    done
+    case ${1:-} in -h|--help) usage; return 0 ;; esac   # a verb's -h answers first
+    runtime_adopt
+    case $sub in
+        -h|--help|help) usage ;;
+        on) cmd_on "$@" ;;
+        off) cmd_off "$@" ;;
+        apply) cmd_on "$@" ;;
+        follow) cmd_follow ;;
+        check) cmd_check ;;
+        update) cmd_update ;;
+        bar) cmd_bar "$@" ;;
+        panel) cmd_panel "$@" ;;
+        dialog) cmd_dialog "$@" ;;
+        want) cmd_want "$@" ;;
+        provide) cmd_provide "$@" ;;
+        semantic) cmd_semantic "$@" ;;
+        theme) cmd_theme "$@" ;;
+        font) cmd_font "$@" ;;
+        quiet) cmd_quiet "$@" ;;
+        sbom) cmd_sbom "$@" ;;
+        desktop) cmd_desktop "$@" ;;
+        login) cmd_login "$@" ;;
+        layout) cmd_layout "$@" ;;
+        apps) REFUSE_AS=apps; cmd_apps_verb ;;
+        notes) cmd_notes "$@" ;;
+        reminders) cmd_reminders "$@" ;;
+        status) cmd_status ;;
+        --dry-run) MODE=dry; cmd_on ;;
+        *) usage >&2; exit 2 ;;
+    esac
+}
+
+main "$@"
