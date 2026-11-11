@@ -1,12 +1,17 @@
 # shellcheck extended-analysis=false
 # --- the layouts
 # sets: LAYOUTS_DIR LAYOUT_LAST LAYOUT_NOT_APPS LAYOUT_PENDING LAYOUT_SMALL_WORDS LAYOUT_VERBS LAYOUT_WAIT REFUSE_AS
-# reads: APPS CONFIG_DIR DIALOG_BIN KEPT_LAYOUTS LAYOUT_ON NOTES_DIR OS PANEL_APP REPO TAB TMP VERBOSE
-# a layout (a desk, in the code);
+# reads: APPS CONFIG_DIR DIALOG_BIN KEPT_LAYOUTS LAYOUT_ON NOTES_DIR OS PANEL_APP REPO STATE_DIR TAB TMP VERBOSE
 # every rendered line passes the gate before sway sees it
 LAYOUTS_DIR=$CONFIG_DIR/layouts
-LAYOUT_LAST=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desk.last
-LAYOUT_PENDING=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desk.pending
+LAYOUT_LAST=$STATE_DIR/layout.last
+LAYOUT_PENDING=$STATE_DIR/layout.pending
+layout_state_names() {   # the state files were desk.last and desk.pending through v0.137: each moved to its name, once
+    for _f in last pending; do
+        [ ! -e "$STATE_DIR/desk.$_f" ] || [ -e "$STATE_DIR/layout.$_f" ] || mv "$STATE_DIR/desk.$_f" "$STATE_DIR/layout.$_f" 2>/dev/null || :
+    done
+}
+layout_state_names
 LAYOUT_VERBS="workspace rename splith splitv layout resize focus move floating fullscreen exec session window window-rule"   # session and window: the tmux lines
 LAYOUT_NOT_APPS="sh bash zsh dash fish ksh sudo doas su pkexec"   # a shell or a way to root
 LAYOUT_WAIT=30                                                    # seconds for a window to map
@@ -42,7 +47,7 @@ layout_apps() {   # layout_apps NEED -> the lines
             w=$(printf '%s' "$w" | tr -cd 'A-Za-z0-9_.-' | tr 'A-Z' 'a-z')
             [ -z "$w" ] || ! layout_on_path "$w" || printf '%s: named in the need, terminal\n' "$w"
         done
-        echo "shell: a terminal with a prompt, terminal"   # a desk word, not an app
+        echo "shell: a terminal with a prompt, terminal"   # a layout word, not an app
     } | grep -v "^\\($(printf '%s' "sway swaybg swaymsg foot footclient xdg-open $LAYOUT_NOT_APPS" | sed 's/ /\\|/g')\\):" \
       | sort -t: -s -u -k1,1   # the desktop itself: not apps
 }
@@ -388,32 +393,32 @@ layout_in_sway() { [ -n "${SWAYSOCK:-}" ] && [ -n "$(swaymsg -t get_version 2>/d
 layout_on() {   # -> desktop or terminal; LAYOUT_ON forces one
     if [ -n "${LAYOUT_ON:-}" ]; then echo "$LAYOUT_ON"; elif layout_in_sway; then echo desktop; else echo terminal; fi
 }
-layout_render() {   # layout_render JSONFILE -> $TMP/desk; ws the main's workspace
+layout_render() {   # layout_render JSONFILE -> $TMP/layout.lines; ws the main's workspace
     ED=$(layout_editor) || ED=''
     : "${LAYOUT_LABEL:=$(layout_ws_label "$(layout_words "$1")")}"
     [ -n "$ED" ] || ! layout_has "$1" editor || echo "  editor -- no editor on this machine: set EDITOR in ~/.config/spark-shell/rc"
-    if [ "$LAYOUT_ON" = terminal ]; then layout_rooms "$(layout_name_of "$(layout_words "$1")")" "$1" > "$TMP/desk"; return; fi
+    if [ "$LAYOUT_ON" = terminal ]; then layout_rooms "$(layout_name_of "$(layout_words "$1")")" "$1" > "$TMP/layout.lines"; return; fi
     layout_screens
     layout_windows_of "$1"
     ws=$(layout_words_ws "$(layout_words "$1")"); [ -n "$ws" ] || ws=$(layout_next_ws)
-    layout_lines "$ws" "$1" > "$TMP/desk"
+    layout_lines "$ws" "$1" > "$TMP/layout.lines"
 }
 layout_show() {   # layout_show WHOSE -- KEPT=1 for a kept one
     if [ "$LAYOUT_ON" = terminal ]; then
-        name=$(sed -n 's/^session //p' "$TMP/desk" | head -1)
-        layout_play_rooms "$TMP/desk" || refuse "nothing ran"
+        name=$(sed -n 's/^session //p' "$TMP/layout.lines" | head -1)
+        layout_play_rooms "$TMP/layout.lines" || refuse "nothing ran"
         echo "tmux session $name -- $1"
         if layout_in_sway; then   # a foot window of its own
-            _w=$(layout_next_ws); printf 'workspace number %s\nrename workspace to "%s %s"\nexec foot -e tmux attach-session -t =%s\n' "$_w" "$_w" "$(layout_ws_label "$name")" "$name" > "$TMP/desk.win"
-            KEPT=1 layout_play "$TMP/desk.win" >/dev/null || refuse 'the layout workspace could not be opened'; : > "$TMP/opened"
+            _w=$(layout_next_ws); printf 'workspace number %s\nrename workspace to "%s %s"\nexec foot -e tmux attach-session -t =%s\n' "$_w" "$_w" "$(layout_ws_label "$name")" "$name" > "$TMP/layout.win"
+            KEPT=1 layout_play "$TMP/layout.win" >/dev/null || refuse 'the layout workspace could not be opened'; : > "$TMP/opened"
         else layout_join "$name"; fi
         return
     fi
-    # the panel's window goes with the desk
+    # the panel's window goes with the layout
     [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=$PANEL_APP] move container to workspace number $ws" >/dev/null 2>&1 || true
-    layout_play "$TMP/desk" || refuse "the layout did not finish; some windows may already be open"
+    layout_play "$TMP/layout.lines" || refuse "the layout did not finish; some windows may already be open"
     : > "$TMP/opened"   # the panel's window closes on it
-    echo "on workspace $(layout_ws_said "$TMP/desk")${1:+ -- $1}"
+    echo "on workspace $(layout_ws_said "$TMP/layout.lines")${1:+ -- $1}"
     [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=$PANEL_APP] focus" >/dev/null 2>&1 || true   # the keys stay the panel's
 }
 
@@ -457,7 +462,7 @@ layout_play() {   # layout_play FILE -> the lines sent to sway
     [ "$sent" -gt 0 ] && [ "$_dp_failed" = 0 ]
 }
 
-layout_make() {   # layout_make NEED -> the desk laid out
+layout_make() {   # layout_make NEED -> the layout laid out
     command -v jq >/dev/null 2>&1 || refuse "jq is not installed (spark-shell on)"
     spark=$(spark_bin)
     [ -n "$spark" ] || refuse "spark is not installed -- spark picks the apps for a layout (github.com/forgewright-ai/spark)"
@@ -468,20 +473,20 @@ layout_make() {   # layout_make NEED -> the desk laid out
     about=$(layout_brief)
     [ -n "${ASKED:-}" ] || printf 'layout> %s\n' "$1"
     layout_pulse
-    st=0; "$spark" edit --type json --name layout.json --about "$about" -- "write the layout for this need: $1" </dev/null > "$TMP/desk.json" 2>"$TMP/desk.err" || st=$?
+    st=0; "$spark" edit --type json --name layout.json --about "$about" -- "write the layout for this need: $1" </dev/null > "$TMP/layout.json" 2>"$TMP/layout.err" || st=$?
     layout_pulse_stop
-    [ "$st" -eq 0 ] || refuse "spark did not answer: $(head -1 "$TMP/desk.err")"
-    jq -e '.main.app | strings' "$TMP/desk.json" >/dev/null 2>&1 || refuse "the answer was not a layout (spark-shell layout -v shows it)"
+    [ "$st" -eq 0 ] || refuse "spark did not answer: $(head -1 "$TMP/layout.err")"
+    jq -e '.main.app | strings' "$TMP/layout.json" >/dev/null 2>&1 || refuse "the answer was not a layout (spark-shell layout -v shows it)"
     # never the model's: window rules and minimum sizes
-    jq '.main |= del(.floating, .border, .min_columns, .min_rows) | .side = ((.side // []) | map(del(.floating, .border, .min_columns, .min_rows)))' "$TMP/desk.json" > "$TMP/desk.clean"
-    mv "$TMP/desk.clean" "$TMP/desk.json"
+    jq '.main |= del(.floating, .border, .min_columns, .min_rows) | .side = ((.side // []) | map(del(.floating, .border, .min_columns, .min_rows)))' "$TMP/layout.json" > "$TMP/layout.clean"
+    mv "$TMP/layout.clean" "$TMP/layout.json"
     ED=$(layout_editor) || ED=''
-    answer=$(layout_set "$TMP/desk.json")
-    layout_named "$TMP/desk.json" "$1" > "$TMP/named.say"
-    changed=''; [ "$(layout_set "$TMP/desk.json")" = "$answer" ] || changed=1
-    why=$(layout_why "$TMP/desk.json")
+    answer=$(layout_set "$TMP/layout.json")
+    layout_named "$TMP/layout.json" "$1" > "$TMP/named.say"
+    changed=''; [ "$(layout_set "$TMP/layout.json")" = "$answer" ] || changed=1
+    why=$(layout_why "$TMP/layout.json")
     [ -n "$changed" ] || [ -z "$why" ] || printf '  %s\n' "$why"
-    for a in $(jq -r '[.main] + (.side // []) | .[].app' "$TMP/desk.json"); do
+    for a in $(jq -r '[.main] + (.side // []) | .[].app' "$TMP/layout.json"); do
         [ "$a" != editor ] || continue   # a layout word, not an app
         layout_app_known "$a" && continue
         if layout_on_path "$a"; then echo "  $a is not one of the allowed apps -- laid out without it (spark-shell apps adds it)"
@@ -489,7 +494,7 @@ layout_make() {   # layout_make NEED -> the desk laid out
     done
     cat "$TMP/named.say"
     mkdir_private "$(dirname "$LAYOUT_LAST")"
-    jq --arg w "$1" --arg ch "$changed" --argjson full "$(layout_words_full "$1")" '{words: $w} + . | if $ch == "" then . else del(.why) end | if $full then .main.fullscreen = true else . end' "$TMP/desk.json" > "$LAYOUT_LAST"
+    jq --arg w "$1" --arg ch "$changed" --argjson full "$(layout_words_full "$1")" '{words: $w} + . | if $ch == "" then . else del(.why) end | if $full then .main.fullscreen = true else . end' "$TMP/layout.json" > "$LAYOUT_LAST"
     layout_render "$LAYOUT_LAST"
     layout_keep "$1"
     if [ -n "${ASKED:-}" ]; then layout_show ''; else layout_show "spark-shell layout save NAME saves it"; fi   # the panel has its save row
