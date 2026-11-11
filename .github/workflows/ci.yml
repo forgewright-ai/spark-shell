@@ -150,7 +150,7 @@ jobs:
     container: ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c   # a stable release: pinned, bump the digest with a point release
     timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
     steps:
-      - run: sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources && apt-get -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq python3 git shellcheck diffutils jq openssh-client curl sudo >/dev/null   # sudo: the image has none, and 26.04's is sudo-rs
+      - run: printf 'http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\nhttp://mirrors.edge.kernel.org/ubuntu/\tpriority:2\nhttp://archive.ubuntu.com/ubuntu/\tpriority:3\n' > /etc/apt/mirrors.txt && sed -i -E 's|^(URIs:) .*|\1 mirror+file:/etc/apt/mirrors.txt|' /etc/apt/sources.list.d/ubuntu.sources && apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update -qq && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq python3 git shellcheck diffutils jq openssh-client curl sudo >/dev/null   # sudo: the image has none, and 26.04's is sudo-rs
       - name: the image's sudo is sudo-rs and its coreutils are uutils', or this job proves nothing
         run: |
           sudo --version | head -1
@@ -295,13 +295,13 @@ jobs:
           - family: ubuntu   # the Debian family's file: Ubuntu says ID_LIKE=debian
             distro: debian
             image: ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
-            prep: sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources && apt-get -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq git jq diffutils >/dev/null
+            prep: printf 'http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\nhttp://mirrors.edge.kernel.org/ubuntu/\tpriority:2\nhttp://archive.ubuntu.com/ubuntu/\tpriority:3\n' > /etc/apt/mirrors.txt && sed -i -E 's|^(URIs:) .*|\1 mirror+file:/etc/apt/mirrors.txt|' /etc/apt/sources.list.d/ubuntu.sources && apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update -qq && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq git jq diffutils >/dev/null
             install: DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq
             proof: dbus systemd   # mako 1.8's makoctl asks the bus through systemd's busctl, which a real Ubuntu always has
           - family: ubuntu-26.04   # sudo-rs and uutils' coreutils (#107)
             distro: debian
             image: ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
-            prep: sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources && apt-get -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq git jq diffutils >/dev/null
+            prep: printf 'http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\nhttp://mirrors.edge.kernel.org/ubuntu/\tpriority:2\nhttp://archive.ubuntu.com/ubuntu/\tpriority:3\n' > /etc/apt/mirrors.txt && sed -i -E 's|^(URIs:) .*|\1 mirror+file:/etc/apt/mirrors.txt|' /etc/apt/sources.list.d/ubuntu.sources && apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update -qq && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq git jq diffutils >/dev/null
             install: DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq
             proof: dbus systemd   # makoctl asks the bus through systemd's busctl, as on 24.04
           - family: arch
