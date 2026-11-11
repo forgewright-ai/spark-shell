@@ -1,4 +1,4 @@
-# Dependabot keeps every action's sha pin and the dialog's and the player's crates current, weekly.
+# Dependabot keeps every action's sha pin and the crates of the dialog, the pad and the wallpaper current, weekly.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -11,10 +11,14 @@ updates:
         patterns:
           - "github/codeql-action*"
   - package-ecosystem: cargo
-    directory: /dialog
+    directory: /component/dialog
     schedule:
       interval: weekly
   - package-ecosystem: cargo
-    directory: /player
+    directory: /component/pad
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: /component/wallpaper
     schedule:
       interval: weekly
