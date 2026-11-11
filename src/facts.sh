@@ -1,5 +1,5 @@
 # shellcheck extended-analysis=false
-# --- the machine folder
+# --- facts: what the desktop knows, for the model
 # sets: MACHINE_AT_NOW MACHINE_FACTS_EVERY MACHINE_NAME MACHINE_NOW_EVERY MACHINE_NOW_SOON MACHINE_NO_TOOL MACHINE_READS
 # reads: BAR_SYS LAYOUTS_DIR NOTES_DIR OS PANEL_APP PANEL_CACHE SAVER_NAMES TAB TMP WALL_SCENES WALL_SHIPPED
 # spark reads two files there. NAME.facts: what holds while the machine
@@ -22,7 +22,7 @@ machine_join() { awk -v s="${1:-, }" '{ o = o (NR > 1 ? s : "") $0 } END { if (N
 machine_names() { while IFS= read -r _mqn; do [ -z "$_mqn" ] || { machine_q "$_mqn"; echo; }; done | machine_join; }   # a name a line -> one line, each name quoted when it must be
 machine_clean() { tr '\t' ' ' | scrub_text | awk -v max="$1" 'NF { n += length($0) + 1; if (n > max) exit; print }'; }   # machine_clean MAX -- no tab, no control character, no empty line, MAX characters at most, cut at a line's end
 machine_keys() {   # -> the key table's sentences a request asks about, each to its first clause, one line
-    desk_keys | awk '$1 ~ /^(Super[+]Return|Super[+]Shift[+]q|Super[+]Escape|Print|Super[+]Ctrl[+]space|Super[+]1[.][.]0)$/ || /^The (volume|brightness) / { if ($1 !~ /^Super[+]1/) sub(/(; |, and ).*/, "."); print }' | machine_join ' '   # the workspaces' second clause says where Shift sends the window
+    layout_keys | awk '$1 ~ /^(Super[+]Return|Super[+]Shift[+]q|Super[+]Escape|Print|Super[+]Ctrl[+]space|Super[+]1[.][.]0)$/ || /^The (volume|brightness) / { if ($1 !~ /^Super[+]1/) sub(/(; |, and ).*/, "."); print }' | machine_join ' '   # the workspaces' second clause says where Shift sends the window
 }
 # the commands that read and list, named to spark; a change goes through a setting's MCP tool
 MACHINE_READS='theme:font list:layout:notes:reminders:desktop keys:desktop display'   # a colon between (awk -v takes no new line)
@@ -118,7 +118,7 @@ machine_facts() {   # -> the .facts lines
     if command -v wl-copy >/dev/null 2>&1; then _mwl="${_mwl:+$_mwl, }clipboard wl-copy"; ! command -v wl-paste >/dev/null 2>&1 || _mwl="$_mwl and wl-paste"; fi
     ! command -v notify-send >/dev/null 2>&1 || _mwl="${_mwl:+$_mwl, }notifications notify-send"
     printf -- "- Session: sway%s on Wayland (X11 apps run through Xwayland), set up by spark-shell%s; %s.\n" "${_msv:+ $_msv}" "${_mpv:+ v$_mpv}" "${_mwl:+$_mwl, }swaymsg"
-    _mkd=$(desk_keys | awk '$2 == "home.open." { print $1; exit }')
+    _mkd=$(layout_keys | awk '$2 == "home.open." { print $1; exit }')
     printf -- '- spark-shell is this desktop: the bar at the top; home%s holds native actions and optional conversation.\n' "${_mkd:+ ($_mkd)}"
     _msc=$(machine_screens); [ -z "$_msc" ] || printf -- '- Screens: %s.\n' "$_msc"
     echo '- Workspaces: the bar names each N:GLYPH; swaymsg workspace number N goes to one.'
@@ -256,7 +256,7 @@ machine_put() {   # machine_put now|facts FILE -- FILE as NAME.KIND in _md, 0600
 }
 machine_write() (   # machine_write now|all|tick -- .now, and .facts with all (tick: while a screen is on); a second writer gives way
     config_load
-    [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && grep -qs 'rendered by spark-shell' "$HOME/.config/sway/config" && desk_in_sway || exit 0
+    [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && grep -qs 'rendered by spark-shell' "$HOME/.config/sway/config" && layout_in_sway || exit 0
     [ -n "${SPARK_MACHINE_DIR:-}" ] || [ -n "$(spark_bin)" ] || exit 0
     _md=$(machine_dir)
     [ -d "$_md" ] || (umask 077 && mkdir -p "$_md") || exit 0

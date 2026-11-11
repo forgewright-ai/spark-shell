@@ -145,8 +145,8 @@ REPO=$(cd "$(dirname "$SELF")" && pwd)
 # the modules, sourced in this order
 # shellcheck source=src/core.sh
 . "$REPO/src/core.sh"
-# shellcheck source=src/read.sh
-. "$REPO/src/read.sh"
+# shellcheck source=src/config.sh
+. "$REPO/src/config.sh"
 # shellcheck source=src/look.sh
 . "$REPO/src/look.sh"
 # shellcheck source=src/packages.sh
@@ -167,30 +167,34 @@ REPO=$(cd "$(dirname "$SELF")" && pwd)
 . "$REPO/src/font.sh"
 # shellcheck source=src/quiet.sh
 . "$REPO/src/quiet.sh"
-# shellcheck source=src/verbs.sh
-. "$REPO/src/verbs.sh"
+# shellcheck source=src/setup.sh
+. "$REPO/src/setup.sh"
 # shellcheck source=src/bar.sh
 . "$REPO/src/bar.sh"
-# shellcheck source=src/machine.sh
-. "$REPO/src/machine.sh"
+# shellcheck source=src/facts.sh
+. "$REPO/src/facts.sh"
 # shellcheck source=src/panel.sh
 . "$REPO/src/panel.sh"
-# shellcheck source=src/probes.sh
-. "$REPO/src/probes.sh"
+# shellcheck source=src/devices.sh
+. "$REPO/src/devices.sh"
 # shellcheck source=src/sections.sh
 . "$REPO/src/sections.sh"
 # shellcheck source=src/notes.sh
 . "$REPO/src/notes.sh"
 # shellcheck source=src/reminders.sh
 . "$REPO/src/reminders.sh"
-# shellcheck source=src/system.sh
-. "$REPO/src/system.sh"
-# shellcheck source=src/step.sh
-. "$REPO/src/step.sh"
-# shellcheck source=src/want.sh
-. "$REPO/src/want.sh"
-# shellcheck source=src/provide.sh
-. "$REPO/src/provide.sh"
+# shellcheck source=src/notifications.sh
+. "$REPO/src/notifications.sh"
+# shellcheck source=src/storage.sh
+. "$REPO/src/storage.sh"
+# shellcheck source=src/power.sh
+. "$REPO/src/power.sh"
+# shellcheck source=src/undo.sh
+. "$REPO/src/undo.sh"
+# shellcheck source=src/ask.sh
+. "$REPO/src/ask.sh"
+# shellcheck source=src/rows.sh
+. "$REPO/src/rows.sh"
 # shellcheck source=src/tools.sh
 . "$REPO/src/tools.sh"
 # shellcheck source=src/mcp.sh

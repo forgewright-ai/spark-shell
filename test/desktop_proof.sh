@@ -61,7 +61,7 @@ if sway -C -c "$HOME/.config/sway/config" > "$HOME/sway-C.out" 2>&1; then echo "
 cat "$HOME/sway-C.out"
 
 echo "== a session bus, then a headless sway on it, then a foot window in it"
-# a container has no logind, as Void has none: the bus is the desktop's own (desk_start runs sway
+# a container has no logind, as Void has none: the bus is the desktop's own (layout_start runs sway
 # inside dbus-run-session); here one bus for sway and for this script's notify-send and makoctl
 command -v dbus-daemon >/dev/null 2>&1 || { echo "FAIL: no dbus-daemon for a session bus"; exit 1; }
 dbus-daemon --session --fork --print-address=1 --print-pid=1 > "$HOME/bus.out" || { echo "FAIL: dbus-daemon gave no session bus"; exit 1; }

@@ -1,5 +1,5 @@
 # shellcheck extended-analysis=false
-# --- the probes
+# --- devices: wifi, bluetooth and sound, as their tools answer
 # reads: BAR_SHADE BAR_STEPS DISTRO MODE OS REPO ROOT STATE_DIR TAB TMP YES
 panel_lower() { printf '%s' "$*" | tr 'A-Z' 'a-z'; }
 panel_bars() { bar_bars_plain "$1"; }
@@ -204,7 +204,7 @@ provide_network_rows() {   # SECTION DEVICE -> one connection's settings, JSON
                 {id: "set-dns", text: "set DNS servers", tool: {name: ($s + "_dns"), arguments: {device: $i, servers: "auto"}, ask: ["servers"]}}]} | .short = [.rows[].id]' "$TMP/network.show"
     else jq -cn --arg i "$_ni" --arg text "$(cat "$TMP/network.error" | scrub_text)" '{title: ("network " + $i), state: $text, rows: [], short: []}'; fi
 }
-desk_network() {
+layout_network() {
     [ "$OS" != Darwin ] || refuse 'macOS owns its network settings'
     case ${1:-} in
         setup)

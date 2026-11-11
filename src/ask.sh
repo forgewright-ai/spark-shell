@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
-# --- the want
+# --- ask: the words to the model and the steps it plans
 # sets: LOCAL_RISK US WANT_ATTACH_MAX
-# reads: APPS DESK_NOT_APPS LAYOUTS_DIR OS PANEL_CROSS PANEL_GO PANEL_TICK PROVIDE_TOOLS TAB TMP
+# reads: APPS LAYOUTS_DIR LAYOUT_NOT_APPS OS PANEL_CROSS PANEL_GO PANEL_TICK PROVIDE_TOOLS TAB TMP
 panel_brief_sections() {   # -> the sections the want path offers here, in the brief's order
     for p in layout apps printers window bar notes reminders display keyboard notifications storage power $(panel_blocks_here); do
         case $p in lan|bat|clock) continue ;; window|bar|display|keyboard|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; printers) command -v lpstat >/dev/null 2>&1 || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac
@@ -27,7 +27,7 @@ want_names_app() {   # want_names_app WORDS -> the first word that names an app 
     sbom_entries >/dev/null 2>&1 || :   # $TMP/entries
     for w in $1; do
         w=$(printf '%s' "$w" | tr -cd 'A-Za-z0-9_.-' | tr 'A-Z' 'a-z'); [ -n "$w" ] || continue
-        case " sway swaybg swaymsg foot footclient xdg-open $DESK_NOT_APPS " in *" $w "*) continue ;; esac
+        case " sway swaybg swaymsg foot footclient xdg-open $LAYOUT_NOT_APPS " in *" $w "*) continue ;; esac
         if [ -s "$TMP/entries" ] && awk -F '\t' -v w="$w" 'tolower($1) == w { f = 1 } { split($6, a, " "); b = a[1]; sub(/.*\//, "", b); if (tolower(b) == w) f = 1 } END { exit !f }' "$TMP/entries"; then echo "$w"; return 0; fi
         if apps_marked && grep -iq "^$w\([: ]\|$\)" "$APPS"; then echo "$w"; return 0; fi
     done
@@ -38,7 +38,7 @@ want_is_question() {   # want_is_question WORDS -> 0 when the words ask somethin
     case $1 in *'?') return 0 ;; esac
     case " $(printf '%s' "$1" | tr 'A-Z' 'a-z' | cut -d' ' -f1) " in ' what '|' how '|' why '|' when '|' where '|' who '|' which '|' is '|' are '|' can '|' could '|' do '|' does '|' did '|' will '|' should '|' was '|' were ') return 0 ;; *) return 1 ;; esac
 }
-want_layout() { ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; desk_need "$1" ) || :; }   # want_layout WORDS -- a layout for the task
+want_layout() { ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; layout_need "$1" ) || :; }   # want_layout WORDS -- a layout for the task
 # the plan, $TMP/plan: a line each, its fields parted by US:
 # "step SECTION ACTION ARG GATED", "say LINE" (an answer) or "no LINE"
 # (a refusal); a step is in it only once panel_gate took it
@@ -51,7 +51,7 @@ want_plan() {   # want_plan WORDS -> $TMP/plan; exit 1 when the words could not 
     spark=$(spark_bin); [ -n "$spark" ] || { want_put no "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"; return 1; }
     SND=${SND:-$(snd_tool)}
     if [ -z "$WANT_Q" ] && ! want_says_close "$1" && _app=$(want_names_app "$1"); then   # an app named opens, or is a layout for the task
-        if [ "$(printf '%s\n' "$1" | wc -w | tr -d ' ')" -le 2 ] && [ "$(desk_words_full "$1")" = false ] && [ -z "$(desk_words_ws "$1")" ]; then   # a word or two and no layout word: the app itself, at once
+        if [ "$(printf '%s\n' "$1" | wc -w | tr -d ' ')" -le 2 ] && [ "$(layout_words_full "$1")" = false ] && [ -z "$(layout_words_ws "$1")" ]; then   # a word or two and no layout word: the app itself, at once
             want_step apps open "$(panel_apps_known | awk -v w="$_app" 'tolower($0) == w && !d {print; d = 1}')"
         else want_put step layout new "$1" "$1"; fi   # the layout's model reads the whole sentence
         return 0

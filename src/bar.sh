@@ -97,7 +97,7 @@ bar_ws_watch() {   # on sway's workspace and output events: rename, refit
     bar_ws_names
     swaymsg -r -t subscribe -m '["workspace","output"]' 2>/dev/null | while IFS= read -r _e; do   # -r: one event a line
         case $_e in *'"change": "init"'*|*'"change":"init"'*|*'"change": "rename"'*|*'"change":"rename"'*) bar_ws_names ;; esac   # sway spaces its JSON; a rename drops the label
-        case $_e in *'"change": "unspecified"'*|*'"change":"unspecified"'*) desk_refit_soon ;; esac   # an output event says "unspecified"
+        case $_e in *'"change": "unspecified"'*|*'"change":"unspecified"'*) layout_refit_soon ;; esac   # an output event says "unspecified"
     done
 }
 bar_timeout() { if command -v timeout >/dev/null 2>&1; then timeout 3 "$@"; else "$@"; fi; }
@@ -593,7 +593,7 @@ bar_font_follow() {   # BAR_TEXT=auto: the font follows the screen; _bff is the 
     [ "$_bfn" != "${_bff:-}" ] || return 0
     _bfb=$(swaymsg -t get_bar_config 2>/dev/null | tr -d '[]" \n' | cut -d, -f1); [ -n "$_bfb" ] || return 0
     if [ -z "${_bff:-}" ] && [ "$(swaymsg -t get_bar_config "$_bfb" 2>/dev/null | jq -r '.font // empty' 2>/dev/null)" = "pango:$_bfn" ]; then _bff=$_bfn; return 0; fi   # the first pass: the font sway has
-    swaymsg -- "bar $_bfb font pango:$_bfn" >/dev/null 2>&1 && { _bff=$_bfn; desk_refit_soon; } || :
+    swaymsg -- "bar $_bfb font pango:$_bfn" >/dev/null 2>&1 && { _bff=$_bfn; layout_refit_soon; } || :
 }
 bar_style() { _bv=$(sed -n "s/^$1=//p" "$CONFIG" 2>/dev/null | tail -1); printf '%s' "${_bv:-$2}"; }   # bar_style KEY DEFAULT -> the config's value now
 bar_redraw() { [ -f "$BAR_PID" ] && read -r p < "$BAR_PID" && kill -USR1 "$p" 2>/dev/null || :; }
@@ -666,7 +666,7 @@ bar_text_step() {   # bar_text_step auto|N|bigger|smaller -> the receipt, or exi
     _btb=$(swaymsg -t get_bar_config 2>/dev/null | tr -d '[]" \n' | cut -d, -f1) || _btb=''
     [ -z "$_btb" ] || [ -z "${SWAYSOCK:-}" ] || swaymsg -- "bar $_btb font pango:$(bar_line_font "$(font_spec)")" >/dev/null 2>&1 || :
     pad_again   # the pad's text follows
-    desk_refit_soon   # the bar's height changed
+    layout_refit_soon   # the bar's height changed
     _bts=$(bar_line_font "$(font_spec)"); _bts=${_bts##* }
     if [ "$_btn" = auto ]; then echo "bar text auto, $_bts now $PANEL_SEP it follows the screen"; else echo "bar text $_btn"; fi
 }

@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # on_console -> 0 on /dev/tty1 and up (not XDG_VTNR: Void has no logind)
 # sets: IDLE_ALPHA IDLE_APP IDLE_FROM
-# reads: BAR_WS_ORDER CONFIG_DIR CONFIG_UNSET DESK_PENDING DESK_SEEN KB_RE NOTIFY_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SCREENS_CONF STATE_DIR TAB TMP US
+# reads: BAR_WS_ORDER CONFIG_DIR CONFIG_UNSET KB_RE LAYOUT_PENDING LAYOUT_SEEN NOTIFY_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SCREENS_CONF STATE_DIR TAB TMP US
 on_console() { case $(tty 2>/dev/null) in /dev/tty[1-9]*) return 0 ;; *) return 1 ;; esac; }
 # runtime_dir -- XDG_RUNTIME_DIR when unset (Void has no logind)
 runtime_dir() {
@@ -30,45 +30,45 @@ cmd_desktop() {
         off) shift; cmd_off desktop "$@"; return ;;
         wallpaper) refuse "the wallpaper is a theme word now: spark-shell theme wallpaper ${2:-X}" ;;
         apps|tools) cmd_apps_verb; return ;;
-        keep) shift; desk_save "$@"; return ;;
-        forget) shift; desk_delete "$@"; return ;;
+        keep) shift; layout_save "$@"; return ;;
+        forget) shift; layout_delete "$@"; return ;;
         --ask) cmd_panel layout; return ;;
-        --pending) desk_pending; return ;;
+        --pending) layout_pending; return ;;
         --motion) theme_load 2>/dev/null || :; motion_follow; return ;;
         --chat) python3 "$REPO/lib/home.py" open "$REPO/spark-shell" chat; return ;;
         home) python3 "$REPO/lib/home.py" open "$REPO/spark-shell" "${2:-}"; return ;;
-        keys) desk_keys; return ;;
-        lock) theme_load 2>/dev/null || :; desk_lock; return ;;
-        idle) shift; theme_load 2>/dev/null || :; desk_idle "$@"; return ;;   # a failed palette must not keep the lock away
-        network) shift; desk_network "$@"; return ;;
-        time) shift; desk_time "$@"; return ;;
-        display) shift; desk_display "$@"; return ;;
-        keyboard) shift; desk_keyboard "$@"; return ;;
+        keys) layout_keys; return ;;
+        lock) theme_load 2>/dev/null || :; layout_lock; return ;;
+        idle) shift; theme_load 2>/dev/null || :; layout_idle "$@"; return ;;   # a failed palette must not keep the lock away
+        network) shift; layout_network "$@"; return ;;
+        time) shift; layout_time "$@"; return ;;
+        display) shift; layout_display "$@"; return ;;
+        keyboard) shift; layout_keyboard "$@"; return ;;
         pointer) shift
             [ "$OS" != Darwin ] || refuse "not on macOS, which has its own pointer settings"
             if [ "$#" = 0 ]; then panel_title pointer; else [ "$#" = 2 ] || refuse "pointer takes tap on|off, scroll on|off or speed N"; input_setting pointer "$1" "$2"; fi
             return ;;
-        portals) desk_portals; return ;;
+        portals) layout_portals; return ;;
         --machine) case ${2:-all} in all|now|tick) machine_write "${2:-all}"; return ;; *) refuse "--machine takes all, now or tick" ;; esac ;;   # the tests' door to machine_write
-        screen|screens) shift; desk_screen "$@"; return ;;
-        window) shift; desk_window "$@"; return ;;
-        pad) shift; desk_pad "$@"; return ;;
-        capture) shift; desk_capture "$@"; return ;;
-        notifications) shift; desk_notifications "$@"; return ;;
-        storage) shift; desk_storage "$@"; return ;;
-        power) shift; desk_power "$@"; return ;;
+        screen|screens) shift; layout_screen "$@"; return ;;
+        window) shift; layout_window "$@"; return ;;
+        pad) shift; layout_pad "$@"; return ;;
+        capture) shift; layout_capture "$@"; return ;;
+        notifications) shift; layout_notifications "$@"; return ;;
+        storage) shift; layout_storage "$@"; return ;;
+        power) shift; layout_power "$@"; return ;;
         --first)   # home once, then your shell
-            if [ ! -f "$DESK_SEEN" ]; then
-                { mkdir_private "$(dirname "$DESK_SEEN")" && : > "$DESK_SEEN"; } 2>/dev/null || true
+            if [ ! -f "$LAYOUT_SEEN" ]; then
+                { mkdir_private "$(dirname "$LAYOUT_SEEN")" && : > "$LAYOUT_SEEN"; } 2>/dev/null || true
                 if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v foot >/dev/null 2>&1; then bar_panel_open ''; fi
             fi
             # the config's exports stay out of the shell (PROMPT is zsh's)
             # shellcheck disable=SC2086   # the -u words, split on purpose
             rm -rf "$TMP"; trap - EXIT; exec env $CONFIG_UNSET "${SHELL:-/bin/sh}" ;;
         ''|-*) ;;
-        *) desk_need "$@"; return ;;
+        *) layout_need "$@"; return ;;
     esac
-    desk_start ''
+    layout_start ''
 }
 # the idle screen goes once the lock is up (swaylock --daemonize returns then)
 idle_exec() {   # idle_exec -> the swayidle command
@@ -82,18 +82,18 @@ idle_exec() {   # idle_exec -> the swayidle command
 IDLE_APP="spark-idle"
 IDLE_ALPHA=0.8
 IDLE_FROM=$STATE_DIR/idle.from   # PORT<tab>NAME a line, the focused screen last
-desk_idle() {   # desk_idle [off|--clock|--side]
+layout_idle() {   # layout_idle [off|--clock|--side]
     case ${1:-} in
         --clock) trap 'idle_back; exit 0' INT TERM HUP; idle_clock; idle_back; return ;;
         --side) trap 'idle_back; exit 0' INT TERM HUP; idle_side; idle_back; return ;;
-        off) desk_in_sway || return 0
+        off) layout_in_sway || return 0
             idle_back
             return 0 ;;
         '') ;;
         *) refuse "idle takes off, or nothing: the idle screen now" ;;
     esac
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own desktop"
-    desk_in_sway || refuse "the idle screen is the desktop's: run it inside it"
+    layout_in_sway || refuse "the idle screen is the desktop's: run it inside it"
     command -v foot >/dev/null 2>&1 || refuse "foot is not installed (spark-shell on desktop)"
     ! idle_up || return 0
     theme_load
@@ -120,7 +120,7 @@ idle_main() {   # -> the main screen when on, else the focused one
 }
 idle_up() { swaymsg -t get_tree 2>/dev/null | jq -e --arg a "$IDLE_APP" '[.. | objects | select(.app_id? == $a)] | length > 0' >/dev/null 2>&1; }
 idle_back() {   # never a toggle: off and each window's end may all run it
-    desk_in_sway || return 0
+    layout_in_sway || return 0
     if swaymsg -t get_workspaces 2>/dev/null | jq -e '[.[] | select((.visible or .focused) and (.name == "idle" or (.name | startswith("idle "))))] | length > 0' >/dev/null 2>&1; then
         _ib=''
         [ -f "$IDLE_FROM" ] && while IFS="$TAB" read -r _io _iw; do
@@ -195,13 +195,13 @@ idle_side() {   # the saver without its clock, or nothing
     idle_clock_end
 }
 idle_restart() {
-    desk_in_sway || return 0
+    layout_in_sway || return 0
     # never another session's swayidle
     pkill -u "$(id -u)" -f "^swayidle .*$(printf '%s' "$REPO/spark-shell desktop lock" | sed 's/[][\.*^$+?(){}|]/\\&/g')" 2>/dev/null || :
     swaymsg -- exec "$(idle_exec)" >/dev/null 2>&1 || :
 }
 idle_words() { if [ "$1" = 0 ]; then echo never; elif [ "$1" = 1 ]; then echo "after 1 minute"; else echo "after $1 minutes"; fi; }   # idle_words MINUTES
-desk_display() {   # desk_display [idle|lock N | saver [NAME] | brightness N|up|down]
+layout_display() {   # layout_display [idle|lock N | saver [NAME] | brightness N|up|down]
     case ${1:-} in
         '') _sv=''; [ "$DISPLAY_SAVER" = clock ] || _sv=" $PANEL_SEP $DISPLAY_SAVER saver"
             echo "idle screen $(idle_words "$DISPLAY_IDLE")$_sv $PANEL_SEP lock and display off $(idle_words "$DISPLAY_LOCK")"
@@ -291,14 +291,14 @@ kb_known() {   # kb_known LAYOUT -> 0 when xkb lists it (or has no list)
     [ -r "$_lst" ] || return 0
     awk -v n="${1%%+*}" '/^! layout/ {on = 1; next} /^!/ {on = 0} on && $1 == n {f = 1} END {exit !f}' "$_lst"
 }
-desk_keyboard() {   # desk_keyboard [next | LAYOUT...]
+layout_keyboard() {   # layout_keyboard [next | LAYOUT...]
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own keyboard settings"
     case ${1:-} in
         repeat-delay|repeat-rate|caps) [ "$#" = 2 ] || refuse "keyboard $1 takes one value"; input_setting keyboard "$1" "$2" ;;
         '') if [ -z "$KEYBOARD" ]; then echo "keyboard: sway's own layout (spark-shell desktop keyboard us br sets some)"; return 0; fi
             _a=$(kb_names | cut -f1); _i=0
             for _x in $KEYBOARD; do if [ "$_i" = "${_a:-0}" ]; then echo "$PANEL_TICK $_x"; else echo "  $_x"; fi; _i=$((_i + 1)); done ;;
-        next) desk_in_sway || refuse "switches the desktop's keyboard: run it inside it (Super+Ctrl+space)"
+        next) layout_in_sway || refuse "switches the desktop's keyboard: run it inside it (Super+Ctrl+space)"
             swaymsg -- input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || refuse "sway took no layout switch"
             bar_redraw; kb_names | awk -F '\t' '{print "keyboard " $($1 + 2)}' ;;
         *) [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
@@ -338,13 +338,13 @@ screen_origin() {   # -> the screens moved, one line each
         echo "$_son at $_snx,$_sny"
     done < "$TMP/origin"
 }
-desk_screen() {   # desk_screen [NAME [scale N | mode WxH | transform normal|90|180|270 | on | off | left-of|right-of|above|below OTHER]]
+layout_screen() {   # layout_screen [NAME [scale N | mode WxH | transform normal|90|180|270 | on | off | left-of|right-of|above|below OTHER]]
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own display settings"
-    desk_in_sway || refuse "changes the desktop's screens: run it inside it"
+    layout_in_sway || refuse "changes the desktop's screens: run it inside it"
     if [ "${1:-}" = --ensure-visible ]; then
         if [ "$(screens_json | jq '[.[] | select(.active)] | length')" = 0 ]; then
             _first=$(screens_json | jq -r '.[0].name // empty')
-            [ -z "$_first" ] || desk_screen "$_first" on
+            [ -z "$_first" ] || layout_screen "$_first" on
         fi
         screen_origin >/dev/null
         return 0
@@ -391,13 +391,13 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | transform normal|90|
     [ "$_kind" != transform ] || screen_beside_again "$_id"   # its width changed: the screens beside it move
     screen_origin > "$TMP/origin.said"
     login_screens_follow
-    desk_refit_soon
+    layout_refit_soon
     echo "$_said"
     [ ! -s "$TMP/origin.said" ] || echo "every screen moved by the same amount, so none sits left of or above 0 (X11 apps take clicks there)"
 }
 
 # Notifications, storage and power
-desk_notifications() {   # desk_notifications [do-not-disturb on|off | dismiss | restore]
+layout_notifications() {   # layout_notifications [do-not-disturb on|off | dismiss | restore]
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own notifications"
     case ${1:-} in
         '') notify_up || { notify_why; return 0; }
@@ -409,7 +409,7 @@ desk_notifications() {   # desk_notifications [do-not-disturb on|off | dismiss |
         *) refuse "notifications takes do-not-disturb on|off, dismiss or restore" ;;
     esac
 }
-desk_storage() {   # desk_storage [mount|unmount|open|eject NAME]
+layout_storage() {   # layout_storage [mount|unmount|open|eject NAME]
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own Finder"
     case ${1:-} in
         '') storage_list > "$TMP/storage.l"
@@ -425,7 +425,7 @@ desk_storage() {   # desk_storage [mount|unmount|open|eject NAME]
         *) refuse "storage takes mount, unmount, open or eject, and a drive's name" ;;
     esac
 }
-desk_power() {   # desk_power [lock|suspend|logout|restart|shutdown]
+layout_power() {   # layout_power [lock|suspend|logout|restart|shutdown]
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own power menu"
     case ${1:-} in
         '') _pu=$(power_up); [ -z "$_pu" ] || echo "$_pu"
@@ -439,8 +439,8 @@ desk_power() {   # desk_power [lock|suspend|logout|restart|shutdown]
     esac
 }
 
-# desk_lock -- swaylock in the palette
-desk_lock() {
+# layout_lock -- swaylock in the palette
+layout_lock() {
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own lock"
     [ -n "${WAYLAND_DISPLAY:-}" ] || refuse "locks the desktop: run it inside it (Super+Escape)"
     command -v swaylock >/dev/null 2>&1 || refuse "swaylock is not installed (spark-shell on desktop)"
@@ -465,7 +465,7 @@ desk_lock() {
         --ring-caps-lock-color "$HEX_ANSI_3" --inside-caps-lock-color "$_in" --line-caps-lock-color 00000000 --caps-lock-bs-hl-color "$HEX_ANSI_1"
 }
 # under the pictures folder user-dirs.dirs names, so ~/Pictures gets no twin
-desk_capture() {   # desk_capture screen|area|window [--wait N]
+layout_capture() {   # layout_capture screen|area|window [--wait N]
     CAPTURE_DIR=$(user_pictures)/screenshots
     _what=${1:-screen}; _wait=0
     if [ "${2:-}" = --wait ]; then _wait=${3:-}; fi
@@ -494,7 +494,7 @@ desk_capture() {   # desk_capture screen|area|window [--wait N]
     # shellcheck disable=SC2088   # the path as you read it, a tilde and all
     echo "~/${_f#"$HOME"/}$_c"
 }
-desk_start() {   # desk_start PENDING -- sway on this console, PENDING a layout's words
+layout_start() {   # layout_start PENDING -- sway on this console, PENDING a layout's words
     pending=$1
     [ -z "$(desktop_na)" ] || refuse "$(desktop_na)"
     # the login screen still runs this: your shell, not a dead end
@@ -507,12 +507,12 @@ desk_start() {   # desk_start PENDING -- sway on this console, PENDING a layout'
     [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop"
     [ -z "$(desktop_tools)" ] || refuse "not installed:$(desktop_tools) (spark-shell on)"
     [ -f "$HOME/.config/sway/config" ] && [ -f "$HOME/.config/foot/foot.ini" ] || refuse "the sway and foot settings are missing (spark-shell on)"
-    if [ -n "${WAYLAND_DISPLAY:-}" ]; then desk_list; return 0; fi
+    if [ -n "${WAYLAND_DISPLAY:-}" ]; then layout_list; return 0; fi
     on_console || refuse "needs a console login (tty1 to tty9): ssh and terminal windows cannot start sway"
     runtime_dir
     log_dir=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell
     mkdir_private "$log_dir"
-    [ -z "${pending:-}" ] || printf '%s\n' "$pending" > "$DESK_PENDING"
+    [ -z "${pending:-}" ] || printf '%s\n' "$pending" > "$LAYOUT_PENDING"
     rm -f "$BAR_WS_ORDER" "$STATE_DIR/ws-pool" "$NOTIFY_SEEN"   # a new login; mako's ids start again
     st=0
     sound_start "$log_dir/sound.log"

@@ -21,7 +21,7 @@ screen_action() (   # screen_action ACTION ARGS [check]
         *) exit 1 ;;
     esac
     [ "$check" != check ] || exit 0
-    desk_screen "$name" "$@"
+    layout_screen "$name" "$@"
 )
 provide_screen_rows() {   # provide_screen_rows NAME -> the screen's choices as rows, JSON
     printf '%s\n' "$1" | grep -qE '^[A-Za-z0-9_.:-]{1,80}$' || return 1
@@ -72,5 +72,5 @@ screen_beside_again() {   # screen_beside_again ID -- the screens placed beside 
         [ -n "$_bn" ] && [ -n "$_bon" ] || continue
         printf '%s\t%s\t%s\n' "$_bn" "$_bs" "$_bon"
     done > "$TMP/beside"
-    while IFS="$TAB" read -r _bn _bs _bon; do ( desk_screen "$_bn" "$_bs" "$_bon" ) >/dev/null 2>&1 || :; done < "$TMP/beside"   # its own shell: the turn's receipt stays the turn's
+    while IFS="$TAB" read -r _bn _bs _bon; do ( layout_screen "$_bn" "$_bs" "$_bon" ) >/dev/null 2>&1 || :; done < "$TMP/beside"   # its own shell: the turn's receipt stays the turn's
 }

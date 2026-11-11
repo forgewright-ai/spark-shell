@@ -1,5 +1,5 @@
 # shellcheck extended-analysis=false
-# --------------------------------------------------------------- readers
+# --- the config: the readers of the settings and the theme
 # sets: ANIMATION_NAMES ANIM_PAIRED CONFIG_UNSET GLYPH_FAMILIES KB_RE PATH_REFUSED PATH_SAID SAVER_NAMES THEME_KEYS
 # reads: CONFIG CONFIG_DIR OS REPO TMP
 GLYPH_FAMILIES='stone star banner'

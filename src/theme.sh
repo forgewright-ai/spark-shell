@@ -155,7 +155,7 @@ theme_list() {
 }
 theme_save() {   # theme_save [NAME...]
     [ -n "${THEME:-}" ] && [ "$THEME" != none ] || refuse_in theme "no palette is in use -- spark-shell theme NAME first"
-    name=$(desk_name_of "$*")
+    name=$(layout_name_of "$*")
     if [ -z "$name" ]; then case $(theme_kind "$THEME") in look) name=$THEME ;; *) refuse_in theme "save NAME -- a name for this look" ;; esac; fi
     case $(theme_kind "$name") in shipped|yours) refuse_in theme "$name is a palette's name -- give the theme another" ;; esac
     _pf=$(palette_file "$THEME") || refuse_in theme "no palette named $THEME -- spark-shell theme list shows them"
@@ -197,7 +197,7 @@ theme_save() {   # theme_save [NAME...]
     kept_note theme "$name"
 }
 theme_delete() {   # theme_delete NAME... -- its folder and history lines
-    name=$(desk_name_of "$*"); [ -n "$name" ] || refuse_in theme "delete NAME -- which theme?"
+    name=$(layout_name_of "$*"); [ -n "$name" ] || refuse_in theme "delete NAME -- which theme?"
     case $(theme_kind "$name") in
         saved|look) ;;
         shipped) refuse_in theme "$name is a palette spark-shell ships, not a saved theme" ;;
@@ -425,7 +425,7 @@ scene_screens() {   # portrait screens' stills, in the background
 MOTION_NOW=''   # from motion_follow: playing, making or nothing
 motion_follow() {   # the look's loops playing or made; else ours stopped
     MOTION_NOW=''
-    [ "$OS" != Darwin ] && desk_in_sway || return 0
+    [ "$OS" != Darwin ] && layout_in_sway || return 0
     scene_screens
     if [ "${WALLPAPER_MOTION:-off}" != on ] || ! motion_has "${WALLPAPER:-}" || [ -n "$(motion_missing)" ]; then motion_stop; return 0; fi
     _mj=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || return 0
@@ -515,7 +515,7 @@ look_small() {   # look_small PICTURE -> a small PNG, or the PNG itself
     echo "a picture is read through rsvg-convert (the $(svg_pkg) package), which is not installed; a PNG is read without it"; return 1
 }
 look_name() {   # look_name WORDS -> a name not taken
-    _ln=$(desk_name_of "$1"); [ -n "$_ln" ] || _ln=look
+    _ln=$(layout_name_of "$1"); [ -n "$_ln" ] || _ln=look
     case $(theme_kind "$_ln") in ''|look) ;; *) _ln=$_ln-look ;; esac
     printf '%s' "$_ln"
 }

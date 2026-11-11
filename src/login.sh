@@ -30,7 +30,7 @@ portal_off() (
     fi
     rm -f "$saved"
 )
-desk_portals() {
+layout_portals() {
     [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || refuse "portals need the sway desktop"
     [ -n "${WAYLAND_DISPLAY:-}" ] && notify_bus || refuse "portals need the running desktop and its session bus"
     command -v dbus-update-activation-environment >/dev/null 2>&1 || refuse "the desktop bus tools are missing (spark-shell on desktop)"

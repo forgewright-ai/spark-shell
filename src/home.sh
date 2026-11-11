@@ -197,7 +197,7 @@ panel_about() {   # panel_about WIDTH -> the splash: the logo, the version, the 
     printf '%s\342\226\200\342\226\200\342\226\200\342\226\200%s    %s\342\226\202%s\n' "$_r" "$PANEL_UNMARK" "$PANEL_MARK" "$PANEL_UNMARK"
     echo; printf '%sspark-shell %s%s\n' "$_b" "$(panel_version)" "$PANEL_UNMARK"; echo
     _i=0
-    desk_keys | while IFS= read -r _l; do
+    layout_keys | while IFS= read -r _l; do
         _i=$((_i + 1)); case $_i in 4|7|13|16) echo ;; esac   # the keys in their groups: opening, the window, moving, lock and capture, the rest
         case $_l in
             Super+*|Ctrl+*|Alt+*|Shift+*|Print\ *)

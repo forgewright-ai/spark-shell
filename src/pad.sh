@@ -84,7 +84,7 @@ pad_place_words() {   # pad_place_words PLACE -> where it sits, in words
 }
 pad_band_words() { if [ "$1" = on ]; then echo "the band under its handle says pad and how many wait"; else echo "the handle alone across its top"; fi; }   # pad_band_words on|off -> what the pad shows, in words
 pad_view_words() { if [ "$1" = titles ]; then echo "a slot a window, its icon, its app and its title"; else echo "one icon a window, its title beside it on hover"; fi; }   # pad_view_words icons|titles -> how the pad shows its windows, in words
-desk_pad() {   # desk_pad [keys|toggle|place PLACE WIDTH SIDE [HEIGHT]|band [on|off]|view [icons|titles]|start|again] -- the pad
+layout_pad() {   # layout_pad [keys|toggle|place PLACE WIDTH SIDE [HEIGHT]|band [on|off]|view [icons|titles]|start|again] -- the pad
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own Dock"
     case ${1:-} in
         place) shift
@@ -121,7 +121,7 @@ desk_pad() {   # desk_pad [keys|toggle|place PLACE WIDTH SIDE [HEIGHT]|band [on|
         *) refuse "pad takes keys, toggle, place PLACE WIDTH SIDE [HEIGHT], band on|off or view icons|titles" ;;
     esac
     [ "${1:-}" != again ] || { pad_again; return 0; }
-    desk_in_sway || { [ "${1:-}" != start ] || return 0; refuse "the pad is the desktop's: run it inside it"; }
+    layout_in_sway || { [ "${1:-}" != start ] || return 0; refuse "the pad is the desktop's: run it inside it"; }
     swaymsg -t get_tree > "$TMP/tree" 2>/dev/null || refuse "sway did not answer"
     pad_list "$TMP/tree" > "$TMP/pad"
     _pdn=$(grep -c '' "$TMP/pad" || :)
@@ -132,7 +132,7 @@ desk_pad() {   # desk_pad [keys|toggle|place PLACE WIDTH SIDE [HEIGHT]|band [on|
         start) [ "$_pdn" = 0 ] || pad_wake ;;
         keys) [ "$_pdn" != 0 ] || refuse "no window is on the pad"
             if _pdp=$(pad_pid); then kill -USR1 "$_pdp" 2>/dev/null || :
-            elif ! pad_run --keys; then desk_window restore; return; fi   # no pad here: the window minimized last comes back
+            elif ! pad_run --keys; then layout_window restore; return; fi   # no pad here: the window minimized last comes back
             echo "the pad has the keys: Enter brings the window back, Esc leaves" ;;
         toggle) [ "$_pdn" != 0 ] || refuse "no window is on the pad"
             if _pdp=$(pad_pid); then

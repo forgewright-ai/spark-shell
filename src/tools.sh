@@ -145,7 +145,7 @@ tools_system_facts() {   # -> GROUP<tab>LABEL<tab>VALUE: the machine, the operat
     _tsu=$(power_up); printf 'operating system\tsystem\t%s\noperating system\tkernel\t%s\noperating system\tinit\t%s\noperating system\tpackages\t%s\noperating system\tuptime\t%s\n' \
         "$(tools_os PRETTY_NAME)" "$(uname -r)" "$(init_shape)" "$PM" "${_tsu#up }"
     _tss=''; _tso=''
-    if desk_in_sway; then
+    if layout_in_sway; then
         _tss=$(swaymsg -t get_version 2>/dev/null | jq -r '.human_readable // empty' | awk '{ print $1 }')
         _tso=$(swaymsg -t get_outputs 2>/dev/null | jq -r '[.[] | select(.active) | .name + " " + (.current_mode.width | tostring) + "x" + (.current_mode.height | tostring)] | join(", ")')
     fi
@@ -331,7 +331,7 @@ tools_space_view() {   # tools_space_view caches|folder:NAME -> a page of its la
 }
 tools_running_read() {   # -> $TMP/running.tsv, the programs now, sway's windows by process id
     : > "$TMP/running.windows"
-    ! desk_in_sway || swaymsg -t get_tree 2>/dev/null | jq -r '.. | objects | select((.type == "con" or .type == "floating_con") and (.pid // 0) > 0) | "\(.pid)\t\(.id)"' > "$TMP/running.windows" 2>/dev/null || :
+    ! layout_in_sway || swaymsg -t get_tree 2>/dev/null | jq -r '.. | objects | select((.type == "con" or .type == "floating_con") and (.pid // 0) > 0) | "\(.pid)\t\(.id)"' > "$TMP/running.windows" 2>/dev/null || :
     python3 -I "$REPO/lib/tools_running.py" list "$BAR_PROC" "$TMP/running.state" "$TMP/running.windows" > "$TMP/running.tsv" 2>/dev/null
 }
 tools_users() { awk -F: '{ printf "%s\t%s\n", $3, $1 }' /etc/passwd 2>/dev/null | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add // {}'; }   # -> {"0": "root",...}
@@ -432,7 +432,7 @@ tools_act() {   # tools_act ACTION [ARG] -> one line; exit 1 when it was not don
     esac
 }
 tools_terminal() {   # tools_terminal LINE [THEN] -- LINE in a terminal window that waits for Enter; THEN a spark-shell command run after it
-    desk_in_sway || { echo "a terminal window needs the desktop"; return 1; }
+    layout_in_sway || { echo "a terminal window needs the desktop"; return 1; }
     mkdir_private "$STATE_DIR/tools"
     _tts=$(mktemp "$STATE_DIR/tools/run.XXXXXX") || { echo "could not open a terminal"; return 1; }
     case $1 in spark-shell|'spark-shell '*) _ttc="$REPO/$1" ;; *) _ttc=$1 ;; esac

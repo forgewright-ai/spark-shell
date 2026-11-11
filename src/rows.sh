@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
-# --- the providers
+# --- rows: a section as an MCP server on stdio
 # sets: PROVIDE_CLIENT PROVIDE_LINE_MAX PROVIDE_PROTOCOL PROVIDE_SECTIONS PROVIDE_TOOLS SCRUB_JQ
-# reads: ANIMATION_NAMES DESK_LAST KEPT_LAYOUTS LAYOUTS_DIR PANEL_CROSS PANEL_DOT PANEL_GO PANEL_RING PANEL_SEP PANEL_TICK REPO SAVER_NAMES TAB THUMB_DIR TMP US WALL_TYPES
+# reads: ANIMATION_NAMES KEPT_LAYOUTS LAYOUTS_DIR LAYOUT_LAST PANEL_CROSS PANEL_DOT PANEL_GO PANEL_RING PANEL_SEP PANEL_TICK REPO SAVER_NAMES TAB THUMB_DIR TMP US WALL_TYPES
 # a section as an MCP server on stdio, JSON-RPC a line. Every JSON value
 # is built by jq with --arg, every request is parsed by jq; a method or a
 # tool name is matched by case, never run as a name
@@ -412,7 +412,7 @@ layout_meta() {   # -> {NAME: {apps, why}}, a layout saved or kept for the histo
     done | jq -cs 'add // {}'
 }
 provide_rows_layout() {   # stdin: the layout section's rows -> the same with each layout's apps and why
-    _prl=''; [ ! -f "$DESK_LAST" ] || _prl=$(desk_words "$DESK_LAST")
+    _prl=''; [ ! -f "$LAYOUT_LAST" ] || _prl=$(layout_words "$LAYOUT_LAST")
     jq -c --slurpfile facts "$TMP/win.facts" --argjson meta "$(layout_meta)" --arg sep "$PANEL_SEP" --arg last "$_prl" '
         ($facts[0] // null) as $f | ($f.here != null) as $desk
         | .rows |= ([.[] | (.tool.name // "") as $t

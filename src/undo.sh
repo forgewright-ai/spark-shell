@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
-# --- the step
-# reads: ANIMATION_NAMES BAR_FULL BAR_SYS CONFIG DESK_LAST FONT_FACES GLYPH_FAMILIES KEPT_LAYOUTS LAYOUTS_DIR MODE OS ROOT TAB TMP US WALL_NAMES WORDS_TAKE YES
+# --- undo: the step and its journal
+# reads: ANIMATION_NAMES BAR_FULL BAR_SYS CONFIG FONT_FACES GLYPH_FAMILIES KEPT_LAYOUTS LAYOUTS_DIR LAYOUT_LAST MODE OS ROOT TAB TMP US WALL_NAMES WORDS_TAKE YES
 panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORDS" that takes the step back, or nothing
     _p=$1; _a=$2; shift 2; _arg=$*
     case $_p:$_a in
@@ -15,9 +15,9 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
                 *) _back="screen-$(printf '%s' "$_row" | cut -f3) $_name" ;;
             esac
             printf '%s\t%s restored\n' "$_back" "$_name" ;;
-        layout:save) _n=$(desk_name_of "$_arg"); [ -z "$_n" ] || [ -e "$LAYOUTS_DIR/$_n" ] || printf 'delete %s\t%s deleted again\n' "$_n" "$_n" ;;
+        layout:save) _n=$(layout_name_of "$_arg"); [ -z "$_n" ] || [ -e "$LAYOUTS_DIR/$_n" ] || printf 'delete %s\t%s deleted again\n' "$_n" "$_n" ;;
         layout:delete) [ ! -f "$LAYOUTS_DIR/$_arg" ] || printf 'restore %s\t%s is back\n' "$_arg" "$_arg" ;;
-        layout:rename) _n=$(desk_name_of "${_arg#* to=}"); [ -z "$_n" ] || printf 'rename %s to=%s\t%s has its name again\n' "$_n" "${_arg%% *}" "${_arg%% *}" ;;
+        layout:rename) _n=$(layout_name_of "${_arg#* to=}"); [ -z "$_n" ] || printf 'rename %s to=%s\t%s has its name again\n' "$_n" "${_arg%% *}" "${_arg%% *}" ;;
         clock:format) printf 'format %s\tclock format restored\n' "$(time_pref CLOCK_FORMAT 24)" ;;
         clock:week) printf 'week %s\tfirst weekday restored\n' "$(time_pref WEEK_START sunday)" ;;
         clock:zone) _z=$(time_zone); time_zone_valid "$_z" && printf 'zone %s\ttime zone restored\n' "$_z" ;;
@@ -151,7 +151,7 @@ time_setting() {
     bar_redraw
     echo "time $1 $2"
 }
-desk_time() {
+layout_time() {
     case ${1:-} in
         '') printf 'zone %s\nformat %s\nweek %s\n%s\n' "$(time_zone)" "$(time_pref CLOCK_FORMAT 24)" "$(time_pref WEEK_START sunday)" "$(time_sync)" ;;
         format|week|zone)
@@ -245,11 +245,11 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         spark:chat|undo:all|about:open|about:site) echo ''; return 0 ;;
         tools:*) tools_gate "$2" "${3:-}"; return ;;
         layout:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: save takes a name"; return 1 ;;
-        layout:add) _n=$(jq -r '.suggested // [] | .[]' "$DESK_LAST" 2>/dev/null | awk -v w="$(panel_lower "$3")" 'tolower($0) == w && !d {print; d = 1}'); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "layout: $3 was not suggested for the last layout"; return 1 ;;
+        layout:add) _n=$(jq -r '.suggested // [] | .[]' "$LAYOUT_LAST" 2>/dev/null | awk -v w="$(panel_lower "$3")" 'tolower($0) == w && !d {print; d = 1}'); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "layout: $3 was not suggested for the last layout"; return 1 ;;
         apps:open) panel_apps_read "$TMP/apps.gate"   # the step opens from this list too: one read
             _n=$(panel_apps_names < "$TMP/apps.gate" | awk -v w="$(panel_lower "$3")" 'tolower($0) == w && !d {print; d = 1}'); [ -n "$_n" ] && { echo "$_n"; return 0; }
             rm -f "$TMP/apps.gate"; echo "apps: no app named $3 here"; return 1 ;;
-        layout:open) _n=$(desk_name_of "$3"); if [ -n "$_n" ] && desk_kept_file "$_n" >/dev/null; then echo "$_n"; return 0; fi; echo "layout: no saved layout named $3"; return 1 ;;
+        layout:open) _n=$(layout_name_of "$3"); if [ -n "$_n" ] && layout_kept_file "$_n" >/dev/null; then echo "$_n"; return 0; fi; echo "layout: no saved layout named $3"; return 1 ;;
         layout:new) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: new takes the words for it"; return 1 ;;
         apps:pick|apps:terminal) echo ''; return 0 ;;
         window:move) _n=$(win_named "${3%% *}") || { echo 'that window is no longer open'; return 1; }; case ${3##* to=} in [1-9]|[1-9][0-9]) ;; *) echo 'a workspace is a number, 1 to 99'; return 1 ;; esac; echo "$_n to=${3##* to=}"; return 0 ;;

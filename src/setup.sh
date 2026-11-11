@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
-# ------------------------------------------------------------------ verbs
-# sets: DESK_SEEN SEEN
+# --- setup: on, off, status and check
+# sets: LAYOUT_SEEN SEEN
 # reads: APPS CONFIG DESKTOP_RENDERED DIALOG_BIN DIALOG_URL DISTRO FAMILIES_SAID LAYOUTS_DIR LOGIN_ETC MODE NEON NEON_OLD NEON_VERSION OS PM PROVIDE_SECTIONS RENDERED REPO SEMANTIC_MODEL SPARK_CONFIG_DIR THEME_ENV TMP YES
 # `on` is the terminal seat, `on desktop` the seat and the desktop; `off
 # desktop` takes the desktop back, `off` everything. The nouns are desktop
@@ -388,8 +388,8 @@ cmd_follow() {
 
 # The desktop's keys are the `# key: ` sentences in the sway template, one
 # source (the README carries them verbatim and the suite holds it to them).
-DESK_SEEN=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desktop.seen
-desk_keys() { python3 "$REPO/lib/home.py" keys "$REPO/template/.config/sway/config"; }
+LAYOUT_SEEN=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desktop.seen
+layout_keys() { python3 "$REPO/lib/home.py" keys "$REPO/template/.config/sway/config"; }
 status_next() {   # the first sentence that applies, as a next row; nothing off, no row
     if [ -z "$(spark_bin)" ]; then n=spark; s="Install spark, the local AI: github.com/forgewright-ai/spark."
     elif [ -n "$(desktop_na)" ]; then return 0
@@ -559,7 +559,7 @@ cmd_check_lines() {
         sbom_entries; ne=$(wc -l < "$TMP/entries" | tr -d ' ')
         if apps_marked; then
             gone=''
-            for n in $(grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//'); do desk_on_path "$n" || grep -q "^$n	" "$TMP/entries" || gone="$gone $n"; done
+            for n in $(grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//'); do layout_on_path "$n" || grep -q "^$n	" "$TMP/entries" || gone="$gone $n"; done
             [ -z "$gone" ] && chk apps ok "$(grep -c '^[A-Za-z0-9]' "$APPS") allowed apps, $ne apps installed" || chk apps fail "allowed but not here:$gone" "spark-shell apps"
         else chk apps ok "$ne apps installed, all allowed (spark-shell apps chooses)"; fi
     fi

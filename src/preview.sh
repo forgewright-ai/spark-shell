@@ -91,11 +91,11 @@ win_page() {   # win_page ID -> a window's page
     sed -n '3,$p' "$TMP/win.page" | page_of "$(sed -n 1p "$TMP/win.page")" "$(sed -n 2p "$TMP/win.page")"
 }
 layout_page() {   # layout_page NAME -> a layout's page
-    _lpf=$(desk_kept_file "$1") || return 1
-    desk_json_ok "$_lpf" || return 1
+    _lpf=$(layout_kept_file "$1") || return 1
+    layout_json_ok "$_lpf" || return 1
     jq -r '"in front\t" + .main.app + (if .main.fullscreen == true then ", full screen" elif (.main.width | type) == "number" then ", " + (.main.width | tostring) + "% wide" else "" end),
         (if ((.side // []) | length) > 0 then "beside\t" + ([.side[] | .app // empty] | join(", ")) else empty end),
-        (if (.main.screen // "") != "" then "screen\t" + .main.screen else empty end)' "$_lpf" 2>/dev/null | page_of "$(desk_label "$_lpf")" "$(desk_why "$_lpf")"
+        (if (.main.screen // "") != "" then "screen\t" + .main.screen else empty end)' "$_lpf" 2>/dev/null | page_of "$(layout_label "$_lpf")" "$(layout_why "$_lpf")"
 }
 wifi_page() {   # wifi_page ROW-ID -> a network's page
     case $1 in wifi:disconnect) _wpn=$(wifi_connected); _wpu=yes ;; 'wifi:connect '?*) _wpn=${1#wifi:connect }; _wpu='' ;; 'wifi:saved '?*) _wpn=${1#wifi:saved }; _wpu='' ;; *) return 1 ;; esac

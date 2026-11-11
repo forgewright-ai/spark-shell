@@ -178,7 +178,7 @@ desktop_stubs() {
     done
 }
 
-desk_stubs() {   # after desktop_stubs: its swaymsg is replaced
+layout_stubs() {   # after desktop_stubs: its swaymsg is replaced
     cat > "$H/.local/bin/spark" <<'EOF'
 #!/bin/sh
 mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}"; printf '%s\n' "$@" > "${XDG_STATE_HOME:-$HOME/.local/state}/spark.argv"
@@ -1489,10 +1489,10 @@ if want 16; then
 # uname like 14 and 15.
 fresh
 desktop_stubs
-desk_stubs
+layout_stubs
 need='photo editing for instagram and x'
 argv=$H/.local/state/spark.argv; swlog=$H/.local/state/swaymsg.log
-desk_last=$H/.local/state/spark-shell/desk.last; desk_pending=$H/.local/state/spark-shell/desk.pending
+layout_last=$H/.local/state/spark-shell/desk.last; layout_pending=$H/.local/state/spark-shell/desk.pending
 desks=$H/.config/spark-shell/layouts
 theme_fixture '#ff5555'
 mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
@@ -1504,7 +1504,7 @@ if [ "$(uname -s)" = Darwin ]; then
             && ok "macOS: desktop $1 refuses, na, one line, exit 1" || bad "macOS desktop $*" "st=$st $out"
     }
     na_form apps   # a desk itself plays as rooms here (18)
-    [ ! -e "$desk_last" ] && [ ! -e "$desk_pending" ] && [ ! -e "$desks" ] && [ ! -e "$argv" ] && [ ! -e "$swlog" ] \
+    [ ! -e "$layout_last" ] && [ ! -e "$layout_pending" ] && [ ! -e "$desks" ] && [ ! -e "$argv" ] && [ ! -e "$swlog" ] \
         && ok "macOS: the picker wrote nothing (no desk.last, no pending, no desks dir, spark and swaymsg never called)" || bad "macOS desk wrote" "$(find "$H/.local/state" "$H/.config/spark-shell")"
 else
     export SWAYSOCK=$H/sway.sock WAYLAND_DISPLAY=wayland-1    # inside the desktop
@@ -1534,9 +1534,9 @@ else
     printf '%s\n' 'workspace number 3' 'rename workspace to "3 photo editing for"' 'exec gimp-3.0' splith 'exec firefox https://instagram.com' splitv 'exec firefox https://x.com' 'exec foot -e micro' 'exec player --idle --' 'focus left' 'resize set width 70 ppt' > "$H/expected.lines"
     sed 's/^rename workspace to .*/rename workspace to "3 studio"/' "$H/expected.lines" > "$H/expected.studio"   # a saved layout names its workspace after itself
     cmp -s "$swlog" "$H/expected.lines" && ok "sway got exactly the ten lines in order (main, the workspace named after the words, splith, side, splitv, micro in foot, focus left, resize 70 ppt; ghostapp never)" || bad "swaymsg lines" "$(cat "$swlog" 2>&1)"
-    jq -e --arg w "$need" '(keys_unsorted[0] == "words") and .words == $w and (.why | startswith("photo work in gimp")) and .main.app == "gimp-3.0" and .main.width == 70 and (.side | length) == 5 and .side[0].args == "https://instagram.com"' "$desk_last" >/dev/null 2>&1 \
-        && ok "desk.last: the model's answer as JSON, the words first, then why, main and side as answered" || bad "desk.last" "$(cat "$desk_last" 2>&1)"
-    grep -q '^exec\|^workspace\|^#' "$desk_last" && bad "desk.last holds sway lines or a header" "$(head -3 "$desk_last")" || ok "desk.last: no sway line, no header (rendered when it opens)"
+    jq -e --arg w "$need" '(keys_unsorted[0] == "words") and .words == $w and (.why | startswith("photo work in gimp")) and .main.app == "gimp-3.0" and .main.width == 70 and (.side | length) == 5 and .side[0].args == "https://instagram.com"' "$layout_last" >/dev/null 2>&1 \
+        && ok "desk.last: the model's answer as JSON, the words first, then why, main and side as answered" || bad "desk.last" "$(cat "$layout_last" 2>&1)"
+    grep -q '^exec\|^workspace\|^#' "$layout_last" && bad "desk.last holds sway lines or a header" "$(head -3 "$layout_last")" || ok "desk.last: no sway line, no header (rendered when it opens)"
     # the inventory: unmarked, every app with a desktop entry and never a package
     # (the fake pacman answers -Qi and -Ql, as sbom_collect asks); marked (the
     # apps file), exactly those names -- an entry's words, a package's words or
@@ -1572,7 +1572,7 @@ EOF
     printf '%s' "$out" | grep -q "$(printf '\033')" && bad "the pulse reached a pipe" "unexpected escape byte" || ok "no pulse on a pipe (a tty only, like spark's)"
     # keep, list, replay, status, forget
     out=$(sh "$SH" layout save studio)
-    printf '%s\n' "$out" | grep -q "^saved studio -- spark-shell layout studio opens it ($desks/studio)\$" && [ "$(jq -S 'del(.suggested)' "$desk_last")" = "$(jq -S . "$desks/studio")" ] && ! jq -e 'has("suggested")' "$desks/studio" >/dev/null \
+    printf '%s\n' "$out" | grep -q "^saved studio -- spark-shell layout studio opens it ($desks/studio)\$" && [ "$(jq -S 'del(.suggested)' "$layout_last")" = "$(jq -S . "$desks/studio")" ] && ! jq -e 'has("suggested")' "$desks/studio" >/dev/null \
         && ok "layout save NAME: desk.last saved as layouts/NAME without what was only suggested, said in one line" || bad "keep" "$out"
     # keep takes all the words; bare keep names the desk after its own words
     out=$(sh "$SH" layout save Photo Work, please)
@@ -1630,7 +1630,7 @@ EOF
     # the words decide what the machine can read in them: fullscreen when they say so (the model said false), and workspace N
     printf '#!/bin/sh\nprintf "{\\"why\\": \\"the editor\\", \\"main\\": {\\"app\\": \\"micro\\", \\"args\\": \\"\\", \\"fullscreen\\": false}, \\"side\\": []}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
     : > "$swlog"; st=0; out=$(sh "$SH" layout "micro workspace 7 fullscreen" 2>&1) || st=$?
-    [ "$st" -eq 0 ] && head -1 "$swlog" | grep -q '^workspace number 7$' && grep -q '^fullscreen enable$' "$swlog" && [ "$(jq -r .main.fullscreen "$desk_last")" = true ] \
+    [ "$st" -eq 0 ] && head -1 "$swlog" | grep -q '^workspace number 7$' && grep -q '^fullscreen enable$' "$swlog" && [ "$(jq -r .main.fullscreen "$layout_last")" = true ] \
         && ok "layout WORDS with workspace 7 and fullscreen: that workspace, and fullscreen, by the words themselves (the model had said false)" || bad "words decide" "st=$st $out $(cat "$swlog")"
     # every window tied to words of the need (its quote): notes -> micro stays, firefox stays, a shell for "fullscreen" or for nothing is padding and only suggested
     printf '#!/bin/sh\nprintf "{\\"why\\": \\"notes beside the browser\\", \\"main\\": {\\"app\\": \\"firefox\\", \\"quote\\": \\"Firefox\\", \\"args\\": \\"\\"}, \\"side\\": [{\\"app\\": \\"micro\\", \\"quote\\": \\"notes\\", \\"args\\": \\"\\"}, {\\"app\\": \\"shell\\", \\"quote\\": \\"fullscreen\\", \\"args\\": \\"\\"}, {\\"app\\": \\"btop\\", \\"quote\\": \\"\\", \\"args\\": \\"\\"}, {\\"app\\": \\"player\\", \\"quote\\": \\"some music\\", \\"args\\": \\"\\"}]}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
@@ -1645,8 +1645,8 @@ EOF
     # what spark also suggested is one Enter away: a row per app, opening it on this workspace, gone once taken
     printf '#!/bin/sh\nprintf "{\\"why\\": \\"notes beside the browser\\", \\"main\\": {\\"app\\": \\"firefox\\", \\"args\\": \\"\\"}, \\"side\\": [{\\"app\\": \\"micro\\", \\"args\\": \\"\\"}]}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
     : > "$swlog"; st=0; out=$(sh "$SH" layout "notes and firefox" 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q 'also suggested: micro' && [ "$(jq -r '.suggested | join(",")' "$desk_last")" = micro ] && sh "$SH" panel layout --list | grep -q "also open micro	layout add micro$" \
-        && ok "layout: what spark also suggested is kept with the last layout and offered as a panel row" || bad "suggested row" "st=$st $out $(jq -c . "$desk_last")"
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q 'also suggested: micro' && [ "$(jq -r '.suggested | join(",")' "$layout_last")" = micro ] && sh "$SH" panel layout --list | grep -q "also open micro	layout add micro$" \
+        && ok "layout: what spark also suggested is kept with the last layout and offered as a panel row" || bad "suggested row" "st=$st $out $(jq -c . "$layout_last")"
     : > "$swlog"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel layout add micro 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'opened micro' ] && grep -q '^exec foot -e micro' "$swlog" && ! sh "$SH" panel layout --list | grep -q 'also open micro' \
         && ok "panel layout add NAME: the suggested app opens on this workspace, and its row is gone" || bad "suggested add" "st=$st $out $(cat "$swlog")"
@@ -1677,10 +1677,10 @@ EOF
     st=0; out=$(sh "$SH" layout delete old 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = "$old_why" ] && [ -f "$desks/old" ] && ok "layout delete NAME on a file of the old shape: the same sentence, the file left" || bad "forget old" "st=$st $out"
     rm -f "$desks/old"
-    cp "$desk_last" "$H/desk.last.json"; printf '# desk: old -- rendered by spark-shell\nworkspace number 1\n' > "$desk_last"
+    cp "$layout_last" "$H/desk.last.json"; printf '# desk: old -- rendered by spark-shell\nworkspace number 1\n' > "$layout_last"
     st=0; out=$(sh "$SH" layout save 2>&1) || st=$?
-    [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q "^spark-shell layout: $desk_last is a layout of the old shape" && ok "layout save with a desk.last of the old shape: refused, the file named" || bad "save old" "st=$st $out"
-    cp "$H/desk.last.json" "$desk_last"
+    [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q "^spark-shell layout: $layout_last is a layout of the old shape" && ok "layout save with a desk.last of the old shape: refused, the file named" || bad "save old" "st=$st $out"
+    cp "$H/desk.last.json" "$layout_last"
     st=0; out=$(sh "$SH" layout save a b 2>&1) || st=$?
     [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^saved a-b -- ' && [ -f "$desks/a-b" ] && ok "layout save: words with a space become one name (a-b)" || bad "save name" "st=$st $out"
     rm -f "$desks/a-b"
@@ -1817,7 +1817,7 @@ fi
 # --- 17. sbom and the apps a desk may open --------------------------------
 if want 17; then
 # a fake pacman answers -Qi (three packages) and -Ql (their files); the
-# entries are the fixture's (desk_stubs) plus the tmux entry that `on`
+# entries are the fixture's (layout_stubs) plus the tmux entry that `on`
 # renders with DESKTOP=sway; fzf is a stub (the picker is asked with no
 # terminal, so it never runs); jq is the real one. ID=arch is pinned per
 # call, so `on` keeps the fixture's todo packages row. Linux-guarded like
@@ -1825,7 +1825,7 @@ if want 17; then
 # so gimp is the one app, reader the tool, libfoo the part.
 fresh
 desktop_stubs
-desk_stubs
+layout_stubs
 sbom_stubs
 mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 apps_file=$HOME/.config/spark-shell/apps; argv=$H/.local/state/spark.argv
@@ -1979,12 +1979,12 @@ if want 18; then
 # or address sway are Linux's.
 fresh
 desktop_stubs
-desk_stubs
+layout_stubs
 rooms_stubs
 unset SWAYSOCK WAYLAND_DISPLAY TMUX EDITOR
 need='photo editing for instagram and x'; sname=photo-editing-for-instagram-and-x
 argv=$H/.local/state/spark.argv; swlog=$H/.local/state/swaymsg.log; tlog=$H/.local/state/tmux.log
-desk_last=$H/.local/state/spark-shell/desk.last; desks=$H/.config/spark-shell/layouts
+layout_last=$H/.local/state/spark-shell/desk.last; desks=$H/.config/spark-shell/layouts
 # a need with no sway: the rooms player, the terminal apps offered, one room per app that is one
 st=0; out=$(sh "$SH" layout "$need" 2>&1) || st=$?
 [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^layout> $need\$" && printf '%s\n' "$out" | grep -q '^  photo work in gimp with the two feeds' \
@@ -2000,7 +2000,7 @@ grep -q 'attach-session\|switch-client' "$tlog" && bad "rooms: attached on a pip
 grep -q '^A layout of tmux windows: the apps for one need, each in a terminal window, on a [0-9]*x[0-9]* terminal\. ' "$argv" && ok "rooms brief: tmux windows, a terminal, its columns and lines" || bad "rooms brief" "$(grep -o 'A layout[^.]*' "$argv")"
 grep -q 'micro: Micro' "$argv" && grep -q 'shell: a terminal with a prompt' "$argv" && ! grep -q 'gimp-3.0\|firefox\|"screen"\|on one screen\|on screens' "$argv" \
     && ok "rooms brief: the terminal apps and shell only; no graphical app, no screen field, no screens" || bad "rooms brief apps" "$(grep -o 'Apps on this machine[^.]*' "$argv")"
-jq -e --arg w "$need" '.words == $w and .main.app == "gimp-3.0"' "$desk_last" >/dev/null 2>&1 && ok "rooms: desk.last is the same JSON shape (keep works the same)" || bad "rooms desk.last" "$(cat "$desk_last" 2>&1)"
+jq -e --arg w "$need" '.words == $w and .main.app == "gimp-3.0"' "$layout_last" >/dev/null 2>&1 && ok "rooms: desk.last is the same JSON shape (keep works the same)" || bad "rooms desk.last" "$(cat "$layout_last" 2>&1)"
 [ ! -e "$swlog" ] && ok "rooms: swaymsg never sent a line" || bad "rooms swaymsg" "$(cat "$swlog")"
 # a need of * from a directory with files: the word, never the file names
 rm -f "$argv"
@@ -2117,8 +2117,8 @@ st=0; out=$(sh "$SH" layout "writing with vi and the prompt shell" 2>&1) || st=$
 printf '%s\n' "has-session -t =$wname" "new-session -d -s $wname -n vi vi" "new-window -t =$wname -n shell" > "$H/expected.named"
 [ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.named" && ok "named: the words name vi and shell, only those two open" || bad "named open" "st=$st $out $(cat "$tlog")"
 printf '%s\n' "$out" | grep -qx '  also suggested: btop -- add it to your words to open it' && ok "named: the one app not named is said in one line, a suggestion" || bad "named suggestion" "$out"
-jq -e '.main.app == "vi" and (.side | map(.app)) == ["shell"] and .suggested == ["btop"] and (has("why") | not)' "$desk_last" >/dev/null 2>&1 \
-    && ok "named: desk.last holds what opened (vi and shell), btop as suggested for the panel's row, and no why" || bad "named desk.last" "$(cat "$desk_last")"
+jq -e '.main.app == "vi" and (.side | map(.app)) == ["shell"] and .suggested == ["btop"] and (has("why") | not)' "$layout_last" >/dev/null 2>&1 \
+    && ok "named: desk.last holds what opened (vi and shell), btop as suggested for the panel's row, and no why" || bad "named desk.last" "$(cat "$layout_last")"
 printf '%s\n' "$out" | grep -q 'vi to write, btop to watch' && bad "named: the model's why said though btop was dropped" "$out" || ok "named: btop dropped, so the model's why is not said"
 # the same gate on a room: a first word with a = is a variable, and sh runs the word after it
 printf '{"main": {"app": "vi", "args": ""}, "side": [{"app": "X=/vi", "args": "sh -c id", "quote": "the prompt shell"}]}\n' > "$H/answer.json"
@@ -2129,15 +2129,15 @@ dname=the-feeds-in-newsboat-and-a-shell; : > "$tlog"
 st=0; out=$(sh "$SH" layout "the feeds in Newsboat and a shell" 2>&1) || st=$?
 printf '%s\n' "has-session -t =$dname" "new-session -d -s $dname -n newsboat newsboat" "new-window -t =$dname -n shell" > "$H/expected.dropped"
 [ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.dropped" && printf '%s\n' "$out" | grep -qx '  also suggested: btop and micro -- add them to your words to open them' \
-    && jq -e '.main.app == "newsboat" and .main.width == 60 and (.side | map(.app)) == ["shell"]' "$desk_last" >/dev/null 2>&1 \
-    && ok "named: the main window not named, the first named takes its place (its width kept); two suggestions in one line" || bad "named main dropped" "st=$st $out $(cat "$tlog" "$desk_last")"
+    && jq -e '.main.app == "newsboat" and .main.width == 60 and (.side | map(.app)) == ["shell"]' "$layout_last" >/dev/null 2>&1 \
+    && ok "named: the main window not named, the first named takes its place (its width kept); two suggestions in one line" || bad "named main dropped" "st=$st $out $(cat "$tlog" "$layout_last")"
 printf '{"why": "micro for notes, btop to watch", "main": {"app": "micro", "args": ""}, "side": [{"app": "btop", "args": ""}]}\n' > "$H/answer.json"
 nname=news-reading-and-music; : > "$tlog"
 st=0; out=$(sh "$SH" layout "news reading and music" 2>&1) || st=$?
 printf '%s\n' "has-session -t =$nname" "new-session -d -s $nname -n micro micro" "new-window -t =$nname -n btop btop" > "$H/expected.none"
 [ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.none" && ! printf '%s\n' "$out" | grep -q 'also suggested' && printf '%s\n' "$out" | grep -qx '  micro for notes, btop to watch' \
-    && jq -e '.why == "micro for notes, btop to watch"' "$desk_last" >/dev/null 2>&1 \
-    && ok "named: words that name no app open the model's picks as they are, with its why (said and kept)" || bad "named none" "st=$st $out $(cat "$tlog" "$desk_last")"
+    && jq -e '.why == "micro for notes, btop to watch"' "$layout_last" >/dev/null 2>&1 \
+    && ok "named: words that name no app open the model's picks as they are, with its why (said and kept)" || bad "named none" "st=$st $out $(cat "$tlog" "$layout_last")"
 printf '{"main": {"app": "editor", "args": "notes.txt"}, "side": [{"app": "btop", "args": ""}]}\n' > "$H/answer.json"
 ename=notes-in-micro; : > "$tlog"
 st=0; out=$(sh "$SH" layout "notes in micro" 2>&1) || st=$?
@@ -2153,8 +2153,8 @@ printf '%s\n' "has-session -t =$bname" "new-session -d -s $bname -n shell" "new-
 [ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.box" && ok "named: the box's words (vi and shell) open shell and vi, vi added though the answer lacks it" || bad "named box" "st=$st $out $(cat "$tlog")"
 printf '%s\n' "$out" | grep -qx '  also suggested: tmux and btop -- add them to your words to open them' && ok "named: the box's case suggests tmux and btop" || bad "named box suggested" "$out"
 printf '%s\n' "$out" | grep -q 'tmux to split it' && bad "named: the box's case said the model's why" "$out" || ok "named: the box's case says no why (the set changed)"
-jq -e '.main.app == "shell" and .main.width == 60 and .side == [{"app": "vi", "args": ""}] and (has("why") | not)' "$desk_last" >/dev/null 2>&1 \
-    && ok "named: desk.last holds shell and vi, no why" || bad "named box desk.last" "$(cat "$desk_last")"
+jq -e '.main.app == "shell" and .main.width == 60 and .side == [{"app": "vi", "args": ""}] and (has("why") | not)' "$layout_last" >/dev/null 2>&1 \
+    && ok "named: desk.last holds shell and vi, no why" || bad "named box desk.last" "$(cat "$layout_last")"
 sh "$SH" layout save box-case >/dev/null; : > "$tlog"
 st=0; out=$(sh "$SH" layout box-case 2>&1) || st=$?
 [ "$st" -eq 0 ] && grep -q "^new-window -t =$bname -n vi vi\$" "$tlog" && [ "$(printf '%s\n' "$out" | sed -n 2p)" = '  shell' ] \
@@ -2165,8 +2165,8 @@ fname=feeds-in-newsboat-beside-vi; : > "$tlog"
 st=0; out=$(sh "$SH" layout "feeds in newsboat beside vi" 2>&1) || st=$?
 printf '%s\n' "has-session -t =$fname" "new-session -d -s $fname -n newsboat newsboat" "new-window -t =$fname -n vi vi" > "$H/expected.added"
 [ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.added" && printf '%s\n' "$out" | grep -qx '  also suggested: btop and micro -- add them to your words to open them' \
-    && ! printf '%s\n' "$out" | grep -q 'btop to watch' && jq -e '.main.app == "newsboat" and .main.width == 50 and (.side | map(.app)) == ["vi"] and (has("why") | not)' "$desk_last" >/dev/null 2>&1 \
-    && ok "named: none of the answer named, the words name newsboat and vi: those two open, the answer suggested, no why" || bad "named added" "st=$st $out $(cat "$tlog" "$desk_last")"
+    && ! printf '%s\n' "$out" | grep -q 'btop to watch' && jq -e '.main.app == "newsboat" and .main.width == 50 and (.side | map(.app)) == ["vi"] and (has("why") | not)' "$layout_last" >/dev/null 2>&1 \
+    && ok "named: none of the answer named, the words name newsboat and vi: those two open, the answer suggested, no why" || bad "named added" "st=$st $out $(cat "$tlog" "$layout_last")"
 # editor and its own program are one app: added once
 printf '{"why": "btop to watch", "main": {"app": "btop", "args": ""}}\n' > "$H/answer.json"
 oname=notes-in-the-editor-with-vi; : > "$tlog"
@@ -2180,8 +2180,8 @@ sname_=notes-in-vi-and-btop; : > "$tlog"
 st=0; out=$(EDITOR="vi" sh "$SH" layout "notes in vi and btop" 2>&1) || st=$?
 printf '%s\n' "has-session -t =$sname_" "new-session -d -s $sname_ -n editor vi" "new-window -t =$sname_ -n btop btop" > "$H/expected.same"
 [ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.same" && printf '%s\n' "$out" | grep -qx '  vi to write and btop to watch' && ! printf '%s\n' "$out" | grep -q 'also suggested' \
-    && jq -e '.why == "vi to write and btop to watch"' "$desk_last" >/dev/null 2>&1 \
-    && ok "named: the answer opens unchanged (vi names the editor), so its why is said and kept" || bad "named same" "st=$st $out $(cat "$tlog" "$desk_last")"
+    && jq -e '.why == "vi to write and btop to watch"' "$layout_last" >/dev/null 2>&1 \
+    && ok "named: the answer opens unchanged (vi names the editor), so its why is said and kept" || bad "named same" "st=$st $out $(cat "$tlog" "$layout_last")"
 rm -f "$XDG_DATA_HOME/applications/tmux.desktop" "$desks/box-case"
 sh "$SH" layout save named-one >/dev/null
 printf '{"words": "saved as is", "main": {"app": "micro", "args": ""}, "side": [{"app": "btop", "args": ""}]}\n' > "$desks/as-is"; : > "$tlog"
@@ -2194,22 +2194,22 @@ if [ "$(uname -s)" != Darwin ]; then
     printf '{"main":{"app":"micro"},"side":[{"app":"firefox"}]}\n' > "$H/answer.json"   # every required app exists in this positive pending proof
     theme_fixture '#ff5555'; mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" on --yes >/dev/null
-    desk_pending=$H/.local/state/spark-shell/desk.pending; rm -f "$argv" "$swlog"
+    layout_pending=$H/.local/state/spark-shell/desk.pending; rm -f "$argv" "$swlog"
     st=0; out=$(TEST_TTY=/dev/tty1 sh "$SH" layout "news and music" --desktop 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$(cat "$desk_pending" 2>&1)" = 'news and music' ] && grep -q 'sway-stub' "$H/.local/state/spark-shell/sway.log" && [ ! -e "$argv" ] \
-        && ok "layout WORDS --desktop from a console: the words wait in desk.pending, sway starts, no model call yet" || bad "pending write" "st=$st $out $(cat "$desk_pending" 2>&1)"
+    [ "$st" -eq 0 ] && [ "$(cat "$layout_pending" 2>&1)" = 'news and music' ] && grep -q 'sway-stub' "$H/.local/state/spark-shell/sway.log" && [ ! -e "$argv" ] \
+        && ok "layout WORDS --desktop from a console: the words wait in desk.pending, sway starts, no model call yet" || bad "pending write" "st=$st $out $(cat "$layout_pending" 2>&1)"
     st=0; out=$(SWAYSOCK=$H/sway.sock sh "$SH" layout --pending 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^layout> news and music$' && printf '%s\n' "$out" | grep -q '^on workspace 3' && [ ! -e "$desk_pending" ] \
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^layout> news and music$' && printf '%s\n' "$out" | grep -q '^on workspace 3' && [ ! -e "$layout_pending" ] \
         && [ "$(tail -1 "$argv")" = 'write the layout for this need: news and music' ] && grep -qx 'exec foot -e micro' "$swlog" && grep -qx 'exec firefox' "$swlog" \
         && ok "layout --pending: lays the waiting words out as sway windows, the file is gone" || bad "pending play" "st=$st $out"
     st=0; out=$(SWAYSOCK=$H/sway.sock sh "$SH" layout --pending 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ -z "$out" ] && ok "layout --pending twice: a quiet no-op" || bad "pending twice" "st=$st $out"
     rm -f "$argv"
     st=0; out=$(TEST_TTY=/dev/tty1 sh "$SH" desktop "news and music" --windows 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$(cat "$desk_pending" 2>&1)" = 'news and music' ] && [ ! -e "$argv" ] \
+    [ "$st" -eq 0 ] && [ "$(cat "$layout_pending" 2>&1)" = 'news and music' ] && [ ! -e "$argv" ] \
         && ok "old spellings: desktop WORDS --windows from a console waits the same" || bad "alias windows" "st=$st $out"
     st=0; out=$(SWAYSOCK=$H/sway.sock sh "$SH" desktop --pending 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^layout> news and music$' && [ ! -e "$desk_pending" ] \
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^layout> news and music$' && [ ! -e "$layout_pending" ] \
         && ok "old spellings: desktop --pending (the sway config's line) lays them out" || bad "alias pending" "st=$st $out"
     rm -f "$H/answer.json"
 fi
@@ -4282,7 +4282,7 @@ if want 20; then
 full=$(printf '\342\226\210')
 fresh
 desktop_stubs
-desk_stubs
+layout_stubs
 bar_fixture
 theme_fixture '#ff5555'
 mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
@@ -4998,7 +4998,7 @@ if want 21; then
 # the bar's fixture (wpa_cli, bluetoothctl, amixer stubs).
 fresh
 desktop_stubs
-desk_stubs
+layout_stubs
 bar_fixture
 theme_fixture '#ff5555'
 mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
@@ -7252,7 +7252,7 @@ ans 1 | jq -e '.result.tools[] | select(.name == "theme_words") | .inputSchema.r
 # layouts keep the same history: a layout made from words is kept, layout back opens it again with no model call
 printf 'DESKTOP=sway\n' > "$cfg"
 if [ "$(uname -s)" != Darwin ]; then
-    desk_stubs
+    layout_stubs
     printf '{"main":{"app":"gimp-3.0"},"side":[{"app":"firefox"}]}\n' > "$H/answer.json"
     st=0; out=$(SWAYSOCK=$H/sock sh "$SH" layout "photo editing for instagram" 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ -f "$st_dir/layouts/photo-editing-for-instagram" ] && [ "$(sed -n 1p "$st_dir/layout.history" | cut -f2)" = photo-editing-for-instagram ] && ok "layout WORDS: kept under the words' name in the state, first in the layout history" || bad "layout kept" "$out $(ls "$st_dir/layouts" 2>&1; cat "$st_dir/layout.history" 2>&1)"

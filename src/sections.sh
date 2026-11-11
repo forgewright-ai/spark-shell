@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- the sections: a title, the rows and the act each
-# reads: APPS BAR_SYS DESK_LAST LAYOUTS_DIR OS PALETTE_DIR PANEL_CACHE PANEL_DOT PANEL_GO PANEL_MARK PANEL_RING PANEL_SEP PANEL_TICK PANEL_WARN SAVER_NAMES TAB TMP US WALL_GROUND_SAID
+# reads: APPS BAR_SYS LAYOUTS_DIR LAYOUT_LAST OS PALETTE_DIR PANEL_CACHE PANEL_DOT PANEL_GO PANEL_MARK PANEL_RING PANEL_SEP PANEL_TICK PANEL_WARN SAVER_NAMES TAB TMP US WALL_GROUND_SAID
 # a row is MARK<tab>TEXT<tab>ACTION [ARG]: the mark a sign or -, a
 # look-only row carries `show`
 panel_title() {   # panel_title SECTION -> the lines that say what opened the panel; glance: the date, the facts, an alarm line
@@ -33,7 +33,7 @@ panel_title() {   # panel_title SECTION -> the lines that say what opened the pa
         display) _b=$(light_get); if [ -n "$_b" ]; then echo "$(panel_col display)brightness $_b%"; else echo "$(panel_col display)idle $(idle_words "$DISPLAY_IDLE")"; fi ;;   # short: the rows say the minutes
         pointer) echo "$(panel_col pointer)tap $POINTER_TAP $PANEL_SEP scroll $POINTER_SCROLL $PANEL_SEP speed $POINTER_SPEED" ;;
         keyboard) _k=$(kb_active); if [ -n "$_k" ]; then echo "$(panel_col keyboard)$_k $PANEL_SEP $(printf '%s\n' $KEYBOARD | grep -c .) layouts"; elif [ -n "$KEYBOARD" ]; then echo "$(panel_col keyboard)$KEYBOARD"; else echo "$(panel_col keyboard)sway's own layout"; fi ;;
-        bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown $(bar_place_words "$BAR_POSITION")"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys "$(desk_keys | awk '$2 == "home.open." {print $1; exit}')") opens the dialog"; fi ;;
+        bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown $(bar_place_words "$BAR_POSITION")"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys "$(layout_keys | awk '$2 == "home.open." {print $1; exit}')") opens the dialog"; fi ;;
         notifications) if ! mako_here; then echo "$(panel_col notifications)mako is not installed"
             elif ! notify_up; then echo "$(panel_col notifications)not running yet"
             elif notify_dnd; then echo "$(panel_col notifications)do not disturb"
@@ -43,7 +43,7 @@ panel_title() {   # panel_title SECTION -> the lines that say what opened the pa
         power) _pu=$(power_up); echo "$(panel_col power)${_pu:-lock, suspend, restart}" ;;
         about) echo "$(panel_col about)spark-shell $(panel_version) $PANEL_SEP the project, the license, the credits" ;;
         tools) echo "$(panel_col tools)$(tools_check_state)" ;;
-        layout) _n=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | wc -l | tr -d ' '); _last=''; [ ! -f "$DESK_LAST" ] || _last=$(desk_words "$DESK_LAST")
+        layout) _n=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | wc -l | tr -d ' '); _last=''; [ ! -f "$LAYOUT_LAST" ] || _last=$(layout_words "$LAYOUT_LAST")
             if [ "$_n" -eq 0 ]; then echo "$(panel_col layout)none saved yet"
             else echo "$(panel_col layout)$_n saved${_last:+ $PANEL_SEP last: $_last}"; fi ;;
         apps) if apps_marked; then echo "$(panel_col apps)$(grep -c '^[A-Za-z0-9]' "$APPS") allowed $PANEL_SEP Enter opens one"; else echo "$(panel_col apps)every app allowed $PANEL_SEP Enter opens one"; fi ;;
@@ -306,15 +306,15 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             done
             printf -- '-\tText size\tshow\tlook\n-\tApp icons (the tray)\tshow\tlook\n' ;;
         layout) if [ -d "$LAYOUTS_DIR" ] && [ -n "$(ls -A "$LAYOUTS_DIR" 2>/dev/null)" ]; then
-                for f in "$LAYOUTS_DIR"/*; do _w=$(desk_label "$f"); printf '%s\t%s\topen %s\tlayouts\n-\trename %s\trename %s\n' "$PANEL_GO" "$_w" "${f##*/}" "$_w" "${f##*/}"; done   # by the name it was saved under, and a new name for it
+                for f in "$LAYOUTS_DIR"/*; do _w=$(layout_label "$f"); printf '%s\t%s\topen %s\tlayouts\n-\trename %s\trename %s\n' "$PANEL_GO" "$_w" "${f##*/}" "$_w" "${f##*/}"; done   # by the name it was saved under, and a new name for it
             else printf -- '-\tnone saved: ask at the prompt or save this workspace\tshow\n'; fi
-            [ ! -f "$DESK_LAST" ] || jq -r '.suggested // [] | .[]' "$DESK_LAST" 2>/dev/null | while IFS= read -r a; do printf '%s\talso open %s\tadd %s\n' "$PANEL_GO" "$a" "$a"; done   # what spark also suggested for the last layout, one Enter away
+            [ ! -f "$LAYOUT_LAST" ] || jq -r '.suggested // [] | .[]' "$LAYOUT_LAST" 2>/dev/null | while IFS= read -r a; do printf '%s\talso open %s\tadd %s\n' "$PANEL_GO" "$a" "$a"; done   # what spark also suggested for the last layout, one Enter away
             # recent: the layouts opened lately and not saved, five at most
             kept_history layout | while IFS="$TAB" read -r _e _n; do
                 [ ! -f "$LAYOUTS_DIR/$_n" ] || continue
                 case $_n in layout-delete*|layout-rename*|layout-save*|layout-back*|layout-help*|-*|help) continue ;; esac
-                _f=$(desk_kept_file "$_n") || continue
-                printf '%s\t%s\topen %s\trecent|%s||%s\n' "$PANEL_GO" "$(desk_label "$_f")" "$_n" "$(kept_when "$_e")" "$_e"
+                _f=$(layout_kept_file "$_n") || continue
+                printf '%s\t%s\topen %s\trecent|%s||%s\n' "$PANEL_GO" "$(layout_label "$_f")" "$_n" "$(kept_when "$_e")" "$_e"
             done | head -5
             [ -z "${SWAYSOCK:-}" ] || printf '%s\tsave this workspace\tsave\n' "$PANEL_GO" ;;
         apps) printf '%s\tterminal\tterminal\n' "$PANEL_GO"   # a terminal window, as Super+Return
