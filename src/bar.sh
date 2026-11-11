@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # ---------------------------------------------------------------- the bar
 # sets: BAR_BT BAR_BT_OFF BAR_DEV BAR_DND BAR_DUE BAR_FULL BAR_GAP BAR_GROUP_GAP BAR_KB BAR_LAN BAR_LIGHT BAR_MIC BAR_MIC_OFF BAR_NOTE BAR_OUT BAR_OUT_OFF BAR_PAD BAR_PALETTE BAR_PID BAR_PROC BAR_SHADE BAR_STEPS BAR_SYS BAR_WIFI BAR_WS_ORDER
-# reads: BAR_ASOUNDRC CONFIG GLYPH_FAMILIES NOTIFY_MODE OS PANEL_DOT PANEL_PROMPT PANEL_SEP PANEL_WARN PLAYER REPO STATE_DIR TAB THEME_KEYS TMP
+# reads: BAR_ASOUNDRC CONFIG GLYPH_FAMILIES LAYOUT_ON NOTIFY_MODE OS PANEL_DOT PANEL_PROMPT PANEL_SEP PANEL_WARN REPO STATE_DIR TAB THEME_KEYS TMP
 # swaybar reads `spark-shell bar status`: i3bar JSON every 15 s
 # and on SIGUSR1 to the pid in STATE_DIR/bar.pid
 BAR_SYS=${SPARK_SHELL_SYS:-/sys}      # tests: a fixture /sys and /proc
@@ -700,7 +700,7 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | top|bottom | text [aut
         -*) refuse_in bar "$1 is not a bar command: on, off, top, bottom, text, tray, status, volume, panel, or words for what you want" ;;
         *) [ "$OS" != Darwin ] || refuse_in bar "not on macOS, which has its own desktop"; bar_want "$*"; return ;;
     esac
-    which=both; case ${PLAYER:-} in rooms) which=rooms ;; windows) which=windows ;; esac
+    which=both; case ${LAYOUT_ON:-} in terminal) which=rooms ;; desktop) which=windows ;; esac
     [ "$which" = windows ] || bar_tmux "${1:-}" "$which"
     [ "$which" = rooms ] || bar_desktop "${1:-}" "$which"
 }

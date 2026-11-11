@@ -247,7 +247,7 @@ desktop_apply() {
     power_apply
     dialog_install
     semantic_install
-    player_install
+    wallpaper_install
     pad_install
     motion_row
     mcp_apply

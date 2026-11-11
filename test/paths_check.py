@@ -56,7 +56,7 @@ def main():
     report = "--report" in sys.argv[1:]
     bad = []
     for path in tracked():
-        if not path.endswith(TEXT) or "/golden/" in path or path.startswith(("asset/transitions", "gallery/animation/")):
+        if not path.endswith(TEXT) or "/golden/" in path or path.startswith("gallery/animation/"):
             continue
         full = os.path.join(REPO, path)
         crate = re.match(r"^(component/[a-z_]+)/", path)

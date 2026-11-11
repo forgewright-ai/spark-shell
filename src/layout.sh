@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # ------------------------------------------------------------------ desks
 # sets: DESK_LAST DESK_NOT_APPS DESK_PENDING DESK_SMALL_WORDS DESK_VERBS DESK_WAIT LAYOUTS_DIR REFUSE_AS
-# reads: APPS CONFIG_DIR DIALOG_BIN KEPT_LAYOUTS NOTES_DIR OS PANEL_APP PLAYER REPO TAB TMP VERBOSE
+# reads: APPS CONFIG_DIR DIALOG_BIN KEPT_LAYOUTS LAYOUT_ON NOTES_DIR OS PANEL_APP REPO TAB TMP VERBOSE
 # a layout (a desk, in the code);
 # every rendered line passes the gate before sway sees it
 LAYOUTS_DIR=$CONFIG_DIR/layouts
@@ -385,21 +385,21 @@ desk_named() {   # desk_named JSONFILE NEED -> JSONFILE narrowed to what the nee
 desk_set() { jq -c '[.main] + (.side // []) | map([.app, (.args // "")])' "$1" 2>/dev/null; }   # desk_set JSONFILE -> its windows
 desk_has() { jq -e --arg a "$2" '[.main] + (.side // []) | any(.app == $a)' "$1" >/dev/null 2>&1; }   # desk_has JSONFILE APP
 desk_in_sway() { [ -n "${SWAYSOCK:-}" ] && [ -n "$(swaymsg -t get_version 2>/dev/null)" ]; }   # a sway that answers
-desk_player() {   # -> windows or rooms; PLAYER forces one
-    if [ -n "${PLAYER:-}" ]; then echo "$PLAYER"; elif desk_in_sway; then echo windows; else echo rooms; fi
+layout_on() {   # -> desktop or terminal; LAYOUT_ON forces one
+    if [ -n "${LAYOUT_ON:-}" ]; then echo "$LAYOUT_ON"; elif desk_in_sway; then echo desktop; else echo terminal; fi
 }
 desk_render() {   # desk_render JSONFILE -> $TMP/desk; ws the main's workspace
     ED=$(desk_editor) || ED=''
     : "${DESK_LABEL:=$(desk_ws_label "$(desk_words "$1")")}"
     [ -n "$ED" ] || ! desk_has "$1" editor || echo "  editor -- no editor on this machine: set EDITOR in ~/.config/spark-shell/rc"
-    if [ "$PLAYER" = rooms ]; then desk_rooms "$(desk_name_of "$(desk_words "$1")")" "$1" > "$TMP/desk"; return; fi
+    if [ "$LAYOUT_ON" = terminal ]; then desk_rooms "$(desk_name_of "$(desk_words "$1")")" "$1" > "$TMP/desk"; return; fi
     desk_screens
     desk_windows_of "$1"
     ws=$(desk_words_ws "$(desk_words "$1")"); [ -n "$ws" ] || ws=$(desk_next_ws)
     desk_lines "$ws" "$1" > "$TMP/desk"
 }
 desk_show() {   # desk_show WHOSE -- KEPT=1 for a kept one
-    if [ "$PLAYER" = rooms ]; then
+    if [ "$LAYOUT_ON" = terminal ]; then
         name=$(sed -n 's/^session //p' "$TMP/desk" | head -1)
         desk_play_rooms "$TMP/desk" || refuse "nothing ran"
         echo "tmux session $name -- $1"
@@ -461,10 +461,10 @@ desk_make() {   # desk_make NEED -> the desk laid out
     command -v jq >/dev/null 2>&1 || refuse "jq is not installed (spark-shell on)"
     spark=$(spark_bin)
     [ -n "$spark" ] || refuse "spark is not installed -- spark picks the apps for a layout (github.com/forgewright-ai/spark)"
-    [ "$PLAYER" != rooms ] || command -v tmux >/dev/null 2>&1 || refuse "tmux is not installed (spark-shell on)"
+    [ "$LAYOUT_ON" != terminal ] || command -v tmux >/dev/null 2>&1 || refuse "tmux is not installed (spark-shell on)"
     desk_apps "$1" > "$TMP/apps"
     [ -s "$TMP/apps" ] || refuse "no apps found on this machine (no desktop entries, no chosen packages)"
-    [ "$PLAYER" = rooms ] || desk_screens
+    [ "$LAYOUT_ON" = terminal ] || desk_screens
     about=$(desk_brief)
     [ -n "${ASKED:-}" ] || printf 'layout> %s\n' "$1"
     desk_pulse
@@ -523,7 +523,7 @@ desk_back() {   # one step back each time
 desk_brief() {
     ex='{"why": "one sentence, from the need to the apps chosen", "main": {"app": "NAME", "quote": "the words of the need this window is for", "args": "", "width": 70, "fullscreen": false}, "side": [{"app": "NAME", "quote": "the words of the need this window is for", "args": ""}]}'
     rule=' The need is read part by part: each thing it names, split at and or a comma, is one window of its own, with quote: the words of that part as they are in the need (two things named, two windows, each with the words of its own part). A window the need has no words for is not in the layout, and one window never answers two parts. main fullscreen is true only when the need says fullscreen or full screen: that window alone fills the screen, and side is then empty.'
-    if [ "$PLAYER" = rooms ]; then
+    if [ "$LAYOUT_ON" = terminal ]; then
         opening="A layout of tmux windows: the apps for one need, each in a terminal window, on a $(tput cols 2>/dev/null || echo 80)x$(tput lines 2>/dev/null || echo 24) terminal."
         apps=$(grep ', terminal$' "$TMP/apps")
     else
@@ -609,10 +609,10 @@ desk_label() {   # desk_label FILE -> its words when the name is only those
 desk_need() {   # desk_need WORDS... -- a saved layout first, else the model
     command -v jq >/dev/null 2>&1 || refuse "jq is not installed (spark-shell on)"
     case " $* " in *" -"*|" layout "*|" help "|" save "*|" delete "*|" rename "*|" back "*) refuse "\"$*\" is a command, not what a layout is for (spark-shell layout save|delete|rename|back)" ;; esac
-    PLAYER=$(desk_player)
-    if [ "$PLAYER" = windows ] && ! desk_in_sway; then desk_start "$*"; return; fi
-    [ "$PLAYER" = rooms ] || [ "$OS" != Darwin ] || refuse "not on macOS, which has its own desktop"
-    [ "$PLAYER" = rooms ] || [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
+    LAYOUT_ON=$(layout_on)
+    if [ "$LAYOUT_ON" = desktop ] && ! desk_in_sway; then desk_start "$*"; return; fi
+    [ "$LAYOUT_ON" = terminal ] || [ "$OS" != Darwin ] || refuse "not on macOS, which has its own desktop"
+    [ "$LAYOUT_ON" = terminal ] || [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
     kept=$(desk_name_of "$*")
     if [ -n "$kept" ] && [ -f "$LAYOUTS_DIR/$kept" ]; then desk_replay "$kept"
     elif [ -n "$kept" ] && [ -f "$KEPT_LAYOUTS/$kept" ] && { [ -n "${KEPT_ALSO:-}" ] || [ "$kept" = "$*" ]; }; then desk_replay "$kept"   # by its name alone, or from back

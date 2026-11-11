@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- core: the paths, the rows, the flags, the temp folder and the traps
-# sets: CONFIG CONFIG_DIR MODE NL OS PLAYER PULSE ROOT SPARK_CONFIG_DIR STATE_DIR TAB THEME_ENV TMP VERBOSE YES
+# sets: CONFIG CONFIG_DIR LAYOUT_ON MODE NL OS PULSE ROOT SPARK_CONFIG_DIR STATE_DIR TAB THEME_ENV TMP VERBOSE YES
 OS=$(uname -s)
 CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/spark-shell
 CONFIG=$CONFIG_DIR/config
@@ -15,7 +15,7 @@ NL='
 MODE=apply
 VERBOSE=0
 YES=0       # --yes: on, on desktop and quiet boot on go ahead without asking
-PLAYER=''   # a desk's player: windows | rooms, forced by --windows | --rooms; else where you ask from
+LAYOUT_ON=''   # where a layout opens: desktop | terminal, forced by --desktop | --terminal; else where you ask from
 todo=0
 would=0   # the would rows printed: a dry run's last line counts them
 acting=0

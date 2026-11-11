@@ -61,7 +61,7 @@ jobs:
       - name: ascii docs
         run: |
           tab=$(printf '\t')
-          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell src/*.sh test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/player_build.sh test/pad_build.sh test/desktop_proof.sh test/dialog_pty.py lib/terminal_profile.py test/profile_test.py lib/saver.py test/saver_test.py lib/office.py test/office_test.py $(find template distro gallery/theme component/dialog/src component/dialog/tests component/player/src component/pad/src -type f ! -name '*.txt' | sort) component/dialog/Cargo.toml component/dialog/deny.toml component/dialog/dialog.env component/dialog/rust-toolchain.toml component/player/Cargo.toml component/player/deny.toml component/player/player.env component/player/rust-toolchain.toml component/pad/Cargo.toml component/pad/deny.toml component/pad/pad.env component/pad/rust-toolchain.toml; do
+          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell src/*.sh test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/pad_build.sh test/desktop_proof.sh test/dialog_pty.py lib/terminal_profile.py test/profile_test.py lib/saver.py test/saver_test.py lib/office.py test/office_test.py $(find template distro gallery/theme component/dialog/src component/dialog/tests component/wallpaper/src component/pad/src -type f ! -name '*.txt' | sort) component/dialog/Cargo.toml component/dialog/deny.toml component/dialog/dialog.env component/dialog/rust-toolchain.toml component/wallpaper/Cargo.toml component/wallpaper/deny.toml component/wallpaper/wallpaper.env component/wallpaper/rust-toolchain.toml component/pad/Cargo.toml component/pad/deny.toml component/pad/pad.env component/pad/rust-toolchain.toml; do
             if LC_ALL=C grep -n "[^ -~${tab}]" "$f"; then
               echo "non-ASCII in $f"; exit 1; fi; done
       - name: no hex color in a template (the look is the 16 slots)
@@ -73,7 +73,7 @@ jobs:
         # analysis: 0.11.0's took over 10 GB on them and stopped the box
         # twice. The runner's 0.9.0 has none and calls that directive
         # unknown (SC1107), so the line leaves that one out.
-        run: shellcheck -x -S warning -e SC1107 spark-shell lib/apps-terminal/xterm test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/player_build.sh test/pad_build.sh test/desktop_proof.sh test/wifi_proof.sh test/greetd_upgrade_proof.sh test/dhcpcd_proof.sh test/gate.sh test/semantic_measure.sh .githooks/pre-push
+        run: shellcheck -x -S warning -e SC1107 spark-shell lib/apps-terminal/xterm test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/pad_build.sh test/desktop_proof.sh test/wifi_proof.sh test/greetd_upgrade_proof.sh test/dhcpcd_proof.sh test/gate.sh test/semantic_measure.sh .githooks/pre-push
       - name: zizmor over .github/workflows
         # the workflows are code too: zizmor (pinned, in a venv of its own)
         # reads every file under .github/workflows; medium and above fail.
@@ -447,9 +447,9 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
         with:
           manifest-path: component/dialog/Cargo.toml
-  player:
-    # the wallpaper player (component/player/, #187): the format, clippy, its tests,
-    # the release build twice and its sha256 against component/player/player.env, all
+  wallpaper:
+    # the wallpaper loop (component/wallpaper/, #187): the format, clippy, its tests,
+    # the release build twice and its sha256 against component/wallpaper/wallpaper.env, all
     # in one pinned Debian 12 image (glibc 2.36, the oldest a supported
     # family runs), so the build is reproducible and release.yml builds
     # the same bytes; the binary kept as an artifact; cargo-deny.
@@ -464,28 +464,28 @@ jobs:
         with:
           persist-credentials: false
       - name: the format, clippy and the tests
-        working-directory: component/player
+        working-directory: component/wallpaper
         run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
       - name: the release build, twice, the same bytes
         run: |
           set -eu
-          one=$(sh test/player_build.sh | cut -d' ' -f1)
-          (cd component/player && cargo clean --release --target x86_64-unknown-linux-gnu)
-          two=$(sh test/player_build.sh | cut -d' ' -f1)
+          one=$(sh test/wallpaper_build.sh | cut -d' ' -f1)
+          (cd component/wallpaper && cargo clean --release --target x86_64-unknown-linux-gnu)
+          two=$(sh test/wallpaper_build.sh | cut -d' ' -f1)
           echo "built $one, from clean again $two"
           if [ "$one" != "$two" ]; then echo "two builds of one tree differ: the build is not reproducible"; exit 1; fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
         with:
           name: spark-wallpaper-x86_64-linux-gnu
-          path: component/player/target/x86_64-unknown-linux-gnu/release/spark-wallpaper
+          path: component/wallpaper/target/x86_64-unknown-linux-gnu/release/spark-wallpaper
           retention-days: 14
-      - name: the sha256 component/player/player.env pins
+      - name: the sha256 component/wallpaper/wallpaper.env pins
         run: |
           set -eu
-          got=$(sha256sum component/player/target/x86_64-unknown-linux-gnu/release/spark-wallpaper | cut -d' ' -f1)
-          want=$(sed -n 's/^PLAYER_SHA256_X86_64_LINUX_GNU=//p' component/player/player.env)
-          if [ "$got" != "$want" ]; then echo "the build is not the binary component/player/player.env pins -- PLAYER_SHA256_X86_64_LINUX_GNU=$got"; exit 1; fi
-  player-deny:
+          got=$(sha256sum component/wallpaper/target/x86_64-unknown-linux-gnu/release/spark-wallpaper | cut -d' ' -f1)
+          want=$(sed -n 's/^WALLPAPER_SHA256_X86_64_LINUX_GNU=//p' component/wallpaper/wallpaper.env)
+          if [ "$got" != "$want" ]; then echo "the build is not the binary component/wallpaper/wallpaper.env pins -- WALLPAPER_SHA256_X86_64_LINUX_GNU=$got"; exit 1; fi
+  wallpaper-deny:
     # cargo-deny over the player's crates (advisories, licences), on the
     # runner: the action is a container of its own
     needs: lint
@@ -498,7 +498,7 @@ jobs:
       - name: cargo-deny (advisories, licences, no network crate)
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
         with:
-          manifest-path: component/player/Cargo.toml
+          manifest-path: component/wallpaper/Cargo.toml
   pad:
     # the pad (component/pad/, v0.133): the format, clippy, its tests, the release
     # build twice and its sha256 against component/pad/pad.env, all in the pinned
@@ -556,7 +556,7 @@ jobs:
     # and fails when any of them failed, was cancelled or was skipped. A
     # pull request from this repository's own branch is the one run whose
     # jobs are all skipped on purpose, and green skips with them.
-    needs: [lint, linux, debian, ubuntu, arch, void, fedora, opensuse, desktop, macos, dialog, player, player-deny, pad, pad-deny]
+    needs: [lint, linux, debian, ubuntu, arch, void, fedora, opensuse, desktop, macos, dialog, wallpaper, wallpaper-deny, pad, pad-deny]
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 2

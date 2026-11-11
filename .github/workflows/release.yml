@@ -1,5 +1,5 @@
 # The release: a signed v* tag becomes a GitHub Release with the dialog
-# binary, its sha256 and its SBOM, and the wallpaper player's binary and
+# binary, its sha256 and its SBOM, and the wallpaper loop's binary and
 # its sha256 (#187) and the pad's (v0.133), each built in the pinned image
 # CI's player and pad jobs use. Nothing is published unless the tag is
 # on main, signed by a key the release before it trusted, names itself,
@@ -87,9 +87,9 @@ jobs:
           name: release
           path: out/
           retention-days: 7
-  player:
-    # the wallpaper player at the tag, in the image CI's player job pins,
-    # and the sha256 component/player/player.env pins in the tagged tree; the build
+  wallpaper:
+    # the wallpaper loop at the tag, in the image CI's player job pins,
+    # and the sha256 component/wallpaper/wallpaper.env pins in the tagged tree; the build
     # job above checked the tag before this one publishes anything
     needs: build
     runs-on: ubuntu-latest
@@ -106,16 +106,16 @@ jobs:
       - name: the build, and the sha256 the tagged tree pins
         run: |
           set -eu
-          got=$(sh test/player_build.sh | cut -d' ' -f1)
-          want=$(sed -n 's/^PLAYER_SHA256_X86_64_LINUX_GNU=//p' component/player/player.env)
+          got=$(sh test/wallpaper_build.sh | cut -d' ' -f1)
+          want=$(sed -n 's/^WALLPAPER_SHA256_X86_64_LINUX_GNU=//p' component/wallpaper/wallpaper.env)
           echo "built $got, pinned $want"
           [ "$got" = "$want" ] || { echo "the player is not the one the tree pins: nothing is published"; exit 1; }
           mkdir -p out
-          cp component/player/target/x86_64-unknown-linux-gnu/release/spark-wallpaper out/spark-wallpaper-x86_64-linux-gnu
+          cp component/wallpaper/target/x86_64-unknown-linux-gnu/release/spark-wallpaper out/spark-wallpaper-x86_64-linux-gnu
           (cd out && sha256sum spark-wallpaper-x86_64-linux-gnu > spark-wallpaper-x86_64-linux-gnu.sha256)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
         with:
-          name: player
+          name: wallpaper
           path: out/
           retention-days: 7
   pad:
@@ -150,7 +150,7 @@ jobs:
           path: out/
           retention-days: 7
   publish:
-    needs: [build, player, pad]
+    needs: [build, wallpaper, pad]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -164,7 +164,7 @@ jobs:
           path: out
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333   # v8.0.2
         with:
-          name: player
+          name: wallpaper
           path: out
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333   # v8.0.2
         with:

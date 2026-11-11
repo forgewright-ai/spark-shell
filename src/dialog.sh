@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- the dialog
-# sets: DIALOG_BIN DIALOG_URL PLAYER_BIN SEMANTIC_LOG SEMANTIC_MODEL SEMANTIC_SHA256 SEMANTIC_SIZE SEMANTIC_URL
+# sets: DIALOG_BIN DIALOG_URL SEMANTIC_LOG SEMANTIC_MODEL SEMANTIC_SHA256 SEMANTIC_SIZE SEMANTIC_URL WALLPAPER_BIN
 # reads: MODE REPO STATE_DIR TMP
 DIALOG_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-dialog
 DIALOG_URL=${SPARK_SHELL_DIALOG_URL:-https://github.com/forgewright-ai/spark-shell/releases/download}   # the release assets; file:// or none in the tests
@@ -100,26 +100,26 @@ dialog_install() {   # the dialog's row of on: in place as pinned, or fetched fo
     mkdir -p "$(dirname "$DIALOG_BIN")" && cp "$_df" "$DIALOG_BIN.new" && chmod 755 "$DIALOG_BIN.new" && mv "$DIALOG_BIN.new" "$DIALOG_BIN"
     row ok dialog "installed for $_rt ($DIALOG_BIN), sha256 checked"
 }
-# --- the wallpaper player
-PLAYER_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-wallpaper
-player_target() { case $(uname -m) in x86_64|amd64) echo x86_64-linux-gnu ;; *) return 1 ;; esac; }   # -> the release's build for this machine, or false
-player_release_tag() {   # -> clone_tag when it pins a player and component/player/ is unchanged since; false otherwise
+# --- the wallpaper loop
+WALLPAPER_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-wallpaper
+wallpaper_target() { case $(uname -m) in x86_64|amd64) echo x86_64-linux-gnu ;; *) return 1 ;; esac; }   # -> the release's build for this machine, or false
+wallpaper_release_tag() {   # -> clone_tag when it pins a wallpaper loop and component/wallpaper/ is unchanged since; false otherwise
     _plr=$(clone_tag) || return 1
-    git -C "$REPO" cat-file -e "$_plr:component/player/player.env" 2>/dev/null || return 1
-    git -C "$REPO" diff --quiet "$_plr" -- component/player 2>/dev/null || return 1
+    git -C "$REPO" cat-file -e "$_plr:component/wallpaper/wallpaper.env" 2>/dev/null || return 1
+    git -C "$REPO" diff --quiet "$_plr" -- component/wallpaper 2>/dev/null || return 1
     printf '%s\n' "$_plr"
 }
-player_want_sha() {   # -> the sha256 the release tag's tree pins for this machine, or nothing
-    _plk=PLAYER_SHA256_$(player_target | tr 'a-z-' 'A-Z_'); _plr=$(player_release_tag) || return 0
-    git -C "$REPO" show "$_plr:component/player/player.env" 2>/dev/null | sed -n "s/^$_plk=\([0-9a-f]\{64\}\)$/\1/p"
+wallpaper_want_sha() {   # -> the sha256 the release tag's tree pins for this machine, or nothing
+    _plk=WALLPAPER_SHA256_$(wallpaper_target | tr 'a-z-' 'A-Z_'); _plr=$(wallpaper_release_tag) || return 0
+    git -C "$REPO" show "$_plr:component/wallpaper/wallpaper.env" 2>/dev/null | sed -n "s/^$_plk=\([0-9a-f]\{64\}\)$/\1/p"
 }
-player_ok() { [ -x "$PLAYER_BIN" ] && _plw=$(player_want_sha) && [ -n "$_plw" ] && [ "$(sha256_of "$PLAYER_BIN")" = "$_plw" ]; }   # the binary in place is the one the tree pins
-player_cmd() { if [ -n "${SPARK_SHELL_PLAYER:-}" ]; then [ -x "$SPARK_SHELL_PLAYER" ] && printf '%s' "$SPARK_SHELL_PLAYER"; elif player_ok; then printf '%s' "$PLAYER_BIN"; else return 1; fi; }   # -> SPARK_SHELL_PLAYER (another build, as it is), else the pinned player; false when none
-player_install() {   # the player's row of on desktop: in place as pinned, or fetched for the signed tag and checked
-    _plt=$(player_target) || { skip motion "no spark-wallpaper built for $(uname -m) yet: the wallpaper stays still"; return 0; }
-    _plr=$(player_release_tag) || { row todo motion "this clone is past its release: spark-wallpaper comes with the next tag"; return 0; }
-    _plw=$(player_want_sha); [ -n "$_plw" ] || { skip motion "$_plr pins no spark-wallpaper: the wallpaper stays still"; return 0; }
-    if player_ok; then ok motion "$PLAYER_BIN, the sha256 $_plr pins"; return 0; fi
+wallpaper_ok() { [ -x "$WALLPAPER_BIN" ] && _plw=$(wallpaper_want_sha) && [ -n "$_plw" ] && [ "$(sha256_of "$WALLPAPER_BIN")" = "$_plw" ]; }   # the binary in place is the one the tree pins
+wallpaper_cmd() { if [ -n "${SPARK_SHELL_WALLPAPER:-}" ]; then [ -x "$SPARK_SHELL_WALLPAPER" ] && printf '%s' "$SPARK_SHELL_WALLPAPER"; elif wallpaper_ok; then printf '%s' "$WALLPAPER_BIN"; else return 1; fi; }   # -> SPARK_SHELL_WALLPAPER (another build, as it is), else the pinned player; false when none
+wallpaper_install() {   # the wallpaper loop's row of on desktop: in place as pinned, or fetched for the signed tag and checked
+    _plt=$(wallpaper_target) || { skip motion "no spark-wallpaper built for $(uname -m) yet: the wallpaper stays still"; return 0; }
+    _plr=$(wallpaper_release_tag) || { row todo motion "this clone is past its release: spark-wallpaper comes with the next tag"; return 0; }
+    _plw=$(wallpaper_want_sha); [ -n "$_plw" ] || { skip motion "$_plr pins no spark-wallpaper: the wallpaper stays still"; return 0; }
+    if wallpaper_ok; then ok motion "$WALLPAPER_BIN, the sha256 $_plr pins"; return 0; fi
     [ "$DIALOG_URL" != none ] || { skip motion "no release to fetch it from (SPARK_SHELL_DIALOG_URL=none)"; return 0; }
     tag_signed "$_plr" || { row todo motion "$_plr is not signed by a key in allowed-signers: spark-wallpaper not installed"; return 0; }
     command -v curl >/dev/null 2>&1 || { row todo motion "curl is not installed: spark-wallpaper cannot be fetched (spark-shell on installs it)"; return 0; }
@@ -127,7 +127,7 @@ player_install() {   # the player's row of on desktop: in place as pinned, or fe
     _plf=$TMP/spark-wallpaper
     curl -fsSL --proto '=https,file' --proto-redir '=https' -o "$_plf" "$DIALOG_URL/$_plr/spark-wallpaper-$_plt" 2>/dev/null || { rm -f "$_plf"; row todo motion "could not fetch spark-wallpaper for $_plr -- spark-shell on desktop again"; return 0; }
     [ "$(sha256_of "$_plf")" = "$_plw" ] || { rm -f "$_plf"; row todo motion "the spark-wallpaper fetched for $_plr is not the one the tree pins: not installed"; return 0; }
-    mkdir -p "$(dirname "$PLAYER_BIN")" && cp "$_plf" "$PLAYER_BIN.new" && chmod 755 "$PLAYER_BIN.new" && mv "$PLAYER_BIN.new" "$PLAYER_BIN"
-    row ok motion "spark-wallpaper installed for $_plr ($PLAYER_BIN), sha256 checked"
+    mkdir -p "$(dirname "$WALLPAPER_BIN")" && cp "$_plf" "$WALLPAPER_BIN.new" && chmod 755 "$WALLPAPER_BIN.new" && mv "$WALLPAPER_BIN.new" "$WALLPAPER_BIN"
+    row ok motion "spark-wallpaper installed for $_plr ($WALLPAPER_BIN), sha256 checked"
 }
 

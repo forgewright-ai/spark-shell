@@ -349,7 +349,7 @@ motion_missing() {   # -> the missing tools, or nothing
     command -v mpv >/dev/null 2>&1 || _mm="$_mm mpv"
     if wall_scene "${WALLPAPER:-}"; then scene_ready || _mm="$_mm numpy"
     else for _mt in python3 rsvg-convert; do command -v "$_mt" >/dev/null 2>&1 || _mm="$_mm $_mt"; done; fi
-    player_cmd >/dev/null || _mm="$_mm spark-wallpaper"
+    wallpaper_cmd >/dev/null || _mm="$_mm spark-wallpaper"
     printf '%s' "${_mm# }"
 }
 motion_why() {   # -> why it cannot play, or nothing (after pm_detect)
@@ -358,7 +358,7 @@ motion_why() {   # -> why it cannot play, or nothing (after pm_detect)
     _mw=$(motion_missing); [ -n "$_mw" ] || return 0
     echo "the moving wallpaper needs $_mw: spark-shell on desktop installs it"
 }
-motion_want() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-motion.want"; }   # -> the player's words file
+motion_want() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-motion.want"; }   # -> the loop's words file
 motion_ours() {   # -> pids of players on our loops
     if command -v pgrep >/dev/null 2>&1; then { pgrep -u "$(id -u)" -f "spark-wallpaper .*$MOTION_DIR/"; pgrep -u "$(id -u)" -f "mpvpaper .*$MOTION_DIR/"; } 2>/dev/null || :; return 0; fi
     # no pgrep (a bare container): /proc
@@ -374,7 +374,7 @@ motion_stop() {
     for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done
 }
 motion_play() {   # motion_play ARGS... -- in its own session
-    _mpc=$(player_cmd) || return 0
+    _mpc=$(wallpaper_cmd) || return 0
     for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done
     if command -v setsid >/dev/null 2>&1; then setsid "$_mpc" "$@" </dev/null >/dev/null 2>&1 &
     else ( trap '' HUP; exec "$_mpc" "$@" ) </dev/null >/dev/null 2>&1 & fi

@@ -238,7 +238,7 @@ main() {
         a=$1; shift; n=$((n - 1))
         case $a in
             --dry-run) MODE=dry ;; --yes) YES=1 ;; --verbose|-v) VERBOSE=1 ;;
-            --desktop|--windows) PLAYER=windows ;; --terminal|--rooms) PLAYER=rooms ;;
+            --desktop|--windows) LAYOUT_ON=desktop ;; --terminal|--rooms) LAYOUT_ON=terminal ;;
             *) set -- "$@" "$a" ;;
         esac
     done

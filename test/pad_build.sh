@@ -1,6 +1,6 @@
 #!/bin/sh
 # The pad's release build, the one CI's pad job and release.yml both run,
-# in the player's pinned Debian 12 image (glibc 2.36): the toolchain
+# in the wallpaper loop's pinned Debian 12 image (glibc 2.36): the toolchain
 # component/pad/rust-toolchain.toml pins, the locked crates, every path remapped, no
 # build id, so the same tree builds the same bytes. It links glibc
 # dynamically: the pad loads Wayland's client library, cairo and pango at

@@ -12,13 +12,13 @@ pad_release_tag() {   # -> clone_tag when it pins a pad and component/pad/ is un
     printf '%s\n' "$_pdr"
 }
 pad_want_sha() {   # -> the sha256 the release tag's tree pins for this machine, or nothing
-    _pdk=PAD_SHA256_$(player_target | tr 'a-z-' 'A-Z_'); _pdr=$(pad_release_tag) || return 0
+    _pdk=PAD_SHA256_$(wallpaper_target | tr 'a-z-' 'A-Z_'); _pdr=$(pad_release_tag) || return 0
     git -C "$REPO" show "$_pdr:component/pad/pad.env" 2>/dev/null | sed -n "s/^$_pdk=\([0-9a-f]\{64\}\)$/\1/p"
 }
 pad_ok() { [ -x "$PAD_BIN" ] && _pdw=$(pad_want_sha) && [ -n "$_pdw" ] && [ "$(sha256_of "$PAD_BIN")" = "$_pdw" ]; }   # the binary in place is the one the tree pins
 pad_cmd() { if [ -n "${SPARK_SHELL_PAD:-}" ]; then [ -x "$SPARK_SHELL_PAD" ] && printf '%s' "$SPARK_SHELL_PAD"; elif pad_ok; then printf '%s' "$PAD_BIN"; else return 1; fi; }   # -> SPARK_SHELL_PAD (another build, as it is), else the pinned pad; false when none
 pad_install() {   # the pad's row of on desktop: in place as pinned, or fetched for the signed tag and checked
-    _pdt=$(player_target) || { skip pad "no spark-pad built for $(uname -m) yet: Super+minus brings back the window minimized last"; return 0; }
+    _pdt=$(wallpaper_target) || { skip pad "no spark-pad built for $(uname -m) yet: Super+minus brings back the window minimized last"; return 0; }
     _pdr=$(pad_release_tag) || { row todo pad "this clone is past its release: spark-pad comes with the next tag"; return 0; }
     _pdw=$(pad_want_sha); [ -n "$_pdw" ] || { skip pad "$_pdr pins no spark-pad: Super+minus brings back the window minimized last"; return 0; }
     if pad_ok; then ok pad "$PAD_BIN, the sha256 $_pdr pins"; return 0; fi

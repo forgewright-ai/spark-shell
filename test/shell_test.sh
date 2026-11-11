@@ -3858,7 +3858,7 @@ printf '#!/bin/sh\necho "$*" >> "$HOME/player.log"\nwhile :; do sleep 1; done\n'
 chmod +x "$H/mo/swaymsg" "$H/mo/python3" "$H/mo/rsvg-convert" "$H/mo/mpv" "$H/mo/spark-wallpaper"
 cp "$HOME/.config/spark-shell/config" "$H/cfg.mo"; printf 'DESKTOP=sway\nTHEME=dracula\nWALLPAPER=orbit\nWALLPAPER_MOTION=on\n' > "$HOME/.config/spark-shell/config"
 rm -f "$HOME/mpv.log" "$HOME/player.log"; _mdir=${XDG_CACHE_HOME:-$HOME/.cache}/spark-shell/motion
-mo() { TMPDIR=$H/motmp XDG_RUNTIME_DIR=$H/run SWAYSOCK=$H/sock SPARK_SHELL_PLAYER=$H/mo/spark-wallpaper PATH="$H/mo:$H/lx:$PATH" sh "$SH" "$@"; }
+mo() { TMPDIR=$H/motmp XDG_RUNTIME_DIR=$H/run SWAYSOCK=$H/sock SPARK_SHELL_WALLPAPER=$H/mo/spark-wallpaper PATH="$H/mo:$H/lx:$PATH" sh "$SH" "$@"; }
 mo_wait() { _i=0; while [ "$_i" -lt 50 ] && [ "$(grep -c '' "$HOME/player.log" 2>/dev/null || :)" != "$1" ]; do sleep 0.2; _i=$((_i + 1)); done; }
 mo_stop() { for _mp in $(pgrep -u "$(id -u)" -f "$H/mo/spark-wallpaper" 2>/dev/null || :); do kill "$_mp" 2>/dev/null || :; done; }
 mo desktop --motion >/dev/null 2>&1; mo_wait 1
@@ -7221,16 +7221,16 @@ if [ "$(uname -s)" != Darwin ]; then
     jq -e '.rows[] | select(.id == "theme:show:Moving wallpaper") | .switch == {on: false, turn_on: {name: "theme_motion", arguments: {to: "on"}}, turn_off: {name: "theme_motion", arguments: {to: "off"}}} and .tool == null and .group == "screen"' "$H/trows.json" >/dev/null \
         && ok "provide theme rows (#180, #183): the moving wallpaper, a switch" || bad "motion row" "$(jq -c '[.rows[] | select(.id | test("Moving"))]' "$H/trows.json")"
     mkdir -p "$H/mot"; for t in python3 rsvg-convert mpv spark-wallpaper; do printf '#!/bin/sh\nexit 0\n' > "$H/mot/$t"; chmod +x "$H/mot/$t"; done
-    ( PATH=$H/mot:$PATH; SPARK_SHELL_PLAYER=$H/mot/spark-wallpaper; export SPARK_SHELL_PLAYER; mcp theme "$(call 1 theme_motion '{"to":"on"}')" "$(call 2 theme_motion '{"to":"on"}')" )
+    ( PATH=$H/mot:$PATH; SPARK_SHELL_WALLPAPER=$H/mot/spark-wallpaper; export SPARK_SHELL_WALLPAPER; mcp theme "$(call 1 theme_motion '{"to":"on"}')" "$(call 2 theme_motion '{"to":"on"}')" )
     ans 1 | jq -r '.result.structuredContent.receipt' | grep -q '^moving wallpaper on .* dunes is still; 13 wallpapers move$' && ans 1 | jq -e '.result.structuredContent.undo | .name == "theme_motion" and .arguments.to == "off"' >/dev/null \
         && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'the moving wallpaper is on already' ] && grep -qx 'WALLPAPER_MOTION=on' "$cfg" \
         && ok "provide theme_motion (#180): a step with its receipt (the drawing in use still, the ones that move named) and undo, kept in the config; the same value again refused" || bad "motion step" "$(cut -c1-300 "$H/mcp.out")"
     sh "$SH" theme save motionlook >/dev/null 2>&1; sh "$SH" theme motion off >/dev/null 2>&1; sh "$SH" theme motionlook >/dev/null 2>&1
     grep -qx 'WALLPAPER_MOTION=on' "$th_dir/motionlook/look.env" && grep -qx 'WALLPAPER_MOTION=on' "$cfg" && ok "theme save keeps the moving wallpaper, and the theme brings it back (#180)" || bad "motion look kept" "$(cat "$th_dir/motionlook/look.env" 2>&1; grep MOTION "$cfg")"
     sh "$SH" theme dracula >/dev/null 2>&1; sh "$SH" theme delete motionlook </dev/null >/dev/null 2>&1; sh "$SH" theme motion off >/dev/null 2>&1
-    rc=0; out=$(env -u SPARK_SHELL_PLAYER sh "$SH" theme motion on 2>&1) || rc=$?   # no player of the release's in this clone
+    rc=0; out=$(env -u SPARK_SHELL_WALLPAPER sh "$SH" theme motion on 2>&1) || rc=$?   # no player of the release's in this clone
     [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'the moving wallpaper needs .*spark-wallpaper' && grep -qx 'WALLPAPER_MOTION=off' "$cfg" \
-        && ok "theme motion on: refused in one line where the wallpaper player is not here, the setting left off (#180, #187)" || bad "motion skip" "rc=$rc $out"
+        && ok "theme motion on: refused in one line where the wallpaper loop is not here, the setting left off (#180, #187)" || bad "motion skip" "rc=$rc $out"
     printf 'WALLPAPER_MOTION=fast\n' >> "$cfg"; st=0; out=$(sh "$SH" theme 2>&1) || st=$?
     [ "$st" -eq 1 ] && printf '%s' "$out" | grep -q 'WALLPAPER_MOTION=fast in .*: on or off' && ok "config: WALLPAPER_MOTION other than on or off is refused in one line (#180)" || bad "motion refuse" "st=$st $out"
     sed -i.bak '/^WALLPAPER_MOTION=fast$/d' "$cfg"; rm -f "$cfg.bak"
