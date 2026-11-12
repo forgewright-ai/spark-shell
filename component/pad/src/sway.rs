@@ -10,8 +10,13 @@ pub const RUN_COMMAND: u32 = 0;
 pub const SUBSCRIBE: u32 = 2;
 pub const GET_OUTPUTS: u32 = 3;
 pub const GET_TREE: u32 = 4;
-/// A window event's type: the high bit and 3.
+/// An event's type: the high bit and the event's number.
+pub const EVENT_WORKSPACE: u32 = 0x8000_0000;
+pub const EVENT_OUTPUT: u32 = 0x8000_0001;
 pub const EVENT_WINDOW: u32 = 0x8000_0003;
+pub const EVENT_TICK: u32 = 0x8000_0007;
+/// The tick spark-shell sends for Super+Tab (desktop window back).
+pub const BACK: &str = "spark-pad.back";
 
 fn socket() -> io::Result<UnixStream> {
     let path = std::env::var_os("SWAYSOCK").ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no sway here (SWAYSOCK)"))?;
@@ -91,10 +96,10 @@ impl Ipc {
     }
 }
 
-/// A connection that hears sway's window events: non-blocking, for the event loop.
-pub fn subscribe_windows() -> io::Result<UnixStream> {
+/// A connection that hears sway's events of those kinds: non-blocking, for the event loop.
+pub fn subscribe(kinds: &[&str]) -> io::Result<UnixStream> {
     let mut s = socket()?;
-    s.write_all(&frame(SUBSCRIBE, br#"["window"]"#))?;
+    s.write_all(&frame(SUBSCRIBE, serde_json::to_string(kinds).unwrap_or_default().as_bytes()))?;
     let mut head = [0u8; 14];
     s.read_exact(&mut head)?;
     let len = u32::from_ne_bytes(head[6..10].try_into().unwrap()) as usize;
@@ -102,7 +107,7 @@ pub fn subscribe_windows() -> io::Result<UnixStream> {
     s.read_exact(&mut body)?;
     let ok: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
     if ok["success"] != true {
-        return Err(io::Error::other("sway refused the window events"));
+        return Err(io::Error::other("sway refused the events"));
     }
     s.set_nonblocking(true)?;
     Ok(s)

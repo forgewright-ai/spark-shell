@@ -55,10 +55,10 @@ pad_run() {   # pad_run [--keys] -- spark-pad started in its own session; false 
     mkdir_private "$STATE_DIR"
     (
         # PAD_BAND on|off, PAD_BAND_HEX its color; PAD_GAP the outer gap; PAD_VIEW icons|titles; PAD_HEIGHT 0 as many as needed
-        SPARK_SHELL=$REPO/spark-shell PAD_FG=$HEX_FG PAD_ACCENT=$HEX_ACCENT PAD_MUTED=$PANEL_MUTED PAD_SURFACE=$PANEL_BG PAD_LIT=$PANEL_HI PAD_BAND_HEX=$PANEL_BAND
+        SPARK_SHELL=$REPO/spark-shell PAD_FG=$HEX_FG PAD_ACCENT=$HEX_ACCENT PAD_MUTED=$PANEL_MUTED PAD_TITLE_MUTED=$HEX_MUTED PAD_LOW=$PANEL_LOW PAD_SURFACE=$PANEL_BG PAD_LIT=$PANEL_HI PAD_BAND_HEX=$PANEL_BAND
         PAD_ALPHA=$ALPHA PAD_FONT=$(bar_line_font) PAD_PLACE=$PAD_PLACE PAD_WIDTH=$PAD_WIDTH PAD_SIDE_WIDTH=$PAD_SIDE_WIDTH PAD_HEIGHT=${PAD_HEIGHT:-0} PAD_BAR=$(bar_place)
         PAD_BAND=${PAD_BAND:-off} PAD_VIEW=${PAD_VIEW:-icons} PAD_GAP=${GAPS_OUTER:-} PAD_LOCK=$(pad_lock) PAD_STATE=$(pad_state) PAD_BAR_PID=$BAR_PID
-        export SPARK_SHELL PAD_FG PAD_ACCENT PAD_MUTED PAD_SURFACE PAD_LIT PAD_BAND_HEX PAD_ALPHA PAD_FONT PAD_PLACE PAD_WIDTH PAD_SIDE_WIDTH PAD_HEIGHT PAD_BAR PAD_BAND PAD_VIEW PAD_GAP PAD_LOCK PAD_STATE PAD_BAR_PID
+        export SPARK_SHELL PAD_FG PAD_ACCENT PAD_MUTED PAD_TITLE_MUTED PAD_LOW PAD_SURFACE PAD_LIT PAD_BAND_HEX PAD_ALPHA PAD_FONT PAD_PLACE PAD_WIDTH PAD_SIDE_WIDTH PAD_HEIGHT PAD_BAR PAD_BAND PAD_VIEW PAD_GAP PAD_LOCK PAD_STATE PAD_BAR_PID
         if command -v setsid >/dev/null 2>&1; then setsid "$_pdc" "$@" </dev/null >/dev/null 2>"$_pdlog" &
         else ( trap '' HUP; exec "$_pdc" "$@" ) </dev/null >/dev/null 2>"$_pdlog" & fi
     )
@@ -69,7 +69,7 @@ pad_again() {   # a running pad restarted, so it takes a new look or bar place; 
     _pdo=$(pad_pid) || return 0
     kill "$_pdo" 2>/dev/null || :
     _pdi=0; while [ "$_pdi" -lt 20 ] && kill -0 "$_pdo" 2>/dev/null; do sleep 0.1; _pdi=$((_pdi + 1)); done
-    [ "$(pad_count)" = 0 ] || pad_run 2>/dev/null || :
+    pad_run 2>/dev/null || :
 }
 pad_place_words() {   # pad_place_words PLACE -> where it sits, in words
     case $1 in
@@ -129,7 +129,7 @@ layout_pad() {   # layout_pad [keys|toggle|place PLACE WIDTH SIDE [HEIGHT]|band 
         '') if [ "$_pdn" = 0 ]; then echo "no window is on the pad"
             else _pdw=window; [ "$_pdn" = 1 ] || _pdw=windows
                 echo "the pad has $_pdn $_pdw: $(cut -f2 "$TMP/pad" | paste -sd, - | sed 's/,/, /g')"; fi ;;
-        start) [ "$_pdn" = 0 ] || pad_wake ;;
+        start) pad_wake ;;   # resident: it draws each window's glyphs and keeps the focus order
         keys) [ "$_pdn" != 0 ] || refuse "no window is on the pad"
             if _pdp=$(pad_pid); then kill -USR1 "$_pdp" 2>/dev/null || :
             elif ! pad_run --keys; then layout_window restore; return; fi   # no pad here: the window minimized last comes back

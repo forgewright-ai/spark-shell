@@ -3,7 +3,7 @@
 //! the background layer. The pointer, the keys while it has them, and sway's list.
 
 use crate::keys::Keyboard;
-use crate::model::{self, Click, Edge, Gesture, Grab, Hit, Item, KeyAct, Layout, ListAct, Metrics, Place, Rect, Sides, View, Want, Win};
+use crate::model::{self, Band, Click, Edge, Gesture, Glyph, Grab, History, Hit, Item, KeyAct, Layout, ListAct, Metrics, Place, Rect, Sides, View, Want, Win};
 use crate::paint::{Align, Canvas, Fonts, Lib, Picture, Rgb};
 use crate::sway::Ipc;
 use calloop::timer::{TimeoutAction, Timer};
@@ -46,6 +46,9 @@ pub struct Look {
     pub fg: Rgb,
     pub accent: Rgb,
     pub muted: Rgb,
+    /// The unfocused title's text and band, as sway draws them.
+    pub title_muted: Rgb,
+    pub low: Rgb,
     pub surface: Rgb,
     pub lit: Rgb,
     pub band: Rgb,
@@ -125,6 +128,14 @@ struct Kept {
     mapped: bool,
 }
 
+/// The glyph surface: the whole screen on the top layer, every zone ignored, so its pixels are the screen's
+/// own; the minimize and close glyphs of each title band, and the pointer on them alone.
+struct Deco {
+    layer: LayerSurface,
+    size: (i32, i32),
+    configured: bool,
+}
+
 struct Out {
     output: WlOutput,
     name: String,
@@ -135,6 +146,7 @@ struct Out {
     strip: Option<Kept>,
     /// The surface that holds the keyboard while the pad has the keys.
     keyer: Option<LayerSurface>,
+    deco: Option<Deco>,
 }
 
 struct Keys {
@@ -235,8 +247,12 @@ pub struct Pad {
     tip: Tip,
     pub dirty: bool,
     pub list_dirty: bool,
+    pub deco_dirty: bool,
     pub stop: bool,
-    empty_since: Option<Instant>,
+    /// The title bands in sight, and the glyph a press is on.
+    bands: Vec<Band>,
+    deco_press: Option<(i64, Glyph)>,
+    history: History,
     written: Option<(bool, usize)>,
     /// The strips kept when spark-shell last laid the placed windows out again (desktop window refit).
     refit_for: Vec<(String, Edge, i32)>,
@@ -303,8 +319,11 @@ impl Pad {
             tip: Tip::default(),
             dirty: true,
             list_dirty: true,
+            deco_dirty: true,
             stop: false,
-            empty_since: None,
+            bands: vec![],
+            deco_press: None,
+            history: History::default(),
             written: None,
             refit_for: vec![],
             refit_owed: false,
@@ -432,9 +451,148 @@ impl Pad {
         for oi in 0..self.outs.len() {
             self.apply_one(oi);
             self.apply_keyer(oi);
+            self.apply_deco(oi);
         }
         self.dirty = true;
         self.refit();
+    }
+
+    fn apply_deco(&mut self, oi: usize) {
+        if self.outs[oi].deco.is_some() {
+            return;
+        }
+        let surface = self.compositor.create_surface(&self.qh);
+        let layer = self
+            .layer_shell
+            .create_layer_surface(&self.qh, surface, Layer::Top, Some(NAMESPACE), Some(&self.outs[oi].output));
+        layer.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
+        layer.set_size(0, 0);
+        layer.set_exclusive_zone(-1);
+        layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+        if let Ok(region) = Region::new(&self.compositor) {
+            layer.wl_surface().set_input_region(Some(region.wl_region()));
+        }
+        layer.commit();
+        self.outs[oi].deco = Some(Deco {
+            layer,
+            size: (0, 0),
+            configured: false,
+        });
+    }
+
+    pub fn draw_decos(&mut self) {
+        self.deco_dirty = false;
+        for oi in 0..self.outs.len() {
+            self.draw_deco(oi);
+        }
+    }
+
+    /// Each band's minimize and close glyphs at its right end, on a chip in the band's own shade (the surface
+    /// shade on the focused window, the low one on the others), so a long title ends under them.
+    fn draw_deco(&mut self, oi: usize) {
+        let Some(d) = self.outs[oi].deco.as_ref() else { return };
+        if !d.configured || d.size.0 <= 0 || d.size.1 <= 0 {
+            return;
+        }
+        let (size, scale) = (d.size, self.outs[oi].scale.max(1));
+        let name = self.outs[oi].name.clone();
+        let (bw, bh) = (size.0 * scale, size.1 * scale);
+        let Ok((buffer, data)) = self.pool.create_buffer(bw, bh, bw * 4, wl_shm::Format::Argb8888) else {
+            eprintln!("spark-pad: no shared memory for a frame");
+            return;
+        };
+        let Ok(region) = Region::new(&self.compositor) else { return };
+        {
+            let Some(c) = Canvas::new(&self.lib, &self.fonts, data, bw, bh, bw * 4, scale as f64) else {
+                return;
+            };
+            let look = &self.cfg.look;
+            for b in self.bands.iter().filter(|b| b.output == name) {
+                let cells = model::glyph_cells(b.rect);
+                let (chip, ink) = if b.focused { (look.surface, look.fg) } else { (look.low, look.title_muted) };
+                let x0 = cells[0].x - 4;
+                c.fill(x0 as f64, b.rect.y as f64, (b.rect.x + b.rect.w - x0) as f64, b.rect.h as f64, chip, 1.0);
+                for (r, glyph) in cells.iter().zip(["\u{2212}", "\u{25a1}", "\u{00d7}"]) {
+                    c.text(r.x as f64, r.y as f64, r.w as f64, r.h as f64, glyph, ink, false, Align::Center);
+                }
+                region.add(cells[0].x, cells[0].y, cells[2].x + cells[2].w - cells[0].x, cells[0].h);
+            }
+        }
+        let d = self.outs[oi].deco.as_ref().unwrap();
+        let surface = d.layer.wl_surface().clone();
+        surface.set_input_region(Some(region.wl_region()));
+        surface.set_buffer_scale(scale);
+        if buffer.attach_to(&surface).is_ok() {
+            surface.damage_buffer(0, 0, bw, bh);
+            d.layer.commit();
+        }
+    }
+
+    fn deco_of(&self, surface: &WlSurface) -> Option<usize> {
+        self.outs.iter().position(|o| o.deco.as_ref().is_some_and(|d| d.layer.wl_surface() == surface))
+    }
+
+    /// The glyph under a point on a screen's glyph surface, and its window.
+    fn glyph_at(&self, oi: usize, pos: (f64, f64)) -> Option<(i64, Glyph)> {
+        let name = &self.outs[oi].name;
+        self.bands
+            .iter()
+            .filter(|b| &b.output == name)
+            .find_map(|b| model::glyph_at(b.rect, pos.0, pos.1).map(|g| (b.id, g)))
+    }
+
+    /// The pointer on a glyph surface: the hand over a glyph; a press and a release on the same glyph act.
+    fn deco_pointer(&mut self, oi: usize, kind: &PointerEventKind, pos: (f64, f64)) {
+        match kind {
+            PointerEventKind::Enter { serial } => {
+                if let Some(p) = self.pointer.as_mut() {
+                    p.serial = *serial;
+                    p.cursor = None;
+                }
+                let on = self.glyph_at(oi, pos).is_some();
+                self.set_cursor(if on { Cursor::Pointer } else { Cursor::Default });
+            }
+            PointerEventKind::Motion { .. } => {
+                let on = self.glyph_at(oi, pos).is_some();
+                self.set_cursor(if on { Cursor::Pointer } else { Cursor::Default });
+            }
+            PointerEventKind::Press { button: BTN_LEFT, .. } => self.deco_press = self.glyph_at(oi, pos),
+            PointerEventKind::Release { button: BTN_LEFT, .. } => {
+                let pressed = self.deco_press.take();
+                if let Some((id, glyph)) = self.glyph_at(oi, pos).filter(|h| Some(*h) == pressed) {
+                    match glyph {
+                        Glyph::Close => {
+                            let _ = self.ipc.run(&format!("[con_id={id}] kill"));
+                        }
+                        Glyph::Min => spawn(&self.cfg.spark_shell, &["desktop", "window", "min", &id.to_string()]),
+                        Glyph::Fill => spawn(&self.cfg.spark_shell, &["desktop", "window", "toggle", &id.to_string()]),
+                    }
+                }
+            }
+            PointerEventKind::Leave { .. } => self.deco_press = None,
+            _ => {}
+        }
+    }
+
+    /// A window event from sway: the focus order follows it, and the tree is read again.
+    pub fn window_event(&mut self, change: &str, id: Option<i64>) {
+        match (change, id) {
+            ("focus", Some(id)) => self.history.focused(id),
+            ("close", Some(id)) => self.history.closed(id),
+            _ => {}
+        }
+        self.list_dirty = true;
+    }
+
+    /// Super+Tab: the window before, along the walk.
+    pub fn back(&mut self) {
+        if let Some(id) = self.history.back(Instant::now()) {
+            let _ = self.ipc.run(&format!("[con_id={id}] focus"));
+        }
+    }
+
+    pub fn settle(&mut self) {
+        self.history.settle(Instant::now());
     }
 
     /// spark-shell lays the placed windows out again (desktop window refit) once each time a kept strip
@@ -626,7 +784,7 @@ impl Pad {
         l.commit();
     }
 
-    /// sway's scratchpad read again: the windows on the pad, oldest first.
+    /// sway's tree read again: the title bands in sight, the focus order, and the windows on the pad, oldest first.
     pub fn refresh_list(&mut self) {
         self.list_dirty = false;
         let Ok(tree) = self.ipc.tree() else {
@@ -634,6 +792,12 @@ impl Pad {
             self.stop = true;
             return;
         };
+        let bands = model::bands(&tree);
+        if bands != self.bands {
+            self.bands = bands;
+            self.deco_dirty = true;
+        }
+        self.history.seed(&model::in_sight(&tree));
         let wins = model::minimized(&tree);
         if wins == self.wins {
             return;
@@ -641,10 +805,7 @@ impl Pad {
         let added = wins.len() > self.wins.len();
         self.wins = wins;
         if self.wins.is_empty() {
-            self.empty_since.get_or_insert_with(Instant::now);
             self.keys = None;
-        } else {
-            self.empty_since = None;
         }
         let cells = self.cells_for_keys();
         if added && self.keys.is_some() {
@@ -671,11 +832,6 @@ impl Pad {
             Some(oi) => self.items_on(oi, self.cfg.place.side()).0.len(),
             None => self.wins.len(),
         }
-    }
-
-    /// No window on the pad for two seconds: the pad's work is done.
-    pub fn idle_long(&self) -> bool {
-        self.empty_since.is_some_and(|t| t.elapsed() >= Duration::from_secs(2))
     }
 
     /// The hidden state and the count for the bar, and the bar told to draw again; once a change.
@@ -1404,6 +1560,7 @@ impl Pad {
             }
             o.surf = None;
             o.keyer = None;
+            o.deco = None;
         }
         if owed {
             let _ = self.conn.roundtrip();
@@ -1475,12 +1632,21 @@ impl LayerShellHandler for Pad {
             if o.keyer.as_ref() == Some(layer) {
                 o.keyer = None;
             }
+            if o.deco.as_ref().is_some_and(|d| &d.layer == layer) {
+                o.deco = None;
+            }
         }
     }
 
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface, configure: LayerSurfaceConfigure, _: u32) {
         if let Some(oi) = self.outs.iter().position(|o| o.keyer.as_ref() == Some(layer)) {
             self.draw_keyer(oi);
+            return;
+        }
+        if let Some(d) = self.outs.iter_mut().find_map(|o| o.deco.as_mut().filter(|d| &d.layer == layer)) {
+            d.size = (configure.new_size.0 as i32, configure.new_size.1 as i32);
+            d.configured = true;
+            self.deco_dirty = true;
             return;
         }
         if let Some(oi) = self.outs.iter().position(|o| o.strip.as_ref().is_some_and(|k| &k.layer == layer)) {
@@ -1535,10 +1701,11 @@ impl LayerShellHandler for Pad {
 
 impl CompositorHandler for Pad {
     fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &WlSurface, factor: i32) {
-        if let Some(oi) = self.out_of(surface) {
+        if let Some(oi) = self.out_of(surface).or_else(|| self.deco_of(surface)) {
             if self.outs[oi].scale != factor.max(1) {
                 self.outs[oi].scale = factor.max(1);
                 self.dirty = true;
+                self.deco_dirty = true;
             }
         }
     }
@@ -1569,6 +1736,7 @@ impl OutputHandler for Pad {
             surf: None,
             strip: None,
             keyer: None,
+            deco: None,
         });
         self.apply();
     }
@@ -1638,6 +1806,10 @@ impl SeatHandler for Pad {
 impl PointerHandler for Pad {
     fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlPointer, events: &[PointerEvent]) {
         for ev in events {
+            if let Some(oi) = self.deco_of(&ev.surface) {
+                self.deco_pointer(oi, &ev.kind, ev.position);
+                continue;
+            }
             let oi = self.out_of(&ev.surface);
             match ev.kind {
                 PointerEventKind::Enter { serial } => {

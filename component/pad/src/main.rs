@@ -1,10 +1,11 @@
 //! spark-pad: the windows spark-shell minimized, on a surface of their own on each screen, each
-//! with its app's icon and its title; a click or a key brings one back. Started by spark-shell when
-//! a window goes to the pad, gone two seconds after the last one comes back.
+//! with its app's icon and its title; a click or a key brings one back. The minimize and close
+//! glyphs on every window's title band, and the order the windows were focused in, for Super+Tab.
+//! Started with the desktop by spark-shell, for the session.
 
 use std::process::ExitCode;
 
-const USAGE: &str = "spark-pad -- the minimized windows of a sway desktop, on the pad (run by spark-shell)
+const USAGE: &str = "spark-pad -- the minimized windows of a sway desktop, on the pad, and the glyphs on every title band (run by spark-shell)
 
   spark-pad [--keys]
 
@@ -16,11 +17,14 @@ an icon each. A click on one, or Enter, brings it back through spark-shell
 desktop window restore. When the pad is too small for them, the windows of
 one app fold into one icon, the app with the most first; a click on it, or
 Enter, opens its list. SIGUSR1 puts the keyboard on the pad, SIGUSR2 hides
-or shows it, SIGTERM or SIGINT ends it. It ends by itself two seconds after
-the last window comes back.
+or shows it, SIGTERM or SIGINT ends it. On every window's title band it
+draws the minimize and close glyphs and takes their clicks; it keeps the
+order the windows were focused in, and the tick spark-pad.back (spark-shell
+desktop window back, Super+Tab) focuses the window before.
 
 spark-shell sets the look and the place in the environment: PAD_FG,
-PAD_ACCENT, PAD_MUTED, PAD_SURFACE, PAD_LIT, PAD_BAND_HEX (rrggbb),
+PAD_ACCENT, PAD_MUTED, PAD_TITLE_MUTED, PAD_LOW, PAD_SURFACE, PAD_LIT,
+PAD_BAND_HEX (rrggbb),
 PAD_ALPHA, PAD_FONT, PAD_VIEW (icons, the default, or titles: a slot a
 window with its title), PAD_BAND (on: the band under the handle; off, the
 default), PAD_GAP (the pixels off an edge, 8), PAD_PLACE, PAD_WIDTH,
@@ -105,6 +109,8 @@ fn config() -> spark_pad::app::Config {
             fg: color("PAD_FG", "383a42"),
             accent: color("PAD_ACCENT", "4078f2"),
             muted: color("PAD_MUTED", "696c77"),
+            title_muted: color("PAD_TITLE_MUTED", "a0a1a7"),
+            low: color("PAD_LOW", "f3f3f4"),
             surface: color("PAD_SURFACE", "ebebec"),
             lit: color("PAD_LIT", "dcdcdd"),
             band: color("PAD_BAND_HEX", "c3d0ee"),
@@ -243,8 +249,7 @@ fn svg_at(svg: &std::path::Path, px: i32) -> Option<std::path::PathBuf> {
     Some(out)
 }
 
-/// Shows the pad until SIGTERM or SIGINT (Ok), until its last window has been back two seconds
-/// (Ok), or until the compositor or sway goes (Err).
+/// Shows the pad until SIGTERM or SIGINT (Ok), or until the compositor or sway goes (Err).
 #[cfg(target_os = "linux")]
 fn run(keys: bool) -> Result<(), String> {
     use calloop::channel::{channel, Event as Msg};
@@ -278,7 +283,7 @@ fn run(keys: bool) -> Result<(), String> {
         ConnectError::InvalidFd => "WAYLAND_SOCKET is not a socket".to_string(),
     })?;
     let ipc = Ipc::connect().map_err(|e| format!("sway: {e}"))?;
-    let events = sway::subscribe_windows().map_err(|e| format!("sway: {e}"))?;
+    let events = sway::subscribe(&["window", "workspace", "output", "tick"]).map_err(|e| format!("sway: {e}"))?;
     let (globals, mut queue) = registry_queue_init::<Pad>(&conn).map_err(|e| format!("the compositor's globals: {e}"))?;
     let mut event_loop: EventLoop<'static, Pad> = EventLoop::try_new().map_err(|e| format!("event loop: {e}"))?;
     let handle = event_loop.handle();
@@ -315,8 +320,21 @@ fn run(keys: bool) -> Result<(), String> {
                     Err(e) => return Err(e),
                 }
             }
-            if sway::split(&mut buf).iter().any(|(kind, _)| *kind == sway::EVENT_WINDOW) {
-                pad.list_dirty = true;
+            for (kind, payload) in sway::split(&mut buf) {
+                match kind {
+                    sway::EVENT_WINDOW => {
+                        let v: serde_json::Value = serde_json::from_slice(&payload).unwrap_or_default();
+                        pad.window_event(v["change"].as_str().unwrap_or(""), v["container"]["id"].as_i64());
+                    }
+                    sway::EVENT_WORKSPACE | sway::EVENT_OUTPUT => pad.list_dirty = true,
+                    sway::EVENT_TICK => {
+                        let v: serde_json::Value = serde_json::from_slice(&payload).unwrap_or_default();
+                        if v["payload"] == sway::BACK {
+                            pad.back();
+                        }
+                    }
+                    _ => {}
+                }
             }
             Ok(PostAction::Continue)
         })
@@ -346,10 +364,14 @@ fn run(keys: bool) -> Result<(), String> {
         }
     });
     let tick = Duration::from_millis(500);
+    let mut ticks = 0u32;
     handle
         .insert_source(Timer::from_duration(tick), move |_, _, pad: &mut Pad| {
-            if pad.idle_long() {
-                pad.stop = true;
+            pad.settle();
+            // the tree read again each second: a resize or a drag sends no event
+            ticks = ticks.wrapping_add(1);
+            if ticks.is_multiple_of(2) {
+                pad.list_dirty = true;
             }
             TimeoutAction::ToDuration(tick)
         })
@@ -361,6 +383,9 @@ fn run(keys: bool) -> Result<(), String> {
         }
         if pad.dirty {
             pad.draw_all();
+        }
+        if pad.deco_dirty {
+            pad.draw_decos();
         }
         if pad.stop {
             stop.stop();

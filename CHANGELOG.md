@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.140
+
+The window model: every window has a title band, the keys follow one
+rule, and the pad draws the glyphs.
+
+- Each window wears a title band with the app's name and what it shows,
+  and a one-pixel frame in the band's own shade: the surface shade on
+  the focused window, four percent above the ground on the others. The
+  windows sit 8 pixels apart. The terminal's band says terminal and the
+  folder the prompt is in.
+- The keys: Super+arrow moves the focus, Super+Ctrl+arrow places the
+  window (a half, a quarter, the whole screen past the top, the pad past
+  the bottom), Super+Shift+arrow moves it in the tiling or to the next
+  screen, Super+PageUp/PageDown the workspace before or after. Super+Tab
+  goes back to the window before, and again to the one before that.
+  Super+m minimizes, Super+q closes. A free window fills the screen or
+  goes to the pad in one press.
+- The pad runs for the session: it draws the minimize, fill and close
+  glyphs at the right end of every title band and takes their clicks,
+  and it keeps the order the windows were focused in.
+- window place takes min; desktop window takes toggle, move and back.
+- ALPHA defaults to 0.95: the windows are nearly solid.
+
 ## v0.139
 
 The compositor and the terminal are spoken to through one module each,

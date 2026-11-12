@@ -3,6 +3,7 @@
 //! its origin at that area's top left corner.
 
 use serde_json::Value;
+use std::time::{Duration, Instant};
 
 /// The lengths the pad is drawn with, at a text size: the mock-up's at 16 px (Monaspace Neon 12),
 /// in proportion at any other. The air off an edge (PAD_GAP), the snapping distances and the grips stay as they are.
@@ -912,6 +913,267 @@ pub fn minimized(tree: &Value) -> Vec<Win> {
         .unwrap_or_default()
 }
 
+/// A window's title band in sight, where the pad draws the minimize and close glyphs: its rect in its
+/// screen's own pixels, the window's whole rect for what lies over it, and whether it has the focus.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Band {
+    pub id: i64,
+    pub output: String,
+    pub rect: Rect,
+    pub whole: Rect,
+    pub focused: bool,
+}
+
+/// The pixels between a band's right end and its glyphs.
+pub const GLYPH_INSET: i32 = 8;
+
+/// The glyphs at the right end of a band: minimize, fill the screen or put back, close.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Glyph {
+    Min,
+    Fill,
+    Close,
+}
+
+/// A band's three glyph cells, each as tall as the band and as wide: minimize, fill, close.
+pub fn glyph_cells(band: Rect) -> [Rect; 3] {
+    let cell = band.h.max(1);
+    let x1 = band.x + band.w - GLYPH_INSET;
+    [
+        Rect::new(x1 - 3 * cell, band.y, cell, band.h),
+        Rect::new(x1 - 2 * cell, band.y, cell, band.h),
+        Rect::new(x1 - cell, band.y, cell, band.h),
+    ]
+}
+
+/// The glyph a point is on in a band.
+pub fn glyph_at(band: Rect, x: f64, y: f64) -> Option<Glyph> {
+    let [min, fill, close] = glyph_cells(band);
+    if close.has(x, y) {
+        Some(Glyph::Close)
+    } else if fill.has(x, y) {
+        Some(Glyph::Fill)
+    } else if min.has(x, y) {
+        Some(Glyph::Min)
+    } else {
+        None
+    }
+}
+
+fn meets(a: Rect, b: Rect) -> bool {
+    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+}
+
+fn num(v: &Value) -> i32 {
+    v.as_i64().unwrap_or(0) as i32
+}
+
+fn rect_of(v: &Value) -> Rect {
+    Rect::new(num(&v["x"]), num(&v["y"]), num(&v["width"]), num(&v["height"]))
+}
+
+fn kids(n: &Value) -> impl Iterator<Item = &Value> {
+    n["nodes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .chain(n["floating_nodes"].as_array().into_iter().flatten())
+}
+
+/// The title bands on each screen's current workspace, the tiled windows first and the floating ones in
+/// their stacking order: each view with a title bar, its band placed by its parent's rect as sway gives
+/// it, in the screen's own pixels. A workspace with a view in full screen has none, and a band whose
+/// glyphs lie under a window above it is left out.
+pub fn bands(tree: &Value) -> Vec<Band> {
+    struct Seen {
+        band: Rect,
+        whole: Rect,
+        id: i64,
+        focused: bool,
+        full: bool,
+    }
+    fn walk(n: &Value, at: Rect, out: &mut Vec<Seen>) {
+        let r = rect_of(&n["rect"]);
+        if kids(n).next().is_some() {
+            for k in kids(n) {
+                walk(k, r, out);
+            }
+            return;
+        }
+        if n["type"] != "con" && n["type"] != "floating_con" {
+            return;
+        }
+        let d = rect_of(&n["deco_rect"]);
+        let band = Rect::new(at.x + d.x, at.y + d.y, d.w, d.h);
+        let (x0, y0) = (r.x.min(band.x), r.y.min(band.y));
+        let whole = Rect::new(x0, y0, (r.x + r.w).max(band.x + band.w) - x0, (r.y + r.h).max(band.y + band.h) - y0);
+        out.push(Seen {
+            band,
+            whole,
+            id: n["id"].as_i64().unwrap_or(0),
+            focused: n["focused"] == true,
+            full: num(&n["fullscreen_mode"]) != 0,
+        });
+    }
+    let mut out: Vec<Band> = vec![];
+    for o in tree["nodes"].as_array().into_iter().flatten() {
+        let name = o["name"].as_str().unwrap_or("");
+        if o["type"] != "output" || name == "__i3" {
+            continue;
+        }
+        let orect = rect_of(&o["rect"]);
+        let current = &o["current_workspace"];
+        let Some(ws) = o["nodes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|w| w["type"] == "workspace" && &w["name"] == current)
+        else {
+            continue;
+        };
+        let mut seen = vec![];
+        walk(ws, rect_of(&ws["rect"]), &mut seen);
+        if seen.iter().any(|s| s.full) {
+            continue;
+        }
+        let shift = |r: Rect| Rect::new(r.x - orect.x, r.y - orect.y, r.w, r.h);
+        for s in seen.into_iter().filter(|s| s.band.h > 0 && s.band.w > 0) {
+            out.push(Band {
+                id: s.id,
+                output: name.to_string(),
+                rect: shift(s.band),
+                whole: shift(s.whole),
+                focused: s.focused,
+            });
+        }
+    }
+    let keep: Vec<bool> = (0..out.len())
+        .map(|i| {
+            let [a, _, b] = glyph_cells(out[i].rect);
+            let zone = Rect::new(a.x, a.y, b.x + b.w - a.x, a.h);
+            !out[i + 1..].iter().any(|o| o.output == out[i].output && meets(zone, o.whole))
+        })
+        .collect();
+    out.into_iter().zip(keep).filter_map(|(b, k)| k.then_some(b)).collect()
+}
+
+/// The views in sight, in the order sway's focus stacks give them, the latest first; none from the pad.
+pub fn in_sight(tree: &Value) -> Vec<i64> {
+    fn walk(n: &Value, out: &mut Vec<i64>) {
+        if n["type"] == "workspace" && n["name"] == "__i3_scratch" {
+            return;
+        }
+        if kids(n).next().is_none() {
+            if n["type"] == "con" || n["type"] == "floating_con" {
+                if let Some(id) = n["id"].as_i64() {
+                    out.push(id);
+                }
+            }
+            return;
+        }
+        let order: Vec<i64> = n["focus"].as_array().into_iter().flatten().filter_map(Value::as_i64).collect();
+        for &id in &order {
+            if let Some(k) = kids(n).find(|k| k["id"].as_i64() == Some(id)) {
+                walk(k, out);
+            }
+        }
+        for k in kids(n).filter(|k| !k["id"].as_i64().is_some_and(|id| order.contains(&id))) {
+            walk(k, out);
+        }
+    }
+    let mut out = vec![];
+    walk(tree, &mut out);
+    out
+}
+
+/// The windows in the order they were focused in, the latest first, and a walk through it: Super+Tab goes
+/// to the window before, and within a second again to the one before that; the walk ends a second after
+/// the last press, with the window it stopped on at the front.
+#[derive(Default)]
+pub struct History {
+    mru: Vec<i64>,
+    walk: Option<Walk>,
+}
+
+struct Walk {
+    order: Vec<i64>,
+    at: usize,
+    last: Instant,
+}
+
+/// How long a walk waits for the next press.
+pub const WALK: Duration = Duration::from_secs(1);
+
+impl History {
+    /// A window took the focus; during a walk the focus is the walk's own.
+    pub fn focused(&mut self, id: i64) {
+        if self.walk.is_some() {
+            return;
+        }
+        self.mru.retain(|&i| i != id);
+        self.mru.insert(0, id);
+    }
+
+    /// A window closed; the walk ends when it was the window the walk stood on, sway's own choice of
+    /// focus taken from then on.
+    pub fn closed(&mut self, id: i64) {
+        self.mru.retain(|&i| i != id);
+        if self.walk.as_ref().is_some_and(|w| w.order.get(w.at) == Some(&id)) {
+            self.walk = None;
+            return;
+        }
+        self.drop_from_walk(|i| i == id);
+    }
+
+    /// The windows in sight as sway orders them: the ones not known yet join at the back, the ones gone leave.
+    pub fn seed(&mut self, ids: &[i64]) {
+        self.mru.retain(|i| ids.contains(i));
+        for &id in ids {
+            if !self.mru.contains(&id) {
+                self.mru.push(id);
+            }
+        }
+        self.drop_from_walk(|i| !ids.contains(&i));
+    }
+
+    fn drop_from_walk(&mut self, gone: impl Fn(i64) -> bool) {
+        if let Some(w) = self.walk.as_mut() {
+            w.order.retain(|&i| !gone(i));
+            w.at = w.at.min(w.order.len().saturating_sub(1));
+        }
+        if self.walk.as_ref().is_some_and(|w| w.order.len() < 2) {
+            self.walk = None;
+        }
+    }
+
+    /// The window Super+Tab goes to now; none with fewer than two.
+    pub fn back(&mut self, now: Instant) -> Option<i64> {
+        if self.walk.as_ref().is_none_or(|w| now.duration_since(w.last) > WALK) {
+            if self.mru.len() < 2 {
+                self.walk = None;
+                return None;
+            }
+            self.walk = Some(Walk {
+                order: self.mru.clone(),
+                at: 0,
+                last: now,
+            });
+        }
+        let w = self.walk.as_mut()?;
+        w.at = (w.at + 1) % w.order.len();
+        w.last = now;
+        Some(w.order[w.at])
+    }
+
+    /// A walk a second past its last press ends: the window it stopped on comes to the front.
+    pub fn settle(&mut self, now: Instant) {
+        if let Some(id) = self.walk.as_ref().filter(|w| now.duration_since(w.last) > WALK).map(|w| w.order[w.at]) {
+            self.walk = None;
+            self.focused(id);
+        }
+    }
+}
+
 /// The app an icon is looked up by: a desktop entry's id without .desktop, or its window class.
 pub fn icon_key(app: &str) -> String {
     app.trim().to_lowercase()
@@ -938,6 +1200,72 @@ pub fn icon_paths(catalog: &Value) -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn a_tree(over: bool) -> Value {
+        // a screen of 1600 by 900 with the bar's 30 px, a tiled window with the focus and a floating one,
+        // placed over the tiled one's glyphs when `over`
+        let fx = if over { 700 } else { 100 };
+        serde_json::json!({
+            "type": "root", "focus": [2], "nodes": [
+                {"type": "output", "name": "__i3", "id": 1, "nodes": [{"type": "workspace", "name": "__i3_scratch", "id": 9, "floating_nodes": [{"type": "floating_con", "id": 70, "pid": 7, "marks": ["_spark-shell.min.tiled.70"], "nodes": [], "floating_nodes": []}]}]},
+                {"type": "output", "name": "DP-1", "id": 2, "current_workspace": "1", "rect": {"x": 0, "y": 0, "width": 1600, "height": 900}, "focus": [3],
+                 "nodes": [{"type": "workspace", "name": "1", "id": 3, "rect": {"x": 0, "y": 30, "width": 1600, "height": 870}, "focus": [5, 6],
+                            "nodes": [{"type": "con", "id": 5, "pid": 1, "focused": true, "fullscreen_mode": 0, "rect": {"x": 8, "y": 61, "width": 784, "height": 831}, "deco_rect": {"x": 8, "y": 8, "width": 784, "height": 23}, "nodes": [], "floating_nodes": []}],
+                            "floating_nodes": [{"type": "floating_con", "id": 6, "pid": 2, "focused": false, "fullscreen_mode": 0, "rect": {"x": fx, "y": 50, "width": 400, "height": 300}, "deco_rect": {"x": fx, "y": -3, "width": 400, "height": 23}, "nodes": [], "floating_nodes": []}]}]}]
+        })
+    }
+
+    #[test]
+    fn the_bands_sit_where_sway_puts_the_titles() {
+        let b = bands(&a_tree(false));
+        assert_eq!(b.len(), 2);
+        assert_eq!(b[0].id, 5);
+        assert!(b[0].focused);
+        assert_eq!(b[0].rect, Rect::new(8, 38, 784, 23));
+        assert_eq!(b[0].whole, Rect::new(8, 38, 784, 854));
+        assert_eq!(b[1].rect, Rect::new(100, 27, 400, 23));
+        let [min, fill, close] = glyph_cells(b[0].rect);
+        assert_eq!(min, Rect::new(792 - 8 - 69, 38, 23, 23));
+        assert_eq!(fill, Rect::new(792 - 8 - 46, 38, 23, 23));
+        assert_eq!(close, Rect::new(792 - 8 - 23, 38, 23, 23));
+        assert_eq!(glyph_at(b[0].rect, 775.0, 50.0), Some(Glyph::Close));
+        assert_eq!(glyph_at(b[0].rect, 750.0, 50.0), Some(Glyph::Fill));
+        assert_eq!(glyph_at(b[0].rect, 720.0, 50.0), Some(Glyph::Min));
+        assert_eq!(glyph_at(b[0].rect, 700.0, 50.0), None);
+    }
+
+    #[test]
+    fn a_band_under_a_floating_window_has_no_glyphs() {
+        let b = bands(&a_tree(true));
+        assert_eq!(b.iter().map(|b| b.id).collect::<Vec<_>>(), vec![6]);
+    }
+
+    #[test]
+    fn the_views_in_sight_follow_the_focus_stacks() {
+        assert_eq!(in_sight(&a_tree(false)), vec![5, 6]);
+    }
+
+    #[test]
+    fn a_walk_goes_back_and_further_within_a_second() {
+        let mut h = History::default();
+        h.seed(&[5, 6, 7]);
+        h.focused(7);
+        let t = Instant::now();
+        assert_eq!(h.back(t), Some(5));
+        h.focused(5); // sway's event for the walk's own focus: not taken
+        assert_eq!(h.back(t + Duration::from_millis(300)), Some(6));
+        assert_eq!(h.back(t + Duration::from_millis(600)), Some(7));
+        h.settle(t + Duration::from_millis(900));
+        assert_eq!(h.back(t + Duration::from_millis(950)), Some(5));
+        h.settle(t + Duration::from_secs(3));
+        assert_eq!(h.back(t + Duration::from_secs(4)), Some(7));
+        h.closed(7);
+        h.settle(t + Duration::from_secs(6));
+        assert_eq!(h.back(t + Duration::from_secs(7)), Some(6));
+        h.seed(&[5]);
+        h.settle(t + Duration::from_secs(9));
+        assert_eq!(h.back(t + Duration::from_secs(10)), None);
+    }
 
     fn m() -> Metrics {
         Metrics::for_text(16.0)
