@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- setup: on, off, status and check
 # sets: LAYOUT_SEEN SEEN
-# reads: APPS CONFIG DESKTOP_RENDERED DIALOG_BIN DIALOG_URL DISTRO FAMILIES_SAID LAYOUTS_DIR LOGIN_ETC MODE NEON NEON_OLD NEON_VERSION OS PM PROVIDE_SECTIONS RENDERED REPO SEMANTIC_MODEL SPARK_CONFIG_DIR THEME_ENV TMP YES
+# reads: APPS CONFIG DESKTOP_RENDERED DIALOG_BIN DIALOG_URL DISTRO FAMILIES_SAID LAYOUTS_DIR LOGIN_ETC MODE NEON NEON_OLD NEON_VERSION OS PM PROVIDE_SECTIONS RENDERED REPO SEMANTIC_MODEL SPARK_CONFIG_DIR TERM_NAME THEME_ENV TMP WM_NAME YES
 # `on` is the terminal seat, `on desktop` the seat and the desktop; `off
 # desktop` takes the desktop back, `off` everything. The nouns are desktop
 # and login; any other word is refused before a thing is touched.
@@ -401,8 +401,8 @@ status_next() {   # the first sentence that applies, as a next row; nothing off,
     if [ -z "$(spark_bin)" ]; then n=spark; s="Install spark, the local AI: github.com/forgewright-ai/spark."
     elif [ -n "$(desktop_na)" ]; then return 0
     elif [ "$DESKTOP" = none ]; then [ -d /dev/dri ] || return 0; n=desktop; s="spark-shell on desktop adds the desktop."
-    elif [ -n "$(desktop_tools)" ]; then n=desktop; s="spark-shell on installs sway and foot."
-    elif [ ! -f "$(wm_config_file)" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then n=desktop; s="spark-shell on writes the sway and foot settings."
+    elif [ -n "$(desktop_tools)" ]; then n=desktop; s="spark-shell on installs $WM_NAME and $TERM_NAME."
+    elif [ ! -f "$(wm_config_file)" ] || [ ! -f "$(term_config_file)" ]; then n=desktop; s="spark-shell on writes the $WM_NAME and $TERM_NAME settings."
     elif seat_needed && ! seat_ready; then n=desktop; s="spark-shell on desktop at a terminal sets up seatd (sudo once)."
     elif seat_needed && ! id -Gn | tr ' ' '\n' | grep -qx _seatd; then n=desktop; s="Log out and in again: the _seatd group takes effect at the next login."
     else return 0; fi
@@ -430,9 +430,9 @@ cmd_status() {
     theme_load || true   # the wall row below names the ground's hex
     if s=$(desktop_na) && [ -n "$s" ]; then :
     elif [ "$DESKTOP" = none ]; then s="none (spark-shell on desktop)"
-    elif [ -n "$(desktop_tools)" ]; then s="sway: not installed --$(desktop_tools) (spark-shell on desktop)"
-    elif [ ! -f "$(wm_config_file)" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then s="sway: settings not written (spark-shell on)"
-    else _fs=$(font_spec); s="sway: ready, foot uses $(fc-match -f '%{family}' "$_fs" 2>/dev/null || printf '%s' "${_fs%%:*}") (log in on tty1 to start it)"; fi
+    elif [ -n "$(desktop_tools)" ]; then s="$WM_NAME: not installed --$(desktop_tools) (spark-shell on desktop)"
+    elif [ ! -f "$(wm_config_file)" ] || [ ! -f "$(term_config_file)" ]; then s="$WM_NAME: settings not written (spark-shell on)"
+    else _fs=$(font_spec); s="$WM_NAME: ready, $TERM_NAME uses $(fc-match -f '%{family}' "$_fs" 2>/dev/null || printf '%s' "${_fs%%:*}") (log in on tty1 to start it)"; fi
     printf '  desktop %-14s %s\n' "$DESKTOP" "$s"
     status_login
     n=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | wc -l | tr -d ' ')   # a saved layout opens as tmux windows anywhere
@@ -480,6 +480,8 @@ cmd_check_lines() {   # the checks, a row each; false when one fails
     check_font
     check_quiet
     check_desktop
+    check_compositor
+    check_terminal
     check_pointer
     check_saver
     check_mcp
@@ -546,9 +548,21 @@ check_desktop() {   # the desktop's tools and rendered files, the seat, the font
         elif ! command -v jq >/dev/null 2>&1; then chk desktop fail "jq is missing (a layout reads the model's answer with it)" "spark-shell on"
         elif seat_needed && ! seatd_on; then chk desktop fail "seatd does not start at boot (Void has no logind)" "spark-shell on desktop"
         elif seat_needed && ! in_group _seatd "$(id -un)"; then chk desktop fail "$(id -un) is not in the _seatd group" "spark-shell on desktop"
-        elif [ "$(font_spec)" != "$FONT" ]; then chk desktop warn "$NEON is not installed, so foot draws $NEON_OLD" "spark-shell on"
-        else chk desktop ok "sway and foot are installed and up to date"; fi
+        elif [ "$(font_spec)" != "$FONT" ]; then chk desktop warn "$NEON is not installed, so $TERM_NAME draws $NEON_OLD" "spark-shell on"
+        else chk desktop ok "$WM_NAME and $TERM_NAME are installed and up to date"; fi
     fi
+}
+check_compositor() {   # the compositor answers
+    if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk compositor ok "na (no desktop)"
+    elif ! wm_here; then chk compositor fail "$WM_NAME is not installed" "spark-shell on desktop"
+    elif ! wm_session; then chk compositor ok "$WM_NAME: no session here (log in on tty1)"
+    elif _wv=$(wm_version | jq -r '.human_readable // empty' 2>/dev/null) && [ -n "$_wv" ]; then chk compositor ok "$WM_NAME $_wv answers"
+    else chk compositor warn "$WM_NAME does not answer" "log in again"; fi
+}
+check_terminal() {   # the terminal is here
+    if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk terminal ok "na (no desktop)"
+    elif ! term_here; then chk terminal fail "$TERM_NAME is not installed" "spark-shell on desktop"
+    else _tv=$(term_version); chk terminal ok "$TERM_NAME${_tv:+ $_tv}, pictures over sixel"; fi
 }
 check_pointer() {   # the spark pointer is drawn
     if [ -n "$(desktop_na)" ] || [ "$DESKTOP" = none ]; then chk pointer ok "na (no desktop)"

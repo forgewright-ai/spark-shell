@@ -3067,7 +3067,7 @@ rm -f "$H/lx/wpctl" "$H/lx/pipewire" "$H/lx/wireplumber" "$H/lx/pipewire-pulse"
 # verbs against stubs (swaylock, pgrep, grim, slurp, wl-copy, swaymsg, date)
 sw_t=$REPO/template/.config/sway/config
 grep -qx 'exec @IDLE_EXEC@' "$sw_t" && grep -qx 'bindsym $mod+Escape exec @REPO@/spark-shell desktop lock || swaylock -f' "$sw_t" \
-    && ok "sway template: ten idle minutes turn the display off, fifteen lock, and it locks before sleep; Super+Escape locks now" || bad "lock template" "$(grep -n 'swayidle\|Escape' "$sw_t")"
+    && ok "sway template: ten idle minutes bring the idle screen, fifteen the lock, and it locks before sleep; Super+Escape locks now" || bad "lock template" "$(grep -n 'swayidle\|Escape' "$sw_t")"
 grep -qx 'bindsym Print exec @REPO@/spark-shell desktop capture screen' "$sw_t" && grep -qx 'bindsym Shift+Print exec @REPO@/spark-shell desktop capture area' "$sw_t" && grep -qx 'bindsym $mod+Print exec @REPO@/spark-shell desktop capture window' "$sw_t" \
     && ok "sway template: Print the screen, Shift+Print an area, Super+Print the window" || bad "capture keys" "$(grep -n Print "$sw_t")"
 printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/swaylock.args"\n' > "$H/lx/swaylock"
@@ -3188,11 +3188,11 @@ chmod +x "$H/lx/swaymsg" "$H/lx/pkill"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 L on --yes >/dev/null 2>&1 </dev/null || :
 swc=$HOME/.config/sway/config
-grep -qx "exec swayidle -w timeout 600 '$REPO/spark-shell desktop idle' resume '$REPO/spark-shell desktop idle off' timeout 900 '$REPO/spark-shell desktop lock || swaylock -f; $REPO/spark-shell desktop idle off' timeout 900 'swaymsg \"output \* power off\"' resume 'swaymsg \"output \* power on\"' before-sleep '$REPO/spark-shell desktop lock || swaylock -f'" "$swc" \
+grep -qx "exec swayidle -w timeout 600 '$REPO/spark-shell desktop idle' resume '$REPO/spark-shell desktop idle off' timeout 900 '$REPO/spark-shell desktop lock || swaylock -f; $REPO/spark-shell desktop idle off' before-sleep '$REPO/spark-shell desktop lock || swaylock -f'" "$swc" \
     && grep -qx "include \"$HOME/.config/spark-shell/screens.conf\"" "$swc" && [ -f "$HOME/.config/spark-shell/screens.conf" ] \
     && grep -qx "# the keyboard: sway's own layout (spark-shell desktop keyboard us br sets some)" "$swc" \
     && grep -qxF 'for_window [app_id="spark-idle"] border none' "$swc" && grep -qx 'workspace idle gaps outer 0' "$swc" \
-    && ok "sway render: swayidle brings the idle screen at 10 minutes and the lock with the display off at 15 by default, the idle window taken down behind the lock (#66); the idle workspace has no gaps and no border; the screens file included (and there), no keyboard line without KEYBOARD" || bad "display render" "$(grep -n 'swayidle\|include\|keyboard' "$swc")"
+    && ok "sway render: swayidle brings the idle screen at 10 minutes and the lock at 15 by default, the idle window taken down behind the lock (#66); the idle workspace has no gaps and no border; the screens file included (and there), no keyboard line without KEYBOARD" || bad "display render" "$(grep -n 'swayidle\|include\|keyboard' "$swc")"
 # your own sway lines (#170): their folder made and read last; a render changed by hand kept as .bak at the next render, an unchanged one rendered again with none
 [ "$(grep -v '^$' "$swc" | tail -1)" = "include $HOME/.config/sway/config.d/*" ] && [ -d "$HOME/.config/sway/config.d" ] && grep -qx 'xwayland enable' "$swc" \
     && ok "sway render: Xwayland on, and the folder for your own lines made and read last (#170)" || bad "sway own lines render" "$(grep -n 'xwayland\|config.d' "$swc")"
@@ -3205,11 +3205,11 @@ rm -f "$swc.bak"; L on --yes >/dev/null 2>&1 </dev/null || :
 rm -f "$HOME/swaymsg.log"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop display idle 0 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'idle screen never' ] && grep -qx 'DISPLAY_IDLE=0' "$HOME/.config/spark-shell/config" \
-    && grep -qx "exec swayidle -w timeout 900 '$REPO/spark-shell desktop lock || swaylock -f; $REPO/spark-shell desktop idle off' timeout 900 'swaymsg \"output \* power off\"' resume 'swaymsg \"output \* power on\"' before-sleep '$REPO/spark-shell desktop lock || swaylock -f'" "$swc" \
+    && grep -qx "exec swayidle -w timeout 900 '$REPO/spark-shell desktop lock || swaylock -f; $REPO/spark-shell desktop idle off' before-sleep '$REPO/spark-shell desktop lock || swaylock -f'" "$swc" \
     && grep '^pkill ' "$HOME/swaymsg.log" | grep -q "^pkill -u $(id -u) -f ^swayidle .*spark-shell desktop lock\$" && grep -q "^-- exec swayidle -w timeout 900 " "$HOME/swaymsg.log" \
     && ok "desktop display idle 0: no idle screen; the render and the running desktop's swayidle (restarted, spark-shell's own alone, #196) follow" || bad "display idle 0" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop display lock 30 2>&1) || rc=$?
-[ "$rc" = 0 ] && [ "$out" = 'lock and display off after 30 minutes' ] && grep -q "^exec swayidle -w timeout 1800 " "$swc" && ok "desktop display lock 30: the lock and the display off after 30 minutes" || bad "display lock 30" "rc=$rc $out"
+[ "$rc" = 0 ] && [ "$out" = 'lock after 30 minutes' ] && grep -q "^exec swayidle -w timeout 1800 " "$swc" && ok "desktop display lock 30: the lock after 30 minutes" || bad "display lock 30" "rc=$rc $out"
 rc=0; out=$(PATH="$H/lx:$PATH" sh "$SH" desktop display idle soon 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: display idle takes minutes, 0 to 999 (0: never)' ] && ok "desktop display idle: a wrong word refused in one line" || bad "display idle word" "rc=$rc $out"
 rc=0; out=$(PATH="$H/lx:$PATH" sh "$SH" desktop display idle 08 2>&1) || rc=$?
@@ -3229,14 +3229,14 @@ if [ -n "$py3" ]; then   # a bare container has no python3 (debian, arch, void):
     printf '#!/bin/sh\nexit 1\n' > "$H/clk/sleep"; printf '#!/bin/sh\necho "30 100"\n' > "$H/clk/stty"   # so the clock's loop ends after one drawing
     chmod +x "$H/nopy/python3" "$H/pyl/python3" "$H/clk/python3" "$H/clk/sleep" "$H/clk/stty"
     out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display 2>&1 | sed -n 1p)
-    [ "$out" = "idle screen after 10 minutes $dot lock and display off after 15 minutes" ] && ok "desktop display: with no saver chosen the line reads as it always did" || bad "display default line" "$out"
+    [ "$out" = "idle screen after 10 minutes $dot lock after 15 minutes" ] && ok "desktop display: with no saver chosen the line reads as it always did" || bad "display default line" "$out"
     out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver 2>&1)
     [ "$out" = "$(printf '\342\234\223 clock\n  spark\n  starfield\n  drift')" ] && ok "desktop display saver: the savers listed, the one in use ticked, as the keyboard lists its layouts" || bad "saver list" "$out"
     rc=0; out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver spark 2>&1) || rc=$?
     [ "$rc" = 0 ] && [ "$out" = 'idle screen shows the spark saver' ] && grep -qx 'DISPLAY_SAVER=spark' "$HOME/.config/spark-shell/config" \
         && ok "desktop display saver spark: said in one line, kept in the config" || bad "saver set" "rc=$rc $out"
     out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display 2>&1 | sed -n 1p)
-    [ "$out" = "idle screen after 10 minutes $dot spark saver $dot lock and display off after 15 minutes" ] && ok "desktop display: a chosen saver is named between the idle and the lock" || bad "display with saver" "$out"
+    [ "$out" = "idle screen after 10 minutes $dot spark saver $dot lock after 15 minutes" ] && ok "desktop display: a chosen saver is named between the idle and the lock" || bad "display with saver" "$out"
     [ "$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver 2>&1 | sed -n 2p)" = "$(printf '\342\234\223 spark')" ] && ok "desktop display saver: the tick moves to the one chosen" || bad "saver tick" "$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver 2>&1)"
     rc=0; out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver nope 2>&1) || rc=$?
     [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: display saver takes clock, spark, starfield or drift' ] && grep -qx 'DISPLAY_SAVER=spark' "$HOME/.config/spark-shell/config" \
@@ -3975,7 +3975,7 @@ rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel keyboard use 
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display idle 5 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'idle screen after 5 minutes' ] && grep -qx 'DISPLAY_IDLE=5' "$HOME/.config/spark-shell/config" && ok "the dialog: display idle 5 sets it, and says the idle screen, as the command does (#68)" || bad "display idle from dialog" "rc=$rc $out"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display lock 20 2>&1) || rc=$?
-[ "$rc" = 0 ] && [ "$out" = 'lock and display off after 20 minutes' ] && grep -qx 'DISPLAY_LOCK=20' "$HOME/.config/spark-shell/config" && ok "the dialog: display lock 20 says the lock and the display off (#68)" || bad "display lock from dialog" "rc=$rc $out"
+[ "$rc" = 0 ] && [ "$out" = 'lock after 20 minutes' ] && grep -qx 'DISPLAY_LOCK=20' "$HOME/.config/spark-shell/config" && ok "the dialog: display lock 20 says the lock (#68)" || bad "display lock from dialog" "rc=$rc $out"
 # notes: one Markdown file a note in ~/notes, the first line its name
 [ "$(NL notes add 'groceries for the weekend')" = 'new note: groceries for the weekend' ] && [ "$(cat "$HOME/notes/groceries-for-the-weekend.md")" = '# groceries for the weekend' ] \
     && ok "notes add: a new note, its words the first line, a file named from them in ~/notes" || bad "notes add" "$(ls "$HOME/notes" 2>&1)"

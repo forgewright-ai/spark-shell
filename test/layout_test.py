@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "lib"))   # the helpers import each other by name
 spec = importlib.util.spec_from_file_location("layout", REPO / "lib/layout.py")
 terminal = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(terminal)
@@ -20,20 +21,20 @@ class Terminal(unittest.TestCase):
         sizes = [os.terminal_size((40, 24)), os.terminal_size((80, 24))]
         tree = {"nodes": [{"id": 31, "pid": 23, "rect": {"width": 400, "height": 500}},
                           {"id": 32, "pid": 24, "rect": {"width": 900, "height": 500}}]}
-        with patch.object(terminal, "ancestors", return_value={23}), patch.object(terminal, "sway", return_value=tree) as sway, patch.object(terminal.os, "get_terminal_size", side_effect=sizes), patch.object(terminal.time, "sleep"):
+        with patch.object(terminal, "ancestors", return_value={23}), patch.object(terminal, "wm", return_value=tree) as sway, patch.object(terminal.os, "get_terminal_size", side_effect=sizes), patch.object(terminal.time, "sleep"):
             terminal.fit(80, 24)
         self.assertEqual(sway.call_args_list[1].args, ("--", "[con_id=31] resize set width 800 px height 500 px"))
         self.assertEqual(sway.call_count, 2)
 
     def test_no_room_floats_only_this_window_then_checks_real_cells(self):
         tree = {"nodes": [{"id": 31, "pid": 23, "rect": {"width": 400, "height": 500}}]}
-        with patch.object(terminal, "ancestors", return_value={23}), patch.object(terminal, "sway", return_value=tree) as sway, patch.object(terminal.os, "get_terminal_size", return_value=os.terminal_size((40, 24))), patch.object(terminal.time, "sleep"), self.assertRaisesRegex(terminal.Refused, "cannot provide 80"):
+        with patch.object(terminal, "ancestors", return_value={23}), patch.object(terminal, "wm", return_value=tree) as sway, patch.object(terminal.os, "get_terminal_size", return_value=os.terminal_size((40, 24))), patch.object(terminal.time, "sleep"), self.assertRaisesRegex(terminal.Refused, "cannot provide 80"):
             terminal.fit(80, 24)
         self.assertIn(("--", "[con_id=31] floating enable"), [call.args for call in sway.call_args_list])
 
     def test_ambiguous_parent_never_resizes_another_window(self):
         tree = {"nodes": [{"id": 31, "pid": 23}, {"id": 32, "pid": 23}]}
-        with patch.object(terminal, "ancestors", return_value={23}), patch.object(terminal, "sway", return_value=tree) as sway, patch.object(terminal.os, "get_terminal_size", return_value=os.terminal_size((40, 24))), self.assertRaises(terminal.Refused):
+        with patch.object(terminal, "ancestors", return_value={23}), patch.object(terminal, "wm", return_value=tree) as sway, patch.object(terminal.os, "get_terminal_size", return_value=os.terminal_size((40, 24))), self.assertRaises(terminal.Refused):
             terminal.fit(80, 24)
         self.assertEqual(sway.call_count, 1)
 

@@ -10,6 +10,7 @@ import tempfile
 import unittest
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "lib"))   # the helpers import each other by name
 SPEC = importlib.util.spec_from_file_location("home", REPO / "lib/home.py")
 home = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(home)
@@ -102,12 +103,12 @@ time.sleep(.2)
             said.append(args[0])
             return [{"success": True}]
 
-        kept = home.sway
-        home.sway = sway
+        kept = home.wm
+        home.wm = sway
         try:
             self.assertTrue(home.focus_existing())
         finally:
-            home.sway = kept
+            home.wm = kept
         self.assertEqual(said[0], "[con_id=42] unmark _spark-shell.min.float.42, focus")
 
     def test_a_section_asked_of_an_open_home_is_a_request_it_takes(self):

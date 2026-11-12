@@ -14,6 +14,7 @@ import tempfile
 import unittest
 
 ADAPTER = Path(__file__).resolve().parents[1] / "lib/apps.py"
+sys.path.insert(0, str(ADAPTER.parent))   # the helpers import each other by name
 spec = importlib.util.spec_from_file_location("native_apps", ADAPTER)
 apps = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(apps)
@@ -58,7 +59,7 @@ class Contracts(unittest.TestCase):
         apps.shutil.which = lambda name: "/bin/" + name
         os.environ["SWAYSOCK"] = "fixture"
         try:
-            self.assertEqual(len(apps.sway_tree()["nodes"]), 1000)
+            self.assertEqual(len(apps.window_tree()["nodes"]), 1000)
         finally:
             apps.subprocess.run, apps.shutil.which = real_run, real_which
             del os.environ["SWAYSOCK"]

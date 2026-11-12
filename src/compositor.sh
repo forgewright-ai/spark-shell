@@ -1,10 +1,11 @@
 # shellcheck extended-analysis=false
 # --- the compositor: the one module that names it (sway)
-# sets: WM_CONFIG_REL WM_NAME WM_OWN
+# sets: WM_CONFIG_REL WM_LOGIN_CONF WM_NAME WM_OWN
 # reads: REPO
 WM_NAME=sway
 WM_OWN='sway swaybar swaybg swaymsg swaylock swayidle'   # its own processes: never apps, never ended
 WM_CONFIG_REL=.config/sway/config
+WM_LOGIN_CONF=sway.conf   # the login screen's own config for it, in template/login
 
 wm_session() { [ -n "${SWAYSOCK:-}" ]; }         # inside a session
 wm_live() { [ -S "${SWAYSOCK:-}" ]; }            # its socket is open
@@ -54,7 +55,7 @@ wm_lock_fallback() { printf 'swaylock -f'; }
 wm_idle_cmd() {   # wm_idle_cmd LOCK-LINE IDLE-SECONDS LOCK-SECONDS -> the watcher command; 0 seconds: no timer
     printf 'swayidle -w'
     [ "$2" = 0 ] || printf " timeout %s '%s desktop idle' resume '%s desktop idle off'" "$2" "$REPO/spark-shell" "$REPO/spark-shell"
-    [ "$3" = 0 ] || printf " timeout %s '%s; %s desktop idle off' timeout %s 'swaymsg \"output * power off\"' resume 'swaymsg \"output * power on\"'" "$3" "$1" "$REPO/spark-shell" "$3"
+    [ "$3" = 0 ] || printf " timeout %s '%s; %s desktop idle off'" "$3" "$1" "$REPO/spark-shell"
     printf " before-sleep '%s'" "$1"
 }
 wm_idle_stop() { pkill -u "$(id -u)" -f "^swayidle .*$(printf '%s' "$1" | sed 's/[][\.*^$+?(){}|]/\\&/g')" 2>/dev/null || :; }   # wm_idle_stop LOCK-LINE: ours alone

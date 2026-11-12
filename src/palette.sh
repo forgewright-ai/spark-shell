@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # ------------------------------------------------------------ the palette
 # sets: CONSOLE_NOW KEPT_LAYOUTS KEPT_MAX LOOKS_DIR LOOK_FORMAT PALETTE_DIR PTS_DIR VT_SYSFS WALL_CACHE WALL_COVER
-# reads: ANIMATION_NAMES CONFIG_DIR CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GLYPH_FAMILIES MODE OS PALETTE_MARK PATH_SAID REPO ROOT STATE_DIR TAB TERMINAL_SEEN THEME_ENV THEME_KEYS TMP VGA_HEX WALL_TYPES
+# reads: ANIMATION_NAMES CONFIG_DIR CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GLYPH_FAMILIES MODE OS PALETTE_MARK PATH_SAID REPO ROOT STATE_DIR TAB TERMINAL_SEEN TERM_NAME THEME_ENV THEME_KEYS TMP VGA_HEX WALL_TYPES
 PALETTE_DIR=$CONFIG_DIR/themes
 # theme.env, rendered from the palette, is what spark and every render read
 palette_file() {   # palette_file NAME -> the palette's file; false when none
@@ -334,7 +334,7 @@ osc_render() {   # osc_render plain|foot|dialog -> $TMP/osc.KIND: OSC 4, 10, 11 
     done
     [ "$1" = plain ] || printf '\033]4;16;#%s\033\\\033]4;17;#%s\033\\\033]4;18;#%s\033\\\033]4;19;#%s\033\\\033]4;20;#%s\033\\\033]4;21;#%s\033\\' "$HEX_ACCENT" "$HEX_MUTED" "$PANEL_BG" "$PANEL_HI" "$PANEL_MUTED" "$PANEL_BAND" >> "$_o"
     case $1 in
-        foot) _bg="[$(awk -v a="$FOOT_ALPHA" 'BEGIN { printf "%d", a * 100 + 0.5 }')]#$HEX_BG" ;;   # foot's form: opacity in percent, then the color
+        "$TERM_NAME") _bg=$(term_osc_bg "$FOOT_ALPHA" "$HEX_BG") ;;   # foot's form: opacity in percent, then the color
         dialog) _bg="#$PANEL_BG" ;;
         *) _bg="#$HEX_BG" ;;
     esac
@@ -362,14 +362,14 @@ pts_write() {   # pts_write PTY FILE -- 2 seconds: a stopped terminal cannot han
 pts_kinds() {   # -> "PTY<tab>KIND" lines; KIND dialog, foot or plain
     pts_mine > "$TMP/pts"
     [ -s "$TMP/pts" ] || return 0
-    _fk=plain; ! desktop_wanted || _fk=foot
+    _fk=plain; ! desktop_wanted || _fk=$TERM_NAME
     ps -eo pid=,ppid=,tty=,comm= > "$TMP/ps" 2>/dev/null || : > "$TMP/ps"
-    awk -v d="$PTS_DIR" -v fk="$_fk" 'NR == FNR { pp[$1] = $2; cm[$1] = $4; next }
+    awk -v d="$PTS_DIR" -v fk="$_fk" -v tn="$TERM_NAME" 'NR == FNR { pp[$1] = $2; cm[$1] = $4; next }
         $3 ~ /^pts\/[0-9]+$/ { t = d "/" substr($3, 5)
             if ($4 == "spark-dialog") { k[t] = "dialog"; next }
             if (t in k) next
             p = $2; n = 0   # up the parents: a process under foot is in a window of the desktop, however deep (a shell in a shell, sudo)
-            while (p != "" && p > 1 && n < 16) { if (cm[p] == "foot") { k[t] = fk; break }; p = pp[p]; n++ } }
+            while (p != "" && p > 1 && n < 16) { if (cm[p] == tn) { k[t] = fk; break }; p = pp[p]; n++ } }
         END { while ((getline l < pts) > 0) printf "%s\t%s\n", l, (l in k) ? k[l] : "plain" }' pts="$TMP/pts" "$TMP/ps" "$TMP/ps"
 }
 look_terms() {   # look_terms prepare|send -- send writes all at once; _painted counts the takers
@@ -378,7 +378,7 @@ look_terms() {   # look_terms prepare|send -- send writes all at once; _painted 
             : > "$TMP/pts.todo"
             [ "$MODE" = apply ] && [ "$OS" != Darwin ] && [ -d "$PTS_DIR" ] || return 0
             pts_kinds > "$TMP/pts.todo"
-            for _k in plain foot dialog; do ! grep -q "$TAB$_k\$" "$TMP/pts.todo" || osc_render "$_k"; done ;;
+            for _k in plain $TERM_NAME dialog; do ! grep -q "$TAB$_k\$" "$TMP/pts.todo" || osc_render "$_k"; done ;;
         send)
             _painted=0; _pids=''
             [ -s "$TMP/pts.todo" ] || return 0

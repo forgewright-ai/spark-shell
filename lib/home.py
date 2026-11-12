@@ -13,6 +13,8 @@ import subprocess
 import sys
 import time
 
+import compositor
+
 
 def config_dir():
     return Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "spark-shell"
@@ -70,9 +72,8 @@ def read_overrides():
     return json.loads(file.read_text()) if file.exists() else {}
 
 
-def sway(*args):
-    result = subprocess.run(["swaymsg", "-r", *args], check=True, capture_output=True, text=True, timeout=5)
-    return json.loads(result.stdout)
+def wm(*args):
+    return compositor.msg(*args)
 
 
 def home_id(tree):
@@ -121,19 +122,19 @@ def fit(tree, ident):
 
 
 def focus_existing():
-    tree = sway("-t", "get_tree")
+    tree = wm("-t", "get_tree")
     ident = home_id(tree)
     if ident is None:
         return False
     window, _ = placed(tree, ident)
     # home back from the pad: its mark goes, or the pad would list it the next time home is put away
     leave = "".join("unmark %s, " % mark for mark in (window or {}).get("marks", []) if mark.startswith("_spark-shell.min."))
-    result = sway("[con_id=%d] %sfocus" % (ident, leave))
+    result = wm("[con_id=%d] %sfocus" % (ident, leave))
     if not result or not all(item.get("success") for item in result):
         raise ValueError("the compositor could not focus home")
     command = fit(tree, ident)
     if command:
-        sway(command)   # best effort: home works the same at the size sway gave it
+        wm(command)   # best effort: home works the same at the size sway gave it
     return True
 
 
@@ -156,11 +157,11 @@ def open_home(shell, section=None):
     lock = os.open(runtime / "spark-home.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     with os.fdopen(lock, "w") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
-        if section and home_id(sway("-t", "get_tree")) is not None:
+        if section and home_id(wm("-t", "get_tree")) is not None:
             ask_section(runtime, section)   # home is open: it goes there, its draft and its way back kept
         if focus_existing():
             return
-        argv = ["foot", "--config", str(Path.home() / ".config/foot/dialog.ini"), "--app-id", "spark-dialog", "-e", shell, "dialog"]
+        argv = compositor.terminal_argv(compositor.terminal_config("dialog"), "spark-dialog", shell, "dialog")
         if section:
             argv.append(section)
         child = subprocess.Popen(argv, stdin=subprocess.DEVNULL, start_new_session=True)

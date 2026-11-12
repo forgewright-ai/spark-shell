@@ -21,6 +21,8 @@ import subprocess
 import sys
 import time
 
+import compositor
+
 
 class GList(C.Structure):
     pass
@@ -52,11 +54,11 @@ def windows(tree):
         yield from windows(child)
 
 
-def sway_tree():
-    if not os.environ.get("SWAYSOCK") or not shutil.which("swaymsg"):
-        raise RuntimeError("Window inspection requires the Sway session")
+def window_tree():
+    if not compositor.session() or not compositor.here():
+        raise RuntimeError("Window inspection requires the compositor session")
     # Parsed whole: a cut tree is not JSON, and a busy desktop passes any limit.
-    return json.loads(run(["swaymsg", "-r", "-t", "get_tree"], limit=None))
+    return json.loads(run(compositor.argv("-t", "get_tree"), limit=None))
 
 
 def matching(app, tree):
@@ -115,8 +117,8 @@ TERMINALS = ("xdg-terminal-exec", "kgx", "gnome-terminal", "mate-terminal", "xfc
              "tilix", "konsole", "nxterm", "color-xterm", "rxvt", "dtterm", "xterm")
 
 
-def foot_fallback():
-    return bool(shutil.which("foot") and not any(shutil.which(t) for t in TERMINALS))
+def terminal_fallback():
+    return bool(compositor.terminal_here() and not any(shutil.which(t) for t in TERMINALS))
 
 
 class Desktop:
@@ -187,7 +189,7 @@ class Desktop:
                 "categories": self.text(g.g_desktop_app_info_get_categories(info)).strip(";").split(";"),
                 "launcher": self.text(g.g_desktop_app_info_get_filename(info)),
                 "wm_class": wm_class,
-                "focus": bool(os.environ.get("SWAYSOCK") and (wm_class or ident.count(".") >= 3 or terminal and foot_fallback())),
+                "focus": bool(compositor.session() and (wm_class or ident.count(".") >= 3 or terminal and terminal_fallback())),
                 "new_window": next((a for a in actions if a.lower().replace("-", "").replace("_", "") == "newwindow"), "")}
 
     def catalog(self, icon_px=None):
@@ -266,7 +268,7 @@ class Desktop:
                 except (RuntimeError, subprocess.TimeoutExpired):
                     fields.append(["Declared access", "Flatpak metadata unavailable"])
             try:
-                opened = matching(app, sway_tree())
+                opened = matching(app, window_tree())
                 fields.append(["Running windows", "\n".join(str(w.get("name") or "Untitled") for w in opened) or "None"])
                 fields.append(["Processes", ", ".join(str(w["pid"]) for w in opened if w.get("pid")) or "None reported by Sway"])
             except (RuntimeError, OSError, subprocess.TimeoutExpired, ValueError):
@@ -284,7 +286,7 @@ class Desktop:
             app = self.record(info)
             before = []
             try:
-                before = matching(app, sway_tree())
+                before = matching(app, window_tree())
             except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired):
                 if mode == "focus":
                     raise RuntimeError("Focus existing requires a working Sway session")
@@ -292,19 +294,19 @@ class Desktop:
                 if not app["focus"]:
                     raise RuntimeError("This app does not declare a reliable window identity")
                 if before:
-                    recent = most_recent(app, sway_tree())
+                    recent = most_recent(app, window_tree())
                     if recent is None:  # the last matching window closed during inspection
                         return self.launch(ident, "default")
                     target = int(recent["id"])
-                    reply = json.loads(run(["swaymsg", "-r", "[con_id=%d] focus" % target]))
+                    reply = json.loads(run(compositor.argv("[con_id=%d] focus" % target)))
                     if not all(r.get("success") for r in reply):
                         raise RuntimeError("The compositor could not focus this window")
-                    if not any(w["id"] == target and w.get("focused") for w in windows(sway_tree())):
+                    if not any(w["id"] == target and w.get("focused") for w in windows(window_tree())):
                         raise RuntimeError("Focus was requested, but could not be confirmed")
                     return {"message": app["name"].lower() + " focused", "confirmed": True}
             elif mode not in ("default", "new"):
                 raise ValueError("Unknown launch preference")
-            if self.gio.g_desktop_app_info_get_boolean(info, b"Terminal") and foot_fallback():
+            if self.gio.g_desktop_app_info_get_boolean(info, b"Terminal") and terminal_fallback():
                 os.environ["PATH"] = str(Path(__file__).resolve().parent / "shim") + os.pathsep + os.environ["PATH"]
                 os.environ["SPARK_APPS_TERMINAL_ID"] = ident.removesuffix(".desktop")
             context = self.gio.g_app_launch_context_new()
@@ -323,9 +325,9 @@ class Desktop:
                         raise RuntimeError(message)
             previous = {w["id"] for w in before}
             deadline = time.monotonic() + 1.5
-            while os.environ.get("SWAYSOCK") and time.monotonic() < deadline:
+            while compositor.session() and time.monotonic() < deadline:
                 try:
-                    opened = matching(app, sway_tree())
+                    opened = matching(app, window_tree())
                     if any(w["id"] not in previous for w in opened):
                         return {"message": app["name"].lower() + " opened", "confirmed": True}
                     if mode != "new" and any(w.get("focused") for w in opened):
@@ -501,10 +503,9 @@ def request(data):
         text = data.get("text")
         if not isinstance(text, str) or len(text) > 1048576:
             raise ValueError("that is too much to copy")
-        if not shutil.which("wl-copy") or not os.environ.get("WAYLAND_DISPLAY"):
-            raise RuntimeError("copying needs wl-copy in a Wayland session")
-        copied = subprocess.run(["wl-copy", "--"], input=text, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True, timeout=4)
-        if copied.returncode:
+        if not compositor.copy_here():
+            raise RuntimeError(compositor.COPY_MISSING)
+        if not compositor.copy(text):
             raise RuntimeError("the clipboard did not take it")
         return {"copied": True}
     desktop = Desktop()

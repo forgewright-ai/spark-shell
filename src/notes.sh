@@ -56,7 +56,7 @@ editor_windowed() {   # -> 0 when the editor is a windowed application: no termi
 }
 editor_exec() {   # editor_exec FILE -> the exec line sway runs to open FILE in the editor; false with no editor
     _ex=$(editor_pick) || return 1
-    if editor_windowed; then printf "%s '%s'\n" "$_ex" "$1"; else printf "foot -e %s '%s'\n" "$_ex" "$1"; fi
+    if editor_windowed; then printf "%s '%s'\n" "$_ex" "$1"; else printf '%s\n' "$(term_run "$_ex '$1'")"; fi
 }
 note_slug() { printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//' | cut -c1-40; }   # note_slug WORDS -> a file name
 note_open_file() {   # note_open_file FILE NAME -> one line; the note opens in the editor

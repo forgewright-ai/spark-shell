@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # ------------------------------------------------------------- the slots
-# sets: FOOT_HEX HEX_KEYS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_THEMES SCENE_MAKE SCENE_READY SLOT_KEYS THUMB_DIR VGA_HEX WALL_GROUND_SAID WALL_KEYS WALL_NAMES WALL_SCENES WALL_SHIPPED WALL_TYPES WIN_KEYS
-# reads: MODE PATH_REFUSED PM POINTER_SEEN REPO STATE_DIR THEME_ENV THEME_KEYS TMP WALL_CACHE
+# sets: HEX_KEYS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_THEMES SCENE_MAKE SCENE_READY SLOT_KEYS THUMB_DIR VGA_HEX WALL_GROUND_SAID WALL_KEYS WALL_NAMES WALL_SCENES WALL_SHIPPED WALL_TYPES WIN_KEYS
+# reads: MODE PATH_REFUSED PM POINTER_SEEN REPO STATE_DIR TERM_HEX THEME_ENV THEME_KEYS TMP WALL_CACHE
 # slots (0-15), not hex: one file serves the console and an emulator;
 # spark reads SPARK_*_SGR at a tty
 SLOT_KEYS="ACCENT_SLOT MUTED_SLOT ACCENT_STAR MUTED_STAR ACCENT_SGR MUTED_SGR"
@@ -68,7 +68,6 @@ theme_load() {
 # foot and sway's borders take rrggbb: foot gives the slots their colors
 HEX_KEYS="HEX_BG HEX_FG HEX_ACCENT HEX_MUTED HEX_ANSI_0 HEX_ANSI_1 HEX_ANSI_2 HEX_ANSI_3 HEX_ANSI_4 HEX_ANSI_5 HEX_ANSI_6 HEX_ANSI_7 HEX_ANSI_8 HEX_ANSI_9 HEX_ANSI_10 HEX_ANSI_11 HEX_ANSI_12 HEX_ANSI_13 HEX_ANSI_14 HEX_ANSI_15"
 VGA_HEX="000000 aa0000 00aa00 aa5500 0000aa aa00aa 00aaaa aaaaaa 555555 ff5555 55ff55 ffff55 5555ff ff55ff 55ffff ffffff"
-FOOT_HEX="242424 f62b5a 47b413 e3c401 24acd4 f2affd 13c299 e6e6e6 616161 ff4d51 35d450 e9e836 5dc5f8 feabf2 24dfc4 ffffff"   # foot's defaults (foot.ini(5)): text ffffff on ground 242424
 hex_put() {   # hex_put VAR COLOR FALLBACK -> VAR as rrggbb; no subshell when lowercase
     case $2 in
         \#[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) _hp=${2#\#} ;;
@@ -79,7 +78,7 @@ hex_put() {   # hex_put VAR COLOR FALLBACK -> VAR as rrggbb; no subshell when lo
 }
 hex_load() {
     i=0
-    for h in $FOOT_HEX; do
+    for h in $TERM_HEX; do
         eval "c=\$THEME_ANSI_$i"
         hex_put "HEX_ANSI_$i" "$c" "$h"
         i=$((i + 1))

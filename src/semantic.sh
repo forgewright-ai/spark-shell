@@ -168,7 +168,7 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- home, its conversation, or
         set -- "$@" --semantic "$SEMANTIC_SOCK"
     fi
     FULL_ID=''; ! panel_own_window || panel_full_aside
-    ! desktop_wanted || case ${TERM:-} in foot*) SPARK_DIALOG_SLOTS=1; export SPARK_DIALOG_SLOTS ;; esac   # foot's five slots: a new look recolors the dialog in place
+    ! desktop_wanted || ! term_is_ours || { SPARK_DIALOG_SLOTS=1; export SPARK_DIALOG_SLOTS; }   # foot's five slots: a new look recolors the dialog in place
     st=0; "$_db" "$@" --composer "$_dc" --attach "$DIALOG_ATTACH_TYPES" --spark-shell "$REPO/spark-shell" || st=$?
     [ "$st" -eq 3 ] || panel_full_back   # 3: a step put a window on the screen, and the window is the receipt
     [ "$st" -eq 3 ] || [ "$st" -eq 0 ] || return "$st"

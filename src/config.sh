@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the config: the readers of the settings and the theme
 # sets: ANIMATION_NAMES ANIM_PAIRED CONFIG_UNSET GLYPH_FAMILIES KB_RE PATH_REFUSED PATH_SAID SAVER_NAMES THEME_KEYS
-# reads: CONFIG CONFIG_DIR OS REPO TMP
+# reads: CONFIG CONFIG_DIR OS REPO TERM_NAME TMP
 GLYPH_FAMILIES='stone star banner'
 # load_env FILE [env] -> each KEY=value exported; the file wins over the
 # environment (sway's children inherit login's keys), `env` keeps a set key
@@ -70,7 +70,7 @@ config_load() {
     case $BAR_POSITION in top|bottom) ;; *) echo "spark-shell: BAR_POSITION=$BAR_POSITION in $CONFIG: top or bottom" >&2; exit 1 ;; esac
     case $BAR_TEXT in auto|[6-9]|[1-3][0-9]|40) ;; *) echo "spark-shell: BAR_TEXT=$BAR_TEXT in $CONFIG: auto, or a size from 6 to 40" >&2; exit 1 ;; esac
     alpha_ok "$ALPHA" || { echo "spark-shell: ALPHA=$ALPHA in $CONFIG: 0 to 1 (0.85)" >&2; exit 1; }
-    font_ok "$FONT" || { echo "spark-shell: FONT=$FONT in $CONFIG: a face and its size as foot takes them (Monaspace Neon:size=11): letters, digits, spaces and : = . + _ -" >&2; exit 1; }
+    font_ok "$FONT" || { echo "spark-shell: FONT=$FONT in $CONFIG: a face and its size as $TERM_NAME takes them (Monaspace Neon:size=11): letters, digits, spaces and : = . + _ -" >&2; exit 1; }
     wall_value_ok "$WALLPAPER" || { echo "spark-shell: WALLPAPER=$WALLPAPER in $CONFIG: default, a drawing's name, #rrggbb or a picture's full path, with $PATH_SAID" >&2; exit 1; }
     case $DESKTOP in none|sway) ;;
         *) echo "spark-shell: DESKTOP=$DESKTOP in $CONFIG: none or sway" >&2; exit 1 ;; esac

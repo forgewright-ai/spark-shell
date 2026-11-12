@@ -441,7 +441,7 @@ tools_terminal() {   # tools_terminal LINE [THEN] -- LINE in a terminal window t
         case ${2:-} in spark-shell|'spark-shell '*) printf 'printf %s\n%s\n' "'\\n%s\\n\\n' '$2'" "$REPO/$2" ;; esac
         printf 'printf %s\nread _\n' "'\\npress Enter to close\\n'"
     } > "$_tts"
-    _wr=0; win_exec "foot sh $_tts" || _wr=$?
+    _wr=0; win_exec "$(term_run_bare "sh $_tts")" || _wr=$?
     [ "$_wr" -ne 2 ] || { rm -f "$_tts"; echo "could not open a terminal"; return 1; }
     [ "$_wr" -eq 0 ] || { echo "the terminal opened no window"; return 1; }
     : > "$TMP/opened"; echo "opened a terminal: $1"

@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the layouts
 # sets: LAYOUTS_DIR LAYOUT_LAST LAYOUT_NOT_APPS LAYOUT_PENDING LAYOUT_SMALL_WORDS LAYOUT_VERBS LAYOUT_WAIT REFUSE_AS
-# reads: APPS CONFIG_DIR DIALOG_BIN KEPT_LAYOUTS LAYOUT_ON NOTES_DIR OS PANEL_APP REPO STATE_DIR TAB TERM_OWN TMP VERBOSE WM_NAME WM_OWN
+# reads: APPS CONFIG_DIR DIALOG_BIN KEPT_LAYOUTS LAYOUT_ON NOTES_DIR OS PANEL_APP REPO STATE_DIR TAB TERM_NAME TERM_OWN TMP VERBOSE WM_NAME WM_OWN
 # every rendered line passes the gate before sway sees it
 LAYOUTS_DIR=$CONFIG_DIR/layouts
 LAYOUT_LAST=$STATE_DIR/layout.last
@@ -193,7 +193,7 @@ layout_gate() {   # the gate: layout_gate LINE -> '' or why not
     if [ "$verb" = window ]; then   # window NAME [CMD ARGS]: bare is a shell
         [ $# -gt 0 ] || { echo "window with no name"; return; }
         shift; [ $# -gt 0 ] || return 0
-    elif [ "${1:-}" = foot ]; then   # foot -e CMD is judged as CMD
+    elif [ "${1:-}" = "$TERM_NAME" ]; then   # foot -e CMD is judged as CMD
         [ $# -gt 1 ] || return 0
         [ "${2:-}" != -e ] || shift 2
     fi
@@ -245,8 +245,8 @@ layout_term_line() {   # layout_term_line JSON INDEX APP ARGS -> the exec foot l
         if all(.[]; type == "number" and . == floor) and .[0] >= 20 and .[0] <= 240 and .[1] >= 5 and .[1] <= 100 then "\(.[0]) \(.[1])" else empty end' "$1")
     if [ -n "$_min" ]; then
         _lease=$(mktemp "$TMP/term.XXXXXX"); echo wait > "$_lease"
-        printf 'exec foot -e python3 %s/lib/layout.py %s %s %s\n' "$REPO" "$_lease" "$_min" "$(layout_launch "$3" "$4")"
-    else printf 'exec foot -e %s\n' "$(layout_launch "$3" "$4")"; fi
+        printf 'exec %s\n' "$(term_run "python3 $REPO/lib/layout.py $_lease $_min $(layout_launch "$3" "$4")")"
+    else printf 'exec %s\n' "$(term_run "$(layout_launch "$3" "$4")")"; fi
 }
 layout_terminal_ready() {   # false when a lease did not confirm
     _dtr_failed=0
@@ -279,7 +279,7 @@ layout_lines() {   # layout_lines WS JSONFILE -> the sway lines
                 [ "$app" != editor ] || [ -n "$ED" ] || continue
                 case $i in 1) echo splith ;; 2) echo splitv ;; esac   # the next window's split
                 case $app in
-                    shell) echo "exec foot" ;;
+                    shell) echo "exec $TERM_NAME" ;;
                     editor) if editor_windowed; then printf 'exec %s\n' "$(layout_launch "$ED" "$args")"; else layout_term_line "$2" "$index" "$ED" "$args"; fi ;;
                     *) if layout_app_term "$app" || { ! layout_app_known "$app" && layout_on_path "$app"; }; then layout_term_line "$2" "$index" "$app" "$args"; else printf 'exec %s\n' "$(layout_launch "$app" "$args")"; fi ;;
                 esac
@@ -408,7 +408,7 @@ layout_show() {   # layout_show WHOSE -- KEPT=1 for a kept one
         layout_play_rooms "$TMP/layout.lines" || refuse "nothing ran"
         echo "tmux session $name -- $1"
         if wm_up; then   # a foot window of its own
-            _w=$(layout_next_ws); printf 'workspace number %s\nrename workspace to "%s %s"\nexec foot -e tmux attach-session -t =%s\n' "$_w" "$_w" "$(layout_ws_label "$name")" "$name" > "$TMP/layout.win"
+            _w=$(layout_next_ws); printf 'workspace number %s\nrename workspace to "%s %s"\nexec %s\n' "$_w" "$_w" "$(layout_ws_label "$name")" "$(term_run "tmux attach-session -t =$name")" > "$TMP/layout.win"
             KEPT=1 layout_play "$TMP/layout.win" >/dev/null || refuse 'the layout workspace could not be opened'; : > "$TMP/opened"
         else layout_join "$name"; fi
         return
@@ -442,7 +442,7 @@ layout_play() {   # layout_play FILE -> the lines sent to sway
         sent=$((sent + 1))
         case $line in exec*)
             # until its window maps; 3 s grace for a program that ended
-            set -- $line; shift; [ "${1:-}" = foot ] && [ "${2:-}" = -e ] && shift 2
+            set -- $line; shift; term_runs "${1:-}" "${2:-}" && shift 2
             if [ "${1:-}" = python3 ] && [ "${2:-}" = "$REPO/lib/layout.py" ]; then shift 5; fi
             prog=${1##*/}; shown=$*; t=0
             layout_pulse

@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --------------------------------------------------------- the console font
 # sets: FACES_OTHER FONT_FACES MAC_FACES MAC_SYSTEM_FACES NEON NEON_MOVED NEON_OLD NEON_PS NEON_PS_OLD NEON_SHA256 NEON_STYLES NEON_URL NEON_VERSION NEON_WOULD
-# reads: CONFIG MODE OS REPO ROOT STATE_DIR THEME_ENV TMP
+# reads: CONFIG MODE OS REPO ROOT STATE_DIR TERM_NAME THEME_ENV TMP
 # console-setup (Debian), vconsole.conf (Arch), rc.conf (Void).
 console_shape() {   # -> setup | vconsole | rcconf
     console_linux || return 0
@@ -182,14 +182,14 @@ neon_wanted() {   # Neon, or the old face before the move
     case $FONT in "$NEON"|"$NEON":*) return 0 ;; "$NEON_OLD"|"$NEON_OLD":*) [ ! -e "$NEON_MOVED" ]; return ;; *) return 1 ;; esac
 }
 neon_install() {   # the font row of `on`
-    if [ "$OS" != Darwin ] && ! desktop_wanted && ! login_wanted; then skip font "DESKTOP=none: Monaspace Neon is for foot, the desktop's terminal"; return 0; fi
+    if [ "$OS" != Darwin ] && ! desktop_wanted && ! login_wanted; then skip font "DESKTOP=none: Monaspace Neon is for $TERM_NAME, the desktop's terminal"; return 0; fi
     if neon_ours; then ok font "$NEON is in $NEON_DIR"; return 0; fi
     if ! neon_wanted; then
         if [ "$OS" = Darwin ]; then skip font "CONSOLE_FONT=$CONSOLE_FONT is yours: $NEON is not fetched"; else skip font "FONT=$FONT is yours: $NEON is not fetched"; fi
         return 0
     fi
     if neon_here; then ok font "$NEON is installed$(_np=$(neon_pkg) && printf ' (%s)' "$_np")"; return 0; fi
-    if [ "$OS" = Darwin ]; then _nkeep="Terminal.app keeps its font"; else _nkeep="foot draws $NEON_OLD"; fi
+    if [ "$OS" = Darwin ]; then _nkeep="Terminal.app keeps its font"; else _nkeep="$TERM_NAME draws $NEON_OLD"; fi
     [ "$NEON_URL" != none ] || { skip font "no release to fetch $NEON from (SPARK_SHELL_FONT_URL=none): $_nkeep"; return 0; }
     command -v curl >/dev/null 2>&1 || { row todo font "curl is not installed, so $NEON cannot be fetched: $_nkeep -- spark-shell on desktop installs curl"; return 0; }
     need font "fetch $NEON $NEON_VERSION from GitHub (56 MB), check its sha256 and put its four faces in $NEON_DIR" || { NEON_WOULD=1; return 0; }

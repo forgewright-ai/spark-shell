@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # on_console -> 0 on /dev/tty1 and up (not XDG_VTNR: Void has no logind)
 # sets: IDLE_ALPHA IDLE_APP IDLE_FROM
-# reads: BAR_WS_ORDER CONFIG_DIR CONFIG_UNSET KB_RE LAYOUT_PENDING LAYOUT_SEEN NOTIFY_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SCREENS_CONF STATE_DIR TAB TMP US WM_NAME
+# reads: BAR_WS_ORDER CONFIG_DIR CONFIG_UNSET KB_RE LAYOUT_PENDING LAYOUT_SEEN NOTIFY_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SCREENS_CONF STATE_DIR TAB TERM_NAME TMP US WM_NAME
 on_console() { case $(tty 2>/dev/null) in /dev/tty[1-9]*) return 0 ;; *) return 1 ;; esac; }
 # runtime_dir -- XDG_RUNTIME_DIR when unset (Void has no logind)
 runtime_dir() {
@@ -60,7 +60,7 @@ cmd_desktop() {
         --first)   # home once, then your shell
             if [ ! -f "$LAYOUT_SEEN" ]; then
                 { mkdir_private "$(dirname "$LAYOUT_SEEN")" && : > "$LAYOUT_SEEN"; } 2>/dev/null || true
-                if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v foot >/dev/null 2>&1; then bar_panel_open ''; fi
+                if [ -n "${WAYLAND_DISPLAY:-}" ] && term_here; then bar_panel_open ''; fi
             fi
             # the config's exports stay out of the shell (PROMPT is zsh's)
             # shellcheck disable=SC2086   # the -u words, split on purpose
@@ -93,16 +93,16 @@ layout_idle() {   # layout_idle [off|--clock|--side]
     esac
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own desktop"
     wm_up || refuse "the idle screen is the desktop's: run it inside it"
-    command -v foot >/dev/null 2>&1 || refuse "foot is not installed (spark-shell on desktop)"
+    term_here || refuse "$(term_missing)"
     ! idle_up || return 0
     theme_load
-    _sz=$(look_font_size); : "${_sz:=12}"; _fc=$(foot_colors)
+    _sz=$(look_font_size); : "${_sz:=12}"
     # the focused screen's last, so the focus ends there
     screens_json | jq -r '[.[] | select(.active and (.current_workspace // "") != "" and .current_workspace != "idle" and (.current_workspace | startswith("idle ") | not))]
         | (map(select(.focused | not)) + map(select(.focused)))[] | [.name, .current_workspace] | @tsv' > "$TMP/idle.from" 2>/dev/null || :
     [ ! -s "$TMP/idle.from" ] || { mkdir_private "$STATE_DIR"; cat "$TMP/idle.from" > "$IDLE_FROM"; }
     wm_send "bar mode invisible" >/dev/null 2>&1 || :
-    _fs=$(font_spec); _foot="foot --app-id $IDLE_APP -o 'font=${_fs%%:*}:size=$((_sz * 2))' -o $_fc.alpha=$IDLE_ALPHA -o $_fc.background=$HEX_BG -o pad=0x0 -e $REPO/spark-shell desktop idle"
+    _fs=$(font_spec); _foot=$(term_window_cmd "$IDLE_APP" "${_fs%%:*}" "$((_sz * 2))" "$IDLE_ALPHA" "$HEX_BG" "$REPO/spark-shell desktop idle")
     # the main screen last: the focus ends on the clock
     _main=$(idle_main)
     screens_json | jq -r --arg m "$_main" '.[] | select(.active and .name != $m) | .name' 2>/dev/null | while IFS= read -r _o; do
@@ -203,14 +203,14 @@ idle_words() { if [ "$1" = 0 ]; then echo never; elif [ "$1" = 1 ]; then echo "a
 layout_display() {   # layout_display [idle|lock N | saver [NAME] | brightness N|up|down]
     case ${1:-} in
         '') _sv=''; [ "$DISPLAY_SAVER" = clock ] || _sv=" $PANEL_SEP $DISPLAY_SAVER saver"
-            echo "idle screen $(idle_words "$DISPLAY_IDLE")$_sv $PANEL_SEP lock and display off $(idle_words "$DISPLAY_LOCK")"
+            echo "idle screen $(idle_words "$DISPLAY_IDLE")$_sv $PANEL_SEP lock $(idle_words "$DISPLAY_LOCK")"
             [ "$OS" = Darwin ] || { _b=$(light_get); [ -z "$_b" ] || echo "brightness ${_b%% *}%"; } ;;
         idle|lock) _k=DISPLAY_IDLE; [ "$1" = idle ] || _k=DISPLAY_LOCK
             case ${2:-} in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; never) set -- "$1" 0 ;; *) refuse "display $1 takes minutes, 0 to 999 (0: never)" ;; esac
             [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
             config_set "$_k" "$2" >/dev/null; eval "$_k=\$2"; export "${_k?}"
             desktop_file_apply; idle_restart
-            if [ "$1" = idle ]; then echo "idle screen $(idle_words "$2")"; else echo "lock and display off $(idle_words "$2")"; fi ;;
+            if [ "$1" = idle ]; then echo "idle screen $(idle_words "$2")"; else echo "lock $(idle_words "$2")"; fi ;;
         saver) if [ -z "${2:-}" ]; then
                 for _x in clock $SAVER_NAMES; do if [ "$_x" = "$DISPLAY_SAVER" ]; then echo "$PANEL_TICK $_x"; else echo "  $_x"; fi; done; return 0; fi
             _p=$(saver_problem "$2"); [ -z "$_p" ] || refuse "display $_p"
@@ -505,7 +505,7 @@ layout_start() {   # layout_start PENDING -- sway on this console, PENDING a lay
     fi
     [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop"
     [ -z "$(desktop_tools)" ] || refuse "not installed:$(desktop_tools) (spark-shell on)"
-    [ -f "$(wm_config_file)" ] && [ -f "$HOME/.config/foot/foot.ini" ] || refuse "the sway and foot settings are missing (spark-shell on)"
+    [ -f "$(wm_config_file)" ] && [ -f "$(term_config_file)" ] || refuse "the $WM_NAME and $TERM_NAME settings are missing (spark-shell on)"
     if [ -n "${WAYLAND_DISPLAY:-}" ]; then layout_list; return 0; fi
     on_console || refuse "needs a console login (tty1 to tty9): ssh and terminal windows cannot start sway"
     runtime_dir

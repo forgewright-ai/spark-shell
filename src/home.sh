@@ -82,7 +82,7 @@ panel_run() {   # panel_run KIND CMD... -> CMD's lines as they land, the pulse o
 }
 panel_own_window() {   # the terminal is the panel's own window: foot our parent under sway, its window with the panel's app id
     wm_session && wm_here || return 1
-    _c=$(cat "/proc/$PPID/comm" 2>/dev/null || ps -o comm= -p "$PPID" 2>/dev/null); [ "${_c##*/}" = foot ] || return 1
+    _c=$(cat "/proc/$PPID/comm" 2>/dev/null || ps -o comm= -p "$PPID" 2>/dev/null); term_own_process "$_c" || return 1
     _i=0
     while :; do   # foot maps its window a moment after it starts us: up to a second for the tree to show it
         _a=$(wm_tree | jq -r --argjson p "$PPID" '[.. | objects | select(.pid? == $p) | .app_id // empty] | first // empty' 2>/dev/null)

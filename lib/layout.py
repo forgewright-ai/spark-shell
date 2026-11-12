@@ -9,15 +9,16 @@ import subprocess
 import sys
 import time
 
+import compositor
+
 
 class Refused(Exception):
     pass
 
 
-def sway(*args):
+def wm(*args):
     try:
-        result = subprocess.run(["swaymsg", *args], text=True, capture_output=True,
-                                stdin=subprocess.DEVNULL, timeout=3)
+        result = compositor.call(*args, timeout=3)
         data = json.loads(result.stdout)
         if result.returncode or (isinstance(data, list) and any(not x.get("success", True) for x in data)):
             raise ValueError()
@@ -50,7 +51,7 @@ def fit(columns, rows):
     if size.columns >= columns and size.lines >= rows:
         return
     parents = ancestors()
-    matches = [n for n in nodes(sway("-t", "get_tree")) if n.get("pid") in parents]
+    matches = [n for n in nodes(wm("-t", "get_tree")) if n.get("pid") in parents]
     if len(matches) != 1:
         raise Refused("cannot identify this terminal window to size it")
     window = matches[0]
@@ -60,15 +61,15 @@ def fit(columns, rows):
     # rect and cell counts share the current scale; no guessed font metrics.
     width = math.ceil(window["rect"]["width"] * max(1, columns / size.columns))
     height = math.ceil(window["rect"]["height"] * max(1, rows / size.lines))
-    sway("--", f"[con_id={con}] resize set width {width} px height {height} px")
+    wm("--", f"[con_id={con}] resize set width {width} px height {height} px")
     for _ in range(10):
         time.sleep(0.05)
         size = os.get_terminal_size(0)
         if size.columns >= columns and size.lines >= rows:
             return
     # A split may have no room. Only this app floats; other windows stay put.
-    sway("--", f"[con_id={con}] floating enable")
-    sway("--", f"[con_id={con}] resize set width {width} px height {height} px")
+    wm("--", f"[con_id={con}] floating enable")
+    wm("--", f"[con_id={con}] resize set width {width} px height {height} px")
     for _ in range(20):
         time.sleep(0.05)
         size = os.get_terminal_size(0)
@@ -77,12 +78,12 @@ def fit(columns, rows):
     # Decorations and a resize still in flight can change the cell estimate.
     # Measure again before taking more screen space than the app needs.
     for _ in range(3):
-        current = next((n for n in nodes(sway("-t", "get_tree")) if n.get("id") == con), None)
+        current = next((n for n in nodes(wm("-t", "get_tree")) if n.get("id") == con), None)
         if current is None:
             raise Refused("the terminal window closed while sizing it")
         width = math.ceil(current["rect"]["width"] * max(1, (columns + 1) / max(1, size.columns)))
         height = math.ceil(current["rect"]["height"] * max(1, (rows + 1) / max(1, size.lines)))
-        sway("--", f"[con_id={con}] resize set width {width} px height {height} px")
+        wm("--", f"[con_id={con}] resize set width {width} px height {height} px")
         for _ in range(10):
             time.sleep(0.05)
             size = os.get_terminal_size(0)
@@ -91,7 +92,7 @@ def fit(columns, rows):
     # Sway can cap a floating window below the screen's usable size. A
     # fullscreen view of this terminal respects that limit without changing
     # the compositor's global limits or any other window's geometry.
-    sway("--", f"[con_id={con}] fullscreen enable")
+    wm("--", f"[con_id={con}] fullscreen enable")
     for _ in range(20):
         time.sleep(0.05)
         size = os.get_terminal_size(0)

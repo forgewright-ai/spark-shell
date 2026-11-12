@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # the gsettings color-scheme is yours: put back only while spark-shell's
 # sets: GREETD_CONF LOGIN_ETC LOGIN_FILES LOGIN_FONTS LOGIN_ICONS LOGIN_LIB LOGIN_MARK LOGIN_SUDOERS OLD_GREETD_CONF OLD_GREETD_DIRS OLD_GREETD_FILES
-# reads: DIALOG_BIN DISTRO FACES_OTHER FAMILIES_SAID MODE NEON_STYLES NL OS POINTER_DIR POINTER_THEMES RENDERED REPO ROOT SCREENS_CONF SOUND_CONF SOUND_SV SPARK_CONFIG_DIR STATE_DIR TMP WM_NAME
+# reads: DIALOG_BIN DISTRO FACES_OTHER FAMILIES_SAID MODE NEON_STYLES NL OS POINTER_DIR POINTER_THEMES RENDERED REPO ROOT SCREENS_CONF SOUND_CONF SOUND_SV SPARK_CONFIG_DIR STATE_DIR TERM_LOGIN_CONF TMP WM_LOGIN_CONF WM_NAME
 # last value still holds; an outside change takes it back
 portal_ready() {
     [ "$OS" != Darwin ] && notify_bus && command -v gsettings >/dev/null 2>&1 &&
@@ -140,7 +140,7 @@ LOGIN_FONTS=usr/share/fonts/spark-shell   # Monaspace Neon for the login screen'
 GREETD_CONF=etc/greetd/config.toml
 LOGIN_SUDOERS=etc/sudoers.d/spark-shell-login
 LOGIN_MARK=' #spark-shell-login#'
-LOGIN_FILES="session window run sway.conf foot.ini screens.conf"
+LOGIN_FILES="session window run $WM_LOGIN_CONF $TERM_LOGIN_CONF screens.conf"
 login_wanted() { [ -z "$(login_na)" ] && [ "$LOGIN" = yes ]; }
 login_rec() { [ -e "$ROOT/$LOGIN_ETC/$1" ]; }                       # login_rec NAME -- a record of a change spark-shell made
 login_record() { root_do touch "$ROOT/$LOGIN_ETC/$1"; }

@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.139
+
+The compositor and the terminal are spoken to through one module each,
+and the desktop stays on.
+
+- src/compositor.sh and src/terminal.sh are the only modules that name
+  sway, its tools and foot, and lib/compositor.py the only helper; the
+  module check refuses any other that does. Each implements a stated
+  contract, so another compositor or terminal is one module behind the
+  same calls.
+- check has two new rows: the compositor and the terminal in use.
+- Always on: the lock timer locks and no longer turns the display off;
+  the idle screen is the resting state.
+- CI times each family's package install and writes the seconds to the
+  job summary.
+
 ## v0.138
 
 The long functions are short ones with names, and the layout's state

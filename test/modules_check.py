@@ -13,6 +13,7 @@ comments removed, and checks:
 declaration lines each module should carry, and exits 0. Without it, a finding is an
 error and the exit code is 1.
 """
+import glob
 import os
 import re
 import sys
@@ -138,6 +139,17 @@ def main():
     # 3. declarations
     want = {}
     for name, _ in files:
+        for keeper, pattern in NAMED.items():
+            hit = names_elsewhere(MODULE_TEXT[name], pattern) if name != keeper else []
+            if hit:
+                problems.append("names: %s names %s; only %s may" % (name, " ".join(hit), keeper))
+    for path in sorted(glob.glob(os.path.join(REPO, "lib", "*.py"))):
+        if os.path.basename(path) == "compositor.py":
+            continue
+        hit = names_elsewhere(helper_text(path), HELPER_NAMED)
+        if hit:
+            problems.append("names: lib/%s names %s; only lib/compositor.py may" % (os.path.basename(path), " ".join(hit)))
+    for name, _ in files:
         foreign = {v for v in reads[name] if v in owner and owner[v] != name and v.isupper()}
         sets = {v for v in top_sets[name] if v.isupper()}
         want[name] = (foreign, sets)
@@ -186,6 +198,32 @@ def main():
 
 
 MODULE_TEXT = {}   # a module's code lines, comments gone, as one text
+NAMED = {   # the module that may name a program and its variables; every other one speaks through it
+    "compositor": r"swaymsg|swaylock|swayidle|swaybg|grim|slurp|wl-copy|wl-paste|SWAYSOCK",
+    "terminal": r"foot|footclient",
+}
+HELPER_NAMED = r"swaymsg|swaylock|swayidle|swaybg|grim|slurp|wl-copy|wl-paste|SWAYSOCK|footclient|which\(\"foot\"\)|(?<![A-Za-z0-9_])\[\"foot\""   # lib/*.py: compositor.py alone; foot is an English word too
+
+
+def names_elsewhere(text, pattern):
+    """The words of pattern in text, as whole words."""
+    return sorted(set(re.findall(r"(?<![A-Za-z0-9_./@-])(?:%s)(?![A-Za-z0-9_@-])" % pattern, text)))
+
+
+def helper_text(path):
+    """A python helper's code, comment lines and docstrings gone."""
+    out, doc, q = [], False, chr(34) * 3
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            s = line.strip()
+            if s.startswith(q):
+                if s.count(q) == 1:
+                    doc = not doc
+                continue
+            if doc or s.startswith("#"):
+                continue
+            out.append(line.split("  #")[0])
+    return "\n".join(out)
 
 
 def words_only_def(fn, module, files):

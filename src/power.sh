@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the power
 # sets: APP_GROUPS POWER_SUDOERS
-# reads: BAR_PROC BAR_SYS LAYOUTS_DIR LAYOUT_LAST LAYOUT_WAIT OS PANEL_APP PANEL_CACHE PANEL_CROSS PANEL_SEP PANEL_TICK REPO ROOT STATE_DIR TAB THEME_KEYS TMP WALL_NAMES WM_NAME
+# reads: BAR_PROC BAR_SYS LAYOUTS_DIR LAYOUT_LAST LAYOUT_WAIT OS PANEL_APP PANEL_CACHE PANEL_CROSS PANEL_SEP PANEL_TICK REPO ROOT STATE_DIR TAB TERM_CLIENT TERM_NAME THEME_KEYS TMP WALL_NAMES WM_NAME
 POWER_SUDOERS=etc/sudoers.d/spark-shell-power
 about_site() {
     _as=https://github.com/forgewright-ai/spark-shell
@@ -251,7 +251,7 @@ panel_act_apps() {   # the apps steps: close and focus done to the window, pick,
         pick) ( cmd_apps_verb ) ;;
         open) panel_app_open "$_arg" ;;
         terminal) wm_up || { echo "a terminal window needs the desktop"; return 1; }
-            _wr=0; win_exec foot || _wr=$?
+            _wr=0; win_exec "$TERM_NAME" || _wr=$?
             [ "$_wr" -ne 2 ] || { echo "could not open a terminal"; return 1; }
             [ "$_wr" -eq 0 ] || { echo "the terminal opened no window"; return 1; }
             : > "$TMP/opened"; echo "opened a terminal" ;;
@@ -283,7 +283,7 @@ panel_act_display() {   # the display steps: the idle and lock minutes, the save
         idle|lock) case $_arg in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) echo "$_a takes minutes, 0 to 999 (0: never)"; return 1 ;; esac
             _k=DISPLAY_IDLE; [ "$_a" = idle ] || _k=DISPLAY_LOCK
             config_set "$_k" "$_arg" >/dev/null; eval "$_k=\$_arg"; export "${_k?}"; desktop_file_apply; idle_restart
-            if [ "$_a" = idle ]; then echo "idle screen $(idle_words "$_arg")"; else echo "lock and display off $(idle_words "$_arg")"; fi ;;
+            if [ "$_a" = idle ]; then echo "idle screen $(idle_words "$_arg")"; else echo "lock $(idle_words "$_arg")"; fi ;;
         saver) _p=$(saver_problem "$_arg"); [ -z "$_p" ] || { echo "$_p"; return 1; }
             config_set DISPLAY_SAVER "$_arg" >/dev/null; DISPLAY_SAVER=$_arg; export DISPLAY_SAVER
             echo "idle screen shows $(saver_words "$_arg")" ;;
@@ -319,7 +319,7 @@ panel_app_open() {   # panel_app_open NAME -> the app opens here
     wm_up || { echo "opening an app needs the desktop"; return 1; }
     mv -f "$TMP/apps.gate" "$TMP/apps" 2>/dev/null || panel_apps_read "$TMP/apps"   # the gate's list, if any
     _n=$(sed -n "s/^\($(printf '%s' "$1" | sed 's/[.[\*^$]/\\&/g')\): .*/\1/Ip" "$TMP/apps" | head -1); [ -n "$_n" ] || { echo "no app named $1 here"; return 1; }
-    _l=$(layout_launch "$_n" ''); ! layout_app_term "$_n" || _l="foot -e $_l"
+    _l=$(layout_launch "$_n" ''); ! layout_app_term "$_n" || _l=$(term_run "$_l")
     _wr=0; win_exec "$_l" || _wr=$?
     [ "$_wr" -ne 2 ] || { echo "could not open $_n"; return 1; }
     # maybe a tab in an open app: not refused
@@ -345,12 +345,12 @@ win_exec() {   # win_exec COMMAND -> 0 a new window, 1 none in LAYOUT_WAIT secon
 win_open() {   # -> APP<tab>TITLE<tab>ID per window
     wm_tree | jq -r --arg me "$PANEL_APP" '.. | objects | select(.pid? != null and (.type? == "con" or .type? == "floating_con")) | select(((.app_id // .window_properties.class // "") != "") and .app_id != $me) | "\(.app_id // .window_properties.class)\t\(.name // "" | gsub("\t"; " "))\t\(.id)"' 2>/dev/null | scrub_text || :   # any program's words: scrubbed
 }
-win_label() { win_open | awk -F '\t' '{ n = split($1, p, "."); a = tolower(p[n]); if (a == "footclient") a = "foot"; l = a; if ($2 != "" && tolower($2) != a) l = l ": " $2; print l "\t" $3 }'; }   # -> LABEL<tab>ID
+win_label() { win_open | awk -F '\t' -v tc="$TERM_CLIENT" -v tn="$TERM_NAME" '{ n = split($1, p, "."); a = tolower(p[n]); if (a == tc) a = tn; l = a; if ($2 != "" && tolower($2) != a) l = l ": " $2; print l "\t" $3 }'; }   # -> LABEL<tab>ID
 win_facts() {   # -> JSON: .windows, .here (this workspace), .spaces
-    wm_tree | jq -c --arg me "$PANEL_APP" --arg sep "$PANEL_SEP" --arg def "${WINDOWS:-split}" --arg aside "$(win_aside)" '
+    wm_tree | jq -c --arg me "$PANEL_APP" --arg sep "$PANEL_SEP" --arg def "${WINDOWS:-split}" --arg aside "$(win_aside)" --arg tc "$TERM_CLIENT" --arg tn "$TERM_NAME" '
         def kids: (.nodes // []) + (.floating_nodes // []);
         def leaves: if (kids | length) == 0 then . else kids[] | leaves end;
-        def app: (.app_id // .window_properties.class // "") | split(".") | last | ascii_downcase | if . == "footclient" then "foot" else . end;
+        def app: (.app_id // .window_properties.class // "") | split(".") | last | ascii_downcase | if . == $tc then $tn else . end;
         def arrangement: if ((.nodes // []) | length) == 1 and .nodes[0].pid == null then .nodes[0] | arrangement else .layout end;   # sway wraps a workspace'"'"'s windows in one container when they go to tabs
         def front: ([.focus[]? as $i | kids[] | select(.id == $i and .app_id != $me)] | first) as $c | if $c == null then . else $c | front end;
         def named: (.name // "") as $n | ((.num // 0) | tostring) as $u | ($n | sub("^[0-9]+"; "")) as $r
@@ -467,11 +467,11 @@ panel_layout_save() {   # panel_layout_save NAME -> this workspace, as a layout
     panel_apps_known > "$TMP/known"
     ps -eo pid=,ppid=,comm= > "$TMP/ps" 2>/dev/null || : > "$TMP/ps"
     # a terminal's app: its first child, else shell
-    awk -v me="$PANEL_APP" -v tab="$TAB" '
+    awk -v me="$PANEL_APP" -v tab="$TAB" -v tn="$TERM_NAME" '
         FILENAME == ARGV[1] { c = $0; sub(/^ *[0-9]+ +[0-9]+ +/, "", c); sub(/.*\//, "", c); if (!($2 in kid)) kid[$2] = c; next }
         FILENAME == ARGV[2] { w = tolower($0); if (!(w in known)) known[w] = $0; next }
         { split($0, f, tab); if (f[1] == me) next
-          a = f[1]; if (a == "foot") { a = (f[2] in kid) ? kid[f[2]] : ""; if (a ~ /^(sh|bash|zsh|dash|fish)?$/) a = "shell" }
+          a = f[1]; if (a == tn) { a = (f[2] in kid) ? kid[f[2]] : ""; if (a ~ /^(sh|bash|zsh|dash|fish)?$/) a = "shell" }
           w = tolower(a); if (w in known) a = known[w]
           if (a != "") print a }' "$TMP/ps" "$TMP/known" "$TMP/open" > "$TMP/open.apps"
     [ -s "$TMP/open.apps" ] || { echo "nothing is open on this workspace"; return 1; }

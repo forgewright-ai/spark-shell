@@ -348,7 +348,7 @@ files_play_video() {   # files_play_video PATH AT X Y W H -- X Y W H in terminal
             printf '%s\n' "$_fvsw" > "$TMP/play.swap" ;;
         esac
     fi
-    _fvp=$(sed -n 's/^pad=\([0-9]*\)x\([0-9]*\).*/\1 \2/p' "$HOME/.config/foot/dialog.ini" 2>/dev/null | head -1)
+    _fvp=$(term_dialog_pad)
     # sway's units: the corner, foot's padding, the frame scaled
     # shellcheck disable=SC2086   # numbers, split on purpose
     _fvg=$(printf '%s %s %s %s %s %s\n' "$3 $4 $5 $6" ${_fvd% *} ${_fvp:-0 0} | awk -v s="${_fvs:-1}" '{ if (s <= 0) s = 1; printf "%d %d %d %d", $5 + $7 + $1 / s, $6 + $8 + $2 / s, $3 / s, $4 / s }')

@@ -60,7 +60,7 @@ storage_act() {   # storage_act mount|unmount|open|eject NAME -> one line
 storage_open() {   # storage_open DIR NAME -> a file manager or terminal
     wm_up || { echo "$2 is at $1"; return 0; }
     case $1 in *[,\;\'\"]*) echo "$2 is at $1 (a comma, a quote or a semicolon in it, which sway would split)"; return 0 ;; esac
-    _so="foot --working-directory='$1'"
+    _so=$(term_in_dir "$1")
     if command -v xdg-open >/dev/null 2>&1 && [ -n "$(xdg-mime query default inode/directory 2>/dev/null)" ]; then _so="xdg-open '$1'"; fi
     _wr=0; win_exec "$_so" || _wr=$?
     [ "$_wr" -ne 2 ] || { echo "could not open $2"; return 1; }
