@@ -83,7 +83,8 @@ wm_tools_said() {
     _wts=''
     if wm_capture_here; then _wts='screenshots grim'; ! wm_pick_here || _wts="$_wts + slurp"; fi
     if wm_copy_here; then _wts="${_wts:+$_wts, }clipboard wl-copy"; ! wm_paste_here || _wts="$_wts and wl-paste"; fi
-    printf '%s' "${_wts:+$_wts, }swaymsg"
+    printf '%s' "$_wts"
 }
+wm_client() { printf 'swaymsg'; }
 wm_queries_said() { printf 'swaymsg -t get_outputs|get_workspaces|get_tree|get_inputs'; }
 wm_workspace_said() { printf 'swaymsg workspace number N goes to one'; }

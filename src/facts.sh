@@ -113,9 +113,9 @@ machine_facts() {   # -> the .facts lines
     fi
     # the session
     _msv=$(wm_version | jq -r 'if (.major // null) != null then "\(.major).\(.minor)" + (if (.patch // 0) > 0 then ".\(.patch)" else "" end) else "" end' 2>/dev/null || :)
-    _mpv=$(panel_version); _mwl=''
+    _mpv=$(panel_version); _mwl=$(wm_tools_said)
     ! command -v notify-send >/dev/null 2>&1 || _mwl="${_mwl:+$_mwl, }notifications notify-send"
-    printf -- "- Session: %s%s on Wayland (X11 apps run through Xwayland), set up by spark-shell%s; %s.\n" "$WM_NAME" "${_msv:+ $_msv}" "${_mpv:+ v$_mpv}" "$(wm_tools_said)"
+    printf -- "- Session: %s%s on Wayland (X11 apps run through Xwayland), set up by spark-shell%s; %s.\n" "$WM_NAME" "${_msv:+ $_msv}" "${_mpv:+ v$_mpv}" "${_mwl:+$_mwl, }$(wm_client)"
     _mkd=$(layout_keys | awk '$2 == "home.open." { print $1; exit }')
     printf -- '- spark-shell is this desktop: the bar at the top; home%s holds native actions and optional conversation.\n' "${_mkd:+ ($_mkd)}"
     _msc=$(machine_screens); [ -z "$_msc" ] || printf -- '- Screens: %s.\n' "$_msc"
