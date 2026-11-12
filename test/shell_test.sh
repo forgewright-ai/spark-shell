@@ -909,7 +909,7 @@ else
     _bg=' &#x2715;  &#x25BD;  &#x25A1; '
     grep -qxF "for_window [shell=\".*\"] title_format \"$_bg  %title\"" "$sway" && grep -qxF "for_window [app_id=\"foot\"] title_format \"$_bg  terminal   %title\"" "$sway" \
         && grep -qF 'pub const GLYPH_REFS: [&str; 3] = ["&#x2715;", "&#x25BD;", "&#x25A1;"];' "$REPO/component/winpad/src/buttons.rs" \
-        && ok "sway: the close, minimize and fill buttons are the start of every title, sway's own pixels, so they move with the window (v0.141.1), written as character references so the render stays ASCII; the pad's are the same three" || bad "band glyphs" "$(grep -n title_format "$sway")"
+        && ok "sway: the close, minimize and fill buttons are the start of every title, sway's own pixels, so they move with the window (v0.142), written as character references so the render stays ASCII; the pad's are the same three" || bad "band glyphs" "$(grep -n title_format "$sway")"
     grep -qxF "bindsym Mod4+space exec $REPO/spark-shell desktop home" "$sway" \
         && ! grep -q '^bindsym Mod4+[ds] ' "$sway" \
         && ok "sway: Super+Space opens home, without separate desktop chat keys" || bad "sway home render" "$(grep -n 'desktop home' "$sway")"
