@@ -1,11 +1,13 @@
-//! spark-winpad: the windows spark-shell minimized, on a surface of their own on each screen, each
-//! with its app's icon and its title; a click or a key brings one back. The clicks on the
-//! glyphs sway draws on every title band, and the order the windows were focused in, for Super+Tab.
-//! Started with the desktop by spark-shell, for the session.
+//! spark-winpad: spark-shell's windows on a sway desktop, three jobs. The pad: the minimized windows on a
+//! surface of their own on each screen, each with its app's icon and its title; a click or a key brings
+//! one back. The buttons: close, minimize and fill on every title band, drawn by sway, told and clicked
+//! here. The order: the windows as they were focused, for Super+Tab. Started with the desktop by
+//! spark-shell, for the session.
 
 use std::process::ExitCode;
 
-const USAGE: &str = "spark-winpad -- the minimized windows of a sway desktop, on the pad, and the clicks on every title band's glyphs (run by spark-shell)
+const USAGE: &str =
+    "spark-winpad -- the windows of a sway desktop: the pad for the minimized ones, the buttons on every title band, the focus order (run by spark-shell)
 
   spark-winpad [--keys]
 
@@ -98,7 +100,7 @@ fn run(_: bool) -> Result<(), String> {
 #[cfg(target_os = "linux")]
 fn config() -> spark_winpad::app::Config {
     use spark_winpad::app::{Config, Look, Titles};
-    use spark_winpad::model::{Place, View};
+    use spark_winpad::pad::{Place, View};
     use spark_winpad::paint::Rgb;
     let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
     let color = |k: &str, d: &str| env(k).and_then(|v| Rgb::hex(&v)).unwrap_or_else(|| Rgb::hex(d).unwrap());
@@ -153,7 +155,7 @@ fn config() -> spark_winpad::app::Config {
 fn gap(v: Option<&str>) -> i32 {
     v.and_then(|v| v.trim().parse::<i32>().ok())
         .filter(|n| (0..=200).contains(n))
-        .unwrap_or(spark_winpad::model::GAP)
+        .unwrap_or(spark_winpad::pad::GAP)
 }
 
 /// The one pad: PAD_LOCK held for the pad's life, its pid in it. None when another pad holds it.
@@ -164,7 +166,7 @@ fn lock() -> Result<Option<std::fs::File>, String> {
     use std::os::unix::io::AsRawFd;
     let path = std::env::var_os("PAD_LOCK").map(std::path::PathBuf::from).unwrap_or_else(|| {
         let dir = std::env::var_os("XDG_RUNTIME_DIR").map_or_else(std::env::temp_dir, Into::into);
-        dir.join("spark-shell-pad.pid")
+        dir.join("spark-shell-app.pid")
     });
     let mut f = std::fs::OpenOptions::new()
         .read(true)
@@ -211,7 +213,7 @@ fn icons(spark_shell: &str, px: i32) -> Vec<(String, String)> {
         let _ = o.read_to_string(&mut out);
     }
     let _ = child.wait();
-    serde_json::from_str(&out).map(|v| spark_winpad::model::icon_paths(&v)).unwrap_or_default()
+    serde_json::from_str(&out).map(|v| spark_winpad::pad::icon_paths(&v)).unwrap_or_default()
 }
 
 /// Spark's mark for the dialog's icon at `px`, from the assets next to spark-shell, the dark ground's or the light
@@ -219,10 +221,10 @@ fn icons(spark_shell: &str, px: i32) -> Vec<(String, String)> {
 /// into a cache under XDG_RUNTIME_DIR, else the largest PNG, scaled. None when the assets are not there.
 #[cfg(target_os = "linux")]
 fn mark(spark_shell: &str, dark: bool, px: i32) -> Option<String> {
-    use spark_winpad::model;
+    use spark_winpad::pad;
     let dir = std::path::Path::new(spark_shell).parent().filter(|d| !d.as_os_str().is_empty())?.join("asset");
-    let file = dir.join(model::mark_file(dark, px));
-    let largest = dir.join(model::mark_file(dark, model::MARK_PNGS[model::MARK_PNGS.len() - 1]));
+    let file = dir.join(pad::mark_file(dark, px));
+    let largest = dir.join(pad::mark_file(dark, pad::MARK_PNGS[pad::MARK_PNGS.len() - 1]));
     let drawn = if file.extension().is_some_and(|e| e == "svg") {
         svg_at(&file, px)
     } else {
@@ -241,7 +243,7 @@ fn svg_at(svg: &std::path::Path, px: i32) -> Option<std::path::PathBuf> {
     use std::process::{Command, Stdio};
     let run = std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty())?;
     let made = std::fs::metadata(svg).and_then(|m| m.modified()).ok()?;
-    let dir = std::path::PathBuf::from(run).join("spark-shell-pad.icons");
+    let dir = std::path::PathBuf::from(run).join("spark-shell-app.icons");
     std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir).ok()?;
     let name = format!("{}-{px}.png", svg.file_stem()?.to_string_lossy());
     let out = dir.join(&name);
@@ -274,7 +276,7 @@ fn run(keys: bool) -> Result<(), String> {
     use calloop::timer::{TimeoutAction, Timer};
     use calloop::{EventLoop, Interest, Mode, PostAction};
     use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
-    use spark_winpad::app::Pad;
+    use spark_winpad::app::App;
     use spark_winpad::sway::{self, Ipc};
     use std::io::Read;
     use std::time::Duration;
@@ -286,7 +288,7 @@ fn run(keys: bool) -> Result<(), String> {
     // the ground spark's mark stands on: the dark S on a dark surface, the light one on a light one
     let byte = |v: f64| (v * 255.0).round().clamp(0.0, 255.0) as u8;
     let s = cfg.look.surface;
-    let dark = spark_winpad::model::dark_ground(byte(s.0), byte(s.1), byte(s.2));
+    let dark = spark_winpad::pad::dark_ground(byte(s.0), byte(s.1), byte(s.2));
     if !wayland_sys::client::is_lib_available() {
         return Err("libwayland-client.so.0 is missing (Wayland's client library)".into());
     }
@@ -300,34 +302,34 @@ fn run(keys: bool) -> Result<(), String> {
     })?;
     let ipc = Ipc::connect().map_err(|e| format!("sway: {e}"))?;
     let events = sway::subscribe(&["window", "workspace", "output", "tick"]).map_err(|e| format!("sway: {e}"))?;
-    let (globals, mut queue) = registry_queue_init::<Pad>(&conn).map_err(|e| format!("the compositor's globals: {e}"))?;
-    let mut event_loop: EventLoop<'static, Pad> = EventLoop::try_new().map_err(|e| format!("event loop: {e}"))?;
+    let (globals, mut queue) = registry_queue_init::<App>(&conn).map_err(|e| format!("the compositor's globals: {e}"))?;
+    let mut event_loop: EventLoop<'static, App> = EventLoop::try_new().map_err(|e| format!("event loop: {e}"))?;
     let handle = event_loop.handle();
     let spark_shell = cfg.spark_shell.clone();
-    let mut pad = Pad::new(&conn, &globals, &queue.handle(), handle.clone(), lib, cfg, ipc, keys)?;
+    let mut app = App::new(&conn, &globals, &queue.handle(), handle.clone(), lib, cfg, ipc, keys)?;
     // the screens' names and scales before the first surface
-    queue.roundtrip(&mut pad).map_err(|e| format!("the compositor: {e}"))?;
+    queue.roundtrip(&mut app).map_err(|e| format!("the compositor: {e}"))?;
     WaylandSource::new(conn.clone(), queue)
         .insert(handle.clone())
         .map_err(|e| format!("event loop: {}", e.error))?;
     let stop = event_loop.get_signal();
     handle
-        .insert_source(signals, |ev, &mut (), pad: &mut Pad| match ev.signal() {
-            Signal::SIGUSR1 => pad.keys_on(),
-            Signal::SIGUSR2 => pad.toggle_hidden(),
-            _ => pad.stop = true,
+        .insert_source(signals, |ev, &mut (), app: &mut App| match ev.signal() {
+            Signal::SIGUSR1 => app.keys_on(),
+            Signal::SIGUSR2 => app.toggle_hidden(),
+            _ => app.stop = true,
         })
         .map_err(|e| format!("event loop: {}", e.error))?;
     let mut buf = Vec::new();
     handle
-        .insert_source(Generic::new(events, Interest::READ, Mode::Level), move |_, s, pad: &mut Pad| {
+        .insert_source(Generic::new(events, Interest::READ, Mode::Level), move |_, s, app: &mut App| {
             let mut chunk = [0u8; 8192];
             let mut stream: &std::os::unix::net::UnixStream = s;
             loop {
                 match stream.read(&mut chunk) {
                     Ok(0) => {
                         eprintln!("spark-winpad: sway is gone");
-                        pad.stop = true;
+                        app.stop = true;
                         return Ok(PostAction::Remove);
                     }
                     Ok(n) => buf.extend_from_slice(&chunk[..n]),
@@ -340,15 +342,19 @@ fn run(keys: bool) -> Result<(), String> {
                 match kind {
                     sway::EVENT_WINDOW => {
                         let v: serde_json::Value = serde_json::from_slice(&payload).unwrap_or_default();
-                        pad.window_event(v["change"].as_str().unwrap_or(""), v["container"]["id"].as_i64());
+                        app.window_event(v["change"].as_str().unwrap_or(""), v["container"]["id"].as_i64());
                     }
-                    sway::EVENT_WORKSPACE | sway::EVENT_OUTPUT => pad.look(),
+                    sway::EVENT_WORKSPACE => app.look(),
+                    sway::EVENT_OUTPUT => {
+                        app.look();
+                        app.screens_changed();
+                    }
                     sway::EVENT_TICK => {
                         let v: serde_json::Value = serde_json::from_slice(&payload).unwrap_or_default();
                         if v["payload"] == sway::BACK {
-                            pad.back();
+                            app.back();
                         } else if v["payload"] == sway::LOOK {
-                            pad.look();
+                            app.look();
                         }
                     }
                     _ => {}
@@ -361,17 +367,17 @@ fn run(keys: bool) -> Result<(), String> {
     // a few seconds on finds the rest
     let (tx, rx) = channel::<Vec<(String, String)>>();
     handle
-        .insert_source(rx, |ev, &mut (), pad: &mut Pad| {
+        .insert_source(rx, |ev, &mut (), app: &mut App| {
             if let Msg::Msg(paths) = ev {
-                pad.set_icons(paths);
+                app.set_icons(paths);
             }
         })
         .map_err(|e| format!("event loop: {}", e.error))?;
-    let px = pad.icon_px();
+    let px = app.icon_px();
     std::thread::spawn(move || {
         // the dialog's mark first, spark's own: a file at hand, where the catalog takes its time
         if let Some(path) = mark(&spark_shell, dark, px) {
-            let key = spark_winpad::model::icon_key(spark_winpad::model::DIALOG);
+            let key = spark_winpad::pad::icon_key(spark_winpad::pad::DIALOG);
             if tx.send(vec![(key, path)]).is_err() {
                 return;
             }
@@ -384,33 +390,33 @@ fn run(keys: bool) -> Result<(), String> {
     let tick = Duration::from_millis(100);
     let mut ticks = 0u32;
     handle
-        .insert_source(Timer::from_duration(tick), move |_, _, pad: &mut Pad| {
-            pad.settle();
+        .insert_source(Timer::from_duration(tick), move |_, _, app: &mut App| {
+            app.settle();
             // the tree read again every tick for two seconds after an event, else every half second: a
             // resize or a drag sends no event
             ticks = ticks.wrapping_add(1);
-            if pad.bursting() || ticks.is_multiple_of(5) {
-                pad.list_dirty = true;
+            if app.bursting() || ticks.is_multiple_of(5) {
+                app.list_dirty = true;
             }
             TimeoutAction::ToDuration(tick)
         })
         .map_err(|e| format!("event loop: {}", e.error))?;
-    pad.refresh_list();
-    let ran = event_loop.run(None, &mut pad, |pad| {
-        if pad.list_dirty {
-            pad.refresh_list();
+    app.refresh_list();
+    let ran = event_loop.run(None, &mut app, |app| {
+        if app.list_dirty {
+            app.refresh_list();
         }
-        if pad.dirty {
-            pad.draw_all();
+        if app.dirty {
+            app.draw_all();
         }
-        if pad.deco_dirty {
-            pad.draw_decos();
+        if app.deco_dirty {
+            app.draw_decos();
         }
-        if pad.stop {
+        if app.stop {
             stop.stop();
         }
     });
-    pad.free();
+    app.free();
     let _ = conn.flush();
     ran.map_err(|e| format!("the compositor is gone: {e}"))
 }

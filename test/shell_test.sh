@@ -908,7 +908,7 @@ else
         && ok "sway: the chrome (v0.140): a title band and a one-pixel frame in one shade, the surface shade on the focused window (#0f0f0f), four percent above the ground on the others (#060606) with muted text; the accent only as the focused indicator, the drop area of a moving window (#47), at a quarter: #ff5555 halved with alpha 80, as sway takes it (#49)" || bad "sway focused" "$(grep -n 'client\|border' "$sway")"
     _bg=' &#x2715;  &#x25BD;  &#x25A1; '
     grep -qxF "for_window [shell=\".*\"] title_format \"$_bg  %title\"" "$sway" && grep -qxF "for_window [app_id=\"foot\"] title_format \"$_bg  terminal   %title\"" "$sway" \
-        && grep -qF 'pub const GLYPH_REFS: [&str; 3] = ["&#x2715;", "&#x25BD;", "&#x25A1;"];' "$REPO/component/winpad/src/model.rs" \
+        && grep -qF 'pub const GLYPH_REFS: [&str; 3] = ["&#x2715;", "&#x25BD;", "&#x25A1;"];' "$REPO/component/winpad/src/buttons.rs" \
         && ok "sway: the close, minimize and fill buttons are the start of every title, sway's own pixels, so they move with the window (v0.141.1), written as character references so the render stays ASCII; the pad's are the same three" || bad "band glyphs" "$(grep -n title_format "$sway")"
     grep -qxF "bindsym Mod4+space exec $REPO/spark-shell desktop home" "$sway" \
         && ! grep -q '^bindsym Mod4+[ds] ' "$sway" \

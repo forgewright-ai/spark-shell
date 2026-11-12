@@ -126,7 +126,7 @@ def text_px(font):
 
 
 def lengths(font):
-    """The pad's lengths at the text size it was handed (PAD_FONT, the bar's), as component/winpad/src/model.rs's
+    """The pad's lengths at the text size it was handed (PAD_FONT, the bar's), as component/winpad/src/pad.rs's
     Metrics::for_text makes them: the mock-up's at 16 px (36 an icon's cell, 6 the handle, 228 a slot), in
     proportion at any other."""
     k = min(max(text_px(font) / 16, 0.5), 3.0)

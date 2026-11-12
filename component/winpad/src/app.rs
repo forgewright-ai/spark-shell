@@ -2,8 +2,10 @@
 //! window, drawn with cairo and pango; a docked pad keeps its strip with a second surface, empty, on
 //! the background layer. The pointer, the keys while it has them, and sway's list.
 
+use crate::buttons::{Band, Glyph};
 use crate::keys::Keyboard;
-use crate::model::{self, Band, Click, Edge, Gesture, Glyph, Grab, History, Hit, Item, KeyAct, Layout, ListAct, Metrics, Place, Rect, Sides, View, Want, Win};
+use crate::order::History;
+use crate::pad::{self, Click, Edge, Gesture, Grab, Hit, Item, KeyAct, Layout, ListAct, Metrics, Place, Rect, Sides, View, Want, Win};
 use crate::paint::{Align, Canvas, Fonts, Lib, Picture, Rgb};
 use crate::sway::Ipc;
 use calloop::timer::{TimeoutAction, Timer};
@@ -33,6 +35,9 @@ use wayland_client::protocol::wl_seat::WlSeat;
 use wayland_client::protocol::wl_shm;
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Connection, QueueHandle, WEnum};
+
+mod buttons;
+mod order;
 
 /// The layer shell namespace: what sway's rules and tools call the surface.
 const NAMESPACE: &str = "spark-winpad";
@@ -193,7 +198,7 @@ struct Drag {
     /// Set once the surface covers the whole area: the pad's corner there, and its rectangle at the start.
     pad: Option<(i32, i32)>,
     start: Rect,
-    /// The edge the drag holds, from the pointer (model::drag_edge).
+    /// The edge the drag holds, from the pointer (pad::drag_edge).
     near: Option<Edge>,
     /// The surface's shape at the press. sway keeps a held pointer's coordinates in the frame the surface
     /// had at the press (seatop_down), so a drag's points are read from there.
@@ -222,7 +227,7 @@ struct Tip {
     quiet_gen: u64,
 }
 
-pub struct Pad {
+pub struct App {
     registry: RegistryState,
     outputs: OutputState,
     compositor: CompositorState,
@@ -231,8 +236,8 @@ pub struct Pad {
     shm: Shm,
     pool: SlotPool,
     cursors: Option<CursorShapeManager>,
-    qh: QueueHandle<Pad>,
-    handle: LoopHandle<'static, Pad>,
+    qh: QueueHandle<App>,
+    handle: LoopHandle<'static, App>,
     lib: Lib,
     fonts: Fonts,
     m: Metrics,
@@ -272,6 +277,8 @@ pub struct Pad {
     cell: f64,
     /// Until when the tree is read every tick: two seconds after an event, since a move that follows sends none.
     burst_until: Option<Instant>,
+    /// The screen changes counted: a refit runs for the last one only.
+    screens_gen: u64,
     written: Option<(bool, usize)>,
     /// The strips kept when spark-shell last laid the placed windows out again (desktop window refit).
     refit_for: Vec<(String, Edge, i32)>,
@@ -283,18 +290,18 @@ pub struct Pad {
     conn: Connection,
 }
 
-impl Pad {
+impl App {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         conn: &Connection,
         globals: &GlobalList,
-        qh: &QueueHandle<Pad>,
-        handle: LoopHandle<'static, Pad>,
+        qh: &QueueHandle<App>,
+        handle: LoopHandle<'static, App>,
         lib: Lib,
         cfg: Config,
         ipc: Ipc,
         keys: bool,
-    ) -> Result<Pad, String> {
+    ) -> Result<App, String> {
         let compositor = CompositorState::bind(globals, qh).map_err(|e| format!("the compositor has no wl_compositor: {e}"))?;
         let layer_shell = LayerShell::bind(globals, qh).map_err(|_| "the compositor has no layer shell (zwlr_layer_shell_v1)".to_string())?;
         let shm = Shm::bind(globals, qh).map_err(|e| format!("the compositor has no wl_shm: {e}"))?;
@@ -303,13 +310,13 @@ impl Pad {
         // one character of a title, from the buttons' nine in the title's own font
         let cell = {
             let mut probe = [0u8; 4 * 8 * 8];
-            Canvas::new(&lib, &fonts, &mut probe, 8, 8, 32, 1.0).map_or(fonts.px * 0.6, |c| c.measure(model::GLYPHS, false) / 9.0)
+            Canvas::new(&lib, &fonts, &mut probe, 8, 8, 32, 1.0).map_or(fonts.px * 0.6, |c| c.measure(crate::buttons::GLYPHS, false) / 9.0)
         };
         let m = Metrics {
             gap: cfg.gap,
             ..Metrics::for_text(fonts.px)
         };
-        Ok(Pad {
+        Ok(App {
             registry: RegistryState::new(globals),
             outputs: OutputState::new(globals, qh),
             seats: SeatState::new(globals, qh),
@@ -352,6 +359,7 @@ impl Pad {
             history: History::default(),
             cell,
             burst_until: None,
+            screens_gen: 0,
             written: None,
             refit_for: vec![],
             refit_owed: false,
@@ -383,7 +391,7 @@ impl Pad {
 
     /// The windows' apps by name, oldest first: what a group folds by.
     fn names(&self) -> Vec<String> {
-        self.wins.iter().map(|w| model::app_name(&w.app)).collect()
+        self.wins.iter().map(|w| pad::app_name(&w.app)).collect()
     }
 
     /// What the pad is asked to be at a side, or at the top, the bottom or free. A pad moved between a side and the
@@ -409,8 +417,8 @@ impl Pad {
     fn items_on(&self, oi: usize, side: bool) -> (Vec<Item>, Layout) {
         let want = self.want(side);
         let room = self.room(oi);
-        let items = model::group(&self.names(), model::capacity(&want, room, &self.m));
-        let lay = model::layout(items.len(), &want, room, &self.m);
+        let items = pad::group(&self.names(), pad::capacity(&want, room, &self.m));
+        let lay = pad::layout(items.len(), &want, room, &self.m);
         (items, lay)
     }
 
@@ -429,7 +437,7 @@ impl Pad {
     /// The strip the pad keeps on a screen at its place: its edge and thickness.
     fn strip_for(&self, oi: usize) -> Option<(Edge, i32)> {
         let Place::Dock(edge, _) = self.cfg.place else { return None };
-        let thick = model::strip_thick(self.cfg.place, &self.layout_on(oi, edge.side()));
+        let thick = pad::strip_thick(self.cfg.place, &self.layout_on(oi, edge.side()));
         (thick > 0).then_some((edge, thick))
     }
 
@@ -442,16 +450,16 @@ impl Pad {
         let lay = self.layout_on(oi, self.cfg.place.side());
         match self.cfg.place {
             Place::Dock(edge, _) => {
-                let over = model::strip_thick(self.cfg.place, &lay);
+                let over = pad::strip_thick(self.cfg.place, &lay);
                 // the label's room beside the pad, away from its edge, where the grip on that side is too
-                let thick = if edge.side() { lay.w + m.tip_room } else { lay.h + m.tip + model::AIR };
+                let thick = if edge.side() { lay.w + m.tip_room } else { lay.h + m.tip + pad::AIR };
                 Shape::Strip { edge, thick, over }
             }
             Place::Free(..) => {
                 // around the pad, inside the area: the room for its label on any side, and its grips
                 let (aw, ah) = self.outs[oi].area;
-                let (x, y) = model::position(self.cfg.place, lay.w, lay.h, aw, ah, m);
-                let (rx, ry) = (m.tip_room + model::AIR, (m.tip + model::AIR).max(m.grip));
+                let (x, y) = pad::position(self.cfg.place, lay.w, lay.h, aw, ah, m);
+                let (rx, ry) = (m.tip_room + pad::AIR, (m.tip + pad::AIR).max(m.grip));
                 let (x0, y0) = ((x - rx).max(0), (y - ry).max(0));
                 let (x1, y1) = ((x + lay.w + rx).min(aw).max(x + lay.w), (y + lay.h + ry).min(ah).max(y + lay.h));
                 Shape::Free {
@@ -485,144 +493,6 @@ impl Pad {
         self.refit();
     }
 
-    fn apply_deco(&mut self, oi: usize) {
-        if self.outs[oi].deco.is_some() {
-            return;
-        }
-        let surface = self.compositor.create_surface(&self.qh);
-        let layer = self
-            .layer_shell
-            .create_layer_surface(&self.qh, surface, Layer::Top, Some(NAMESPACE), Some(&self.outs[oi].output));
-        layer.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
-        layer.set_size(0, 0);
-        layer.set_exclusive_zone(-1);
-        layer.set_keyboard_interactivity(KeyboardInteractivity::None);
-        if let Ok(region) = Region::new(&self.compositor) {
-            layer.wl_surface().set_input_region(Some(region.wl_region()));
-        }
-        layer.commit();
-        self.outs[oi].deco = Some(Deco {
-            layer,
-            size: (0, 0),
-            configured: false,
-        });
-    }
-
-    pub fn draw_decos(&mut self) {
-        self.deco_dirty = false;
-        for oi in 0..self.outs.len() {
-            self.draw_deco(oi);
-        }
-    }
-
-    /// The pointer's cells over the glyphs sway draws at the start of each title. Nothing is drawn here: the
-    /// surface is clear, so the glyphs are sway's own pixels and move with their window.
-    fn draw_deco(&mut self, oi: usize) {
-        let Some(d) = self.outs[oi].deco.as_ref() else { return };
-        if !d.configured || d.size.0 <= 0 || d.size.1 <= 0 {
-            return;
-        }
-        let (size, scale) = (d.size, self.outs[oi].scale.max(1));
-        let name = self.outs[oi].name.clone();
-        let (bw, bh) = (size.0 * scale, size.1 * scale);
-        let Ok((buffer, data)) = self.pool.create_buffer(bw, bh, bw * 4, wl_shm::Format::Argb8888) else {
-            eprintln!("spark-winpad: no shared memory for a frame");
-            return;
-        };
-        let Ok(region) = Region::new(&self.compositor) else { return };
-        data.fill(0);
-        for b in self.bands.iter().filter(|b| b.output == name) {
-            let cells = model::glyph_cells(b.rect, self.cell);
-            region.add(cells[0].x, cells[0].y, cells[2].x + cells[2].w - cells[0].x, cells[0].h);
-        }
-        let d = self.outs[oi].deco.as_ref().unwrap();
-        let surface = d.layer.wl_surface().clone();
-        surface.set_input_region(Some(region.wl_region()));
-        surface.set_buffer_scale(scale);
-        if buffer.attach_to(&surface).is_ok() {
-            surface.damage_buffer(0, 0, bw, bh);
-            d.layer.commit();
-        }
-    }
-
-    fn deco_of(&self, surface: &WlSurface) -> Option<usize> {
-        self.outs.iter().position(|o| o.deco.as_ref().is_some_and(|d| d.layer.wl_surface() == surface))
-    }
-
-    /// The glyph under a point on a screen's glyph surface, and its window.
-    fn glyph_at(&self, oi: usize, pos: (f64, f64)) -> Option<(i64, Glyph)> {
-        let name = &self.outs[oi].name;
-        self.bands
-            .iter()
-            .filter(|b| &b.output == name)
-            .find_map(|b| model::glyph_at(b.rect, self.cell, pos.0, pos.1).map(|g| (b.id, g)))
-    }
-
-    /// The pointer on a glyph surface: the hand over a glyph; a press and a release on the same glyph act.
-    fn deco_pointer(&mut self, oi: usize, kind: &PointerEventKind, pos: (f64, f64)) {
-        match kind {
-            PointerEventKind::Enter { serial } => {
-                if let Some(p) = self.pointer.as_mut() {
-                    p.serial = *serial;
-                    p.cursor = None;
-                }
-                self.deco_over(oi, pos);
-            }
-            PointerEventKind::Motion { .. } => self.deco_over(oi, pos),
-            PointerEventKind::Press { button: BTN_LEFT, .. } => self.deco_press = self.glyph_at(oi, pos),
-            PointerEventKind::Release { button: BTN_LEFT, .. } => {
-                let pressed = self.deco_press.take();
-                if let Some((id, glyph)) = self.glyph_at(oi, pos).filter(|h| Some(*h) == pressed) {
-                    match glyph {
-                        Glyph::Close => {
-                            let _ = self.ipc.run(&format!("[con_id={id}] kill"));
-                        }
-                        Glyph::Min => spawn(&self.cfg.spark_shell, &["desktop", "window", "min", &id.to_string()]),
-                        Glyph::Fill => spawn(&self.cfg.spark_shell, &["desktop", "window", "toggle", &id.to_string()]),
-                    }
-                }
-            }
-            PointerEventKind::Leave { .. } => {
-                self.deco_press = None;
-                if self.deco_hover.take().is_some() {
-                    self.title_sync();
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// The pointer over a button: the hand, and the button lit.
-    fn deco_over(&mut self, oi: usize, pos: (f64, f64)) {
-        let over = self.glyph_at(oi, pos);
-        self.set_cursor(if over.is_some() { Cursor::Pointer } else { Cursor::Default });
-        if over != self.deco_hover {
-            self.deco_hover = over;
-            self.title_sync();
-        }
-    }
-
-    /// Each band in sight wears the buttons its state asks for, drawn by sway as the start of its title: sway
-    /// is told only when a window's focus or its lit button changed.
-    fn title_sync(&mut self) {
-        let t = &self.cfg.titles;
-        let mut todo = vec![];
-        for b in &self.bands {
-            let hover = self.deco_hover.filter(|h| h.0 == b.id).map(|h| h.1);
-            let want = (b.focused, hover);
-            if self.sent.get(&b.id) != Some(&want) {
-                let tail = if !t.term.is_empty() && b.app == t.term { &t.term_title } else { &t.title };
-                let buttons = model::buttons(b.focused, hover, &t.colors, &t.ground);
-                todo.push((b.id, want, format!("[con_id={}] title_format \"{buttons}{tail}\"", b.id)));
-            }
-        }
-        for (id, want, command) in todo {
-            if self.ipc.run(&command).is_ok() {
-                self.sent.insert(id, want);
-            }
-        }
-    }
-
     /// A window event from sway: the focus order follows it, and the tree is read again.
     pub fn window_event(&mut self, change: &str, id: Option<i64>) {
         match (change, id) {
@@ -642,19 +512,26 @@ impl Pad {
         self.list_dirty = true;
     }
 
-    pub fn bursting(&self) -> bool {
-        self.burst_until.is_some_and(|t| Instant::now() < t)
-    }
-
-    /// Super+Tab: the window before, along the walk.
-    pub fn back(&mut self) {
-        if let Some(id) = self.history.back(Instant::now()) {
-            let _ = self.ipc.run(&format!("[con_id={id}] focus"));
+    /// A screen came, went or changed: spark-shell lays the placed windows out again (desktop window refit),
+    /// half a second on and again a second later, as sway lays a screen out a moment after its event. Only
+    /// the last event of a run counts.
+    pub fn screens_changed(&mut self) {
+        self.screens_gen += 1;
+        let gen = self.screens_gen;
+        for ms in [500, 1500] {
+            let _ = self
+                .handle
+                .insert_source(Timer::from_duration(Duration::from_millis(ms)), move |_, _, app: &mut App| {
+                    if app.screens_gen == gen {
+                        spawn(&app.cfg.spark_shell, &["desktop", "window", "refit"]);
+                    }
+                    TimeoutAction::Drop
+                });
         }
     }
 
-    pub fn settle(&mut self) {
-        self.history.settle(Instant::now());
+    pub fn bursting(&self) -> bool {
+        self.burst_until.is_some_and(|t| Instant::now() < t)
     }
 
     /// spark-shell lays the placed windows out again (desktop window refit) once each time a kept strip
@@ -799,7 +676,7 @@ impl Pad {
                 size: (0, 0),
                 configured: false,
                 pad_at: (0, 0),
-                lay: model::layout(1, &self.want(false), (1, 1), &self.m),
+                lay: pad::layout(1, &self.want(false), (1, 1), &self.m),
                 items: vec![],
                 list_at: None,
             });
@@ -854,14 +731,14 @@ impl Pad {
             self.stop = true;
             return;
         };
-        let bands = model::bands(&tree, self.cell);
+        let bands = crate::buttons::bands(&tree, self.cell);
         if bands != self.bands {
             self.bands = bands;
             self.deco_dirty = true;
         }
         self.title_sync();
-        self.history.seed(&model::in_sight(&tree));
-        let wins = model::minimized(&tree);
+        self.history.seed(&crate::order::in_sight(&tree));
+        let wins = pad::minimized(&tree);
         if wins == self.wins {
             return;
         }
@@ -1075,7 +952,7 @@ impl Pad {
     }
 
     fn picture(&mut self, app: &str) -> Option<&Picture> {
-        let key = model::icon_key(app);
+        let key = pad::icon_key(app);
         if !self.pictures.contains_key(&key) {
             let p = self.icon_paths.get(&key).and_then(|path| Picture::png(&self.lib, path));
             self.pictures.insert(key.clone(), p);
@@ -1098,9 +975,9 @@ impl Pad {
     fn item_words(&self, it: &Item) -> (String, Option<String>) {
         let w = &self.wins[it.wins[0]];
         if it.group() {
-            model::group_words(&w.app, it.wins.len())
+            pad::group_words(&w.app, it.wins.len())
         } else {
-            model::item_words(&w.app, &w.title)
+            pad::item_words(&w.app, &w.title)
         }
     }
 
@@ -1130,14 +1007,14 @@ impl Pad {
                 .drag
                 .as_ref()
                 .and_then(|d| d.pad)
-                .unwrap_or_else(|| model::position(self.cfg.place, lay.w, lay.h, aw, ah, &m)),
-            Shape::Strip { edge: Edge::Bottom, .. } => (model::position(self.cfg.place, lay.w, lay.h, size.0, ah, &m).0, size.1 - lay.h),
-            Shape::Strip { edge: Edge::Top, .. } => (model::position(self.cfg.place, lay.w, lay.h, size.0, ah, &m).0, 0),
-            Shape::Strip { edge: Edge::Left, .. } => (0, model::position(self.cfg.place, lay.w, lay.h, aw, size.1, &m).1),
-            Shape::Strip { edge: Edge::Right, .. } => (size.0 - lay.w, model::position(self.cfg.place, lay.w, lay.h, aw, size.1, &m).1),
+                .unwrap_or_else(|| pad::position(self.cfg.place, lay.w, lay.h, aw, ah, &m)),
+            Shape::Strip { edge: Edge::Bottom, .. } => (pad::position(self.cfg.place, lay.w, lay.h, size.0, ah, &m).0, size.1 - lay.h),
+            Shape::Strip { edge: Edge::Top, .. } => (pad::position(self.cfg.place, lay.w, lay.h, size.0, ah, &m).0, 0),
+            Shape::Strip { edge: Edge::Left, .. } => (0, pad::position(self.cfg.place, lay.w, lay.h, aw, size.1, &m).1),
+            Shape::Strip { edge: Edge::Right, .. } => (size.0 - lay.w, pad::position(self.cfg.place, lay.w, lay.h, aw, size.1, &m).1),
             // a free surface has the room around the pad
             Shape::Free { x, y, .. } => {
-                let (px, py) = model::position(self.cfg.place, lay.w, lay.h, aw, ah, &m);
+                let (px, py) = pad::position(self.cfg.place, lay.w, lay.h, aw, ah, &m);
                 (px - x, py - y)
             }
         };
@@ -1149,8 +1026,8 @@ impl Pad {
             let _ = self.picture(app);
         }
         let words: Vec<(String, Option<String>)> = items.iter().map(|it| self.item_words(it)).collect();
-        let lit_line = lit.and_then(|i| words.get(i)).map(|w| model::line(w.clone()));
-        let tip = model::labeled(&lay, &m) && !full && lit_line.is_some() && (self.tip.on || keys_here) && !self.tip.quiet;
+        let lit_line = lit.and_then(|i| words.get(i)).map(|w| pad::line(w.clone()));
+        let tip = pad::labeled(&lay, &m) && !full && lit_line.is_some() && (self.tip.on || keys_here) && !self.tip.quiet;
         let near = self
             .drag
             .as_ref()
@@ -1159,7 +1036,7 @@ impl Pad {
         // the open list's rows: each window's words as a label says them, the newest last
         let list = self.list.as_ref().filter(|l| l.out == oi && full).and_then(|l| {
             let (gi, wins) = self.list_group()?;
-            let lines: Vec<String> = wins.iter().map(|&w| model::item_line(&self.wins[w].app, &self.wins[w].title)).collect();
+            let lines: Vec<String> = wins.iter().map(|&w| pad::item_line(&self.wins[w].app, &self.wins[w].title)).collect();
             let picked = l.hover.or(keys_here.then_some(l.sel));
             Some((gi, lines, picked))
         });
@@ -1185,11 +1062,11 @@ impl Pad {
             if lay.band {
                 let (by, b) = (oy + m.handle as f64, m.band as f64);
                 c.fill(ox, by, w, b, look.band, look.alpha);
-                let says = model::band_words(lay.w, self.wins.len(), lit_line.as_deref(), &m);
+                let says = pad::band_words(lay.w, self.wins.len(), lit_line.as_deref(), &m);
                 c.text(ox + 6.0, by, w - 12.0, b, &says, look.fg, true, Align::Center);
             }
             // hide, muted, past a hairline at the end of the cells
-            let hr = model::hide_rect(&lay, &m);
+            let hr = pad::hide_rect(&lay, &m);
             if lay.column {
                 c.fill(ox, oy + hr.y as f64 - 1.0, w, 1.0, look.lit, 1.0);
             } else {
@@ -1208,7 +1085,7 @@ impl Pad {
             let inset = (m.icon as f64 / 3.0).round();
             let side_px = m.icon as f64;
             for (i, (it, (app, (name, rest)))) in items.iter().zip(apps.iter().zip(&words)).enumerate() {
-                let r = model::item_rect(&lay, i, &m);
+                let r = pad::item_rect(&lay, i, &m);
                 let (rx, ry) = (ox + r.x as f64, oy + r.y as f64);
                 let lit_here = lit == Some(i) || list.as_ref().is_some_and(|(gi, ..)| *gi == i);
                 if lit_here {
@@ -1218,7 +1095,7 @@ impl Pad {
                     View::Icons => (rx + (r.w as f64 - side_px) / 2.0, ry + (r.h as f64 - side_px) / 2.0),
                     View::Titles => (rx + inset, ry + (r.h as f64 - side_px) / 2.0),
                 };
-                match self.pictures.get(&model::icon_key(app)).and_then(Option::as_ref) {
+                match self.pictures.get(&pad::icon_key(app)).and_then(Option::as_ref) {
                     Some(p) => c.picture(p, ix, iy, side_px),
                     None => {
                         c.fill(ix, iy, side_px, side_px, look.lit, 1.0);
@@ -1231,7 +1108,7 @@ impl Pad {
                     }
                 }
                 // a group's count, circled and filled, in the accent over the icon's top right corner
-                if let Some(ch) = model::badge(it.wins.len()) {
+                if let Some(ch) = pad::badge(it.wins.len()) {
                     c.badge(ix + side_px - 2.0, iy + 2.0, &ch.to_string(), look.accent);
                 }
                 if lay.view == View::Titles {
@@ -1240,7 +1117,7 @@ impl Pad {
                     let room = r.w as f64 - (inset + side_px + inset + inset * 1.75);
                     let name_w = c.text(tx, ry, room, r.h as f64, name, look.fg, false, Align::Left);
                     if let Some(rest) = rest {
-                        if let Some((at, tw)) = model::title_room(room, name_w, c.measure("  ", false), self.fonts.px) {
+                        if let Some((at, tw)) = pad::title_room(room, name_w, c.measure("  ", false), self.fonts.px) {
                             c.text(
                                 tx + at,
                                 ry,
@@ -1257,23 +1134,23 @@ impl Pad {
             }
             if let (true, Some(line), Some(i)) = (tip, lit_line.as_deref(), lit) {
                 // the lit cell's words beside the pad, away from the edge it sits on
-                let r = model::item_rect(&lay, i, &m);
+                let r = pad::item_rect(&lay, i, &m);
                 let cell = Rect::new(pad_at.0 + r.x, pad_at.1 + r.y, r.w, r.h);
                 let pad_text = 10.0;
                 let tw = (c.measure(line, false) + 2.0 * pad_text).min(m.tip_room as f64 - 8.0).ceil() as i32;
-                let (tx, ty) = model::beside(pad_r, cell, (tw, m.tip), dock, size);
+                let (tx, ty) = pad::beside(pad_r, cell, (tw, m.tip), dock, size);
                 let (tx, ty, tw, th) = (tx as f64, ty as f64, tw as f64, m.tip as f64);
                 c.fill(tx, ty, tw, th, look.surface, 0.95);
                 c.text(tx + pad_text, ty, tw - 2.0 * pad_text, th, line, look.fg, false, Align::Left);
             }
             if let Some((gi, lines, picked)) = &list {
                 // the group's list beside it, a row a window
-                let r = model::item_rect(&lay, *gi, &m);
+                let r = pad::item_rect(&lay, *gi, &m);
                 let cell = Rect::new(pad_at.0 + r.x, pad_at.1 + r.y, r.w, r.h);
                 let pad_text = 10.0;
                 let lw = lines.iter().map(|l| c.measure(l, false)).fold(0.0, f64::max) + 2.0 * pad_text;
                 let lw = lw.clamp(m.tool as f64 * 3.0, m.tip_room as f64).ceil() as i32;
-                let lr = model::list_rect(pad_r, cell, lines.len(), lw, m.tip, dock, size);
+                let lr = pad::list_rect(pad_r, cell, lines.len(), lw, m.tip, dock, size);
                 c.fill(lr.x as f64 - 1.0, lr.y as f64 - 1.0, lr.w as f64 + 2.0, lr.h as f64 + 2.0, look.lit, 1.0);
                 c.fill(lr.x as f64, lr.y as f64, lr.w as f64, lr.h as f64, look.surface, look.alpha.max(0.95));
                 for (j, line) in lines.iter().enumerate() {
@@ -1295,8 +1172,8 @@ impl Pad {
                 list_at = Some((lr, lines.len()));
             }
             if let Some(e) = near {
-                let along = model::snap_along(e, pad_r, aw, ah, &m);
-                let (dx, dy) = model::position(Place::Dock(e, along), lay.w, lay.h, aw, ah, &m);
+                let along = pad::snap_along(e, pad_r, aw, ah, &m);
+                let (dx, dy) = pad::position(Place::Dock(e, along), lay.w, lay.h, aw, ah, &m);
                 let (lx, ly, lw, lh) = match e {
                     Edge::Bottom => (dx, ah - 3, lay.w, 3),
                     Edge::Top => (dx, 0, lay.w, 3),
@@ -1339,12 +1216,12 @@ impl Pad {
             return Hit::Nothing;
         };
         if let Some((r, rows)) = s.list_at.filter(|_| self.list.as_ref().is_some_and(|l| l.out == oi)) {
-            if let Some(i) = model::list_row(r, self.m.tip, rows, pos.0, pos.1) {
+            if let Some(i) = pad::list_row(r, self.m.tip, rows, pos.0, pos.1) {
                 return Hit::Row(i);
             }
         }
         let (x, y) = (pos.0 - s.pad_at.0 as f64, pos.1 - s.pad_at.1 as f64);
-        model::hit(&s.lay, s.items.len(), &self.m, x, y, self.cfg.place.edge())
+        pad::hit(&s.lay, s.items.len(), &self.m, x, y, self.cfg.place.edge())
     }
 
     fn set_cursor(&mut self, want: Cursor) {
@@ -1431,7 +1308,7 @@ impl Pad {
         match kind {
             Grab::Move => {
                 // the edge from the pointer, never from the pad's outline, which the edge changes
-                let near = model::drag_edge(d.near, pos, aw, ah, &m);
+                let near = pad::drag_edge(d.near, pos, aw, ah, &m);
                 self.drag.as_mut().unwrap().near = near;
                 let lay = self.layout_on(oi, near.is_some_and(Edge::side));
                 // the pointer keeps its place on the pad; on a pad that turned from a row to a column or back,
@@ -1447,7 +1324,7 @@ impl Pad {
             }
             Grab::Grip(s) => {
                 // the width sets the columns, the height the rows; a docked pad grows away from its edge
-                let (w, h) = model::grip_size(self.cfg.place, s, start, moved, self.room(oi), &m);
+                let (w, h) = pad::grip_size(self.cfg.place, s, start, moved, self.room(oi), &m);
                 if let Some(w) = w {
                     if self.cfg.place.side() {
                         self.cfg.side_width = w.max(SIDE_LEAST);
@@ -1459,8 +1336,8 @@ impl Pad {
                     self.cfg.height = h;
                 }
                 let lay = self.layout_on(oi, self.cfg.place.side());
-                self.cfg.place = model::grip_place(self.cfg.place, s, start, lay.w, lay.h);
-                let at = model::position(self.cfg.place, lay.w, lay.h, aw, ah, &m);
+                self.cfg.place = pad::grip_place(self.cfg.place, s, start, lay.w, lay.h);
+                let at = pad::position(self.cfg.place, lay.w, lay.h, aw, ah, &m);
                 self.drag.as_mut().unwrap().pad = Some(at);
             }
         }
@@ -1496,7 +1373,7 @@ impl Pad {
                     self.cfg.height = 0;
                 }
                 self.cfg.place = match d.near {
-                    Some(e) => Place::Dock(e, model::snap_along(e, r, aw, ah, &self.m)),
+                    Some(e) => Place::Dock(e, pad::snap_along(e, r, aw, ah, &self.m)),
                     None => Place::Free(x, y),
                 };
             }
@@ -1529,7 +1406,7 @@ impl Pad {
         let Some(k) = self.kb.key(code) else { return };
         if let Some((l_out, l_sel)) = self.list.as_ref().map(|l| (l.out, l.sel)) {
             let wins = self.list_group().map(|(_, w)| w).unwrap_or_default();
-            match model::list_key(k, l_sel, wins.len()) {
+            match pad::list_key(k, l_sel, wins.len()) {
                 ListAct::Pick(i) => {
                     if let Some(l) = self.list.as_mut() {
                         l.sel = i;
@@ -1549,7 +1426,7 @@ impl Pad {
             .get(oi)
             .and_then(|o| o.surf.as_ref())
             .map_or((self.wins.len(), 1), |s| (s.items.len(), s.lay.cols.max(1) as usize));
-        match model::key(k, self.sel, cells, cols) {
+        match pad::key(k, self.sel, cells, cols) {
             KeyAct::Pick(i) => {
                 self.sel = i;
                 self.hover = None;
@@ -1579,10 +1456,10 @@ impl Pad {
         let gen = self.tip.gen;
         let _ = self
             .handle
-            .insert_source(Timer::from_duration(Duration::from_millis(400)), move |_, _, pad: &mut Pad| {
-                if pad.tip.gen == gen && pad.hover.is_some() {
-                    pad.tip.on = true;
-                    pad.dirty = true;
+            .insert_source(Timer::from_duration(Duration::from_millis(400)), move |_, _, app: &mut App| {
+                if app.tip.gen == gen && app.hover.is_some() {
+                    app.tip.on = true;
+                    app.dirty = true;
                 }
                 TimeoutAction::Drop
             });
@@ -1595,10 +1472,10 @@ impl Pad {
         let gen = self.tip.quiet_gen;
         let _ = self
             .handle
-            .insert_source(Timer::from_duration(Duration::from_secs(5)), move |_, _, pad: &mut Pad| {
-                if pad.tip.quiet_gen == gen {
-                    pad.tip.quiet = true;
-                    pad.dirty = true;
+            .insert_source(Timer::from_duration(Duration::from_secs(5)), move |_, _, app: &mut App| {
+                if app.tip.quiet_gen == gen {
+                    app.tip.quiet = true;
+                    app.dirty = true;
                 }
                 TimeoutAction::Drop
             });
@@ -1683,7 +1560,7 @@ fn spawn(program: &str, args: &[&str]) {
     }
 }
 
-impl LayerShellHandler for Pad {
+impl LayerShellHandler for App {
     fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface) {
         for o in &mut self.outs {
             if o.surf.as_ref().is_some_and(|s| &s.layer == layer) {
@@ -1744,7 +1621,7 @@ impl LayerShellHandler for Pad {
         // the whole area under a drag: the pad's corner there, where it stood
         if matches!(shape, Shape::Full { .. }) && self.drag.as_ref().is_some_and(|d| d.out == oi && d.pad.is_none()) {
             let lay = self.layout_on(oi, self.cfg.place.side());
-            let at = model::position(self.cfg.place, lay.w, lay.h, w, h, &self.m);
+            let at = pad::position(self.cfg.place, lay.w, lay.h, w, h, &self.m);
             let gap = self.m.gap;
             let d = self.drag.as_mut().unwrap();
             d.pad = Some(at);
@@ -1762,7 +1639,7 @@ impl LayerShellHandler for Pad {
     }
 }
 
-impl CompositorHandler for Pad {
+impl CompositorHandler for App {
     fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &WlSurface, factor: i32) {
         if let Some(oi) = self.out_of(surface).or_else(|| self.deco_of(surface)) {
             if self.outs[oi].scale != factor.max(1) {
@@ -1782,7 +1659,7 @@ impl CompositorHandler for Pad {
     fn surface_leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlSurface, _: &WlOutput) {}
 }
 
-impl OutputHandler for Pad {
+impl OutputHandler for App {
     fn output_state(&mut self) -> &mut OutputState {
         &mut self.outputs
     }
@@ -1825,7 +1702,7 @@ impl OutputHandler for Pad {
     }
 }
 
-impl SeatHandler for Pad {
+impl SeatHandler for App {
     fn seat_state(&mut self) -> &mut SeatState {
         &mut self.seats
     }
@@ -1866,7 +1743,7 @@ impl SeatHandler for Pad {
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlSeat) {}
 }
 
-impl PointerHandler for Pad {
+impl PointerHandler for App {
     fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlPointer, events: &[PointerEvent]) {
         for ev in events {
             if let Some(oi) = self.deco_of(&ev.surface) {
@@ -1908,7 +1785,7 @@ impl PointerHandler for Pad {
     }
 }
 
-impl ShmHandler for Pad {
+impl ShmHandler for App {
     fn shm_state(&mut self) -> &mut Shm {
         &mut self.shm
     }
@@ -1918,11 +1795,11 @@ impl ShmHandler for Pad {
 /// the placed windows out on it (desktop window refit).
 struct Synced;
 
-impl Dispatch2<WlCallback, Pad> for Synced {
-    fn event(&self, pad: &mut Pad, _: &WlCallback, event: wl_callback::Event, _: &Connection, _: &QueueHandle<Pad>) {
+impl Dispatch2<WlCallback, App> for Synced {
+    fn event(&self, app: &mut App, _: &WlCallback, event: wl_callback::Event, _: &Connection, _: &QueueHandle<App>) {
         if let wl_callback::Event::Done { .. } = event {
-            pad.refit_waiting = pad.refit_waiting.saturating_sub(1);
-            spawn(&pad.cfg.spark_shell, &["desktop", "window", "refit"]);
+            app.refit_waiting = app.refit_waiting.saturating_sub(1);
+            spawn(&app.cfg.spark_shell, &["desktop", "window", "refit"]);
         }
     }
 }
@@ -1930,33 +1807,33 @@ impl Dispatch2<WlCallback, Pad> for Synced {
 /// The keyboard's events while the pad has the keys: evdev codes, read as positions.
 struct KeyData;
 
-impl Dispatch2<WlKeyboard, Pad> for KeyData {
-    fn event(&self, pad: &mut Pad, _: &WlKeyboard, event: wl_keyboard::Event, _: &Connection, _: &QueueHandle<Pad>) {
+impl Dispatch2<WlKeyboard, App> for KeyData {
+    fn event(&self, app: &mut App, _: &WlKeyboard, event: wl_keyboard::Event, _: &Connection, _: &QueueHandle<App>) {
         match event {
-            wl_keyboard::Event::Keymap { fd, size, .. } => pad.kb.keymap(fd, size),
+            wl_keyboard::Event::Keymap { fd, size, .. } => app.kb.keymap(fd, size),
             wl_keyboard::Event::Modifiers {
                 mods_depressed,
                 mods_latched,
                 mods_locked,
                 group,
                 ..
-            } => pad.kb.modifiers(mods_depressed, mods_latched, mods_locked, group),
+            } => app.kb.modifiers(mods_depressed, mods_latched, mods_locked, group),
             wl_keyboard::Event::Key {
                 key,
                 state: WEnum::Value(KeyState::Pressed),
                 ..
-            } => pad.key(key),
+            } => app.key(key),
             _ => {}
         }
     }
 }
 
-impl ProvidesRegistryState for Pad {
+impl ProvidesRegistryState for App {
     fn registry(&mut self) -> &mut RegistryState {
         &mut self.registry
     }
     registry_handlers![OutputState, SeatState];
 }
 
-delegate_registry!(Pad);
-delegate_dispatch2!(Pad);
+delegate_registry!(App);
+delegate_dispatch2!(App);

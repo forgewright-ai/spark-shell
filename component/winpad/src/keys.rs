@@ -3,7 +3,7 @@
 //! keyboard drives the pad, a virtual one (wtype) or a Dvorak layout included. Without the library,
 //! one line on stderr and the keys read as evdev positions on a US layout.
 
-use crate::model::Key;
+use crate::pad::Key;
 use libloading::Library;
 use std::ffi::{c_char, c_int, c_void, CString};
 use std::os::fd::{AsRawFd, OwnedFd};
