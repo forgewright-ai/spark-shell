@@ -96,6 +96,8 @@ layout_pad() {   # layout_pad [keys|toggle|place PLACE WIDTH SIDE [HEIGHT]|band 
             [ "$#" = 3 ] || pad_width_ok "$4" 0 || refuse "pad place: the height is pixels, 0 to 9999 (0: as many rows as needed)"
             config_set PAD_PLACE "$1" >/dev/null; config_set PAD_WIDTH "$2" >/dev/null; config_set PAD_SIDE_WIDTH "$3" >/dev/null
             [ "$#" = 3 ] || config_set PAD_HEIGHT "$4" >/dev/null
+            PAD_PLACE=$1; PAD_WIDTH=$2; PAD_SIDE_WIDTH=$3; [ "$#" = 3 ] || PAD_HEIGHT=$4; export PAD_PLACE PAD_WIDTH PAD_SIDE_WIDTH PAD_HEIGHT
+            [ -n "${PAD_LOCK:-}" ] || pad_again   # drawn again at its place; the pad's own save after a drag keeps it as it is
             echo "the pad sits $(pad_place_words "$1")"; return ;;
         band) [ "$#" -le 2 ] || refuse "pad band takes on or off"
             case ${2:-} in

@@ -354,6 +354,11 @@ def round_in(palette, binary, evidence):
         except (OSError, ValueError, IndexError):
             return None
 
+    def pad_empty():
+        """The pad with no window waiting: it stays for the session, its surfaces gone (v0.140)."""
+        state = runtime / "spark-shell-pad.state"
+        return pad_pid() is not None and state.exists() and "count 0" in state.read_text()
+
     try:
         sock = wait_for(lambda: next(iter(runtime.glob("sway-ipc.*.sock")), None), "sway's socket")
         display = wait_for(lambda: next((p.name for p in runtime.glob("wayland-*")
@@ -474,7 +479,6 @@ def round_in(palette, binary, evidence):
         def minimize(child):
             subprocess.run(["swaymsg", "[pid=%d] focus" % child.pid], env=env, capture_output=True)
             time.sleep(0.2)
-            shell("desktop", "window", "down")
             said = shell("desktop", "window", "down")
             wait_for(lambda: on_pad(child.pid), "%d on the pad (%s)" % (child.pid, said))
 
@@ -490,7 +494,6 @@ def round_in(palette, binary, evidence):
 
         # 1. a tiled foot, Down twice: it goes to the pad, marked tiled, and the pad keeps its strip
         a = open_foot("MANOR").pid
-        shell("desktop", "window", "down")
         said = shell("desktop", "window", "down")
         na = foot(a)
         marks = na.get("marks", []) if na else []
@@ -659,9 +662,9 @@ def round_in(palette, binary, evidence):
         wait_for(lambda: not on_pad(b), "Enter brings the second back")
         ok(True, "Super+minus then Enter brings the newest back")
 
-        # 9. no window waits: the pad goes and the bar's block with it
-        wait_for(lambda: pad_pid() is None, "spark-pad gone with the last window", seconds=10)
-        ok(wait_for(lambda: reaches("left") and reaches("bottom"), "the strip given back with the last window"), "the pad is gone and its strip with it")
+        # 9. no window waits: the pad's surfaces go and the bar's block with them; the pad itself stays for the session
+        wait_for(pad_empty, "spark-pad with no window, still here for the glyphs", seconds=10)
+        ok(wait_for(lambda: reaches("left") and reaches("bottom"), "the strip given back with the last window"), "the pad stays and gives its strip back")
         blocks = json.loads(shell("bar", "status", "--once") or "[]")
         ok(not any(blk.get("name") == "pad" for blk in blocks), "the bar's block is gone")
         refused = shell("desktop", "pad", "keys")
@@ -851,8 +854,8 @@ def round_in(palette, binary, evidence):
         shell("desktop", "pad", "keys")
         time.sleep(0.5)
         keys("Return")
-        wait_for(lambda: pad_pid() is None, "the pad gone", seconds=10)
-        ok(True, "the last one back, the pad goes")
+        wait_for(pad_empty, "the pad with no window", seconds=10)
+        ok(True, "the last one back, the pad's surfaces go")
 
         # 15. the band on, and the bar at the bottom (a new bar, before the pad): the pad over the bar, the handle and
         #     the band's color over the row, a strip of all three inside the bar's zone, and the bar where it was
@@ -867,7 +870,6 @@ def round_in(palette, binary, evidence):
         said = shell("desktop", "pad", "band", "on")
         for child in (a, b):
             subprocess.run(["swaymsg", "[pid=%d] focus" % child], env=env, capture_output=True)
-            shell("desktop", "window", "down")
             shell("desktop", "window", "down")
         wait_for(pad_pid, "spark-pad started with its band")
         band_floor = edge - gap - HANDLE - BAND - TOOL - GAP
@@ -898,7 +900,6 @@ def round_in(palette, binary, evidence):
         wait_for(lambda: handed_env().get("PAD_VIEW") == "titles" and pad_pid(), "the pad again in the titled view (%s)" % said)
         subprocess.run(["swaymsg", "[pid=%d] focus" % a], env=env, capture_output=True)
         shell("desktop", "window", "down")
-        shell("desktop", "window", "down")
         wait_for(lambda: on_pad(a), "the first window on the titled pad")
         titled = HANDLE + CELL
         settle(lambda: bottom() == edge - gap - titled - GAP)
@@ -927,7 +928,7 @@ def round_in(palette, binary, evidence):
         row = [r for r in runs(grab(0, top + HANDLE + 3, W, 1), 0, (surface, lit), 6) if r[1] >= SLOT]
         left = row[0][0] if row else (W - SLOT) // 2
         click(left + SLOT // 2, top + HANDLE + CELL // 2)
-        ok(wait_for(lambda: pad_pid() is None and bottom() == edge - GAP, "the pad gone", seconds=10), "a click on its slot brings it back, and the pad goes")
+        ok(wait_for(lambda: pad_empty() and bottom() == edge - GAP, "the pad with no window", seconds=10), "a click on its slot brings it back, and the pad's surfaces go")
 
         # 17. the dialog on the pad (v0.134.3): a foot whose app id is spark-dialog, as the dialog's window, wears
         #     spark's own mark, the S of the assets beside spark-shell, its three bands top to bottom: the dark one

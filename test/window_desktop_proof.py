@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """Prove the window keys on a separate headless sway with a real foot:
 python3 test/window_desktop_proof.py. A throwaway HOME and a sway of its
-own. Drives spark-shell desktop window as Super+arrow and Super+minus do and
-reads where foot lands: Up twice maximizes, Down twice minimizes, Right then
-Down is the bottom right quarter, and the window minimized last comes back
-at its place. foot rounds a floating window down to whole cells, so a place
-holds when the corner is the place's and the size is the place's or up to
-an eighth less.
+own. Drives spark-shell desktop window as Super+Ctrl+arrow and Super+minus
+do and reads where foot lands: Up fills the area, Down twice minimizes, Right
+then Down is the bottom right quarter, and the window minimized last comes
+back at its place. A window's box is its rect with the title band above it.
+foot rounds a floating window down to whole cells, so a place holds when the
+corner is the place's and the size is the place's or up to an eighth less.
 
-The sway it starts takes from spark-shell's own render the gaps, the edge,
-the bar's font and the rule for a new window (#262, #265), with a bar at the
-top. Then: the area stands 8 pixels in from the screen's edges and a window
-has an edge of 2 (#265); two windows the keys placed in the top quarters,
+The sway it starts takes from spark-shell's own render the gaps, the title
+band and its frame, the font and the rule for a new window (#262, #265),
+with a bar at the top. Then: the area stands 16 pixels in from the screen's
+edges and a window has a frame of 1; two windows the keys placed in the top quarters,
 and a third foot opens floating in the bottom half; all four places taken, a
 fifth opens at two thirds, centered, on top; a workspace with a tiled window
 tiles a new one (#262). Two foot windows on the halves, no tiled window: the
@@ -94,8 +94,10 @@ def places(area):
 
 
 def rect(node):
-    r = node["rect"]
-    return (r["x"], r["y"], r["width"], r["height"])
+    """The window's box: its rect and the title band above it."""
+    r, d = node["rect"], node.get("deco_rect") or {}
+    band = d.get("height", 0)
+    return (r["x"], r["y"] - band, r["width"], r["height"] + band)
 
 
 class Strip:
@@ -212,11 +214,11 @@ def main():
     spark("bar", "text", "10")
     render = (root / ".config/sway/config").read_text()
     picked = [line for line in render.splitlines()
-              if re.match(r"(gaps (inner|outer) |default_border |default_floating_border |for_window \[tiling\] )", line)]
+              if re.match(r"(gaps (inner|outer) |default_border |default_floating_border |for_window \[tiling\] |font pango:|titlebar_|title_align )", line)]
     font = next((line.strip() for line in render.splitlines() if line.strip().startswith("font pango:")), "font pango:monospace 10")
-    ok(len(picked) == 5 and "gaps outer 8" in picked and "default_border pixel 2" in picked
-       and any(line.endswith("spark-shell desktop window new") for line in picked),
-       "spark-shell's render: an outer gap of 8, an edge of 2, the rule for a new window (#262, #265)", picked)
+    ok(len(picked) == 9 and "gaps outer 8" in picked and "gaps inner 8" in picked and "default_border normal 1" in picked
+       and "titlebar_border_thickness 1" in picked and any(line.endswith("spark-shell desktop window new") for line in picked),
+       "spark-shell's render: gaps of 8, a title band with a frame of 1, the rule for a new window (#262, #265)", picked)
     config = root / "sway.conf"
     bar = ("bar {\n    position top\n    %s\n    status_command while :; do echo proof; sleep 60; done\n}\n" % font) if bar_here else ""
     config.write_text("output HEADLESS-1 mode 1920x1080\nxwayland disable\n%s\n%s" % ("\n".join(picked), bar))
@@ -274,7 +276,7 @@ def main():
             time.sleep(0.6)   # foot answers the new size with its own, a frame later
             return (done.stdout + done.stderr).strip()
 
-        steps = [("up", "top half"), ("up", "maximized"), ("down", "bottom half"), ("down", "minimized"),
+        steps = [("up", "maximized"), ("down", "bottom half"), ("down", "minimized"),
                  ("restore", "bottom half"), ("right", "bottom right quarter"), ("up", "right half"),
                  ("down", "bottom right quarter"), ("down", "minimized"), ("restore", "bottom right quarter"),
                  ("left", "bottom left quarter")]
@@ -290,20 +292,23 @@ def main():
                    "%s: foot is %s, %s" % (word, "maximized" if where == "maximized" else "on the " + where, got),
                    "want %s, said %r" % (place[where], said))
 
-        # half the air (#265): the area 8 pixels in from the screen where no bar is, a window's edge 2 pixels
+        # the air (#265): the area 16 pixels in from the screen where no bar is (outer 8 and inner 8), a window's frame 1 pixel
+        # and its title band above its rect
         n = foot()
-        ok(area["x"] == 8 and area["x"] + area["width"] == 1920 - 8 and area["y"] + area["height"] == 1080 - 8
-           and (area["y"] > 8 if bar_here else area["y"] == 8),
-           "the area stands 8 pixels in from the screen's edges%s (#265)" % (", below the bar" if bar_here else ", no bar here"), area)
-        ok(n["current_border_width"] == 2 and n["window_rect"]["x"] == 2 and n["rect"]["x"] + n["window_rect"]["x"] == 10,
-           "a window at the left edge: an edge of 2, its text 10 pixels from the screen's edge; two windows side by side 4 apart (#265)",
-           (n["current_border_width"], n["rect"], n["window_rect"]))
+        ok(area["x"] == 16 and area["x"] + area["width"] == 1920 - 16 and area["y"] + area["height"] == 1080 - 16
+           and (area["y"] > 16 if bar_here else area["y"] == 16),
+           "the area stands 16 pixels in from the screen's edges%s (#265)" % (", below the bar" if bar_here else ", no bar here"), area)
+        ok(n["current_border_width"] == 1 and n["window_rect"]["x"] == 1 and n["rect"]["x"] + n["window_rect"]["x"] == 17
+           and n["deco_rect"]["height"] > 0 and n["rect"]["y"] == area["y"] + n["deco_rect"]["y"] + n["deco_rect"]["height"],
+           "a window at the left edge: a frame of 1, its text 17 pixels from the screen's edge, its title band above it (v0.140)",
+           (n["current_border_width"], n["rect"], n["window_rect"], n["deco_rect"]))
 
         # a new window (#262): on workspace 2, two windows the keys placed in the top quarters, then a third, a fourth, a fifth
         msg("workspace 2")
         a = open_foot()
-        key("up")
+        key("up")   # the whole area
         key("left")
+        key("up")   # the top left quarter
         b = open_foot()   # the left half is under a, the right half free: b floats there by itself
         ok(node(b)["type"] == "floating_con" and fills(rect(node(b)), place["right half"]),
            "a foot opened beside a window the keys placed floats in the right half, the first place free (#262)", rect(node(b)))
@@ -330,6 +335,8 @@ def main():
         g = open_foot()
         ok(node(f)["type"] == "con" and node(g)["type"] == "con",
            "a workspace with a tiled window tiles the new one (#262)", (node(f)["type"], node(g)["type"]))
+        apart = node(g)["rect"]["x"] - (node(f)["rect"]["x"] + node(f)["rect"]["width"])
+        ok(apart == 8, "two tiled windows side by side sit 8 pixels apart (#265)", (apart, node(f)["rect"], node(g)["rect"]))
 
         # the space for windows changes (#264): on workspace 4, two halves the keys placed and no tiled window
         if pad or bar_here:   # the space changes by the pad, else by the bar's text size; with neither, nothing here changes it
