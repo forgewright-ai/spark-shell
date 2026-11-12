@@ -44,9 +44,9 @@ gaps inner @GAPS_INNER@
 gaps outer @GAPS_OUTER@
 workspace_layout @WS_LAYOUT@
 # The window's chrome: a title band, the app's name at its left and what it shows beside it in
-# muted, and a one-pixel frame in the band's own shade. The focused window wears the surface
-# shade with the text color, the others four percent above the ground with muted text, so the
-# focus reads at a glance and nothing outlines in a bright color; urgent keeps the alarm. The
+# muted, and a one-pixel frame in the band's own shade. The focused window wears the accent with
+# the ground's color as text, as the bar's workspace block; the others four percent above the
+# ground with muted text, so the focus reads at a glance; urgent keeps the alarm. The
 # indicator is the accent at a quarter (#47, #49): the drop area of a moving window, and the side
 # of a window alone in a split where the next one opens. sway halves the four channels it is
 # given and draws them premultiplied, so the accent goes in with each channel halved and alpha 80.
@@ -60,13 +60,13 @@ title_align left
 floating_modifier $mod normal
 # key: The glyphs at a title's right end minimize, fill the screen, and close.
 # The terminal's band: terminal, then the folder the prompt is in (the prompt hook titles it)
-for_window [app_id="foot"] title_format "terminal   <span foreground='#@HEX_MUTED@'>%title</span>"
+for_window [app_id="foot"] title_format "terminal   %title"
 # The pointer (#22): the spark pointer, white on a dark palette and black on a light one, or the theme
 # POINTER names, at its size; sway hands the name and the size to every program it starts
 seat * xcursor_theme @POINTER_NAME@ @POINTER_SIZE@
 
 # border  background  text  indicator  child_border
-client.focused          #@PANEL_BG@ #@PANEL_BG@ #@HEX_FG@ #@DROP_HEX@ #@PANEL_BG@
+client.focused          #@HEX_ACCENT@ #@HEX_ACCENT@ #@HEX_BG@ #@DROP_HEX@ #@HEX_ACCENT@
 client.focused_inactive #@PANEL_LOW@ #@PANEL_LOW@ #@HEX_MUTED@ #@PANEL_LOW@ #@PANEL_LOW@
 client.unfocused        #@PANEL_LOW@ #@PANEL_LOW@ #@HEX_MUTED@ #@PANEL_LOW@ #@PANEL_LOW@
 client.urgent           #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@HEX_BG@ #@HEX_ANSI_1@ #@HEX_ANSI_1@

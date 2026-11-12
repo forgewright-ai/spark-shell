@@ -37,6 +37,8 @@ use wayland_client::{Connection, QueueHandle, WEnum};
 /// The layer shell namespace: what sway's rules and tools call the surface.
 const NAMESPACE: &str = "spark-pad";
 const BTN_LEFT: u32 = 0x110;
+/// How long the tree is read every tick after an event.
+const BURST: Duration = Duration::from_secs(2);
 /// The least width at a side spark-shell keeps (PAD_SIDE_WIDTH, 36 to 9999): a column's cell is narrower at a
 /// small text size, and the layout makes the same column of it.
 const SIDE_LEAST: i32 = 36;
@@ -49,6 +51,8 @@ pub struct Look {
     /// The unfocused title's text and band, as sway draws them.
     pub title_muted: Rgb,
     pub low: Rgb,
+    /// The ground: the text on the focused band, which wears the accent.
+    pub ground: Rgb,
     pub surface: Rgb,
     pub lit: Rgb,
     pub band: Rgb,
@@ -253,6 +257,8 @@ pub struct Pad {
     bands: Vec<Band>,
     deco_press: Option<(i64, Glyph)>,
     history: History,
+    /// Until when the tree is read every tick: two seconds after an event, since a move that follows sends none.
+    burst_until: Option<Instant>,
     written: Option<(bool, usize)>,
     /// The strips kept when spark-shell last laid the placed windows out again (desktop window refit).
     refit_for: Vec<(String, Edge, i32)>,
@@ -324,6 +330,7 @@ impl Pad {
             bands: vec![],
             deco_press: None,
             history: History::default(),
+            burst_until: None,
             written: None,
             refit_for: vec![],
             refit_owed: false,
@@ -509,7 +516,11 @@ impl Pad {
             let look = &self.cfg.look;
             for b in self.bands.iter().filter(|b| b.output == name) {
                 let cells = model::glyph_cells(b.rect);
-                let (chip, ink) = if b.focused { (look.surface, look.fg) } else { (look.low, look.title_muted) };
+                let (chip, ink) = if b.focused {
+                    (look.accent, look.ground)
+                } else {
+                    (look.low, look.title_muted)
+                };
                 let x0 = cells[0].x - 4;
                 c.fill(x0 as f64, b.rect.y as f64, (b.rect.x + b.rect.w - x0) as f64, b.rect.h as f64, chip, 1.0);
                 for (r, glyph) in cells.iter().zip(["\u{2212}", "\u{25a1}", "\u{00d7}"]) {
@@ -581,7 +592,17 @@ impl Pad {
             ("close", Some(id)) => self.history.closed(id),
             _ => {}
         }
+        self.look();
+    }
+
+    /// The tree read now, and every tick for the next two seconds: a command moved a window, or one may follow.
+    pub fn look(&mut self) {
+        self.burst_until = Some(Instant::now() + BURST);
         self.list_dirty = true;
+    }
+
+    pub fn bursting(&self) -> bool {
+        self.burst_until.is_some_and(|t| Instant::now() < t)
     }
 
     /// Super+Tab: the window before, along the walk.

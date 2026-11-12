@@ -408,7 +408,7 @@ wall_uncover() {   # wall_uncover [WALL_BG] -- sway's under ours, then ours goes
 wall_shown() { sed -n 's/^output \* bg //p' "$(wm_config_file)" 2>/dev/null | head -1; }   # -> the config's wallpaper
 desktop_live_cmd() {   # -> one compositor command; not the wallpaper
     wm_session && wm_here || return 0
-    _c="client.focused #$PANEL_BG #$PANEL_BG #$HEX_FG #$DROP_HEX #$PANEL_BG; client.focused_inactive #$PANEL_LOW #$PANEL_LOW #$HEX_MUTED #$PANEL_LOW #$PANEL_LOW"   # the indicator: the accent at a quarter
+    _c="client.focused #$HEX_ACCENT #$HEX_ACCENT #$HEX_BG #$DROP_HEX #$HEX_ACCENT; client.focused_inactive #$PANEL_LOW #$PANEL_LOW #$HEX_MUTED #$PANEL_LOW #$PANEL_LOW"   # the indicator: the accent at a quarter
     _c="$_c; client.unfocused #$PANEL_LOW #$PANEL_LOW #$HEX_MUTED #$PANEL_LOW #$PANEL_LOW; client.urgent #$HEX_ANSI_1 #$HEX_ANSI_1 #$HEX_BG #$HEX_ANSI_1 #$HEX_ANSI_1"
     _c="$_c; font pango:$(bar_line_font "$(font_spec)"); $(pointer_fresh)seat * xcursor_theme $POINTER_NAME $POINTER_SIZE; gaps inner all set $GAPS_INNER; gaps outer all set $GAPS_OUTER; [tiling] border $BORDER"
     _b=$(wm_bar_id)   # the bar's id, bar-0

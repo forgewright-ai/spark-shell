@@ -23,7 +23,7 @@ order the windows were focused in, and the tick spark-pad.back (spark-shell
 desktop window back, Super+Tab) focuses the window before.
 
 spark-shell sets the look and the place in the environment: PAD_FG,
-PAD_ACCENT, PAD_MUTED, PAD_TITLE_MUTED, PAD_LOW, PAD_SURFACE, PAD_LIT,
+PAD_ACCENT, PAD_MUTED, PAD_TITLE_MUTED, PAD_GROUND, PAD_LOW, PAD_SURFACE, PAD_LIT,
 PAD_BAND_HEX (rrggbb),
 PAD_ALPHA, PAD_FONT, PAD_VIEW (icons, the default, or titles: a slot a
 window with its title), PAD_BAND (on: the band under the handle; off, the
@@ -111,6 +111,7 @@ fn config() -> spark_pad::app::Config {
             muted: color("PAD_MUTED", "696c77"),
             title_muted: color("PAD_TITLE_MUTED", "a0a1a7"),
             low: color("PAD_LOW", "f3f3f4"),
+            ground: color("PAD_GROUND", "fafafa"),
             surface: color("PAD_SURFACE", "ebebec"),
             lit: color("PAD_LIT", "dcdcdd"),
             band: color("PAD_BAND_HEX", "c3d0ee"),
@@ -326,11 +327,13 @@ fn run(keys: bool) -> Result<(), String> {
                         let v: serde_json::Value = serde_json::from_slice(&payload).unwrap_or_default();
                         pad.window_event(v["change"].as_str().unwrap_or(""), v["container"]["id"].as_i64());
                     }
-                    sway::EVENT_WORKSPACE | sway::EVENT_OUTPUT => pad.list_dirty = true,
+                    sway::EVENT_WORKSPACE | sway::EVENT_OUTPUT => pad.look(),
                     sway::EVENT_TICK => {
                         let v: serde_json::Value = serde_json::from_slice(&payload).unwrap_or_default();
                         if v["payload"] == sway::BACK {
                             pad.back();
+                        } else if v["payload"] == sway::LOOK {
+                            pad.look();
                         }
                     }
                     _ => {}
@@ -363,14 +366,15 @@ fn run(keys: bool) -> Result<(), String> {
             let _ = tx.send(icons(&spark_shell, px));
         }
     });
-    let tick = Duration::from_millis(500);
+    let tick = Duration::from_millis(100);
     let mut ticks = 0u32;
     handle
         .insert_source(Timer::from_duration(tick), move |_, _, pad: &mut Pad| {
             pad.settle();
-            // the tree read again each second: a resize or a drag sends no event
+            // the tree read again every tick for two seconds after an event, else every half second: a
+            // resize or a drag sends no event
             ticks = ticks.wrapping_add(1);
-            if ticks.is_multiple_of(2) {
+            if pad.bursting() || ticks.is_multiple_of(5) {
                 pad.list_dirty = true;
             }
             TimeoutAction::ToDuration(tick)

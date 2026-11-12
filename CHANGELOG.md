@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.141
+
+The focused window wears the accent, and the glyphs follow the window.
+
+- The focused title band and its frame are the palette's accent, with
+  the ground's color as text, as the bar's workspace block; the other
+  bands stay four percent above the ground.
+- The pad reads sway's tree the moment a window command has moved a
+  window, told by a tick, and every tenth of a second for two seconds
+  after any window event; its backstop is half a second. The glyphs no
+  longer trail a placed window.
+
 ## v0.140.1
 
 - An update to v0.140 in a running desktop left the pad off until the

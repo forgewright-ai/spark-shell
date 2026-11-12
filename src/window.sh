@@ -92,6 +92,7 @@ layout_window_refit() {   # layout_window_refit -- after layout_window read the 
         _rc="resize set width $3 px height $4 px, move absolute position $1 $2, $(layout_place_unmarks "$_rq")mark --add _spark-shell.area.$_ax.$_ay.$_aw.$_ah.$_ri"
         wm_on "con_id=$_ri" "$_rc" </dev/null >/dev/null 2>&1 && _rm=$((_rm + 1)) || :
     done < "$TMP/refit"
+    [ "$_rm" = 0 ] || pad_look
     if [ "$_rn" = 0 ]; then echo "no window in sight has a place the keys gave it"; return 0; fi
     _rs=''
     case $_rm in 0) ;; 1) _rs='1 window is at its place again' ;; *) _rs="$_rm windows are at their places again" ;; esac
@@ -142,6 +143,7 @@ layout_window_new() {   # layout_window_new -- after layout_window read the tree
         fi
     fi
     wm_send "$_nc" >/dev/null 2>&1 || refuse "$WM_NAME refused: $_nc"
+    pad_look
     echo "the new window $_ns"
 }
 layout_mark_from() { printf '%s\n' "$1" | tr ',' '\n' | sed -n 's/^_spark-shell\.from\.\(.*\)\.[0-9]*$/\1/p' | head -1; }   # layout_mark_from MARKS -> where a window that fills the screen came from: tiled, a place or X.Y.W.H
@@ -224,6 +226,7 @@ layout_window() {   # layout_window float|left|right|up|down|max|min|toggle|rest
             fi ;;
     esac
     wm_on "con_id=$2" "$_dc" >/dev/null 2>&1 || refuse "$WM_NAME refused: $_dc"
+    pad_look
     [ -z "$_drefit" ] || { wm_tree > "$TMP/tree" && layout_window_refit >/dev/null 2>&1 || :; }   # at its place on the new screen
     [ -z "$_dpad" ] || { pad_wake; bar_redraw; }   # the pad shows it, and the bar's count
     echo "the window is $_ds"
@@ -258,6 +261,7 @@ layout_window_restore() {   # layout_window_restore [ID] -- the window ID from t
             _dc="$_dc, floating disable, floating enable, resize set width $3 px height $4 px, move absolute position $1 $2$(layout_place_marks "$_dk" "$_di" $_da)"; _ds=$(layout_window_said "$_dk") ;;
     esac
     wm_on "con_id=$_di" "$_dc" >/dev/null 2>&1 || refuse "$WM_NAME refused: $_dc"
+    pad_look
     bar_redraw   # one window fewer on the pad
     echo "the window is back, $_ds"
 }
