@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.140.1
+
+- An update to v0.140 in a running desktop left the pad off until the
+  next login, so the title bands had no minimize, fill and close glyphs.
+  sway starts the pad when it starts, and a reload does not start it
+  again. `spark-shell on` now has sway start the pad, as login does,
+  when the desktop is running and no pad is, so `spark-shell update`
+  brings it up at once.
+
 ## v0.140
 
 The window model: every window has a title band, the keys follow one

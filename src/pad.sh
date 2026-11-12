@@ -33,6 +33,14 @@ pad_install() {   # the pad's row of on desktop: in place as pinned, or fetched 
     row ok pad "spark-pad installed for $_pdr ($PAD_BIN), sha256 checked"
     _pad_again=''; pad_again   # a pad running the build before takes the new one
 }
+pad_session() {   # on desktop's last pad row: the pad runs for the session (v0.140), and sway starts it at login alone, so a session that began before, as an update's, has none until this starts it, through sway, as login does
+    wm_up && pad_cmd >/dev/null || return 0
+    ! pad_pid >/dev/null || return 0
+    [ -z "${_pad_started:-}" ] || return 0   # this run started one already (pad_again), its lock not taken yet
+    need pad "start the pad for this session, through sway as at login" || return 0
+    wm_exec "$REPO/spark-shell desktop pad start" >/dev/null 2>&1 || { row todo pad "sway did not start the pad -- it starts at the next login"; return 0; }
+    ok pad "the pad runs for this session now"
+}
 pad_pid() {   # -> the running pad's pid from its lock; false when none runs
     _pdl=$(pad_lock); [ -s "$_pdl" ] || return 1
     _pdp=''; read -r _pdp 2>/dev/null < "$_pdl" || [ -n "$_pdp" ] || return 1   # a pid with no new line after it is read too
@@ -69,7 +77,7 @@ pad_again() {   # a running pad restarted, so it takes a new look or bar place; 
     _pdo=$(pad_pid) || return 0
     kill "$_pdo" 2>/dev/null || :
     _pdi=0; while [ "$_pdi" -lt 20 ] && kill -0 "$_pdo" 2>/dev/null; do sleep 0.1; _pdi=$((_pdi + 1)); done
-    pad_run 2>/dev/null || :
+    if pad_run 2>/dev/null; then _pad_started=1; fi   # pad_session asks for no second one before this one takes its lock
 }
 pad_place_words() {   # pad_place_words PLACE -> where it sits, in words
     case $1 in

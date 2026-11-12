@@ -1015,6 +1015,27 @@ else
     out=$(SWAYSOCK=/nonexistent sh "$SH" on --yes)
     ! printf '%s\n' "$out" | grep -q 'reloaded' && ok "on: a bar's file whose bar is gone asks no reload" || bad "dead bar no reload" "$out"
     rm -f "$bpid"; kill "$fakebar" 2>/dev/null; wait "$fakebar" 2>/dev/null || :
+    # the pad runs for the session (v0.140), and sway starts it at login alone: on, in a session with no pad (one that
+    # began before an update), has sway start it as login does; with a pad running, or a dry run, sway is not asked.
+    # The stand-in holds its lock as the real pad does, so a pad on restarts (a new look) is still one running
+    psd=$H/padsway; mkdir -p "$psd" "$H/padrun"; pslog=$H/padsway.log; plock=$H/padrun/spark-shell-pad.pid
+    printf '#!/bin/sh\ncase "$*" in "-t get_version") echo "{\\"human_readable\\":\\"1.10\\"}" ;; "-- "*) shift; echo "$*" >> "%s" ;; esac\n' "$pslog" > "$psd/swaymsg"
+    printf '#!/bin/sh\ntrap '"'"'[ -z "${PAD_LOCK:-}" ] || rm -f "$PAD_LOCK"; exit 0'"'"' TERM\n[ -z "${PAD_LOCK:-}" ] || echo $$ > "$PAD_LOCK"\nwhile :; do sleep 0.1; done\n' > "$psd/spark-pad"
+    chmod +x "$psd/swaymsg" "$psd/spark-pad"
+    padon() { rm -f "$pslog"; XDG_RUNTIME_DIR=$H/padrun SPARK_SHELL_PAD=$psd/spark-pad SWAYSOCK=/nonexistent PATH="$psd:$PATH" sh "$SH" on --yes "$@" 2>&1; }
+    padasked() { grep -qxF "exec $REPO/spark-shell desktop pad start" "$pslog" 2>/dev/null; }
+    out=$(padon || :)
+    printf '%s\n' "$out" | grep -qx 'ok     pad          the pad runs for this session now' && padasked \
+        && ok "on: a session with no pad (begun before an update to v0.140) has sway start it, as login does" || bad "pad session start" "$out | $(cat "$pslog" 2>&1)"
+    PAD_LOCK=$plock "$psd/spark-pad" & ppad=$!
+    i=0; while [ ! -s "$plock" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+    out=$(padon || :)
+    ! printf '%s\n' "$out" | grep -q '^[a-z]* *pad  .*for this session' && ! padasked \
+        && ok "on: a pad running, or one on started again, is left as it is, sway not asked for another" || bad "pad session running" "$out | $(cat "$pslog" 2>&1)"
+    [ ! -s "$plock" ] || kill "$(cat "$plock")" 2>/dev/null || :; kill "$ppad" 2>/dev/null || :; wait "$ppad" 2>/dev/null || :; rm -f "$plock"
+    out=$(padon --dry-run || :)
+    printf '%s\n' "$out" | grep -qx 'would  pad          start the pad for this session, through sway as at login' && ! padasked \
+        && ok "on --dry-run: the pad it would start is said, sway not asked" || bad "pad session dry" "$out | $(cat "$pslog" 2>&1)"
     # a new drawing of the pointer reaches a running sway once: sway loads a cursor theme again only for a new name or size (#48)
     pd=$HOME/.local/share/icons; seen=$HOME/.local/state/spark-shell/pointer.seen; cmds=$H/swaymsg.cmds
     printf '#!/bin/sh\n[ "$1" != -- ] || { shift; echo "$*" >> "%s"; }\n' "$cmds" > "$H/.local/bin/swaymsg"

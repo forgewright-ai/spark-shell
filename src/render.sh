@@ -244,6 +244,7 @@ desktop_apply() {
     semantic_install
     wallpaper_install
     pad_install
+    pad_session
     motion_row
     mcp_apply
     notify_start
