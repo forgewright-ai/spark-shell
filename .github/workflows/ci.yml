@@ -348,7 +348,8 @@ jobs:
           pkgs=$(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p' "distro/$DISTRO.env" | tr '\n' ' ')
           sh -c "$INSTALL $pkgs >/dev/null" || sh -c "$INSTALL $pkgs"
       - name: the install timed, the packages alone, in this container
-        run: echo "install on $FAMILY: $(( $(date +%s) - $(cat /tmp/install.t0) )) s for the packages" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "install on $FAMILY: $(( $(date +%s) - $(cat /tmp/install.t0) )) s for the packages" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: the proof's own (a session bus for the headless sway, which a machine's login makes; wtype, the pad proof's keyboard)
         run: sh -c "$INSTALL $PROOF wtype >/dev/null" || sh -c "$INSTALL $PROOF wtype"
       - name: the pad's build, the one the pad job made
