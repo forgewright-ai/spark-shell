@@ -1,15 +1,20 @@
 # Changelog
 
-## v0.141.1
+## v0.142
 
-The buttons on a title band are sway's own and move with their window.
+One window component, winpad, and buttons that move with their window.
 
 - Close, minimize and fill sit at the band's left end, in that order,
   drawn by sway as the start of every title. A dragged window carries
-  them. The pad no longer draws on the band.
+  them.
 - On the focused window the buttons wear the title's color, on the
   others each its own: red, yellow and green from the palette. The one
   under the pointer lights as a chip in its color.
+- The pad component is winpad now, with three jobs in three files: the
+  pad for the minimized windows, the buttons, and the focus order. The
+  pad keeps its name as the place where minimized windows wait.
+- winpad lays the placed windows out again when a screen changes; the
+  bar no longer does.
 
 ## v0.141
 

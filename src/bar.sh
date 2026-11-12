@@ -93,11 +93,10 @@ bar_ws_names() {   # renames "3" or "3 writing" to "3:LABEL" or "3:LABEL writing
             [ "$name" = "$n:$g$_wr" ] || wm_send "rename workspace \"$name\" to \"$n:$g$_wr\"" >/dev/null 2>&1 || :
         done
 }
-bar_ws_watch() {   # on sway's workspace and output events: rename, refit
+bar_ws_watch() {   # on sway's workspace events: the labels again
     bar_ws_names
-    wm_events '["workspace","output"]' | while IFS= read -r _e; do   # -r: one event a line
+    wm_events '["workspace"]' | while IFS= read -r _e; do   # -r: one event a line
         case $_e in *'"change": "init"'*|*'"change":"init"'*|*'"change": "rename"'*|*'"change":"rename"'*) bar_ws_names ;; esac   # sway spaces its JSON; a rename drops the label
-        case $_e in *'"change": "unspecified"'*|*'"change":"unspecified"'*) layout_refit_soon ;; esac   # an output event says "unspecified"
     done
 }
 bar_timeout() { if command -v timeout >/dev/null 2>&1; then timeout 3 "$@"; else "$@"; fi; }

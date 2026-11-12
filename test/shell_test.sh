@@ -3204,7 +3204,7 @@ case "$*" in
         [ -e "$HOME/ws-test" ] || exit 0   # only the workspace glyphs' test asks
         if [ -e "$HOME/ws-later" ]; then echo '[{"num":1,"name":"1:x"},{"num":5,"name":"5"}]'
         else echo '[{"num":1,"name":"1"},{"num":2,"name":"2:x"},{"num":3,"name":"3 writing"},{"num":10,"name":"10"},{"num":11,"name":"11"}]'; touch "$HOME/ws-later"; fi ;;
-    "-r -t subscribe -m [\"workspace\",\"output\"]") echo '{ "change": "init", "old": null, "current": { "num": 5, "name": "5" } }' ;;   # as sway writes it: spaced
+    "-r -t subscribe -m [\"workspace\"]") echo '{ "change": "init", "old": null, "current": { "num": 5, "name": "5" } }' ;;   # as sway writes it: spaced
     "-t get_outputs") echo '[{"name":"eDP-1","make":"BOE","model":"0x0BCA","serial":"","active":true,"scale":1.0,"current_mode":{"width":1920,"height":1080},"rect":{"x":0,"y":0,"width":1920,"height":1080},"modes":[{"width":1920,"height":1080},{"width":1280,"height":720}]},{"name":"HDMI-A-1","make":"Lenovo Group Limited","model":"T24i-30","serial":"V30A1","active":true,"scale":1.0,"current_mode":{"width":1920,"height":1080},"rect":{"x":1920,"y":0,"width":1920,"height":1080},"modes":[{"width":1920,"height":1080}]}]' ;;
 esac
 STUB
