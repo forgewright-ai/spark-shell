@@ -22,7 +22,7 @@ machine_join() { awk -v s="${1:-, }" '{ o = o (NR > 1 ? s : "") $0 } END { if (N
 machine_names() { while IFS= read -r _mqn; do [ -z "$_mqn" ] || { machine_q "$_mqn"; echo; }; done | machine_join; }   # a name a line -> one line, each name quoted when it must be
 machine_clean() { tr '\t' ' ' | scrub_text | awk -v max="$1" 'NF { n += length($0) + 1; if (n > max) exit; print }'; }   # machine_clean MAX -- no tab, no control character, no empty line, MAX characters at most, cut at a line's end
 machine_keys() {   # -> the key table's sentences a request asks about, each to its first clause, one line
-    layout_keys | awk '$1 ~ /^(Super[+]Return|Super[+]Shift[+]q|Super[+]Escape|Print|Super[+]Ctrl[+]space|Super[+]1[.][.]0)$/ || /^The (volume|brightness) / { if ($1 !~ /^Super[+]1/) sub(/(; |, and ).*/, "."); print }' | machine_join ' '   # the workspaces' second clause says where Shift sends the window
+    layout_keys | awk '$1 ~ /^(Super[+]Return|Super[+]q|Super[+]Escape|Print|Super[+]Ctrl[+]space|Super[+]1[.][.]0)$/ || /^The (volume|brightness) / { if ($1 !~ /^Super[+]1/) sub(/(; |, and ).*/, "."); print }' | machine_join ' '   # the workspaces' second clause says where Shift sends the window
 }
 # the commands that read and list, named to spark; a change goes through a setting's MCP tool
 MACHINE_READS='theme:font list:layout:notes:reminders:desktop keys:desktop display'   # a colon between (awk -v takes no new line)
