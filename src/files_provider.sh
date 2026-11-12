@@ -157,7 +157,7 @@ files_result() {   # files_result ID RECEIPT [UNDO-TOOL UNDO-ARGS-JSON] [open=UR
     [ -z "$SUBSCRIBED" ] || rpc_note notifications/resources/updated "{\"uri\":\"spark-shell://${sec:-files}/rows\"}"
 }
 files_opened() {   # files_opened ID BEFORE RECEIPT-FILE -- opened, so the dialog closes; a short wait for a new window so a fresh app takes the focus (a browser open already shows none)
-    if [ -n "${SWAYSOCK:-}" ]; then
+    if wm_session; then
         _ow=0; while [ "$(layout_windows_all)" -le "$2" ] && [ "$_ow" -lt 4 ]; do sleep 0.25; _ow=$((_ow + 1)); done
         rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
     else rpc_result "$1" "$(jq -c '{content: [{type: "text", text: tojson}], structuredContent: ., isError: false}' "$3")"; fi
@@ -165,7 +165,7 @@ files_opened() {   # files_opened ID BEFORE RECEIPT-FILE -- opened, so the dialo
 files_manager_ok() { [ "$OS" = Darwin ] || { command -v xdg-open >/dev/null 2>&1 && [ -n "$(xdg-mime query default inode/directory 2>/dev/null)" ]; }; }   # a system file manager is configured (Finder on macOS)
 files_text() { [ -f "$1" ] && { [ ! -s "$1" ] || LC_ALL=C grep -qI . "$1" 2>/dev/null; }; }   # a text file: grep reads it as text; an empty file is one
 files_open_text() {   # files_open_text ID PATH -- a text file in the editor in a terminal window (xdg-open would start a terminal editor with none); 1 on macOS, without sway or an editor, or a path sway would split
-    [ "$OS" != Darwin ] && files_text "$2" && layout_in_sway && _fed=$(editor_pick) || return 1
+    [ "$OS" != Darwin ] && files_text "$2" && wm_up && _fed=$(editor_pick) || return 1
     case $2 in *[,\;\'\"]*) return 1 ;; esac
     _wr=0; win_exec "$(editor_exec "$2")" || _wr=$?
     [ "$_wr" -ne 2 ] || { provide_refuse "$1" "files: could not start the editor"; return 0; }
@@ -185,7 +185,7 @@ files_open_with() {   # files_open_with ID PATH [--reveal] -- the path through t
         [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ] || { provide_refuse "$1" "files: opening a file needs the desktop"; return 0; }
         if { [ -d "$2" ] || [ "${3:-}" = --reveal ]; } && [ -z "$(xdg-mime query default inode/directory 2>/dev/null)" ]; then provide_refuse "$1" "files: no system file manager is configured; folders can still be browsed here"; return 0; fi
     fi
-    _before=''; [ -z "${SWAYSOCK:-}" ] || _before=$(layout_windows_all)
+    _before=''; ! wm_session || _before=$(layout_windows_all)
     if ! python3 "$REPO/lib/launch.py" "$OS" "$2" ${3:-} > "$TMP/open.result" 2> "$TMP/open.error"; then provide_refuse "$1" "$(scrub_text < "$TMP/open.error")"; return 0; fi
     files_opened "$1" "$_before" "$TMP/open.result"
 }
@@ -249,7 +249,7 @@ files_call_new() {   # files_call_new ID TOOL ARGUMENTS -- a folder, or an empty
     if [ "$2" = files_new_folder ]; then mkdir "$_fn" 2>/dev/null || { provide_refuse "$1" "files: could not make $_fnm"; return 0; }
         files_result "$1" "folder $_fnm made in $(files_home "${_fn%/*}")" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"; return 0; fi
     : > "$_fn" 2>/dev/null || { provide_refuse "$1" "files: could not make $_fnm"; return 0; }
-    if layout_in_sway && editor_pick >/dev/null; then   # in the editor, in a terminal window: the window is the receipt
+    if wm_up && editor_pick >/dev/null; then   # in the editor, in a terminal window: the window is the receipt
         case $_fn in *[,\;\'\"]*) ;; *)
             if win_exec "$(editor_exec "$_fn")"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"; return 0; fi ;;
         esac

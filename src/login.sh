@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # the gsettings color-scheme is yours: put back only while spark-shell's
 # sets: GREETD_CONF LOGIN_ETC LOGIN_FILES LOGIN_FONTS LOGIN_ICONS LOGIN_LIB LOGIN_MARK LOGIN_SUDOERS OLD_GREETD_CONF OLD_GREETD_DIRS OLD_GREETD_FILES
-# reads: DIALOG_BIN DISTRO FACES_OTHER FAMILIES_SAID MODE NEON_STYLES NL OS POINTER_DIR POINTER_THEMES RENDERED REPO ROOT SCREENS_CONF SOUND_CONF SOUND_SV SPARK_CONFIG_DIR STATE_DIR TMP
+# reads: DIALOG_BIN DISTRO FACES_OTHER FAMILIES_SAID MODE NEON_STYLES NL OS POINTER_DIR POINTER_THEMES RENDERED REPO ROOT SCREENS_CONF SOUND_CONF SOUND_SV SPARK_CONFIG_DIR STATE_DIR TMP WM_NAME
 # last value still holds; an outside change takes it back
 portal_ready() {
     [ "$OS" != Darwin ] && notify_bus && command -v gsettings >/dev/null 2>&1 &&
@@ -34,10 +34,10 @@ layout_portals() {
     [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || refuse "portals need the sway desktop"
     [ -n "${WAYLAND_DISPLAY:-}" ] && notify_bus || refuse "portals need the running desktop and its session bus"
     command -v dbus-update-activation-environment >/dev/null 2>&1 || refuse "the desktop bus tools are missing (spark-shell on desktop)"
-    XDG_CURRENT_DESKTOP=sway; export XDG_CURRENT_DESKTOP
-    dbus-update-activation-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP SWAYSOCK || return 1
+    XDG_CURRENT_DESKTOP=$WM_NAME; export XDG_CURRENT_DESKTOP
+    dbus-update-activation-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP "$(wm_env_name)" || return 1
     if command -v systemctl >/dev/null 2>&1; then
-        systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP SWAYSOCK 2>/dev/null || :
+        systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP "$(wm_env_name)" 2>/dev/null || :
     fi
     theme_load
     portal_look
@@ -53,7 +53,7 @@ portal_check() {
         chk portals warn "the desktop bus or settings tools are missing" "spark-shell on desktop"
     elif [ -n "${WAYLAND_DISPLAY:-}" ] && ! notify_bus; then
         chk portals warn "the desktop has no session bus" "log out and in again"
-    elif [ ! -f "$HOME/.config/xdg-desktop-portal/sway-portals.conf" ]; then
+    elif [ ! -f "$(wm_portals_conf)" ]; then
         chk portals warn "the desktop portal choices are missing" "spark-shell on desktop"
     else chk portals ok "native settings and file picker via gtk, screen sharing via wlr"; fi
 }

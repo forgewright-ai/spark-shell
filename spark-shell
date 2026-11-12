@@ -145,6 +145,10 @@ REPO=$(cd "$(dirname "$SELF")" && pwd)
 # the modules, sourced in this order
 # shellcheck source=src/core.sh
 . "$REPO/src/core.sh"
+# shellcheck source=src/compositor.sh
+. "$REPO/src/compositor.sh"
+# shellcheck source=src/terminal.sh
+. "$REPO/src/terminal.sh"
 # shellcheck source=src/config.sh
 . "$REPO/src/config.sh"
 # shellcheck source=src/look.sh

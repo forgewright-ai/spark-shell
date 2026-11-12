@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the layouts
 # sets: LAYOUTS_DIR LAYOUT_LAST LAYOUT_NOT_APPS LAYOUT_PENDING LAYOUT_SMALL_WORDS LAYOUT_VERBS LAYOUT_WAIT REFUSE_AS
-# reads: APPS CONFIG_DIR DIALOG_BIN KEPT_LAYOUTS LAYOUT_ON NOTES_DIR OS PANEL_APP REPO STATE_DIR TAB TMP VERBOSE
+# reads: APPS CONFIG_DIR DIALOG_BIN KEPT_LAYOUTS LAYOUT_ON NOTES_DIR OS PANEL_APP REPO STATE_DIR TAB TERM_OWN TMP VERBOSE WM_NAME WM_OWN
 # every rendered line passes the gate before sway sees it
 LAYOUTS_DIR=$CONFIG_DIR/layouts
 LAYOUT_LAST=$STATE_DIR/layout.last
@@ -48,7 +48,7 @@ layout_apps() {   # layout_apps NEED -> the lines
             [ -z "$w" ] || ! layout_on_path "$w" || printf '%s: named in the need, terminal\n' "$w"
         done
         echo "shell: a terminal with a prompt, terminal"   # a layout word, not an app
-    } | grep -v "^\\($(printf '%s' "sway swaybg swaymsg foot footclient xdg-open $LAYOUT_NOT_APPS" | sed 's/ /\\|/g')\\):" \
+    } | grep -v "^\\($(printf '%s' "$WM_OWN $TERM_OWN xdg-open $LAYOUT_NOT_APPS" | sed 's/ /\\|/g')\\):" \
       | sort -t: -s -u -k1,1   # the desktop itself: not apps
 }
 REFUSE_AS=desktop   # the verb a refusal names
@@ -73,7 +73,7 @@ cmd_apps() {   # the picker: fzf over the apps and tools
             shown = (index(" " $7 " ", " " name " ") > 0) ? name : name " (" first ")"
             printf "%d\t%s\t%s%s: %s  [tool]\n", ($5 == "chosen" ? 1 : 2), name, star(name), shown, $6 }' "$TMP/entries" "$TMP/sbom" \
              | sort -t'	' -k1,1n -k2,2f -u | cut -f3 \
-             | grep -v "^..\\($(printf '%s' "sway swaybg swaymsg foot footclient xdg-open $LAYOUT_NOT_APPS" | sed 's/ /\\|/g')\\)[ :(]" \
+             | grep -v "^..\\($(printf '%s' "$WM_OWN $TERM_OWN xdg-open $LAYOUT_NOT_APPS" | sed 's/ /\\|/g')\\)[ :(]" \
              | fzf --multi --prompt "apps> " --layout=reverse --no-info --color=16 --no-unicode \
                    --header "The allowed apps: what a layout may open. A tool opens in a terminal window.
 Tab flips a row, Enter saves, Esc leaves the list as it was. A * row is allowed.
@@ -158,7 +158,7 @@ layout_launch() {   # layout_launch NAME ARGS -> the command line
 # never make, model or serial
 layout_screens() {
     [ ! -f "$TMP/screens" ] || return 0
-    swaymsg -t get_outputs 2>/dev/null | jq -r '[.[] | select(.active != false)] | sort_by(.rect.x) | length as $n | to_entries[]
+    wm_outputs | jq -r '[.[] | select(.active != false)] | sort_by(.rect.x) | length as $n | to_entries[]
         | "\(.value.name) \(.value.rect.width // .value.current_mode.width)x\(.value.rect.height // .value.current_mode.height) \(if .key == 0 then "left" elif .key == $n - 1 then "right" else "middle" end)"' > "$TMP/screens" 2>/dev/null || true
     [ -s "$TMP/screens" ] || echo "- 1920x1080 left" > "$TMP/screens"
 }
@@ -169,12 +169,12 @@ layout_screens_say() {   # -> the brief's words
 }
 layout_ws_said() { sed -n 's/^workspace number //p' "$1" | layout_said and; }   # layout_ws_said FILE -> "3" or "3 and 4"
 layout_next_ws() {   # layout_next_ws [SKIP...] -> the lowest free workspace not in SKIP
-    used="$(swaymsg -t get_workspaces 2>/dev/null | jq -r '.[].num' 2>/dev/null) $*"
+    used="$(wm_workspaces | jq -r '.[].num' 2>/dev/null) $*"
     n=1; while printf '%s\n' $used | grep -qx "$n"; do n=$((n + 1)); done
     echo "$n"
 }
 layout_windows() {   # layout_windows N -> its window count
-    swaymsg -t get_tree 2>/dev/null | jq "[.. | objects | select(.type? == \"workspace\" and .num? == $1) | .. | objects | select(.pid? != null)] | length" 2>/dev/null || echo 0
+    wm_tree | jq "[.. | objects | select(.type? == \"workspace\" and .num? == $1) | .. | objects | select(.pid? != null)] | length" 2>/dev/null || echo 0
 }
 
 layout_gate() {   # the gate: layout_gate LINE -> '' or why not
@@ -389,9 +389,8 @@ layout_named() {   # layout_named JSONFILE NEED -> JSONFILE narrowed to what the
 }
 layout_set() { jq -c '[.main] + (.side // []) | map([.app, (.args // "")])' "$1" 2>/dev/null; }   # layout_set JSONFILE -> its windows
 layout_has() { jq -e --arg a "$2" '[.main] + (.side // []) | any(.app == $a)' "$1" >/dev/null 2>&1; }   # layout_has JSONFILE APP
-layout_in_sway() { [ -n "${SWAYSOCK:-}" ] && [ -n "$(swaymsg -t get_version 2>/dev/null)" ]; }   # a sway that answers
 layout_on() {   # -> desktop or terminal; LAYOUT_ON forces one
-    if [ -n "${LAYOUT_ON:-}" ]; then echo "$LAYOUT_ON"; elif layout_in_sway; then echo desktop; else echo terminal; fi
+    if [ -n "${LAYOUT_ON:-}" ]; then echo "$LAYOUT_ON"; elif wm_up; then echo desktop; else echo terminal; fi
 }
 layout_render() {   # layout_render JSONFILE -> $TMP/layout.lines; ws the main's workspace
     ED=$(layout_editor) || ED=''
@@ -408,18 +407,18 @@ layout_show() {   # layout_show WHOSE -- KEPT=1 for a kept one
         name=$(sed -n 's/^session //p' "$TMP/layout.lines" | head -1)
         layout_play_rooms "$TMP/layout.lines" || refuse "nothing ran"
         echo "tmux session $name -- $1"
-        if layout_in_sway; then   # a foot window of its own
+        if wm_up; then   # a foot window of its own
             _w=$(layout_next_ws); printf 'workspace number %s\nrename workspace to "%s %s"\nexec foot -e tmux attach-session -t =%s\n' "$_w" "$_w" "$(layout_ws_label "$name")" "$name" > "$TMP/layout.win"
             KEPT=1 layout_play "$TMP/layout.win" >/dev/null || refuse 'the layout workspace could not be opened'; : > "$TMP/opened"
         else layout_join "$name"; fi
         return
     fi
     # the panel's window goes with the layout
-    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=$PANEL_APP] move container to workspace number $ws" >/dev/null 2>&1 || true
+    [ -z "${ASKED:-}" ] || wm_on "app_id=$PANEL_APP" "move container to workspace number $ws" >/dev/null 2>&1 || true
     layout_play "$TMP/layout.lines" || refuse "the layout did not finish; some windows may already be open"
     : > "$TMP/opened"   # the panel's window closes on it
     echo "on workspace $(layout_ws_said "$TMP/layout.lines")${1:+ -- $1}"
-    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=$PANEL_APP] focus" >/dev/null 2>&1 || true   # the keys stay the panel's
+    [ -z "${ASKED:-}" ] || wm_on "app_id=$PANEL_APP" "focus" >/dev/null 2>&1 || true   # the keys stay the panel's
 }
 
 layout_play() {   # layout_play FILE -> the lines sent to sway
@@ -433,13 +432,13 @@ layout_play() {   # layout_play FILE -> the lines sent to sway
         [ "$VERBOSE" != 1 ] || echo "  $line"
         case $line in 'workspace number '*) _ws=${line#workspace number } ;; esac
         case $line in 'window-rule '*)
-            if [ -n "$_new_id" ]; then swaymsg -- "[con_id=$_new_id] ${line#window-rule }" >/dev/null || { echo "  window rule refused"; _dp_failed=1; }
+            if [ -n "$_new_id" ]; then wm_on "con_id=$_new_id" "${line#window-rule }" >/dev/null || { echo "  window rule refused"; _dp_failed=1; }
             else echo "  window rule skipped: no single new window"; _dp_failed=1; fi
             continue ;;
         esac
-        case $line in exec*) swaymsg -t get_tree 2>/dev/null | jq '[.. | objects | select(.pid? != null) | .id]' > "$TMP/old.windows" ;; esac
+        case $line in exec*) wm_tree | jq '[.. | objects | select(.pid? != null) | .id]' > "$TMP/old.windows" ;; esac
         before=$(layout_windows "$_ws")
-        swaymsg -- "$line" >/dev/null || { echo "  sway refused: $line"; _dp_failed=1; continue; }
+        wm_send "$line" >/dev/null || { echo "  $WM_NAME refused: $line"; _dp_failed=1; continue; }
         sent=$((sent + 1))
         case $line in exec*)
             # until its window maps; 3 s grace for a program that ended
@@ -452,7 +451,7 @@ layout_play() {   # layout_play FILE -> the lines sent to sway
                 sleep 0.25; t=$((t + 1))
             done
             layout_pulse_stop
-            _new_id=$(swaymsg -t get_tree 2>/dev/null | jq -r --slurpfile old "$TMP/old.windows" --argjson ws "$_ws" '
+            _new_id=$(wm_tree | jq -r --slurpfile old "$TMP/old.windows" --argjson ws "$_ws" '
                 [.. | objects | select(.type? == "workspace" and .num? == $ws) | .. | objects | select(.pid? != null) | .id | select(. as $id | $old[0] | index($id) | not)] |
                 if length == 1 and (.[0] | type) == "number" then .[0] else empty end' 2>/dev/null)
             if [ "$(layout_windows "$_ws")" -gt "$before" ]; then nowin=0; echo "  $shown"; else nowin=1; _dp_failed=1; echo "  $shown -- no window"; fi ;;
@@ -615,7 +614,7 @@ layout_need() {   # layout_need WORDS... -- a saved layout first, else the model
     command -v jq >/dev/null 2>&1 || refuse "jq is not installed (spark-shell on)"
     case " $* " in *" -"*|" layout "*|" help "|" save "*|" delete "*|" rename "*|" back "*) refuse "\"$*\" is a command, not what a layout is for (spark-shell layout save|delete|rename|back)" ;; esac
     LAYOUT_ON=$(layout_on)
-    if [ "$LAYOUT_ON" = desktop ] && ! layout_in_sway; then layout_start "$*"; return; fi
+    if [ "$LAYOUT_ON" = desktop ] && ! wm_up; then layout_start "$*"; return; fi
     [ "$LAYOUT_ON" = terminal ] || [ "$OS" != Darwin ] || refuse "not on macOS, which has its own desktop"
     [ "$LAYOUT_ON" = terminal ] || [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
     kept=$(layout_name_of "$*")

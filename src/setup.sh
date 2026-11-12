@@ -385,7 +385,7 @@ cmd_follow() {
     prompt_render >/dev/null
     if desktop_wanted; then
         for rel in $DESKTOP_RENDERED; do render_one "$REPO/template/$rel" "$HOME/$rel" >/dev/null; done
-        sway_reload >/dev/null
+        desktop_reload >/dev/null
     fi
     n=$changes
     tmux_reload >/dev/null 2>&1 || true
@@ -396,13 +396,13 @@ cmd_follow() {
 # The desktop's keys are the `# key: ` sentences in the sway template, one
 # source (the README carries them verbatim and the suite holds it to them).
 LAYOUT_SEEN=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desktop.seen
-layout_keys() { python3 "$REPO/lib/home.py" keys "$REPO/template/.config/sway/config"; }
+layout_keys() { python3 "$REPO/lib/home.py" keys "$(wm_config_template)"; }
 status_next() {   # the first sentence that applies, as a next row; nothing off, no row
     if [ -z "$(spark_bin)" ]; then n=spark; s="Install spark, the local AI: github.com/forgewright-ai/spark."
     elif [ -n "$(desktop_na)" ]; then return 0
     elif [ "$DESKTOP" = none ]; then [ -d /dev/dri ] || return 0; n=desktop; s="spark-shell on desktop adds the desktop."
     elif [ -n "$(desktop_tools)" ]; then n=desktop; s="spark-shell on installs sway and foot."
-    elif [ ! -f "$HOME/.config/sway/config" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then n=desktop; s="spark-shell on writes the sway and foot settings."
+    elif [ ! -f "$(wm_config_file)" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then n=desktop; s="spark-shell on writes the sway and foot settings."
     elif seat_needed && ! seat_ready; then n=desktop; s="spark-shell on desktop at a terminal sets up seatd (sudo once)."
     elif seat_needed && ! id -Gn | tr ' ' '\n' | grep -qx _seatd; then n=desktop; s="Log out and in again: the _seatd group takes effect at the next login."
     else return 0; fi
@@ -431,7 +431,7 @@ cmd_status() {
     if s=$(desktop_na) && [ -n "$s" ]; then :
     elif [ "$DESKTOP" = none ]; then s="none (spark-shell on desktop)"
     elif [ -n "$(desktop_tools)" ]; then s="sway: not installed --$(desktop_tools) (spark-shell on desktop)"
-    elif [ ! -f "$HOME/.config/sway/config" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then s="sway: settings not written (spark-shell on)"
+    elif [ ! -f "$(wm_config_file)" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then s="sway: settings not written (spark-shell on)"
     else _fs=$(font_spec); s="sway: ready, foot uses $(fc-match -f '%{family}' "$_fs" 2>/dev/null || printf '%s' "${_fs%%:*}") (log in on tty1 to start it)"; fi
     printf '  desktop %-14s %s\n' "$DESKTOP" "$s"
     status_login

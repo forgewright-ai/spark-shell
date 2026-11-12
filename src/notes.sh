@@ -60,10 +60,10 @@ editor_exec() {   # editor_exec FILE -> the exec line sway runs to open FILE in 
 }
 note_slug() { printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//' | cut -c1-40; }   # note_slug WORDS -> a file name
 note_open_file() {   # note_open_file FILE NAME -> one line; the note opens in the editor
-    layout_in_sway || { echo "a note opens in the desktop's terminal: ${1#"$HOME"/} is the file"; return 1; }
+    wm_up || { echo "a note opens in the desktop's terminal: ${1#"$HOME"/} is the file"; return 1; }
     case $1 in *[,\;\'\"]*) echo "the file's name holds a comma, a quote or a semicolon, which sway would split: ${1##*/}"; return 1 ;; esac
     _ed=$(editor_exec "$1") || { echo "no editor here: set EDITOR in ~/.config/spark-shell/rc"; return 1; }
-    swaymsg -- exec "$_ed" >/dev/null 2>&1 || { echo "could not open $2"; return 1; }
+    wm_exec "$_ed" >/dev/null 2>&1 || { echo "could not open $2"; return 1; }
     : > "$TMP/opened"; echo "opened $2"
 }
 notes_act() {   # notes_act new|open|add|find [ARG]

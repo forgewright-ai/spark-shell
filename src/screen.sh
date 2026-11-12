@@ -37,7 +37,7 @@ provide_screen_rows() {   # provide_screen_rows NAME -> the screen's choices as 
         | {title: $n, state: ($screen.model // ""), rows: .} | .short = [.rows[].id]'
 }
 
-screens_json() { swaymsg -t get_outputs 2>/dev/null || echo '[]'; }
+screens_json() { wm_outputs || echo '[]'; }
 screen_rows() { read_once screens screen_rows_now; }   # -> NAME<tab>ID<tab>ON<tab>MODE<tab>SCALE<tab>X<tab>Y<tab>W<tab>H<tab>MODEL<tab>TRANSFORM per screen (W, H: its place in layout pixels; TRANSFORM normal, 90, 180 or 270)
 screen_rows_now() {
     screens_json | jq -r '.[] | [.name, ([.make, .model, .serial] | map(if . == null or . == "" then "Unknown" else . end) | join(" ")), (if .active then "on" else "off" end),
@@ -58,11 +58,11 @@ screen_save() {   # screen_save ID WORDS [SIDE OTHER-ID] -- the screen's line of
 SCREEN_MAIN_MARK='# the main screen (#135): workspace 1 and the focus at the start'
 screen_main_save() {   # screen_main_save ID -- the main screen in screens.conf: workspace 1 and the focus on it at the start
     mkdir -p "$CONFIG_DIR"
-    { [ -f "$SCREENS_CONF" ] && grep -v -e '^# rendered' -e "^$SCREEN_MAIN_MARK" -e '^workspace 1 output ' -e '^exec swaymsg focus output ' "$SCREENS_CONF" || :; } > "$TMP/screens"
+    { [ -f "$SCREENS_CONF" ] && grep -v -e '^# rendered' -e "^$SCREEN_MAIN_MARK" "$SCREENS_CONF" | wm_main_screen_strip || :; } > "$TMP/screens"
     { echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them'; grep . "$TMP/screens" || :
-      printf '%s\nworkspace 1 output "%s"\nexec swaymsg focus output %s\n' "$SCREEN_MAIN_MARK" "$1" "'\"$1\"'"; } > "$SCREENS_CONF"
+      printf '%s\n' "$SCREEN_MAIN_MARK"; wm_main_screen_lines "$1"; } > "$SCREENS_CONF"
 }
-screen_main() { [ -f "$SCREENS_CONF" ] && sed -n 's/^workspace 1 output "\(.*\)"$/\1/p' "$SCREENS_CONF" | head -1; }   # -> the main screen's id, as screens.conf names it; nothing when none is set (sway's order decides)
+screen_main() { [ -f "$SCREENS_CONF" ] && wm_main_screen_of "$SCREENS_CONF"; }   # -> the main screen's id, as screens.conf names it; nothing when none is set (sway's order decides)
 screen_beside_again() {   # screen_beside_again ID -- the screens placed beside ID, and ID beside another, placed again (a turn changed its width)
     [ -f "$SCREENS_CONF" ] || return 0
     grep '^# beside "' "$SCREENS_CONF" | while IFS= read -r _bl; do

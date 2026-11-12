@@ -388,30 +388,30 @@ look_terms() {   # look_terms prepare|send -- send writes all at once; _painted 
             for _lw in $_pids; do if wait "$_lw"; then _painted=$((_painted + 1)); fi; done ;;   # not _w: the caller's _w is in use
     esac
 }
-# sway stops its swaybg before the new one draws, 100 ms of black;
+# the compositor stops its background before the new one draws, 100 ms of black;
 # ours covers that and goes once sway's own has drawn
 WALL_COVER=''
 wall_cover() {   # WALL_BG on top, now
     WALL_COVER=''
-    [ "$MODE" = apply ] && [ -n "${SWAYSOCK:-}" ] && [ -n "${WAYLAND_DISPLAY:-}" ] && command -v swaybg >/dev/null 2>&1 || return 0
+    [ "$MODE" = apply ] && wm_session && [ -n "${WAYLAND_DISPLAY:-}" ] && wm_background_here || return 0
     case $WALL_BG in
         *' solid_color') set -- -c "${WALL_BG% solid_color}" ;;
         *) _wp=${WALL_BG% fill}; _wp=${_wp#\"}; _wp=${_wp%\"}; set -- -i "$_wp" -m fill ;;
     esac
-    swaybg -o '*' "$@" >/dev/null 2>&1 </dev/null & WALL_COVER=$!   # it draws in 100 to 200 ms
+    wm_background "$@" >/dev/null 2>&1 </dev/null & WALL_COVER=$!   # it draws in 100 to 200 ms
 }
 wall_uncover() {   # wall_uncover [WALL_BG] -- sway's under ours, then ours goes
     [ -n "$WALL_COVER" ] || return 0
-    ( sleep 0.25; [ -z "${1:-}" ] || swaymsg -- "output * bg $1" >/dev/null 2>&1; sleep 0.6; kill "$WALL_COVER" 2>/dev/null ) >/dev/null 2>&1 </dev/null &
+    ( sleep 0.25; [ -z "${1:-}" ] || wm_send "output * bg $1" >/dev/null 2>&1; sleep 0.6; kill "$WALL_COVER" 2>/dev/null ) >/dev/null 2>&1 </dev/null &
     WALL_COVER=''
 }
-wall_shown() { sed -n 's/^output \* bg //p' "$HOME/.config/sway/config" 2>/dev/null | head -1; }   # -> the config's wallpaper
-sway_live_cmd() {   # -> one swaymsg command; not the wallpaper
-    [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || return 0
+wall_shown() { sed -n 's/^output \* bg //p' "$(wm_config_file)" 2>/dev/null | head -1; }   # -> the config's wallpaper
+desktop_live_cmd() {   # -> one compositor command; not the wallpaper
+    wm_session && wm_here || return 0
     _c="client.focused #$BORDER_HEX #$PANEL_HI #$HEX_FG #$DROP_HEX #$BORDER_HEX; client.focused_inactive #$BORDER_HEX #$PANEL_BG #$HEX_FG #$BORDER_HEX #$BORDER_HEX"   # the indicator: the accent at a quarter
     _c="$_c; client.unfocused #$BORDER_HEX #$HEX_BG #$HEX_MUTED #$BORDER_HEX #$BORDER_HEX; client.urgent #$HEX_ANSI_1 #$HEX_ANSI_1 #$HEX_BG #$HEX_ANSI_1 #$HEX_ANSI_1"
     _c="$_c; $(pointer_fresh)seat * xcursor_theme $POINTER_NAME $POINTER_SIZE; gaps inner all set $GAPS_INNER; gaps outer all set $GAPS_OUTER; [tiling] border $BORDER"
-    _b=$(swaymsg -t get_bar_config 2>/dev/null | tr -d '[]" \n' | cut -d, -f1)   # the bar's id, bar-0
+    _b=$(wm_bar_id)   # the bar's id, bar-0
     [ -z "$_b" ] || _c="$_c; bar $_b mode $(bar_mode); bar $_b font pango:$(bar_line_font "$(font_spec)"); bar $_b colors background #$HEX_BG$BAR_ALPHA; bar $_b colors statusline #$HEX_FG; bar $_b colors separator #$HEX_MUTED; bar $_b colors focused_workspace #$HEX_ACCENT #$HEX_ACCENT #$HEX_BG; bar $_b colors active_workspace #$HEX_MUTED #$HEX_MUTED #$HEX_BG; bar $_b colors inactive_workspace #$HEX_BG$BAR_ALPHA #$HEX_BG$BAR_ALPHA #$HEX_MUTED; bar $_b colors urgent_workspace #$HEX_ANSI_1 #$HEX_ANSI_1 #$HEX_BG; bar $_b colors binding_mode #$HEX_ACCENT #$HEX_ACCENT #$HEX_BG"
     printf '%s' "$_c"
 }
@@ -437,17 +437,17 @@ look_burst() {   # one frame: all made ready, then sent while the wallpaper draw
     _painted=0
     [ "$MODE" = apply ] && [ "$OS" != Darwin ] || return 0
     [ -n "${LOOK_PREVIEW:-}" ] || portal_look   # a preview leaves the apps' mode alone
-    _wn=''; ! desktop_wanted || [ -z "${SWAYSOCK:-}" ] || [ "$WALL_BG" = "$(wall_shown)" ] || _wn=1
+    _wn=''; ! desktop_wanted || ! wm_session || [ "$WALL_BG" = "$(wall_shown)" ] || _wn=1
     look_terms prepare
     ! desktop_wanted || bar_palette
-    _sc=''; ! desktop_wanted || _sc=$(sway_live_cmd)   # the wallpaper goes under the cover
+    _sc=''; ! desktop_wanted || _sc=$(desktop_live_cmd)   # the wallpaper goes under the cover
     [ -z "$_wn" ] || wall_cover
     if [ -n "$WALL_COVER" ]; then sleep 0.09   # the new picture draws meanwhile
     elif [ -n "$_wn" ]; then _sc="$_sc; output * bg $WALL_BG"; fi   # no cover: sway's own way, black frame
     _sw=''
-    if [ -n "$_sc" ]; then swaymsg -- "$_sc" >/dev/null 2>&1 & _sw=$!; bar_redraw; fi
+    if [ -n "$_sc" ]; then wm_send "$_sc" >/dev/null 2>&1 & _sw=$!; bar_redraw; fi
     look_terms send
-    [ -z "$_sw" ] || wait "$_sw" 2>/dev/null || :   # the cover's swaybg is a child too
+    [ -z "$_sw" ] || wait "$_sw" 2>/dev/null || :   # the cover's background process is a child too
     [ -z "$_sc" ] || pointer_seen
     wall_uncover "$WALL_BG"
     [ -n "${LOOK_PREVIEW:-}" ] || ! desktop_wanted || motion_follow   # a preview leaves the motion alone

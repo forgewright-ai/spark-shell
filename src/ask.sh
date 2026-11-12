@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- ask: the words to the model and the steps it plans
 # sets: LOCAL_RISK US WANT_ATTACH_MAX
-# reads: APPS LAYOUTS_DIR LAYOUT_NOT_APPS OS PANEL_CROSS PANEL_GO PANEL_TICK PROVIDE_TOOLS TAB TMP
+# reads: APPS LAYOUTS_DIR LAYOUT_NOT_APPS OS PANEL_CROSS PANEL_GO PANEL_TICK PROVIDE_TOOLS TAB TERM_OWN TMP WM_OWN
 panel_brief_sections() {   # -> the sections the want path offers here, in the brief's order
     for p in layout apps printers window bar notes reminders display keyboard notifications storage power $(panel_blocks_here); do
         case $p in lan|bat|clock) continue ;; window|bar|display|keyboard|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; printers) command -v lpstat >/dev/null 2>&1 || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac
@@ -27,7 +27,7 @@ want_names_app() {   # want_names_app WORDS -> the first word that names an app 
     sbom_entries >/dev/null 2>&1 || :   # $TMP/entries
     for w in $1; do
         w=$(printf '%s' "$w" | tr -cd 'A-Za-z0-9_.-' | tr 'A-Z' 'a-z'); [ -n "$w" ] || continue
-        case " sway swaybg swaymsg foot footclient xdg-open $LAYOUT_NOT_APPS " in *" $w "*) continue ;; esac
+        case " $WM_OWN $TERM_OWN xdg-open $LAYOUT_NOT_APPS " in *" $w "*) continue ;; esac
         if [ -s "$TMP/entries" ] && awk -F '\t' -v w="$w" 'tolower($1) == w { f = 1 } { split($6, a, " "); b = a[1]; sub(/.*\//, "", b); if (tolower(b) == w) f = 1 } END { exit !f }' "$TMP/entries"; then echo "$w"; return 0; fi
         if apps_marked && grep -iq "^$w\([: ]\|$\)" "$APPS"; then echo "$w"; return 0; fi
     done

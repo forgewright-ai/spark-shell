@@ -274,7 +274,7 @@ panel_rows_display() {   # the idle and lock minutes (the other picks in a full 
         if [ "${2:-}" = full ]; then for _n in clock $SAVER_NAMES; do [ "$_n" = "$DISPLAY_SAVER" ] || printf -- '-\tsaver %s\tsaver %s\n' "$_n" "$_n"; done; fi
     fi
     _b=$(light_get); [ -z "$_b" ] || printf -- '-\tbrightness %s%%\tshow\n-\tbrighter\tbrightness up\n-\tdimmer\tbrightness down\n' "$_b"
-    [ -z "${SWAYSOCK:-}" ] || screen_rows | while IFS="$TAB" read -r _n _id _on _md _sc _x _y _w _h _mo _tr; do   # short, for the dialog's width: the port, the model, the mode, the scale
+    ! wm_session || screen_rows | while IFS="$TAB" read -r _n _id _on _md _sc _x _y _w _h _mo _tr; do   # short, for the dialog's width: the port, the model, the mode, the scale
         if [ "$_on" = on ]; then printf -- '-\tscreen %s %s %s%s %s scale %s\tshow\n' "$_n" "$PANEL_SEP" "${_mo:+$_mo $PANEL_SEP }" "$_md" "$PANEL_SEP" "$_sc"; else printf -- '-\tscreen %s %s off\tshow\n' "$_n" "$PANEL_SEP"; fi
     done
 }
@@ -323,7 +323,7 @@ panel_rows_power() {   # one word a row, what it does as its wide column; the up
     _pt=$(power_tool)
     [ -z "${WAYLAND_DISPLAY:-}" ] || printf -- '-\tlock\tlock\t|the screen %s Super+Escape\n' "$PANEL_SEP"
     [ -z "$_pt" ] || ! power_sleeps || printf -- '-\tsuspend\tsuspend\t|the screen locks first\n'
-    [ -z "${SWAYSOCK:-}" ] || printf -- '-\tlogout\tlogout\t|every window closes\n'
+    ! wm_session || printf -- '-\tlogout\tlogout\t|every window closes\n'
     if [ -n "$_pt" ]; then printf -- '-\trestart\trestart\t|asks first\n-\tshutdown\tshutdown\t|asks first\n'; else printf -- '-\t%s\tshow\n' "$(power_why)"; fi   # what the machine's buttons do is no step here
     _pu=$(power_up); [ -z "$_pu" ] || printf -- '-\t%s\tshow\n' "$_pu"
 }
@@ -373,7 +373,7 @@ panel_rows_layout() {   # the saved layouts with a rename each, what spark also 
         _f=$(layout_kept_file "$_n") || continue
         printf '%s\t%s\topen %s\trecent|%s||%s\n' "$PANEL_GO" "$(layout_label "$_f")" "$_n" "$(kept_when "$_e")" "$_e"
     done | head -5
-    [ -z "${SWAYSOCK:-}" ] || printf '%s\tsave this workspace\tsave\n' "$PANEL_GO"
+    ! wm_session || printf '%s\tsave this workspace\tsave\n' "$PANEL_GO"
 }
 panel_rows_apps() {   # a terminal window (as Super+Return), the apps a layout may open under their desktop entry's group (three unless full), then the pick
     printf '%s\tterminal\tterminal\n' "$PANEL_GO"

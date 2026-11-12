@@ -82,7 +82,7 @@ bar_ws_ours() {   # bar_ws_ours N MARK -> 0 when MARK is ours for N
 bar_ws_names() {   # renames "3" or "3 writing" to "3:LABEL" or "3:LABEL writing"
     command -v jq >/dev/null 2>&1 || return 0
     family_set "$(bar_style GLYPH_FAMILY stone)"
-    swaymsg -t get_workspaces 2>/dev/null | jq -r '.[] | select(.name | test("^[0-9]+([: ]|$)")) | "\(.num)\t\(.name)"' 2>/dev/null |
+    wm_workspaces | jq -r '.[] | select(.name | test("^[0-9]+([: ]|$)")) | "\(.num)\t\(.name)"' 2>/dev/null |
         while IFS="$TAB" read -r n name; do
             g=$(bar_ws_label "$n") || continue
             _wr=${name#"$n"}
@@ -90,12 +90,12 @@ bar_ws_names() {   # renames "3" or "3 writing" to "3:LABEL" or "3:LABEL writing
                 :*) _wr=${_wr#:}; _wx=${_wr%% *}; case $_wr in *' '*) _wr=" ${_wr#* }" ;; *) _wr='' ;; esac
                     [ "$_wx" = "$g" ] || bar_ws_ours "$n" "$_wx" || continue ;;   # never a name the user gave
             esac
-            [ "$name" = "$n:$g$_wr" ] || swaymsg -- "rename workspace \"$name\" to \"$n:$g$_wr\"" >/dev/null 2>&1 || :
+            [ "$name" = "$n:$g$_wr" ] || wm_send "rename workspace \"$name\" to \"$n:$g$_wr\"" >/dev/null 2>&1 || :
         done
 }
 bar_ws_watch() {   # on sway's workspace and output events: rename, refit
     bar_ws_names
-    swaymsg -r -t subscribe -m '["workspace","output"]' 2>/dev/null | while IFS= read -r _e; do   # -r: one event a line
+    wm_events '["workspace","output"]' | while IFS= read -r _e; do   # -r: one event a line
         case $_e in *'"change": "init"'*|*'"change":"init"'*|*'"change": "rename"'*|*'"change":"rename"'*) bar_ws_names ;; esac   # sway spaces its JSON; a rename drops the label
         case $_e in *'"change": "unspecified"'*|*'"change":"unspecified"'*) layout_refit_soon ;; esac   # an output event says "unspecified"
     done
@@ -526,7 +526,7 @@ bar_click() {   # bar_click NAME INSTANCE BUTTON RELX WIDTH X; 4 and 5 are the w
         light:name:1) bar_panel_open display ;;
         due:*:1) bar_panel_open reminders ;;
         notifications:*:1) notify_seen; bar_panel_open notifications ;;
-        kb:*:1) swaymsg -- input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || : ;;
+        kb:*:1) wm_input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || : ;;
         out:*:4|mic:*:4) snd_set "$1" +5 ;;
         out:*:5|mic:*:5) snd_set "$1" -5 ;;
         out:*:2|out:*:3|mic:*:2|mic:*:3) snd_set "$1" mute ;;
@@ -558,7 +558,7 @@ bar_status() {   # bar_status [--once]
     printf '{"version":1,"click_events":true}\n[\n'
     exec 3<&0; bar_clicks <&3 &   # a background job's stdin is /dev/null in dash
     reader=$!
-    [ -z "${SWAYSOCK:-}" ] || { bar_ws_watch </dev/null & watcher=$!; }
+    ! wm_session || { bar_ws_watch </dev/null & watcher=$!; }
     _ts=$(theme_sum); _bp=$({ cksum < "$BAR_PALETTE"; } 2>/dev/null || :); _line=''
     storage_sig; _bseen=$_bsg
     MACHINE_AT_FACTS=$(( $(date +%s) - MACHINE_FACTS_EVERY + 60 ))   # .facts a minute in: the devices are up
@@ -586,14 +586,14 @@ bar_status() {   # bar_status [--once]
     kill ${reader:-} ${watcher:-} 2>/dev/null || :; rm -f "$BAR_PID"
 }
 bar_font_follow() {   # BAR_TEXT=auto: the font follows the screen; _bff is the last sent
-    [ -S "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || return 0
+    wm_live && wm_here || return 0
     BAR_TEXT=$(bar_style BAR_TEXT auto); [ "$BAR_TEXT" = auto ] || { _bff=''; return 0; }   # a fixed size: already rendered
     FONT=$(bar_style FONT "$FONT"); case $FONT in \"*\") FONT=${FONT#\"}; FONT=${FONT%\"} ;; esac   # quoted as load_env takes it
     _bfn=$(bar_line_font "$(font_spec)")
     [ "$_bfn" != "${_bff:-}" ] || return 0
-    _bfb=$(swaymsg -t get_bar_config 2>/dev/null | tr -d '[]" \n' | cut -d, -f1); [ -n "$_bfb" ] || return 0
-    if [ -z "${_bff:-}" ] && [ "$(swaymsg -t get_bar_config "$_bfb" 2>/dev/null | jq -r '.font // empty' 2>/dev/null)" = "pango:$_bfn" ]; then _bff=$_bfn; return 0; fi   # the first pass: the font sway has
-    swaymsg -- "bar $_bfb font pango:$_bfn" >/dev/null 2>&1 && { _bff=$_bfn; layout_refit_soon; } || :
+    _bfb=$(wm_bar_id); [ -n "$_bfb" ] || return 0
+    if [ -z "${_bff:-}" ] && [ "$(wm_bar_config "$_bfb" | jq -r '.font // empty' 2>/dev/null)" = "pango:$_bfn" ]; then _bff=$_bfn; return 0; fi   # the first pass: the font sway has
+    wm_send "bar $_bfb font pango:$_bfn" >/dev/null 2>&1 && { _bff=$_bfn; layout_refit_soon; } || :
 }
 bar_style() { _bv=$(sed -n "s/^$1=//p" "$CONFIG" 2>/dev/null | tail -1); printf '%s' "${_bv:-$2}"; }   # bar_style KEY DEFAULT -> the config's value now
 bar_redraw() { [ -f "$BAR_PID" ] && read -r p < "$BAR_PID" && kill -USR1 "$p" 2>/dev/null || :; }
@@ -663,8 +663,8 @@ bar_text_step() {   # bar_text_step auto|N|bigger|smaller -> the receipt, or exi
     [ "$_btn" = auto ] || { [ "$_btn" -ge 6 ] && [ "$_btn" -le 40 ]; } || { echo "bar text $_bts stays (6 to 40)"; return 1; }
     config_set BAR_TEXT "$_btn" >/dev/null; BAR_TEXT=$_btn; export BAR_TEXT
     theme_load; EXPR=$(render_expr); desktop_files >/dev/null
-    _btb=$(swaymsg -t get_bar_config 2>/dev/null | tr -d '[]" \n' | cut -d, -f1) || _btb=''
-    [ -z "$_btb" ] || [ -z "${SWAYSOCK:-}" ] || swaymsg -- "bar $_btb font pango:$(bar_line_font "$(font_spec)")" >/dev/null 2>&1 || :
+    _btb=$(wm_bar_id) || _btb=''
+    [ -z "$_btb" ] || ! wm_session || wm_send "bar $_btb font pango:$(bar_line_font "$(font_spec)")" >/dev/null 2>&1 || :
     pad_again   # the pad's text follows
     layout_refit_soon   # the bar's height changed
     _bts=$(bar_line_font "$(font_spec)"); _bts=${_bts##* }

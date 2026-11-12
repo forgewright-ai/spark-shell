@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # The window keys: a place is a half or a quarter of the workspace's area, a two by two grid;
 # sets: LAYOUT_PLACE_SLACK
-# reads: OS REPO TMP
+# reads: OS REPO TMP WM_NAME
 # past the top the window fills the area, past the bottom it goes to the pad with its place
 layout_window_at() {   # layout_window_at PLACE X Y W H -> "X Y W H" of PLACE on that area: L R F a column, T B F a row (FF fills it)
     case $1 in L?) _wx=$2; _ww=$(($4 / 2)) ;; R?) _wx=$(($2 + $4 / 2)); _ww=$(($4 - $4 / 2)) ;; *) _wx=$2; _ww=$4 ;; esac
@@ -42,7 +42,7 @@ layout_place_marks() { printf ', mark --add _spark-shell.place.%s.%s, mark --add
 layout_place_unmarks() { [ "$1" = - ] || { printf '%s\n' "$1" | tr ',' '\n' | grep . | sed 's/^/unmark /; s/$/, /' | tr -d '\n'; }; }   # layout_place_unmarks MARKS|- -> "unmark M, " for each of a comma list
 LAYOUT_PLACE_SLACK=32   # twice the outer gap and more: how far sway itself may move a placed window when the area's corner moves
 layout_refit_soon() {   # a refit half a second on and again a second later: sway lays out a bar or a screen a moment after the command; only under a real sway
-    [ -S "${SWAYSOCK:-}" ] || return 0
+    wm_live || return 0
     ( sleep 0.5; sh "$REPO/spark-shell" desktop window refit; sleep 1; sh "$REPO/spark-shell" desktop window refit ) </dev/null >/dev/null 2>&1 &
 }
 layout_window_refit() {   # layout_window_refit -- after layout_window read the tree: each placed window in sight at its place on the area as it is now; one that left it loses it
@@ -79,17 +79,17 @@ layout_window_refit() {   # layout_window_refit -- after layout_window read the 
             layout_window_fits "$_rw" "$3" && layout_window_fits "$_rh" "$4" || _rgo=''   # resized by hand: its size is no longer its place's
         fi
         if [ -z "$_rgo" ]; then   # it left its place: the person's now
-            _rc=$(layout_place_unmarks "$_rp,$_rq"); swaymsg -- "[con_id=$_ri] ${_rc%, }" </dev/null >/dev/null 2>&1 || :
+            _rc=$(layout_place_unmarks "$_rp,$_rq"); wm_on "con_id=$_ri" "${_rc%, }" </dev/null >/dev/null 2>&1 || :
             _rl=$((_rl + 1)); continue
         fi
         # shellcheck disable=SC2046   # four numbers, split on purpose
         set -- $(layout_window_at "$_rk" "$_ax" "$_ay" "$_aw" "$_ah")
         if layout_window_near "$_rx" "$1" && layout_window_near "$_ry" "$2" && layout_window_fits "$_rw" "$3" && layout_window_fits "$_rh" "$4"; then
-            [ "$_rq" != - ] || swaymsg -- "[con_id=$_ri] mark --add _spark-shell.area.$_ax.$_ay.$_aw.$_ah.$_ri" </dev/null >/dev/null 2>&1 || :   # there already
+            [ "$_rq" != - ] || wm_on "con_id=$_ri" "mark --add _spark-shell.area.$_ax.$_ay.$_aw.$_ah.$_ri" </dev/null >/dev/null 2>&1 || :   # there already
             continue
         fi
         _rc="resize set width $3 px height $4 px, move absolute position $1 $2, $(layout_place_unmarks "$_rq")mark --add _spark-shell.area.$_ax.$_ay.$_aw.$_ah.$_ri"
-        swaymsg -- "[con_id=$_ri] $_rc" </dev/null >/dev/null 2>&1 && _rm=$((_rm + 1)) || :
+        wm_on "con_id=$_ri" "$_rc" </dev/null >/dev/null 2>&1 && _rm=$((_rm + 1)) || :
     done < "$TMP/refit"
     if [ "$_rn" = 0 ]; then echo "no window in sight has a place the keys gave it"; return 0; fi
     _rs=''
@@ -140,14 +140,14 @@ layout_window_new() {   # layout_window_new -- after layout_window read the tree
             fi
         fi
     fi
-    swaymsg -- "$_nc" >/dev/null 2>&1 || refuse "sway refused: $_nc"
+    wm_send "$_nc" >/dev/null 2>&1 || refuse "$WM_NAME refused: $_nc"
     echo "the new window $_ns"
 }
 layout_window() {   # layout_window float|left|right|up|down|max|min|restore [ID] | refit | new -- the focused window, or the window ID; every placed window in sight; the window just opened (the sway rule's)
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own window keys"
     case ${1:-} in float|left|right|up|down|max|min|restore|refit|new) ;; *) refuse "window takes float, left, right, up, down, max, min, restore or refit" ;; esac
-    layout_in_sway || refuse "moves the desktop's windows: run it inside it"
-    swaymsg -t get_tree > "$TMP/tree" 2>/dev/null || refuse "sway did not answer"
+    wm_up || refuse "moves the desktop's windows: run it inside it"
+    wm_tree > "$TMP/tree" || refuse "$WM_NAME did not answer"
     case ${2:-} in *[!0-9]*) refuse "window takes a window's ID, its digits, after the word" ;; esac
     case $1 in restore) layout_window_restore "${2:-}"; return ;; refit) layout_window_refit; return ;; new) layout_window_new; return ;; esac
     _dwid=${2:-}
@@ -185,7 +185,7 @@ layout_window() {   # layout_window float|left|right|up|down|max|min|restore [ID
                 _dc="${_dfs}${_dtm}${_dun}floating enable, resize set width ${11} px height ${12} px, move absolute position $9 ${10}$(layout_place_marks "$_dn" "$2" "$5" "$6" "$7" "$8")"; _ds=$(layout_window_said "$_dn")
             fi ;;
     esac
-    swaymsg -- "[con_id=$2] $_dc" >/dev/null 2>&1 || refuse "sway refused: $_dc"
+    wm_on "con_id=$2" "$_dc" >/dev/null 2>&1 || refuse "$WM_NAME refused: $_dc"
     [ -z "$_dpad" ] || { pad_wake; bar_redraw; }   # the pad shows it, and the bar's count
     echo "the window is $_ds"
 }
@@ -206,7 +206,7 @@ layout_window_restore() {   # layout_window_restore [ID] -- the window ID from t
             # shellcheck disable=SC2086   # four numbers, split on purpose
             _dc="$_dc, floating disable, floating enable, resize set width $3 px height $4 px, move absolute position $1 $2$(layout_place_marks "$_dk" "$_di" $_da)"; _ds=$(layout_window_said "$_dk") ;;
     esac
-    swaymsg -- "[con_id=$_di] $_dc" >/dev/null 2>&1 || refuse "sway refused: $_dc"
+    wm_on "con_id=$_di" "$_dc" >/dev/null 2>&1 || refuse "$WM_NAME refused: $_dc"
     bar_redraw   # one window fewer on the pad
     echo "the window is back, $_ds"
 }

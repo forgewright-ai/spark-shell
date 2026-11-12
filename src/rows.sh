@@ -339,7 +339,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
     THEME_ENUM_NOW=''; [ "$1" != theme ] || THEME_ENUM_NOW=$(theme_enum)   # the palette names once for this read, not once a row
     WIFI_TOOL_READ=''; [ "$1" != wifi ] || { WIFI_TOOL_NOW=$(wifi_tool); WIFI_TOOL_READ=1; }   # the wifi manager once for this read
     ROWS_READ=$TMP/once; read_once_end   # asked once a read; none left from a read cut short
-    _pr_keys='{}'; [ "$1" != window ] || _pr_keys=$(python3 "$REPO/lib/home.py" map "$REPO/template/.config/sway/config")
+    _pr_keys='{}'; [ "$1" != window ] || _pr_keys=$(python3 "$REPO/lib/home.py" map "$(wm_config_template)")
     case $1 in window|layout) win_facts > "$TMP/win.facts"; WIN_FACTS_READ=1 ;; esac   # the tree read once a read
     _pr_chips='{}'; _pr_size=''; _pr_anim=''; _pr_trn=0; _pr_tr=''
     if [ "$1" = theme ]; then
@@ -448,7 +448,7 @@ provide_rows_window() {   # stdin: the window section's rows -> the same with th
 }
 provide_window_rows() {   # provide_window_rows URI -> a picker as a rows resource: arrange, move/ID or place/ID
     win_facts > "$TMP/win.facts"
-    _pwk=$(python3 "$REPO/lib/home.py" map "$REPO/template/.config/sway/config")
+    _pwk=$(python3 "$REPO/lib/home.py" map "$(wm_config_template)")
     family_set "$(bar_style GLYPH_FAMILY stone)"
     _pwm=$(for _n in 1 2 3 4 5 6 7 8 9 10; do bar_ws_label "$_n"; echo; done | jq -R . | jq -cs .)   # the bar's labels, one a line
     jq -cn --slurpfile facts "$TMP/win.facts" --argjson keys "$_pwk" --argjson marks "$_pwm" --arg uri "${1#spark-shell://window/rows/}" '

@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the power
 # sets: APP_GROUPS POWER_SUDOERS
-# reads: BAR_PROC BAR_SYS LAYOUTS_DIR LAYOUT_LAST LAYOUT_WAIT OS PANEL_APP PANEL_CACHE PANEL_CROSS PANEL_SEP PANEL_TICK REPO ROOT STATE_DIR TAB THEME_KEYS TMP WALL_NAMES
+# reads: BAR_PROC BAR_SYS LAYOUTS_DIR LAYOUT_LAST LAYOUT_WAIT OS PANEL_APP PANEL_CACHE PANEL_CROSS PANEL_SEP PANEL_TICK REPO ROOT STATE_DIR TAB THEME_KEYS TMP WALL_NAMES WM_NAME
 POWER_SUDOERS=etc/sudoers.d/spark-shell-power
 about_site() {
     _as=https://github.com/forgewright-ai/spark-shell
@@ -36,10 +36,10 @@ power_keys() {   # -> what the power button and lid do
 }
 power_lock_first() {   # from outside (ssh): through sway's socket
     if [ -n "${WAYLAND_DISPLAY:-}" ]; then "$REPO/spark-shell" desktop lock >/dev/null 2>&1; return; fi
-    _pp=$(pgrep -u "$(id -u)" -x sway 2>/dev/null | head -1 || :); [ -n "$_pp" ] || return 0   # no desktop: nothing to lock
-    _pk=${XDG_RUNTIME_DIR:-/nonexistent}/sway-ipc.$(id -u).$_pp.sock; [ -S "$_pk" ] || return 1
-    SWAYSOCK=$_pk swaymsg -- exec "$REPO/spark-shell desktop lock" >/dev/null 2>&1 || return 1
-    _pl=0; while [ "$_pl" -lt 12 ]; do pgrep -u "$(id -u)" -x swaylock >/dev/null 2>&1 && return 0; sleep 0.25; _pl=$((_pl + 1)); done
+    _pp=$(wm_pid); [ -n "$_pp" ] || return 0   # no desktop: nothing to lock
+    _pk=$(wm_socket_of "$_pp"); [ -S "$_pk" ] || return 1
+    wm_exec_at "$_pk" "$REPO/spark-shell desktop lock" >/dev/null 2>&1 || return 1
+    _pl=0; while [ "$_pl" -lt 12 ]; do wm_lock_running && return 0; sleep 0.25; _pl=$((_pl + 1)); done
     return 1
 }
 power_now() {   # power_now lock|suspend|logout|restart|shutdown -> one line
@@ -50,8 +50,8 @@ power_now() {   # power_now lock|suspend|logout|restart|shutdown -> one line
             power_lock_first || { echo "the desktop could not be locked, so the machine did not suspend"; return 1; }   # locked on waking, or no suspend
             echo "suspending"
             if [ "$_pt" = systemd ]; then systemctl suspend >/dev/null 2>&1; else sudo -n /usr/bin/zzz >/dev/null 2>&1; fi || { echo "the machine did not suspend"; return 1; } ;;
-        logout) layout_in_sway || { echo "log out is the desktop's: Super+Shift+e, or exit in its first window"; return 1; }
-            echo "logging out"; swaymsg exit >/dev/null 2>&1 || { echo "sway did not exit"; return 1; } ;;
+        logout) wm_up || { echo "log out is the desktop's: Super+Shift+e, or exit in its first window"; return 1; }
+            echo "logging out"; wm_exit >/dev/null 2>&1 || { echo "$WM_NAME did not exit"; return 1; } ;;
         restart|shutdown) _pt=$(power_tool); [ -n "$_pt" ] || { power_why; return 1; }
             _pc=reboot; _pw=restarting; [ "$1" = restart ] || { _pc=poweroff; _pw="shutting down"; }
             if [ "$_pt" = systemd ]; then _po=$(systemctl "$_pc" 2>&1) || { echo "could not: $(printf '%s\n' "$_po" | grep . | tail -1 | scrub_text)"; return 1; }   # logind refuses while another login is open
@@ -62,8 +62,8 @@ power_now() {   # power_now lock|suspend|logout|restart|shutdown -> one line
 }
 power_act() {   # power_act ACTION -> one line; lock once the dialog closes
     case $1 in
-        lock) layout_in_sway || { power_now lock; return; }
-            swaymsg -- exec "$REPO/spark-shell desktop power lock" >/dev/null 2>&1 || { echo "could not lock"; return 1; }
+        lock) wm_up || { power_now lock; return; }
+            wm_exec "$REPO/spark-shell desktop power lock" >/dev/null 2>&1 || { echo "could not lock"; return 1; }
             : > "$TMP/opened"; echo "locked" ;;
         suspend) power_now suspend > "$TMP/suspend.out" 2>&1 || { cat "$TMP/suspend.out"; return 1; }
             echo "back from suspend" ;;
@@ -132,9 +132,9 @@ panel_recent_first() {   # panel_recent_first ROWS -- the recent picks first
         cat "$TMP/rest.rows"
     else cat "$1"; fi
 }
-sway_file_apply() {   # sway's config rendered, nothing redrawn
+desktop_file_apply() {   # sway's config rendered, nothing redrawn
     for _k in $THEME_KEYS; do unset "$_k"; done; theme_load; EXPR=$(render_expr)
-    render_one "$REPO/template/.config/sway/config" "$HOME/.config/sway/config" >/dev/null 2>&1 || :
+    render_one "$(wm_config_template)" "$(wm_config_file)" >/dev/null 2>&1 || :
 }
 look_apply() {   # a look change, on the screen now
     for _k in $THEME_KEYS; do unset "$_k"; done; theme_load; EXPR=$(render_expr)
@@ -250,7 +250,7 @@ panel_act_apps() {   # the apps steps: close and focus done to the window, pick,
         close|focus) panel_act window "$_a" "$_arg" ;;   # done to its window
         pick) ( cmd_apps_verb ) ;;
         open) panel_app_open "$_arg" ;;
-        terminal) layout_in_sway || { echo "a terminal window needs the desktop"; return 1; }
+        terminal) wm_up || { echo "a terminal window needs the desktop"; return 1; }
             _wr=0; win_exec foot || _wr=$?
             [ "$_wr" -ne 2 ] || { echo "could not open a terminal"; return 1; }
             [ "$_wr" -eq 0 ] || { echo "the terminal opened no window"; return 1; }
@@ -260,11 +260,11 @@ panel_act_apps() {   # the apps steps: close and focus done to the window, pick,
 }
 panel_act_window() {   # the window steps: the arrangement and its undo, move, place, close, capture, focus
     case $_a in
-        split|tabs|stacked) config_set WINDOWS "$_a" >/dev/null; WINDOWS=$_a; export WINDOWS; sway_file_apply
+        split|tabs|stacked) config_set WINDOWS "$_a" >/dev/null; WINDOWS=$_a; export WINDOWS; desktop_file_apply
             win_arrange "$_a" || { echo "could not arrange this workspace: new workspaces will use $(win_words "$_a")"; return 1; }
             echo "windows $(win_said "$_a")" ;;
         restore) _rd=${_arg%% *}; _rw=${_arg##* now=}   # undo: the default and this workspace
-            config_set WINDOWS "$_rd" >/dev/null; WINDOWS=$_rd; export WINDOWS; sway_file_apply
+            config_set WINDOWS "$_rd" >/dev/null; WINDOWS=$_rd; export WINDOWS; desktop_file_apply
             win_arrange "$_rw" || { echo "could not arrange this workspace: new workspaces will use $(win_words "$_rd")"; return 1; }
             echo "windows $(win_said "$_rw")" ;;
         move) win_move "${_arg%% *}" "${_arg##* to=}" ;;
@@ -272,7 +272,7 @@ panel_act_window() {   # the window steps: the arrangement and its undo, move, p
         close) win_change close "$_arg" ;;
         capture) _cw=${_arg%% *}; _ci=''; case $_arg in *' name='*) _ci=${_arg##* name=} ;; esac
             case $_cw in screen|area|window) ;; *) echo "capture takes screen, area or window"; return 1 ;; esac
-            layout_in_sway || { echo "capture needs the desktop: run spark-shell on desktop"; return 1; }
+            wm_up || { echo "capture needs the desktop: run spark-shell on desktop"; return 1; }
             win_capture "$_cw" "$_ci" ;;
         focus) win_change focus "$_arg" ;;
         *) echo "$_a is not something window does"; return 1 ;;
@@ -282,7 +282,7 @@ panel_act_display() {   # the display steps: the idle and lock minutes, the save
     case $_a in
         idle|lock) case $_arg in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) echo "$_a takes minutes, 0 to 999 (0: never)"; return 1 ;; esac
             _k=DISPLAY_IDLE; [ "$_a" = idle ] || _k=DISPLAY_LOCK
-            config_set "$_k" "$_arg" >/dev/null; eval "$_k=\$_arg"; export "${_k?}"; sway_file_apply; idle_restart
+            config_set "$_k" "$_arg" >/dev/null; eval "$_k=\$_arg"; export "${_k?}"; desktop_file_apply; idle_restart
             if [ "$_a" = idle ]; then echo "idle screen $(idle_words "$_arg")"; else echo "lock and display off $(idle_words "$_arg")"; fi ;;
         saver) _p=$(saver_problem "$_arg"); [ -z "$_p" ] || { echo "$_p"; return 1; }
             config_set DISPLAY_SAVER "$_arg" >/dev/null; DISPLAY_SAVER=$_arg; export DISPLAY_SAVER
@@ -295,12 +295,12 @@ panel_act_display() {   # the display steps: the idle and lock minutes, the save
 panel_act_keyboard() {   # the keyboard steps: the repeat and caps settings, the next layout, one by name
     case $_a in
         repeat-delay|repeat-rate|caps) input_setting keyboard "$_a" "$_arg" ;;
-        next) layout_in_sway || { echo "a layout switch needs the desktop"; return 1; }
-            swaymsg -- input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || { echo "sway took no layout switch"; return 1; }
+        next) wm_up || { echo "a layout switch needs the desktop"; return 1; }
+            wm_input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || { echo "$WM_NAME took no layout switch"; return 1; }
             bar_redraw; echo "the keyboard is $(kb_active)" ;;
-        use) layout_in_sway || { echo "a layout switch needs the desktop"; return 1; }
+        use) wm_up || { echo "a layout switch needs the desktop"; return 1; }
             _i=$(printf '%s\n' $KEYBOARD | awk -v n="$(panel_lower "$_arg")" 'tolower($0) == n {print NR - 1; exit}'); [ -n "$_i" ] || { echo "no layout $_arg in KEYBOARD ($KEYBOARD)"; return 1; }
-            swaymsg -- input type:keyboard xkb_switch_layout "$_i" >/dev/null 2>&1 || { echo "sway took no layout switch"; return 1; }
+            wm_input type:keyboard xkb_switch_layout "$_i" >/dev/null 2>&1 || { echo "$WM_NAME took no layout switch"; return 1; }
             bar_redraw; echo "the keyboard is $_arg" ;;
         *) echo "$_a is not something keyboard does"; return 1 ;;
     esac
@@ -316,7 +316,7 @@ panel_act_bar() {   # the bar steps: off, on, the place, the text size, the tray
     esac
 }
 panel_app_open() {   # panel_app_open NAME -> the app opens here
-    layout_in_sway || { echo "opening an app needs the desktop"; return 1; }
+    wm_up || { echo "opening an app needs the desktop"; return 1; }
     mv -f "$TMP/apps.gate" "$TMP/apps" 2>/dev/null || panel_apps_read "$TMP/apps"   # the gate's list, if any
     _n=$(sed -n "s/^\($(printf '%s' "$1" | sed 's/[.[\*^$]/\\&/g')\): .*/\1/Ip" "$TMP/apps" | head -1); [ -n "$_n" ] || { echo "no app named $1 here"; return 1; }
     _l=$(layout_launch "$_n" ''); ! layout_app_term "$_n" || _l="foot -e $_l"
@@ -329,13 +329,13 @@ panel_app_open() {   # panel_app_open NAME -> the app opens here
 win_exec() {   # win_exec COMMAND -> 0 a new window, 1 none in LAYOUT_WAIT seconds, 2 no exec
     _wr=1; [ ! -p "$TMP/win.events" ] || rm -f "$TMP/win.events"
     if ! command -v timeout >/dev/null 2>&1 || ! mkfifo "$TMP/win.events" 2>/dev/null; then
-        swaymsg -- exec "$1" > /dev/null 2>&1 < /dev/null || _wr=2
+        wm_exec "$1" > /dev/null 2>&1 < /dev/null || _wr=2
         return "$_wr"
     fi
-    timeout "$LAYOUT_WAIT" swaymsg -r -t subscribe -m '["tick","window"]' > "$TMP/win.events" 2>/dev/null < /dev/null & _wx=$!
+    wm_events_for "$LAYOUT_WAIT" '["tick","window"]' > "$TMP/win.events" < /dev/null & _wx=$!
     {
         IFS= read -r _we || :   # the subscribe tick: no window missed from here
-        if swaymsg -- exec "$1" > /dev/null 2>&1 < /dev/null; then
+        if wm_exec "$1" > /dev/null 2>&1 < /dev/null; then
             while IFS= read -r _we; do case $_we in '{ "change": "new"'*|'{"change":"new"'*) _wr=0; break ;; esac; done   # -r: one event a line; sway spaces its JSON
         else _wr=2; fi
     } < "$TMP/win.events"
@@ -343,11 +343,11 @@ win_exec() {   # win_exec COMMAND -> 0 a new window, 1 none in LAYOUT_WAIT secon
     return "$_wr"
 }
 win_open() {   # -> APP<tab>TITLE<tab>ID per window
-    swaymsg -t get_tree 2>/dev/null | jq -r --arg me "$PANEL_APP" '.. | objects | select(.pid? != null and (.type? == "con" or .type? == "floating_con")) | select(((.app_id // .window_properties.class // "") != "") and .app_id != $me) | "\(.app_id // .window_properties.class)\t\(.name // "" | gsub("\t"; " "))\t\(.id)"' 2>/dev/null | scrub_text || :   # any program's words: scrubbed
+    wm_tree | jq -r --arg me "$PANEL_APP" '.. | objects | select(.pid? != null and (.type? == "con" or .type? == "floating_con")) | select(((.app_id // .window_properties.class // "") != "") and .app_id != $me) | "\(.app_id // .window_properties.class)\t\(.name // "" | gsub("\t"; " "))\t\(.id)"' 2>/dev/null | scrub_text || :   # any program's words: scrubbed
 }
 win_label() { win_open | awk -F '\t' '{ n = split($1, p, "."); a = tolower(p[n]); if (a == "footclient") a = "foot"; l = a; if ($2 != "" && tolower($2) != a) l = l ": " $2; print l "\t" $3 }'; }   # -> LABEL<tab>ID
 win_facts() {   # -> JSON: .windows, .here (this workspace), .spaces
-    swaymsg -t get_tree 2>/dev/null | jq -c --arg me "$PANEL_APP" --arg sep "$PANEL_SEP" --arg def "${WINDOWS:-split}" --arg aside "$(win_aside)" '
+    wm_tree | jq -c --arg me "$PANEL_APP" --arg sep "$PANEL_SEP" --arg def "${WINDOWS:-split}" --arg aside "$(win_aside)" '
         def kids: (.nodes // []) + (.floating_nodes // []);
         def leaves: if (kids | length) == 0 then . else kids[] | leaves end;
         def app: (.app_id // .window_properties.class // "") | split(".") | last | ascii_downcase | if . == "footclient" then "foot" else . end;
@@ -379,27 +379,27 @@ win_aside() { [ -z "${SPARK_SHELL_ASIDE:-}" ] || cat "$SPARK_SHELL_ASIDE" 2>/dev
 win_read() { { if [ -n "${WIN_FACTS_READ:-}" ]; then cat "$TMP/win.facts"; else win_facts; fi; } | jq -r '.windows[]? | [.label, (.id | tostring), .group] | @tsv'; }   # -> LABEL<tab>ID<tab>HEADING per window
 win_now() { win_facts | jq -r '.here.arrange // "split"'; }   # -> split, tabs or stacked
 win_arrange() {   # win_arrange split|tabs|stacked -- this workspace; true with none
-    [ -n "${SWAYSOCK:-}" ] || return 0
+    wm_session || return 0
     case $1 in tabs) _wal=tabbed ;; stacked) _wal=stacking ;; *) _wal=splith ;; esac
-    _wao=$(swaymsg -- "[workspace=__focused__ tiling] layout $_wal" 2>&1) && return 0
+    _wao=$(wm_on "workspace=__focused__ tiling" "layout $_wal" 2>&1) && return 0
     case $_wao in *[Nn]o\ matching*) return 0 ;; esac   # nothing tiled: not a failure
     return 1
 }
 win_move() {   # win_move ID N -- to workspace N, as Super+Shift+N
     _wmn=$(win_name_of "$1"); [ -n "$_wmn" ] || { echo 'that window is no longer open'; return 1; }
-    swaymsg -- "[con_id=$1] move container to workspace number $2" >/dev/null 2>&1 || { echo "$_wmn did not move: look at its window, then try again"; return 1; }
+    wm_on "con_id=$1" "move container to workspace number $2" >/dev/null 2>&1 || { echo "$_wmn did not move: look at its window, then try again"; return 1; }
     echo "$_wmn moved to workspace $2"
 }
 win_place() {   # win_place ID tiled|floating|full|left|right|up|down
     _wpn=$(win_name_of "$1"); [ -n "$_wpn" ] || { echo 'that window is no longer open'; return 1; }
     _wpw=$(win_facts | jq -r --argjson i "$1" '.windows[] | select(.id == $i) | .floating')
     case $2 in
-        tiled) swaymsg -- "[con_id=$1] fullscreen disable, floating disable" >/dev/null 2>&1 || { echo "$_wpn did not move: look at its window, then try again"; return 1; }
+        tiled) wm_on "con_id=$1" "fullscreen disable, floating disable" >/dev/null 2>&1 || { echo "$_wpn did not move: look at its window, then try again"; return 1; }
             echo "$_wpn tiled" ;;
-        floating) if [ "$_wpw" = true ]; then swaymsg -- "[con_id=$1] fullscreen disable" >/dev/null 2>&1 || :
+        floating) if [ "$_wpw" = true ]; then wm_on "con_id=$1" "fullscreen disable" >/dev/null 2>&1 || :
             else _wpr=$( REFUSE_AS=window; layout_window float "$1" ) || { echo "${_wpr#spark-shell window: }"; return 1; }; fi
             echo "$_wpn floating" ;;
-        full) swaymsg -- "[con_id=$1] focus, fullscreen enable" >/dev/null 2>&1 || { echo "$_wpn did not go full screen: look at its window, then try again"; return 1; }
+        full) wm_on "con_id=$1" "focus, fullscreen enable" >/dev/null 2>&1 || { echo "$_wpn did not go full screen: look at its window, then try again"; return 1; }
             : > "$TMP/opened"; echo "$_wpn full screen" ;;   # drawn over the dialog: it closes
         left|right|up|down) _wpr=$( REFUSE_AS=window; layout_window "$2" "$1" ) || { echo "${_wpr#spark-shell window: }"; return 1; }
             case $2 in up) _wpw=top ;; down) _wpw=bottom ;; *) _wpw=$2 ;; esac
@@ -408,15 +408,15 @@ win_place() {   # win_place ID tiled|floating|full|left|right|up|down
     [ "$2" = full ] || [ "$(win_aside)" != "$1" ] || : > "$SPARK_SHELL_ASIDE"   # placed: it stays so
 }
 win_capture() {   # win_capture WHAT [ID] -> the picture's name
-    swaymsg -- "[app_id=\"$PANEL_APP\"] move scratchpad" >/dev/null 2>&1 || :
+    wm_on "app_id=\"$PANEL_APP\"" "move scratchpad" >/dev/null 2>&1 || :
     _wcb=''
     if [ -n "${2:-}" ]; then
-        _wcb=$(swaymsg -t get_workspaces 2>/dev/null | jq -r '.[] | select(.focused) | if .num > 0 then "number \(.num)" else "\"\(.name)\"" end')
-        swaymsg -- "[con_id=$2] focus" >/dev/null 2>&1 || :
+        _wcb=$(wm_workspaces | jq -r '.[] | select(.focused) | if .num > 0 then "number \(.num)" else "\"\(.name)\"" end')
+        wm_on "con_id=$2" "focus" >/dev/null 2>&1 || :
     fi
     _wcr=0; _wco=$(layout_capture "$1" --wait 1 2>&1) || _wcr=$?
-    [ -z "$_wcb" ] || swaymsg -- "workspace $_wcb" >/dev/null 2>&1 || :
-    swaymsg -- "[app_id=\"$PANEL_APP\"] scratchpad show" >/dev/null 2>&1 || :
+    [ -z "$_wcb" ] || wm_send "workspace $_wcb" >/dev/null 2>&1 || :
+    wm_on "app_id=\"$PANEL_APP\"" "scratchpad show" >/dev/null 2>&1 || :
     [ "$_wcr" -eq 0 ] || { printf '%s\n' "${_wco#spark-shell *: }"; return 1; }
     _wcn=${_wco%%,*}; _wcn=${_wcn##*/}
     case $_wco in *clipboard*) echo "$_wcn $PANEL_SEP on the clipboard" ;; *) echo "$_wcn" ;; esac
@@ -442,11 +442,11 @@ win_name_of() { win_labels | win_rows | awk -F '\t' -v i="$1" '$2 == i { print $
 win_change() {   # win_change focus|close ID -> one line
     _wc_name=$(win_name_of "$2"); [ -n "$_wc_name" ] || { echo 'that window is no longer open'; return 1; }
     _wc_cmd=focus; [ "$1" != close ] || _wc_cmd='kill'
-    swaymsg -- "[con_id=$2] $_wc_cmd" >/dev/null 2>&1 || { echo "$_wc_name did not $1"; return 1; }
+    wm_on "con_id=$2" "$_wc_cmd" >/dev/null 2>&1 || { echo "$_wc_name did not $1"; return 1; }
     # a close is the app's: 50 ms a try, 2 s at most
     _wc_tries=0; _wc_ok=''
     while :; do
-        _wc_rc=0; swaymsg -t get_tree 2>/dev/null | jq -e --argjson id "$2" --arg action "$1" '
+        _wc_rc=0; wm_tree | jq -e --argjson id "$2" --arg action "$1" '
             if type != "object" or .type != "root" or (.nodes | type) != "array" then error("no tree")
             else [.. | objects | select(.id? == $id)] | if $action == "close" then length == 0 else any(.[]; .focused == true) end end' >/dev/null 2>&1 || _wc_rc=$?
         [ "$_wc_rc" -ne 0 ] || { _wc_ok=1; break; }
@@ -458,11 +458,11 @@ win_change() {   # win_change focus|close ID -> one line
     [ -z "${PROVIDE_EFFECT:-}" ] || jq -cn --arg id "$2" --arg title "$_wc_name" --arg operation "$1" \
         '{kind:"window", id:$id, title:$title, operation:$operation}' > "$TMP/action.effect"
 }
-layout_windows_all() { swaymsg -t get_tree 2>/dev/null | jq '[.. | objects | select(.pid? != null)] | length' 2>/dev/null || echo 0; }   # -> how many windows
+layout_windows_all() { wm_tree | jq '[.. | objects | select(.pid? != null)] | length' 2>/dev/null || echo 0; }   # -> how many windows
 panel_layout_save() {   # panel_layout_save NAME -> this workspace, as a layout
-    layout_in_sway || { echo "saving what is open needs the desktop"; return 1; }
+    wm_up || { echo "saving what is open needs the desktop"; return 1; }
     [ -n "$1" ] || { echo "a name for it"; return 1; }
-    swaymsg -t get_tree 2>/dev/null | jq -r '.. | objects | select(.type? == "workspace" and (.. | objects | select(.focused? == true)) != null) | .. | objects | select(.app_id? != null or .window_properties? != null) | "\(.app_id // .window_properties.class)\t\(.pid // 0)"' > "$TMP/open" 2>/dev/null
+    wm_tree | jq -r '.. | objects | select(.type? == "workspace" and (.. | objects | select(.focused? == true)) != null) | .. | objects | select(.app_id? != null or .window_properties? != null) | "\(.app_id // .window_properties.class)\t\(.pid // 0)"' > "$TMP/open" 2>/dev/null
     [ -s "$TMP/open" ] || { echo "nothing is open on this workspace"; return 1; }
     panel_apps_known > "$TMP/known"
     ps -eo pid=,ppid=,comm= > "$TMP/ps" 2>/dev/null || : > "$TMP/ps"

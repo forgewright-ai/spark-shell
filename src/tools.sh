@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the tools provider
 # sets: TOOLS_CHECK TOOLS_CHECK_FRESH TOOLS_KEEP TOOLS_SBOM TOOLS_SPACE TOOLS_SPACE_FRESH TOOLS_SPACE_SHOWN TOOLS_SPACE_WAIT
-# reads: BAR_PROC BAR_SYS PANEL_SEP PM REPO SBOM_JSON STATE_DIR TAB TMP
+# reads: BAR_PROC BAR_SYS PANEL_SEP PM REPO SBOM_JSON STATE_DIR TAB TMP WM_OWN
 TOOLS_CHECK=$STATE_DIR/check.last   # the epoch, then spark-shell check's own lines
 TOOLS_CHECK_FRESH=10                # a check younger than this many seconds is read, not run again
 tools_label() {   # tools_label NAME -> the plain name of a check row
@@ -145,9 +145,9 @@ tools_system_facts() {   # -> GROUP<tab>LABEL<tab>VALUE: the machine, the operat
     _tsu=$(power_up); printf 'operating system\tsystem\t%s\noperating system\tkernel\t%s\noperating system\tinit\t%s\noperating system\tpackages\t%s\noperating system\tuptime\t%s\n' \
         "$(tools_os PRETTY_NAME)" "$(uname -r)" "$(init_shape)" "$PM" "${_tsu#up }"
     _tss=''; _tso=''
-    if layout_in_sway; then
-        _tss=$(swaymsg -t get_version 2>/dev/null | jq -r '.human_readable // empty' | awk '{ print $1 }')
-        _tso=$(swaymsg -t get_outputs 2>/dev/null | jq -r '[.[] | select(.active) | .name + " " + (.current_mode.width | tostring) + "x" + (.current_mode.height | tostring)] | join(", ")')
+    if wm_up; then
+        _tss=$(wm_version | jq -r '.human_readable // empty' | awk '{ print $1 }')
+        _tso=$(wm_outputs | jq -r '[.[] | select(.active) | .name + " " + (.current_mode.width | tostring) + "x" + (.current_mode.height | tostring)] | join(", ")')
     fi
     _tsk=$(spark_bin); _tskv=''; [ -z "$_tsk" ] || _tskv=$("$_tsk" --version 2>/dev/null | sed -n 's/.*spark \([0-9][0-9.]*\).*/\1/p' | head -1)
     printf 'desktop\tsway\t%s\ndesktop\tscreens\t%s\ndesktop\tspark-shell\t%s\ndesktop\tspark-dialog\t%s\ndesktop\tspark\t%s\n' \
@@ -331,11 +331,11 @@ tools_space_view() {   # tools_space_view caches|folder:NAME -> a page of its la
 }
 tools_running_read() {   # -> $TMP/running.tsv, the programs now, sway's windows by process id
     : > "$TMP/running.windows"
-    ! layout_in_sway || swaymsg -t get_tree 2>/dev/null | jq -r '.. | objects | select((.type == "con" or .type == "floating_con") and (.pid // 0) > 0) | "\(.pid)\t\(.id)"' > "$TMP/running.windows" 2>/dev/null || :
+    ! wm_up || wm_tree | jq -r '.. | objects | select((.type == "con" or .type == "floating_con") and (.pid // 0) > 0) | "\(.pid)\t\(.id)"' > "$TMP/running.windows" 2>/dev/null || :
     python3 -I "$REPO/lib/running.py" list "$BAR_PROC" "$TMP/running.state" "$TMP/running.windows" > "$TMP/running.tsv" 2>/dev/null
 }
 tools_users() { awk -F: '{ printf "%s\t%s\n", $3, $1 }' /etc/passwd 2>/dev/null | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add // {}'; }   # -> {"0": "root",...}
-TOOLS_KEEP='sway swaybar swaybg swayidle swaylock spark-shell spark-dialog dbus-daemon pipewire pipewire-pulse wireplumber'   # never ended from here: the desktop's own parts and the dialog
+TOOLS_KEEP="$WM_OWN spark-shell spark-dialog dbus-daemon pipewire pipewire-pulse wireplumber"   # never ended from here: the desktop's own parts and the dialog
 tools_running_page() {   # -> every program, the busiest first, with put in front and end
     tools_running_read
     jq -Rn --arg sep "$PANEL_SEP" --arg me "$(id -u)" --argjson users "$(tools_users)" --arg keep " $TOOLS_KEEP " --arg state "$(tools_running_state)" '
@@ -409,7 +409,7 @@ tools_act() {   # tools_act ACTION [ARG] -> one line; exit 1 when it was not don
         measure) tools_space_measure; echo "measured: $(tools_space_state)" ;;
         clean-packages) tools_terminal "$(tools_clean_command)" ;;
         front) _tfc=$(tools_program "$2" | cut -f10)
-            swaymsg "[con_id=$_tfc] focus" >/dev/null 2>&1 || { echo "$2 did not come to front"; return 1; }
+            wm_act "con_id=$_tfc" "focus" >/dev/null 2>&1 || { echo "$2 did not come to front"; return 1; }
             : > "$TMP/opened"; echo "$2 in front" ;;
         end) tools_dialog_tree | sort -u > "$TMP/end.keep"
             tools_program "$2" | cut -f8 | tr ' ' '\n' | grep -vxFf "$TMP/end.keep" | grep . > "$TMP/end.pids" || { echo "$2 is part of the dialog: Esc closes it"; return 1; }
@@ -422,8 +422,8 @@ tools_act() {   # tools_act ACTION [ARG] -> one line; exit 1 when it was not don
             [ -z "$_tel" ] || { echo "$2 is still running after 5 seconds"; return 1; }
             echo "$2 ended" ;;
         update-system) tools_terminal "$(tools_upgrade_command)" ;;
-        copy-details) command -v wl-copy >/dev/null 2>&1 || { echo "cannot copy: wl-copy is not installed (spark-shell on desktop)"; return 1; }
-            tools_details_text | wl-copy 2>/dev/null || { echo "cannot copy: the clipboard did not take it"; return 1; }
+        copy-details) wm_copy_here || { echo "$(wm_missing copy)"; return 1; }
+            tools_details_text | wm_copy 2>/dev/null || { echo "cannot copy: the clipboard did not take it"; return 1; }
             echo "details copied" ;;
         export) _tex=$("$REPO/spark-shell" sbom --json 2>&1) || { printf '%s
 ' "$_tex" | tail -1; return 1; }
@@ -432,7 +432,7 @@ tools_act() {   # tools_act ACTION [ARG] -> one line; exit 1 when it was not don
     esac
 }
 tools_terminal() {   # tools_terminal LINE [THEN] -- LINE in a terminal window that waits for Enter; THEN a spark-shell command run after it
-    layout_in_sway || { echo "a terminal window needs the desktop"; return 1; }
+    wm_up || { echo "a terminal window needs the desktop"; return 1; }
     mkdir_private "$STATE_DIR/tools"
     _tts=$(mktemp "$STATE_DIR/tools/run.XXXXXX") || { echo "could not open a terminal"; return 1; }
     case $1 in spark-shell|'spark-shell '*) _ttc="$REPO/$1" ;; *) _ttc=$1 ;; esac
@@ -475,7 +475,7 @@ provide_about_rows() {   # -> the about section's rows resource: the facts, proj
     [ -z "$_av" ] || _ad=$(cd "$REPO" 2>/dev/null && LC_ALL=C git log -1 --format=%cd --date=format:'%e %b %Y' "v$_av" 2>/dev/null | sed 's/^ *//')   # the day of the tag this copy is at
     _ap=$REPO; case $_ap in "$HOME"/*) _ap="~${_ap#"$HOME"}" ;; esac
     _an=$(grep -c '^- ' "$REPO/CREDITS.md" 2>/dev/null || echo 0)
-    _am=$(python3 "$REPO/lib/home.py" map "$REPO/template/.config/sway/config" 2>/dev/null) || _am='{}'   # the keys as bound now, your overrides in
+    _am=$(python3 "$REPO/lib/home.py" map "$(wm_config_template)" 2>/dev/null) || _am='{}'   # the keys as bound now, your overrides in
     help_keys | scrub_text | jq -Rn --arg v "$_av" --arg d "$_ad" --arg p "$_ap" --arg n "$_an" --argjson m "$_am" '
         def b64: @base64 | gsub("="; "") | gsub("[+]"; "-") | gsub("/"; "_");
         def row(id; text; tool; cols): {id: id, sign: "blank", text: text, tool: tool, more: [], columns: cols, children: null, group: null};

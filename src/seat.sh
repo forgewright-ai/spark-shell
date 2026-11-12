@@ -12,7 +12,7 @@ in_group() {   # in_group GROUP USER -- USER is a member of GROUP in /etc/group
 }
 seatd_on() { [ -e "$ROOT/$SEATD_LINK" ] || [ -L "$ROOT/$SEATD_LINK" ]; }
 seat_ready() { seatd_on && in_group _seatd "$(id -un)"; }
-sway_running() { [ -n "${WAYLAND_DISPLAY:-}" ] || pgrep -x sway >/dev/null 2>&1; }
+desktop_running() { [ -n "${WAYLAND_DISPLAY:-}" ] || wm_running_any; }
 seat_root() {   # seat_root VERB [FOR] -- a root to write with, asked once; else a todo row and false
     if ! root_can; then row todo desktop "root is needed for ${2:-seatd} -- spark-shell $1 desktop at a terminal (sudo once)"; acting=0; return 1; fi
     root_sudo_once "${2:-seatd} for the desktop" || { row todo desktop "sudo refused -- spark-shell $1 desktop at a terminal (sudo once)"; acting=0; return 1; }
@@ -44,7 +44,7 @@ seat_off() {   # by the records alone: the link spark-shell made, the membership
     [ -e "$STATE_DIR/seatd.linked" ] || [ -e "$STATE_DIR/seatd.group" ] || return 0
     need desktop "seatd's link and your _seatd membership removed, as spark-shell made them (sudo)" || return 0
     _keep=0
-    if [ -e "$STATE_DIR/seatd.linked" ] && sway_running; then
+    if [ -e "$STATE_DIR/seatd.linked" ] && desktop_running; then
         _keep=1
         row todo desktop "seatd stays while a desktop runs (stopping it would end the desktop) -- spark-shell off desktop again after leaving it"; acting=0
     fi

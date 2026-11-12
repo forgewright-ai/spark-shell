@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- facts: what the desktop knows, for the model
 # sets: MACHINE_AT_NOW MACHINE_FACTS_EVERY MACHINE_NAME MACHINE_NOW_EVERY MACHINE_NOW_SOON MACHINE_NO_TOOL MACHINE_READS
-# reads: BAR_SYS LAYOUTS_DIR NOTES_DIR OS PANEL_APP PANEL_CACHE SAVER_NAMES TAB TMP WALL_SCENES WALL_SHIPPED
+# reads: BAR_SYS LAYOUTS_DIR NOTES_DIR OS PANEL_APP PANEL_CACHE SAVER_NAMES TAB TMP WALL_SCENES WALL_SHIPPED WM_NAME
 # spark reads two files there. NAME.facts: what holds while the machine
 # stays as it is, every name as its tool takes it, written only when it
 # changed (spark keeps it in the cached part of its prompt). NAME.now:
@@ -16,7 +16,7 @@ MACHINE_NOW_SOON=3        # after a click or a key (the bar drawn again at once)
 MACHINE_FACTS_EVERY=300   # seconds between two looks at.facts; the first a minute after the bar starts
 MACHINE_AT_NOW=0; MACHINE_AT_FACTS=0
 machine_dir() { printf '%s\n' "${SPARK_MACHINE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/spark/machine}"; }   # SPARK_MACHINE_DIR: the whole path, for the tests (spark reads the default alone)
-machine_live() { [ "$OS" != Darwin ] && [ -S "${SWAYSOCK:-}" ] && { [ -n "${SPARK_MACHINE_DIR:-}" ] || [ -n "$(spark_bin)" ]; }; }   # a running sway, and a spark here to read the files
+machine_live() { [ "$OS" != Darwin ] && wm_live && { [ -n "${SPARK_MACHINE_DIR:-}" ] || [ -n "$(spark_bin)" ]; }; }   # a running sway, and a spark here to read the files
 machine_q() { case $1 in ''|*[!A-Za-z0-9._+-]*) printf '"%s"' "$(printf '%s' "$1" | tr -d '"')" ;; *) printf '%s' "$1" ;; esac; }   # machine_q NAME -> NAME, in quotes when it holds more than a word's characters
 machine_join() { awk -v s="${1:-, }" '{ o = o (NR > 1 ? s : "") $0 } END { if (NR) print o }'; }   # machine_join [SEP] -- the lines as one, parted by SEP (", ")
 machine_names() { while IFS= read -r _mqn; do [ -z "$_mqn" ] || { machine_q "$_mqn"; echo; }; done | machine_join; }   # a name a line -> one line, each name quoted when it must be
@@ -112,16 +112,14 @@ machine_facts() {   # -> the .facts lines
         bt_list_now | awk -F '\t' '$3 == 1' | LC_ALL=C sort -t "$TAB" -k2,2 | head -8 | while IFS="$TAB" read -r _mba _mbn _mbp _mbc; do printf '%s\t%s\n' "$_mbn" "$(machine_bt_kind "$_mba")"; done > "$TMP/machine.bt"
     fi
     # the session
-    _msv=$(swaymsg -t get_version 2>/dev/null | jq -r 'if (.major // null) != null then "\(.major).\(.minor)" + (if (.patch // 0) > 0 then ".\(.patch)" else "" end) else "" end' 2>/dev/null || :)
+    _msv=$(wm_version | jq -r 'if (.major // null) != null then "\(.major).\(.minor)" + (if (.patch // 0) > 0 then ".\(.patch)" else "" end) else "" end' 2>/dev/null || :)
     _mpv=$(panel_version); _mwl=''
-    if command -v grim >/dev/null 2>&1; then _mwl='screenshots grim'; ! command -v slurp >/dev/null 2>&1 || _mwl="$_mwl + slurp"; fi
-    if command -v wl-copy >/dev/null 2>&1; then _mwl="${_mwl:+$_mwl, }clipboard wl-copy"; ! command -v wl-paste >/dev/null 2>&1 || _mwl="$_mwl and wl-paste"; fi
     ! command -v notify-send >/dev/null 2>&1 || _mwl="${_mwl:+$_mwl, }notifications notify-send"
-    printf -- "- Session: sway%s on Wayland (X11 apps run through Xwayland), set up by spark-shell%s; %s.\n" "${_msv:+ $_msv}" "${_mpv:+ v$_mpv}" "${_mwl:+$_mwl, }swaymsg"
+    printf -- "- Session: %s%s on Wayland (X11 apps run through Xwayland), set up by spark-shell%s; %s.\n" "$WM_NAME" "${_msv:+ $_msv}" "${_mpv:+ v$_mpv}" "$(wm_tools_said)"
     _mkd=$(layout_keys | awk '$2 == "home.open." { print $1; exit }')
     printf -- '- spark-shell is this desktop: the bar at the top; home%s holds native actions and optional conversation.\n' "${_mkd:+ ($_mkd)}"
     _msc=$(machine_screens); [ -z "$_msc" ] || printf -- '- Screens: %s.\n' "$_msc"
-    echo '- Workspaces: the bar names each N:GLYPH; swaymsg workspace number N goes to one.'
+    echo "- Workspaces: the bar names each N:GLYPH; $(wm_workspace_said)."
     if [ -n "${SND:-}" ]; then printf -- '- Sound outputs: %s. Inputs: %s.\n' "$(machine_snd_list out | grep . || echo none)" "$(machine_snd_list mic | grep . || echo none)"
     else echo '- Sound: no audio system answers.'; fi
     if [ -n "$_mbt" ]; then
@@ -165,7 +163,7 @@ machine_facts() {   # -> the .facts lines
     fi
     # how to read the state
     _mrs=''; [ -z "$(mcp_mine)" ] || _mrs="spark mcp read SERVER spark-shell://SERVER/rows (SERVER is the first word of a tool line below); "
-    _mrt='swaymsg -t get_outputs|get_workspaces|get_tree|get_inputs'
+    _mrt=$(wm_queries_said)
     case ${SND:-} in wpctl) _mrt="$_mrt, wpctl status" ;; pactl) _mrt="$_mrt, pactl list sinks" ;; alsa) _mrt="$_mrt, amixer" ;; esac
     [ -z "$_mbt" ] || _mrt="$_mrt, bluetoothctl show"
     printf -- '- Reading state: %s%s.\n' "$_mrs" "$_mrt"
@@ -181,12 +179,12 @@ machine_facts() {   # -> the .facts lines
 }
 machine_awake() { screens_json | jq -e '[.[] | select(.active) | if .power != null then .power elif .dpms != null then .dpms else true end] | length == 0 or any' >/dev/null 2>&1; }   # -> 0 when a screen is on (none told: on)
 machine_now() {   # -> the .now lines
-    swaymsg -t get_tree 2>/dev/null | jq -r --arg me "$PANEL_APP" '
+    wm_tree | jq -r --arg me "$PANEL_APP" '
         [.nodes[]? | select(.type == "output") | .nodes[]? | select(.type == "workspace") | . as $w
          | .. | objects | select(.pid? != null and (.type? == "con" or .type? == "floating_con") and (.app_id // "") != $me)
          | "\(.id) \(.app_id // .window_properties.class // "unknown")" + (if $w.name == "__i3_scratch" then " in the scratchpad" else " on \($w.num)" end) + (if .focused then ", focused" else "" end)]
         | if length == 0 then "- No window is open." else "- Windows open (sway con id, app_id, workspace): " + join("; ") + "." end' 2>/dev/null   # never a title
-    swaymsg -t get_workspaces 2>/dev/null | jq -r '[.[] | select(.name != "__i3_scratch") | .name + " on " + .output + (if .focused then " (focused)" elif .visible then " (shown)" else "" end)]
+    wm_workspaces | jq -r '[.[] | select(.name != "__i3_scratch") | .name + " on " + .output + (if .focused then " (focused)" elif .visible then " (shown)" else "" end)]
         | if length == 0 then empty else "- Workspaces: " + join(", ") + "." end' 2>/dev/null
     screens_json | jq -r '[.[] | select(.active and (if .power != null then .power elif .dpms != null then .dpms else true end) == false) | .name] | if length == 0 then empty else "- Screens off now (the lock turns them off): " + join(", ") + "." end' 2>/dev/null
     if [ -n "${SND:-}" ]; then
@@ -256,7 +254,7 @@ machine_put() {   # machine_put now|facts FILE -- FILE as NAME.KIND in _md, 0600
 }
 machine_write() (   # machine_write now|all|tick -- .now, and .facts with all (tick: while a screen is on); a second writer gives way
     config_load
-    [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && grep -qs 'rendered by spark-shell' "$HOME/.config/sway/config" && layout_in_sway || exit 0
+    [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && grep -qs 'rendered by spark-shell' "$(wm_config_file)" && wm_up || exit 0
     [ -n "${SPARK_MACHINE_DIR:-}" ] || [ -n "$(spark_bin)" ] || exit 0
     _md=$(machine_dir)
     [ -d "$_md" ] || (umask 077 && mkdir -p "$_md") || exit 0

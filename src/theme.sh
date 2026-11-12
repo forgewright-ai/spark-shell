@@ -192,7 +192,7 @@ theme_save() {   # theme_save [NAME...]
     THEME=$name; export THEME
     if [ -n "$_tsp" ] && [ "$WALLPAPER" != "$_d/$_tsp" ]; then   # the folder's copy from now on
         config_set WALLPAPER "$_d/$_tsp" >/dev/null; WALLPAPER=$_d/$_tsp; export WALLPAPER
-        ! desktop_wanted || sway_file_apply   # sway's file names the copy
+        ! desktop_wanted || desktop_file_apply   # sway's file names the copy
     fi
     kept_note theme "$name"
 }
@@ -293,7 +293,7 @@ bar_look_follow() {   # bar_look_follow GLYPHS FAMILY -- each when named
     case ${1:-} in signs|words) [ "$1" = "$BAR_GLYPHS" ] || { [ "$MODE" = dry ] || config_set BAR_GLYPHS "$1" >/dev/null; BAR_GLYPHS=$1; export BAR_GLYPHS; _bc=1; } ;; esac
     case " $GLYPH_FAMILIES " in *" ${2:-none} "*) [ "$2" = "$GLYPH_FAMILY" ] || { [ "$MODE" = dry ] || config_set GLYPH_FAMILY "$2" >/dev/null; GLYPH_FAMILY=$2; export GLYPH_FAMILY; _bc=1; } ;; esac
     [ -n "$_bc" ] && [ "$MODE" != dry ] || return 0
-    bar_redraw; [ -z "${SWAYSOCK:-}" ] || bar_ws_names
+    bar_redraw; ! wm_session || bar_ws_names
 }
 theme_family() {   # theme_family [stone|star|banner]
     [ -n "${1:-}" ] || { echo "glyph family $GLYPH_FAMILY $PANEL_SEP stone, star or banner"; return; }
@@ -304,7 +304,7 @@ family_step() {   # family_step stone|star|banner -> the receipt; 1 when refused
     case " $GLYPH_FAMILIES " in *" $1 "*) ;; *) echo "family takes stone, star or banner"; return 1 ;; esac
     [ "$1" != "$GLYPH_FAMILY" ] || { echo "the glyph family is $1 already"; return 1; }
     config_set GLYPH_FAMILY "$1" >/dev/null; GLYPH_FAMILY=$1; export GLYPH_FAMILY
-    bar_redraw; [ -z "${SWAYSOCK:-}" ] || bar_ws_names
+    bar_redraw; ! wm_session || bar_ws_names
     echo "glyph family $1"
 }
 theme_glyphs() {   # theme_glyphs [signs|words] -- the bar's
@@ -410,7 +410,7 @@ motion_make_scene() {   # motion_make_scene SCENE PALETTE_FILE WxH OUT -- a pixe
     return "$_mk"
 }
 motion_screens() {   # -> NAME<tab>WxH per screen on, in pixels
-    swaymsg -t get_outputs 2>/dev/null | jq -r '.[] | select(.active) | [.name, (((.rect.width * (.scale // 1)) | floor | tostring) + "x" + ((.rect.height * (.scale // 1)) | floor | tostring))] | @tsv' 2>/dev/null || :
+    wm_outputs | jq -r '.[] | select(.active) | [.name, (((.rect.width * (.scale // 1)) | floor | tostring) + "x" + ((.rect.height * (.scale // 1)) | floor | tostring))] | @tsv' 2>/dev/null || :
 }
 scene_screens() {   # portrait screens' stills, in the background
     wall_scene "${WALLPAPER:-}" && _ssp=$(palette_file "${THEME:-}" 2>/dev/null) && scene_ready || return 0
@@ -419,13 +419,13 @@ scene_screens() {   # portrait screens' stills, in the background
     ( printf '%s\n' "$_ssl" | while IFS="$TAB" read -r _ssn _sss; do   # TMP dies with its step
           _ssf=$WALL_CACHE/$WALLPAPER-$THEME-$_sss.png
           [ -f "$_ssf" ] || { mkdir_state "$WALL_CACHE" && scene_still "$WALLPAPER" "$_ssp" "$_sss" "$_ssf"; } || continue
-          swaymsg -- "output \"$_ssn\" bg \"$_ssf\" fill" >/dev/null 2>&1 || :
+          wm_send "output \"$_ssn\" bg \"$_ssf\" fill" >/dev/null 2>&1 || :
       done ) </dev/null >/dev/null 2>&1 3>&- 4<&- &
 }
 MOTION_NOW=''   # from motion_follow: playing, making or nothing
 motion_follow() {   # the look's loops playing or made; else ours stopped
     MOTION_NOW=''
-    [ "$OS" != Darwin ] && layout_in_sway || return 0
+    [ "$OS" != Darwin ] && wm_up || return 0
     scene_screens
     if [ "${WALLPAPER_MOTION:-off}" != on ] || ! motion_has "${WALLPAPER:-}" || [ -n "$(motion_missing)" ]; then motion_stop; return 0; fi
     _mj=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || return 0

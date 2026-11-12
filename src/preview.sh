@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the preview: a page for each kind of file, a sound and a video played
 # sets: FILES_FULL_PX FILES_KINDS FILES_PAGE_PX FILES_SOUND_T FILES_TEXT_MAX FILES_TOOL_T FILES_WAVE_PX MPV_SAFE
-# reads: NOTES_DIR REPO TMP US
+# reads: NOTES_DIR REPO TMP US WM_NAME
 FILES_TEXT_MAX=131072    # a text preview's bytes at most
 FILES_PAGE_PX=1600       # a picture's long side at most
 FILES_FULL_PX=4096       # a zoom's; the dialog decodes 4096 at most
@@ -82,7 +82,7 @@ rem_page() {   # rem_page UID -> a reminder's page
 }
 win_page() {   # win_page ID -> a window's page
     case $1 in ''|*[!0-9]*) return 1 ;; esac
-    swaymsg -t get_tree 2>/dev/null | jq -r --argjson i "$1" --arg aside "$(win_aside)" '
+    wm_tree | jq -r --argjson i "$1" --arg aside "$(win_aside)" '
         [.nodes[] | select(.type == "output") as $o | $o.nodes[] | select(.type == "workspace") as $w | $w | .. | objects | select(.id? == $i and (.type == "con" or .type == "floating_con")) | {o: $o.name, w: $w.name, n: .}] | .[0] // empty
         | (.n.app_id // .n.window_properties.class // "a window"), (.n.name // ""),
           "workspace\t" + (.w | split(":") | .[0] + (if (.[1] // "") != "" and .[1] != .[0] then " " + .[1] else "" end)), "screen\t" + .o, "size\t" + (.n.rect.width | tostring) + " by " + (.n.rect.height | tostring) + " pixels",
@@ -324,27 +324,27 @@ files_play() {   # files_play PATH [AT] -- a sound from AT seconds
     mpv $MPV_SAFE --no-video --no-terminal --really-quiet --start="+${2:-0}" -- "$1" </dev/null >/dev/null 2>&1 &
     echo "$!" > "$TMP/play.pid"
 }
-files_video_here() { [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 && swaymsg -t get_version >/dev/null 2>&1; }   # files_video_here -- sway answers
+files_video_here() { wm_session && wm_here && wm_version >/dev/null; }   # files_video_here -- sway answers
 files_play_video() {   # files_play_video PATH AT X Y W H -- X Y W H in terminal pixels
-    _fvt=$(swaymsg -t get_tree 2>/dev/null) || { echo "sway does not answer"; return 1; }
+    _fvt=$(wm_tree) || { echo "$WM_NAME does not answer"; return 1; }
     _fvd=$(printf '%s' "$_fvt" | jq -r 'first(.. | objects | select(.app_id? == "spark-dialog" and .focused? == true) | "\(.rect.x + .window_rect.x) \(.rect.y + .window_rect.y) \(.fullscreen_mode // 0)") // empty')
     [ -n "$_fvd" ] || { echo "the dialog's window is not found"; return 1; }
     _fvo=$(printf '%s' "$_fvt" | jq -r 'first(.nodes[] | select(.type == "output") | select(any(.. | objects; .app_id? == "spark-dialog" and .focused? == true)) | .name) // empty')
-    _fvs=$(swaymsg -t get_outputs 2>/dev/null | jq -r --arg o "$_fvo" 'first(.[] | select(.name == $o) | .scale) // 1')
+    _fvs=$(wm_outputs | jq -r --arg o "$_fvo" 'first(.[] | select(.name == $o) | .scale) // 1')
     # sway stacks full screen over floating: the dialog goes floating for the play
     _fvsw=''
     if [ -f "$TMP/play.swap" ]; then _fvsw=$(cat "$TMP/play.swap")
     else
         case $_fvd in *' 0') ;; *)
             _fvsw=$(printf '%s' "$_fvt" | jq -r 'first(.. | objects | select(.app_id? == "spark-dialog" and .focused? == true) | "\(.id) \(.geometry.width // 0) \(.geometry.height // 0)") // empty')
-            _fvr=$(swaymsg -t get_outputs 2>/dev/null | jq -r --arg o "$_fvo" 'first(.[] | select(.name == $o) | "\(.rect.width) \(.rect.height) \(.rect.x) \(.rect.y)") // empty')
+            _fvr=$(wm_outputs | jq -r --arg o "$_fvo" 'first(.[] | select(.name == $o) | "\(.rect.width) \(.rect.height) \(.rect.x) \(.rect.y)") // empty')
             [ -n "$_fvsw" ] && [ -n "$_fvr" ] || { echo "the dialog's window is not found"; return 1; }
             # shellcheck disable=SC2086   # four numbers
             set -- "$1" "$2" "$3" "$4" "$5" "$6" $_fvr
             # the bar apart: a sway with no bar refuses it
-            swaymsg "bar mode invisible" >/dev/null 2>&1 || :
-            swaymsg "[con_id=${_fvsw%% *}] fullscreen disable, resize set $7 $8, move absolute position $9 ${10}" >/dev/null 2>&1 \
-                || { swaymsg "bar mode $(bar_mode)" >/dev/null 2>&1 || :; echo "full screen could not make room for the video"; return 1; }
+            wm_cmd "bar mode invisible" >/dev/null 2>&1 || :
+            wm_act "con_id=${_fvsw%% *}" "fullscreen disable, resize set $7 $8, move absolute position $9 ${10}" >/dev/null 2>&1 \
+                || { wm_cmd "bar mode $(bar_mode)" >/dev/null 2>&1 || :; echo "full screen could not make room for the video"; return 1; }
             printf '%s\n' "$_fvsw" > "$TMP/play.swap" ;;
         esac
     fi
@@ -366,16 +366,16 @@ files_play_video() {   # files_play_video PATH AT X Y W H -- X Y W H in terminal
     fi
     # shellcheck disable=SC2086   # four numbers
     set -- $_fvg
-    _fvi=0; while [ "$_fvi" -lt 30 ] && ! swaymsg -t get_tree 2>/dev/null | jq -e 'any(.. | objects; .app_id? == "spark-preview")' >/dev/null 2>&1; do sleep 0.1; _fvi=$((_fvi + 1)); done
+    _fvi=0; while [ "$_fvi" -lt 30 ] && ! wm_tree | jq -e 'any(.. | objects; .app_id? == "spark-preview")' >/dev/null 2>&1; do sleep 0.1; _fvi=$((_fvi + 1)); done
     # mapped unseen; placed and shown in one command
-    swaymsg "[app_id=\"spark-preview\"] floating enable, border none, resize set $3 $4, move absolute position $1 $2, opacity 1" >/dev/null 2>&1 || :
+    wm_act "app_id=\"spark-preview\"" "floating enable, border none, resize set $3 $4, move absolute position $1 $2, opacity 1" >/dev/null 2>&1 || :
 }
 pid_running() { kill -0 "$1" 2>/dev/null && ! grep -qs '^State:[[:space:]]*Z' "/proc/$1/status"; }   # pid_running PID -- a zombie is ended; a container may never reap
 files_full_back() {   # files_full_back "ID W H" -- full screen again, sized first for leaving
     # shellcheck disable=SC2086   # three numbers
     set -- $1
     _ffb=''; [ "${2:-0}" -gt 0 ] && [ "${3:-0}" -gt 0 ] && _ffb="resize set $2 $3, move position center, "
-    swaymsg "[con_id=$1] ${_ffb}fullscreen enable" >/dev/null 2>&1 || :
-    swaymsg "bar mode $(bar_mode)" >/dev/null 2>&1 || :
+    wm_act "con_id=$1" "${_ffb}fullscreen enable" >/dev/null 2>&1 || :
+    wm_cmd "bar mode $(bar_mode)" >/dev/null 2>&1 || :
 }
 files_stop() { [ ! -f "$TMP/play.pid" ] || { kill "$(cat "$TMP/play.pid")" 2>/dev/null || :; rm -f "$TMP/play.pid"; }; }

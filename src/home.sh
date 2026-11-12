@@ -14,15 +14,15 @@ panel_tick_start() {   # panel_tick_start ROW -- the time drawn again at ROW as 
 }
 panel_tick_stop() { [ -z "${TICK:-}" ] || { kill "$TICK" 2>/dev/null || :; wait "$TICK" 2>/dev/null || :; TICK=''; }; }
 panel_full_aside() {   # a fullscreen window on the panel's workspace steps aside (sway draws nothing else over it); FULL_ID remembers it
-    FULL_ID=$(swaymsg -t get_tree 2>/dev/null | jq -r --argjson p "$PPID" '[.. | objects | select(.type? == "workspace") | select([.. | objects | select(.pid? == $p)] | length > 0) | .. | objects | select((.type? == "con" or .type? == "floating_con") and (.fullscreen_mode? // 0) > 0 and .pid? != $p) | .id] | first // empty' 2>/dev/null)   # a window or a container, never the workspace (it says fullscreen too)
+    FULL_ID=$(wm_tree | jq -r --argjson p "$PPID" '[.. | objects | select(.type? == "workspace") | select([.. | objects | select(.pid? == $p)] | length > 0) | .. | objects | select((.type? == "con" or .type? == "floating_con") and (.fullscreen_mode? // 0) > 0 and .pid? != $p) | .id] | first // empty' 2>/dev/null)   # a window or a container, never the workspace (it says fullscreen too)
     [ -n "$FULL_ID" ] || return 0
-    swaymsg -- "[con_id=$FULL_ID] fullscreen disable" >/dev/null 2>&1 || { FULL_ID=''; return 0; }
-    swaymsg -- "[app_id=$PANEL_APP] focus" >/dev/null 2>&1 || :
+    wm_on "con_id=$FULL_ID" "fullscreen disable" >/dev/null 2>&1 || { FULL_ID=''; return 0; }
+    wm_on "app_id=$PANEL_APP" "focus" >/dev/null 2>&1 || :
     printf '%s\n' "$FULL_ID" > "$TMP/full.aside"; SPARK_SHELL_ASIDE=$TMP/full.aside; export SPARK_SHELL_ASIDE   # a provider reads the window as full screen, and placing it clears this
 }
 panel_full_back() {   # the window that stepped aside is fullscreen again, unless a pick opened or placed a window
     [ -n "${FULL_ID:-}" ] && [ ! -f "$TMP/opened" ] && [ -s "$TMP/full.aside" ] || return 0
-    swaymsg -- "[con_id=$FULL_ID] fullscreen enable" >/dev/null 2>&1 || :
+    wm_on "con_id=$FULL_ID" "fullscreen enable" >/dev/null 2>&1 || :
 }
 panel_reload() {   # the settings read again: a pick may have changed them
     config_load
@@ -46,8 +46,8 @@ panel_chat() {   # spark chat takes this window; without spark, one line that wa
     rm -rf "$TMP"; trap - EXIT; exec "$(spark_bin)" chat
 }
 panel_open_count() {   # -> how many panel windows a running sway shows (0 without sway)
-    [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || { echo 0; return 0; }
-    _c=$(swaymsg -t get_tree 2>/dev/null | jq -r --arg a "$PANEL_APP" '[.. | objects | select(.app_id? == $a)] | length' 2>/dev/null || :)
+    wm_session && wm_here || { echo 0; return 0; }
+    _c=$(wm_tree | jq -r --arg a "$PANEL_APP" '[.. | objects | select(.app_id? == $a)] | length' 2>/dev/null || :)
     echo "${_c:-0}"   # a sway that does not answer: none
 }
 panel_warm() {   # panel_warm SECTION ROW -- a slow section that opened the panel is probed first, the march at ROW
@@ -81,11 +81,11 @@ panel_run() {   # panel_run KIND CMD... -> CMD's lines as they land, the pulse o
     wait "$_w"
 }
 panel_own_window() {   # the terminal is the panel's own window: foot our parent under sway, its window with the panel's app id
-    [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || return 1
+    wm_session && wm_here || return 1
     _c=$(cat "/proc/$PPID/comm" 2>/dev/null || ps -o comm= -p "$PPID" 2>/dev/null); [ "${_c##*/}" = foot ] || return 1
     _i=0
     while :; do   # foot maps its window a moment after it starts us: up to a second for the tree to show it
-        _a=$(swaymsg -t get_tree 2>/dev/null | jq -r --argjson p "$PPID" '[.. | objects | select(.pid? == $p) | .app_id // empty] | first // empty' 2>/dev/null)
+        _a=$(wm_tree | jq -r --argjson p "$PPID" '[.. | objects | select(.pid? == $p) | .app_id // empty] | first // empty' 2>/dev/null)
         [ -z "$_a" ] && [ "$_i" -lt 10 ] || break
         sleep 0.1; _i=$((_i + 1))
     done
@@ -220,7 +220,7 @@ cmd_panel() {   # cmd_panel [SECTION] [--list | ACTION [ARG...]] | chat | "WORDS
     [ "$OS" = Darwin ] || pm_detect
     theme_load; SND=''; [ "$OS" = Darwin ] || SND=$(snd_tool)   # on macOS the panel holds the chat and the layouts only
     case ${1:-} in
-        chat) [ "$(panel_open_count)" -lt 2 ] || { swaymsg "[app_id=$PANEL_APP] kill" >/dev/null 2>&1 || :; return 0; }   # the key again: a panel already open goes
+        chat) [ "$(panel_open_count)" -lt 2 ] || { wm_act "app_id=$PANEL_APP" "kill" >/dev/null 2>&1 || :; return 0; }   # the key again: a panel already open goes
               panel_chat; return ;;
         ''|--list) what=glance ;;
         -*) refuse_in panel "$1 is not an option here: a section ($(printf '%s' "$PANEL_ORDER $PANEL_LOOKS" | sed 's/ /, /g')), --list, or words for what you would like" ;;
@@ -237,7 +237,7 @@ cmd_panel() {   # cmd_panel [SECTION] [--list | ACTION [ARG...]] | chat | "WORDS
     esac
     if { [ -t 0 ] || [ -n "${SPARK_SHELL_TEST_TTY:-}" ]; } && command -v fzf >/dev/null 2>&1; then   # the tests drive the window with an fzf of their own
         # the key again: this window is the second panel, so both go
-        [ "$(panel_open_count)" -lt 2 ] || { swaymsg "[app_id=$PANEL_APP] kill" >/dev/null 2>&1 || :; return 0; }
+        [ "$(panel_open_count)" -lt 2 ] || { wm_act "app_id=$PANEL_APP" "kill" >/dev/null 2>&1 || :; return 0; }
         panel_loop "$what"
     else panel_list "$what"; fi
 }

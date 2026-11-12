@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --------------------------------------------------------------- renders
 # sets: DESKTOP_RENDERED RENDERED USER_DIRS USER_DIRS_ROLES
-# reads: CONFIG_DIR HEX_KEYS MODE NEON NEON_OLD NL OS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_SEEN POINTER_THEMES REPO SCREENS_CONF SLOT_KEYS STATE_DIR TAB THEME_KEYS TMP WALL_COVER WALL_KEYS WIN_KEYS
+# reads: CONFIG_DIR HEX_KEYS MODE NEON NEON_OLD NL OS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_SEEN POINTER_THEMES REPO SCREENS_CONF SLOT_KEYS STATE_DIR TAB TERM_NAME THEME_KEYS TMP WALL_COVER WALL_KEYS WIN_KEYS WM_CONFIG_REL WM_NAME
 # a symlink for a file used as-is, a rendered file where a value is baked
 # in. A file marked `rendered by spark-shell` is ours to render again; any
 # other is yours and moves to <path>.bak. The first .bak stays for off; a
@@ -58,10 +58,10 @@ bar_auto_size() {   # bar_auto_size SIZE ROWS -> SIZE as it is for 1080 rows or 
     awk -v n="$1" -v h="$2" 'BEGIN { s = int(n * sqrt(h / 1080) + 0.5); if (s > 40) s = 40; if (s < n) s = n; print s }'
 }
 bar_screen_rows() {   # -> the rows of the shortest screen on, its shorter side after sway's scale, from a running sway; nothing outside one
-    [ -S "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
-    swaymsg -t get_outputs 2>/dev/null | jq -r '[.[] | select(.active) | [.rect.width, .rect.height] | min] | min // empty' 2>/dev/null || :
+    wm_live && wm_here && command -v jq >/dev/null 2>&1 || return 0
+    wm_outputs | jq -r '[.[] | select(.active) | [.rect.width, .rect.height] | min] | min // empty' 2>/dev/null || :
 }
-render_expr() {   # -> the sed script that renders a template, one s command a line: BSD sed reads a -e script of 2048 bytes at most, and the swayidle line alone passed it
+render_expr() {   # -> the sed script that renders a template, one s command a line: BSD sed reads a -e script of 2048 bytes at most, and the idle watcher line alone passed it
     e="s|@HOME@|$(esc "$HOME")|g${NL}s|@USER@|$(esc "$(id -un)")|g${NL}s|@NAME@|$(esc "$(short_host)")|g${NL}s|@REPO@|$(esc "$REPO")|g"
     for k in $THEME_KEYS; do
         eval "v=\$$k"
@@ -93,7 +93,7 @@ render_expr() {   # -> the sed script that renders a template, one s command a l
 render_sed() { printf '%s\n' "$1" > "$TMP/render.sed"; sed -f "$TMP/render.sed" "$2"; }   # render_sed SCRIPT SRC -> SRC through the script, from a file (never one -e line)
 render_tmp() {   # render_tmp SRC DST -- the template through EXPR, every placeholder gone
     render_sed "$EXPR" "$1" > "$2"
-    case $1 in */sway/config) python3 "$REPO/lib/home.py" render "$2" || exit 1 ;; esac
+    case $1 in "$(wm_config_template)") python3 "$REPO/lib/home.py" render "$2" || exit 1 ;; esac
     if grep -q '@[A-Z_0-9]*@' "$2"; then
         printf 'spark-shell: %s: unrendered placeholder: %s\n' "$1" "$(grep -o '@[A-Z_0-9]*@' "$2" | head -1)" >&2
         exit 1
@@ -135,7 +135,7 @@ rc_files() { if [ "$OS" = Darwin ]; then echo ".zshrc .zprofile"; else echo ".ba
 rc_tree() { if [ "$OS" = Darwin ]; then echo "$REPO/template/macos"; else echo "$REPO/template/linux"; fi; }
 # the desktop's renders, only with DESKTOP=sway on Linux; off hands them
 # back whatever the config says
-DESKTOP_RENDERED=".config/foot/foot.ini .config/foot/dialog.ini .config/sway/config .local/share/applications/spark-shell-tmux.desktop .config/fontconfig/conf.d/50-spark-shell.conf .config/mako/config .config/xdg-desktop-portal/sway-portals.conf"   # fontconfig: the wifi bars' family, unhinted; mako: the notifications
+DESKTOP_RENDERED=".config/foot/foot.ini .config/foot/dialog.ini $WM_CONFIG_REL .local/share/applications/spark-shell-tmux.desktop .config/fontconfig/conf.d/50-spark-shell.conf .config/mako/config .config/xdg-desktop-portal/sway-portals.conf"   # fontconfig: the wifi bars' family, unhinted; mako: the notifications
 foot_colors() {   # the name of foot's color section: [colors] before 1.26, [colors-dark] from it
     _v=$(PATH=$HOME/.local/bin:$PATH foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')
     set -- ${_v:-1 26}
@@ -148,7 +148,7 @@ login_na() { if [ "$OS" = Darwin ]; then echo "not on macOS, which has its own l
 desktop_wanted() { [ -z "$(desktop_na)" ] && [ "$DESKTOP" = sway ]; }
 desktop_tools() {   # -> the missing ones, if any (PATH or ~/.local/bin)
     _miss=''
-    for t in sway foot; do
+    for t in $WM_NAME $TERM_NAME; do
         command -v "$t" >/dev/null 2>&1 || [ -x "$HOME/.local/bin/$t" ] || _miss="$_miss $t"
     done
     printf '%s' "$_miss"
@@ -166,20 +166,20 @@ pointer_off() {   # the two spark themes are spark-shell's own: gone with the de
     [ "$MODE" = dry ] || rm -f "$POINTER_SEEN"
     [ "$_had" = 0 ] || { if [ "$MODE" = dry ]; then row would pointer "spark-white and spark-black removed from $POINTER_DIR"; else row ok pointer "spark-white and spark-black removed from $POINTER_DIR"; fi; }
 }
-sway_reload() {   # sway_reload [WHY] -- a running sway reads its new config (on, on desktop: the keys may have changed), under a cover so the wallpaper never goes black; WHY, its row's words
+desktop_reload() {   # desktop_reload [WHY] -- a running sway reads its new config (on, on desktop: the keys may have changed), under a cover so the wallpaper never goes black; WHY, its row's words
     [ "$MODE" = dry ] && return 0
-    [ -n "${SWAYSOCK:-}" ] || return 0
-    [ -f "$HOME/.config/sway/config" ] || return 0
-    command -v swaymsg >/dev/null 2>&1 || return 0
+    wm_session || return 0
+    [ -f "$(wm_config_file)" ] || return 0
+    wm_here || return 0
     wall_cover; [ -z "$WALL_COVER" ] || sleep 0.25   # drawn before the reload stops sway's own
-    swaymsg reload >/dev/null 2>&1 || { wall_uncover; return 0; }
+    wm_reload >/dev/null 2>&1 || { wall_uncover; return 0; }
     wall_uncover
     pad_again   # the bar may have started again: a pad keeping its strip starts after it, so the new bar is not inside that strip
     # a reload gives the gaps to new workspaces only: the ones open take them now
-    [ -z "${GAPS_INNER:-}" ] || { swaymsg "gaps inner all set $GAPS_INNER" >/dev/null 2>&1; swaymsg "gaps outer all set $GAPS_OUTER" >/dev/null 2>&1; } || :
-    [ -z "${BORDER:-}" ] || swaymsg "[tiling] border $BORDER" >/dev/null 2>&1 || :   # and the windows open now their border (a reload gives it to new ones only)
+    [ -z "${GAPS_INNER:-}" ] || { wm_cmd "gaps inner all set $GAPS_INNER" >/dev/null 2>&1; wm_cmd "gaps outer all set $GAPS_OUTER" >/dev/null 2>&1; } || :
+    [ -z "${BORDER:-}" ] || wm_act "tiling" "border $BORDER" >/dev/null 2>&1 || :   # and the windows open now their border (a reload gives it to new ones only)
     layout_refit_soon   # a bar moved or another gap: the windows the keys placed take their places on the new area
-    if [ -n "${1:-}" ]; then row ok sway "reloaded ($1)"; else row ok sway "reloaded (~/.config/sway/config)"; fi
+    if [ -n "${1:-}" ]; then row ok "$WM_NAME" "reloaded ($1)"; else row ok "$WM_NAME" "reloaded (~/$WM_CONFIG_REL)"; fi
 }
 wall_missing() {   # a todo row when the picture the config names is not there: the ground instead
     if [ "$WALLPAPER" != none ] && [ "$WALLPAPER" != default ] && ! wall_color && ! wall_there; then
@@ -223,18 +223,18 @@ desktop_files() {   # the desktop's renders: foot's, the dialog's, sway's, the t
         render_one "$REPO/template/$rel" "$HOME/$rel"
     done
     user_dirs_apply
-    [ "$MODE" = dry ] || mkdir -p "$HOME/.config/sway/config.d"   # your own sway lines: the config reads the folder last
+    [ "$MODE" = dry ] || mkdir -p "$(wm_config_file).d"   # your own sway lines: the config reads the folder last
     [ "$MODE" = dry ] || [ -f "$SCREENS_CONF" ] || { mkdir -p "$CONFIG_DIR" && echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them' > "$SCREENS_CONF"; }   # the template includes it
     [ "$MODE" = dry ] || [ "$({ cksum < "$HOME/.config/mako/config"; } 2>/dev/null || :)" = "$_mk" ] || notify_reload   # a new look reaches the next notification, with no login
 }
 desktop_look_apply() {   # on and on desktop: the renders, the pointer, and a running sway reloaded when its file changed (its keys may have)
     wall_missing
     wall_follow   # a shipped drawing under a palette not its own: drawn in that palette first, so the render names the picture
-    _sc=$({ cksum < "$HOME/.config/sway/config"; } 2>/dev/null || :)
+    _sc=$({ cksum < "$(wm_config_file)"; } 2>/dev/null || :)
     desktop_files
     pointer_apply
-    if [ "$({ cksum < "$HOME/.config/sway/config"; } 2>/dev/null || :)" != "$_sc" ]; then sway_reload
-    elif bar_stale; then sway_reload "the bar starts again on this spark-shell"; fi   # after an update the bar still ran the old code until a logout: a reload starts it on the new
+    if [ "$({ cksum < "$(wm_config_file)"; } 2>/dev/null || :)" != "$_sc" ]; then desktop_reload
+    elif bar_stale; then desktop_reload "the bar starts again on this spark-shell"; fi   # after an update the bar still ran the old code until a logout: a reload starts it on the new
     look_burst   # the open terminals take the look too: after an upgrade, the slots their new shells draw in
 }
 desktop_apply() {

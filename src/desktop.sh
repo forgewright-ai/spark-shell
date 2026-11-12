@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # on_console -> 0 on /dev/tty1 and up (not XDG_VTNR: Void has no logind)
 # sets: IDLE_ALPHA IDLE_APP IDLE_FROM
-# reads: BAR_WS_ORDER CONFIG_DIR CONFIG_UNSET KB_RE LAYOUT_PENDING LAYOUT_SEEN NOTIFY_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SCREENS_CONF STATE_DIR TAB TMP US
+# reads: BAR_WS_ORDER CONFIG_DIR CONFIG_UNSET KB_RE LAYOUT_PENDING LAYOUT_SEEN NOTIFY_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SCREENS_CONF STATE_DIR TAB TMP US WM_NAME
 on_console() { case $(tty 2>/dev/null) in /dev/tty[1-9]*) return 0 ;; *) return 1 ;; esac; }
 # runtime_dir -- XDG_RUNTIME_DIR when unset (Void has no logind)
 runtime_dir() {
@@ -71,12 +71,11 @@ cmd_desktop() {
     layout_start ''
 }
 # the idle screen goes once the lock is up (swaylock --daemonize returns then)
-idle_exec() {   # idle_exec -> the swayidle command
-    _l="$REPO/spark-shell desktop lock || swaylock -f"
-    printf 'swayidle -w'
-    [ "${DISPLAY_IDLE:-10}" = 0 ] || printf " timeout %s '%s desktop idle' resume '%s desktop idle off'" "$((DISPLAY_IDLE * 60))" "$REPO/spark-shell" "$REPO/spark-shell"
-    [ "${DISPLAY_LOCK:-15}" = 0 ] || printf " timeout %s '%s; %s desktop idle off' timeout %s 'swaymsg \"output * power off\"' resume 'swaymsg \"output * power on\"'" "$((DISPLAY_LOCK * 60))" "$_l" "$REPO/spark-shell" "$((DISPLAY_LOCK * 60))"
-    printf " before-sleep '%s'" "$_l"
+idle_exec() {   # idle_exec -> the idle watcher's command
+    _l="$REPO/spark-shell desktop lock || $(wm_lock_fallback)"
+    _ii=0; [ "${DISPLAY_IDLE:-10}" = 0 ] || _ii=$((DISPLAY_IDLE * 60))
+    _il=0; [ "${DISPLAY_LOCK:-15}" = 0 ] || _il=$((DISPLAY_LOCK * 60))
+    wm_idle_cmd "$_l" "$_ii" "$_il"
 }
 # a foot window a screen, tiled alone, no gaps: fullscreen foot is solid
 IDLE_APP="spark-idle"
@@ -86,14 +85,14 @@ layout_idle() {   # layout_idle [off|--clock|--side]
     case ${1:-} in
         --clock) trap 'idle_back; exit 0' INT TERM HUP; idle_clock; idle_back; return ;;
         --side) trap 'idle_back; exit 0' INT TERM HUP; idle_side; idle_back; return ;;
-        off) layout_in_sway || return 0
+        off) wm_up || return 0
             idle_back
             return 0 ;;
         '') ;;
         *) refuse "idle takes off, or nothing: the idle screen now" ;;
     esac
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own desktop"
-    layout_in_sway || refuse "the idle screen is the desktop's: run it inside it"
+    wm_up || refuse "the idle screen is the desktop's: run it inside it"
     command -v foot >/dev/null 2>&1 || refuse "foot is not installed (spark-shell on desktop)"
     ! idle_up || return 0
     theme_load
@@ -102,26 +101,26 @@ layout_idle() {   # layout_idle [off|--clock|--side]
     screens_json | jq -r '[.[] | select(.active and (.current_workspace // "") != "" and .current_workspace != "idle" and (.current_workspace | startswith("idle ") | not))]
         | (map(select(.focused | not)) + map(select(.focused)))[] | [.name, .current_workspace] | @tsv' > "$TMP/idle.from" 2>/dev/null || :
     [ ! -s "$TMP/idle.from" ] || { mkdir_private "$STATE_DIR"; cat "$TMP/idle.from" > "$IDLE_FROM"; }
-    swaymsg -- "bar mode invisible" >/dev/null 2>&1 || :
+    wm_send "bar mode invisible" >/dev/null 2>&1 || :
     _fs=$(font_spec); _foot="foot --app-id $IDLE_APP -o 'font=${_fs%%:*}:size=$((_sz * 2))' -o $_fc.alpha=$IDLE_ALPHA -o $_fc.background=$HEX_BG -o pad=0x0 -e $REPO/spark-shell desktop idle"
     # the main screen last: the focus ends on the clock
     _main=$(idle_main)
     screens_json | jq -r --arg m "$_main" '.[] | select(.active and .name != $m) | .name' 2>/dev/null | while IFS= read -r _o; do
         case $_o in *[\"\\]*) continue ;; esac
-        swaymsg -- "mouse_warping none; focus output \"$_o\"; workspace \"idle $_o\"; gaps inner current set 0; gaps outer current set 0; exec $_foot --side; mouse_warping output" >/dev/null 2>&1 || :
+        wm_send "mouse_warping none; focus output \"$_o\"; workspace \"idle $_o\"; gaps inner current set 0; gaps outer current set 0; exec $_foot --side; mouse_warping output" >/dev/null 2>&1 || :
     done
     _at=''; case $_main in ''|*[\"\\]*) ;; *) _at="focus output \"$_main\"; " ;; esac
-    swaymsg -- "mouse_warping none; ${_at}workspace idle; exec $_foot --clock; mouse_warping output" >/dev/null 2>&1 || refuse "could not open the idle screen"
+    wm_send "mouse_warping none; ${_at}workspace idle; exec $_foot --clock; mouse_warping output" >/dev/null 2>&1 || refuse "could not open the idle screen"
 }
 idle_main() {   # -> the main screen when on, else the focused one
     screens_json | jq -r --arg m "$(screen_main || :)" '[.[] | select(.active)] as $on
         | ([$on[] | select($m != "" and (.name == $m or ([.make, .model, .serial] | map(if . == null or . == "" then "Unknown" else . end) | join(" ")) == $m))]
            + [$on[] | select(.focused)] + $on)[0].name // empty' 2>/dev/null || :
 }
-idle_up() { swaymsg -t get_tree 2>/dev/null | jq -e --arg a "$IDLE_APP" '[.. | objects | select(.app_id? == $a)] | length > 0' >/dev/null 2>&1; }
+idle_up() { wm_tree | jq -e --arg a "$IDLE_APP" '[.. | objects | select(.app_id? == $a)] | length > 0' >/dev/null 2>&1; }
 idle_back() {   # never a toggle: off and each window's end may all run it
-    layout_in_sway || return 0
-    if swaymsg -t get_workspaces 2>/dev/null | jq -e '[.[] | select((.visible or .focused) and (.name == "idle" or (.name | startswith("idle "))))] | length > 0' >/dev/null 2>&1; then
+    wm_up || return 0
+    if wm_workspaces | jq -e '[.[] | select((.visible or .focused) and (.name == "idle" or (.name | startswith("idle "))))] | length > 0' >/dev/null 2>&1; then
         _ib=''
         [ -f "$IDLE_FROM" ] && while IFS="$TAB" read -r _io _iw; do
             [ -n "$_iw" ] || { _iw=$_io; _io=''; }
@@ -130,15 +129,15 @@ idle_back() {   # never a toggle: off and each window's end may all run it
             [ -z "$_io" ] || _ib="$_ib focus output \"$_io\";"
             _ib="$_ib workspace \"$_iw\";"
         done < "$IDLE_FROM" || :
-        if [ -n "$_ib" ]; then swaymsg -- "mouse_warping none;$_ib mouse_warping output" >/dev/null 2>&1 || :   # one command: two ways out cannot cross
-        else swaymsg -- "workspace back_and_forth" >/dev/null 2>&1 || :; fi
+        if [ -n "$_ib" ]; then wm_send "mouse_warping none;$_ib mouse_warping output" >/dev/null 2>&1 || :   # one command: two ways out cannot cross
+        else wm_send "workspace back_and_forth" >/dev/null 2>&1 || :; fi
     fi
-    [ "$DESKTOP_BAR" != yes ] || swaymsg -- "bar mode dock" >/dev/null 2>&1 || :
+    [ "$DESKTOP_BAR" != yes ] || wm_send "bar mode dock" >/dev/null 2>&1 || :
     idle_close
 }
 idle_close() {   # all but this shell's parent foot
-    swaymsg -t get_tree 2>/dev/null | jq -r --arg a "$IDLE_APP" --argjson p "${PPID:-0}" '.. | objects | select(.app_id? == $a and .pid != $p) | .id' 2>/dev/null \
-        | while IFS= read -r _ic; do swaymsg -- "[con_id=$_ic] kill" >/dev/null 2>&1 || :; done
+    wm_tree | jq -r --arg a "$IDLE_APP" --argjson p "${PPID:-0}" '.. | objects | select(.app_id? == $a and .pid != $p) | .id' 2>/dev/null \
+        | while IFS= read -r _ic; do wm_on "con_id=$_ic" "kill" >/dev/null 2>&1 || :; done
 }
 idle_wait() {   # idle_wait SECONDS -> 0 on input, 1 when the time ran out
     _iw=0
@@ -195,10 +194,10 @@ idle_side() {   # the saver without its clock, or nothing
     idle_clock_end
 }
 idle_restart() {
-    layout_in_sway || return 0
+    wm_up || return 0
     # never another session's swayidle
-    pkill -u "$(id -u)" -f "^swayidle .*$(printf '%s' "$REPO/spark-shell desktop lock" | sed 's/[][\.*^$+?(){}|]/\\&/g')" 2>/dev/null || :
-    swaymsg -- exec "$(idle_exec)" >/dev/null 2>&1 || :
+    wm_idle_stop "$REPO/spark-shell desktop lock"
+    wm_exec "$(idle_exec)" >/dev/null 2>&1 || :
 }
 idle_words() { if [ "$1" = 0 ]; then echo never; elif [ "$1" = 1 ]; then echo "after 1 minute"; else echo "after $1 minutes"; fi; }   # idle_words MINUTES
 layout_display() {   # layout_display [idle|lock N | saver [NAME] | brightness N|up|down]
@@ -210,7 +209,7 @@ layout_display() {   # layout_display [idle|lock N | saver [NAME] | brightness N
             case ${2:-} in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; never) set -- "$1" 0 ;; *) refuse "display $1 takes minutes, 0 to 999 (0: never)" ;; esac
             [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
             config_set "$_k" "$2" >/dev/null; eval "$_k=\$2"; export "${_k?}"
-            sway_file_apply; idle_restart
+            desktop_file_apply; idle_restart
             if [ "$1" = idle ]; then echo "idle screen $(idle_words "$2")"; else echo "lock and display off $(idle_words "$2")"; fi ;;
         saver) if [ -z "${2:-}" ]; then
                 for _x in clock $SAVER_NAMES; do if [ "$_x" = "$DISPLAY_SAVER" ]; then echo "$PANEL_TICK $_x"; else echo "  $_x"; fi; done; return 0; fi
@@ -252,7 +251,7 @@ input_live() {
     _input_value=$2
     case $1 in POINTER_TAP|POINTER_SCROLL) if [ "$2" = on ]; then _input_value=enabled; else _input_value=disabled; fi ;; KEY_CAPS) _input_value=$(input_caps "$2") ;; esac
     for _input_type in $input_targets; do
-        swaymsg -- input "type:$_input_type" "$input_command" "$_input_value" >/dev/null 2>&1 || return 1
+        wm_input "type:$_input_type" "$input_command" "$_input_value" >/dev/null 2>&1 || return 1
     done
 }
 input_setting() {
@@ -260,15 +259,15 @@ input_setting() {
     input_spec "$1" "$2" && input_valid "$input_key" "$3" || { echo "$1: invalid $2 value"; return 1; }
     input_old=
     eval "input_old=\$$input_key"
-    if [ -n "${SWAYSOCK:-}" ]; then
+    if wm_session; then
         if ! input_live "$input_key" "$3"; then
             input_live "$input_key" "$input_old" || :
-            echo "sway did not apply $1 $2; the saved setting is unchanged"; return 1
+            echo "$WM_NAME did not apply $1 $2; the saved setting is unchanged"; return 1
         fi
     fi
     config_set "$input_key" "$3" >/dev/null
     export "$input_key=$3"
-    sway_file_apply
+    desktop_file_apply
     echo "$1 $2 $3"
 }
 
@@ -285,7 +284,7 @@ kb_line() {   # kb_line layout|variant -> the template's input line
     elif [ -n "$_any" ]; then echo "input type:keyboard xkb_variant \"$_vs\""
     else echo "# no variant"; fi
 }
-kb_names() { swaymsg -t get_inputs 2>/dev/null | jq -r '[.[] | select(.type == "keyboard" and (.xkb_layout_names // [] | length) > 0)][0] | if . == null then empty else (.xkb_active_layout_index | tostring) + "\t" + (.xkb_layout_names | join("\t")) end' 2>/dev/null || :; }   # -> ACTIVE<tab>NAME<tab>NAME..., sway's long names
+kb_names() { wm_inputs | jq -r '[.[] | select(.type == "keyboard" and (.xkb_layout_names // [] | length) > 0)][0] | if . == null then empty else (.xkb_active_layout_index | tostring) + "\t" + (.xkb_layout_names | join("\t")) end' 2>/dev/null || :; }   # -> ACTIVE<tab>NAME<tab>NAME..., sway's long names
 kb_known() {   # kb_known LAYOUT -> 0 when xkb lists it (or has no list)
     _lst=${SPARK_SHELL_XKB_LST:-/usr/share/X11/xkb/rules/evdev.lst}
     [ -r "$_lst" ] || return 0
@@ -298,15 +297,15 @@ layout_keyboard() {   # layout_keyboard [next | LAYOUT...]
         '') if [ -z "$KEYBOARD" ]; then echo "keyboard: sway's own layout (spark-shell desktop keyboard us br sets some)"; return 0; fi
             _a=$(kb_names | cut -f1); _i=0
             for _x in $KEYBOARD; do if [ "$_i" = "${_a:-0}" ]; then echo "$PANEL_TICK $_x"; else echo "  $_x"; fi; _i=$((_i + 1)); done ;;
-        next) layout_in_sway || refuse "switches the desktop's keyboard: run it inside it (Super+Ctrl+space)"
-            swaymsg -- input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || refuse "sway took no layout switch"
+        next) wm_up || refuse "switches the desktop's keyboard: run it inside it (Super+Ctrl+space)"
+            wm_input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || refuse "$WM_NAME took no layout switch"
             bar_redraw; kb_names | awk -F '\t' '{print "keyboard " $($1 + 2)}' ;;
         *) [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
             _w=$(printf '%s ' "$@" | sed 's/ $//')
             printf '%s\n' "$_w" | grep -qE "$KB_RE" || refuse "$_w: layouts by their xkb names, a space between, a variant after a plus (us us+intl)"
             for _x in $_w; do kb_known "$_x" || refuse "$_x is no keyboard layout xkb knows (the two-letter names: us, br, de, fr, gb)"; done
             config_set KEYBOARD "$_w" >/dev/null; KEYBOARD=$_w; export KEYBOARD
-            sway_file_apply; bar_redraw
+            desktop_file_apply; bar_redraw
             echo "keyboard $_w" ;;
     esac
 }
@@ -331,7 +330,7 @@ screen_origin() {   # -> the screens moved, one line each
     while IFS="$TAB" read -r _son _soi _ _ _ _sx _sy _; do
         _snx=$((_sx - _sox)); _sny=$((_sy - _soy))
         [ "$(awk -F '\t' -v i="$_soi" '$2 == i' "$TMP/origin" | grep -c .)" -eq 1 ] || _soi=$_son   # a shared name: the port's
-        swaymsg -- output "\"$_soi\"" position "$_snx" "$_sny" >/dev/null 2>&1 || swaymsg -- output "$_son" position "$_snx" "$_sny" >/dev/null 2>&1 || continue
+        wm_output "\"$_soi\"" position "$_snx" "$_sny" >/dev/null 2>&1 || wm_output "$_son" position "$_snx" "$_sny" >/dev/null 2>&1 || continue
         mkdir -p "$CONFIG_DIR"
         { [ ! -f "$SCREENS_CONF" ] || grep -v -F -e "output \"$_soi\" position " -e '# rendered' "$SCREENS_CONF" || :; } > "$TMP/screens"
         { echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them'; grep . "$TMP/screens" || :; printf 'output "%s" position %s %s\n' "$_soi" "$_snx" "$_sny"; } > "$SCREENS_CONF"
@@ -340,7 +339,7 @@ screen_origin() {   # -> the screens moved, one line each
 }
 layout_screen() {   # layout_screen [NAME [scale N | mode WxH | transform normal|90|180|270 | on | off | left-of|right-of|above|below OTHER]]
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own display settings"
-    layout_in_sway || refuse "changes the desktop's screens: run it inside it"
+    wm_up || refuse "changes the desktop's screens: run it inside it"
     if [ "${1:-}" = --ensure-visible ]; then
         if [ "$(screens_json | jq '[.[] | select(.active)] | length')" = 0 ]; then
             _first=$(screens_json | jq -r '.[0].name // empty')
@@ -367,7 +366,7 @@ layout_screen() {   # layout_screen [NAME [scale N | mode WxH | transform normal
         transform) case ${3:-} in normal|90|180|270) ;; *) refuse "transform takes normal, 90, 180 or 270 (clockwise); no mirrored orientation" ;; esac
             _cmd="transform $3"; if [ "$3" = normal ]; then _said="$_n upright"; else _said="$_n turned $3"; fi ;;
         main) [ "$(printf '%s' "$_r" | cut -f3)" = on ] || refuse "$_n is off: a screen off is no main one"
-            screen_main_save "$_id"; swaymsg -- workspace 1 output "\"$_id\"" >/dev/null 2>&1 || :   # sway's now too, for a new workspace 1
+            screen_main_save "$_id"; wm_workspace 1 output "\"$_id\"" >/dev/null 2>&1 || :   # sway's now too, for a new workspace 1
             login_screens_follow; screen_x11_main
             echo "$_n is the main screen: workspace 1 and the login screen go to it from the next start"; return 0 ;;
         on) _cmd=enable; _said="$_n on" ;;
@@ -385,7 +384,7 @@ layout_screen() {   # layout_screen [NAME [scale N | mode WxH | transform normal
             _cmd="position $_x $_y"; _said="$_n $1 $(printf '%s' "$_o" | cut -f1)" ;;
         *) refuse "screen NAME takes scale N, mode WxH, transform normal|90|180|270, on, off, main, or left-of, right-of, above or below another screen" ;;
     esac
-    swaymsg -- output "\"$_id\"" "$_cmd" >/dev/null 2>&1 || swaymsg -- output "$_n" "$_cmd" >/dev/null 2>&1 || refuse "sway refused: output $_n $_cmd"
+    wm_output "\"$_id\"" "$_cmd" >/dev/null 2>&1 || wm_output "$_n" "$_cmd" >/dev/null 2>&1 || refuse "$WM_NAME refused: output $_n $_cmd"
     case $_kind in left-of|right-of|above|below) _oi=$(printf '%s' "$_o" | cut -f2); [ "$(screen_rows | awk -F '\t' -v i="$_oi" '$2 == i' | grep -c .)" -eq 1 ] || _oi=$(printf '%s' "$_o" | cut -f1); screen_save "$_id" "$_cmd" "$_kind" "$_oi" ;;
         *) screen_save "$_id" "$_cmd" ;; esac
     [ "$_kind" != transform ] || screen_beside_again "$_id"   # its width changed: the screens beside it move
@@ -443,8 +442,8 @@ layout_power() {   # layout_power [lock|suspend|logout|restart|shutdown]
 layout_lock() {
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own lock"
     [ -n "${WAYLAND_DISPLAY:-}" ] || refuse "locks the desktop: run it inside it (Super+Escape)"
-    command -v swaylock >/dev/null 2>&1 || refuse "swaylock is not installed (spark-shell on desktop)"
-    ! pgrep -u "$(id -u)" -x swaylock >/dev/null 2>&1 || return 0
+    wm_lock_here || refuse "$(wm_missing lock)"
+    ! wm_lock_running || return 0
     : "${HEX_BG:=242424}" "${HEX_FG:=ffffff}" "${HEX_ACCENT:=24acd4}" "${HEX_MUTED:=616161}" "${HEX_ANSI_1:=f62b5a}" "${HEX_ANSI_3:=e3c401}"   # foot's own, when no palette loaded
     if wall_there; then set -- --image "$(wall_path)" --scaling fill
     elif [ "$WALLPAPER" = default ]; then set -- --color "$(wall_ground | tr -d '#')"
@@ -454,7 +453,7 @@ layout_lock() {
     _in=${HEX_BG}e6
     rm -rf "$TMP"; trap - EXIT
     _sz=$(look_font_size); : "${_sz:=12}"; _fs=$(font_spec)
-    exec swaylock --daemonize "$@" --font "${_fs%%:*}" --font-size $((_sz * 5 / 3)) --indicator-radius 72 --indicator-thickness 6 --show-failed-attempts \
+    wm_lock "$@" --font "${_fs%%:*}" --font-size $((_sz * 5 / 3)) --indicator-radius 72 --indicator-thickness 6 --show-failed-attempts \
         --inside-color "$_in" --ring-color "$HEX_ACCENT" --key-hl-color "$HEX_FG" --bs-hl-color "$HEX_ANSI_1" --text-color "$HEX_FG" \
         --line-color 00000000 --separator-color 00000000 --line-clear-color 00000000 --line-ver-color 00000000 --line-wrong-color 00000000 \
         --inside-clear-color "$_in" --ring-clear-color "$HEX_MUTED" --text-clear-color "$HEX_FG" \
@@ -473,24 +472,24 @@ layout_capture() {   # layout_capture screen|area|window [--wait N]
     case $_wait in ''|*[!0-9]*) refuse "--wait takes whole seconds" ;; esac
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own (Shift+Command+5)"
     [ -n "${WAYLAND_DISPLAY:-}" ] || refuse "captures the desktop: run it inside it (Print)"
-    command -v grim >/dev/null 2>&1 || refuse "grim is not installed: run spark-shell on desktop"
-    [ "$_what" != area ] || command -v slurp >/dev/null 2>&1 || refuse "slurp is not installed: run spark-shell on desktop"
+    wm_capture_here || refuse "$(wm_missing capture)"
+    [ "$_what" != area ] || wm_pick_here || refuse "$(wm_missing pick)"
     [ "$_wait" = 0 ] || sleep "$_wait"
     mkdir -p "$CAPTURE_DIR"
     _b=$(date +%Y-%m-%d-%H%M%S); _f=$CAPTURE_DIR/$_b.png; _n=2
     while [ -e "$_f" ]; do _f=$CAPTURE_DIR/$_b-$_n.png; _n=$((_n + 1)); done
     case $_what in
-        screen) _o=$(swaymsg -t get_outputs 2>/dev/null | jq -r '.[] | select(.focused) | .name' 2>/dev/null | head -1)
+        screen) _o=$(wm_outputs | jq -r '.[] | select(.focused) | .name' 2>/dev/null | head -1)
             if [ -n "$_o" ]; then set -- -o "$_o"; else set --; fi ;;
-        area) _g=$(slurp 2>/dev/null) && [ -n "$_g" ] || { echo "no area picked: nothing captured"; return 1; }
+        area) _g=$(wm_pick) && [ -n "$_g" ] || { echo "no area picked: nothing captured"; return 1; }
             set -- -g "$_g" ;;
-        window) _g=$(swaymsg -t get_tree 2>/dev/null | jq -r '[.. | objects | select(.focused? == true and .type? != "workspace" and .type? != "output")][0] | if . == null then "" else "\(.rect.x),\(.rect.y) \(.rect.width)x\(.rect.height)" end' 2>/dev/null || :)
+        window) _g=$(wm_tree | jq -r '[.. | objects | select(.focused? == true and .type? != "workspace" and .type? != "output")][0] | if . == null then "" else "\(.rect.x),\(.rect.y) \(.rect.width)x\(.rect.height)" end' 2>/dev/null || :)
             [ -n "$_g" ] || refuse "no window in front to capture"
             set -- -g "$_g" ;;
     esac
-    grim -c "$@" "$_f" 2>/dev/null || { rm -f "$_f"; refuse "grim could not take the picture"; }   # -c: the pointer in the picture
+    wm_capture "$@" "$_f" || { rm -f "$_f"; refuse "$(wm_missing capture-failed)"; }   # -c: the pointer in the picture
     _c=''
-    if command -v wl-copy >/dev/null 2>&1 && wl-copy --type image/png < "$_f" 2>/dev/null; then _c=', and on the clipboard'; fi
+    if wm_copy_here && wm_copy --type image/png < "$_f" 2>/dev/null; then _c=', and on the clipboard'; fi
     # shellcheck disable=SC2088   # the path as you read it, a tilde and all
     echo "~/${_f#"$HOME"/}$_c"
 }
@@ -506,7 +505,7 @@ layout_start() {   # layout_start PENDING -- sway on this console, PENDING a lay
     fi
     [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop"
     [ -z "$(desktop_tools)" ] || refuse "not installed:$(desktop_tools) (spark-shell on)"
-    [ -f "$HOME/.config/sway/config" ] && [ -f "$HOME/.config/foot/foot.ini" ] || refuse "the sway and foot settings are missing (spark-shell on)"
+    [ -f "$(wm_config_file)" ] && [ -f "$HOME/.config/foot/foot.ini" ] || refuse "the sway and foot settings are missing (spark-shell on)"
     if [ -n "${WAYLAND_DISPLAY:-}" ]; then layout_list; return 0; fi
     on_console || refuse "needs a console login (tty1 to tty9): ssh and terminal windows cannot start sway"
     runtime_dir
@@ -519,7 +518,7 @@ layout_start() {   # layout_start PENDING -- sway on this console, PENDING a lay
     # no session bus from logind (Void): dbus-run-session, so notifications reach mako
     _bus=''; notify_bus || ! command -v dbus-run-session >/dev/null 2>&1 || _bus=dbus-run-session
     # shellcheck disable=SC2086   # the -u words and the bus, split on purpose: sway and all it starts read the file, never a key from this login
-    XDG_CURRENT_DESKTOP=sway PATH=$HOME/.local/bin:$PATH env $CONFIG_UNSET $_bus sway 2>"$log_dir/sway.log" || st=$?
+    wm_start $CONFIG_UNSET $_bus 2>"$log_dir/$WM_NAME.log" || st=$?
     sound_stop
     semantic_stop
     machine_rm now

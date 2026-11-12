@@ -32,9 +32,9 @@ notify_keep() {   # do not disturb as configured, once mako answers
     makoctl mode -a "$NOTIFY_MODE" >/dev/null 2>&1 || :
 }
 notify_start() {   # on desktop's notify row
-    [ "$MODE" = apply ] && mako_here && notify_bus && layout_in_sway || return 0
+    [ "$MODE" = apply ] && mako_here && notify_bus && wm_up || return 0
     ! notify_up || return 0
-    swaymsg -- exec mako >/dev/null 2>&1 || return 0
+    wm_exec mako >/dev/null 2>&1 || return 0
     ok notify "the notifications show now"
 }
 notify_list() { read_once "notify.$1" notify_list_now "$1"; }   # notify_list list|history -> ID US APP US SUMMARY, newest first; mako 1.7 and 1.8: JSON

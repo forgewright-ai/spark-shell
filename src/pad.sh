@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the pad
 # sets: PAD_BIN
-# reads: BAR_PID DIALOG_URL OS PANEL_SEP REPO STATE_DIR TMP
+# reads: BAR_PID DIALOG_URL OS PANEL_SEP REPO STATE_DIR TMP WM_NAME
 PAD_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-pad
 pad_lock() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-pad.pid"; }   # the pad's lock, its pid inside
 pad_state() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-pad.state"; }   # what the pad says of itself: hidden 0|1, count N
@@ -47,7 +47,7 @@ pad_list() {   # pad_list TREEFILE -> the windows on the pad, oldest first: ID<t
         | select(any((.marks // [])[]; startswith("_spark-shell.min.")))
         | "\(.id)\t\(.app_id // .window_properties.class // "a window")\t\(.name // "")"' "$1" 2>/dev/null || :
 }
-pad_count() { [ -n "${SWAYSOCK:-}" ] || { echo 0; return; }; swaymsg -t get_tree 2>/dev/null | jq '[.. | objects | select(.type == "workspace" and .name == "__i3_scratch") | .floating_nodes[]? | select(any((.marks // [])[]; startswith("_spark-shell.min.")))] | length' 2>/dev/null || echo 0; }   # -> how many windows wait on the pad
+pad_count() { wm_session || { echo 0; return; }; wm_tree | jq '[.. | objects | select(.type == "workspace" and .name == "__i3_scratch") | .floating_nodes[]? | select(any((.marks // [])[]; startswith("_spark-shell.min.")))] | length' 2>/dev/null || echo 0; }   # -> how many windows wait on the pad
 pad_run() {   # pad_run [--keys] -- spark-pad started in its own session; false when none can run here
     _pdc=$(pad_cmd) || return 1
     theme_load 2>/dev/null || :
@@ -121,8 +121,8 @@ layout_pad() {   # layout_pad [keys|toggle|place PLACE WIDTH SIDE [HEIGHT]|band 
         *) refuse "pad takes keys, toggle, place PLACE WIDTH SIDE [HEIGHT], band on|off or view icons|titles" ;;
     esac
     [ "${1:-}" != again ] || { pad_again; return 0; }
-    layout_in_sway || { [ "${1:-}" != start ] || return 0; refuse "the pad is the desktop's: run it inside it"; }
-    swaymsg -t get_tree > "$TMP/tree" 2>/dev/null || refuse "sway did not answer"
+    wm_up || { [ "${1:-}" != start ] || return 0; refuse "the pad is the desktop's: run it inside it"; }
+    wm_tree > "$TMP/tree" || refuse "$WM_NAME did not answer"
     pad_list "$TMP/tree" > "$TMP/pad"
     _pdn=$(grep -c '' "$TMP/pad" || :)
     case ${1:-} in

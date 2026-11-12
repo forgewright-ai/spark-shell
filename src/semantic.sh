@@ -164,7 +164,7 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- home, its conversation, or
     # started aside, never waited for; only inside the desktop, whose end stops it (ssh would leave it running)
     if [ -z "$(semantic_why)" ]; then
         semantic_where
-        [ -z "${SWAYSOCK:-}${WAYLAND_DISPLAY:-}" ] || ( semantic_start ) </dev/null >/dev/null 2>&1 &
+        if wm_session || [ -n "${WAYLAND_DISPLAY:-}" ]; then ( semantic_start ) </dev/null >/dev/null 2>&1 & fi
         set -- "$@" --semantic "$SEMANTIC_SOCK"
     fi
     FULL_ID=''; ! panel_own_window || panel_full_aside
