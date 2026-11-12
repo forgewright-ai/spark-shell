@@ -48,11 +48,6 @@ pub struct Look {
     pub fg: Rgb,
     pub accent: Rgb,
     pub muted: Rgb,
-    /// The unfocused title's text and band, as sway draws them.
-    pub title_muted: Rgb,
-    pub low: Rgb,
-    /// The ground: the text on the focused band, which wears the accent.
-    pub ground: Rgb,
     pub surface: Rgb,
     pub lit: Rgb,
     pub band: Rgb,
@@ -61,8 +56,20 @@ pub struct Look {
 }
 
 /// What spark-shell says, read once at the start.
+/// What the buttons on a title band need: their colors and the ground's as rrggbb, the terminal's app, and
+/// the title format that follows the buttons, the terminal's and every other window's.
+pub struct Titles {
+    /// Close, minimize, fill.
+    pub colors: [String; 3],
+    pub ground: String,
+    pub term: String,
+    pub title: String,
+    pub term_title: String,
+}
+
 pub struct Config {
     pub look: Look,
+    pub titles: Titles,
     pub place: Place,
     /// The icons alone (the default), or the titled slots (PAD_VIEW=titles).
     pub view: View,
@@ -256,7 +263,13 @@ pub struct Pad {
     /// The title bands in sight, and the glyph a press is on.
     bands: Vec<Band>,
     deco_press: Option<(i64, Glyph)>,
+    /// The button under the pointer, and the state each window's buttons were last drawn in: its focus and
+    /// its lit button.
+    deco_hover: Option<(i64, Glyph)>,
+    sent: HashMap<i64, (bool, Option<Glyph>)>,
     history: History,
+    /// The width of one character of a title, in the title's font.
+    cell: f64,
     /// Until when the tree is read every tick: two seconds after an event, since a move that follows sends none.
     burst_until: Option<Instant>,
     written: Option<(bool, usize)>,
@@ -287,6 +300,11 @@ impl Pad {
         let shm = Shm::bind(globals, qh).map_err(|e| format!("the compositor has no wl_shm: {e}"))?;
         let pool = SlotPool::new(1 << 20, &shm).map_err(|e| format!("shared memory: {e}"))?;
         let fonts = Fonts::new(&lib, &cfg.look.font);
+        // one character of a title, from the buttons' nine in the title's own font
+        let cell = {
+            let mut probe = [0u8; 4 * 8 * 8];
+            Canvas::new(&lib, &fonts, &mut probe, 8, 8, 32, 1.0).map_or(fonts.px * 0.6, |c| c.measure(model::GLYPHS, false) / 9.0)
+        };
         let m = Metrics {
             gap: cfg.gap,
             ..Metrics::for_text(fonts.px)
@@ -329,7 +347,10 @@ impl Pad {
             stop: false,
             bands: vec![],
             deco_press: None,
+            deco_hover: None,
+            sent: HashMap::new(),
             history: History::default(),
+            cell,
             burst_until: None,
             written: None,
             refit_for: vec![],
@@ -494,8 +515,8 @@ impl Pad {
         }
     }
 
-    /// Each band's minimize and close glyphs at its right end, on a chip in the band's own shade (the surface
-    /// shade on the focused window, the low one on the others), so a long title ends under them.
+    /// The pointer's cells over the glyphs sway draws at the start of each title. Nothing is drawn here: the
+    /// surface is clear, so the glyphs are sway's own pixels and move with their window.
     fn draw_deco(&mut self, oi: usize) {
         let Some(d) = self.outs[oi].deco.as_ref() else { return };
         if !d.configured || d.size.0 <= 0 || d.size.1 <= 0 {
@@ -509,25 +530,10 @@ impl Pad {
             return;
         };
         let Ok(region) = Region::new(&self.compositor) else { return };
-        {
-            let Some(c) = Canvas::new(&self.lib, &self.fonts, data, bw, bh, bw * 4, scale as f64) else {
-                return;
-            };
-            let look = &self.cfg.look;
-            for b in self.bands.iter().filter(|b| b.output == name) {
-                let cells = model::glyph_cells(b.rect);
-                let (chip, ink) = if b.focused {
-                    (look.accent, look.ground)
-                } else {
-                    (look.low, look.title_muted)
-                };
-                let x0 = cells[0].x - 4;
-                c.fill(x0 as f64, b.rect.y as f64, (b.rect.x + b.rect.w - x0) as f64, b.rect.h as f64, chip, 1.0);
-                for (r, glyph) in cells.iter().zip(["\u{2212}", "\u{25a1}", "\u{00d7}"]) {
-                    c.text(r.x as f64, r.y as f64, r.w as f64, r.h as f64, glyph, ink, false, Align::Center);
-                }
-                region.add(cells[0].x, cells[0].y, cells[2].x + cells[2].w - cells[0].x, cells[0].h);
-            }
+        data.fill(0);
+        for b in self.bands.iter().filter(|b| b.output == name) {
+            let cells = model::glyph_cells(b.rect, self.cell);
+            region.add(cells[0].x, cells[0].y, cells[2].x + cells[2].w - cells[0].x, cells[0].h);
         }
         let d = self.outs[oi].deco.as_ref().unwrap();
         let surface = d.layer.wl_surface().clone();
@@ -549,7 +555,7 @@ impl Pad {
         self.bands
             .iter()
             .filter(|b| &b.output == name)
-            .find_map(|b| model::glyph_at(b.rect, pos.0, pos.1).map(|g| (b.id, g)))
+            .find_map(|b| model::glyph_at(b.rect, self.cell, pos.0, pos.1).map(|g| (b.id, g)))
     }
 
     /// The pointer on a glyph surface: the hand over a glyph; a press and a release on the same glyph act.
@@ -560,13 +566,9 @@ impl Pad {
                     p.serial = *serial;
                     p.cursor = None;
                 }
-                let on = self.glyph_at(oi, pos).is_some();
-                self.set_cursor(if on { Cursor::Pointer } else { Cursor::Default });
+                self.deco_over(oi, pos);
             }
-            PointerEventKind::Motion { .. } => {
-                let on = self.glyph_at(oi, pos).is_some();
-                self.set_cursor(if on { Cursor::Pointer } else { Cursor::Default });
-            }
+            PointerEventKind::Motion { .. } => self.deco_over(oi, pos),
             PointerEventKind::Press { button: BTN_LEFT, .. } => self.deco_press = self.glyph_at(oi, pos),
             PointerEventKind::Release { button: BTN_LEFT, .. } => {
                 let pressed = self.deco_press.take();
@@ -580,8 +582,44 @@ impl Pad {
                     }
                 }
             }
-            PointerEventKind::Leave { .. } => self.deco_press = None,
+            PointerEventKind::Leave { .. } => {
+                self.deco_press = None;
+                if self.deco_hover.take().is_some() {
+                    self.title_sync();
+                }
+            }
             _ => {}
+        }
+    }
+
+    /// The pointer over a button: the hand, and the button lit.
+    fn deco_over(&mut self, oi: usize, pos: (f64, f64)) {
+        let over = self.glyph_at(oi, pos);
+        self.set_cursor(if over.is_some() { Cursor::Pointer } else { Cursor::Default });
+        if over != self.deco_hover {
+            self.deco_hover = over;
+            self.title_sync();
+        }
+    }
+
+    /// Each band in sight wears the buttons its state asks for, drawn by sway as the start of its title: sway
+    /// is told only when a window's focus or its lit button changed.
+    fn title_sync(&mut self) {
+        let t = &self.cfg.titles;
+        let mut todo = vec![];
+        for b in &self.bands {
+            let hover = self.deco_hover.filter(|h| h.0 == b.id).map(|h| h.1);
+            let want = (b.focused, hover);
+            if self.sent.get(&b.id) != Some(&want) {
+                let tail = if !t.term.is_empty() && b.app == t.term { &t.term_title } else { &t.title };
+                let buttons = model::buttons(b.focused, hover, &t.colors, &t.ground);
+                todo.push((b.id, want, format!("[con_id={}] title_format \"{buttons}{tail}\"", b.id)));
+            }
+        }
+        for (id, want, command) in todo {
+            if self.ipc.run(&command).is_ok() {
+                self.sent.insert(id, want);
+            }
         }
     }
 
@@ -589,7 +627,10 @@ impl Pad {
     pub fn window_event(&mut self, change: &str, id: Option<i64>) {
         match (change, id) {
             ("focus", Some(id)) => self.history.focused(id),
-            ("close", Some(id)) => self.history.closed(id),
+            ("close", Some(id)) => {
+                self.history.closed(id);
+                self.sent.remove(&id);
+            }
             _ => {}
         }
         self.look();
@@ -813,11 +854,12 @@ impl Pad {
             self.stop = true;
             return;
         };
-        let bands = model::bands(&tree);
+        let bands = model::bands(&tree, self.cell);
         if bands != self.bands {
             self.bands = bands;
             self.deco_dirty = true;
         }
+        self.title_sync();
         self.history.seed(&model::in_sight(&tree));
         let wins = model::minimized(&tree);
         if wins == self.wins {

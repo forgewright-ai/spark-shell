@@ -77,7 +77,7 @@ help lists them by subject. The bindings are named actions in
     Super+Shift+space floats the window, or tiles it again.
     Super+Shift+arrow moves the window: in the tiling, or to the next screen.
     Super+Shift+h/j/k/l move the window in the tiling too.
-    The glyphs at a title's right end minimize, fill the screen, and close.
+    The buttons at a title's left end close, minimize, and fill the screen.
     Super+f makes a window fill the screen.
     Super+r resizes the window, until Enter.
     The mouse resizes too: drag the strip between two windows.

@@ -91,7 +91,7 @@ hex_load() {
 }
 
 # a missing picture shows the ground, never a black screen
-WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA BAR_ALPHA BORDER DROP_HEX"   # BAR_ALPHA: two hex digits; DROP_HEX: rrggbbaa
+WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA BAR_ALPHA BORDER BAND_GLYPHS BAND_TITLE BAND_TERM_TITLE DROP_HEX"   # BAR_ALPHA: two hex digits; DROP_HEX: rrggbbaa
 WALL_NAMES="black white gray silver navy blue teal green olive maroon red purple brown orange"   # grey reads as gray
 # NAME:PALETTE:SAMPLE, SAMPLE the drawing's main color
 WALL_SHIPPED="skyline:tokyonight-night:7aa2f7 fjord:nord:88c0d0 forest:everforest-dark:a7c080 sunset:gruvbox-dark:fe8019 hills:catppuccin-mocha:f5c2e7 dunes:dracula:ff79c6 orbit:dracula:bd93f9 ripples:rose-pine:ebbcba contours:selenized-dark:41c7b9 morning:solarized-light:b58900 meadow:catppuccin-latte:ea76cb kites:tokyonight-day:2e7de9 fields:gruvbox-light:d79921 grove:everforest-light:8da101 arches:rose-pine-dawn:d7827e shore:selenized-light:009c8f flight:one-light:4078f2 embers:any:d24a2a"
@@ -273,6 +273,8 @@ wall_load() {   # WALL_KEYS from WALLPAPER and ALPHA
     else WALL_BG="$(wall_ground) solid_color"; fi   # default, none or a missing picture
     # shellcheck disable=SC2034
     GAPS_INNER=8; GAPS_OUTER=8; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER="normal 1"   # a title band and a one-pixel frame; windows 8 px apart
+    BAND_GLYPHS=' &#x2715;  &#x25BD;  &#x25A1; '   # close, minimize, fill as pango character references, so the render stays ASCII: the start of every title, drawn by the compositor (the pad's GLYPH_REFS)
+    BAND_TITLE='  %title'; BAND_TERM_TITLE='  terminal   %title'   # what follows the buttons, two spaces on: a window's title; the terminal's name, then the folder
     DROP_HEX=$(drop_hex "$HEX_ACCENT")   # the drop area
     for k in $WALL_KEYS; do export "${k?}"; done
 }

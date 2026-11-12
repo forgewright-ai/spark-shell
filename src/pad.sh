@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the pad
 # sets: PAD_BIN
-# reads: BAR_PID DIALOG_URL OS PANEL_SEP REPO STATE_DIR TMP WM_NAME
+# reads: BAR_PID DIALOG_URL OS PANEL_SEP REPO STATE_DIR TERM_NAME TMP WM_NAME
 PAD_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-pad
 pad_lock() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-pad.pid"; }   # the pad's lock, its pid inside
 pad_state() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-pad.state"; }   # what the pad says of itself: hidden 0|1, count N
@@ -63,10 +63,10 @@ pad_run() {   # pad_run [--keys] -- spark-pad started in its own session; false 
     mkdir_private "$STATE_DIR"
     (
         # PAD_BAND on|off, PAD_BAND_HEX its color; PAD_GAP the outer gap; PAD_VIEW icons|titles; PAD_HEIGHT 0 as many as needed
-        SPARK_SHELL=$REPO/spark-shell PAD_FG=$HEX_FG PAD_ACCENT=$HEX_ACCENT PAD_MUTED=$PANEL_MUTED PAD_TITLE_MUTED=$HEX_MUTED PAD_GROUND=$HEX_BG PAD_LOW=$PANEL_LOW PAD_SURFACE=$PANEL_BG PAD_LIT=$PANEL_HI PAD_BAND_HEX=$PANEL_BAND
+        SPARK_SHELL=$REPO/spark-shell PAD_FG=$HEX_FG PAD_ACCENT=$HEX_ACCENT PAD_MUTED=$PANEL_MUTED PAD_GROUND=$HEX_BG PAD_CLOSE=$HEX_ANSI_1 PAD_MIN=$HEX_ANSI_3 PAD_FILL=$HEX_ANSI_2 PAD_SURFACE=$PANEL_BG PAD_LIT=$PANEL_HI PAD_BAND_HEX=$PANEL_BAND
         PAD_ALPHA=$ALPHA PAD_FONT=$(bar_line_font) PAD_PLACE=$PAD_PLACE PAD_WIDTH=$PAD_WIDTH PAD_SIDE_WIDTH=$PAD_SIDE_WIDTH PAD_HEIGHT=${PAD_HEIGHT:-0} PAD_BAR=$(bar_place)
-        PAD_BAND=${PAD_BAND:-off} PAD_VIEW=${PAD_VIEW:-icons} PAD_GAP=${GAPS_OUTER:-} PAD_LOCK=$(pad_lock) PAD_STATE=$(pad_state) PAD_BAR_PID=$BAR_PID
-        export SPARK_SHELL PAD_FG PAD_ACCENT PAD_MUTED PAD_TITLE_MUTED PAD_GROUND PAD_LOW PAD_SURFACE PAD_LIT PAD_BAND_HEX PAD_ALPHA PAD_FONT PAD_PLACE PAD_WIDTH PAD_SIDE_WIDTH PAD_HEIGHT PAD_BAR PAD_BAND PAD_VIEW PAD_GAP PAD_LOCK PAD_STATE PAD_BAR_PID
+        PAD_TERM=$TERM_NAME PAD_TITLE=$BAND_TITLE PAD_TERM_TITLE=$BAND_TERM_TITLE PAD_BAND=${PAD_BAND:-off} PAD_VIEW=${PAD_VIEW:-icons} PAD_GAP=${GAPS_OUTER:-} PAD_LOCK=$(pad_lock) PAD_STATE=$(pad_state) PAD_BAR_PID=$BAR_PID
+        export SPARK_SHELL PAD_FG PAD_ACCENT PAD_MUTED PAD_GROUND PAD_CLOSE PAD_MIN PAD_FILL PAD_TERM PAD_TITLE PAD_TERM_TITLE PAD_SURFACE PAD_LIT PAD_BAND_HEX PAD_ALPHA PAD_FONT PAD_PLACE PAD_WIDTH PAD_SIDE_WIDTH PAD_HEIGHT PAD_BAR PAD_BAND PAD_VIEW PAD_GAP PAD_LOCK PAD_STATE PAD_BAR_PID
         if command -v setsid >/dev/null 2>&1; then setsid "$_pdc" "$@" </dev/null >/dev/null 2>"$_pdlog" &
         else ( trap '' HUP; exec "$_pdc" "$@" ) </dev/null >/dev/null 2>"$_pdlog" & fi
     )

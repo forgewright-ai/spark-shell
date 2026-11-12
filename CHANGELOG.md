@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.141.1
+
+The buttons on a title band are sway's own and move with their window.
+
+- Close, minimize and fill sit at the band's left end, in that order,
+  drawn by sway as the start of every title. A dragged window carries
+  them. The pad no longer draws on the band.
+- On the focused window the buttons wear the title's color, on the
+  others each its own: red, yellow and green from the palette. The one
+  under the pointer lights as a chip in its color.
+
 ## v0.141
 
 The focused window wears the accent, and the glyphs follow the window.
