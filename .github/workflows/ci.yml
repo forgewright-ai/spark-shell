@@ -61,7 +61,7 @@ jobs:
       - name: ascii docs
         run: |
           tab=$(printf '\t')
-          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell src/*.sh test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/pad_build.sh test/desktop_proof.sh test/dialog_pty.py lib/terminal.py test/terminal_test.py lib/saver.py test/saver_test.py lib/office.py test/office_test.py $(find template distro gallery/theme component/dialog/src component/dialog/tests component/wallpaper/src component/pad/src -type f ! -name '*.txt' | sort) component/dialog/Cargo.toml component/dialog/deny.toml component/dialog/dialog.env component/dialog/rust-toolchain.toml component/wallpaper/Cargo.toml component/wallpaper/deny.toml component/wallpaper/wallpaper.env component/wallpaper/rust-toolchain.toml component/pad/Cargo.toml component/pad/deny.toml component/pad/pad.env component/pad/rust-toolchain.toml; do
+          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell src/*.sh test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/desktop_proof.sh test/dialog_pty.py lib/terminal.py test/terminal_test.py lib/saver.py test/saver_test.py lib/office.py test/office_test.py $(find template distro gallery/theme component/dialog/src component/dialog/tests component/wallpaper/src component/winpad/src -type f ! -name '*.txt' | sort) component/dialog/Cargo.toml component/dialog/deny.toml component/dialog/dialog.env component/dialog/rust-toolchain.toml component/wallpaper/Cargo.toml component/wallpaper/deny.toml component/wallpaper/wallpaper.env component/wallpaper/rust-toolchain.toml component/winpad/Cargo.toml component/winpad/deny.toml component/winpad/winpad.env component/winpad/rust-toolchain.toml; do
             if LC_ALL=C grep -n "[^ -~${tab}]" "$f"; then
               echo "non-ASCII in $f"; exit 1; fi; done
       - name: no hex color in a template (the look is the 16 slots)
@@ -73,7 +73,7 @@ jobs:
         # analysis: 0.11.0's took over 10 GB on them and stopped the box
         # twice. The runner's 0.9.0 has none and calls that directive
         # unknown (SC1107), so the line leaves that one out.
-        run: shellcheck -x -S warning -e SC1107 spark-shell lib/shim/xterm test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/pad_build.sh test/desktop_proof.sh test/wifi_proof.sh test/login_upgrade_proof.sh test/dhcp_proof.sh test/gate.sh test/semantic_measure.sh .githooks/pre-push
+        run: shellcheck -x -S warning -e SC1107 spark-shell lib/shim/xterm test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/desktop_proof.sh test/wifi_proof.sh test/login_upgrade_proof.sh test/dhcp_proof.sh test/gate.sh test/semantic_measure.sh .githooks/pre-push
       - name: zizmor over .github/workflows
         # the workflows are code too: zizmor (pinned, in a venv of its own)
         # reads every file under .github/workflows; medium and above fail.
@@ -277,7 +277,7 @@ jobs:
     # drawn in it in two palettes, the pictures kept for a look. No seat,
     # no GPU, no sound card: a proof of the install and the render, said
     # so; a screen is a machine's proof.
-    needs: [lint, pad]   # the pad's build, proven on each family's sway (test/pad_desktop_proof.py)
+    needs: [lint, winpad]   # the pad's build, proven on each family's sway (test/pad_desktop_proof.py)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -355,8 +355,8 @@ jobs:
       - name: the pad's build, the one the pad job made
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333   # v8.0.2
         with:
-          name: spark-pad-x86_64-linux-gnu
-          path: pad-build
+          name: spark-winpad-x86_64-linux-gnu
+          path: winpad-build
       - name: spark-shell on as a plain user, the config read by sway, a headless sway with a foot in it
         # sway's package on Arch, Void and Fedora sets cap_sys_nice on the
         # binary; a container's bounding set lacks it, so a plain user's
@@ -369,12 +369,12 @@ jobs:
           cp test/desktop_proof.sh /tmp/desktop_proof.sh
           chmod 755 /tmp/desktop_proof.sh
           su ada -c "PATH=/opt/nocap:\$PATH python3 -I '$GITHUB_WORKSPACE/test/layout_desktop_proof.py'"
-          chmod 755 pad-build/spark-pad
+          chmod 755 winpad-build/spark-winpad
           # the window keys with the pad's build: its strip changes the space on every family, swaybar or not (openSUSE has none)
-          su ada -c "PATH=/opt/nocap:\$PATH SPARK_SHELL_PAD='$GITHUB_WORKSPACE/pad-build/spark-pad' python3 -I '$GITHUB_WORKSPACE/test/window_desktop_proof.py'"
+          su ada -c "PATH=/opt/nocap:\$PATH SPARK_SHELL_WINPAD='$GITHUB_WORKSPACE/winpad-build/spark-winpad' python3 -I '$GITHUB_WORKSPACE/test/window_desktop_proof.py'"
           su ada -c "REPO='$GITHUB_WORKSPACE' SWAY_NOCAP=/opt/nocap sh /tmp/desktop_proof.sh"
           # the pad on this family's sway: windows on the pad by the keys, a click and Super+minus bring them back, the bar's block, hide
-          su ada -c "PATH=/opt/nocap:\$PATH SPARK_SHELL_PAD='$GITHUB_WORKSPACE/pad-build/spark-pad' python3 -I '$GITHUB_WORKSPACE/test/pad_desktop_proof.py' \$HOME/proof/pad"
+          su ada -c "PATH=/opt/nocap:\$PATH SPARK_SHELL_WINPAD='$GITHUB_WORKSPACE/winpad-build/spark-winpad' python3 -I '$GITHUB_WORKSPACE/test/pad_desktop_proof.py' \$HOME/proof/pad"
       - name: the notifications as drawn, kept for a look
         if: always()
         run: mkdir -p proof && cp -R ~ada/proof/. proof/ 2>/dev/null || true   # ~ada: the proof user's home, by its name
@@ -503,9 +503,9 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
         with:
           manifest-path: component/wallpaper/Cargo.toml
-  pad:
-    # the pad (component/pad/, v0.133): the format, clippy, its tests, the release
-    # build twice and its sha256 against component/pad/pad.env, all in the pinned
+  winpad:
+    # the pad (component/winpad/, v0.133): the format, clippy, its tests, the release
+    # build twice and its sha256 against component/winpad/winpad.env, all in the pinned
     # Debian 12 image the wallpaper job uses, so the build is reproducible
     # and release.yml builds the same bytes; the binary kept as an
     # artifact. The first build of a new pad prints the sha256 to pin.
@@ -520,28 +520,28 @@ jobs:
         with:
           persist-credentials: false
       - name: the format, clippy and the tests
-        working-directory: component/pad
+        working-directory: component/winpad
         run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
       - name: the release build, twice, the same bytes
         run: |
           set -eu
-          one=$(sh test/pad_build.sh | cut -d' ' -f1)
-          (cd component/pad && cargo clean --release --target x86_64-unknown-linux-gnu)
-          two=$(sh test/pad_build.sh | cut -d' ' -f1)
+          one=$(sh test/winpad_build.sh | cut -d' ' -f1)
+          (cd component/winpad && cargo clean --release --target x86_64-unknown-linux-gnu)
+          two=$(sh test/winpad_build.sh | cut -d' ' -f1)
           echo "built $one, from clean again $two"
           if [ "$one" != "$two" ]; then echo "two builds of one tree differ: the build is not reproducible"; exit 1; fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
         with:
-          name: spark-pad-x86_64-linux-gnu
-          path: component/pad/target/x86_64-unknown-linux-gnu/release/spark-pad
+          name: spark-winpad-x86_64-linux-gnu
+          path: component/winpad/target/x86_64-unknown-linux-gnu/release/spark-winpad
           retention-days: 14
-      - name: the sha256 component/pad/pad.env pins
+      - name: the sha256 component/winpad/winpad.env pins
         run: |
           set -eu
-          got=$(sha256sum component/pad/target/x86_64-unknown-linux-gnu/release/spark-pad | cut -d' ' -f1)
-          want=$(sed -n 's/^PAD_SHA256_X86_64_LINUX_GNU=//p' component/pad/pad.env)
-          if [ "$got" != "$want" ]; then echo "the build is not the binary component/pad/pad.env pins -- PAD_SHA256_X86_64_LINUX_GNU=$got"; exit 1; fi
-  pad-deny:
+          got=$(sha256sum component/winpad/target/x86_64-unknown-linux-gnu/release/spark-winpad | cut -d' ' -f1)
+          want=$(sed -n 's/^WINPAD_SHA256_X86_64_LINUX_GNU=//p' component/winpad/winpad.env)
+          if [ "$got" != "$want" ]; then echo "the build is not the binary component/winpad/winpad.env pins -- WINPAD_SHA256_X86_64_LINUX_GNU=$got"; exit 1; fi
+  winpad-deny:
     # cargo-deny over the pad's crates (advisories, licences), on the
     # runner: the action is a container of its own
     needs: lint
@@ -554,13 +554,13 @@ jobs:
       - name: cargo-deny (advisories, licences, no network crate)
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
         with:
-          manifest-path: component/pad/Cargo.toml
+          manifest-path: component/winpad/Cargo.toml
   green:
     # the one name a ruleset on main can require: it needs every job above
     # and fails when any of them failed, was cancelled or was skipped. A
     # pull request from this repository's own branch is the one run whose
     # jobs are all skipped on purpose, and green skips with them.
-    needs: [lint, linux, debian, ubuntu, arch, void, fedora, opensuse, desktop, macos, dialog, wallpaper, wallpaper-deny, pad, pad-deny]
+    needs: [lint, linux, debian, ubuntu, arch, void, fedora, opensuse, desktop, macos, dialog, wallpaper, wallpaper-deny, winpad, winpad-deny]
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 2

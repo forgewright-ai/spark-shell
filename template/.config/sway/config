@@ -163,7 +163,7 @@ bindsym $mod+Tab exec @REPO@/spark-shell desktop window back
 # inside the gaps, where a tiled window would sit; a window floated from the tiling opens at two
 # thirds of its screen, centered. Each press reads where the window sits: Super+Ctrl+Right then
 # Super+Ctrl+Down puts it in the bottom right quarter. A minimized window waits on the pad
-# (spark-pad) as its app's icon, its title beside it on hover, until a click or Super+minus
+# (spark-winpad) as its app's icon, its title beside it on hover, until a click or Super+minus
 # brings it back.
 # key: Super+Ctrl+arrow places the window at a half, then a quarter of the screen.
 # key: Super+Ctrl+Up past the top fills the screen, and past the bottom minimizes.
@@ -359,7 +359,7 @@ mode "resize" {
 bindsym $mod+r mode "resize"
 
 exec @REPO@/spark-shell desktop --pending
-# The pad (spark-pad) runs for the session: the glyphs on each title band, the focus order, the minimized windows
+# The pad (spark-winpad) runs for the session: the glyphs on each title band, the focus order, the minimized windows
 exec @REPO@/spark-shell desktop pad start
 # key: Typing exit in the first window also leaves the desktop.
 exec sh -c '$term -e @REPO@/spark-shell desktop --first; swaymsg exit'

@@ -1,18 +1,18 @@
 [package]
-name = "spark-pad"
-version = "0.141.1"
+name = "spark-winpad"
+version = "0.142.0"
 edition = "2021"
 rust-version = "1.98"
 license = "MIT"
 repository = "https://github.com/forgewright-ai/spark-shell"
 publish = false
-description = "The minimized windows of the desktop, on a surface of their own"
+description = "The windows of the desktop: the pad for the minimized ones, the buttons on each title band, the focus order"
 
 [lib]
 path = "src/lib.rs"
 
 [[bin]]
-name = "spark-pad"
+name = "spark-winpad"
 path = "src/main.rs"
 
 [dependencies]

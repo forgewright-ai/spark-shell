@@ -15,7 +15,7 @@ updates:
     schedule:
       interval: weekly
   - package-ecosystem: cargo
-    directory: /component/pad
+    directory: /component/winpad
     schedule:
       interval: weekly
   - package-ecosystem: cargo

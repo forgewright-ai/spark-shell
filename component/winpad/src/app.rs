@@ -35,7 +35,7 @@ use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Connection, QueueHandle, WEnum};
 
 /// The layer shell namespace: what sway's rules and tools call the surface.
-const NAMESPACE: &str = "spark-pad";
+const NAMESPACE: &str = "spark-winpad";
 const BTN_LEFT: u32 = 0x110;
 /// How long the tree is read every tick after an event.
 const BURST: Duration = Duration::from_secs(2);
@@ -526,7 +526,7 @@ impl Pad {
         let name = self.outs[oi].name.clone();
         let (bw, bh) = (size.0 * scale, size.1 * scale);
         let Ok((buffer, data)) = self.pool.create_buffer(bw, bh, bw * 4, wl_shm::Format::Argb8888) else {
-            eprintln!("spark-pad: no shared memory for a frame");
+            eprintln!("spark-winpad: no shared memory for a frame");
             return;
         };
         let Ok(region) = Region::new(&self.compositor) else { return };
@@ -850,7 +850,7 @@ impl Pad {
     pub fn refresh_list(&mut self) {
         self.list_dirty = false;
         let Ok(tree) = self.ipc.tree() else {
-            eprintln!("spark-pad: sway did not answer");
+            eprintln!("spark-winpad: sway did not answer");
             self.stop = true;
             return;
         };
@@ -1165,7 +1165,7 @@ impl Pad {
         });
         let (bw, bh) = (size.0 * scale, size.1 * scale);
         let Ok((buffer, data)) = self.pool.create_buffer(bw, bh, bw * 4, wl_shm::Format::Argb8888) else {
-            eprintln!("spark-pad: no shared memory for a frame");
+            eprintln!("spark-winpad: no shared memory for a frame");
             return;
         };
         let mut list_at = None;
@@ -1679,7 +1679,7 @@ fn spawn(program: &str, args: &[&str]) {
                 let _ = child.wait();
             });
         }
-        Err(e) => eprintln!("spark-pad: {program}: {e}"),
+        Err(e) => eprintln!("spark-winpad: {program}: {e}"),
     }
 }
 

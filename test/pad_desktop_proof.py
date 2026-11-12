@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove the pad on a separate headless sway with a real foot, a real swaybar and spark-pad:
+"""Prove the pad on a separate headless sway with a real foot, a real swaybar and spark-winpad:
 python3 test/pad_desktop_proof.py [EVIDENCE_DIRECTORY]. A throwaway HOME and a sway of its own, once in a
 dark palette and once in solarized-light, as a surface change is proven (the handbook's two palettes).
 
@@ -32,8 +32,8 @@ step into the evidence directory.
 Nothing here rests on a number read at the start: a bar in a fallback font grows a pixel once its line is
 drawn, so every length is read from the edge the bar does not touch, or as the pad's own.
 
-spark-pad is SPARK_SHELL_PAD, else component/pad/target's release build; spark-shell starts it through a script of
-the proof's that writes what spark-pad was handed and what it asks of spark-shell, and runs both as they
+spark-winpad is SPARK_SHELL_WINPAD, else component/winpad/target's release build; spark-shell starts it through a script of
+the proof's that writes what spark-winpad was handed and what it asks of spark-shell, and runs both as they
 are. Needs sway, swaymsg, foot, grim, wtype and python3; swaybar where the family has it."""
 import json
 import os
@@ -117,7 +117,7 @@ def rgb(hexa):
 
 
 def text_px(font):
-    """The text size in pixels of a pango font, as spark-pad reads PAD_FONT: points at 96 dpi, or px."""
+    """The text size in pixels of a pango font, as spark-winpad reads PAD_FONT: points at 96 dpi, or px."""
     size = (font.split() or [""])[-1]
     try:
         return float(size[:-2]) if size.endswith("px") else float(size) * 96 / 72
@@ -126,7 +126,7 @@ def text_px(font):
 
 
 def lengths(font):
-    """The pad's lengths at the text size it was handed (PAD_FONT, the bar's), as component/pad/src/model.rs's
+    """The pad's lengths at the text size it was handed (PAD_FONT, the bar's), as component/winpad/src/model.rs's
     Metrics::for_text makes them: the mock-up's at 16 px (36 an icon's cell, 6 the handle, 228 a slot), in
     proportion at any other."""
     k = min(max(text_px(font) / 16, 0.5), 3.0)
@@ -138,17 +138,17 @@ def lengths(font):
 
 
 def pad_binary():
-    named = os.environ.get("SPARK_SHELL_PAD")
+    named = os.environ.get("SPARK_SHELL_WINPAD")
     if named:
         return Path(named)
-    for candidate in (REPO / "component/pad/target/release/spark-pad", REPO / "component/pad/target/x86_64-unknown-linux-gnu/release/spark-pad"):
+    for candidate in (REPO / "component/winpad/target/release/spark-winpad", REPO / "component/winpad/target/x86_64-unknown-linux-gnu/release/spark-winpad"):
         if candidate.is_file():
             return candidate
-    raise SystemExit("no spark-pad: build component/pad/ (cargo build --release) or name it in SPARK_SHELL_PAD")
+    raise SystemExit("no spark-winpad: build component/winpad/ (cargo build --release) or name it in SPARK_SHELL_WINPAD")
 
 
 def shim(root, binary):
-    """spark-pad as spark-shell starts it, read on the way: a script named spark-pad writes the environment
+    """spark-winpad as spark-shell starts it, read on the way: a script named spark-winpad writes the environment
     spark-shell hands the pad (its colors, PAD_GAP, PAD_BAND, PAD_VIEW, PAD_HEIGHT) and points the pad's
     SPARK_SHELL at a second one, which writes each call the pad makes and runs spark-shell with it. The apps
     adapter and the assets stay beside it, for the icons and the dialog's mark."""
@@ -163,7 +163,7 @@ def shim(root, binary):
                       "[ \"$*\" != 'desktop window refit' ] || swaymsg -t get_workspaces | jq -c '[.[] | select(.focused) | .rect.y + .rect.height][0]' >> %s\n"
                       "exec sh %s \"$@\"\n"
                       % (shlex.quote(str(calls)), shlex.quote(str(calls) + ".areas"), shlex.quote(str(REPO / "spark-shell"))))
-    pad = folder / "spark-pad"
+    pad = folder / "spark-winpad"
     pad.write_text("#!/bin/sh\nenv | grep '^PAD_' > %s\nSPARK_SHELL=%s exec %s \"$@\"\n"
                    % (shlex.quote(str(handed)), shlex.quote(str(logger)), shlex.quote(str(binary))))
     for script in (logger, pad):
@@ -330,7 +330,7 @@ def round_in(palette, binary, evidence):
     env = {**os.environ, "HOME": str(root), "SPARK_SHELL_ROOT": str(root / "sysroot"), "XDG_CONFIG_HOME": str(root / ".config"),
            "XDG_STATE_HOME": str(root / ".local/state"), "XDG_DATA_HOME": str(root / ".local/share"),
            "XDG_RUNTIME_DIR": str(runtime), "WLR_BACKENDS": "headless", "WLR_RENDERER": "pixman",
-           "WLR_LIBINPUT_NO_DEVICES": "1", "SPARK_SHELL_NO_APPLY": "1", "SPARK_SHELL_PAD": str(pad)}
+           "WLR_LIBINPUT_NO_DEVICES": "1", "SPARK_SHELL_NO_APPLY": "1", "SPARK_SHELL_WINPAD": str(pad)}
     for name in ("SWAYSOCK", "I3SOCK", "WAYLAND_DISPLAY", "DISPLAY", "PAD_BAND", "PAD_GAP", "PAD_VIEW", "PAD_HEIGHT"):
         env.pop(name, None)
     # a real swaybar on top, its line spark-shell's own, so the bar's block is the one people see
@@ -499,7 +499,7 @@ def round_in(palette, binary, evidence):
         marks = na.get("marks", []) if na else []
         ok(workspace_of(na["id"])["name"] == "__i3_scratch", "Down twice puts the tiled window on the pad", said)
         ok(any(m.startswith("_spark-shell.min.tiled.") for m in marks), "its mark says it left the tiling", marks)
-        wait_for(pad_pid, "spark-pad started by the minimize")
+        wait_for(pad_pid, "spark-winpad started by the minimize")
         given = dict(line.split("=", 1) for line in wait_for(lambda: handed.exists() and handed.read_text(), "the pad's environment").splitlines() if "=" in line)
         gap = int(given.get("PAD_GAP") or 8)
         ok(given.get("PAD_BAND") in (None, "off") and gap == GAP, "spark-shell hands the pad the band off and the outer gap as its margin",
@@ -663,7 +663,7 @@ def round_in(palette, binary, evidence):
         ok(True, "Super+minus then Enter brings the newest back")
 
         # 9. no window waits: the pad's surfaces go and the bar's block with them; the pad itself stays for the session
-        wait_for(pad_empty, "spark-pad with no window, still here for the glyphs", seconds=10)
+        wait_for(pad_empty, "spark-winpad with no window, still here for the glyphs", seconds=10)
         ok(wait_for(lambda: reaches("left") and reaches("bottom"), "the strip given back with the last window"), "the pad stays and gives its strip back")
         blocks = json.loads(shell("bar", "status", "--once") or "[]")
         ok(not any(blk.get("name") == "pad" for blk in blocks), "the bar's block is gone")
@@ -676,7 +676,7 @@ def round_in(palette, binary, evidence):
         g1, notes, g2, g3 = group
         for child in group:
             minimize(child)
-        wait_for(pad_pid, "spark-pad started for four")
+        wait_for(pad_pid, "spark-winpad started for four")
         four_w = 4 * TOOL + 1 + CTL
         settle(lambda: bottom() == row_floor)
         move(W // 2, 300)
@@ -871,7 +871,7 @@ def round_in(palette, binary, evidence):
         for child in (a, b):
             subprocess.run(["swaymsg", "[pid=%d] focus" % child], env=env, capture_output=True)
             shell("desktop", "window", "down")
-        wait_for(pad_pid, "spark-pad started with its band")
+        wait_for(pad_pid, "spark-winpad started with its band")
         band_floor = edge - gap - HANDLE - BAND - TOOL - GAP
         settle(lambda: bottom() == band_floor)
         ok(bottom() == band_floor, "with the band on (%s) the strip is the handle, the band and the row, %d px, and the gap%s"
@@ -942,7 +942,7 @@ def round_in(palette, binary, evidence):
         twin = open_foot("HOME", app="org.example.spark")
         minimize(dialog)
         minimize(twin)
-        wait_for(pad_pid, "spark-pad started for the dialog")
+        wait_for(pad_pid, "spark-winpad started for the dialog")
         settle(lambda: bottom() == edge - gap - titled - GAP)
         move(W // 2, 200)
         time.sleep(0.8)

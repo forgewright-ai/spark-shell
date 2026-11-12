@@ -342,8 +342,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "spark-pad"
-version = "0.141.1"
+name = "spark-winpad"
+version = "0.142.0"
 dependencies = [
  "calloop",
  "libc",

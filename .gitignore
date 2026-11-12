@@ -7,5 +7,5 @@ __pycache__/
 # Claude Code's state stays out
 .claude/
 component/dialog/target/
-component/pad/target/
+component/winpad/target/
 component/wallpaper/target/

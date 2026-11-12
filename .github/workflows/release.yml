@@ -118,9 +118,9 @@ jobs:
           name: wallpaper
           path: out/
           retention-days: 7
-  pad:
+  winpad:
     # the pad at the tag, in the image CI's pad job pins, and the sha256
-    # component/pad/pad.env pins in the tagged tree; the build job above checked the
+    # component/winpad/winpad.env pins in the tagged tree; the build job above checked the
     # tag before this one publishes anything
     needs: build
     runs-on: ubuntu-latest
@@ -137,20 +137,20 @@ jobs:
       - name: the build, and the sha256 the tagged tree pins
         run: |
           set -eu
-          got=$(sh test/pad_build.sh | cut -d' ' -f1)
-          want=$(sed -n 's/^PAD_SHA256_X86_64_LINUX_GNU=//p' component/pad/pad.env)
+          got=$(sh test/winpad_build.sh | cut -d' ' -f1)
+          want=$(sed -n 's/^WINPAD_SHA256_X86_64_LINUX_GNU=//p' component/winpad/winpad.env)
           echo "built $got, pinned $want"
           [ "$got" = "$want" ] || { echo "the pad is not the one the tree pins: nothing is published"; exit 1; }
           mkdir -p out
-          cp component/pad/target/x86_64-unknown-linux-gnu/release/spark-pad out/spark-pad-x86_64-linux-gnu
-          (cd out && sha256sum spark-pad-x86_64-linux-gnu > spark-pad-x86_64-linux-gnu.sha256)
+          cp component/winpad/target/x86_64-unknown-linux-gnu/release/spark-winpad out/spark-winpad-x86_64-linux-gnu
+          (cd out && sha256sum spark-winpad-x86_64-linux-gnu > spark-winpad-x86_64-linux-gnu.sha256)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
         with:
-          name: pad
+          name: winpad
           path: out/
           retention-days: 7
   publish:
-    needs: [build, wallpaper, pad]
+    needs: [build, wallpaper, winpad]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -168,15 +168,15 @@ jobs:
           path: out
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333   # v8.0.2
         with:
-          name: pad
+          name: winpad
           path: out
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8   # v4.2.2
         with:
           subject-path: |
             out/spark-dialog-x86_64-linux-musl
             out/spark-wallpaper-x86_64-linux-gnu
-            out/spark-pad-x86_64-linux-gnu
+            out/spark-winpad-x86_64-linux-gnu
       - name: the release, the CHANGELOG section as its notes
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "spark-shell $GITHUB_REF_NAME" --notes-file out/notes.md out/spark-dialog-x86_64-linux-musl out/spark-dialog-x86_64-linux-musl.sha256 out/spark-dialog.cdx.json out/spark-wallpaper-x86_64-linux-gnu out/spark-wallpaper-x86_64-linux-gnu.sha256 out/spark-pad-x86_64-linux-gnu out/spark-pad-x86_64-linux-gnu.sha256
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "spark-shell $GITHUB_REF_NAME" --notes-file out/notes.md out/spark-dialog-x86_64-linux-musl out/spark-dialog-x86_64-linux-musl.sha256 out/spark-dialog.cdx.json out/spark-wallpaper-x86_64-linux-gnu out/spark-wallpaper-x86_64-linux-gnu.sha256 out/spark-winpad-x86_64-linux-gnu out/spark-winpad-x86_64-linux-gnu.sha256

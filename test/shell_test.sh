@@ -726,12 +726,12 @@ out=$(sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q '^ok     prompt       starship 0.0-stub draws the prompt$' && ok "on: the prompt row names the starship it found" || bad "prompt ok" "$out"
 ! grep -q 'STARSHIP_VERSION' "$SRC" && [ "$(grep -c 'curl -' "$SRC")" = 8 ] && grep -q '^    curl -fsIL --proto .=https,file. --proto-redir .=https. -o /dev/null "$DIALOG_URL/$1/spark-dialog-$_ut"' "$SRC" && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$_df" "$DIALOG_URL/$_rt/spark-dialog-$_dt"' "$SRC" \
     && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$_plf" "$DIALOG_URL/$_plr/spark-wallpaper-$_plt"' "$SRC" \
-    && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$_pdf" "$DIALOG_URL/$_pdr/spark-pad-$_pdt"' "$SRC" \
+    && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$_pdf" "$DIALOG_URL/$_pdr/spark-winpad-$_pdt"' "$SRC" \
     && grep -q '^    if ! curl -fsSL --proto .=https,file. --proto-redir .=https. --connect-timeout 30 -o "$_nz" "$NEON_URL"' "$SRC" && grep -q '^NEON_SHA256=[0-9a-f]\{64\} ' "$SRC" \
     && grep -q '^        if ! curl -fsSL --proto .=https,file. --proto-redir .=https. --connect-timeout 30 -o "$_nz" "$NEON_URL"' "$SRC" \
     && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$SEMANTIC_MODEL.new" --connect-timeout 30 --speed-limit 1024 --speed-time 60 "$SEMANTIC_URL"' "$SRC" && grep -q '^SEMANTIC_SHA256=[0-9a-f]\{64\}$' "$SRC" \
     && grep -q 'curl --unix-socket "$SEMANTIC_SOCK" -sf -m 2 -o /dev/null http://localhost/health' "$SRC" \
-    && ok "spark-shell: four downloads, the release files of the dialog, of spark-wallpaper (#187) and of spark-pad (v0.133), the font's (fetched by the faces row too, when the font row did not, #247) and the semantic search's model (v0.130), each checked against the sha256 pinned for it; one look that keeps nothing, whether a release is up; and one at the semantic search's own socket; no pinned version of anything else" || bad "a download survives" "$(grep -n 'STARSHIP_VERSION\|curl ' "$SH")"
+    && ok "spark-shell: four downloads, the release files of the dialog, of spark-wallpaper (#187) and of spark-winpad (v0.133), the font's (fetched by the faces row too, when the font row did not, #247) and the semantic search's model (v0.130), each checked against the sha256 pinned for it; one look that keeps nothing, whether a release is up; and one at the semantic search's own socket; no pinned version of anything else" || bad "a download survives" "$(grep -n 'STARSHIP_VERSION\|curl ' "$SH")"
 
 fi
 
@@ -908,7 +908,7 @@ else
         && ok "sway: the chrome (v0.140): a title band and a one-pixel frame in one shade, the surface shade on the focused window (#0f0f0f), four percent above the ground on the others (#060606) with muted text; the accent only as the focused indicator, the drop area of a moving window (#47), at a quarter: #ff5555 halved with alpha 80, as sway takes it (#49)" || bad "sway focused" "$(grep -n 'client\|border' "$sway")"
     _bg=' &#x2715;  &#x25BD;  &#x25A1; '
     grep -qxF "for_window [shell=\".*\"] title_format \"$_bg  %title\"" "$sway" && grep -qxF "for_window [app_id=\"foot\"] title_format \"$_bg  terminal   %title\"" "$sway" \
-        && grep -qF 'pub const GLYPH_REFS: [&str; 3] = ["&#x2715;", "&#x25BD;", "&#x25A1;"];' "$REPO/component/pad/src/model.rs" \
+        && grep -qF 'pub const GLYPH_REFS: [&str; 3] = ["&#x2715;", "&#x25BD;", "&#x25A1;"];' "$REPO/component/winpad/src/model.rs" \
         && ok "sway: the close, minimize and fill buttons are the start of every title, sway's own pixels, so they move with the window (v0.141.1), written as character references so the render stays ASCII; the pad's are the same three" || bad "band glyphs" "$(grep -n title_format "$sway")"
     grep -qxF "bindsym Mod4+space exec $REPO/spark-shell desktop home" "$sway" \
         && ! grep -q '^bindsym Mod4+[ds] ' "$sway" \
@@ -1024,14 +1024,14 @@ else
     # The stand-in holds its lock as the real pad does, so a pad on restarts (a new look) is still one running
     psd=$H/padsway; mkdir -p "$psd" "$H/padrun"; pslog=$H/padsway.log; plock=$H/padrun/spark-shell-pad.pid
     printf '#!/bin/sh\ncase "$*" in "-t get_version") echo "{\\"human_readable\\":\\"1.10\\"}" ;; "-- "*) shift; echo "$*" >> "%s" ;; esac\n' "$pslog" > "$psd/swaymsg"
-    printf '#!/bin/sh\ntrap '"'"'[ -z "${PAD_LOCK:-}" ] || rm -f "$PAD_LOCK"; exit 0'"'"' TERM\n[ -z "${PAD_LOCK:-}" ] || echo $$ > "$PAD_LOCK"\nwhile :; do sleep 0.1; done\n' > "$psd/spark-pad"
-    chmod +x "$psd/swaymsg" "$psd/spark-pad"
-    padon() { rm -f "$pslog"; XDG_RUNTIME_DIR=$H/padrun SPARK_SHELL_PAD=$psd/spark-pad SWAYSOCK=/nonexistent PATH="$psd:$PATH" sh "$SH" on --yes "$@" 2>&1; }
+    printf '#!/bin/sh\ntrap '"'"'[ -z "${PAD_LOCK:-}" ] || rm -f "$PAD_LOCK"; exit 0'"'"' TERM\n[ -z "${PAD_LOCK:-}" ] || echo $$ > "$PAD_LOCK"\nwhile :; do sleep 0.1; done\n' > "$psd/spark-winpad"
+    chmod +x "$psd/swaymsg" "$psd/spark-winpad"
+    padon() { rm -f "$pslog"; XDG_RUNTIME_DIR=$H/padrun SPARK_SHELL_WINPAD=$psd/spark-winpad SWAYSOCK=/nonexistent PATH="$psd:$PATH" sh "$SH" on --yes "$@" 2>&1; }
     padasked() { grep -qxF "exec $REPO/spark-shell desktop pad start" "$pslog" 2>/dev/null; }
     out=$(padon || :)
     printf '%s\n' "$out" | grep -qx 'ok     pad          the pad runs for this session now' && padasked \
         && ok "on: a session with no pad (begun before an update to v0.140) has sway start it, as login does" || bad "pad session start" "$out | $(cat "$pslog" 2>&1)"
-    PAD_LOCK=$plock "$psd/spark-pad" & ppad=$!
+    PAD_LOCK=$plock "$psd/spark-winpad" & ppad=$!
     i=0; while [ ! -s "$plock" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
     out=$(padon || :)
     ! printf '%s\n' "$out" | grep -q '^[a-z]* *pad  .*for this session' && ! padasked \
@@ -3694,13 +3694,13 @@ nw_tree "$(printf '%s' "$nw" | sed 's/"_spark-shell.new"/"_spark-shell.new","_sp
 [ "$(cat "$HOME/win.log")" = '-- [con_id=9] unmark _spark-shell.new' ] && [ "$out" = 'the new window stays as it opened' ] && ok "desktop window new: a window the float key tiled is the person's choice and stays (#262)" || bad "new yours" "$out"
 nw_tree "$(rf_win 5 con 0 1216 42 944 1022 '')" "$_lt"; win_run new
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: no window opened just now' ] && [ ! -e "$HOME/win.log" ] && ok "desktop window new: no window wears the rule's mark, refused in one line, nothing sent (#262)" || bad "new none" "rc=$rc $out"
-# the pad (v0.133): spark-pad's stand-in records how it was started and the signals it takes, holds its lock as the
+# the pad (v0.133): spark-winpad's stand-in records how it was started and the signals it takes, holds its lock as the
 # real one does, and turns hidden on SIGUSR2
 mkdir -p "$H/padbin" "$H/run"
-cat > "$H/padbin/spark-pad" <<'PAD_STUB'
+cat > "$H/padbin/spark-winpad" <<'PAD_STUB'
 #!/bin/sh
 printf '%s\n' "$*" >> "$HOME/pad.log"
-env | grep -E '^(SPARK_SHELL|PAD_[A-Z_]+)=' | sort > "$HOME/pad.env"
+env | grep -E '^(SPARK_SHELL|PAD_[A-Z_]+)=' | sort > "$HOME/winpad.env"
 trap 'echo usr1 >> "$HOME/pad.sig"' USR1
 trap 'echo usr2 >> "$HOME/pad.sig"; if grep -qx "hidden 1" "$PAD_STATE"; then printf "hidden 0\n" > "$PAD_STATE"; else printf "hidden 1\n" > "$PAD_STATE"; fi' USR2
 trap 'rm -f "$PAD_LOCK"; exit 0' TERM
@@ -3708,12 +3708,12 @@ printf 'hidden 0\ncount 2\n' > "$PAD_STATE"
 echo $$ > "$PAD_LOCK"   # last, as the real pad takes its lock once its signals are set
 while :; do sleep 0.1; done
 PAD_STUB
-chmod +x "$H/padbin/spark-pad"
-padr() { rm -f "$HOME/win.log"; rc=0; out=$(XDG_RUNTIME_DIR=$H/run SPARK_SHELL_PAD=$H/padbin/spark-pad SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop pad "$@" 2>&1) || rc=$?; }
+chmod +x "$H/padbin/spark-winpad"
+padr() { rm -f "$HOME/win.log"; rc=0; out=$(XDG_RUNTIME_DIR=$H/run SPARK_SHELL_WINPAD=$H/padbin/spark-winpad SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop pad "$@" 2>&1) || rc=$?; }
 pad_up() { _pu=0; while [ "$_pu" -lt 40 ] && [ ! -s "$H/run/spark-shell-pad.pid" ]; do sleep 0.1; _pu=$((_pu + 1)); done; }
 pad_sig() { _ps=0; while [ "$_ps" -lt 20 ]; do _pc=$(grep -c "^$1$" "$HOME/pad.sig" 2>/dev/null) || :; [ "${_pc:-0}" -lt "$2" ] || break; sleep 0.1; _ps=$((_ps + 1)); done; }   # the stand-in takes a signal after its sleep: wait for it, 2 s at most
 pad_hidden_is() { _ph=0; while [ "$_ph" -lt 50 ]; do grep -qx "hidden $1" "$H/run/spark-shell-pad.state" 2>/dev/null && return 0; sleep 0.1; _ph=$((_ph + 1)); done; return 1; }   # the stand-in writes its state after it logs the signal: wait for the state, 5 s at most
-pad_down() { [ ! -s "$H/run/spark-shell-pad.pid" ] || kill "$(cat "$H/run/spark-shell-pad.pid")" 2>/dev/null || :; _pd=0; while [ "$_pd" -lt 20 ] && [ -e "$H/run/spark-shell-pad.pid" ]; do sleep 0.1; _pd=$((_pd + 1)); done; rm -f "$H/run/spark-shell-pad.pid" "$H/run/spark-shell-pad.state" "$HOME/pad.log" "$HOME/pad.sig" "$HOME/pad.env"; }
+pad_down() { [ ! -s "$H/run/spark-shell-pad.pid" ] || kill "$(cat "$H/run/spark-shell-pad.pid")" 2>/dev/null || :; _pd=0; while [ "$_pd" -lt 20 ] && [ -e "$H/run/spark-shell-pad.pid" ]; do sleep 0.1; _pd=$((_pd + 1)); done; rm -f "$H/run/spark-shell-pad.pid" "$H/run/spark-shell-pad.state" "$HOME/pad.log" "$HOME/pad.sig" "$HOME/winpad.env"; }
 win_at 2160 42 944 1022; padr
 [ "$rc" = 0 ] && [ "$out" = 'no window is on the pad' ] && ok "desktop pad: none waits, said in one line (v0.133)" || bad "pad none" "rc=$rc $out"
 padr keys
@@ -3721,17 +3721,17 @@ padr keys
 pad_tree; padr
 [ "$rc" = 0 ] && [ "$out" = 'the pad has 2 windows: foot, firefox' ] && ok "desktop pad: the windows on the pad by their apps, oldest first; a scratchpad window not put there is none of them (v0.133)" || bad "pad list" "rc=$rc $out"
 padr keys; pad_up
-_pe=$(cat "$HOME/pad.env" 2>/dev/null)
+_pe=$(cat "$HOME/winpad.env" 2>/dev/null)
 [ "$rc" = 0 ] && [ "$out" = 'the pad has the keys: Enter brings the window back, Esc leaves' ] && [ "$(cat "$HOME/pad.log" 2>/dev/null)" = '--keys' ] \
     && printf '%s\n' "$_pe" | grep -qx "SPARK_SHELL=$SH" && printf '%s\n' "$_pe" | grep -qx 'PAD_PLACE=bottom center' && printf '%s\n' "$_pe" | grep -qx 'PAD_WIDTH=0' && printf '%s\n' "$_pe" | grep -qx 'PAD_SIDE_WIDTH=36' \
     && printf '%s\n' "$_pe" | grep -qx 'PAD_BAR=top' && printf '%s\n' "$_pe" | grep -qx "PAD_LOCK=$H/run/spark-shell-pad.pid" && printf '%s\n' "$_pe" | grep -qx "PAD_STATE=$H/run/spark-shell-pad.state" \
     && printf '%s\n' "$_pe" | grep -qx 'PAD_ACCENT=ff5555' && printf '%s\n' "$_pe" | grep -qx 'PAD_FG=aaaaaa' && [ "$(printf '%s\n' "$_pe" | grep -cE '^PAD_(SURFACE|LIT|BAND_HEX|MUTED)=[0-9a-f]{6}$')" = 4 ] \
     && printf '%s\n' "$_pe" | grep -qx 'PAD_BAND=off' && printf '%s\n' "$_pe" | grep -qx 'PAD_GAP=8' && printf '%s\n' "$_pe" | grep -qx 'PAD_VIEW=icons' && printf '%s\n' "$_pe" | grep -qx 'PAD_HEIGHT=0' \
     && printf '%s\n' "$_pe" | grep -qE '^PAD_FONT=.+ [0-9]+(px)?$' && printf '%s\n' "$_pe" | grep -qE '^PAD_ALPHA=[0-9.]+$' && printf '%s\n' "$_pe" | grep -q '^PAD_BAR_PID=' \
-    && ok "desktop pad keys (Super+minus): no pad running, spark-pad starts with --keys, the look, the place, the bar's place and its files in its environment (v0.133); the band's setting, its color apart, and the outer gap as its margin (#265, #266); the view, icons by default, and the height, 0 by default (#269)" || bad "pad keys start" "rc=$rc $out $(cat "$HOME/pad.log" 2>&1) | $_pe"
+    && ok "desktop pad keys (Super+minus): no pad running, spark-winpad starts with --keys, the look, the place, the bar's place and its files in its environment (v0.133); the band's setting, its color apart, and the outer gap as its margin (#265, #266); the view, icons by default, and the height, 0 by default (#269)" || bad "pad keys start" "rc=$rc $out $(cat "$HOME/pad.log" 2>&1) | $_pe"
 padr keys; pad_sig usr1 1
 [ "$rc" = 0 ] && [ "$(grep -c '' "$HOME/pad.log")" = 1 ] && [ "$(grep -c '^usr1$' "$HOME/pad.sig" 2>/dev/null)" = 1 ] && ok "desktop pad keys: a pad running takes SIGUSR1, none other starts (v0.133)" || bad "pad keys signal" "rc=$rc $out $(cat "$HOME/pad.log" "$HOME/pad.sig" 2>&1)"
-_pdl() { XDG_RUNTIME_DIR=$H/run SPARK_SHELL_PAD=$H/padbin/spark-pad SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null; }
+_pdl() { XDG_RUNTIME_DIR=$H/run SPARK_SHELL_WINPAD=$H/padbin/spark-winpad SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null; }
 padsign=$(printf '\342\212\237')
 line=$(_pdl)
 [ "$(printf '%s' "$line" | jq -r '.[0].name')" = pad ] && [ "$(printf '%s' "$line" | jq -r '.[0].full_text')" = "<span foreground='#555555'>$padsign</span> 2" ] \
@@ -3751,11 +3751,11 @@ pad_down
 win_at 2160 42 944 1022
 line=$(_pdl)
 [ "$(printf '%s' "$line" | jq -r '[.[] | select(.name == "pad")] | length')" = 0 ] && ok "bar: no window on the pad, no block for it (v0.133)" || bad "bar pad gone" "$line"
-pad_tree; rm -f "$HOME/win.log"; rc=0; out=$(XDG_RUNTIME_DIR=$H/run env -u SPARK_SHELL_PAD SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop pad keys 2>&1) || rc=$?
+pad_tree; rm -f "$HOME/win.log"; rc=0; out=$(XDG_RUNTIME_DIR=$H/run env -u SPARK_SHELL_WINPAD SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop pad keys 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=9] unmark _spark-shell.min.RB.9, scratchpad show, floating disable, floating enable, resize set width 944 px height 511 px, move absolute position 2160 553, mark --add _spark-shell.place.RB.9, mark --add _spark-shell.area.1216.42.1888.1022.9' ] && [ "$out" = 'the window is back, in the bottom right quarter' ] \
-    && ok "desktop pad keys: no spark-pad here, Super+minus brings back the window minimized last, as before the pad (v0.133)" || bad "pad keys fallback" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
+    && ok "desktop pad keys: no spark-winpad here, Super+minus brings back the window minimized last, as before the pad (v0.133)" || bad "pad keys fallback" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
 # the window keys put a window on the pad: the pad starts, never waited for
-win_at 2160 553 944 511; rm -f "$HOME/win.log"; rc=0; out=$(XDG_RUNTIME_DIR=$H/run SPARK_SHELL_PAD=$H/padbin/spark-pad SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop window down 2>&1) || rc=$?; pad_up
+win_at 2160 553 944 511; rm -f "$HOME/win.log"; rc=0; out=$(XDG_RUNTIME_DIR=$H/run SPARK_SHELL_WINPAD=$H/padbin/spark-winpad SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop window down 2>&1) || rc=$?; pad_up
 [ "$rc" = 0 ] && [ -s "$H/run/spark-shell-pad.pid" ] && [ "$(cat "$HOME/pad.log" 2>/dev/null)" = '' ] && ok "desktop window: a window put on the pad starts the pad, in sight (v0.133)" || bad "pad wake" "rc=$rc $out $(cat "$HOME/pad.log" 2>&1)"
 pad_down
 # where it sits: the keys the pad writes after a drag, each checked; a pad of v0.134.1 sends three, one of v0.134.2 the height too (#269)
@@ -3796,12 +3796,12 @@ padr band on
 padr band maybe
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: pad band takes on or off' ] && grep -qx 'PAD_BAND=on' "$cfg" && ok "desktop pad band: a word that is neither refused, the config as it was (#266)" || bad "pad band word" "rc=$rc $out"
 pad_tree; padr keys; pad_up
-_pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'PAD_BAND=on' "$HOME/pad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
+_pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'PAD_BAND=on' "$HOME/winpad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
 padr band off
 _pi=0; while [ "$_pi" -lt 40 ] && [ "$(grep -c '' "$HOME/pad.log" 2>/dev/null)" -lt 2 ]; do sleep 0.1; _pi=$((_pi + 1)); done
-_pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'PAD_BAND=off' "$HOME/pad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
-[ "$rc" = 0 ] && [ "$out" = "pad band off $dot the handle alone across its top" ] && grep -qx 'PAD_BAND=off' "$cfg" && [ "$(grep -c '' "$HOME/pad.log")" = 2 ] && grep -qx 'PAD_BAND=off' "$HOME/pad.env" && grep -qE '^PAD_BAND_HEX=[0-9a-f]{6}$' "$HOME/pad.env" \
-    && ok "desktop pad band off: a running pad starts again without its band, its color still handed apart (#266)" || bad "pad band again pad" "rc=$rc $out $(cat "$HOME/pad.log" "$HOME/pad.env" 2>&1)"
+_pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'PAD_BAND=off' "$HOME/winpad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
+[ "$rc" = 0 ] && [ "$out" = "pad band off $dot the handle alone across its top" ] && grep -qx 'PAD_BAND=off' "$cfg" && [ "$(grep -c '' "$HOME/pad.log")" = 2 ] && grep -qx 'PAD_BAND=off' "$HOME/winpad.env" && grep -qE '^PAD_BAND_HEX=[0-9a-f]{6}$' "$HOME/winpad.env" \
+    && ok "desktop pad band off: a running pad starts again without its band, its color still handed apart (#266)" || bad "pad band again pad" "rc=$rc $out $(cat "$HOME/pad.log" "$HOME/winpad.env" 2>&1)"
 pad_down
 printf 'PAD_BAND=maybe\n' >> "$cfg"; padr band
 [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'PAD_BAND=maybe in .*: on or off' && ok "config: PAD_BAND other than on or off refused in one line (#266)" || bad "pad band config" "rc=$rc $out"
@@ -3823,14 +3823,14 @@ _pv1=$rc$out; padr view icons titles
     && ok "desktop pad view: another word, or two, refused in one line, the config as it was (#269)" || bad "pad view word" "$_pv1 | rc=$rc $out"
 padr place 'bottom center' 0 36 76
 pad_tree; padr keys; pad_up
-_pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'PAD_VIEW=titles' "$HOME/pad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
-_pe=$(cat "$HOME/pad.env" 2>/dev/null)
+_pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'PAD_VIEW=titles' "$HOME/winpad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
+_pe=$(cat "$HOME/winpad.env" 2>/dev/null)
 padr view icons
 _pi=0; while [ "$_pi" -lt 40 ] && [ "$(grep -c '' "$HOME/pad.log" 2>/dev/null)" -lt 2 ]; do sleep 0.1; _pi=$((_pi + 1)); done
-_pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'PAD_VIEW=icons' "$HOME/pad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
+_pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'PAD_VIEW=icons' "$HOME/winpad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
 [ "$rc" = 0 ] && [ "$out" = "pad view icons $dot one icon a window, its title beside it on hover" ] && grep -qx 'PAD_VIEW=icons' "$cfg" && printf '%s\n' "$_pe" | grep -qx 'PAD_VIEW=titles' && printf '%s\n' "$_pe" | grep -qx 'PAD_HEIGHT=76' \
-    && [ "$(grep -c '' "$HOME/pad.log")" = 2 ] && grep -qx 'PAD_VIEW=icons' "$HOME/pad.env" && grep -qx 'PAD_HEIGHT=76' "$HOME/pad.env" && grep -qx 'PAD_BAND=off' "$HOME/pad.env" && grep -qE '^PAD_BAND_HEX=[0-9a-f]{6}$' "$HOME/pad.env" && grep -qx 'PAD_GAP=8' "$HOME/pad.env" \
-    && ok "desktop pad view icons: a running pad in titles, its height in its environment, starts again in icons, the band and the gap as they were (#269)" || bad "pad view again pad" "rc=$rc $out $(cat "$HOME/pad.log" "$HOME/pad.env" 2>&1) | $_pe"
+    && [ "$(grep -c '' "$HOME/pad.log")" = 2 ] && grep -qx 'PAD_VIEW=icons' "$HOME/winpad.env" && grep -qx 'PAD_HEIGHT=76' "$HOME/winpad.env" && grep -qx 'PAD_BAND=off' "$HOME/winpad.env" && grep -qE '^PAD_BAND_HEX=[0-9a-f]{6}$' "$HOME/winpad.env" && grep -qx 'PAD_GAP=8' "$HOME/winpad.env" \
+    && ok "desktop pad view icons: a running pad in titles, its height in its environment, starts again in icons, the band and the gap as they were (#269)" || bad "pad view again pad" "rc=$rc $out $(cat "$HOME/pad.log" "$HOME/winpad.env" 2>&1) | $_pe"
 pad_down
 for _pk in PAD_VIEW=grid PAD_VIEW=Icons 'PAD_VIEW=icons titles'; do
     printf '%s\n' "$_pk" >> "$cfg"; padr view

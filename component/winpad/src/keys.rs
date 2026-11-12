@@ -56,7 +56,7 @@ impl Keyboard {
     pub fn new() -> Keyboard {
         let lib = Lib::open();
         if lib.is_none() {
-            eprintln!("spark-pad: {SONAME} is missing (the keyboard's layouts): the keys read as a US keyboard's");
+            eprintln!("spark-winpad: {SONAME} is missing (the keyboard's layouts): the keys read as a US keyboard's");
         }
         let ctx = lib.as_ref().map_or(std::ptr::null_mut(), |l| unsafe { (l.context_new)(0) });
         Keyboard {

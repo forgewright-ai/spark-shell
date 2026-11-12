@@ -16,9 +16,9 @@ pub const EVENT_OUTPUT: u32 = 0x8000_0001;
 pub const EVENT_WINDOW: u32 = 0x8000_0003;
 pub const EVENT_TICK: u32 = 0x8000_0007;
 /// The tick spark-shell sends for Super+Tab (desktop window back).
-pub const BACK: &str = "spark-pad.back";
+pub const BACK: &str = "spark-winpad.back";
 /// The tick spark-shell sends after a window command: the tree read now.
-pub const LOOK: &str = "spark-pad.look";
+pub const LOOK: &str = "spark-winpad.look";
 
 fn socket() -> io::Result<UnixStream> {
     let path = std::env::var_os("SWAYSOCK").ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no sway here (SWAYSOCK)"))?;

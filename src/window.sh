@@ -112,7 +112,7 @@ layout_window_new() {   # layout_window_new -- after layout_window read the tree
         [.. | objects | select(.type == "workspace") | select(any(views; isnew))][0] // empty | . as $w
         | [views | select(isnew)][0] as $n
         | (($n.app_id // "") as $app | ($n.type != "con") or (($n.fullscreen_mode // 0) != 0)
-            or (["spark-dialog", "spark-preview", "spark-idle", "spark-pad"] | any(. == $app))
+            or (["spark-dialog", "spark-preview", "spark-idle", "spark-winpad"] | any(. == $app))
             or any(($n.marks // [])[]; startswith("_spark-shell.") and . != "_spark-shell.new")
             or $w.name == "__i3_scratch" or $w.name == "idle" or ($w.name | startswith("idle "))) as $leave
         | "\(if $leave then "leave" else "new" end) \($n.id) \($w.rect.x) \($w.rect.y) \($w.rect.width) \($w.rect.height)",
@@ -232,7 +232,7 @@ layout_window() {   # layout_window float|left|right|up|down|max|min|toggle|rest
     echo "the window is $_ds"
 }
 layout_window_back() {   # the window before this one: the pad walks its order (a press within a second goes further); with no pad, the one before only
-    if pad_pid >/dev/null; then wm_tick spark-pad.back >/dev/null 2>&1 || refuse "$WM_NAME did not answer"; echo "the window before"; return; fi
+    if pad_pid >/dev/null; then wm_tick spark-winpad.back >/dev/null 2>&1 || refuse "$WM_NAME did not answer"; echo "the window before"; return; fi
     _bi=$(jq -r 'def child(n; i): ([n.nodes[]?, n.floating_nodes[]?] | map(select(.id == i)) | .[0]);
         def leaf(n): (child(n; n.focus[0]?)) as $c | if $c == null then n else leaf($c) end;
         def prev(n): (child(n; n.focus[0]?)) as $c | (if $c == null then null else prev($c) end) as $d

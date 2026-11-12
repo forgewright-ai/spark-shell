@@ -17,8 +17,8 @@ fifth opens at two thirds, centered, on top; a workspace with a tiled window
 tiles a new one (#262). Two foot windows on the halves, no tiled window: the
 space for windows changes and both move to the halves of the space as it is
 now, then back; a window dragged by hand stays where it was dragged (#264).
-The space changes by spark-pad docked at the left as a toolbar when
-SPARK_SHELL_PAD names a build (the pad runs spark-shell desktop window refit
+The space changes by spark-winpad docked at the left as a toolbar when
+SPARK_SHELL_WINPAD names a build (the pad runs spark-shell desktop window refit
 when its strip changes), else by spark-shell bar text, the bar at the top
 taller, then thin again (bar text runs the refit after the bar's new
 height). Then the space changes and comes back between two refits (#273):
@@ -194,9 +194,9 @@ def main():
            "XDG_RUNTIME_DIR": str(runtime), "WLR_BACKENDS": "headless", "WLR_RENDERER": "pixman",
            "WLR_LIBINPUT_NO_DEVICES": "1", "SPARK_SHELL_NO_APPLY": "1", "SPARK_SHELL_PTS_DIR": str(root / "pts"),
            "SPARK_SHELL_DIALOG_URL": "none", "SPARK_SHELL_FONT_URL": "none", "SPARK_SHELL_SEMANTIC_URL": "none"}
-    for name in ("SWAYSOCK", "I3SOCK", "WAYLAND_DISPLAY", "DISPLAY", "DBUS_SESSION_BUS_ADDRESS", "SPARK_SHELL_PAD"):
+    for name in ("SWAYSOCK", "I3SOCK", "WAYLAND_DISPLAY", "DISPLAY", "DBUS_SESSION_BUS_ADDRESS", "SPARK_SHELL_WINPAD"):
         env.pop(name, None)   # never the desktop this runs on, nor its session bus
-    pad = os.environ.get("SPARK_SHELL_PAD", "")
+    pad = os.environ.get("SPARK_SHELL_WINPAD", "")
     # a bar where the family has swaybar (openSUSE has none on PATH); PROOF_NO_BAR proves that case here
     bar_here = shutil.which("swaybar") is not None and not os.environ.get("PROOF_NO_BAR")
     pad = pad if pad and os.access(pad, os.X_OK) else ""
@@ -230,7 +230,7 @@ def main():
                                          if not p.name.endswith(".lock")), None), "the display")
         env.update({"SWAYSOCK": str(sock), "WAYLAND_DISPLAY": display})
         if pad:
-            env["SPARK_SHELL_PAD"] = pad
+            env["SPARK_SHELL_WINPAD"] = pad
 
         def tree():
             out = subprocess.run(["swaymsg", "-t", "get_tree"], env=env, capture_output=True, text=True).stdout
@@ -351,7 +351,7 @@ def main():
             if pad:   # a third window on the pad shows it, docked at the left as a toolbar, and it keeps its strip
                 j = open_foot()
                 key("min", j)
-                how = "spark-pad docked at the left as a toolbar"
+                how = "spark-winpad docked at the left as a toolbar"
             else:
                 spark("bar", "text", "30")
                 how = "the bar at the top taller (spark-shell bar text 30)"

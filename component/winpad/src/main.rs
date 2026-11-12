@@ -1,13 +1,13 @@
-//! spark-pad: the windows spark-shell minimized, on a surface of their own on each screen, each
+//! spark-winpad: the windows spark-shell minimized, on a surface of their own on each screen, each
 //! with its app's icon and its title; a click or a key brings one back. The clicks on the
 //! glyphs sway draws on every title band, and the order the windows were focused in, for Super+Tab.
 //! Started with the desktop by spark-shell, for the session.
 
 use std::process::ExitCode;
 
-const USAGE: &str = "spark-pad -- the minimized windows of a sway desktop, on the pad, and the clicks on every title band's glyphs (run by spark-shell)
+const USAGE: &str = "spark-winpad -- the minimized windows of a sway desktop, on the pad, and the clicks on every title band's glyphs (run by spark-shell)
 
-  spark-pad [--keys]
+  spark-winpad [--keys]
 
   --keys     the keyboard on the pad as soon as it shows, as Super+minus
   --version  the version
@@ -21,7 +21,7 @@ or shows it, SIGTERM or SIGINT ends it. The close, minimize and fill buttons at 
 start of every title are sway's own text: the pad tells sway how each
 window's are drawn, by its focus and the pointer, and takes their clicks.
 It keeps the
-order the windows were focused in, and the tick spark-pad.back (spark-shell
+order the windows were focused in, and the tick spark-winpad.back (spark-shell
 desktop window back, Super+Tab) focuses the window before.
 
 spark-shell sets the look and the place in the environment: PAD_FG,
@@ -64,7 +64,7 @@ fn parse(args: &[String]) -> Result<Ask, String> {
 fn main() -> ExitCode {
     let args: Result<Vec<String>, _> = std::env::args_os().skip(1).map(|a| a.into_string()).collect();
     let Ok(args) = args else {
-        eprintln!("spark-pad: an argument is not UTF-8");
+        eprintln!("spark-winpad: an argument is not UTF-8");
         return ExitCode::from(2);
     };
     match parse(&args) {
@@ -73,18 +73,18 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(Ask::Version) => {
-            println!("spark-pad {}", env!("CARGO_PKG_VERSION"));
+            println!("spark-winpad {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         Ok(Ask::Run { keys }) => match run(keys) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
-                eprintln!("spark-pad: {e}");
+                eprintln!("spark-winpad: {e}");
                 ExitCode::FAILURE
             }
         },
         Err(e) => {
-            eprintln!("spark-pad: {e}\n\n{USAGE}");
+            eprintln!("spark-winpad: {e}\n\n{USAGE}");
             ExitCode::from(2)
         }
     }
@@ -96,10 +96,10 @@ fn run(_: bool) -> Result<(), String> {
 }
 
 #[cfg(target_os = "linux")]
-fn config() -> spark_pad::app::Config {
-    use spark_pad::app::{Config, Look, Titles};
-    use spark_pad::model::{Place, View};
-    use spark_pad::paint::Rgb;
+fn config() -> spark_winpad::app::Config {
+    use spark_winpad::app::{Config, Look, Titles};
+    use spark_winpad::model::{Place, View};
+    use spark_winpad::paint::Rgb;
     let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
     let color = |k: &str, d: &str| env(k).and_then(|v| Rgb::hex(&v)).unwrap_or_else(|| Rgb::hex(d).unwrap());
     // a color kept as its six digits, for sway's markup
@@ -153,7 +153,7 @@ fn config() -> spark_pad::app::Config {
 fn gap(v: Option<&str>) -> i32 {
     v.and_then(|v| v.trim().parse::<i32>().ok())
         .filter(|n| (0..=200).contains(n))
-        .unwrap_or(spark_pad::model::GAP)
+        .unwrap_or(spark_winpad::model::GAP)
 }
 
 /// The one pad: PAD_LOCK held for the pad's life, its pid in it. None when another pad holds it.
@@ -211,7 +211,7 @@ fn icons(spark_shell: &str, px: i32) -> Vec<(String, String)> {
         let _ = o.read_to_string(&mut out);
     }
     let _ = child.wait();
-    serde_json::from_str(&out).map(|v| spark_pad::model::icon_paths(&v)).unwrap_or_default()
+    serde_json::from_str(&out).map(|v| spark_winpad::model::icon_paths(&v)).unwrap_or_default()
 }
 
 /// Spark's mark for the dialog's icon at `px`, from the assets next to spark-shell, the dark ground's or the light
@@ -219,7 +219,7 @@ fn icons(spark_shell: &str, px: i32) -> Vec<(String, String)> {
 /// into a cache under XDG_RUNTIME_DIR, else the largest PNG, scaled. None when the assets are not there.
 #[cfg(target_os = "linux")]
 fn mark(spark_shell: &str, dark: bool, px: i32) -> Option<String> {
-    use spark_pad::model;
+    use spark_winpad::model;
     let dir = std::path::Path::new(spark_shell).parent().filter(|d| !d.as_os_str().is_empty())?.join("asset");
     let file = dir.join(model::mark_file(dark, px));
     let largest = dir.join(model::mark_file(dark, model::MARK_PNGS[model::MARK_PNGS.len() - 1]));
@@ -274,8 +274,8 @@ fn run(keys: bool) -> Result<(), String> {
     use calloop::timer::{TimeoutAction, Timer};
     use calloop::{EventLoop, Interest, Mode, PostAction};
     use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
-    use spark_pad::app::Pad;
-    use spark_pad::sway::{self, Ipc};
+    use spark_winpad::app::Pad;
+    use spark_winpad::sway::{self, Ipc};
     use std::io::Read;
     use std::time::Duration;
     use wayland_client::globals::registry_queue_init;
@@ -286,11 +286,11 @@ fn run(keys: bool) -> Result<(), String> {
     // the ground spark's mark stands on: the dark S on a dark surface, the light one on a light one
     let byte = |v: f64| (v * 255.0).round().clamp(0.0, 255.0) as u8;
     let s = cfg.look.surface;
-    let dark = spark_pad::model::dark_ground(byte(s.0), byte(s.1), byte(s.2));
+    let dark = spark_winpad::model::dark_ground(byte(s.0), byte(s.1), byte(s.2));
     if !wayland_sys::client::is_lib_available() {
         return Err("libwayland-client.so.0 is missing (Wayland's client library)".into());
     }
-    let lib = spark_pad::paint::Lib::open()?;
+    let lib = spark_winpad::paint::Lib::open()?;
     // before any thread starts: the threads inherit the blocked mask, so the signals reach this loop
     let signals = Signals::new(&[Signal::SIGUSR1, Signal::SIGUSR2, Signal::SIGTERM, Signal::SIGINT]).map_err(|e| format!("signals: {e}"))?;
     let conn = Connection::connect_to_env().map_err(|e| match e {
@@ -326,7 +326,7 @@ fn run(keys: bool) -> Result<(), String> {
             loop {
                 match stream.read(&mut chunk) {
                     Ok(0) => {
-                        eprintln!("spark-pad: sway is gone");
+                        eprintln!("spark-winpad: sway is gone");
                         pad.stop = true;
                         return Ok(PostAction::Remove);
                     }
@@ -371,7 +371,7 @@ fn run(keys: bool) -> Result<(), String> {
     std::thread::spawn(move || {
         // the dialog's mark first, spark's own: a file at hand, where the catalog takes its time
         if let Some(path) = mark(&spark_shell, dark, px) {
-            let key = spark_pad::model::icon_key(spark_pad::model::DIALOG);
+            let key = spark_winpad::model::icon_key(spark_winpad::model::DIALOG);
             if tx.send(vec![(key, path)]).is_err() {
                 return;
             }
