@@ -253,7 +253,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         layout:new) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: new takes the words for it"; return 1 ;;
         apps:pick|apps:terminal) echo ''; return 0 ;;
         window:move) _n=$(win_named "${3%% *}") || { echo 'that window is no longer open'; return 1; }; case ${3##* to=} in [1-9]|[1-9][0-9]) ;; *) echo 'a workspace is a number, 1 to 99'; return 1 ;; esac; echo "$_n to=${3##* to=}"; return 0 ;;
-        window:place) _n=$(win_named "${3%% *}") || { echo 'that window is no longer open'; return 1; }; case ${3##* how=} in tiled|floating|full|left|right|up|down) ;; *) echo 'place takes tiled, floating, full, left, right, up or down'; return 1 ;; esac; echo "$_n how=${3##* how=}"; return 0 ;;
+        window:place) _n=$(win_named "${3%% *}") || { echo 'that window is no longer open'; return 1; }; case ${3##* how=} in tiled|floating|full|left|right|up|down|min) ;; *) echo 'place takes tiled, floating, full, left, right, up, down or min'; return 1 ;; esac; echo "$_n how=${3##* how=}"; return 0 ;;
         window:restore) case ${3%% *}:${3##* now=} in split:split|split:tabs|split:stacked|tabs:split|tabs:tabs|tabs:stacked|stacked:split|stacked:tabs|stacked:stacked) echo "$3"; return 0 ;; esac; echo 'restore takes split, tabs or stacked'; return 1 ;;
         window:capture) case ${3%% *} in screen|area|window) ;; *) echo 'capture takes screen, area or window'; return 1 ;; esac
             case $3 in *' name='*) _n=$(win_named "${3##* name=}") || { echo 'that window is no longer open'; return 1; }; echo "${3%% *} name=$_n" ;; *) echo "${3%% *}" ;; esac; return 0 ;;

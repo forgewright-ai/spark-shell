@@ -408,9 +408,9 @@ wall_uncover() {   # wall_uncover [WALL_BG] -- sway's under ours, then ours goes
 wall_shown() { sed -n 's/^output \* bg //p' "$(wm_config_file)" 2>/dev/null | head -1; }   # -> the config's wallpaper
 desktop_live_cmd() {   # -> one compositor command; not the wallpaper
     wm_session && wm_here || return 0
-    _c="client.focused #$BORDER_HEX #$PANEL_HI #$HEX_FG #$DROP_HEX #$BORDER_HEX; client.focused_inactive #$BORDER_HEX #$PANEL_BG #$HEX_FG #$BORDER_HEX #$BORDER_HEX"   # the indicator: the accent at a quarter
-    _c="$_c; client.unfocused #$BORDER_HEX #$HEX_BG #$HEX_MUTED #$BORDER_HEX #$BORDER_HEX; client.urgent #$HEX_ANSI_1 #$HEX_ANSI_1 #$HEX_BG #$HEX_ANSI_1 #$HEX_ANSI_1"
-    _c="$_c; $(pointer_fresh)seat * xcursor_theme $POINTER_NAME $POINTER_SIZE; gaps inner all set $GAPS_INNER; gaps outer all set $GAPS_OUTER; [tiling] border $BORDER"
+    _c="client.focused #$PANEL_BG #$PANEL_BG #$HEX_FG #$DROP_HEX #$PANEL_BG; client.focused_inactive #$PANEL_LOW #$PANEL_LOW #$HEX_MUTED #$PANEL_LOW #$PANEL_LOW"   # the indicator: the accent at a quarter
+    _c="$_c; client.unfocused #$PANEL_LOW #$PANEL_LOW #$HEX_MUTED #$PANEL_LOW #$PANEL_LOW; client.urgent #$HEX_ANSI_1 #$HEX_ANSI_1 #$HEX_BG #$HEX_ANSI_1 #$HEX_ANSI_1"
+    _c="$_c; font pango:$(bar_line_font "$(font_spec)"); $(pointer_fresh)seat * xcursor_theme $POINTER_NAME $POINTER_SIZE; gaps inner all set $GAPS_INNER; gaps outer all set $GAPS_OUTER; [tiling] border $BORDER"
     _b=$(wm_bar_id)   # the bar's id, bar-0
     [ -z "$_b" ] || _c="$_c; bar $_b mode $(bar_mode); bar $_b font pango:$(bar_line_font "$(font_spec)"); bar $_b colors background #$HEX_BG$BAR_ALPHA; bar $_b colors statusline #$HEX_FG; bar $_b colors separator #$HEX_MUTED; bar $_b colors focused_workspace #$HEX_ACCENT #$HEX_ACCENT #$HEX_BG; bar $_b colors active_workspace #$HEX_MUTED #$HEX_MUTED #$HEX_BG; bar $_b colors inactive_workspace #$HEX_BG$BAR_ALPHA #$HEX_BG$BAR_ALPHA #$HEX_MUTED; bar $_b colors urgent_workspace #$HEX_ANSI_1 #$HEX_ANSI_1 #$HEX_BG; bar $_b colors binding_mode #$HEX_ACCENT #$HEX_ACCENT #$HEX_BG"
     printf '%s' "$_c"

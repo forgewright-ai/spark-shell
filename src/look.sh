@@ -91,7 +91,7 @@ hex_load() {
 }
 
 # a missing picture shows the ground, never a black screen
-WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA BAR_ALPHA BORDER BORDER_HEX DROP_HEX"   # BAR_ALPHA: two hex digits; BORDER_HEX, DROP_HEX: rrggbbaa
+WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA BAR_ALPHA BORDER DROP_HEX"   # BAR_ALPHA: two hex digits; DROP_HEX: rrggbbaa
 WALL_NAMES="black white gray silver navy blue teal green olive maroon red purple brown orange"   # grey reads as gray
 # NAME:PALETTE:SAMPLE, SAMPLE the drawing's main color
 WALL_SHIPPED="skyline:tokyonight-night:7aa2f7 fjord:nord:88c0d0 forest:everforest-dark:a7c080 sunset:gruvbox-dark:fe8019 hills:catppuccin-mocha:f5c2e7 dunes:dracula:ff79c6 orbit:dracula:bd93f9 ripples:rose-pine:ebbcba contours:selenized-dark:41c7b9 morning:solarized-light:b58900 meadow:catppuccin-latte:ea76cb kites:tokyonight-day:2e7de9 fields:gruvbox-light:d79921 grove:everforest-light:8da101 arches:rose-pine-dawn:d7827e shore:selenized-light:009c8f flight:one-light:4078f2 embers:any:d24a2a"
@@ -272,7 +272,7 @@ wall_load() {   # WALL_KEYS from WALLPAPER and ALPHA
     elif wall_color; then WALL_BG="$(wall_hex "$WALLPAPER") solid_color"
     else WALL_BG="$(wall_ground) solid_color"; fi   # default, none or a missing picture
     # shellcheck disable=SC2034
-    GAPS_INNER=0; GAPS_OUTER=8; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER="pixel 2"; BORDER_HEX=00000000   # windows 4 px apart, 10 px from the edge
+    GAPS_INNER=8; GAPS_OUTER=8; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER="normal 1"   # a title band and a one-pixel frame; windows 8 px apart
     DROP_HEX=$(drop_hex "$HEX_ACCENT")   # the drop area
     for k in $WALL_KEYS; do export "${k?}"; done
 }
@@ -316,10 +316,10 @@ win_said() { case ${1:-split} in tabs) echo 'in tabs' ;; *) win_words "$1" ;; es
 transparency_of() { awk -v a="${1:-1}" 'BEGIN { printf "%d", (1 - a) * 100 + 0.5 }'; }   # transparency_of ALPHA -> a percent
 
 # PANEL_PAD 0x0: the dialog draws the margins
-PANEL_KEYS="PANEL_SIZE PANEL_PAD PANEL_BG PANEL_HI PANEL_BAND PANEL_MUTED NOTIFY_PAD NOTIFY_WIDTH NOTIFY_HEIGHT"   # NOTIFY_*: mako's air, width and most height, pixels
+PANEL_KEYS="PANEL_SIZE PANEL_PAD PANEL_LOW PANEL_BG PANEL_HI PANEL_BAND PANEL_MUTED NOTIFY_PAD NOTIFY_WIDTH NOTIFY_HEIGHT"   # NOTIFY_*: mako's air, width and most height, pixels
 panel_load() {
     # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
-    PANEL_BG=$(hex_mix "$HEX_BG" "$HEX_FG" 9); PANEL_HI=$(hex_mix "$HEX_BG" "$HEX_FG" 18); PANEL_BAND=$(hex_mix "$PANEL_BG" "$HEX_ACCENT" 25); PANEL_PAD=0x0
+    PANEL_LOW=$(hex_mix "$HEX_BG" "$HEX_FG" 4); PANEL_BG=$(hex_mix "$HEX_BG" "$HEX_FG" 9); PANEL_HI=$(hex_mix "$HEX_BG" "$HEX_FG" 18); PANEL_BAND=$(hex_mix "$PANEL_BG" "$HEX_ACCENT" 25); PANEL_PAD=0x0
     _ns=$(look_font_size); : "${_ns:=12}"
     # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
     { NOTIFY_PAD="$_ns,$((_ns * 3 / 2))"; NOTIFY_WIDTH=$((_ns * 30)); NOTIFY_HEIGHT=$((_ns * 8)); }   # half the dialog's air, thirty cells, four lines

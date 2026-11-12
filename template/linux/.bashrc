@@ -59,10 +59,10 @@ fi
 # zoxide last: its prompt hook has to be the final one, or it complains.
 command -v zoxide >/dev/null && eval "$(zoxide init bash)"
 
-# --- the window's title at the prompt: terminal (the last prompt hook, so
+# --- the window's title at the prompt: the folder (the last prompt hook, so
 #     the next command is the one named)
 if [ -z "${TMUX:-}" ]; then
-    __spark_shell_prompt() { printf '\033]2;terminal\033\\'; __spark_shell_ran=''; }
+    __spark_shell_prompt() { printf '\033]2;%s\033\\' "${PWD/#$HOME/\~}"; __spark_shell_ran=''; }
     PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND;}__spark_shell_prompt"
 fi
 

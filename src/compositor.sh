@@ -41,6 +41,7 @@ wm_exec_at() { SWAYSOCK=$1 swaymsg -- exec "$2"; }   # through another session's
 wm_workspace() { swaymsg -- workspace "$@"; }
 wm_output() { swaymsg -- output "$@"; }
 wm_input() { swaymsg -- input "$@"; }
+wm_tick() { swaymsg -t send_tick "$1"; }   # wm_tick PAYLOAD -- a word to every subscriber of ticks
 wm_reload() { swaymsg reload; }
 wm_exit() { swaymsg exit; }
 wm_main_screen_lines() { printf 'workspace 1 output "%s"\nexec swaymsg focus output %s\n' "$1" "'\"$1\"'"; }   # the main screen, in the config's words

@@ -66,16 +66,18 @@ help lists them by subject. The bindings are named actions in
     Super+Return opens a terminal window.
     Super+Space opens or focuses home, including its conversation view.
     Super+Alt+Space switches focus between floating and tiled windows.
-    Super+Shift+q closes the window.
+    Super+q closes the window.
     Super+Shift+c reloads the desktop after spark-shell on.
     Super+Shift+e leaves the desktop.
-    Super+h/j/k/l move the focus, and with Shift they move the window.
-    Super+Shift+arrow moves the window too.
-    Super+Alt+arrow moves the focus too, across the screens.
-    Super+arrow snaps the window to a half, then a quarter of the screen.
-    Super+Up twice maximizes the window, and Super+Down twice minimizes it.
-    Super+minus puts the keyboard on the pad, where minimized windows wait.
+    Super+arrow moves the focus, and Super+h/j/k/l too.
+    Super+Tab goes back to the window before, and again to the one before that.
+    Super+Ctrl+arrow places the window at a half, then a quarter of the screen.
+    Super+Ctrl+Up past the top fills the screen, and past the bottom minimizes.
+    Super+m minimizes the window; Super+minus puts the keyboard on the pad.
     Super+Shift+space floats the window, or tiles it again.
+    Super+Shift+arrow moves the window: in the tiling, or to the next screen.
+    Super+Shift+h/j/k/l move the window in the tiling too.
+    The glyphs at a title's right end minimize, fill the screen, and close.
     Super+f makes a window fill the screen.
     Super+r resizes the window, until Enter.
     The mouse resizes too: drag the strip between two windows.
@@ -83,8 +85,8 @@ help lists them by subject. The bindings are named actions in
     Super+w makes tabs, Super+Shift+s a stack, Super+e side by side again.
     Super+b puts the next window beside this one, and Super+v below it.
     Super+1..0 go to workspaces 1 to 10; with Shift the window goes there.
-    Super+Ctrl+Left/Right go to the previous or next workspace.
-    Super+Ctrl+Shift+Left/Right take the window there too.
+    Super+PageUp/PageDown go to the previous or next workspace.
+    Super+Shift+PageUp/PageDown take the window there too.
     Super+Escape locks the screen; it locks by itself after idle minutes.
     Print captures the screen, Shift+Print an area, Super+Print the window.
     Super+Ctrl+space goes to the next keyboard layout.

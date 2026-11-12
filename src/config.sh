@@ -58,7 +58,7 @@ config_load() {
     : "${FONT:=Monaspace Neon:size=11}"     # foot's spec, verbatim; drawn as font_spec says until the font is installed
     : "${WALLPAPER:=default}"               # the desktop's background: default (the forge), none, a full path or #rrggbb
     : "${POINTER:=}"                        # the pointer: "NAME [SIZE]", a cursor theme's name and its size in pixels (24); empty: the spark pointer by palette
-    : "${ALPHA:=0.85}"                      # foot over a picture: 0..1, 1 = opaque
+    : "${ALPHA:=0.95}"                      # foot over a picture: 0..1, 1 = opaque
     : "${DESKTOP_BAR:=yes}"                # the bar on the desktop: yes (shown) or no (hidden)
     : "${BAR_POSITION:=top}"               # where the bar sits: top or bottom
     : "${BAR_TEXT:=auto}"                  # the bar's text size: auto (the text size, larger on a screen of many pixels) or 6 to 40
@@ -69,7 +69,7 @@ config_load() {
         *) echo "spark-shell: WINDOWS=$WINDOWS in $CONFIG: split, tabs or stacked" >&2; exit 1 ;; esac
     case $BAR_POSITION in top|bottom) ;; *) echo "spark-shell: BAR_POSITION=$BAR_POSITION in $CONFIG: top or bottom" >&2; exit 1 ;; esac
     case $BAR_TEXT in auto|[6-9]|[1-3][0-9]|40) ;; *) echo "spark-shell: BAR_TEXT=$BAR_TEXT in $CONFIG: auto, or a size from 6 to 40" >&2; exit 1 ;; esac
-    alpha_ok "$ALPHA" || { echo "spark-shell: ALPHA=$ALPHA in $CONFIG: 0 to 1 (0.85)" >&2; exit 1; }
+    alpha_ok "$ALPHA" || { echo "spark-shell: ALPHA=$ALPHA in $CONFIG: 0 to 1 (0.95)" >&2; exit 1; }
     font_ok "$FONT" || { echo "spark-shell: FONT=$FONT in $CONFIG: a face and its size as $TERM_NAME takes them (Monaspace Neon:size=11): letters, digits, spaces and : = . + _ -" >&2; exit 1; }
     wall_value_ok "$WALLPAPER" || { echo "spark-shell: WALLPAPER=$WALLPAPER in $CONFIG: default, a drawing's name, #rrggbb or a picture's full path, with $PATH_SAID" >&2; exit 1; }
     case $DESKTOP in none|sway) ;;

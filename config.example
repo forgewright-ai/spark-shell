@@ -47,10 +47,10 @@ WALLPAPER_MOTION=off
 POINTER=
 
 # How solid foot is over the wallpaper: 0 to 1, where 1 is solid.
-# 0.85 suits a dark picture. A bright one needs more. spark-shell theme
-# transparency N says it as a percent: 0.85 is 15% transparency, and
+# 0.95 keeps the text crisp over a picture. spark-shell theme
+# transparency N says it as a percent: 0.95 is 5% transparency, and
 # the open windows take it at once.
-ALPHA=0.85
+ALPHA=0.95
 
 # How new windows sit on a workspace: split (side by side), tabs or
 # stacked. The panel's window section sets this, and the keys change

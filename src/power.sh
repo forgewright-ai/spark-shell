@@ -210,7 +210,7 @@ panel_act_theme() {   # the theme steps: the text, the wallpaper, save, delete, 
         back) _r=$(cmd_theme back 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | sed -n 1p ;;
         picture) _r=$(cmd_theme picture "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | sed -n 1p ;;
         words) theme_words_step "$_arg" ;;
-        alpha) case $_arg in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) ;; *) echo "alpha is 0 to 1, as 0.85"; return 1 ;; esac
+        alpha) case $_arg in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) ;; *) echo "alpha is 0 to 1, as 0.95"; return 1 ;; esac
             config_set ALPHA "$_arg" >/dev/null; ALPHA=$_arg; export ALPHA; look_apply
             echo "alpha at $_arg" ;;
         transparency|see-through) case ${_arg%\%} in more|less|[0-9]|[1-4][0-9]|50) alpha_step "${_arg%\%}" ;; *) echo "transparency takes more or less, or a percent from 0 to 50"; return 1 ;; esac ;;   # see-through: synonym
@@ -404,6 +404,8 @@ win_place() {   # win_place ID tiled|floating|full|left|right|up|down
         left|right|up|down) _wpr=$( REFUSE_AS=window; layout_window "$2" "$1" ) || { echo "${_wpr#spark-shell window: }"; return 1; }
             case $2 in up) _wpw=top ;; down) _wpw=bottom ;; *) _wpw=$2 ;; esac
             echo "$_wpn on the $_wpw half" ;;
+        min) _wpr=$( REFUSE_AS=window; layout_window min "$1" ) || { echo "${_wpr#spark-shell window: }"; return 1; }
+            echo "$_wpn on the pad" ;;
     esac
     [ "$2" = full ] || [ "$(win_aside)" != "$1" ] || : > "$SPARK_SHELL_ASIDE"   # placed: it stays so
 }

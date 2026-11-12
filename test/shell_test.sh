@@ -904,8 +904,8 @@ else
     printf '#!/bin/sh\n[ "$1" = --version ] && echo "foot version: 1.28.0 (Arch)"\n' > "$HOME/.local/bin/foot"
     sh "$SH" on --yes >/dev/null
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: foot 1.28 gets [colors-dark] alone" || bad "foot 1.28 section" "$(grep -n '^\[' "$foot")"
-    grep -q '^client.focused *#00000000 #1e1e1e #aaaaaa #802b2b80 #00000000$' "$sway" && grep -q '^client.unfocused *#00000000 #000000 #555555 #00000000 #00000000$' "$sway" && ! grep -q '^client\.unfocused.*#ff5555' "$sway" && grep -q '^default_border pixel 2$' "$sway" && grep -q '^default_floating_border pixel 2$' "$sway" && grep -q '^smart_borders on$' "$sway" \
-        && ok "sway: flat windows (#19, #22, #265): a transparent two-pixel edge on every window while a wallpaper is on, none on a window alone on its workspace; the focused title in the surface shade (#1e1e1e); the accent only as the focused indicator, the drop area of a moving window (#47), at a quarter: #ff5555 halved with alpha 80, as sway takes it (#49)" || bad "sway focused" "$(grep -n 'client\|border' "$sway")"
+    grep -q '^client.focused *#0f0f0f #0f0f0f #aaaaaa #802b2b80 #0f0f0f$' "$sway" && grep -q '^client.unfocused *#060606 #060606 #555555 #060606 #060606$' "$sway" && ! grep -q '^client\.unfocused.*#ff5555' "$sway" && grep -q '^default_border normal 1$' "$sway" && grep -q '^default_floating_border normal 1$' "$sway" && grep -q '^titlebar_border_thickness 1$' "$sway" && grep -q '^title_align left$' "$sway" && ! grep -q '^smart_borders' "$sway" \
+        && ok "sway: the chrome (v0.140): a title band and a one-pixel frame in one shade, the surface shade on the focused window (#0f0f0f), four percent above the ground on the others (#060606) with muted text; the accent only as the focused indicator, the drop area of a moving window (#47), at a quarter: #ff5555 halved with alpha 80, as sway takes it (#49)" || bad "sway focused" "$(grep -n 'client\|border' "$sway")"
     grep -qxF "bindsym Mod4+space exec $REPO/spark-shell desktop home" "$sway" \
         && ! grep -q '^bindsym Mod4+[ds] ' "$sway" \
         && ok "sway: Super+Space opens home, without separate desktop chat keys" || bad "sway home render" "$(grep -n 'desktop home' "$sway")"
@@ -926,8 +926,8 @@ else
     grep -q 'style = "bold 16"' "$HOME/.config/starship-foot.toml" && grep -q 'style = "bold bright-red"' "$HOME/.config/starship.toml" && plain "$HOME/.config/starship-foot.toml" \
         && ok "starship on the desktop: a foot twin of its config names the slot 16 for the accent, the sixteen's stays (#34)" || bad "starship foot twin" "$(grep -n style "$HOME/.config/starship-foot.toml" 2>&1 | head -3)"
     grep -q "^exec sh -c '\$term -e $REPO/spark-shell desktop --first; swaymsg exit'\$" "$sway" && ok "sway: the first window's line names the clone's spark-shell" || bad "sway --first render" "$(grep -n '^exec sh' "$sway")"
-    grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^gaps outer 8$' "$sway" && grep -q '^alpha=0.85$' "$foot" \
-        && ok "sway: the default background is the ground (the palette's background a shade darker), the windows apart (no inner gap, the edge; outer 8, #265), foot translucent" || bad "sway default bg" "$(grep -n 'output\|gaps' "$sway")"
+    grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^gaps outer 8$' "$sway" && grep -q '^alpha=0.95$' "$foot" \
+        && ok "sway: the default background is the ground (the palette's background a shade darker), the windows apart (gaps of 8), foot nearly solid" || bad "sway default bg" "$(grep -n 'output\|gaps' "$sway")"
     grep -q '@[A-Z_0-9]*@' "$foot" "$sway" && bad "a desktop render keeps a placeholder" "$(grep -n '@[A-Z_0-9]*@' "$foot" "$sway" | head -2)" || ok "desktop renders: no placeholder left"
     head -1 "$foot" | grep -q '^# rendered by spark-shell' && head -1 "$sway" | grep -q '^# rendered by spark-shell' && ok "desktop renders: both marked" || bad "desktop markers"
     LC_ALL=C grep -q "[^ -~${tab}]" "$foot" "$sway" && bad "a desktop render is not ASCII" || ok "desktop renders: ASCII"
@@ -1023,8 +1023,8 @@ else
     SWAYSOCK=/nonexistent sh "$SH" on --yes >/dev/null
     grep -q "; seat \* xcursor_theme spark-white $((sz + 1)); seat \* xcursor_theme spark-white $sz; " "$cmds" && [ "$(cat "$seen" 2>&1)" = "$(cat "$pd/spark-white/version")" ] \
         && ok "on: a drawing sway has not loaded reaches it, the pointer one pixel up, then back, its version kept (#48)" || bad "pointer fresh" "sz=$sz $(cat "$cmds" "$seen" 2>&1)"
-    grep -q '^client.focused #00000000 #[0-9a-f]* #[0-9a-f]* #802b2b80 #00000000; ' "$cmds" && ok "on: a running sway takes the drop area at a quarter of the accent too, with no reload (#49)" || bad "live drop area" "$(cut -c1-160 "$cmds")"
-    grep -q '; gaps inner all set 0; gaps outer all set 8; \[tiling\] border pixel 2$' "$cmds" && ok "on: a running sway takes the outer gap of 8 and the edge of 2 on the open workspaces at once, with no reload (#265)" || bad "live gaps" "$(cut -c1-400 "$cmds")"
+    grep -q '^client.focused #[0-9a-f]* #[0-9a-f]* #[0-9a-f]* #802b2b80 #[0-9a-f]*; ' "$cmds" && ok "on: a running sway takes the drop area at a quarter of the accent too, with no reload (#49)" || bad "live drop area" "$(cut -c1-160 "$cmds")"
+    grep -q '; gaps inner all set 8; gaps outer all set 8; \[tiling\] border normal 1$' "$cmds" && ok "on: a running sway takes the gaps of 8 and the title band on the open workspaces at once, with no reload (#265)" || bad "live gaps" "$(cut -c1-400 "$cmds")"
     : > "$cmds"; SWAYSOCK=/nonexistent sh "$SH" on --yes >/dev/null
     grep -q "; seat \* xcursor_theme spark-white $sz; " "$cmds" && ! grep -q "xcursor_theme spark-white $((sz + 1))" "$cmds" && ok "on: a drawing sway loaded goes once, the size alone after" || bad "pointer fresh again" "$(cat "$cmds")"
     printf 'DESKTOP=sway\nDESKTOP_BAR=no\nPOINTER=Adwaita 32\n' > "$HOME/.config/spark-shell/config"; rm -f "$seen"; : > "$cmds"
@@ -1060,7 +1060,7 @@ else
     sh "$SH" on --yes >/dev/null
     grep -q '^regular4=24acd4$' "$HOME/.config/foot/foot.ini" && grep -q '^background=242424$' "$HOME/.config/foot/foot.ini" && grep -q '^foreground=ffffff$' "$HOME/.config/foot/foot.ini" && grep -q '^bright0=616161$' "$HOME/.config/foot/foot.ini" \
         && ok "no theme.env: foot.ini takes foot's own sixteen (regular4 24acd4, bg 242424, fg ffffff), never the console's VGA (#25)" || bad "foot own colors" "$(grep -n '=' "$HOME/.config/foot/foot.ini" | head -6)"
-    grep -q '^client.focused *#00000000 #4b4b4b ' "$HOME/.config/sway/config" && ok "no theme.env: the focused title is the surface shade of foot's ground and text (#4b4b4b)" || bad "foot focused" "$(grep -n client "$HOME/.config/sway/config")"
+    grep -q '^client.focused *#373737 #373737 ' "$HOME/.config/sway/config" && ok "no theme.env: the focused band is the surface shade of foot's ground and text (#373737)" || bad "foot focused" "$(grep -n client "$HOME/.config/sway/config")"
 fi
 
 # --- the terminal's font: Monaspace Neon (#26) ----------------------------
@@ -1219,8 +1219,8 @@ if [ "$(uname -s)" != Darwin ]; then
     printf '%s\n' "$out" | grep -q "^wallpaper default -- the ground, the palette's background a shade darker (#000000); it follows the palette\$" && ok "theme wallpaper (bare): the default is the forge" || bad "wallpaper bare default" "$out"
     [ ! -e "$REPO/gallery/wallpapers" ] && ok "wallpapers/: no picture ships with the repo; the ground is the default" || bad "wallpapers dir" "$(ls "$REPO/gallery/wallpapers")"
     sh "$SH" theme wallpaper none >/dev/null
-    grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^gaps outer 8$' "$sway" && grep -q '^alpha=0.85$' "$foot" && grep -q '^default_border pixel 2$' "$sway" && grep -q '^client.focused *#00000000 #1e1e1e #aaaaaa #[0-9a-f]\{6\}80 #00000000$' "$sway" \
-        && ok "wallpaper none: the ground (#35), the windows apart and as transparent as ALPHA says, their four-pixel edge clear (the indicator is the accent, #47)" || bad "wallpaper none render" "$(grep -n 'bg\|gaps\|border' "$sway"; grep -n alpha "$foot")"
+    grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^gaps outer 8$' "$sway" && grep -q '^alpha=0.95$' "$foot" && grep -q '^default_border normal 1$' "$sway" && grep -q '^client.focused *#0f0f0f #0f0f0f #aaaaaa #[0-9a-f]\{6\}80 #0f0f0f$' "$sway" \
+        && ok "wallpaper none: the ground (#35), the windows apart and as transparent as ALPHA says, their band and frame (the indicator is the accent, #47)" || bad "wallpaper none render" "$(grep -n 'bg\|gaps\|border' "$sway"; grep -n alpha "$foot")"
     out=$(sh "$SH" theme wallpaper)
     printf '%s\n' "$out" | grep -q '^wallpaper default -- the ground' && ok "theme wallpaper (bare): none is said as the ground" || bad "wallpaper bare" "$out"
     sh "$SH" theme wallpaper default >/dev/null
@@ -1229,15 +1229,15 @@ if [ "$(uname -s)" != Darwin ]; then
     out=$(sh "$SH" theme wallpaper "$pic")
     grep -q "^WALLPAPER=$pic\$" "$HOME/.config/spark-shell/config" && grep -q '^PROMPT_STYLE=full$' "$HOME/.config/spark-shell/config" \
         && ok "theme wallpaper PATH: WALLPAPER in the config, the other lines kept" || bad "wallpaper config" "$(cat "$HOME/.config/spark-shell/config")"
-    grep -q "^output \* bg \"$pic\" fill\$" "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^gaps outer 8$' "$sway" && grep -q '^alpha=0.85$' "$foot" \
-        && ok "wallpaper PATH: sway fills it (quoted: a space in the path), gaps 8/12, foot alpha 0.85" || bad "wallpaper render" "$(grep -n 'bg\|gaps' "$sway"; grep -n alpha "$foot")"
+    grep -q "^output \* bg \"$pic\" fill\$" "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^gaps outer 8$' "$sway" && grep -q '^alpha=0.95$' "$foot" \
+        && ok "wallpaper PATH: sway fills it (quoted: a space in the path), gaps of 8, foot alpha 0.95" || bad "wallpaper render" "$(grep -n 'bg\|gaps' "$sway"; grep -n alpha "$foot")"
     printf '%s\n' "$out" | grep -q 'a running sway shows it now' && ok "theme wallpaper PATH: says what happens" || bad "wallpaper words" "$out"
     sh "$SH" theme wallpaper | grep -q "^wallpaper $pic\$" && ok "theme wallpaper (bare): names the picture" || bad "wallpaper bare after"
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q "^  wall  picture *$pic\$" && ok "status: the wall row names the picture" || bad "status wall" "$(sh "$SH" status | grep wall)"
     ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q '^ok     desktop' && ok "check: the desktop renders match with a wallpaper" || bad "check with wallpaper" "$(sh "$SH" check)"
     rm -f "$pic"
     out=$(sh "$SH" on --yes)
-    printf '%s\n' "$out" | grep -q '^todo   wallpaper .*is missing -- the ground instead' && grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^alpha=0.85$' "$foot" \
+    printf '%s\n' "$out" | grep -q '^todo   wallpaper .*is missing -- the ground instead' && grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^alpha=0.95$' "$foot" \
         && ok "a picture that went missing: a todo row, the ground, the transparency kept, never a black screen" || bad "missing wallpaper" "$out"
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  wall  missing' && ok "status: wall missing" || bad "status wall missing" "$(sh "$SH" status | grep wall)"
     rc=0; out=$(sh "$SH" theme wallpaper /nowhere/at/all.jpg 2>&1) || rc=$?
@@ -1261,16 +1261,16 @@ if [ "$(uname -s)" != Darwin ]; then
     rm -f "$pic"
     # a plain color: #rrggbb or a name, saved as #rrggbb; a palette with a drawing of its own replaces it (#25)
     out=$(sh "$SH" theme wallpaper navy)
-    grep -qx 'WALLPAPER=#000080' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000080 solid_color$' "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^gaps outer 8$' "$sway" && grep -q '^alpha=0.85$' "$foot" && grep -q '^        background #000000d9$' "$sway" \
+    grep -qx 'WALLPAPER=#000080' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000080 solid_color$' "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^gaps outer 8$' "$sway" && grep -q '^alpha=0.95$' "$foot" && grep -q '^        background #000000f2$' "$sway" \
         && ok "theme wallpaper navy: #000080 in the config, sway paints it solid, with the gaps and the translucent foot and bar a picture has" || bad "wallpaper navy" "$out $(grep -n 'bg\|gaps\|background' "$sway"; grep -n alpha "$foot")"
-    [ "$(printf '%s\n' "$out" | tail -1)" = "a running sway shows #000080 now, and the windows keep their transparency, 15%; a palette with a drawing of its own replaces it" ] && ok "theme wallpaper navy: says what happens" || bad "wallpaper navy words" "$out"
+    [ "$(printf '%s\n' "$out" | tail -1)" = "a running sway shows #000080 now, and the windows keep their transparency, 5%; a palette with a drawing of its own replaces it" ] && ok "theme wallpaper navy: says what happens" || bad "wallpaper navy words" "$out"
     [ "$(sh "$SH" theme wallpaper)" = "wallpaper #000080 -- a plain color; a palette with a drawing of its own replaces it" ] && ok "theme wallpaper (bare): names the color" || bad "wallpaper bare color" "$(sh "$SH" theme wallpaper)"
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  wall  color  *#000080, a plain color; a palette with a drawing of its own replaces it$' && ok "status: the wall row names the color" || bad "status wall color" "$(printf '%s\n' "$st" | grep wall)"
     printf '%s\n' "$(sh "$SH" on --yes)" | grep -q '^todo   wallpaper' && bad "a color is reported missing" || ok "on: a color is never a missing picture"
     sh "$SH" theme dracula >/dev/null
     grep -qx 'WALLPAPER=dunes' "$HOME/.config/spark-shell/config" && grep -qF "output * bg \"$REPO/gallery/wallpaper/dunes.png\" fill" "$sway" && grep -q '^background=282a36$' "$foot" && ok "a palette with a drawing of its own replaces a color (dracula brings dunes, foot takes dracula) (#25)" || bad "color under a palette" "$(grep WALLPAPER "$HOME/.config/spark-shell/config"; grep -n 'output' "$sway"; grep -n '^background' "$foot")"
     sh "$SH" theme wallpaper default >/dev/null
-    grep -q '^output \* bg #1c1e26 solid_color$' "$sway" && grep -q '^gaps outer 8$' "$sway" && grep -q '^alpha=0.85$' "$foot" && ok "theme wallpaper default: the ground follows the palette (dracula's background a shade darker, #1c1e26)" || bad "ground dracula" "$(grep -n 'bg\|gaps' "$sway")"
+    grep -q '^output \* bg #1c1e26 solid_color$' "$sway" && grep -q '^gaps outer 8$' "$sway" && grep -q '^alpha=0.95$' "$foot" && ok "theme wallpaper default: the ground follows the palette (dracula's background a shade darker, #1c1e26)" || bad "ground dracula" "$(grep -n 'bg\|gaps' "$sway")"
     [ "$(sh "$SH" theme wallpaper)" = "wallpaper default -- the ground, the palette's background a shade darker (#1c1e26); it follows the palette" ] && ok "theme wallpaper (bare): names the ground and its hex" || bad "wallpaper bare ground" "$(sh "$SH" theme wallpaper)"
     theme_fixture '#ff5555'   # the fixture's palette again, for the rows below
     for c in black:000000 white:ffffff gray:808080 grey:808080 silver:c0c0c0 navy:000080 blue:0000ff teal:008080 green:008000 olive:808000 maroon:800000 red:ff0000 purple:800080 brown:a52a2a orange:ffa500 Teal:008080; do
@@ -1292,8 +1292,8 @@ if [ "$(uname -s)" != Darwin ]; then
     done > "$H/words.bad"
     [ ! -s "$H/words.bad" ] && grep -qx 'WALLPAPER=#abcdef' "$HOME/.config/spark-shell/config" && ok "theme wallpaper: a word that is no color is refused, the config untouched" || bad "wallpaper bad colors" "$(cat "$H/words.bad")"
     out=$(sh "$SH" theme wallpaper none)
-    grep -q '^WALLPAPER=default$' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps outer 8$' "$sway" && grep -q '^alpha=0.85$' "$foot" \
-        && [ "$(printf '%s\n' "$out" | tail -1)" = "the ground is back: none is the ground now, and the windows keep their transparency, 15%" ] \
+    grep -q '^WALLPAPER=default$' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps outer 8$' "$sway" && grep -q '^alpha=0.95$' "$foot" \
+        && [ "$(printf '%s\n' "$out" | tail -1)" = "the ground is back: none is the ground now, and the windows keep their transparency, 5%" ] \
         && ok "theme wallpaper none: the ground, and the windows keep their transparency and their gaps (#35)" || bad "wallpaper none" "$out $(grep -n 'alpha\|gaps' "$foot" "$sway")"
     printf 'DESKTOP=sway\nWALLPAPER=none\nALPHA=0.7\n' > "$HOME/.config/spark-shell/config"; sh "$SH" on --yes >/dev/null
     grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps outer 8$' "$sway" && grep -q '^alpha=0.7$' "$foot" && ok "WALLPAPER=none in a config of before: read as the ground, the transparency kept (#35)" || bad "wallpaper none read" "$(grep -n 'alpha\|gaps\|bg' "$foot" "$sway")"
@@ -1312,18 +1312,18 @@ grep -q '@FONT@' "$REPO/template/.config/foot/foot.ini" && grep -q '@FOOT_ALPHA@
 grep -q '^bar {' "$REPO/template/.config/sway/config" && grep -q '^    position @BAR_POSITION@$' "$REPO/template/.config/sway/config" && grep -q '^    tray_output @BAR_TRAY@$' "$REPO/template/.config/sway/config" && grep -q '^    status_command @REPO@/spark-shell bar status' "$REPO/template/.config/sway/config" && ok "sway template: a bar where BAR_POSITION puts it, its tray as BAR_TRAY says, drawn by spark-shell bar status" || bad "sway template: the bar block" "$(grep -n '^bar\|position\|status_command' "$REPO/template/.config/sway/config")"
 grep -q '^xwayland enable$' "$REPO/template/.config/sway/config" && ! grep -q '^xwayland disable' "$REPO/template/.config/sway/config" && ok "sway template: Xwayland on, so Steam and other X11 apps open (#170)" || bad "sway xwayland"
 [ "$(grep -v '^$' "$REPO/template/.config/sway/config" | tail -1)" = 'include @HOME@/.config/sway/config.d/*' ] && ok "sway template: your own lines in config.d, read last so they win (#170)" || bad "sway own lines" "$(tail -3 "$REPO/template/.config/sway/config")"
-grep -qxF 'bindsym $mod+Left exec @REPO@/spark-shell desktop window left' "$REPO/template/.config/sway/config" && grep -qxF 'bindsym $mod+Shift+space exec @REPO@/spark-shell desktop window float' "$REPO/template/.config/sway/config" \
-    && grep -qxF 'bindsym $mod+minus exec @REPO@/spark-shell desktop pad keys' "$REPO/template/.config/sway/config" \
-    && ! grep -q '^bindsym $mod+\(Left\|Right\|Up\|Down\) focus' "$REPO/template/.config/sway/config" && grep -qxF 'bindsym $mod+h focus left' "$REPO/template/.config/sway/config" \
-    && ok "sway template: Super+arrow snaps the window and Super+Shift+space floats it through desktop window; the focus on Super+h/j/k/l (#182)" || bad "sway window keys" "$(grep -n 'mod+Left\|mod+Shift+space\|mod+h ' "$REPO/template/.config/sway/config")"
+grep -qxF 'bindsym $mod+Ctrl+Left exec @REPO@/spark-shell desktop window left' "$REPO/template/.config/sway/config" && grep -qxF 'bindsym $mod+Shift+space exec @REPO@/spark-shell desktop window float' "$REPO/template/.config/sway/config" \
+    && grep -qxF 'bindsym $mod+minus exec @REPO@/spark-shell desktop pad keys' "$REPO/template/.config/sway/config" && grep -qxF 'bindsym $mod+m exec @REPO@/spark-shell desktop window min' "$REPO/template/.config/sway/config" \
+    && grep -qxF 'bindsym $mod+Left focus left' "$REPO/template/.config/sway/config" && grep -qxF 'bindsym $mod+h focus left' "$REPO/template/.config/sway/config" && grep -qxF 'bindsym $mod+Tab exec @REPO@/spark-shell desktop window back' "$REPO/template/.config/sway/config" \
+    && grep -qxF 'bindsym $mod+Shift+Left exec @REPO@/spark-shell desktop window move left' "$REPO/template/.config/sway/config" && grep -qxF 'bindsym $mod+q kill' "$REPO/template/.config/sway/config" && ! grep -q 'mod+Shift+q \|mod+Mod1+Left' "$REPO/template/.config/sway/config" \
+    && ok "sway template: Super+arrow the focus, Super+Ctrl+arrow places the window, Super+Shift+arrow moves it, Super+Tab the window before, Super+m the pad, Super+q closes (v0.140)" || bad "sway window keys" "$(grep -n 'mod+Left\|mod+Shift+space\|mod+h ' "$REPO/template/.config/sway/config")"
 grep -qxF 'for_window [tiling] mark --add _spark-shell.new, exec @REPO@/spark-shell desktop window new' "$REPO/template/.config/sway/config" \
     && ok "sway template: a window that opens tiled wears the new mark and runs desktop window new, one rule (#262)" || bad "sway new window rule" "$(grep -n 'for_window' "$REPO/template/.config/sway/config")"
 swt=$REPO/template/.config/sway/config
-grep -qxF 'bindsym $mod+Ctrl+Left workspace prev' "$swt" && grep -qxF 'bindsym $mod+Ctrl+Right workspace next' "$swt" \
-    && grep -qxF 'bindsym $mod+Ctrl+Shift+Right move container to workspace next, workspace next' "$swt" && grep -qxF 'bindsym $mod+Ctrl+Shift+Left move container to workspace prev, workspace prev' "$swt" \
-    && grep -qxF 'bindsym $mod+Mod1+Left focus left' "$swt" && grep -qxF 'bindsym $mod+Mod1+Down focus down' "$swt" && grep -qxF 'bindsym $mod+Mod1+Up focus up' "$swt" && grep -qxF 'bindsym $mod+Mod1+Right focus right' "$swt" \
+grep -qxF 'bindsym $mod+Prior workspace prev' "$swt" && grep -qxF 'bindsym $mod+Next workspace next' "$swt" \
+    && grep -qxF 'bindsym $mod+Shift+Next move container to workspace next, workspace next' "$swt" && grep -qxF 'bindsym $mod+Shift+Prior move container to workspace prev, workspace prev' "$swt" \
     && [ -z "$(awk '$1 == "bindsym" { print $2 }' "$swt" | sort | uniq -d)" ] \
-    && ok "sway template: Super+Ctrl+Left/Right the workspace before or after, with Shift the window along; Super+Alt+arrows the focus; no key bound twice (#185)" || bad "sway workspace keys" "$(awk '$1 == "bindsym" { print $2 }' "$swt" | sort | uniq -d)"
+    && ok "sway template: Super+PageUp/PageDown the workspace before or after, with Shift the window along; no key bound twice (#185)" || bad "sway workspace keys" "$(awk '$1 == "bindsym" { print $2 }' "$swt" | sort | uniq -d)"
 grep -v '^#' "$REPO/template/.config/sway/config" | grep -q 'tmux' && bad "sway: a window starts tmux (it runs the login shell)" || ok "sway template: a new foot runs the login shell, never tmux"
 grep -q "^exec sh -c '\$term -e @REPO@/spark-shell desktop --first; swaymsg exit'$" "$REPO/template/.config/sway/config" && ok "sway template: the desktop ends with its first terminal (desktop --first: the keys once, then your shell)" || bad "sway template: exec line" "$(grep -n '^exec' "$REPO/template/.config/sway/config")"
 sway_t=$REPO/template/.config/sway/config
@@ -3490,9 +3490,9 @@ win_run up; _wu=$(cat "$HOME/win.log" 2>/dev/null)
 win_run down; _wd=$(cat "$HOME/win.log" 2>/dev/null)
 [ "$_wl" = '-- [con_id=7] mark --add _spark-shell.tiled.7, floating enable, resize set width 944 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.LF.7, mark --add _spark-shell.area.1216.42.1888.1022.7' ] \
     && [ "$_wr" = '-- [con_id=7] mark --add _spark-shell.tiled.7, floating enable, resize set width 944 px height 1022 px, move absolute position 2160 42, mark --add _spark-shell.place.RF.7, mark --add _spark-shell.area.1216.42.1888.1022.7' ] \
-    && [ "$_wu" = '-- [con_id=7] mark --add _spark-shell.tiled.7, floating enable, resize set width 1888 px height 511 px, move absolute position 1216 42, mark --add _spark-shell.place.FT.7, mark --add _spark-shell.area.1216.42.1888.1022.7' ] \
-    && [ "$_wd" = '-- [con_id=7] mark --add _spark-shell.tiled.7, floating enable, resize set width 1888 px height 511 px, move absolute position 1216 553, mark --add _spark-shell.place.FB.7, mark --add _spark-shell.area.1216.42.1888.1022.7' ] && [ "$out" = 'the window is on the bottom half' ] \
-    && ok "desktop window left, right, up, down: the focused window floats at that half of its workspace's area, one command by its con_id (#182), marked as one the keys took from the tiling (v0.133)" || bad "window snap" "$_wl | $_wr | $_wu | $_wd | $out"
+    && [ "$_wu" = '-- [con_id=7] mark --add _spark-shell.tiled.7, floating enable, resize set width 1888 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.FF.7, mark --add _spark-shell.area.1216.42.1888.1022.7, mark --add _spark-shell.from.tiled.7' ] \
+    && [ "$_wd" = '-- [con_id=7] mark --add _spark-shell.min.tiled.7, move scratchpad' ] && [ "$out" = 'the window is on the pad: a click or Super+minus brings it back' ] \
+    && ok "desktop window left, right: the focused window floats at that half of its workspace's area, one command by its con_id (#182), marked as one the keys took from the tiling (v0.133); up fills the area and down minimizes, in one press (v0.140)" || bad "window snap" "$_wl | $_wr | $_wu | $_wd | $out"
 win_run float
 [ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=7] floating enable, resize set width 1258 px height 681 px, move position center' ] && [ "$out" = 'the window is floating' ] \
     && ok "desktop window float: a tiled window floats at two thirds of its workspace, centered (#182)" || bad "window float" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
@@ -3503,7 +3503,7 @@ win_tree con true 1; win_run left
 win_tree con false 0; win_run left
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: no window has the focus' ] && [ ! -e "$HOME/win.log" ] && ok "desktop window: no window with the focus, refused in one line, nothing sent (#182)" || bad "window none" "rc=$rc $out"
 win_run sideways
-[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: window takes float, left, right, up, down, max, min, restore or refit' ] && ok "desktop window: a wrong word refused in one line (#182)" || bad "window word" "rc=$rc $out"
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: window takes float, left, right, up, down, max, min, toggle, restore, move, back or refit' ] && ok "desktop window: a wrong word refused in one line (#182)" || bad "window word" "rc=$rc $out"
 win_run restore x7
 [ "$rc" = 1 ] && [ "$out" = "spark-shell desktop: window takes a window's ID, its digits, after the word" ] && [ ! -e "$HOME/win.log" ] && ok "desktop window: an ID that is not digits refused in one line, nothing sent (v0.133)" || bad "window id word" "rc=$rc $out"
 # the window states: each key reads the place the floating window sits at (its rect on the area's two by two grid);
@@ -3520,12 +3520,12 @@ win_at 2161 554 943 510; win_run up
 [ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = "$_wq 944 px height 1022 px, move absolute position 2160 42, mark --add _spark-shell.place.RF.7, mark --add _spark-shell.area.1216.42.1888.1022.7" ] && [ "$out" = 'the window is on the right half' ] \
     && ok "desktop window: Super+Up on a bottom quarter, a pixel off, goes back to its half" || bad "window quarter up" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
 win_at 1216 42 1886 504; win_run up
-[ "$(cat "$HOME/win.log")" = "$_wq 1888 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.FF.7, mark --add _spark-shell.area.1216.42.1888.1022.7" ] && [ "$out" = 'the window is maximized' ] \
-    && ok "desktop window: a terminal a few cells short of the top half is on it: Super+Up maximizes it" || bad "window cells up" "$out $(cat "$HOME/win.log" 2>&1)"
+[ "$(cat "$HOME/win.log")" = "$_wq 1888 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.FF.7, mark --add _spark-shell.area.1216.42.1888.1022.7, mark --add _spark-shell.from.FT.7" ] && [ "$out" = 'the window is maximized' ] \
+    && ok "desktop window: a terminal a few cells short of the top half is on it: Super+Up maximizes it, and keeps where it came from" || bad "window cells up" "$out $(cat "$HOME/win.log" 2>&1)"
 win_at 1216 42 1888 440; win_run up
-[ "$(cat "$HOME/win.log")" = "$_wq 1888 px height 511 px, move absolute position 1216 42, mark --add _spark-shell.place.FT.7, mark --add _spark-shell.area.1216.42.1888.1022.7" ] && ok "desktop window: a window much shorter than the top half is free: Super+Up takes it there" || bad "window short up" "$(cat "$HOME/win.log" 2>&1)"
+[ "$(cat "$HOME/win.log")" = "$_wq 1888 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.FF.7, mark --add _spark-shell.area.1216.42.1888.1022.7, mark --add _spark-shell.from.1216.42.1888.440.7" ] && ok "desktop window: a window much shorter than the top half is free: Super+Up fills the area, its rect kept (v0.140)" || bad "window short up" "$(cat "$HOME/win.log" 2>&1)"
 win_at 1216 42 1888 511; win_run up
-[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = "$_wq 1888 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.FF.7, mark --add _spark-shell.area.1216.42.1888.1022.7" ] && [ "$out" = 'the window is maximized' ] \
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = "$_wq 1888 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.FF.7, mark --add _spark-shell.area.1216.42.1888.1022.7, mark --add _spark-shell.from.FT.7" ] && [ "$out" = 'the window is maximized' ] \
     && ok "desktop window: Super+Up on the top half maximizes it: Super+Up twice" || bad "window top up" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
 win_at 1216 42 1888 1022; win_run down
 [ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = "$_wq 1888 px height 511 px, move absolute position 1216 553, mark --add _spark-shell.place.FB.7, mark --add _spark-shell.area.1216.42.1888.1022.7" ] && [ "$out" = 'the window is on the bottom half' ] \
@@ -3536,11 +3536,11 @@ win_at 2160 42 944 511; win_run left
 [ "$(cat "$HOME/win.log")" = "$_wq 944 px height 511 px, move absolute position 1216 42, mark --add _spark-shell.place.LT.7, mark --add _spark-shell.area.1216.42.1888.1022.7" ] && [ "$out" = 'the window is in the top left quarter' ] \
     && ok "desktop window: Super+Left on the top right quarter keeps its row" || bad "window quarter left" "$out $(cat "$HOME/win.log" 2>&1)"
 win_at 1400 200 800 600; win_run up
-[ "$(cat "$HOME/win.log")" = "$_wq 1888 px height 511 px, move absolute position 1216 42, mark --add _spark-shell.place.FT.7, mark --add _spark-shell.area.1216.42.1888.1022.7" ] && ok "desktop window: a floating window at no place is free: Super+Up takes it to the top half" || bad "window free up" "$(cat "$HOME/win.log" 2>&1)"
+[ "$(cat "$HOME/win.log")" = "$_wq 1888 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.FF.7, mark --add _spark-shell.area.1216.42.1888.1022.7, mark --add _spark-shell.from.1400.200.800.600.7" ] && ok "desktop window: a floating window at no place is free: Super+Up fills the area (v0.140)" || bad "window free up" "$(cat "$HOME/win.log" 2>&1)"
 win_at 2160 42 944 1022; win_run up 7
 [ "$(cat "$HOME/win.log")" = "$_wq 1888 px height 511 px, move absolute position 1216 42, mark --add _spark-shell.place.FT.7, mark --add _spark-shell.area.1216.42.1888.1022.7" ] && ok "desktop window: a window named by its ID gets the half it asks for (the dialog's place rows)" || bad "window id up" "$(cat "$HOME/win.log" 2>&1)"
 win_at 2160 42 944 1022; win_run max
-[ "$(cat "$HOME/win.log")" = "$_wq 1888 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.FF.7, mark --add _spark-shell.area.1216.42.1888.1022.7" ] && ok "desktop window max: the window fills the area" || bad "window max" "$(cat "$HOME/win.log" 2>&1)"
+[ "$(cat "$HOME/win.log")" = "$_wq 1888 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.FF.7, mark --add _spark-shell.area.1216.42.1888.1022.7, mark --add _spark-shell.from.RF.7" ] && ok "desktop window max: the window fills the area, its place kept for the way back" || bad "window max" "$(cat "$HOME/win.log" 2>&1)"
 win_tree con true 0; win_run min
 [ "$(cat "$HOME/win.log")" = '-- [con_id=7] mark --add _spark-shell.min.tiled.7, move scratchpad' ] && ok "desktop window min: a tiled window is minimized, marked tiled" || bad "window min" "$(cat "$HOME/win.log" 2>&1)"
 printf '{"type":"root","nodes":[{"type":"output","name":"__i3","nodes":[{"type":"workspace","name":"__i3_scratch","rect":{"x":0,"y":0,"width":0,"height":0},"nodes":[],"floating_nodes":[{"type":"floating_con","id":5,"marks":["_spark-shell.min.tiled.5"],"nodes":[]},{"type":"floating_con","id":8,"marks":[],"nodes":[]},{"type":"floating_con","id":9,"marks":["_spark-shell.min.RB.9"],"nodes":[]}]}]},{"type":"output","name":"HDMI-A-1","nodes":[{"type":"workspace","name":"1","focused":true,"rect":{"x":1216,"y":42,"width":1888,"height":1022},"nodes":[],"floating_nodes":[]}]}]}\n' > "$HOME/win-tree.json"
@@ -3567,6 +3567,16 @@ win_atm 1216 553 1888 511 '"_spark-shell.tiled.7"'; win_run float
     && ok "desktop window float: a window tiled again by the float key leaves its tiling mark behind (v0.133)" || bad "window tiled float" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
 win_atm 1216 553 1888 511 ''; win_run down
 [ "$(cat "$HOME/win.log")" = '-- [con_id=7] mark --add _spark-shell.min.FB.7, move scratchpad' ] && ok "desktop window: a window floating by itself still comes back at the place it left (v0.133)" || bad "window floating min" "$(cat "$HOME/win.log" 2>&1)"
+# the fill glyph (v0.140): toggle fills the area, and from the whole area goes back where the window came from
+win_atm 1216 42 1888 1022 '"_spark-shell.place.FF.7","_spark-shell.area.1216.42.1888.1022.7","_spark-shell.from.RF.7"'; win_run toggle
+[ "$(cat "$HOME/win.log")" = '-- [con_id=7] unmark _spark-shell.place.FF.7, unmark _spark-shell.area.1216.42.1888.1022.7, unmark _spark-shell.from.RF.7, floating enable, resize set width 944 px height 1022 px, move absolute position 2160 42, mark --add _spark-shell.place.RF.7, mark --add _spark-shell.area.1216.42.1888.1022.7' ] && [ "$out" = 'the window is on the right half' ] \
+    && ok "desktop window toggle: a window that fills the area goes back where it came from (v0.140)" || bad "window toggle back" "$out $(cat "$HOME/win.log" 2>&1)"
+win_atm 1216 42 1888 1022 '"_spark-shell.place.FF.7","_spark-shell.area.1216.42.1888.1022.7","_spark-shell.from.tiled.7","_spark-shell.tiled.7"'; win_run toggle
+[ "$(cat "$HOME/win.log")" = '-- [con_id=7] unmark _spark-shell.tiled.7, unmark _spark-shell.place.FF.7, unmark _spark-shell.area.1216.42.1888.1022.7, unmark _spark-shell.from.tiled.7, floating disable' ] && [ "$out" = 'the window is tiled' ] \
+    && ok "desktop window toggle: a window the keys took from the tiling tiles again" || bad "window toggle tiled" "$out $(cat "$HOME/win.log" 2>&1)"
+win_atm 1400 200 800 600 ''; win_run toggle
+[ "$(cat "$HOME/win.log")" = "$_wq 1888 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.FF.7, mark --add _spark-shell.area.1216.42.1888.1022.7, mark --add _spark-shell.from.1400.200.800.600.7" ] && [ "$out" = 'the window is maximized' ] \
+    && ok "desktop window toggle: a free window fills the area, its rect kept" || bad "window toggle fill" "$out $(cat "$HOME/win.log" 2>&1)"
 # a window by its ID (the pad's click): that one, from among those on the pad; one the pad does not hold is refused
 pad_tree() { printf '{"type":"root","nodes":[{"type":"output","name":"__i3","nodes":[{"type":"workspace","name":"__i3_scratch","nodes":[],"floating_nodes":[{"type":"floating_con","id":5,"app_id":"foot","name":"~/notes","marks":["_spark-shell.min.tiled.5"],"nodes":[]},{"type":"floating_con","id":8,"app_id":"spark-dialog","marks":[],"nodes":[]},{"type":"floating_con","id":9,"window_properties":{"class":"firefox"},"name":"Pull requests","marks":["_spark-shell.min.RB.9"],"nodes":[]}]}]},{"type":"output","name":"HDMI-A-1","nodes":[{"type":"workspace","name":"1","focused":true,"rect":{"x":1216,"y":42,"width":1888,"height":1022},"nodes":[],"floating_nodes":[]}]}]}\n' > "$HOME/win-tree.json"; }
 pad_tree; win_run restore 5
@@ -3826,8 +3836,8 @@ if [ -S "$_rsk" ]; then
     sleep 2   # the second refit of the first, before the next
     rm -f "$HOME/win.log"; rc=0; out=$(XDG_RUNTIME_DIR=$H/run SWAYSOCK=$_rsk PATH="$H/win:$H/lx:$PATH" sh "$SH" bar bottom 2>&1) || rc=$?
     _pi=0; while [ "$_pi" -lt 40 ] && ! grep -qxF -- "$_rfl" "$HOME/win.log" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
-    [ "$rc" = 0 ] && grep -qx 'reload' "$HOME/win.log" && grep -qx 'gaps outer all set 8' "$HOME/win.log" && grep -qx '\[tiling\] border pixel 2' "$HOME/win.log" && grep -qxF -- "$_rfl" "$HOME/win.log" \
-        && ok "bar bottom: sway reloaded, the open workspaces take the gap of 8 and the border of 2 at once (#265), then a refit of the windows the keys placed (#264)" || bad "bar bottom refit" "rc=$rc $out | $(cat "$HOME/win.log" 2>&1)"
+    [ "$rc" = 0 ] && grep -qx 'reload' "$HOME/win.log" && grep -qx 'gaps outer all set 8' "$HOME/win.log" && grep -qx '\[tiling\] border normal 1' "$HOME/win.log" && grep -qxF -- "$_rfl" "$HOME/win.log" \
+        && ok "bar bottom: sway reloaded, the open workspaces take the gaps of 8 and the title band at once (#265), then a refit of the windows the keys placed (#264)" || bad "bar bottom refit" "rc=$rc $out | $(cat "$HOME/win.log" 2>&1)"
     sleep 2
     sh "$SH" bar top >/dev/null 2>&1 || :
 else
@@ -4305,15 +4315,15 @@ else
     grep -q '^bar {$' "$sway" && grep -q '^    position top$' "$sway" && grep -q "^    status_command $REPO/spark-shell bar status\$" "$sway" && grep -q '^    mode dock$' "$sway" \
         && ok "sway: a bar at the top, dock mode, drawn by the clone's spark-shell bar status" || bad "sway bar render" "$(grep -n 'bar {\|position\|status_command\|mode ' "$sway")"
     grep -q '^    font pango:DejaVu Sans Mono 12$' "$sway" && ok "sway: the bar's font is FONT in pango's words (DejaVu Sans Mono 12)" || bad "bar font" "$(grep -n 'font' "$sway")"
-    grep -q '^        background #000000d9$' "$sway" && grep -q '^        focused_workspace #ff5555 #ff5555 #000000$' "$sway" && grep -q '^        inactive_workspace #000000d9 #000000d9 #555555$' "$sway" \
-        && ok "sway: the bar's colors are the palette's, the background with the picture's alpha (d9 = 0.85)" || bad "bar colors" "$(grep -n 'background\|_workspace' "$sway")"
+    grep -q '^        background #000000f2$' "$sway" && grep -q '^        focused_workspace #ff5555 #ff5555 #000000$' "$sway" && grep -q '^        inactive_workspace #000000f2 #000000f2 #555555$' "$sway" \
+        && ok "sway: the bar's colors are the palette's, the background with the picture's alpha (f2 = 0.95)" || bad "bar colors" "$(grep -n 'background\|_workspace' "$sway")"
     grep -q "^bindsym XF86AudioRaiseVolume exec $REPO/spark-shell bar volume up\$" "$sway" && grep -q "^bindsym XF86AudioMicMute exec $REPO/spark-shell bar volume mic\$" "$sway" \
         && ok "sway: the volume keys and the mic mute key run spark-shell bar volume" || bad "volume keys" "$(grep -n XF86 "$sway")"
     ! grep -q 'mod+p ' "$sway" && grep -q '^for_window \[app_id="spark-dialog"\] floating enable, border none, move position center, opacity 0$' "$sway" \
         && ok "sway: no Super+p any more; the dialog's window floats in the middle, unseen until its opening is drawn (#167)" || bad "panel key" "$(grep -n 'spark-dialog\|mod+p' "$sway")"
     printf 'DESKTOP=sway\nFONT=Test Mono:pixelsize=14\nWALLPAPER=none\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" on --yes >/dev/null
-    grep -q '^    font pango:Test Mono 14px$' "$sway" && grep -q '^        background #000000d9$' "$sway" && ok "sway: a pixelsize font is Npx in pango; none is the ground, the bar as translucent as over any wallpaper" || bad "bar font px" "$(grep -n 'font\|background' "$sway")"
+    grep -q '^    font pango:Test Mono 14px$' "$sway" && grep -q '^        background #000000f2$' "$sway" && ok "sway: a pixelsize font is Npx in pango; none is the ground, the bar as translucent as over any wallpaper" || bad "bar font px" "$(grep -n 'font\|background' "$sway")"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" on --yes >/dev/null
     # one line: every block present, in its group, groups parted by air
@@ -6723,7 +6733,7 @@ rc=0; out=$(sh "$SH" theme save nord 2>&1) || rc=$?
 _te=$(cksum < "$HOME/.config/spark/theme.env")
 out=$(sh "$SH" theme save Winter Desk 2>&1)
 [ "$(printf '%s\n' "$out" | sed -n 1p)" = "saved winter-desk ($th_dir/winter-desk) -- spark-shell theme winter-desk brings the look back" ] && [ -f "$th_dir/winter-desk/palette.env" ] && cmp -s "$th_dir/winter-desk/palette.env" "$REPO/gallery/theme/nord.env" \
-    && grep -qx 'PALETTE=nord' "$th_dir/winter-desk/look.env" && grep -qx "WALLPAPER=$([ "$(uname -s)" = Darwin ] && echo default || echo fjord)" "$th_dir/winter-desk/look.env" && [ "$(sed -n 1p "$th_dir/winter-desk/look.env")" = FORMAT=2 ] && grep -qx 'TEXT_SIZE=12' "$th_dir/winter-desk/look.env" && ! grep -q '^FACE=\|^FONT=' "$th_dir/winter-desk/look.env" && grep -qx 'ALPHA=0.85' "$th_dir/winter-desk/look.env" \
+    && grep -qx 'PALETTE=nord' "$th_dir/winter-desk/look.env" && grep -qx "WALLPAPER=$([ "$(uname -s)" = Darwin ] && echo default || echo fjord)" "$th_dir/winter-desk/look.env" && [ "$(sed -n 1p "$th_dir/winter-desk/look.env")" = FORMAT=2 ] && grep -qx 'TEXT_SIZE=12' "$th_dir/winter-desk/look.env" && ! grep -q '^FACE=\|^FONT=' "$th_dir/winter-desk/look.env" && grep -qx 'ALPHA=0.95' "$th_dir/winter-desk/look.env" \
     && grep -qx 'THEME=winter-desk' "$cfg" \
     && ok "theme save WORDS: a folder named by the words with the palette and the look (format 2: the size, and no face for a face of your own), the theme in use now, said in one line" || bad "theme save" "$out $(ls "$th_dir" 2>&1; cat "$th_dir/winter-desk/look.env" 2>&1)"
 [ "$(printf '%s\n' "$out" | grep -c '')" = 1 ] && [ "$_te" = "$(cksum < "$HOME/.config/spark/theme.env")" ] && [ "$(sed -n 1p "$st_dir/theme.history" | cut -f2)" = winter-desk ] \
@@ -6763,7 +6773,7 @@ rc=0; out=$(sh "$SH" theme text 99 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: text takes a size, 6 to 40, or bigger or smaller' ] && grep -qx 'FONT=DejaVu Sans Mono:size=16' "$cfg" && ok "theme text 99: refused in one line, FONT kept" || bad "theme text 99" "rc=$rc $out"
 out=$(sh "$SH" theme text smaller); [ "$out" = "text at 15 $SEP new windows and the bar take it; the pointer 32 pixels" ] && ok "theme text smaller: one point less" || bad "theme text smaller" "$out"
 sh "$SH" theme text 12 >/dev/null
-out=$(sh "$SH" theme transparency); [ "$out" = 'transparency 15%' ] && ok "theme transparency (bare): the percent" || bad "transparency bare" "$out"
+out=$(sh "$SH" theme transparency); [ "$out" = 'transparency 5%' ] && ok "theme transparency (bare): the percent" || bad "transparency bare" "$out"
 out=$(sh "$SH" theme transparency 30); [ "$out" = "transparency at 30%" ] && grep -qx 'ALPHA=0.7' "$cfg" && ok "theme transparency 30: ALPHA 0.7" || bad "transparency 30" "$out $(grep ALPHA "$cfg")"
 out=$(sh "$SH" theme transparency 0); [ "$out" = 'transparency off' ] && grep -qx 'ALPHA=1.0' "$cfg" && ok "theme transparency 0: off, ALPHA 1.0" || bad "transparency 0" "$out $(grep ALPHA "$cfg")"
 rc=0; out=$(sh "$SH" theme transparency 60 2>&1) || rc=$?
@@ -7082,7 +7092,7 @@ jq -e --arg dw "$([ "$(uname -s)" = Darwin ] && echo default || echo fjord)" '(.
     and (.rows[] | select(.id == "theme:solarized-light") | .group == "light") and (.rows[] | select(.id == "theme:dracula") | .sign == "check" and .group == "dark" and .tool.arguments.name == "dracula" and .quiet == true)
     and (.rows[] | select(.id == "theme:show:Text size") | .step.values[.step.at] == {shown: "12", sent: "12"} and (.step.values | length) == 35 and .step.values[0].sent == "6"
         and .step.set == {name: "theme_text", arguments: {}} and .step.key == "size" and .step.words == ["smaller", "bigger"] and .group == "text and bar" and .tool == null)
-    and (.rows[] | select(.id == "theme:show:Transparency") | .step.values[.step.at] == {shown: "15%", sent: "15"} and .step.values[0] == {shown: "off", sent: "0"} and .step.values[-1].shown == "50%"
+    and (.rows[] | select(.id == "theme:show:Transparency") | .step.values[.step.at] == {shown: "5%", sent: "5"} and .step.values[0] == {shown: "off", sent: "0"} and .step.values[-1].shown == "50%"
         and .step.key == "amount" and .group == "screen")
     and (has("side_by_side") | not) and .look_back == {name: "theme_preview", arguments: {name: "off"}}
     and ([.rows[] | .group] | index("dark") < index("custom") and index("custom") < index("screen"))

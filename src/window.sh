@@ -2,7 +2,8 @@
 # The window keys: a place is a half or a quarter of the workspace's area, a two by two grid;
 # sets: LAYOUT_PLACE_SLACK
 # reads: OS REPO TMP WM_NAME
-# past the top the window fills the area, past the bottom it goes to the pad with its place
+# past the top the window fills the area, past the bottom it goes to the pad; a free window
+# fills the area at once, or goes to the pad at once with its place
 layout_window_at() {   # layout_window_at PLACE X Y W H -> "X Y W H" of PLACE on that area: L R F a column, T B F a row (FF fills it)
     case $1 in L?) _wx=$2; _ww=$(($4 / 2)) ;; R?) _wx=$(($2 + $4 / 2)); _ww=$(($4 - $4 / 2)) ;; *) _wx=$2; _ww=$4 ;; esac
     case $1 in ?T) _wy=$3; _wh=$(($5 / 2)) ;; ?B) _wy=$(($3 + $5 / 2)); _wh=$(($5 - $5 / 2)) ;; *) _wy=$3; _wh=$5 ;; esac
@@ -30,8 +31,8 @@ layout_window_next() {   # layout_window_next KEY PLACE -> the place the key tak
     case $1 in
         left|right) _wc=L; [ "$1" = left ] || _wc=R
             case $2 in ?T) echo "${_wc}T" ;; ?B) echo "${_wc}B" ;; *) echo "${_wc}F" ;; esac ;;
-        up) case $2 in free) echo FT ;; LF) echo LT ;; RF) echo RT ;; FB) echo FT ;; LB) echo LF ;; RB) echo RF ;; *) echo FF ;; esac ;;
-        down) case $2 in free|FF|FT) echo FB ;; LF) echo LB ;; RF) echo RB ;; LT) echo LF ;; RT) echo RF ;; *) echo min ;; esac ;;
+        up) case $2 in LF) echo LT ;; RF) echo RT ;; FB) echo FT ;; LB) echo LF ;; RB) echo RF ;; *) echo FF ;; esac ;;
+        down) case $2 in FF|FT) echo FB ;; LF) echo LB ;; RF) echo RB ;; LT) echo LF ;; RT) echo RF ;; *) echo min ;; esac ;;
         max) echo FF ;;
         *) echo min ;;
     esac
@@ -50,7 +51,7 @@ layout_window_refit() {   # layout_window_refit -- after layout_window read the 
         | .. | objects | select(.type == "con" or .type == "floating_con") | . as $c
         | [(.marks // [])[] | select(startswith("_spark-shell.place."))] as $p | select($p | length > 0)
         | [(.marks // [])[] | select(startswith("_spark-shell.area."))] as $q
-        | "\(.id) \(.type) \(.fullscreen_mode // 0) \(.rect.x) \(.rect.y) \(.rect.width) \(.rect.height) \($p | join(",")) \(if ($q | length) == 0 then "-" else ($q | join(",")) end) \($a.x) \($a.y) \($a.width) \($a.height)"' "$TMP/tree" > "$TMP/refit" 2>/dev/null || :
+        | "\(.id) \(.type) \(.fullscreen_mode // 0) \(.rect.x) \(.rect.y - (.deco_rect.height // 0)) \(.rect.width) \(.rect.height + (.deco_rect.height // 0)) \($p | join(",")) \(if ($q | length) == 0 then "-" else ($q | join(",")) end) \($a.x) \($a.y) \($a.width) \($a.height)"' "$TMP/tree" > "$TMP/refit" 2>/dev/null || :
     _rn=0; _rm=0; _rl=0   # windows wearing a place, moved, left their places
     while read -r _ri _rt _rf _rx _ry _rw _rh _rp _rq _ax _ay _aw _ah; do
         [ -n "${_ah:-}" ] || continue
@@ -115,7 +116,7 @@ layout_window_new() {   # layout_window_new -- after layout_window read the tree
             or $w.name == "__i3_scratch" or $w.name == "idle" or ($w.name | startswith("idle "))) as $leave
         | "\(if $leave then "leave" else "new" end) \($n.id) \($w.rect.x) \($w.rect.y) \($w.rect.width) \($w.rect.height)",
           ($w.nodes[]? | views | select(.id != $n.id) | "tiled \(.id)"),
-          ($w.floating_nodes[]? | select(.id != $n.id) | "floating \(.id) \(.rect.x) \(.rect.y) \(.rect.width) \(.rect.height) \([(.marks // [])[] | select(startswith("_spark-shell.place."))] | length)")' "$TMP/tree" > "$TMP/new" 2>/dev/null || :
+          ($w.floating_nodes[]? | select(.id != $n.id) | "floating \(.id) \(.rect.x) \(.rect.y - (.deco_rect.height // 0)) \(.rect.width) \(.rect.height + (.deco_rect.height // 0)) \([(.marks // [])[] | select(startswith("_spark-shell.place."))] | length)")' "$TMP/tree" > "$TMP/new" 2>/dev/null || :
     _nk=''; _ni=''; read -r _nk _ni _nx _ny _nw _nh < "$TMP/new" || :
     [ -n "$_ni" ] || refuse "no window opened just now"
     _nc="[con_id=$_ni] unmark _spark-shell.new"; _ns='tiles'
@@ -143,51 +144,101 @@ layout_window_new() {   # layout_window_new -- after layout_window read the tree
     wm_send "$_nc" >/dev/null 2>&1 || refuse "$WM_NAME refused: $_nc"
     echo "the new window $_ns"
 }
-layout_window() {   # layout_window float|left|right|up|down|max|min|restore [ID] | refit | new -- the focused window, or the window ID; every placed window in sight; the window just opened (the sway rule's)
+layout_mark_from() { printf '%s\n' "$1" | tr ',' '\n' | sed -n 's/^_spark-shell\.from\.\(.*\)\.[0-9]*$/\1/p' | head -1; }   # layout_mark_from MARKS -> where a window that fills the screen came from: tiled, a place or X.Y.W.H
+layout_output_toward() {   # layout_output_toward DIR X Y W H -> the name of a screen that way from that area, or nothing
+    wm_outputs 2>/dev/null | jq -r --arg d "$1" --argjson x "$2" --argjson y "$3" --argjson w "$4" --argjson h "$5" '[.[] | select(.active) | select(
+        if $d == "left" then .rect.x + .rect.width <= $x elif $d == "right" then .rect.x >= $x + $w elif $d == "up" then .rect.y + .rect.height <= $y else .rect.y >= $y + $h end)][0].name // empty' 2>/dev/null
+}
+layout_window_move() {   # layout_window_move DIR -> the command and its words, after layout_window read the window: in the tiling sway moves it; a floating window goes to the screen that way, else a tenth of the area
+    if [ "$_dtype" != floating_con ]; then _dc="move $1"; _ds="moved $1"; return; fi
+    if [ -n "$(layout_output_toward "$1" "$_dax" "$_day" "$_daw" "$_dah")" ]; then _dc="${_dfs}move container to output $1"; _ds="on the next screen"; _drefit=1; return; fi
+    case $1 in left|right) _dst=$((_daw / 10)) ;; *) _dst=$((_dah / 10)) ;; esac
+    _dc="${_dfs}${_dun}move $1 $_dst px"; _ds="moved $1"
+}
+layout_window_from() {   # layout_window_from WHERE -> the command and its words: back from the whole screen to WHERE, after layout_window read the window
+    _dc="${_dfs}${_du}${_dun}"
+    case $1 in
+        tiled) _dc="${_dc}floating disable"; _ds=tiled ;;
+        LF|RF|FT|FB|LT|RT|LB|RB)
+            # shellcheck disable=SC2046   # four numbers, split on purpose
+            set -- "$1" $(layout_window_at "$1" "$_dax" "$_day" "$_daw" "$_dah")
+            _dc="${_dc}floating enable, resize set width $4 px height $5 px, move absolute position $2 $3$(layout_place_marks "$1" "$_did" "$_dax" "$_day" "$_daw" "$_dah")"; _ds=$(layout_window_said "$1") ;;
+        *)  # shellcheck disable=SC2046   # four numbers, split on purpose
+            set -- $(printf '%s\n' "$1" | tr '.' ' ')
+            _dc="${_dc}floating enable, resize set width $3 px height $4 px, move absolute position $1 $2"; _ds="back where it was" ;;
+    esac
+}
+layout_window() {   # layout_window float|left|right|up|down|max|min|toggle|restore [ID] | move DIR | back | refit | new -- the focused window, or the window ID; every placed window in sight; the window just opened (the sway rule's)
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own window keys"
-    case ${1:-} in float|left|right|up|down|max|min|restore|refit|new) ;; *) refuse "window takes float, left, right, up, down, max, min, restore or refit" ;; esac
+    case ${1:-} in float|left|right|up|down|max|min|toggle|restore|refit|new|move|back) ;; *) refuse "window takes float, left, right, up, down, max, min, toggle, restore, move, back or refit" ;; esac
     wm_up || refuse "moves the desktop's windows: run it inside it"
     wm_tree > "$TMP/tree" || refuse "$WM_NAME did not answer"
-    case ${2:-} in *[!0-9]*) refuse "window takes a window's ID, its digits, after the word" ;; esac
-    case $1 in restore) layout_window_restore "${2:-}"; return ;; refit) layout_window_refit; return ;; new) layout_window_new; return ;; esac
-    _dwid=${2:-}
-    # the window: ID TYPE FULL X Y W H TILED MARKS; then its workspace's area
+    _dwid=${2:-}; _dmv=''
+    [ "$1" != move ] || { case $_dwid in left|right|up|down) _dmv=$_dwid; _dwid='' ;; *) refuse "window move takes left, right, up or down" ;; esac; }
+    case $_dwid in *[!0-9]*) refuse "window takes a window's ID, its digits, after the word" ;; esac
+    case $1 in restore) layout_window_restore "$_dwid"; return ;; refit) layout_window_refit; return ;; new) layout_window_new; return ;; back) layout_window_back; return ;; esac
+    # the window: ID TYPE FULL X Y W H TILED MARKS TITLE; then its workspace's area
     _dw=$(jq -r --arg id "$_dwid" '[.. | objects | select((if $id == "" then .focused == true else (.id | tostring) == $id end) and (.type == "con" or .type == "floating_con"))][0] // empty
-        | "\(.id) \(.type) \(.fullscreen_mode // 0) \(.rect.x // 0) \(.rect.y // 0) \(.rect.width // 0) \(.rect.height // 0) \([(.marks // [])[] | select(startswith("_spark-shell.tiled."))] | length) \([(.marks // [])[] | select(startswith("_spark-shell.place.") or startswith("_spark-shell.area."))] | if length == 0 then "-" else join(",") end)"' "$TMP/tree" 2>/dev/null)
+        | "\(.id) \(.type) \(.fullscreen_mode // 0) \(.rect.x // 0) \(.rect.y // 0) \(.rect.width // 0) \(.rect.height // 0) \([(.marks // [])[] | select(startswith("_spark-shell.tiled."))] | length) \([(.marks // [])[] | select(startswith("_spark-shell.place.") or startswith("_spark-shell.area.") or startswith("_spark-shell.from."))] | if length == 0 then "-" else join(",") end) \(.deco_rect.height // 0)"' "$TMP/tree" 2>/dev/null)
     [ -n "$_dw" ] || refuse "no window has the focus"
     set -- "$1" $_dw
     _dt=${9:-0}   # 1: the window keys floated it from the tiling (its _spark-shell.tiled mark), so the pad tiles it again
-    _dun=$(layout_place_unmarks "${10:--}")   # the place it wore: every key gives another, or none
+    _dmk=${10:--}; _dun=$(layout_place_unmarks "$_dmk")   # the place it wore: every key gives another, or none
+    _ddh=${11:-0}   # the title band above the rect: the window's box is both
     _da=$(jq -r --argjson i "$2" '[.. | objects | select(.type == "workspace") | select([.. | objects | select(.id == $i)] | length > 0)][0].rect // empty
         | "\(.x) \(.y) \(.width) \(.height)"' "$TMP/tree" 2>/dev/null)
     [ -n "$_da" ] || refuse "the window is on no workspace"
-    _dr="$5 $6 $7 $8"
+    _dr="$5 $(($6 - _ddh)) $7 $(($8 + _ddh))"
     # shellcheck disable=SC2086   # four numbers, split on purpose
     set -- "$1" "$2" "$3" "$4" $_da   # KIND ID TYPE FULL X Y W H
+    _did=$2; _dtype=$3; _dax=$5; _day=$6; _daw=$7; _dah=$8
     _dfs=''; [ "$4" = 0 ] || _dfs='fullscreen disable, '
-    _dp=free   # where it sits: a floating window the keys move, not full screen; a window named by its ID is free
+    _dp=free   # where it sits: a floating window the keys move, not full screen
     # shellcheck disable=SC2086   # four numbers, split on purpose
-    [ -n "$_dwid" ] || [ "$3" != floating_con ] || [ "$4" != 0 ] || _dp=$(layout_window_place $_dr "$5" "$6" "$7" "$8")
+    [ "$3" != floating_con ] || [ "$4" != 0 ] || _dp=$(layout_window_place $_dr "$5" "$6" "$7" "$8")
     _du=''; [ "$_dt" = 0 ] || _du="unmark _spark-shell.tiled.$2, "   # the float key, or the pad, ends what the tiling mark says
-    _dpad=''
-    case $1 in
+    _dpad=''; _drefit=''
+    _dk=$1
+    if [ "$_dk" = toggle ]; then   # the whole screen, or back where it came from
+        _dk=max; _dfrom=$(layout_mark_from "$_dmk"); [ "$_dp" != FF ] || [ -z "$_dfrom" ] || _dk=from
+    fi
+    case $_dk in
+        from) layout_window_from "$_dfrom" ;;
+        move) layout_window_move "$_dmv" ;;
         float) if [ "$3" = floating_con ]; then _dc="${_du}${_dun}floating disable, mark --add _spark-shell.yours.$2"; _ds="tiled"   # tiled by the person: a new window's rule leaves it tiled
             else _dc="${_dfs}${_du}${_dun}floating enable, resize set width $(($7 * 2 / 3)) px height $(($8 * 2 / 3)) px, move position center"; _ds="floating"; fi ;;
-        *) _dn=$(layout_window_next "$1" "$_dp")
+        *) [ -z "$_dwid" ] || case $_dk in left|right|up|down) _dp=free ;; esac   # a window named by its ID goes to the half the word says
+            _dn=$(layout_window_next "$_dk" "$_dp")
+            [ -z "$_dwid" ] || case $_dk in up) _dn=FT ;; down) _dn=FB ;; esac
             if [ "$_dn" = min ]; then
                 _dk=$_dp; [ "$_dk" != free ] || { _dk=float; [ "$3" = floating_con ] || _dk=tiled; }   # the place it leaves, else floating or tiled
                 [ "$_dt" = 0 ] || _dk=tiled   # a window the keys floated from the tiling tiles again when it comes back
                 _dc="${_dfs}${_du}${_dun}mark --add _spark-shell.min.$_dk.$2, move scratchpad"; _ds="on the pad: a click or Super+minus brings it back"; _dpad=1
             else
                 _dtm=$_du; [ "$3" = floating_con ] || _dtm="mark --add _spark-shell.tiled.$2, "   # from the tiling: it comes back tiled; a second place a key gives it replaces the mark
+                _dfm=''   # the whole screen keeps where it came from, for the double-click back
+                if [ "$_dn" = FF ]; then _dfm=$_dp; [ "$_dfm" != free ] || { _dfm=$(printf '%s' "$_dr" | tr ' ' '.'); [ "$3" = floating_con ] || _dfm=tiled; }; _dfm=", mark --add _spark-shell.from.$_dfm.$2"; fi
                 # shellcheck disable=SC2046   # four numbers, split on purpose
                 set -- "$@" $(layout_window_at "$_dn" "$5" "$6" "$7" "$8")
-                _dc="${_dfs}${_dtm}${_dun}floating enable, resize set width ${11} px height ${12} px, move absolute position $9 ${10}$(layout_place_marks "$_dn" "$2" "$5" "$6" "$7" "$8")"; _ds=$(layout_window_said "$_dn")
+                _dc="${_dfs}${_dtm}${_dun}floating enable, resize set width ${11} px height ${12} px, move absolute position $9 ${10}$(layout_place_marks "$_dn" "$2" "$5" "$6" "$7" "$8")$_dfm"; _ds=$(layout_window_said "$_dn")
             fi ;;
     esac
     wm_on "con_id=$2" "$_dc" >/dev/null 2>&1 || refuse "$WM_NAME refused: $_dc"
+    [ -z "$_drefit" ] || { wm_tree > "$TMP/tree" && layout_window_refit >/dev/null 2>&1 || :; }   # at its place on the new screen
     [ -z "$_dpad" ] || { pad_wake; bar_redraw; }   # the pad shows it, and the bar's count
     echo "the window is $_ds"
+}
+layout_window_back() {   # the window before this one: the pad walks its order (a press within a second goes further); with no pad, the one before only
+    if pad_pid >/dev/null; then wm_tick spark-pad.back >/dev/null 2>&1 || refuse "$WM_NAME did not answer"; echo "the window before"; return; fi
+    _bi=$(jq -r 'def child(n; i): ([n.nodes[]?, n.floating_nodes[]?] | map(select(.id == i)) | .[0]);
+        def leaf(n): (child(n; n.focus[0]?)) as $c | if $c == null then n else leaf($c) end;
+        def prev(n): (child(n; n.focus[0]?)) as $c | (if $c == null then null else prev($c) end) as $d
+            | if $d != null then $d elif (n.focus | length) >= 2 then leaf(child(n; n.focus[1])) else null end;
+        [.. | objects | select(.type == "workspace" and .name != "__i3_scratch") | select([.. | objects | select(.focused == true)] | length > 0)][0] as $w
+        | if $w == null then empty else (prev($w) | .id // empty) end' "$TMP/tree" 2>/dev/null)
+    [ -n "$_bi" ] || refuse "no window came before"
+    wm_on "con_id=$_bi" focus >/dev/null 2>&1 || refuse "$WM_NAME refused: focus"
+    echo "the window before"
 }
 layout_window_restore() {   # layout_window_restore [ID] -- the window ID from the pad, else the last one, back at the place it left; after layout_window read the tree
     _dm=$(jq -r --arg id "${1:-}" '[.. | objects | select(.type == "workspace" and .name == "__i3_scratch") | .floating_nodes[]? | . as $c
