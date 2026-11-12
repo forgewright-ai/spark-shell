@@ -10,9 +10,11 @@ One window component, winpad, and buttons that move with their window.
 - On the focused window the buttons wear the title's color, on the
   others each its own: red, yellow and green from the palette. The one
   under the pointer lights as a chip in its color.
-- The pad component is winpad now, with three jobs in three files: the
-  pad for the minimized windows, the buttons, and the focus order. The
-  pad keeps its name as the place where minimized windows wait.
+- The pad component is winpad now, under one name: the crate, the shell
+  module and the files it keeps while it runs. Its three jobs have a
+  file each: the pad for the minimized windows, the buttons, and the
+  focus order. The pad keeps its name as the place where minimized
+  windows wait.
 - winpad lays the placed windows out again when a screen changes; the
   bar no longer does.
 

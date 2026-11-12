@@ -277,7 +277,7 @@ jobs:
     # drawn in it in two palettes, the pictures kept for a look. No seat,
     # no GPU, no sound card: a proof of the install and the render, said
     # so; a screen is a machine's proof.
-    needs: [lint, winpad]   # the pad's build, proven on each family's sway (test/pad_desktop_proof.py)
+    needs: [lint, winpad]   # the pad's build, proven on each family's sway (test/winpad_desktop_proof.py)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -374,7 +374,7 @@ jobs:
           su ada -c "PATH=/opt/nocap:\$PATH SPARK_SHELL_WINPAD='$GITHUB_WORKSPACE/winpad-build/spark-winpad' python3 -I '$GITHUB_WORKSPACE/test/window_desktop_proof.py'"
           su ada -c "REPO='$GITHUB_WORKSPACE' SWAY_NOCAP=/opt/nocap sh /tmp/desktop_proof.sh"
           # the pad on this family's sway: windows on the pad by the keys, a click and Super+minus bring them back, the bar's block, hide
-          su ada -c "PATH=/opt/nocap:\$PATH SPARK_SHELL_WINPAD='$GITHUB_WORKSPACE/winpad-build/spark-winpad' python3 -I '$GITHUB_WORKSPACE/test/pad_desktop_proof.py' \$HOME/proof/pad"
+          su ada -c "PATH=/opt/nocap:\$PATH SPARK_SHELL_WINPAD='$GITHUB_WORKSPACE/winpad-build/spark-winpad' python3 -I '$GITHUB_WORKSPACE/test/winpad_desktop_proof.py' \$HOME/proof/pad"
       - name: the notifications as drawn, kept for a look
         if: always()
         run: mkdir -p proof && cp -R ~ada/proof/. proof/ 2>/dev/null || true   # ~ada: the proof user's home, by its name

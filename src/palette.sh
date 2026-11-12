@@ -451,6 +451,6 @@ look_burst() {   # one frame: all made ready, then sent while the wallpaper draw
     [ -z "$_sc" ] || pointer_seen
     wall_uncover "$WALL_BG"
     [ -n "${LOOK_PREVIEW:-}" ] || ! desktop_wanted || motion_follow   # a preview leaves the motion alone
-    [ -n "${LOOK_PREVIEW:-}" ] || ! desktop_wanted || pad_again
+    [ -n "${LOOK_PREVIEW:-}" ] || ! desktop_wanted || winpad_again
 }
 

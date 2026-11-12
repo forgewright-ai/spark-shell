@@ -433,9 +433,9 @@ bar_line() {   # -> the i3bar JSON array
         k_lan=$BAR_LAN k_bt=$BAR_BT k_bt_off=$BAR_BT_OFF k_wifi=$BAR_WIFI k_out=$BAR_OUT k_out_off=$BAR_OUT_OFF k_mic=$BAR_MIC k_mic_off=$BAR_MIC_OFF k_light=$BAR_LIGHT k_kb=$BAR_KB k_due=$BAR_DUE k_dnd=$BAR_DND k_note=$BAR_NOTE k_pad=$BAR_PAD
     fi
     # the pad
-    _pdn=$(pad_count)
+    _pdn=$(winpad_count)
     if [ "${_pdn:-0}" -gt 0 ] 2>/dev/null; then
-        _pdc=$HEX_MUTED; ! pad_hidden || _pdc=$HEX_ACCENT
+        _pdc=$HEX_MUTED; ! winpad_hidden || _pdc=$HEX_ACCENT
         bar_add "$(bar_block pad '' "$(bar_span "$_pdc" "$k_pad") $_pdn")"; bar_group
     fi
     # connections
@@ -664,7 +664,7 @@ bar_text_step() {   # bar_text_step auto|N|bigger|smaller -> the receipt, or exi
     theme_load; EXPR=$(render_expr); desktop_files >/dev/null
     _btb=$(wm_bar_id) || _btb=''
     [ -z "$_btb" ] || ! wm_session || wm_send "bar $_btb font pango:$(bar_line_font "$(font_spec)")" >/dev/null 2>&1 || :
-    pad_again   # the pad's text follows
+    winpad_again   # the pad's text follows
     layout_refit_soon   # the bar's height changed
     _bts=$(bar_line_font "$(font_spec)"); _bts=${_bts##* }
     if [ "$_btn" = auto ]; then echo "bar text auto, $_bts now $PANEL_SEP it follows the screen"; else echo "bar text $_btn"; fi

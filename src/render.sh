@@ -169,7 +169,7 @@ desktop_reload() {   # desktop_reload [WHY] -- a running sway reads its new conf
     wall_cover; [ -z "$WALL_COVER" ] || sleep 0.25   # drawn before the reload stops sway's own
     wm_reload >/dev/null 2>&1 || { wall_uncover; return 0; }
     wall_uncover
-    pad_again   # the bar may have started again: a pad keeping its strip starts after it, so the new bar is not inside that strip
+    winpad_again   # the bar may have started again: a pad keeping its strip starts after it, so the new bar is not inside that strip
     # a reload gives the gaps to new workspaces only: the ones open take them now
     [ -z "${GAPS_INNER:-}" ] || { wm_cmd "gaps inner all set $GAPS_INNER" >/dev/null 2>&1; wm_cmd "gaps outer all set $GAPS_OUTER" >/dev/null 2>&1; } || :
     [ -z "${BORDER:-}" ] || wm_act "tiling" "border $BORDER" >/dev/null 2>&1 || :   # and the windows open now their border (a reload gives it to new ones only)
@@ -243,8 +243,8 @@ desktop_apply() {
     dialog_install
     semantic_install
     wallpaper_install
-    pad_install
-    pad_session
+    winpad_install
+    winpad_session
     motion_row
     mcp_apply
     notify_start

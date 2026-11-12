@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Prove the pad on a separate headless sway with a real foot, a real swaybar and spark-winpad:
-python3 test/pad_desktop_proof.py [EVIDENCE_DIRECTORY]. A throwaway HOME and a sway of its own, once in a
+python3 test/winpad_desktop_proof.py [EVIDENCE_DIRECTORY]. A throwaway HOME and a sway of its own, once in a
 dark palette and once in solarized-light, as a surface change is proven (the handbook's two palettes).
 
 Each round puts foot windows on the pad as the keys do (spark-shell desktop window: a tiled one with Down twice,
@@ -343,7 +343,7 @@ def round_in(palette, binary, evidence):
     shots = 0
 
     def pad_pid():
-        lock = runtime / "spark-shell-pad.pid"
+        lock = runtime / "spark-shell-winpad.pid"
         try:
             pid = int(lock.read_text().split()[0])
             os.kill(pid, 0)
@@ -356,7 +356,7 @@ def round_in(palette, binary, evidence):
 
     def pad_empty():
         """The pad with no window waiting: it stays for the session, its surfaces gone (v0.140)."""
-        state = runtime / "spark-shell-pad.state"
+        state = runtime / "spark-shell-winpad.state"
         return pad_pid() is not None and state.exists() and "count 0" in state.read_text()
 
     try:
@@ -595,7 +595,7 @@ def round_in(palette, binary, evidence):
         shell("desktop", "pad", "toggle")
         wait_for(lambda: reaches("bottom"), "the strip given back")
         ok(True, "hidden, the pad gives its strip back")
-        state = (runtime / "spark-shell-pad.state").read_text() if (runtime / "spark-shell-pad.state").exists() else ""
+        state = (runtime / "spark-shell-winpad.state").read_text() if (runtime / "spark-shell-winpad.state").exists() else ""
         ok("hidden 1" in state, "the pad says it is hidden, for the bar's block", state)
         capture("hidden")
         shell("desktop", "pad", "toggle")

@@ -1022,7 +1022,7 @@ else
     # the pad runs for the session (v0.140), and sway starts it at login alone: on, in a session with no pad (one that
     # began before an update), has sway start it as login does; with a pad running, or a dry run, sway is not asked.
     # The stand-in holds its lock as the real pad does, so a pad on restarts (a new look) is still one running
-    psd=$H/padsway; mkdir -p "$psd" "$H/padrun"; pslog=$H/padsway.log; plock=$H/padrun/spark-shell-pad.pid
+    psd=$H/padsway; mkdir -p "$psd" "$H/padrun"; pslog=$H/padsway.log; plock=$H/padrun/spark-shell-winpad.pid
     printf '#!/bin/sh\ncase "$*" in "-t get_version") echo "{\\"human_readable\\":\\"1.10\\"}" ;; "-- "*) shift; echo "$*" >> "%s" ;; esac\n' "$pslog" > "$psd/swaymsg"
     printf '#!/bin/sh\ntrap '"'"'[ -z "${PAD_LOCK:-}" ] || rm -f "$PAD_LOCK"; exit 0'"'"' TERM\n[ -z "${PAD_LOCK:-}" ] || echo $$ > "$PAD_LOCK"\nwhile :; do sleep 0.1; done\n' > "$psd/spark-winpad"
     chmod +x "$psd/swaymsg" "$psd/spark-winpad"
@@ -3710,10 +3710,10 @@ while :; do sleep 0.1; done
 PAD_STUB
 chmod +x "$H/padbin/spark-winpad"
 padr() { rm -f "$HOME/win.log"; rc=0; out=$(XDG_RUNTIME_DIR=$H/run SPARK_SHELL_WINPAD=$H/padbin/spark-winpad SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop pad "$@" 2>&1) || rc=$?; }
-pad_up() { _pu=0; while [ "$_pu" -lt 40 ] && [ ! -s "$H/run/spark-shell-pad.pid" ]; do sleep 0.1; _pu=$((_pu + 1)); done; }
+pad_up() { _pu=0; while [ "$_pu" -lt 40 ] && [ ! -s "$H/run/spark-shell-winpad.pid" ]; do sleep 0.1; _pu=$((_pu + 1)); done; }
 pad_sig() { _ps=0; while [ "$_ps" -lt 20 ]; do _pc=$(grep -c "^$1$" "$HOME/pad.sig" 2>/dev/null) || :; [ "${_pc:-0}" -lt "$2" ] || break; sleep 0.1; _ps=$((_ps + 1)); done; }   # the stand-in takes a signal after its sleep: wait for it, 2 s at most
-pad_hidden_is() { _ph=0; while [ "$_ph" -lt 50 ]; do grep -qx "hidden $1" "$H/run/spark-shell-pad.state" 2>/dev/null && return 0; sleep 0.1; _ph=$((_ph + 1)); done; return 1; }   # the stand-in writes its state after it logs the signal: wait for the state, 5 s at most
-pad_down() { [ ! -s "$H/run/spark-shell-pad.pid" ] || kill "$(cat "$H/run/spark-shell-pad.pid")" 2>/dev/null || :; _pd=0; while [ "$_pd" -lt 20 ] && [ -e "$H/run/spark-shell-pad.pid" ]; do sleep 0.1; _pd=$((_pd + 1)); done; rm -f "$H/run/spark-shell-pad.pid" "$H/run/spark-shell-pad.state" "$HOME/pad.log" "$HOME/pad.sig" "$HOME/winpad.env"; }
+pad_hidden_is() { _ph=0; while [ "$_ph" -lt 50 ]; do grep -qx "hidden $1" "$H/run/spark-shell-winpad.state" 2>/dev/null && return 0; sleep 0.1; _ph=$((_ph + 1)); done; return 1; }   # the stand-in writes its state after it logs the signal: wait for the state, 5 s at most
+pad_down() { [ ! -s "$H/run/spark-shell-winpad.pid" ] || kill "$(cat "$H/run/spark-shell-winpad.pid")" 2>/dev/null || :; _pd=0; while [ "$_pd" -lt 20 ] && [ -e "$H/run/spark-shell-winpad.pid" ]; do sleep 0.1; _pd=$((_pd + 1)); done; rm -f "$H/run/spark-shell-winpad.pid" "$H/run/spark-shell-winpad.state" "$HOME/pad.log" "$HOME/pad.sig" "$HOME/winpad.env"; }
 win_at 2160 42 944 1022; padr
 [ "$rc" = 0 ] && [ "$out" = 'no window is on the pad' ] && ok "desktop pad: none waits, said in one line (v0.133)" || bad "pad none" "rc=$rc $out"
 padr keys
@@ -3724,7 +3724,7 @@ padr keys; pad_up
 _pe=$(cat "$HOME/winpad.env" 2>/dev/null)
 [ "$rc" = 0 ] && [ "$out" = 'the pad has the keys: Enter brings the window back, Esc leaves' ] && [ "$(cat "$HOME/pad.log" 2>/dev/null)" = '--keys' ] \
     && printf '%s\n' "$_pe" | grep -qx "SPARK_SHELL=$SH" && printf '%s\n' "$_pe" | grep -qx 'PAD_PLACE=bottom center' && printf '%s\n' "$_pe" | grep -qx 'PAD_WIDTH=0' && printf '%s\n' "$_pe" | grep -qx 'PAD_SIDE_WIDTH=36' \
-    && printf '%s\n' "$_pe" | grep -qx 'PAD_BAR=top' && printf '%s\n' "$_pe" | grep -qx "PAD_LOCK=$H/run/spark-shell-pad.pid" && printf '%s\n' "$_pe" | grep -qx "PAD_STATE=$H/run/spark-shell-pad.state" \
+    && printf '%s\n' "$_pe" | grep -qx 'PAD_BAR=top' && printf '%s\n' "$_pe" | grep -qx "PAD_LOCK=$H/run/spark-shell-winpad.pid" && printf '%s\n' "$_pe" | grep -qx "PAD_STATE=$H/run/spark-shell-winpad.state" \
     && printf '%s\n' "$_pe" | grep -qx 'PAD_ACCENT=ff5555' && printf '%s\n' "$_pe" | grep -qx 'PAD_FG=aaaaaa' && [ "$(printf '%s\n' "$_pe" | grep -cE '^PAD_(SURFACE|LIT|BAND_HEX|MUTED)=[0-9a-f]{6}$')" = 4 ] \
     && printf '%s\n' "$_pe" | grep -qx 'PAD_BAND=off' && printf '%s\n' "$_pe" | grep -qx 'PAD_GAP=8' && printf '%s\n' "$_pe" | grep -qx 'PAD_VIEW=icons' && printf '%s\n' "$_pe" | grep -qx 'PAD_HEIGHT=0' \
     && printf '%s\n' "$_pe" | grep -qE '^PAD_FONT=.+ [0-9]+(px)?$' && printf '%s\n' "$_pe" | grep -qE '^PAD_ALPHA=[0-9.]+$' && printf '%s\n' "$_pe" | grep -q '^PAD_BAR_PID=' \
@@ -3737,7 +3737,7 @@ line=$(_pdl)
 [ "$(printf '%s' "$line" | jq -r '.[0].name')" = pad ] && [ "$(printf '%s' "$line" | jq -r '.[0].full_text')" = "<span foreground='#555555'>$padsign</span> 2" ] \
     && ok "bar: the pad's block first while windows wait on it, its sign muted while the pad is in sight, and how many (v0.133)" || bad "bar pad shown" "$line"
 padr toggle; pad_sig usr2 1
-[ "$rc" = 0 ] && [ "$out" = 'the pad is hidden' ] && pad_hidden_is 1 && ok "desktop pad toggle (the bar's click): the pad takes SIGUSR2 and hides (v0.133)" || bad "pad toggle hide" "rc=$rc $out $(cat "$H/run/spark-shell-pad.state" 2>&1)"
+[ "$rc" = 0 ] && [ "$out" = 'the pad is hidden' ] && pad_hidden_is 1 && ok "desktop pad toggle (the bar's click): the pad takes SIGUSR2 and hides (v0.133)" || bad "pad toggle hide" "rc=$rc $out $(cat "$H/run/spark-shell-winpad.state" 2>&1)"
 line=$(_pdl)
 [ "$(printf '%s' "$line" | jq -r '.[0].full_text')" = "<span foreground='#ff5555'>$padsign</span> 2" ] && ok "bar: the pad's sign in the accent while the pad is hidden (v0.133)" || bad "bar pad hidden" "$line"
 padr toggle; pad_sig usr2 2
@@ -3746,7 +3746,7 @@ pad_down
 line=$(_pdl)
 [ "$(printf '%s' "$line" | jq -r '.[0].full_text')" = "<span foreground='#ff5555'>$padsign</span> 2" ] && ok "bar: windows on the pad and no pad running: the sign in the accent (v0.133)" || bad "bar pad none running" "$line"
 padr toggle; pad_up
-[ "$rc" = 0 ] && [ "$out" = 'the pad is back in sight' ] && [ "$(cat "$HOME/pad.log" 2>/dev/null)" = '' ] && [ -s "$H/run/spark-shell-pad.pid" ] && ok "desktop pad toggle: no pad running, one starts, in sight (v0.133)" || bad "pad toggle start" "rc=$rc $out $(cat "$HOME/pad.log" 2>&1)"
+[ "$rc" = 0 ] && [ "$out" = 'the pad is back in sight' ] && [ "$(cat "$HOME/pad.log" 2>/dev/null)" = '' ] && [ -s "$H/run/spark-shell-winpad.pid" ] && ok "desktop pad toggle: no pad running, one starts, in sight (v0.133)" || bad "pad toggle start" "rc=$rc $out $(cat "$HOME/pad.log" 2>&1)"
 pad_down
 win_at 2160 42 944 1022
 line=$(_pdl)
@@ -3756,7 +3756,7 @@ pad_tree; rm -f "$HOME/win.log"; rc=0; out=$(XDG_RUNTIME_DIR=$H/run env -u SPARK
     && ok "desktop pad keys: no spark-winpad here, Super+minus brings back the window minimized last, as before the pad (v0.133)" || bad "pad keys fallback" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
 # the window keys put a window on the pad: the pad starts, never waited for
 win_at 2160 553 944 511; rm -f "$HOME/win.log"; rc=0; out=$(XDG_RUNTIME_DIR=$H/run SPARK_SHELL_WINPAD=$H/padbin/spark-winpad SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop window down 2>&1) || rc=$?; pad_up
-[ "$rc" = 0 ] && [ -s "$H/run/spark-shell-pad.pid" ] && [ "$(cat "$HOME/pad.log" 2>/dev/null)" = '' ] && ok "desktop window: a window put on the pad starts the pad, in sight (v0.133)" || bad "pad wake" "rc=$rc $out $(cat "$HOME/pad.log" 2>&1)"
+[ "$rc" = 0 ] && [ -s "$H/run/spark-shell-winpad.pid" ] && [ "$(cat "$HOME/pad.log" 2>/dev/null)" = '' ] && ok "desktop window: a window put on the pad starts the pad, in sight (v0.133)" || bad "pad wake" "rc=$rc $out $(cat "$HOME/pad.log" 2>&1)"
 pad_down
 # where it sits: the keys the pad writes after a drag, each checked; a pad of v0.134.1 sends three, one of v0.134.2 the height too (#269)
 cfg=$HOME/.config/spark-shell/config; cp "$cfg" "$H/cfg.pad"

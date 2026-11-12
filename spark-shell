@@ -211,8 +211,8 @@ REPO=$(cd "$(dirname "$SELF")" && pwd)
 . "$REPO/src/files_provider.sh"
 # shellcheck source=src/dialog.sh
 . "$REPO/src/dialog.sh"
-# shellcheck source=src/pad.sh
-. "$REPO/src/pad.sh"
+# shellcheck source=src/winpad.sh
+. "$REPO/src/winpad.sh"
 # shellcheck source=src/semantic.sh
 . "$REPO/src/semantic.sh"
 # shellcheck source=src/home.sh
