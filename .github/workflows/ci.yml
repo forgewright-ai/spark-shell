@@ -70,15 +70,20 @@ jobs:
             echo "a hex color is in a template"; exit 1; fi
       - name: shellcheck
         # spark-shell and test/shell_test.sh turn off the data flow
-        # analysis: 0.11.0's took over 10 GB on them and stopped the box
-        # twice. A version that calls that directive unknown gets SC1107
-        # excluded. The two big files are checked one at a time, each in a
-        # process of its own: together they took the runner down.
+        # analysis with a directive 0.11.0 reads: without it that pass
+        # took over 10 GB on them and stopped the box twice. The image's
+        # own 0.9.0 does not know the directive and was killed partway
+        # through spark-shell, so the version the tree is written for is
+        # fetched here, pinned by its sha256. SC1107 stays excluded: an
+        # older shellcheck on a contributor's machine calls that
+        # directive unknown, and the gate runs this line as it is.
         run: |
+          curl -fsSL -o "$RUNNER_TEMP/shellcheck.tar.xz" https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  $RUNNER_TEMP/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$RUNNER_TEMP"
+          sudo install -m 755 "$RUNNER_TEMP/shellcheck-v0.11.0/shellcheck" /usr/local/bin/shellcheck
           shellcheck --version | sed -n '2p'
-          shellcheck -x -S warning -e SC1107 spark-shell
-          shellcheck -x -S warning -e SC1107 test/shell_test.sh
-          shellcheck -x -S warning -e SC1107 lib/shim/xterm test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/desktop_proof.sh test/wifi_proof.sh test/login_upgrade_proof.sh test/dhcp_proof.sh test/gate.sh test/semantic_measure.sh .githooks/pre-push
+          shellcheck -x -S warning -e SC1107 spark-shell lib/shim/xterm test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/desktop_proof.sh test/wifi_proof.sh test/login_upgrade_proof.sh test/dhcp_proof.sh test/gate.sh test/semantic_measure.sh .githooks/pre-push
       - name: zizmor over .github/workflows
         # the workflows are code too: zizmor (pinned, in a venv of its own)
         # reads every file under .github/workflows; medium and above fail.
