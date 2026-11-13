@@ -1,37 +1,20 @@
 # shellcheck extended-analysis=false
 # --- the terminal: the one module that names it (foot)
-# sets: TERM_CLIENT TERM_CONFIG_REL TERM_DIALOG_REL TERM_HEX TERM_LOGIN_CONF TERM_NAME TERM_OWN TERM_SHELLS
+# sets: TERM_APP_PREFIX TERM_APP_RE TERM_CLIENT TERM_CONFIG_REL TERM_DIALOG_REL TERM_HEX TERM_LOGIN_CONF TERM_NAME TERM_OWN
 TERM_NAME=foot
 TERM_CLIENT=footclient            # its client's process name when it runs as a server
 TERM_OWN='foot footclient'        # its own processes: never apps
 TERM_CONFIG_REL=.config/foot/foot.ini
 TERM_DIALOG_REL=.config/foot/dialog.ini
 TERM_LOGIN_CONF=foot.ini   # the login screen's own config for it, in template/login
-TERM_SHELLS='bash sh zsh fish dash ksh ash mksh tcsh csh'   # a line is typed only where one of these waits for it
+TERM_APP_PREFIX=spark-shell-   # an app of the menu opens in a window of the terminal under this app id
+TERM_APP_RE="^($TERM_NAME|$TERM_APP_PREFIX.*)$"   # the compositor's criterion for every window of the terminal
 TERM_HEX="242424 f62b5a 47b413 e3c401 24acd4 f2affd 13c299 e6e6e6 616161 ff4d51 35d450 e9e836 5dc5f8 feabf2 24dfc4 ffffff"   # its default colors: text ffffff on ground 242424
 
 term_here() { command -v foot >/dev/null 2>&1; }
 term_missing() { echo 'foot is not installed (spark-shell on desktop)'; }
 term_config_file() { printf '%s\n' "$HOME/$TERM_CONFIG_REL"; }
 term_dialog_pad() { sed -n 's/^pad=\([0-9]*\)x\([0-9]*\).*/\1 \2/p' "$HOME/$TERM_DIALOG_REL" 2>/dev/null | head -1; }   # -> "X Y", the dialog window's padding
-term_front() {   # term_front PID -> what the terminal has in front of its tty, "NAME in front" when something runs in it; false when it has no child
-    _tfp=$1
-    for _tff in "${SPARK_SHELL_PROC:-/proc}"/[0-9]*/stat; do
-        [ -r "$_tff" ] || continue
-        _tfs=$(sed 's/^.*) //' "$_tff" 2>/dev/null) || continue
-        # shellcheck disable=SC2086   # the fields after the name: state ppid pgrp session tty tpgid
-        set -- $_tfs
-        [ "${2:-}" = "$_tfp" ] || continue
-        _tfn=$(sed -n 's/^[0-9]* (\(.*\)) .*/\1/p' "$_tff" 2>/dev/null); _tfn=${_tfn#-}
-        if [ -n "${6:-}" ] && [ "$3" != "$6" ]; then printf '%s in front\n' "$_tfn"; else printf '%s\n' "$_tfn"; fi
-        return 0
-    done
-    return 1
-}
-term_at_prompt() {   # term_at_prompt PID -> 0 when a shell waits at the terminal's prompt: it is in front of the tty and nothing runs in it
-    _tap=$(term_front "$1") || return 1
-    case " $TERM_SHELLS " in *" $_tap "*) return 0 ;; *) return 1 ;; esac
-}
 term_is_ours() { case ${TERM:-} in foot*) return 0 ;; *) return 1 ;; esac; }   # TERM says we run inside it
 term_own_process() { [ "${1##*/}" = foot ]; }                                 # term_own_process COMM
 term_runs() { [ "${1:-}" = foot ] && [ "${2:-}" = -e ]; }                      # term_runs WORD1 WORD2: a line that runs a command in a window

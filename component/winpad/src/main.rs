@@ -135,6 +135,7 @@ fn config() -> spark_winpad::app::Config {
             colors: [hex("WINPAD_CLOSE", "e45649"), hex("WINPAD_MIN", "c18401"), hex("WINPAD_FILL", "50a14f")],
             ground: hex("WINPAD_GROUND", "fafafa"),
             term: env("WINPAD_TERM").unwrap_or_default(),
+            term_also: env("WINPAD_TERM_ALSO").unwrap_or_default(),
             title: env("WINPAD_TITLE").unwrap_or_else(|| "%title".into()),
             term_title: env("WINPAD_TERM_TITLE").unwrap_or_else(|| "%title".into()),
             voice: env("WINPAD_VOICE").as_deref() == Some("yes"),

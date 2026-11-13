@@ -61,9 +61,9 @@ titlebar_padding 12 4
 title_align left
 floating_modifier $mod normal
 # key: The buttons at a title's left end close, minimize, and fill the screen.
-for_window [shell=".*"] title_format "@BAND_GLYPHS@@BAND_TITLE@"
+for_window [shell=".*"] title_format "@BAND_GLYPHS@@BAND_MIC@@BAND_TITLE@"
 # The terminal's band: terminal, then the folder the prompt is in (the prompt hook titles it)
-for_window [app_id="foot"] title_format "@BAND_TERM_GLYPHS@@BAND_TERM_TITLE@"
+for_window [app_id="@TERM_APPS@"] title_format "@BAND_GLYPHS@@BAND_MIC@@BAND_TERM_TITLE@"
 # The pointer (#22): the spark pointer, white on a dark palette and black on a light one, or the theme
 # POINTER names, at its size; sway hands the name and the size to every program it starts
 seat * xcursor_theme @POINTER_NAME@ @POINTER_SIZE@
@@ -120,7 +120,7 @@ bindsym $mod+Return exec $term
 # on a bar block uses the same open-or-focus action.
 # key: Super+Space opens home; held, it listens and types the words in the terminal.
 # action: home.open
-bindsym $mod+space exec @REPO@/spark-shell desktop voice press
+bindsym --no-repeat $mod+space exec @REPO@/spark-shell desktop voice press
 bindsym --release $mod+space exec @REPO@/spark-shell desktop voice release
 # the dialog's window maps unseen and the dialog shows it once its opening
 # is drawn, so nothing comes before the animation (#167)

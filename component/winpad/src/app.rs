@@ -68,6 +68,8 @@ pub struct Titles {
     pub colors: [String; 3],
     pub ground: String,
     pub term: String,
+    /// What an app of the menu opens its window under, as a start: spark-shell-tmux is a terminal too.
+    pub term_also: String,
     pub title: String,
     pub term_title: String,
     /// The mic on a terminal's band (WINPAD_VOICE=yes), and spark-shell's voice state it follows.

@@ -12,10 +12,15 @@ use wayland_client::protocol::wl_shm;
 use wayland_client::protocol::wl_surface::WlSurface;
 
 impl App {
-    /// A terminal's band carries the mic, when something can hear.
-    fn with_mic(&self, b: &crate::buttons::Band) -> bool {
+    /// Every band carries the mic where something can hear: the voice is a window's, like its buttons, and
+    /// the window makes of the words what it will.
+    fn with_mic(&self, _b: &crate::buttons::Band) -> bool {
+        self.cfg.titles.voice
+    }
+
+    pub(super) fn is_term(&self, app: &str) -> bool {
         let t = &self.cfg.titles;
-        t.voice && !t.term.is_empty() && b.app == t.term
+        (!t.term.is_empty() && app == t.term) || (!t.term_also.is_empty() && app.starts_with(&t.term_also))
     }
 
     pub(super) fn apply_deco(&mut self, oi: usize) {
@@ -151,7 +156,7 @@ impl App {
                 mic,
             };
             if self.sent.get(&b.id) != Some(&want) {
-                let tail = if !t.term.is_empty() && b.app == t.term { &t.term_title } else { &t.title };
+                let tail = if self.is_term(&b.app) { &t.term_title } else { &t.title };
                 let buttons = buttons::buttons(b.focused, hover, &t.colors, &t.ground, want.mic.as_ref());
                 todo.push((b.id, want, format!("[con_id={}] title_format \"{buttons}{tail}\"", b.id)));
             }

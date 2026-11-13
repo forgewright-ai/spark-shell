@@ -28,7 +28,7 @@ class HomeTest(unittest.TestCase):
         rendered, pairs = home.bindings(template, {"home.open": "Super+F3"})
         self.assertEqual(dict(pairs)["home.open"], "Super+F3")
         self.assertEqual(len([k for k, _ in pairs if k == "home.open"]), 1)   # the release binding is the same action, listed once
-        self.assertIn("bindsym Mod4+F3 exec", rendered)
+        self.assertIn("bindsym --no-repeat Mod4+F3 exec", rendered)
         self.assertIn("bindsym --release Mod4+F3 exec", rendered)   # a key the person chose moves both halves
         for config in ({"home.open": "Super+Return"}, {"missing": "F1"}, {"home.open": "F1;exec bad"}):
             with self.assertRaises(ValueError):

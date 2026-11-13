@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- voice: the ear hears, the words go in the terminal's line, the band shows it
 # sets: EAR_BIN VOICE_DIR VOICE_MODEL_SHA256 VOICE_MODEL_URL VOICE_RUNTIME_SHA256 VOICE_RUNTIME_URL
-# reads: DIALOG_URL OS REPO STATE_DIR TERM_NAME TMP
+# reads: DIALOG_URL OS REPO STATE_DIR TMP
 EAR_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-ear
 VOICE_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/ear   # the engine: lib/ and model/
 VOICE_RUNTIME_URL=${SPARK_SHELL_VOICE_RUNTIME_URL:-https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-linux-x64-shared-lib.tar.bz2}   # sherpa-onnx; file:// or none in the tests
@@ -97,8 +97,7 @@ voice_listen() {   # voice_listen hold|now -- the session: the engine's words in
     _vlc=$(voice_engine) || { voice_no "nothing can hear here (spark-shell on desktop)"; return 0; }
     voice_engine_env
     wm_type_here || { voice_no "$(wm_missing type)"; return 0; }
-    _vlt=$(term_focused_pid) || { voice_no "focus a terminal at its prompt" "no terminal has the focus"; return 0; }
-    term_at_prompt "$_vlt" || { voice_no "focus a terminal at its prompt" "terminal $_vlt: $(term_front "$_vlt" || echo 'nothing in it')"; return 0; }
+    _vlt=$(wm_focused_id) || { voice_no "no window has the focus"; return 0; }   # the words go where the keys would
     _vld=$(voice_run_dir); mkdir_private "$_vld"; echo $$ > "$_vld/pid"
     rm -f "$_vld/leash" "$_vld/words"; mkfifo "$_vld/leash" "$_vld/words"
     voice_set_state 1 0
@@ -107,22 +106,24 @@ voice_listen() {   # voice_listen hold|now -- the session: the engine's words in
     echo "$_vlp" > "$_vld/engine"
     exec 3> "$_vld/leash"; _vlo=1   # the leash: closed, the engine says its last words and ends
     trap '[ "$_vlo" = 0 ] || { exec 3>&-; _vlo=0; }' TERM INT HUP   # told to stop: the leash goes now, not at the next level
-    _vln=0
+    _vln=0; _vlt1=''
     while IFS= read -r _vll; do
         case $_vll in
             level\ *) voice_set_state 1 "${_vll#level }"
                 _vln=$((_vln + 1))
                 if [ "$_vlo" = 1 ] && [ "$(voice_want_token)" != "$_vlw" ]; then exec 3>&-; _vlo=0   # the key is up, the mic was clicked again, or a newer session has the word
                 # the focus every second: no word goes to another window. A tree that does not answer is not a move.
-                elif [ "$_vlo" = 1 ] && [ $((_vln % 10)) = 0 ] && _vlf=$(term_focused_pid) && [ "$_vlf" != "$_vlt" ]; then
+                elif [ "$_vlo" = 1 ] && [ $((_vln % 10)) = 0 ] && _vlf=$(wm_focused_id) && [ "$_vlf" != "$_vlt" ]; then
                     printf 'voice: the focus moved to %s\n' "$_vlf" >> "$_vld/log"
                     exec 3>&-; _vlo=0
                 fi ;;
-            type\ *) wm_type "${_vll#type }" ;;
+            type\ *) [ -n "$_vlt1" ] || { _vlt1=1; [ -z "${VOICE_PREFIX:-}" ] || wm_type "$VOICE_PREFIX"; }   # the mark before the first words
+                wm_type "${_vll#type }" ;;
             erase\ *) wm_erase "${_vll#erase }" ;;
         esac
     done < "$_vld/words"
     [ "$_vlo" = 0 ] || exec 3>&-
+    [ -z "$_vlt1" ] || [ -z "${VOICE_SUFFIX:-}" ] || wm_type "$VOICE_SUFFIX"   # and the mark after them
     _vlr=0; wait "$_vlp" || _vlr=$?
     printf 'voice: the session ended, the engine said %s, the leash was %s\n' "$_vlr" "$([ "$_vlo" = 1 ] && echo open || echo closed)" >> "$_vld/log"
     [ "$_vlr" != 2 ] || notify_send voice "Voice: $(grep -v '^voice: ' "$_vld/log" 2>/dev/null | tail -1 | sed 's/^spark-ear: //')"
@@ -133,7 +134,7 @@ voice_listen() {   # voice_listen hold|now -- the session: the engine's words in
 voice_off() { voice_stop || rm -f "$(voice_want)"; }   # off desktop: no session is left listening; the ear and its engine stay
 voice_status() {
     if voice_pid >/dev/null; then echo 'voice: listening'
-    elif voice_here; then echo 'voice: ready (hold Super+Space, or click the mic on a terminal)'
+    elif voice_here; then echo 'voice: ready (hold Super+Space, or click the mic on a window)'
     else echo 'voice: nothing can hear here (spark-shell on desktop)'; fi
 }
 voice_cmd() {   # voice_cmd [press|release|toggle|off|status|--listen hold|now]
@@ -148,7 +149,6 @@ voice_cmd() {   # voice_cmd [press|release|toggle|off|status|--listen hold|now]
         *) refuse "voice takes press, release, toggle, off or status" ;;
     esac
 }
-term_focused_pid() { wm_tree | jq -r --arg t "$TERM_NAME" '[.. | objects | select(.focused? == true and .app_id? == $t)][0].pid // empty' 2>/dev/null | grep -x '[0-9][0-9]*'; }   # -> the focused terminal's pid; false when another window has the focus
 
 # the install
 voice_fetch() {   # voice_fetch WHAT URL SHA256 FILE -- the archive at FILE, its sha256 checked; a todo row and false otherwise

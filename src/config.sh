@@ -25,7 +25,7 @@ load_env() {
     done < "$1"
 }
 # the keys spark-shell exports; a shell or desktop it starts gets them unset
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u BAR_POSITION -u BAR_TEXT -u BAR_TRAY -u WINDOWS -u LOGIN -u DIALOG_SEMANTIC -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u DIALOG_ICONS -u DIALOG_SPACING -u BAR_GLYPHS -u BAR_WORKSPACES -u GLYPH_FAMILY -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START -u WINPAD_PLACE -u WINPAD_WIDTH -u WINPAD_SIDE_WIDTH -u WINPAD_BAND -u WINPAD_VIEW -u WINPAD_HEIGHT -u VOICE -u VOICE_ENGINE'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u BAR_POSITION -u BAR_TEXT -u BAR_TRAY -u WINDOWS -u LOGIN -u DIALOG_SEMANTIC -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u DIALOG_ICONS -u DIALOG_SPACING -u BAR_GLYPHS -u BAR_WORKSPACES -u GLYPH_FAMILY -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START -u WINPAD_PLACE -u WINPAD_WIDTH -u WINPAD_SIDE_WIDTH -u WINPAD_BAND -u WINPAD_VIEW -u WINPAD_HEIGHT -u VOICE -u VOICE_ENGINE -u VOICE_PREFIX -u VOICE_SUFFIX'
 
 # short_host -> this machine's short name; on a Mac LocalHostName, by
 # scutil's full path (/usr/sbin is not on every PATH; hostname -s moves)
@@ -98,6 +98,7 @@ config_load() {
     case $WALLPAPER_MOTION in on|off) ;; *) echo "spark-shell: WALLPAPER_MOTION=$WALLPAPER_MOTION in $CONFIG: on or off" >&2; exit 1 ;; esac
     : "${VOICE:=yes}"   # the ear on the terminal's band and under Super+Space held; no leaves it out
     : "${VOICE_ENGINE:=}"   # your own engine's command, speaking the ear's contract; empty: spark-ear
+    : "${VOICE_PREFIX:=}" "${VOICE_SUFFIX:=}"   # typed before the first words and after the last, to open a prompt of your own
     : "${DO_NOT_DISTURB:=no}"   # the notifications kept out of sight, as mako's do-not-disturb mode, across logins
     # the pad: its place, its most width at the top, the bottom or floating (0: the screen's) and at a side,
     # its most height (0: as many rows as its windows need)
@@ -143,7 +144,7 @@ config_load() {
         input_valid "$k" "$v" || { echo "spark-shell: invalid $k in $CONFIG" >&2; exit 1; }
     done
     export POINTER_TAP POINTER_SCROLL POINTER_SPEED KEY_REPEAT_DELAY KEY_REPEAT_RATE KEY_CAPS
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR BAR_POSITION BAR_TEXT BAR_TRAY WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK DIALOG_SEMANTIC DIALOG_ANIMATION DIALOG_ICONS DIALOG_SPACING BAR_GLYPHS GLYPH_FAMILY WALLPAPER_MOTION LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB VOICE VOICE_ENGINE WINPAD_PLACE WINPAD_WIDTH WINPAD_SIDE_WIDTH WINPAD_BAND WINPAD_VIEW WINPAD_HEIGHT
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR BAR_POSITION BAR_TEXT BAR_TRAY WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK DIALOG_SEMANTIC DIALOG_ANIMATION DIALOG_ICONS DIALOG_SPACING BAR_GLYPHS GLYPH_FAMILY WALLPAPER_MOTION LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB VOICE VOICE_ENGINE VOICE_PREFIX VOICE_SUFFIX WINPAD_PLACE WINPAD_WIDTH WINPAD_SIDE_WIDTH WINPAD_BAND WINPAD_VIEW WINPAD_HEIGHT
 }
 winpad_place_ok() { printf '%s\n' "$1" | grep -qE '^((top|bottom|left|right) (center|start|end|[0-9]{1,5})|free [0-9]{1,5} [0-9]{1,5})$'; }   # winpad_place_ok PLACE -> 0 for an edge and where along it (bottom center, left 300), or free X Y
 winpad_width_ok() { case $1 in ''|*[!0-9]*|0?*) return 1 ;; 0) [ "$2" = 0 ] ;; *) [ "${#1}" -le 4 ] && [ "$1" -ge "$2" ] ;; esac; }   # winpad_width_ok N LEAST -> 0 for whole pixels, LEAST to 9999 (0 alone where LEAST is 0)

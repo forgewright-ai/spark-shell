@@ -911,22 +911,23 @@ else
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: foot 1.28 gets [colors-dark] alone" || bad "foot 1.28 section" "$(grep -n '^\[' "$foot")"
     grep -q '^client.focused *#ff5555 #ff5555 #000000 #802b2b80 #ff5555$' "$sway" && grep -q '^client.unfocused *#060606 #060606 #555555 #060606 #060606$' "$sway" && ! grep -q '^client\.unfocused.*#ff5555' "$sway" && grep -q '^default_border normal 1$' "$sway" && grep -q '^default_floating_border normal 1$' "$sway" && grep -q '^titlebar_border_thickness 1$' "$sway" && grep -q '^title_align left$' "$sway" && ! grep -q '^smart_borders' "$sway" \
         && ok "sway: the chrome (v0.140): a title band and a one-pixel frame in one shade, the surface shade on the focused window (#0f0f0f), four percent above the ground on the others (#060606) with muted text; the accent only as the focused indicator, the drop area of a moving window (#47), at a quarter: #ff5555 halved with alpha 80, as sway takes it (#49)" || bad "sway focused" "$(grep -n 'client\|border' "$sway")"
-    grep -qxF 'for_window [shell=".*"] title_format "  %title"' "$sway" && grep -qxF 'for_window [app_id="foot"] title_format "  terminal   %title"' "$sway" \
+    grep -qxF 'for_window [shell=".*"] title_format "  %title"' "$sway" && grep -qxF 'for_window [app_id="^(foot|spark-shell-.*)$"] title_format "  terminal   %title"' "$sway" \
         && ok "sway: with no winpad on the machine the titles are plain: no button is drawn that does not click (v0.143)" || bad "band plain" "$(grep -n title_format "$sway")"
     printf '#!/bin/sh\n' > "$HOME/winpad-here"; chmod +x "$HOME/winpad-here"
     SPARK_SHELL_WINPAD=$HOME/winpad-here sh "$SH" on --yes >/dev/null
     _bg=' &#x2715;  &#x25BD;  &#x25A1; '
-    grep -qxF "for_window [shell=\".*\"] title_format \"$_bg  %title\"" "$sway" && grep -qxF "for_window [app_id=\"foot\"] title_format \"$_bg  terminal   %title\"" "$sway" \
+    grep -qxF "for_window [shell=\".*\"] title_format \"$_bg  %title\"" "$sway" && grep -qxF "for_window [app_id=\"^(foot|spark-shell-.*)\$\"] title_format \"$_bg  terminal   %title\"" "$sway" \
         && grep -qF 'pub const GLYPH_REFS: [&str; 3] = ["&#x2715;", "&#x25BD;", "&#x25A1;"];' "$REPO/component/winpad/src/buttons.rs" \
         && ok "sway: with a winpad, the close, minimize and fill buttons are the start of every title, sway's own pixels, so they move with the window (v0.142), written as character references so the render stays ASCII; the component's are the same three" || bad "band glyphs" "$(grep -n title_format "$sway")"
     printf 'VOICE_ENGINE=/bin/true\n' >> "$HOME/.config/spark-shell/config"
     printf '#!/bin/sh\nexit 0\n' > "$HOME/.local/bin/wtype"; chmod +x "$HOME/.local/bin/wtype"   # a desktop has it; without it no mic is drawn
     SPARK_SHELL_WINPAD=$HOME/winpad-here sh "$SH" on --yes >/dev/null
-    grep -qxF "for_window [app_id=\"foot\"] title_format \"$_bg <span foreground='#aa0000'>&#x25CB;</span>         terminal   %title\"" "$sway" && grep -qxF "for_window [shell=\".*\"] title_format \"$_bg  %title\"" "$sway" \
-        && ok "sway: with a voice, a terminal's title has the mic after the buttons, a red ring (the palette's red) with the bars' room; other windows none (v0.144)" || bad "band mic" "$(grep -n title_format "$sway")"
+    _mic=" <span foreground='#aa0000'>&#x25CB;</span>       "
+    grep -qxF "for_window [app_id=\"^(foot|spark-shell-.*)\$\"] title_format \"$_bg$_mic  terminal   %title\"" "$sway" && grep -qxF "for_window [shell=\".*\"] title_format \"$_bg$_mic  %title\"" "$sway" \
+        && ok "sway: with a voice, every title carries the mic after the buttons, a red ring (the palette's red) with the bars' room: the voice is a window's, like its buttons (v0.145)" || bad "band mic" "$(grep -n title_format "$sway")"
     sed -i.bak '/^VOICE_ENGINE=/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak" "$HOME/.local/bin/wtype"
     sh "$SH" on --yes >/dev/null; rm -f "$HOME/winpad-here"
-    grep -qxF "bindsym Mod4+space exec $REPO/spark-shell desktop voice press" "$sway" \
+    grep -qxF "bindsym --no-repeat Mod4+space exec $REPO/spark-shell desktop voice press" "$sway" \
         && grep -qxF "bindsym --release Mod4+space exec $REPO/spark-shell desktop voice release" "$sway" \
         && ! grep -q '^bindsym Mod4+[ds] ' "$sway" \
         && ok "sway: Super+Space opens home when tapped and listens while held, without separate desktop chat keys (v0.144)" || bad "sway home render" "$(grep -n 'desktop voice' "$sway")"
@@ -1002,7 +1003,7 @@ else
         && ok "check: an unapplied named binding makes the desktop render stale" || bad "check pending home binding" "$out"
     sh "$SH" on --yes >/dev/null
     out=$(sh "$SH" check || true)
-    grep -qxF "bindsym Mod4+F3 exec $REPO/spark-shell desktop voice press" "$sway" \
+    grep -qxF "bindsym --no-repeat Mod4+F3 exec $REPO/spark-shell desktop voice press" "$sway" \
         && grep -qxF "bindsym --release Mod4+F3 exec $REPO/spark-shell desktop voice release" "$sway" \
         && printf '%s\n' "$out" | grep -q '^ok     desktop      sway and foot' \
         && ok "check: configured bindings use the same render as on" || bad "check configured home binding" "$out"
@@ -1392,7 +1393,7 @@ grep -qxF 'bindsym $mod+Prior workspace prev' "$swt" && grep -qxF 'bindsym $mod+
 grep -v '^#' "$REPO/template/.config/sway/config" | grep -q 'tmux' && bad "sway: a window starts tmux (it runs the login shell)" || ok "sway template: a new foot runs the login shell, never tmux"
 grep -q "^exec sh -c '\$term -e @REPO@/spark-shell desktop --first; swaymsg exit'$" "$REPO/template/.config/sway/config" && ok "sway template: the desktop ends with its first terminal (desktop --first: the keys once, then your shell)" || bad "sway template: exec line" "$(grep -n '^exec' "$REPO/template/.config/sway/config")"
 sway_t=$REPO/template/.config/sway/config
-grep -qxF 'bindsym $mod+space exec @REPO@/spark-shell desktop voice press' "$sway_t" && grep -qxF 'bindsym --release $mod+space exec @REPO@/spark-shell desktop voice release' "$sway_t" && ! grep -q '^bindsym \$mod+[ds] ' "$sway_t" && ok "sway template: Super+Space is the sole home entry, pressed and released (v0.144)" || bad "sway template: home entry"
+grep -qxF 'bindsym --no-repeat $mod+space exec @REPO@/spark-shell desktop voice press' "$sway_t" && grep -qxF 'bindsym --release $mod+space exec @REPO@/spark-shell desktop voice release' "$sway_t" && ! grep -q '^bindsym \$mod+[ds] ' "$sway_t" && ok "sway template: Super+Space is the sole home entry, pressed and released (v0.144)" || bad "sway template: home entry"
 ! grep -q 'spark-chat\|mod+p ' "$sway_t" && ok "sway template: no chat window of its own and no Super+p: one window, two keys" || bad "sway template: old keys" "$(grep -n 'spark-chat\|mod+p ' "$sway_t")"
 grep -q '^bindsym \$mod+Shift+s layout stacking$' "$sway_t" && ! grep -q '^bindsym \$mod+s layout' "$sway_t" && ok "sway template: stacking moved to Super+Shift+s, Super+s is spark's" || bad "sway template: stacking key" "$(grep -n 'layout stacking' "$sway_t")"
 
@@ -1870,14 +1871,14 @@ EOF
     printf '%s\n' "$out" | grep -q '^ok     desktop      sway and foot are installed and up to date$' && ok "check: the desktop row says installed and up to date" || bad "check desk row" "$out"
     # the rendered sway config: Super+d, the floating prompt, --pending before the first terminal
     sway=$HOME/.config/sway/config
-    grep -qF "bindsym Mod4+space exec $REPO/spark-shell desktop voice press" "$sway" && grep -qx 'initial-window-size-chars=60x40'  "$HOME/.config/foot/dialog.ini" && grep -qx 'background=0f0f0f' "$HOME/.config/foot/dialog.ini" \
+    grep -qF "bindsym --no-repeat Mod4+space exec $REPO/spark-shell desktop voice press" "$sway" && grep -qx 'initial-window-size-chars=60x40'  "$HOME/.config/foot/dialog.ini" && grep -qx 'background=0f0f0f' "$HOME/.config/foot/dialog.ini" \
         && ok "sway render: Super+space opens the dialog (the clone's spark-shell) in foot with dialog.ini: 60x40 with air and the surface a shade of black towards the text (no theme: 0f0f0f)" || bad "sway render bind" "$(grep -n 'mod+d' "$sway"; cat "$HOME/.config/foot/dialog.ini" 2>&1)"
     grep -qF 'for_window [app_id="spark-dialog"] floating enable, border none, move position center, opacity 0' "$sway" && ok "sway render: the dialog floats in the middle, no frame, and maps unseen until its opening is drawn (#167)" || bad "sway render for_window" "$(grep -n spark-dialog "$sway")"
     l_p=$(grep -nF "exec $REPO/spark-shell desktop --pending" "$sway" | head -1 | cut -d: -f1); l_t=$(grep -n "^exec sh -c '" "$sway" | tail -1 | cut -d: -f1)
     [ -n "$l_p" ] && [ -n "$l_t" ] && [ "$l_p" -lt "$l_t" ] && ok "sway render: desktop --pending runs before the first terminal" || bad "sway render pending" "pending $l_p terminal $l_t"
     unset SWAYSOCK WAYLAND_DISPLAY
 fi
-grep -qxF 'bindsym $mod+space exec @REPO@/spark-shell desktop voice press' "$REPO/template/.config/sway/config" && grep -qxF 'bindsym $mod+Mod1+space focus mode_toggle' "$REPO/template/.config/sway/config" && ok "home entry and displaced focus action stay reachable" || bad "home entry/focus bindings"
+grep -qxF 'bindsym --no-repeat $mod+space exec @REPO@/spark-shell desktop voice press' "$REPO/template/.config/sway/config" && grep -qxF 'bindsym $mod+Mod1+space focus mode_toggle' "$REPO/template/.config/sway/config" && ok "home entry and displaced focus action stay reachable" || bad "home entry/focus bindings"
 ! grep -q 'spark-desk' "$REPO/template/.config/sway/config" && ok "sway template: no spark-desk window any more, the panel is the one window" || bad "sway template spark-desk"
 l_p=$(grep -n '^exec @REPO@/spark-shell desktop --pending$' "$REPO/template/.config/sway/config" | head -1 | cut -d: -f1); l_t=$(grep -n "^exec sh -c '" "$REPO/template/.config/sway/config" | tail -1 | cut -d: -f1)
 [ -n "$l_p" ] && [ -n "$l_t" ] && [ "$l_p" -lt "$l_t" ] && ok "sway template: desktop --pending is the exec before the last exec sh -c" || bad "sway template pending" "pending $l_p terminal $l_t"
@@ -3914,6 +3915,7 @@ chmod +x "$H/vx/ear-stub" "$H/vx/wtype" "$H/vx/pgrep" "$H/vx/notify-send" "$H/vx
 printf '4242 (bash) S 4000 4242 4242 34816 4242 4194560 0 0\n' > "$H/proc/4242/stat"   # pgrp 4242 = tpgid 4242: the shell is at its prompt
 [ ! -f "$HOME/win-tree.json" ] || cp "$HOME/win-tree.json" "$H/tree.voice"   # the tree the tests around share, put back at the end
 voice_tree() { printf '{"type":"root","nodes":[{"type":"output","name":"HDMI-A-1","nodes":[{"type":"workspace","id":3,"num":1,"nodes":[{"type":"con","id":7,"app_id":"%s","pid":4000,"focused":true,"nodes":[]}],"floating_nodes":[]}]}]}' "$1" > "$HOME/win-tree.json"; }
+voice_none() { printf '{"type":"root","nodes":[{"type":"output","name":"HDMI-A-1","nodes":[{"type":"workspace","id":3,"num":1,"nodes":[],"floating_nodes":[]}]}]}' > "$HOME/win-tree.json"; }
 vrun() { rc=0; out=$(XDG_RUNTIME_DIR=$H/run SPARK_SHELL_PROC=$H/proc WAYLAND_DISPLAY=wayland-9 SWAYSOCK=$H/sock PATH="$H/vx:$H/win:$H/lx:$PATH" sh "$SH" desktop voice "$@" 2>&1) || rc=$?; }
 vclean() { rm -f "$HOME/wtype.log" "$HOME/notify.log" "$HOME/home.log" "$H/run/spark-shell-voice/want" "$H/run/spark-shell-voice.state"; }
 vstate=$H/run/spark-shell-voice.state
@@ -3922,20 +3924,14 @@ vclean; vrun status
 [ "$rc" = 0 ] && [ "$out" = 'voice: nothing can hear here (spark-shell on desktop)' ] && ok "desktop voice status: nothing hears here, said in one line (v0.144)" || bad "voice status none" "rc=$rc $out"
 printf 'VOICE_ENGINE=%s\n' "$H/vx/ear-stub" >> "$cfg"
 vrun status
-[ "$rc" = 0 ] && [ "$out" = 'voice: ready (hold Super+Space, or click the mic on a terminal)' ] && ok "desktop voice status: your engine named, ready (v0.144)" || bad "voice status ready" "rc=$rc $out"
+[ "$rc" = 0 ] && [ "$out" = 'voice: ready (hold Super+Space, or click the mic on a window)' ] && ok "desktop voice status: your engine named, ready (v0.144)" || bad "voice status ready" "rc=$rc $out"
 voice_tree firefox; vclean; vrun --listen now
-[ "$rc" = 0 ] && grep -q 'Voice: focus a terminal at its prompt' "$HOME/notify.log" && [ ! -e "$HOME/wtype.log" ] && [ ! -e "$H/run/spark-shell-voice/want" ] \
-    && ok "desktop voice: the focus on another window, nothing typed, one notification (v0.144)" || bad "voice not terminal" "rc=$rc $out $(cat "$HOME/notify.log" 2>&1)"
-printf '4242 (bash) S 4000 4242 4242 34816 4300 4194560 0 0\n' > "$H/proc/4242/stat"   # a program in front of the shell
+[ "$rc" = 0 ] && [ "$(sed -n 1p "$HOME/wtype.log")" = '-s 20 -- hey' ] && [ ! -e "$HOME/notify.log" ] \
+    && ok "desktop voice: the words go to the window that has the focus, whatever it is: the voice is a window's capability (v0.145)" || bad "voice any window" "rc=$rc $out $(cat "$HOME/wtype.log" 2>&1)"
+voice_none; vclean; vrun --listen now
+[ "$rc" = 0 ] && grep -q 'Voice: no window has the focus' "$HOME/notify.log" && [ ! -e "$HOME/wtype.log" ] \
+    && ok "desktop voice: no window has the focus, nothing typed, one notification (v0.145)" || bad "voice no focus" "rc=$rc $out $(cat "$HOME/notify.log" 2>&1)"
 voice_tree foot; vclean; vrun --listen now
-[ "$rc" = 0 ] && grep -q 'Voice: focus a terminal at its prompt' "$HOME/notify.log" && [ ! -e "$HOME/wtype.log" ] \
-    && ok "desktop voice: a terminal with a program running, nothing typed (v0.144)" || bad "voice not at prompt" "rc=$rc $out $(cat "$HOME/notify.log" 2>&1)"
-printf '4242 (sleep) S 4000 4242 4242 34816 4242 4194560 0 0\n' > "$H/proc/4242/stat"   # a program the terminal runs itself, no shell
-voice_tree foot; vclean; vrun --listen now
-[ "$rc" = 0 ] && grep -q 'Voice: focus a terminal at its prompt' "$HOME/notify.log" && [ ! -e "$HOME/wtype.log" ] \
-    && ok "desktop voice: a terminal running a program of its own, no shell, nothing typed (v0.144)" || bad "voice no shell" "rc=$rc $out $(cat "$HOME/notify.log" 2>&1)"
-printf '4242 (bash) S 4000 4242 4242 34816 4242 4194560 0 0\n' > "$H/proc/4242/stat"
-vclean; vrun --listen now
 [ "$rc" = 0 ] && [ "$(cat "$HOME/wtype.log")" = "$(printf -- '-s 20 -- hey\n-s 20 --  can\n-s 20 -k BackSpace -k BackSpace -k BackSpace\n-s 20 -- cat')" ] && grep -qx 'listening 0' "$vstate" && [ ! -e "$HOME/notify.log" ] && [ ! -e "$H/run/spark-shell-voice/pid" ] \
     && ok "desktop voice: the engine's words typed into the terminal's line as they come, an erase as backspaces; at rest after (v0.144)" || bad "voice typed" "rc=$rc $out $(cat "$HOME/wtype.log" "$vstate" 2>&1)"
 vclean; vrun --listen hold
@@ -3963,6 +3959,10 @@ case $out in *ready*) _vt6=gone ;; *) _vt6="$out" ;; esac
     && ok "desktop voice toggle (the mic clicked): it listens, the state carries the level for the band; clicked again, it stops (v0.144)" \
     || bad "voice toggle" "$_vt1 | $_vt2 | $_vt3 $_vt5 | $_vt4 $_vt6 | $(cat "$HOME/wtype.log" 2>&1)"
 sed -i.bak '/^VOICE_ENGINE=/d' "$cfg"; rm -f "$cfg.bak"; printf 'VOICE_ENGINE=%s\n' "$H/vx/ear-stub" >> "$cfg"
+voice_tree foot; printf 'VOICE_PREFIX=?? \nVOICE_SUFFIX= --now\n' >> "$cfg"; vclean; vrun --listen now
+[ "$rc" = 0 ] && [ "$(sed -n 1p "$HOME/wtype.log")" = '-s 20 -- ?? ' ] && [ "$(tail -1 "$HOME/wtype.log")" = '-s 20 --  --now' ] \
+    && ok "desktop voice: VOICE_PREFIX before the first words, VOICE_SUFFIX after the last (v0.145)" || bad "voice marks" "rc=$rc $(cat "$HOME/wtype.log" 2>&1)"
+sed -i.bak '/^VOICE_PREFIX=/d; /^VOICE_SUFFIX=/d' "$cfg"; rm -f "$cfg.bak"
 printf 'VOICE=maybe\n' >> "$cfg"; vrun status
 [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'VOICE=maybe in .*: yes or no' && ok "config: VOICE other than yes or no refused in one line (v0.144)" || bad "voice config" "rc=$rc $out"
 cp "$H/cfg.voice" "$cfg"; vclean
@@ -6141,7 +6141,7 @@ for kv in DIALOG_ATTACH=maybe DIALOG_MODEL=1 DIALOG_TALK=off 'DIALOG_ATTACH_TYPE
 done
 ok "config: DIALOG_ATTACH, DIALOG_MODEL and DIALOG_TALK take yes or no, DIALOG_ATTACH_TYPES lower-case types; anything else is refused in one line"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
-grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u DIALOG_ICONS -u DIALOG_SPACING -u BAR_GLYPHS -u BAR_WORKSPACES -u GLYPH_FAMILY -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START -u WINPAD_PLACE -u WINPAD_WIDTH -u WINPAD_SIDE_WIDTH -u WINPAD_BAND -u WINPAD_VIEW -u WINPAD_HEIGHT -u VOICE -u VOICE_ENGINE'" "$SRC" && grep -q '^WINPAD_PLACE=bottom center$' "$REPO/config.example" && grep -q '^WINPAD_WIDTH=0$' "$REPO/config.example" && grep -q '^WINPAD_SIDE_WIDTH=36$' "$REPO/config.example" && grep -q '^WINPAD_BAND=off$' "$REPO/config.example" && grep -q '^WINPAD_VIEW=icons$' "$REPO/config.example" && grep -q '^WINPAD_HEIGHT=0$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" && grep -q '^DIALOG_ANIMATION=$' "$REPO/config.example" && grep -q '^DIALOG_ICONS=on$' "$REPO/config.example" && grep -q '^DIALOG_SPACING=groups$' "$REPO/config.example" && grep -q '^BAR_GLYPHS=signs$' "$REPO/config.example" && grep -q '^GLYPH_FAMILY=stone$' "$REPO/config.example" && ! grep -q '^BAR_WORKSPACES=' "$REPO/config.example" && grep -q '^WALLPAPER_MOTION=off$' "$REPO/config.example" \
+grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u DIALOG_ICONS -u DIALOG_SPACING -u BAR_GLYPHS -u BAR_WORKSPACES -u GLYPH_FAMILY -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START -u WINPAD_PLACE -u WINPAD_WIDTH -u WINPAD_SIDE_WIDTH -u WINPAD_BAND -u WINPAD_VIEW -u WINPAD_HEIGHT -u VOICE -u VOICE_ENGINE -u VOICE_PREFIX -u VOICE_SUFFIX'" "$SRC" && grep -q '^WINPAD_PLACE=bottom center$' "$REPO/config.example" && grep -q '^WINPAD_WIDTH=0$' "$REPO/config.example" && grep -q '^WINPAD_SIDE_WIDTH=36$' "$REPO/config.example" && grep -q '^WINPAD_BAND=off$' "$REPO/config.example" && grep -q '^WINPAD_VIEW=icons$' "$REPO/config.example" && grep -q '^WINPAD_HEIGHT=0$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" && grep -q '^DIALOG_ANIMATION=$' "$REPO/config.example" && grep -q '^DIALOG_ICONS=on$' "$REPO/config.example" && grep -q '^DIALOG_SPACING=groups$' "$REPO/config.example" && grep -q '^BAR_GLYPHS=signs$' "$REPO/config.example" && grep -q '^GLYPH_FAMILY=stone$' "$REPO/config.example" && ! grep -q '^BAR_WORKSPACES=' "$REPO/config.example" && grep -q '^WALLPAPER_MOTION=off$' "$REPO/config.example" \
     && ok "config: the dialog's keys, the bar's set (#160) and the glyph family (#248) are unset for what spark-shell starts, and config.example shows their defaults, BAR_WORKSPACES no more" || bad "dialog keys" "$(grep -n DIALOG "$REPO/config.example")"
 # the local gate (#155): every python3 test ci.yml runs is in the gate's list, read from ci.yml itself, with the lint and the
 # dialog's checks; the pre-push hook runs its quick part

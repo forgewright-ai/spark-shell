@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.145
+
+The voice is a window's, like its buttons.
+
+- Super+Space runs once a press, not again on every key repeat. Held, it
+  listens; tapped, it opens home. That is the shared key working.
+- Every title band carries the mic, and the words go to the window that
+  has the focus, whatever it is. What they mean is the window's own
+  affair.
+- VOICE_PREFIX and VOICE_SUFFIX are typed before the first words and
+  after the last, so a line can open a prompt of your own.
+
 ## v0.144
 
 Voice: hold Super+Space and talk; the words land in the terminal's line.

@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --------------------------------------------------------------- renders
 # sets: DESKTOP_RENDERED RENDERED USER_DIRS USER_DIRS_ROLES
-# reads: CONFIG_DIR HEX_KEYS MODE NEON NEON_OLD NL OS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_SEEN POINTER_THEMES REPO SCREENS_CONF SLOT_KEYS STATE_DIR TAB TERM_CONFIG_REL TERM_DIALOG_REL TERM_NAME THEME_KEYS TMP WALL_COVER WALL_KEYS WIN_KEYS WM_CONFIG_REL WM_NAME
+# reads: CONFIG_DIR HEX_KEYS MODE NEON NEON_OLD NL OS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_SEEN POINTER_THEMES REPO SCREENS_CONF SLOT_KEYS STATE_DIR TAB TERM_APP_RE TERM_CONFIG_REL TERM_DIALOG_REL TERM_NAME THEME_KEYS TMP WALL_COVER WALL_KEYS WIN_KEYS WM_CONFIG_REL WM_NAME
 # a symlink for a file used as-is, a rendered file where a value is baked
 # in. A file marked `rendered by spark-shell` is ours to render again; any
 # other is yours and moves to <path>.bak. The first .bak stays for off; a
@@ -77,10 +77,10 @@ render_expr() {   # -> the sed script that renders a template, one s command a l
     # fontconfig's own list, whose first is the proportional DejaVu Sans
     case $_fs in "$NEON"|"$NEON":*|'Monaspace '*) _ff="$_fs,$NEON_OLD${_fs#"${_fs%%:*}"}" ;; *) _ff=$_fs ;; esac   # each of the curated faces, as Neon
     e="$e${NL}s|@FONT@|$(esc "$_ff")|g"
-    e="$e${NL}s|@BAND_GLYPHS@|$(esc "$(winpad_buttons)")|g${NL}s|@BAND_TERM_GLYPHS@|$(esc "$(winpad_buttons)$(winpad_mic)")|g"
+    e="$e${NL}s|@BAND_GLYPHS@|$(esc "$(winpad_buttons)")|g${NL}s|@BAND_MIC@|$(esc "$(winpad_mic)")|g"
     e="$e${NL}s|@BAR_MODE@|$(bar_mode)|g${NL}s|@BAR_FONT@|$(esc "$(bar_font "$_fs")")|g${NL}s|@BAR_LINE_FONT@|$(esc "$(bar_line_font "$_fs")")|g"
     e="$e${NL}s|@BAR_POSITION@|$BAR_POSITION|g${NL}s|@BAR_TRAY@|$(bar_tray_output)|g${NL}s|@NOTIFY_ANCHOR@|$(notify_anchor)|g"
-    e="$e${NL}s|@FOOT_COLORS@|$(term_colors_section)|g"
+    e="$e${NL}s|@FOOT_COLORS@|$(term_colors_section)|g${NL}s|@TERM_APPS@|$(esc "$TERM_APP_RE")|g"
     if desktop_wanted; then e="$e${NL}s|@LAYOUT_SLOTS@|yes|g"; else e="$e${NL}s|@LAYOUT_SLOTS@|no|g"; fi   # sgr.sh: the five slots in foot only where the desktop's foot.ini sets them
     e="$e${NL}s|@SCREENS_CONF@|$(esc "$SCREENS_CONF")|g${NL}s|@IDLE_EXEC@|$(esc "$(idle_exec)")|g${NL}s|@KB_LAYOUT@|$(esc "$(kb_line layout)")|g${NL}s|@KB_VARIANT@|$(esc "$(kb_line variant)")|g"
     for k in POINTER_TAP POINTER_SCROLL POINTER_SPEED KEY_REPEAT_DELAY KEY_REPEAT_RATE; do

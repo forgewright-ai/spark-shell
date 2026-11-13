@@ -69,6 +69,7 @@ wm_pick() { slurp 2>/dev/null; }                   # -> a geometry drawn by the 
 wm_copy_here() { command -v wl-copy >/dev/null 2>&1; }
 wm_copy() { wl-copy "$@"; }
 wm_paste_here() { command -v wl-paste >/dev/null 2>&1; }
+wm_focused_id() { wm_tree | jq -r '[.. | objects | select(.focused? == true and .pid? != null)][0].id // empty' 2>/dev/null | grep -x '[0-9][0-9]*'; }   # -> the window with the focus; false when none has it
 wm_type_here() { command -v wtype >/dev/null 2>&1; }
 # the pause first: the compositor takes the keyboard's map a moment after it is handed over, and a word
 # typed in that moment loses its first character

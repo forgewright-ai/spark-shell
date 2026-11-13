@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Voice on a real sway, headless: a stand-in engine that speaks the ear's contract, its words typed into a
-terminal at its prompt, and the mic on that terminal's band, in its own color, with the bars while it listens.
-A terminal that runs a program of its own gets nothing.
+"""Voice on a real sway, headless: a stand-in engine that speaks the ear's contract, its words typed into
+the window that has the focus, and the mic on every title band, in its own color, with the bars while it
+listens. The voice is a window's capability, like its buttons: what the words mean is the window's own affair.
 
 python3 test/voice_desktop_proof.py [EVIDENCE_DIRECTORY]. A throwaway HOME and a sway of its own.
 SPARK_SHELL_WINPAD names the pad's build, which draws the mic. Needs sway, swaymsg, foot, grim, wtype, python3."""
@@ -119,10 +119,9 @@ def main():
     spark("on", "--yes")
     render = (root / ".config/sway/config").read_text()
     titles = [line for line in render.splitlines() if "title_format" in line]
-    ok(any("&#x25A1;  <span foreground='#" in line and "&#x25CB;</span>" in line and line.endswith('terminal   %title"') for line in titles)
-       and any(line.endswith('&#x25A1;   %title"') for line in titles),
-       "the render: a terminal's title starts with the three buttons and the mic, a ring in its own color; other windows have the buttons alone", titles)
-    ok("bindsym Mod4+space exec %s/spark-shell desktop voice press" % REPO in render
+    ok(len(titles) == 2 and all("&#x25A1; " in line and "&#x25CB;</span>" in line for line in titles),
+       "the render: every title starts with the three buttons and the mic, a ring in its own color", titles)
+    ok("bindsym --no-repeat Mod4+space exec %s/spark-shell desktop voice press" % REPO in render
        and "bindsym --release Mod4+space exec %s/spark-shell desktop voice release" % REPO in render,
        "the render: Super+Space pressed and released are the voice's", [line for line in render.splitlines() if "voice" in line])
     children = [subprocess.Popen(["sway", "-c", str(root / ".config/sway/config")], env=env, cwd=root, stdout=subprocess.DEVNULL, stderr=open(root / "sway.log", "w"))]
@@ -181,14 +180,11 @@ def main():
             mic = marks[3][3]
             apart = min(sum(abs(a - b) for a, b in zip(mic, c)) for c in buttons)
             ok(apart > 40, "the mic is drawn in its own color, not the title's, as the buttons are with the focus", (buttons, mic, apart))
-        # a terminal that runs a program of its own: the mic does not open
-        sway("[title=busy]", "focus")
-        time.sleep(0.5)
-        answer = spark("desktop", "voice", "toggle")
-        time.sleep(1.5)
-        ok("listening 1" not in state() and not said.exists(),
-           "a terminal running a program of its own: the mic does not open, nothing is typed", (answer, state()))
-        # the shell at its prompt: the words come as they are said, and Enter runs the line
+        # the busy terminal's band carries the mic too: the voice is every window's
+        busy, busy_after = band_glyphs(glyphs(env, band("busy")))
+        ok(len(busy) == 4, "a window running something of its own carries the mic as well: the capability is the window's",
+           [(c[0], c[1]) for c in busy])
+        # the shell: the words come as they are said, and Enter runs the line
         sway("[title=shell]", "focus")
         time.sleep(0.5)
         answer = spark("desktop", "voice", "toggle")

@@ -53,7 +53,7 @@ def bindings(source, overrides):
                 flags += rest[0] + " "
                 rest = rest[1].split(None, 1)
             default, command = rest
-            if flags:
+            if "--release" in flags:   # the other half of the binding before it, under the same name
                 if last is None:
                     raise ValueError("a release binding with no binding before it: " + stripped)
                 action = last
@@ -64,12 +64,12 @@ def bindings(source, overrides):
                     raise ValueError("duplicate desktop action: " + action)
                 known.add(action)
             key = chord(overrides.get(action, default.replace("$mod", "Super")))
-            identity = (scope, flags, key.lower())
+            identity = (scope, "--release" in flags, key.lower())   # a press and its release share a key; two presses do not
             if identity in seen:
                 raise ValueError("desktop key conflict: " + seen[identity] + " and " + action)
             seen[identity] = action
             lines[i] = line[:len(line) - len(line.lstrip())] + "bindsym " + flags + key + " " + command
-            if not flags:
+            if "--release" not in flags:
                 result.append((action, key.replace("Mod4", "Super").replace("Mod1", "Alt")))
                 last = action
             action = None
