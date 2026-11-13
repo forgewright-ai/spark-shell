@@ -33,7 +33,7 @@ voice_engine() {   # -> the command that hears here: your own, else the ear; fal
     ear_cmd
 }
 voice_engine_env() { [ -n "${VOICE_ENGINE:-}" ] || { EAR_LIB=$(voice_lib) EAR_MODEL=$(voice_model); export EAR_LIB EAR_MODEL; }; }   # what the ear reads; your own engine is left as it is
-voice_here() { [ "$VOICE" != no ] && voice_engine >/dev/null 2>&1; }   # the mic on the band and the key only where something hears
+voice_here() { [ "$VOICE" != no ] && wm_type_here && voice_engine >/dev/null 2>&1; }   # the mic on the band and the key only where something hears and the words can be typed
 
 # the files of a session, in the runtime folder: want (the key is held or the mic is on), pid, the pipes; the state for the band
 voice_run_dir() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-voice"; }
@@ -82,12 +82,19 @@ voice_now_ms() {   # -> the time in milliseconds; where date has no nanoseconds 
     case $_vnm in ''|*[!0-9]*) printf '%s\n' "$(( $(date +%s) * 1000 ))" ;; *) printf '%s\n' "$(( _vnm / 1000000 ))" ;; esac
 }
 voice_session() { ( setsid sh "$REPO/spark-shell" desktop voice --listen "$1" </dev/null >/dev/null 2>>"$(voice_run_dir)/log" & ); }   # voice_session hold|now -- voice_listen, apart
+voice_no() {   # voice_no WHY [DETAIL] -- nothing is heard, said where each is read: a notification, and the session's log
+    rm -f "$(voice_want)"
+    mkdir_private "$(voice_run_dir)"
+    printf 'voice: %s%s\n' "$1" "${2:+ -- $2}" >> "$(voice_run_dir)/log"
+    notify_send voice "Voice: $1"
+}
 voice_listen() {   # voice_listen hold|now -- the session: the engine's words into the focused terminal's line while want stands
     [ "$1" = now ] || { sleep 0.3; [ -f "$(voice_want)" ] || return 0; }   # a tap: the release took the file
-    _vlc=$(voice_engine) || { rm -f "$(voice_want)"; notify_send voice "Voice: nothing can hear here (spark-shell on desktop)"; return 0; }
+    _vlc=$(voice_engine) || { voice_no "nothing can hear here (spark-shell on desktop)"; return 0; }
     voice_engine_env
-    wm_type_here || { rm -f "$(voice_want)"; notify_send voice "Voice: $(wm_missing type)"; return 0; }
-    _vlt=$(term_focused_pid) && term_at_prompt "$_vlt" || { rm -f "$(voice_want)"; notify_send voice "Voice: focus a terminal at its prompt"; return 0; }
+    wm_type_here || { voice_no "$(wm_missing type)"; return 0; }
+    _vlt=$(term_focused_pid) || { voice_no "focus a terminal at its prompt" "no terminal has the focus"; return 0; }
+    term_at_prompt "$_vlt" || { voice_no "focus a terminal at its prompt" "terminal $_vlt: $(term_front "$_vlt" || echo 'nothing in it')"; return 0; }
     _vld=$(voice_run_dir); mkdir_private "$_vld"; echo $$ > "$_vld/pid"
     rm -f "$_vld/leash" "$_vld/words"; mkfifo "$_vld/leash" "$_vld/words"
     voice_set_state 1 0

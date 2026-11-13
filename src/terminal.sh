@@ -14,14 +14,17 @@ term_here() { command -v foot >/dev/null 2>&1; }
 term_missing() { echo 'foot is not installed (spark-shell on desktop)'; }
 term_config_file() { printf '%s\n' "$HOME/$TERM_CONFIG_REL"; }
 term_dialog_pad() { sed -n 's/^pad=\([0-9]*\)x\([0-9]*\).*/\1 \2/p' "$HOME/$TERM_DIALOG_REL" 2>/dev/null | head -1; }   # -> "X Y", the dialog window's padding
-term_at_prompt() {   # term_at_prompt PID -> 0 when a shell waits at the terminal's prompt: it is in front of the tty and nothing runs in it
-    _tap=$(pgrep -P "$1" 2>/dev/null | head -1); [ -n "$_tap" ] || return 1
-    _taf=${SPARK_SHELL_PROC:-/proc}/$_tap/stat
+term_front() {   # term_front PID -> what the terminal has in front of its tty, "NAME in front" when something runs in it; false when it has no child
+    _tfc=$(pgrep -P "$1" 2>/dev/null | head -1); [ -n "$_tfc" ] || return 1
+    _tff=${SPARK_SHELL_PROC:-/proc}/$_tfc/stat
+    _tfn=$(sed -n 's/^[0-9]* (\(.*\)) .*/\1/p' "$_tff" 2>/dev/null); _tfn=${_tfn#-}
     # shellcheck disable=SC2046   # the fields of /proc/PID/stat after the name: state ppid pgrp session tty tpgid
-    set -- $(sed 's/^.*) //' "$_taf" 2>/dev/null)
-    [ -n "${6:-}" ] && [ "$3" = "$6" ] || return 1
-    _tan=$(sed -n 's/^[0-9]* (\(.*\)) .*/\1/p' "$_taf" 2>/dev/null)
-    case " $TERM_SHELLS " in *" ${_tan#-} "*) return 0 ;; *) return 1 ;; esac
+    set -- $(sed 's/^.*) //' "$_tff" 2>/dev/null)
+    if [ -n "${6:-}" ] && [ "$3" != "$6" ]; then printf '%s in front\n' "$_tfn"; else printf '%s\n' "$_tfn"; fi
+}
+term_at_prompt() {   # term_at_prompt PID -> 0 when a shell waits at the terminal's prompt: it is in front of the tty and nothing runs in it
+    _tap=$(term_front "$1") || return 1
+    case " $TERM_SHELLS " in *" $_tap "*) return 0 ;; *) return 1 ;; esac
 }
 term_is_ours() { case ${TERM:-} in foot*) return 0 ;; *) return 1 ;; esac; }   # TERM says we run inside it
 term_own_process() { [ "${1##*/}" = foot ]; }                                 # term_own_process COMM
