@@ -122,6 +122,10 @@ bindsym $mod+Return exec $term
 # action: home.open
 bindsym --no-repeat $mod+space exec @REPO@/spark-shell desktop voice press
 bindsym --release $mod+space exec @REPO@/spark-shell desktop voice release
+# key: Super+period held dictates too, with your prefix and suffix around the words.
+# action: voice.wrap
+bindsym --no-repeat $mod+period exec @REPO@/spark-shell desktop voice press wrap
+bindsym --release $mod+period exec @REPO@/spark-shell desktop voice release wrap
 # the dialog's window maps unseen and the dialog shows it once its opening
 # is drawn, so nothing comes before the animation (#167)
 for_window [app_id="spark-dialog"] floating enable, border none, move position center, opacity 0

@@ -77,14 +77,6 @@ pub struct Titles {
     pub voice_state: Option<PathBuf>,
 }
 
-/// How a window's buttons were last drawn: its focus, its lit button, and on a terminal the mic.
-#[derive(Clone, PartialEq, Eq)]
-pub(crate) struct Shown {
-    pub(crate) focused: bool,
-    pub(crate) hover: Option<Glyph>,
-    pub(crate) mic: Option<Mic>,
-}
-
 pub struct Config {
     pub look: Look,
     pub titles: Titles,
@@ -281,10 +273,9 @@ pub struct App {
     /// The title bands in sight, and the glyph a press is on.
     bands: Vec<Band>,
     deco_press: Option<(i64, Glyph)>,
-    /// The button under the pointer, and the state each window's buttons were last drawn in: its focus and
-    /// its lit button.
+    /// The button under the pointer, and the title each window was last given.
     deco_hover: Option<(i64, Glyph)>,
-    sent: HashMap<i64, Shown>,
+    sent: HashMap<i64, String>,
     /// The mic as the voice state last said.
     voice: Mic,
     history: History,

@@ -48,8 +48,11 @@ repositories; the fonts and the model are pinned to one release.
 - wtype -- https://github.com/atx/wtype -- MIT.
 - sherpa-onnx, the ear's engine -- https://github.com/k2-fsa/sherpa-onnx
   -- Apache-2.0; onnxruntime -- https://onnxruntime.ai -- MIT.
-- The ear's model, a streaming FastConformer for English, as sherpa-onnx
-  packages it -- https://huggingface.co/nvidia -- CC-BY-4.0.
+- The ear's models for English, as sherpa-onnx packages them: a streaming
+  FastConformer for the words as they are said, Parakeet for the line it
+  leaves -- https://huggingface.co/nvidia -- CC-BY-4.0; Edge-Punct-Casing
+  for the punctuation -- https://github.com/frankyoujian/Edge-Punct-Casing
+  -- Apache-2.0.
 
 ## The fonts
 

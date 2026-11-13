@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Voice on a real sway, headless: a stand-in engine that speaks the ear's contract, its words typed into
-the window that has the focus, and the mic on every title band, in its own color, with the bars while it
-listens. The voice is a window's capability, like its buttons: what the words mean is the window's own affair.
+the window that has the focus, the mic on every title band in its own color, and the meter at the band's
+right end while it listens, in cells kept for it, so nothing on the band moves and the meter follows the
+window. The voice is a window's capability, like its buttons: what the words mean is the window's own affair.
 
 python3 test/voice_desktop_proof.py [EVIDENCE_DIRECTORY]. A throwaway HOME and a sway of its own.
 SPARK_SHELL_WINPAD names the pad's build, which draws the mic. Needs sway, swaymsg, foot, grim, wtype, python3."""
@@ -17,6 +18,7 @@ import tempfile
 import time
 
 REPO = Path(__file__).resolve().parent.parent
+LONG = "a window whose name is far longer than any band here holds, with words enough to run off its right end"
 failed = 0
 
 
@@ -143,10 +145,14 @@ def main():
         def terminal(name):
             return next(w for w in windows(json.loads(sway("-t", "get_tree")), []) if w["name"] == name)
 
-        def band(name):   # the start of a title band, where the buttons and the mic are drawn
+        def band(name, side="left"):   # a title band's left end, where the buttons and the mic are, or the cells kept for the meter at its right end
             w = terminal(name)
             r, d = w["rect"], w["deco_rect"]
-            return r["x"] + 10, r["y"] - d["height"] + 2, min(260, r["width"] - 20), d["height"] - 4
+            y, h = r["y"] - d["height"] + 2, d["height"] - 4
+            if side == "left":
+                return r["x"] + 10, y, min(260, r["width"] - 20), h
+            wide = round(8 * cell)   # the pad's METER cells, inside sway's titlebar padding
+            return r["x"] + r["width"] - 12 - wide, y, wide, h
 
         def state():
             path = runtime / "spark-shell-voice.state"
@@ -161,7 +167,7 @@ def main():
 
         sway("output", "*", "resolution", "1920x1080")
         time.sleep(1.5)
-        sway("exec", "foot --app-id foot --title busy -e sleep 1000")
+        sway("exec", "foot --app-id foot --title '%s' -e sleep 1000" % LONG)
         time.sleep(1)
         sway("[app_id=spark-dialog]", "kill")
         sway("exec", "foot --app-id foot --title shell bash --norc --noprofile")
@@ -175,15 +181,24 @@ def main():
         if len(marks) == 4:
             mic_end = marks[3][0] + marks[3][1]
             gap = min((c[0] - mic_end for c in after), default=999)
-            ok(gap >= 40, "at rest the room after the mic is blank: the title stands where it will stand while listening", (mic_end, gap))
+            ok(gap < 40, "the title follows the mic, with no room left empty between them", (mic_end, gap))
             buttons = [c[3] for c in marks[:3]]
             mic = marks[3][3]
             apart = min(sum(abs(a - b) for a, b in zip(mic, c)) for c in buttons)
             ok(apart > 40, "the mic is drawn in its own color, not the title's, as the buttons are with the focus", (buttons, mic, apart))
+            cell = (marks[1][0] - marks[0][0]) / 3.0   # one character of a title, from the glyphs the pad places three cells apart
+        rest_end = glyphs(env, band("shell", "right"))
+        ok(not rest_end, "at rest the band's right end is empty: the meter's cells are kept for it, not drawn",
+           [(c[0], c[1]) for c in rest_end])
         # the busy terminal's band carries the mic too: the voice is every window's
-        busy, busy_after = band_glyphs(glyphs(env, band("busy")))
-        ok(len(busy) == 4, "a window running something of its own carries the mic as well: the capability is the window's",
-           [(c[0], c[1]) for c in busy])
+        busy, busy_after = band_glyphs(glyphs(env, band(LONG)))
+        ok(all(abs(a[0] - b[0]) <= 2 for a, b in zip(busy[:4], marks[:4])) and len(busy) >= 4,
+           "a window running something of its own carries the mic as well: the capability is the window's",
+           ([(c[0], c[1]) for c in busy[:4]], [(c[0], c[1]) for c in marks[:4]]))
+        spill = glyphs(env, band(LONG, "right"))
+        ok(sum(c[1] for c in spill) <= 4,
+           "a name longer than its band is cut: it stops at the meter's cells and is not drawn under them",
+           [(c[0], c[1]) for c in spill])
         # the shell: the words come as they are said, and Enter runs the line
         sway("[title=shell]", "focus")
         time.sleep(0.5)
@@ -199,16 +214,39 @@ def main():
         time.sleep(1.2)
         shot("2-listening")
         lit, lit_after = band_glyphs(glyphs(env, band("shell")))
-        bars = [c for c in lit_after if len(lit) == 4 and 0 <= c[0] - (lit[3][0] + lit[3][1]) < 25]
-        ok(len(lit) == 4 and bars, "while it listens the bars stand right after the mic, in the room kept for them",
-           ([(c[0], c[1]) for c in lit], [(c[0], c[1]) for c in lit_after], state().replace("\n", " "), why()))
+        ok(len(lit) == 4 and [c[0] for c in lit_after] == [c[0] for c in after],
+           "while it listens the buttons, the mic and the title stand where they stood: nothing on the band moves",
+           ([(c[0], c[1]) for c in lit], [c[0] for c in lit_after], [c[0] for c in after], why()))
+        box = band("shell", "right")
+        meter = glyphs(env, box)
+        ok(meter and meter[-1][0] + meter[-1][1] >= box[2] - 6,
+           "the meter runs at the band's right end, where nothing was drawn at rest",
+           ([(c[0], c[1]) for c in meter], [(c[0], c[1]) for c in rest_end], why()))
+        if meter:
+            text = [c[3] for c in lit_after] or [c[3] for c in lit[:3]]
+            apart = lambda c: sum(abs(a - b) for a, b in zip(meter[-1][3], c))   # noqa: E731
+            ok(min(apart(c) for c in text) < apart(lit[3][3]),
+               "the meter wears the band's own text color while the mic stays red", (meter[-1][3], text, lit[3][3]))
+        # the band is the window's own frame: a narrower screen carries the meter to the band's new right end
+        sway("output", "*", "resolution", "1440x900")
+        time.sleep(2)
+        narrow = band("shell", "right")
+        moved = glyphs(env, narrow)
+        ends = [c[-1][0] + c[-1][1] for c in (meter, moved) if c]
+        ok(narrow[0] != box[0] and len(ends) == 2 and abs(ends[0] - ends[1]) <= 12,
+           "a narrower screen: the meter kept the band's right end, within the character it is placed by",
+           (box[0], narrow[0], ends, why()))
+        shot("2-narrow")
+        sway("output", "*", "resolution", "1920x1080")
+        time.sleep(2)
         answer = spark("desktop", "voice", "toggle")
         ok(answer == "voice: off", "clicked again: off", (answer, why()))
         wait_for(lambda: "listening 0" in state(), "the state at rest")
         time.sleep(0.7)
         quiet, quiet_after = band_glyphs(glyphs(env, band("shell")))
-        ok(len(quiet) == 4 and [c[0] for c in quiet_after] == [c[0] for c in after],
-           "off again: the bars are gone and the title stands where it stood", ([(c[0], c[1]) for c in quiet], [c[0] for c in quiet_after]))
+        ok(len(quiet) == 4 and [c[0] for c in quiet_after] == [c[0] for c in after] and not glyphs(env, band("shell", "right")),
+           "off again: the meter is gone from the right end and the title stands where it stood",
+           ([(c[0], c[1]) for c in quiet], [c[0] for c in quiet_after]))
         shot("3-typed")
         subprocess.run(["wtype", "-s", "20", "-k", "Return"], env=env, check=False)
         wait_for(said.exists, "the line run by Enter", 5)

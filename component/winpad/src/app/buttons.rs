@@ -1,7 +1,7 @@
 //! The buttons' side on the screen: a clear surface a screen that takes the pointer on the buttons sway draws,
 //! and the word to sway on how each window's are drawn.
 
-use super::{spawn, App, Deco, Shown, BTN_LEFT, NAMESPACE};
+use super::{spawn, App, Deco, BTN_LEFT, NAMESPACE};
 use crate::buttons::{self, Glyph};
 use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::Shape as Cursor;
@@ -142,28 +142,29 @@ impl App {
         }
     }
 
-    /// Each band in sight wears the buttons its state asks for, drawn by sway as the start of its title: sway
-    /// is told only when a window's focus, its lit button or the mic changed.
+    /// Each band in sight wears the title its state asks for, drawn by sway: the buttons, the window's name
+    /// cut to its room, and the meter's cells at the right end. sway is told only when that title changed.
     pub(super) fn title_sync(&mut self) {
         let t = &self.cfg.titles;
         let mut todo = vec![];
         for b in &self.bands {
             let hover = self.deco_hover.filter(|h| h.0 == b.id).map(|h| h.1);
-            let mic = self.with_mic(b).then(|| self.voice.clone());
-            let want = Shown {
-                focused: b.focused,
-                hover,
-                mic,
-            };
-            if self.sent.get(&b.id) != Some(&want) {
-                let tail = if self.is_term(&b.app) { &t.term_title } else { &t.title };
-                let buttons = buttons::buttons(b.focused, hover, &t.colors, &t.ground, want.mic.as_ref());
-                todo.push((b.id, want, format!("[con_id={}] title_format \"{buttons}{tail}\"", b.id)));
+            let mic = self.with_mic(b).then_some(&self.voice);
+            let around = if self.is_term(&b.app) { &t.term_title } else { &t.title };
+            let line = buttons::title(
+                buttons::room(b.rect, self.cell),
+                &buttons::buttons(b.focused, hover, &t.colors, &t.ground, mic),
+                around,
+                &b.name,
+                &buttons::meter(mic),
+            );
+            if self.sent.get(&b.id) != Some(&line) {
+                todo.push((b.id, format!("[con_id={}] title_format \"{line}\"", b.id), line));
             }
         }
-        for (id, want, command) in todo {
+        for (id, command, line) in todo {
             if self.ipc.run(&command).is_ok() {
-                self.sent.insert(id, want);
+                self.sent.insert(id, line);
             }
         }
     }

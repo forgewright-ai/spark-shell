@@ -26,7 +26,7 @@ dependencies = [
 
 [[package]]
 name = "spark-ear"
-version = "0.144.0"
+version = "0.146.0"
 dependencies = [
  "libc",
  "libloading",

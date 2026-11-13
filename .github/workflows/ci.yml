@@ -380,7 +380,7 @@ jobs:
           su ada -c "REPO='$GITHUB_WORKSPACE' SWAY_NOCAP=/opt/nocap sh /tmp/desktop_proof.sh"
           # the pad on this family's sway: windows on the pad by the keys, a click and Super+minus bring them back, the bar's block, hide
           su ada -c "PATH=/opt/nocap:\$PATH SPARK_SHELL_WINPAD='$GITHUB_WORKSPACE/winpad-build/spark-winpad' python3 -I '$GITHUB_WORKSPACE/test/winpad_desktop_proof.py' \$HOME/proof/pad"
-          # the voice on this family's sway: a stand-in engine's words typed into a terminal at its prompt, the mic and the bars on its band
+          # the voice on this family's sway: a stand-in engine's words typed into a terminal at its prompt, the mic on its band and the meter at the band's right end
           chmod 755 ear-build/spark-ear; ear-build/spark-ear --version
           su ada -c "PATH=/opt/nocap:\$PATH SPARK_SHELL_WINPAD='$GITHUB_WORKSPACE/winpad-build/spark-winpad' python3 -I '$GITHUB_WORKSPACE/test/voice_desktop_proof.py' \$HOME/proof/voice"
       - name: the notifications as drawn, kept for a look

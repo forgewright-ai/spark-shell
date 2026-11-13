@@ -65,6 +65,7 @@ help lists them by subject. The bindings are named actions in
 
     Super+Return opens a terminal window.
     Super+Space opens home; held, it listens and types what you say.
+    Super+period held listens too, with your prefix and suffix around the words.
     Super+Alt+Space switches focus between floating and tiled windows.
     Super+q closes the window.
     Super+Shift+c reloads the desktop after spark-shell on.

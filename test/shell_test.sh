@@ -922,9 +922,9 @@ else
     printf 'VOICE_ENGINE=/bin/true\n' >> "$HOME/.config/spark-shell/config"
     printf '#!/bin/sh\nexit 0\n' > "$HOME/.local/bin/wtype"; chmod +x "$HOME/.local/bin/wtype"   # a desktop has it; without it no mic is drawn
     SPARK_SHELL_WINPAD=$HOME/winpad-here sh "$SH" on --yes >/dev/null
-    _mic=" <span foreground='#aa0000'>&#x25CB;</span>       "
+    _mic=" <span foreground='#aa0000'>&#x25CB;</span> "
     grep -qxF "for_window [app_id=\"^(foot|spark-shell-.*)\$\"] title_format \"$_bg$_mic  terminal   %title\"" "$sway" && grep -qxF "for_window [shell=\".*\"] title_format \"$_bg$_mic  %title\"" "$sway" \
-        && ok "sway: with a voice, every title carries the mic after the buttons, a red ring (the palette's red) with the bars' room: the voice is a window's, like its buttons (v0.145)" || bad "band mic" "$(grep -n title_format "$sway")"
+        && ok "sway: with a voice, every title carries the mic after the buttons, a red ring (the palette's red): the voice is a window's, like its buttons (v0.145)" || bad "band mic" "$(grep -n title_format "$sway")"
     sed -i.bak '/^VOICE_ENGINE=/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak" "$HOME/.local/bin/wtype"
     sh "$SH" on --yes >/dev/null; rm -f "$HOME/winpad-here"
     grep -qxF "bindsym --no-repeat Mod4+space exec $REPO/spark-shell desktop voice press" "$sway" \
@@ -1388,8 +1388,8 @@ grep -qxF 'for_window [tiling] mark --add _spark-shell.new, exec @REPO@/spark-sh
 swt=$REPO/template/.config/sway/config
 grep -qxF 'bindsym $mod+Prior workspace prev' "$swt" && grep -qxF 'bindsym $mod+Next workspace next' "$swt" \
     && grep -qxF 'bindsym $mod+Shift+Next move container to workspace next, workspace next' "$swt" && grep -qxF 'bindsym $mod+Shift+Prior move container to workspace prev, workspace prev' "$swt" \
-    && [ -z "$(awk '$1 == "bindsym" { print $2 }' "$swt" | sort | uniq -d)" ] \
-    && ok "sway template: Super+PageUp/PageDown the workspace before or after, with Shift the window along; no key bound twice (#185)" || bad "sway workspace keys" "$(awk '$1 == "bindsym" { print $2 }' "$swt" | sort | uniq -d)"
+    && [ -z "$(awk '$1 == "bindsym" { print ($2 ~ /^--/) ? $2 " " $3 : $2 }' "$swt" | sort | uniq -d)" ] \
+    && ok "sway template: Super+PageUp/PageDown the workspace before or after, with Shift the window along; no key bound twice (#185)" || bad "sway workspace keys" "$(awk '$1 == "bindsym" { print ($2 ~ /^--/) ? $2 " " $3 : $2 }' "$swt" | sort | uniq -d)"
 grep -v '^#' "$REPO/template/.config/sway/config" | grep -q 'tmux' && bad "sway: a window starts tmux (it runs the login shell)" || ok "sway template: a new foot runs the login shell, never tmux"
 grep -q "^exec sh -c '\$term -e @REPO@/spark-shell desktop --first; swaymsg exit'$" "$REPO/template/.config/sway/config" && ok "sway template: the desktop ends with its first terminal (desktop --first: the keys once, then your shell)" || bad "sway template: exec line" "$(grep -n '^exec' "$REPO/template/.config/sway/config")"
 sway_t=$REPO/template/.config/sway/config
@@ -3959,9 +3959,13 @@ case $out in *ready*) _vt6=gone ;; *) _vt6="$out" ;; esac
     && ok "desktop voice toggle (the mic clicked): it listens, the state carries the level for the band; clicked again, it stops (v0.144)" \
     || bad "voice toggle" "$_vt1 | $_vt2 | $_vt3 $_vt5 | $_vt4 $_vt6 | $(cat "$HOME/wtype.log" 2>&1)"
 sed -i.bak '/^VOICE_ENGINE=/d' "$cfg"; rm -f "$cfg.bak"; printf 'VOICE_ENGINE=%s\n' "$H/vx/ear-stub" >> "$cfg"
-voice_tree foot; printf 'VOICE_PREFIX=?? \nVOICE_SUFFIX= --now\n' >> "$cfg"; vclean; vrun --listen now
+voice_tree foot; printf 'VOICE_PREFIX=?? \nVOICE_SUFFIX= --now\n' >> "$cfg"
+vclean; vrun press wrap; sleep 0.7; vrun release wrap; sleep 0.5
 [ "$rc" = 0 ] && [ "$(sed -n 1p "$HOME/wtype.log")" = '-s 20 -- ?? ' ] && [ "$(tail -1 "$HOME/wtype.log")" = '-s 20 --  --now' ] \
-    && ok "desktop voice: VOICE_PREFIX before the first words, VOICE_SUFFIX after the last (v0.145)" || bad "voice marks" "rc=$rc $(cat "$HOME/wtype.log" 2>&1)"
+    && ok "desktop voice: the wrapping key held, VOICE_PREFIX before the first words and VOICE_SUFFIX after the last (v0.146)" || bad "voice wrap" "rc=$rc $(cat "$HOME/wtype.log" 2>&1)"
+vclean; vrun press; sleep 0.7; vrun release; sleep 0.5
+[ "$rc" = 0 ] && [ "$(sed -n 1p "$HOME/wtype.log")" = '-s 20 -- hey' ] && ! grep -qF '??' "$HOME/wtype.log" && [ ! -e "$HOME/home.log" ] \
+    && ok "desktop voice: the plain key types the words alone, a prefix in your config or not (v0.146)" || bad "voice plain key" "rc=$rc $(cat "$HOME/wtype.log" 2>&1)"
 sed -i.bak '/^VOICE_PREFIX=/d; /^VOICE_SUFFIX=/d' "$cfg"; rm -f "$cfg.bak"
 printf 'VOICE=maybe\n' >> "$cfg"; vrun status
 [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'VOICE=maybe in .*: yes or no' && ok "config: VOICE other than yes or no refused in one line (v0.144)" || bad "voice config" "rc=$rc $out"
@@ -6353,7 +6357,7 @@ else
     fi
     printf '#!/bin/sh\ncase $1 in -m) echo x86_64 ;; *) exec "%s" "$@" ;; esac\n' "$(command -v uname)" > "$H/.local/bin/uname"
     chmod +x "$H/.local/bin/uname"
-    export SPARK_SHELL_VOICE_RUNTIME_URL=none SPARK_SHELL_VOICE_MODEL_URL=none   # no test reaches the engine's own release; the voice test below names its own files
+    export SPARK_SHELL_VOICE_RUNTIME_URL=none SPARK_SHELL_VOICE_MODEL_URL=none SPARK_SHELL_VOICE_PUNCT_URL=none SPARK_SHELL_VOICE_REWRITE_URL=none   # no test reaches the engine's own release; the voice test below names its own files
     C=$H/clone; mkdir -p "$C"
     (cd "$REPO" && tar --exclude=.git --exclude=target --exclude=target2 -cf - .) | (cd "$C" && tar --no-same-owner -xf -)   # the files ours: git refuses a clone another user owns
     printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/dialog.argv"\nexit "${DIALOG_EXIT:-0}"\n' > "$H/stub-dialog"
@@ -6375,9 +6379,18 @@ with tarfile.open(h + "/assets/runtime.tar.bz2", "w:bz2") as t:
 with tarfile.open(h + "/assets/model.tar.bz2", "w:bz2") as t:
     for f in ("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt"):
         put(t, "model/" + f, f)
-    put(t, "model/test_wavs/0.wav", "not wanted")' "$H"
+    put(t, "model/test_wavs/0.wav", "not wanted")
+with tarfile.open(h + "/assets/punct.tar.bz2", "w:bz2") as t:
+    for f in ("model.onnx", "bpe.vocab"):
+        put(t, "punct/" + f, f)
+    put(t, "punct/README.md", "not wanted")
+with tarfile.open(h + "/assets/rewrite.tar.bz2", "w:bz2") as t:
+    for f in ("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt"):
+        put(t, "rewrite/" + f, f)
+    put(t, "rewrite/test_wavs/0.wav", "not wanted")' "$H"
     sha_rt=$(sum256 "$H/assets/runtime.tar.bz2"); sha_md=$(sum256 "$H/assets/model.tar.bz2")
-    sed "s/^VOICE_RUNTIME_SHA256=.*/VOICE_RUNTIME_SHA256=$sha_rt/; s/^VOICE_MODEL_SHA256=.*/VOICE_MODEL_SHA256=$sha_md/" "$REPO/src/voice.sh" > "$C/src/voice.sh"
+    sha_pn=$(sum256 "$H/assets/punct.tar.bz2"); sha_rw=$(sum256 "$H/assets/rewrite.tar.bz2")
+    sed "s/^VOICE_RUNTIME_SHA256=.*/VOICE_RUNTIME_SHA256=$sha_rt/; s/^VOICE_MODEL_SHA256=.*/VOICE_MODEL_SHA256=$sha_md/; s/^VOICE_PUNCT_SHA256=.*/VOICE_PUNCT_SHA256=$sha_pn/; s/^VOICE_REWRITE_SHA256=.*/VOICE_REWRITE_SHA256=$sha_rw/" "$REPO/src/voice.sh" > "$C/src/voice.sh"
     ssh-keygen -q -t ed25519 -N '' -C '' -f "$H/key" >/dev/null
     printf 'spark-shell-release namespaces="git" %s\n' "$(cut -d' ' -f1,2 "$H/key.pub")" > "$C/allowed-signers"
     g() { git -C "$C" -c user.name=test -c user.email=you@example.com -c gpg.format=ssh -c "user.signingkey=$H/key" "$@"; }   # spark:allow-secret (a scratch key, made here)
@@ -6423,22 +6436,25 @@ with tarfile.open(h + "/assets/model.tar.bz2", "w:bz2") as t:
     # the voice's install (v0.144): the ear for the signed tag, then the engine's library and its model, each
     # checked by its sha256 and taken flat out of its archive; a file that does not match installs nothing
     ear_dir=$H/.local/share/spark-shell/ear; ear_bin=$H/.local/share/spark-shell/spark-ear
-    voice_on() { SPARK_SHELL_DIALOG_URL="file://$H/assets" SPARK_SHELL_VOICE_RUNTIME_URL="file://$H/assets/runtime.tar.bz2" SPARK_SHELL_VOICE_MODEL_URL="file://$H/assets/model.tar.bz2" sh "$C/spark-shell" on "$@" 2>&1; }
+    voice_on() { SPARK_SHELL_DIALOG_URL="file://$H/assets" SPARK_SHELL_VOICE_RUNTIME_URL="file://$H/assets/runtime.tar.bz2" SPARK_SHELL_VOICE_MODEL_URL="file://$H/assets/model.tar.bz2" SPARK_SHELL_VOICE_PUNCT_URL="file://$H/assets/punct.tar.bz2" SPARK_SHELL_VOICE_REWRITE_URL="file://$H/assets/rewrite.tar.bz2" sh "$C/spark-shell" on "$@" 2>&1; }
     rm -rf "$ear_dir" "$ear_bin"
     out=$(voice_on --dry-run || :)
-    printf '%s\n' "$out" | grep -q '^would  voice        fetch spark-ear for v9.9 and its engine (sherpa-onnx 2.0.1 with an English model, 110 MB), the sha256 of each checked$' \
+    printf '%s\n' "$out" | grep -q '^would  voice        fetch spark-ear for v9.9 and its models (sherpa-onnx 2.0.1, English, 620 MB: the words as you speak, their punctuation, and the line read again at the end), the sha256 of each checked$' \
         && [ ! -e "$ear_bin" ] && ok "on --dry-run: the voice says what it would fetch and fetches nothing (v0.144)" || bad "voice dry" "$(printf '%s\n' "$out" | grep voice)"
     out=$(voice_on --yes || :)
-    printf '%s\n' "$out" | grep -q "^ok     voice        spark-ear and its engine installed ($ear_dir), sha256 checked$" \
+    printf '%s\n' "$out" | grep -q "^ok     voice        spark-ear and its models installed ($ear_dir), sha256 checked$" \
         && [ -x "$ear_bin" ] && [ "$(sum256 "$ear_bin")" = "$sha_ear" ] \
         && [ "$(cat "$ear_dir/lib/libsherpa-onnx-c-api.so")" = 'the engine' ] && [ -f "$ear_dir/lib/libonnxruntime.so" ] \
         && [ "$(cat "$ear_dir/model/tokens.txt")" = 'tokens.txt' ] && [ -f "$ear_dir/model/encoder.int8.onnx" ] \
+        && [ "$(cat "$ear_dir/punct/bpe.vocab")" = 'bpe.vocab' ] && [ -f "$ear_dir/punct/model.onnx" ] \
+        && [ "$(cat "$ear_dir/rewrite/tokens.txt")" = 'tokens.txt' ] && [ -f "$ear_dir/rewrite/encoder.int8.onnx" ] \
         && [ ! -e "$ear_dir/lib/c-api.h" ] && [ ! -e "$ear_dir/model/test_wavs" ] && [ ! -e "$ear_dir/lib/sherpa" ] \
-        && ok "on: the ear fetched for the signed tag, the engine's library and model checked and taken flat, nothing else out of the archives (v0.144)" || bad "voice install" "$(printf '%s\n' "$out" | grep voice) $(find "$ear_dir" 2>/dev/null | head -8)"
+        && [ ! -e "$ear_dir/punct/README.md" ] && [ ! -e "$ear_dir/rewrite/test_wavs" ] \
+        && ok "on: the ear fetched for the signed tag, its engine and its three models checked and taken flat, nothing else out of the archives (v0.146)" || bad "voice install" "$(printf '%s\n' "$out" | grep voice) $(find "$ear_dir" 2>/dev/null | head -8)"
     printf '#!/bin/sh\nexit 0\n' > "$H/.local/bin/wtype"; chmod +x "$H/.local/bin/wtype"   # a desktop has it; the check says so when it does not
     out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" check 2>&1 || :)
-    printf '%s\n' "$out" | grep -q "^ok     voice        spark-ear and its engine ($ear_dir)$" \
-        && ok "check: the ear and its engine in place, as the release pins them (v0.144)" || bad "check voice ok" "$(printf '%s\n' "$out" | grep voice)"
+    printf '%s\n' "$out" | grep -q "^ok     voice        spark-ear and its models ($ear_dir)$" \
+        && ok "check: the ear and its models in place, as the release pins them (v0.146)" || bad "check voice ok" "$(printf '%s\n' "$out" | grep voice)"
     rm -rf "$ear_dir" "$ear_bin"; cp "$H/assets/model.tar.bz2" "$H/model.keep"; printf 'x' >> "$H/assets/model.tar.bz2"
     out=$(voice_on --yes || :)
     printf '%s\n' "$out" | grep -q '^todo   voice        the model fetched is not the one spark-shell pins: not installed$' \

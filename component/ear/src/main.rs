@@ -4,6 +4,9 @@
 //! The lines: `level N` (0 to 7) ten times a second from the first sound, and as words come `type TEXT` and
 //! `erase N`, so the reader keeps a line that reads as the words heard. Exit 0 when words came, 1 when none,
 //! 2 when it cannot listen, the reason on stderr.
+//!
+//! With EAR_PUNCT the words wear capitals and marks while they are spoken, and with EAR_REWRITE the whole
+//! utterance is read again when the speaking stops and the line is rewritten to what that model hears.
 
 use std::process::ExitCode;
 
@@ -17,6 +20,8 @@ const USAGE: &str = "spark-ear -- the microphone's sound to the words spoken, as
   --max SECONDS   the most to listen (60)
 
 The engine: EAR_LIB names libsherpa-onnx-c-api.so, EAR_MODEL its model's folder, EAR_THREADS its threads (1).
+EAR_PUNCT names the punctuation model's folder, EAR_REWRITE the folder of the model that rewrites the line when
+the speaking stops. Each is left out when unset.
 ";
 
 struct Ask {
@@ -91,7 +96,7 @@ mod listen {
 #[cfg(target_os = "linux")]
 mod listen {
     use super::Ask;
-    use spark_ear::{alsa, engine::Engine, level::level, wav::Wav, words};
+    use spark_ear::{alsa, engine::Engine, level::level, punct::Punct, rewrite::Rewrite, wav::Wav, words};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc::{channel, RecvTimeoutError};
     use std::time::{Duration, Instant};
@@ -140,6 +145,16 @@ mod listen {
         }
     }
 
+    /// The words with their marks, where a punctuation model is loaded: the word still being spoken is left
+    /// alone, since marking half a word only to take the mark back makes the line jump.
+    fn marked(punct: &Option<Punct>, text: &str) -> String {
+        let Some(p) = punct else { return text.to_string() };
+        match text.rfind(' ') {
+            Some(at) if at > 0 => format!("{}{}", p.add(&text[..at]), &text[at..]),
+            _ => text.to_string(),
+        }
+    }
+
     pub fn run(ask: Ask) -> Result<bool, String> {
         let lib = std::env::var("EAR_LIB").map_err(|_| "EAR_LIB names no engine library".to_string())?;
         let model = std::env::var("EAR_MODEL").map_err(|_| "EAR_MODEL names no model folder".to_string())?;
@@ -185,6 +200,16 @@ mod listen {
             drop(tx);
         });
         let engine = Engine::open(&lib, &model, threads).map_err(|e| format!("no engine: {e}"))?;
+        // the marks while speaking, and the better read when it stops: each only where spark-shell named one
+        let punct = match std::env::var("EAR_PUNCT") {
+            Ok(dir) if !dir.is_empty() => Some(Punct::open(&lib, &dir, threads).map_err(|e| format!("no punctuation: {e}"))?),
+            _ => None,
+        };
+        let rewrite = match std::env::var("EAR_REWRITE") {
+            Ok(dir) if !dir.is_empty() => Some(Rewrite::open(&lib, &dir, threads).map_err(|e| format!("no rewrite: {e}"))?),
+            _ => None,
+        };
+        let mut heard: Vec<f32> = vec![];
         let stream = engine.stream();
         let mut said = words::Text::default();
         let mut typed = String::new();
@@ -199,8 +224,11 @@ mod listen {
                 Ok(block) => {
                     let samples: Vec<f32> = block.iter().map(|&s| f32::from(s) / 32768.0).collect();
                     stream.feed(rate, &samples);
+                    if rewrite.is_some() {
+                        heard.extend_from_slice(&samples);
+                    }
                     let current = stream.text();
-                    say(&said.now(&current), &mut typed);
+                    say(&marked(&punct, &said.now(&current)), &mut typed);
                     if stream.ended() {
                         said.end(&current);
                     }
@@ -214,7 +242,14 @@ mod listen {
             }
         }
         stream.finish();
-        say(&said.now(&stream.text()), &mut typed);
+        say(&marked(&punct, &said.now(&stream.text())), &mut typed);
+        // the line as the other model hears the whole of it; its own marks, so the punctuation model stands aside
+        if let (Some(r), false) = (&rewrite, heard.is_empty()) {
+            let again = r.text(rate, &heard);
+            if !again.is_empty() {
+                say(&again, &mut typed);
+            }
+        }
         Ok(!typed.trim().is_empty())
     }
 }

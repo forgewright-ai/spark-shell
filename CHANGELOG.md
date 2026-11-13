@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.146
+
+Punctuation while you speak, and a better line when you stop.
+
+- The words are typed with their punctuation and capitals as they are
+  said. The word still being spoken is left plain, so the line never
+  takes punctuation back.
+- When the key is released a larger model writes the line again, for the
+  words and the punctuation a streaming model cannot get right.
+- Super+period held listens too, with VOICE_PREFIX and VOICE_SUFFIX
+  around the words. Super+Space stays plain.
+- Every title band ends in the voice meter: eight cells kept for it,
+  empty at rest, the levels while it listens. A window name longer than
+  its band is cut short, so nothing on the band moves.
+
 ## v0.145
 
 The voice is a window's, like its buttons.

@@ -18,7 +18,7 @@ winpad_want_sha() {   # -> the sha256 the release tag's tree pins for this machi
 winpad_ok() { [ -x "$WINPAD_BIN" ] && _pdw=$(winpad_want_sha) && [ -n "$_pdw" ] && [ "$(sha256_of "$WINPAD_BIN")" = "$_pdw" ]; }   # the binary in place is the one the tree pins
 winpad_cmd() { if [ -n "${SPARK_SHELL_WINPAD:-}" ]; then [ -x "$SPARK_SHELL_WINPAD" ] && printf '%s' "$SPARK_SHELL_WINPAD"; elif winpad_ok; then printf '%s' "$WINPAD_BIN"; else return 1; fi; }   # -> SPARK_SHELL_WINPAD (another build, as it is), else the pinned pad; false when none
 winpad_here() { winpad_cmd >/dev/null 2>&1; }   # a winpad can run on this machine
-winpad_mic() { ! winpad_here || ! voice_here || printf '%s' " <span foreground='#$HEX_ANSI_1'>&#x25CB;</span>       "; }   # -> the mic at rest on a terminal's band, red in every palette, the bars' room after it
+winpad_mic() { ! winpad_here || ! voice_here || printf '%s' " <span foreground='#$HEX_ANSI_1'>&#x25CB;</span> "; }   # -> the mic at rest on a band, red in every palette; the pad takes the title over from here, with the meter at its right end
 winpad_buttons() { ! winpad_here || printf '%s' ' &#x2715;  &#x25BD;  &#x25A1; '; }   # -> close, minimize, fill, the start of every title, as pango character references so the render stays ASCII (the component's GLYPH_REFS); nothing where no winpad can run: no button is drawn that does not click
 winpad_install() {   # the pad's row of on desktop: in place as pinned, or fetched for the signed tag and checked
     _pdt=$(wallpaper_target) || { skip pad "no spark-winpad built for $(uname -m) yet: Super+minus brings back the window minimized last"; return 0; }
