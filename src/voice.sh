@@ -108,7 +108,12 @@ voice_listen() {   # voice_listen hold|now -- the session: the engine's words in
         case $_vll in
             level\ *) voice_set_state 1 "${_vll#level }"
                 _vln=$((_vln + 1))
-                if [ "$_vlo" = 1 ] && { [ ! -f "$(voice_want)" ] || { [ $((_vln % 10)) = 0 ] && [ "$(term_focused_pid)" != "$_vlt" ]; }; }; then exec 3>&-; _vlo=0; fi ;;   # the key up or the mic clicked; the focus moved: no word goes elsewhere
+                if [ "$_vlo" = 1 ] && [ ! -f "$(voice_want)" ]; then exec 3>&-; _vlo=0   # the key is up, or the mic was clicked again
+                # the focus every second: no word goes to another window. A tree that does not answer is not a move.
+                elif [ "$_vlo" = 1 ] && [ $((_vln % 10)) = 0 ] && _vlf=$(term_focused_pid) && [ "$_vlf" != "$_vlt" ]; then
+                    printf 'voice: the focus moved to %s\n' "$_vlf" >> "$_vld/log"
+                    exec 3>&-; _vlo=0
+                fi ;;
             type\ *) wm_type "${_vll#type }" ;;
             erase\ *) wm_erase "${_vll#erase }" ;;
         esac
