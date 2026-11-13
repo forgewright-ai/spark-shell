@@ -17,12 +17,14 @@ pub struct Band {
     pub focused: bool,
 }
 
-/// The buttons at the left end of a band, in their order: close, minimize, fill the screen or put back.
+/// The buttons at the left end of a band, in their order: close, minimize, fill the screen or put back,
+/// and on a terminal the mic.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Glyph {
     Close,
     Min,
     Fill,
+    Mic,
 }
 
 /// The buttons' glyphs as pango character references, so every command and file stays ASCII: an X, a
@@ -32,12 +34,40 @@ pub const GLYPH_REFS: [&str; 3] = ["&#x2715;", "&#x25BD;", "&#x25A1;"];
 pub const GLYPHS: &str = " \u{2715}  \u{25bd}  \u{25a1} ";
 /// Where a title starts inside its band: the template's titlebar_padding.
 pub const TITLE_PAD: i32 = 12;
+/// The mic at rest, a ring, and listening, a dot; the bars, eight heights.
+pub const MIC_REFS: [&str; 2] = ["&#x25CB;", "&#x25CF;"];
+pub const BAR_REFS: [&str; 8] = ["&#x2581;", "&#x2582;", "&#x2583;", "&#x2584;", "&#x2585;", "&#x2586;", "&#x2587;", "&#x2588;"];
+/// The mic on a terminal's band: listening or at rest, and the last five levels, the newest last.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Mic {
+    pub listening: bool,
+    pub bars: [u8; 5],
+}
+
+/// The mic from spark-shell's voice state (`listening 0|1`, `level N`) and the mic before: the bars slide.
+pub fn mic_state(text: &str, before: &Mic) -> Mic {
+    let (mut listening, mut level) = (false, 0u8);
+    for line in text.lines() {
+        if let Some(v) = line.strip_prefix("listening ") {
+            listening = v.trim() == "1";
+        }
+        if let Some(v) = line.strip_prefix("level ") {
+            level = v.trim().parse().unwrap_or(0);
+        }
+    }
+    let b = before.bars;
+    Mic {
+        listening,
+        bars: if listening { [b[1], b[2], b[3], b[4], level.min(7)] } else { [0; 5] },
+    }
+}
 
 /// The start of a title, sway's title_format: the three buttons, each three characters wide. On the focused
 /// window they wear the title's own color, on the others each its control color. The one under the pointer
 /// lights on any window: a chip in its control color, its glyph in the ground's. `colors` are close,
-/// minimize and fill, as rrggbb.
-pub fn buttons(focused: bool, hover: Option<Glyph>, colors: &[String; 3], ground: &str) -> String {
+/// minimize and fill, as rrggbb. A terminal's band has the mic after them, red in every palette, and the
+/// bars' room: five bars while listening, blank at rest, so the title stays put.
+pub fn buttons(focused: bool, hover: Option<Glyph>, colors: &[String; 3], ground: &str, mic: Option<&Mic>) -> String {
     let mut out = String::new();
     for (i, g) in [Glyph::Close, Glyph::Min, Glyph::Fill].into_iter().enumerate() {
         let (r, c) = (GLYPH_REFS[i], &colors[i]);
@@ -47,28 +77,44 @@ pub fn buttons(focused: bool, hover: Option<Glyph>, colors: &[String; 3], ground
             (false, false) => format!(" <span foreground='#{c}'>{r}</span> "),
         };
     }
+    if let Some(m) = mic {
+        let (r, c) = (MIC_REFS[usize::from(m.listening)], &colors[0]);
+        out += &if hover == Some(Glyph::Mic) {
+            format!("<span background='#{c}' foreground='#{ground}'> {r} </span>")
+        } else {
+            format!(" <span foreground='#{c}'>{r}</span> ")
+        };
+        out += &if m.listening {
+            let bars: String = m.bars.iter().map(|&l| BAR_REFS[usize::from(l.min(7))]).collect();
+            format!(" <span foreground='#{c}'>{bars}</span>")
+        } else {
+            "      ".to_string()
+        };
+    }
     out
 }
 
-/// A band's three button cells for the pointer, `cell` the width of one character of the title: close,
-/// minimize, fill, three characters each from the title's start, as tall as the band.
-pub fn glyph_cells(band: Rect, cell: f64) -> [Rect; 3] {
+/// A band's button cells for the pointer, `cell` the width of one character of the title: close,
+/// minimize, fill and the mic, three characters each from the title's start, as tall as the band.
+pub fn glyph_cells(band: Rect, cell: f64) -> [Rect; 4] {
     let at = |i: f64| {
         let x = band.x as f64 + TITLE_PAD as f64 + 3.0 * i * cell;
         Rect::new(x.round() as i32, band.y, (3.0 * cell).round() as i32, band.h)
     };
-    [at(0.0), at(1.0), at(2.0)]
+    [at(0.0), at(1.0), at(2.0), at(3.0)]
 }
 
-/// The button a point is on in a band.
-pub fn glyph_at(band: Rect, cell: f64, x: f64, y: f64) -> Option<Glyph> {
-    let [close, min, fill] = glyph_cells(band, cell);
+/// The button a point is on in a band; the mic's cell counts on a terminal's band alone.
+pub fn glyph_at(band: Rect, cell: f64, x: f64, y: f64, with_mic: bool) -> Option<Glyph> {
+    let [close, min, fill, mic] = glyph_cells(band, cell);
     if close.has(x, y) {
         Some(Glyph::Close)
     } else if min.has(x, y) {
         Some(Glyph::Min)
     } else if fill.has(x, y) {
         Some(Glyph::Fill)
+    } else if with_mic && mic.has(x, y) {
+        Some(Glyph::Mic)
     } else {
         None
     }
@@ -150,7 +196,7 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
     }
     let keep: Vec<bool> = (0..out.len())
         .map(|i| {
-            let [a, _, b] = glyph_cells(out[i].rect, cell);
+            let [a, _, b, _] = glyph_cells(out[i].rect, cell);
             let zone = Rect::new(a.x, a.y, b.x + b.w - a.x, a.h);
             !out[i + 1..].iter().any(|o| o.output == out[i].output && meets(zone, o.whole))
         })
@@ -186,33 +232,90 @@ mod tests {
         assert_eq!(b[0].whole, Rect::new(8, 38, 784, 854));
         assert_eq!(b[1].rect, Rect::new(400, 27, 400, 23));
         // the title starts 12 px in: close, minimize, fill, three characters each
-        let [close, min, fill] = glyph_cells(b[0].rect, 10.0);
+        let [close, min, fill, mic] = glyph_cells(b[0].rect, 10.0);
         assert_eq!(close, Rect::new(20, 38, 30, 23));
         assert_eq!(min, Rect::new(50, 38, 30, 23));
         assert_eq!(fill, Rect::new(80, 38, 30, 23));
-        assert_eq!(glyph_at(b[0].rect, 10.0, 35.0, 50.0), Some(Glyph::Close));
-        assert_eq!(glyph_at(b[0].rect, 10.0, 65.0, 50.0), Some(Glyph::Min));
-        assert_eq!(glyph_at(b[0].rect, 10.0, 95.0, 50.0), Some(Glyph::Fill));
-        assert_eq!(glyph_at(b[0].rect, 10.0, 120.0, 50.0), None);
+        assert_eq!(mic, Rect::new(110, 38, 30, 23));
+        assert_eq!(glyph_at(b[0].rect, 10.0, 35.0, 50.0, false), Some(Glyph::Close));
+        assert_eq!(glyph_at(b[0].rect, 10.0, 65.0, 50.0, false), Some(Glyph::Min));
+        assert_eq!(glyph_at(b[0].rect, 10.0, 95.0, 50.0, false), Some(Glyph::Fill));
+        assert_eq!(glyph_at(b[0].rect, 10.0, 120.0, 50.0, false), None);
+        assert_eq!(glyph_at(b[0].rect, 10.0, 120.0, 50.0, true), Some(Glyph::Mic));
+        assert_eq!(glyph_at(b[0].rect, 10.0, 150.0, 50.0, true), None);
         assert_eq!(GLYPHS.chars().count(), 9);
     }
 
     #[test]
     fn the_buttons_wear_the_title_color_with_the_focus_and_their_own_without() {
         let c = ["bf616a".to_string(), "ebcb8b".to_string(), "a3be8c".to_string()];
-        assert_eq!(buttons(true, None, &c, "2e3440"), " &#x2715;  &#x25BD;  &#x25A1; ");
+        assert_eq!(buttons(true, None, &c, "2e3440", None), " &#x2715;  &#x25BD;  &#x25A1; ");
         assert_eq!(
-            buttons(true, Some(Glyph::Close), &c, "2e3440"),
+            buttons(true, Some(Glyph::Close), &c, "2e3440", None),
             "<span background='#bf616a' foreground='#2e3440'> &#x2715; </span> &#x25BD;  &#x25A1; "
         );
         assert_eq!(
-            buttons(false, None, &c, "2e3440"),
+            buttons(false, None, &c, "2e3440", None),
             " <span foreground='#bf616a'>&#x2715;</span>  <span foreground='#ebcb8b'>&#x25BD;</span>  <span foreground='#a3be8c'>&#x25A1;</span> "
         );
         assert_eq!(
-            buttons(false, Some(Glyph::Min), &c, "2e3440"),
+            buttons(false, Some(Glyph::Min), &c, "2e3440", None),
             " <span foreground='#bf616a'>&#x2715;</span> <span background='#ebcb8b' foreground='#2e3440'> &#x25BD; </span> <span foreground='#a3be8c'>&#x25A1;</span> "
         );
+    }
+
+    #[test]
+    fn a_terminal_has_the_mic_red_and_the_bars_while_listening() {
+        let c = ["bf616a".to_string(), "ebcb8b".to_string(), "a3be8c".to_string()];
+        let rest = Mic::default();
+        assert_eq!(
+            buttons(true, None, &c, "2e3440", Some(&rest)),
+            " &#x2715;  &#x25BD;  &#x25A1;  <span foreground='#bf616a'>&#x25CB;</span>       "
+        );
+        let live = Mic {
+            listening: true,
+            bars: [0, 2, 5, 7, 3],
+        };
+        assert_eq!(
+            buttons(true, Some(Glyph::Mic), &c, "2e3440", Some(&live)),
+            " &#x2715;  &#x25BD;  &#x25A1; <span background='#bf616a' foreground='#2e3440'> &#x25CF; </span> <span foreground='#bf616a'>&#x2581;&#x2583;&#x2586;&#x2588;&#x2584;</span>"
+        );
+        // the title starts at the same column at rest and listening: three cells of mic, six of bars
+        fn cells(s: &str) -> usize {
+            let (mut n, mut it) = (0, s.chars());
+            while let Some(c) = it.next() {
+                match c {
+                    '<' => {
+                        it.by_ref().find(|&d| d == '>');
+                    }
+                    '&' => {
+                        it.by_ref().find(|&d| d == ';');
+                        n += 1;
+                    }
+                    _ => n += 1,
+                }
+            }
+            n
+        }
+        assert_eq!(cells(&buttons(true, None, &c, "2e3440", Some(&rest))), 18);
+        assert_eq!(cells(&buttons(true, Some(Glyph::Mic), &c, "2e3440", Some(&live))), 18);
+    }
+
+    #[test]
+    fn the_mic_follows_the_voice_state_and_its_bars_slide() {
+        let rest = Mic::default();
+        assert_eq!(mic_state("", &rest), rest);
+        let a = mic_state("listening 1\nlevel 4\n", &rest);
+        assert_eq!(
+            a,
+            Mic {
+                listening: true,
+                bars: [0, 0, 0, 0, 4]
+            }
+        );
+        let b = mic_state("listening 1\nlevel 9\n", &a);
+        assert_eq!(b.bars, [0, 0, 0, 4, 7]);
+        assert_eq!(mic_state("listening 0\nlevel 3\n", &b), rest);
     }
 
     #[test]

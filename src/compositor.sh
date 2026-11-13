@@ -69,12 +69,23 @@ wm_pick() { slurp 2>/dev/null; }                   # -> a geometry drawn by the 
 wm_copy_here() { command -v wl-copy >/dev/null 2>&1; }
 wm_copy() { wl-copy "$@"; }
 wm_paste_here() { command -v wl-paste >/dev/null 2>&1; }
+wm_type_here() { command -v wtype >/dev/null 2>&1; }
+# the pause first: the compositor takes the keyboard's map a moment after it is handed over, and a word
+# typed in that moment loses its first character
+wm_type() { wtype -s 20 -- "$1"; }   # wm_type TEXT -- typed into the focused window, through the compositor's virtual keyboard
+wm_erase() {   # wm_erase N -- N characters back
+    _wen=$1; [ "$_wen" -gt 0 ] || return 0
+    set -- -s 20
+    while [ "$_wen" -gt 0 ]; do set -- "$@" -k BackSpace; _wen=$((_wen - 1)); done
+    wtype "$@"
+}
 wm_missing() {   # wm_missing lock|capture|pick|copy|capture-failed -> the line that says so
     case $1 in
         lock) echo 'swaylock is not installed (spark-shell on desktop)' ;;
         capture) echo 'grim is not installed: run spark-shell on desktop' ;;
         pick) echo 'slurp is not installed: run spark-shell on desktop' ;;
         copy) echo 'cannot copy: wl-copy is not installed (spark-shell on desktop)' ;;
+        type) echo 'wtype is not installed (spark-shell on desktop)' ;;
         capture-failed) echo 'grim could not take the picture' ;;
     esac
 }

@@ -1,7 +1,7 @@
 //! The buttons' side on the screen: a clear surface a screen that takes the pointer on the buttons sway draws,
 //! and the word to sway on how each window's are drawn.
 
-use super::{spawn, App, Deco, BTN_LEFT, NAMESPACE};
+use super::{spawn, App, Deco, Shown, BTN_LEFT, NAMESPACE};
 use crate::buttons::{self, Glyph};
 use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::Shape as Cursor;
@@ -12,6 +12,12 @@ use wayland_client::protocol::wl_shm;
 use wayland_client::protocol::wl_surface::WlSurface;
 
 impl App {
+    /// A terminal's band carries the mic, when something can hear.
+    fn with_mic(&self, b: &crate::buttons::Band) -> bool {
+        let t = &self.cfg.titles;
+        t.voice && !t.term.is_empty() && b.app == t.term
+    }
+
     pub(super) fn apply_deco(&mut self, oi: usize) {
         if self.outs[oi].deco.is_some() {
             return;
@@ -60,7 +66,8 @@ impl App {
         data.fill(0);
         for b in self.bands.iter().filter(|b| b.output == name) {
             let cells = buttons::glyph_cells(b.rect, self.cell);
-            region.add(cells[0].x, cells[0].y, cells[2].x + cells[2].w - cells[0].x, cells[0].h);
+            let last = if self.with_mic(b) { 3 } else { 2 };
+            region.add(cells[0].x, cells[0].y, cells[last].x + cells[last].w - cells[0].x, cells[0].h);
         }
         let d = self.outs[oi].deco.as_ref().unwrap();
         let surface = d.layer.wl_surface().clone();
@@ -82,7 +89,7 @@ impl App {
         self.bands
             .iter()
             .filter(|b| &b.output == name)
-            .find_map(|b| buttons::glyph_at(b.rect, self.cell, pos.0, pos.1).map(|g| (b.id, g)))
+            .find_map(|b| buttons::glyph_at(b.rect, self.cell, pos.0, pos.1, self.with_mic(b)).map(|g| (b.id, g)))
     }
 
     /// The pointer on a glyph surface: the hand over a glyph; a press and a release on the same glyph act.
@@ -106,6 +113,7 @@ impl App {
                         }
                         Glyph::Min => spawn(&self.cfg.spark_shell, &["desktop", "window", "min", &id.to_string()]),
                         Glyph::Fill => spawn(&self.cfg.spark_shell, &["desktop", "window", "toggle", &id.to_string()]),
+                        Glyph::Mic => spawn(&self.cfg.spark_shell, &["desktop", "voice", "toggle"]),
                     }
                 }
             }
@@ -130,16 +138,21 @@ impl App {
     }
 
     /// Each band in sight wears the buttons its state asks for, drawn by sway as the start of its title: sway
-    /// is told only when a window's focus or its lit button changed.
+    /// is told only when a window's focus, its lit button or the mic changed.
     pub(super) fn title_sync(&mut self) {
         let t = &self.cfg.titles;
         let mut todo = vec![];
         for b in &self.bands {
             let hover = self.deco_hover.filter(|h| h.0 == b.id).map(|h| h.1);
-            let want = (b.focused, hover);
+            let mic = self.with_mic(b).then(|| self.voice.clone());
+            let want = Shown {
+                focused: b.focused,
+                hover,
+                mic,
+            };
             if self.sent.get(&b.id) != Some(&want) {
                 let tail = if !t.term.is_empty() && b.app == t.term { &t.term_title } else { &t.title };
-                let buttons = buttons::buttons(b.focused, hover, &t.colors, &t.ground);
+                let buttons = buttons::buttons(b.focused, hover, &t.colors, &t.ground, want.mic.as_ref());
                 todo.push((b.id, want, format!("[con_id={}] title_format \"{buttons}{tail}\"", b.id)));
             }
         }

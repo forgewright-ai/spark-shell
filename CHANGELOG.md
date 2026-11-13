@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.144
+
+Voice: hold Super+Space and talk; the words land in the terminal's line.
+
+- Hold Super+Space, or click the mic on a terminal's band: the words go in
+  the line as you speak, settled words only, never sent. Release, or
+  click again, and they stay.
+- The ear, a new component (spark-ear), hears the microphone through
+  ALSA and runs sherpa-onnx with a streaming FastConformer model for
+  English; spark-shell on desktop fetches both, pinned by sha256.
+- Measured on a desktop machine: a word is typed about a second after it
+  is spoken, 5% of words come out wrong, the ear takes a sixth of one
+  core while it listens and nothing when it does not, and the engine and
+  its model are 170 MB on disk.
+- VOICE=no leaves the voice out; VOICE_ENGINE names your own engine, a
+  command that speaks the ear's contract.
+- The mic is red in every palette; while listening it is a dot, with
+  five bars that follow your voice.
+- wtype joins the desktop's packages.
+
 ## v0.143
 
 One name through winpad, and no button that does not click.

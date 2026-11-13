@@ -45,6 +45,11 @@ repositories; the fonts and the model are pinned to one release.
 - librsvg -- https://gitlab.gnome.org/GNOME/librsvg -- LGPL-2.1-or-later.
 - Poppler -- https://gitlab.freedesktop.org/poppler/poppler -- GPL-2.0-or-later.
 - mpv -- https://mpv.io -- GPL-2.0-or-later.
+- wtype -- https://github.com/atx/wtype -- MIT.
+- sherpa-onnx, the ear's engine -- https://github.com/k2-fsa/sherpa-onnx
+  -- Apache-2.0; onnxruntime -- https://onnxruntime.ai -- MIT.
+- The ear's model, a streaming FastConformer for English, as sherpa-onnx
+  packages it -- https://huggingface.co/nvidia -- CC-BY-4.0.
 
 ## The fonts
 

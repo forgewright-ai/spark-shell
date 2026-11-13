@@ -199,7 +199,7 @@ def main():
 
 MODULE_TEXT = {}   # a module's code lines, comments gone, as one text
 NAMED = {   # the module that may name a program and its variables; every other one speaks through it
-    "compositor": r"swaymsg|swaylock|swayidle|swaybg|grim|slurp|wl-copy|wl-paste|SWAYSOCK",
+    "compositor": r"swaymsg|swaylock|swayidle|swaybg|grim|slurp|wl-copy|wl-paste|wtype|SWAYSOCK",
     "terminal": r"foot|footclient",
 }
 HELPER_NAMED = r"swaymsg|swaylock|swayidle|swaybg|grim|slurp|wl-copy|wl-paste|SWAYSOCK|footclient|which\(\"foot\"\)|(?<![A-Za-z0-9_])\[\"foot\""   # lib/*.py: compositor.py alone; foot is an English word too

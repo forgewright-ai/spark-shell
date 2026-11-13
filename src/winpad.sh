@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- winpad
 # sets: WINPAD_BIN WINPAD_KEEP
-# reads: BAR_PID DIALOG_URL MODE OS PANEL_SEP REPO STATE_DIR TERM_NAME TMP WM_NAME
+# reads: BAR_PID DIALOG_URL OS PANEL_SEP REPO STATE_DIR TERM_NAME TMP WM_NAME
 WINPAD_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-winpad
 winpad_lock() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-winpad.pid"; }   # the pad's lock, its pid inside
 winpad_state() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-winpad.state"; }   # what the pad says of itself: hidden 0|1, count N
@@ -17,14 +17,9 @@ winpad_want_sha() {   # -> the sha256 the release tag's tree pins for this machi
 }
 winpad_ok() { [ -x "$WINPAD_BIN" ] && _pdw=$(winpad_want_sha) && [ -n "$_pdw" ] && [ "$(sha256_of "$WINPAD_BIN")" = "$_pdw" ]; }   # the binary in place is the one the tree pins
 winpad_cmd() { if [ -n "${SPARK_SHELL_WINPAD:-}" ]; then [ -x "$SPARK_SHELL_WINPAD" ] && printf '%s' "$SPARK_SHELL_WINPAD"; elif winpad_ok; then printf '%s' "$WINPAD_BIN"; else return 1; fi; }   # -> SPARK_SHELL_WINPAD (another build, as it is), else the pinned pad; false when none
-winpad_here() { [ -n "${_winpad_coming:-}" ] || winpad_cmd >/dev/null 2>&1; }   # a winpad can run on this machine, or this run is about to fetch one
+winpad_here() { winpad_cmd >/dev/null 2>&1; }   # a winpad can run on this machine
+winpad_mic() { ! winpad_here || ! voice_here || printf '%s' " <span foreground='#$HEX_ANSI_1'>&#x25CB;</span>       "; }   # -> the mic at rest on a terminal's band, red in every palette, the bars' room after it
 winpad_buttons() { ! winpad_here || printf '%s' ' &#x2715;  &#x25BD;  &#x25A1; '; }   # -> close, minimize, fill, the start of every title, as pango character references so the render stays ASCII (the component's GLYPH_REFS); nothing where no winpad can run: no button is drawn that does not click
-winpad_coming() {   # on desktop, before it renders: true when no winpad is in place and the release pins one to fetch
-    _winpad_coming=''
-    ! winpad_cmd >/dev/null 2>&1 && [ "$DIALOG_URL" != none ] && [ -n "$(winpad_want_sha)" ] || return 1
-    _winpad_coming=1
-}
-winpad_came() { [ -n "${_winpad_coming:-}" ] && [ "$MODE" != dry ] || return 0; _winpad_coming=''; winpad_cmd >/dev/null 2>&1; }   # after the install: false when the one awaited did not come; a dry run fetches none and says so in its row
 winpad_install() {   # the pad's row of on desktop: in place as pinned, or fetched for the signed tag and checked
     _pdt=$(wallpaper_target) || { skip pad "no spark-winpad built for $(uname -m) yet: Super+minus brings back the window minimized last"; return 0; }
     _pdr=$(winpad_release_tag) || { row todo pad "this clone is past its release: spark-winpad comes with the next tag"; return 0; }
@@ -79,8 +74,9 @@ winpad_run() {   # winpad_run [--keys] -- spark-winpad started in its own sessio
         # WINPAD_BAND on|off, WINPAD_BAND_HEX its color; WINPAD_GAP the outer gap; WINPAD_VIEW icons|titles; WINPAD_HEIGHT 0 as many as needed
         SPARK_SHELL=$REPO/spark-shell WINPAD_FG=$HEX_FG WINPAD_ACCENT=$HEX_ACCENT WINPAD_MUTED=$PANEL_MUTED WINPAD_GROUND=$HEX_BG WINPAD_CLOSE=$HEX_ANSI_1 WINPAD_MIN=$HEX_ANSI_3 WINPAD_FILL=$HEX_ANSI_2 WINPAD_SURFACE=$PANEL_BG WINPAD_LIT=$PANEL_HI WINPAD_BAND_HEX=$PANEL_BAND
         WINPAD_ALPHA=$ALPHA WINPAD_FONT=$(bar_line_font) WINPAD_PLACE=$WINPAD_PLACE WINPAD_WIDTH=$WINPAD_WIDTH WINPAD_SIDE_WIDTH=$WINPAD_SIDE_WIDTH WINPAD_HEIGHT=${WINPAD_HEIGHT:-0} WINPAD_BAR=$(bar_place)
+        WINPAD_VOICE=$(voice_here && echo yes || echo no) WINPAD_VOICE_STATE=$(voice_state)
         WINPAD_TERM=$TERM_NAME WINPAD_TITLE=$BAND_TITLE WINPAD_TERM_TITLE=$BAND_TERM_TITLE WINPAD_BAND=${WINPAD_BAND:-off} WINPAD_VIEW=${WINPAD_VIEW:-icons} WINPAD_GAP=${GAPS_OUTER:-} WINPAD_LOCK=$(winpad_lock) WINPAD_STATE=$(winpad_state) WINPAD_BAR_PID=$BAR_PID
-        export SPARK_SHELL WINPAD_FG WINPAD_ACCENT WINPAD_MUTED WINPAD_GROUND WINPAD_CLOSE WINPAD_MIN WINPAD_FILL WINPAD_TERM WINPAD_TITLE WINPAD_TERM_TITLE WINPAD_SURFACE WINPAD_LIT WINPAD_BAND_HEX WINPAD_ALPHA WINPAD_FONT WINPAD_PLACE WINPAD_WIDTH WINPAD_SIDE_WIDTH WINPAD_HEIGHT WINPAD_BAR WINPAD_BAND WINPAD_VIEW WINPAD_GAP WINPAD_LOCK WINPAD_STATE WINPAD_BAR_PID
+        export SPARK_SHELL WINPAD_VOICE WINPAD_VOICE_STATE WINPAD_FG WINPAD_ACCENT WINPAD_MUTED WINPAD_GROUND WINPAD_CLOSE WINPAD_MIN WINPAD_FILL WINPAD_TERM WINPAD_TITLE WINPAD_TERM_TITLE WINPAD_SURFACE WINPAD_LIT WINPAD_BAND_HEX WINPAD_ALPHA WINPAD_FONT WINPAD_PLACE WINPAD_WIDTH WINPAD_SIDE_WIDTH WINPAD_HEIGHT WINPAD_BAR WINPAD_BAND WINPAD_VIEW WINPAD_GAP WINPAD_LOCK WINPAD_STATE WINPAD_BAR_PID
         if command -v setsid >/dev/null 2>&1; then setsid sh -c "$WINPAD_KEEP" "$_pdc" "$@" </dev/null >/dev/null 2>"$_pdlog" &
         else ( trap '' HUP; exec sh -c "$WINPAD_KEEP" "$_pdc" "$@" ) </dev/null >/dev/null 2>"$_pdlog" & fi
     )

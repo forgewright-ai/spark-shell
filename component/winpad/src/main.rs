@@ -137,6 +137,8 @@ fn config() -> spark_winpad::app::Config {
             term: env("WINPAD_TERM").unwrap_or_default(),
             title: env("WINPAD_TITLE").unwrap_or_else(|| "%title".into()),
             term_title: env("WINPAD_TERM_TITLE").unwrap_or_else(|| "%title".into()),
+            voice: env("WINPAD_VOICE").as_deref() == Some("yes"),
+            voice_state: env("WINPAD_VOICE_STATE").map(Into::into),
         },
         place: env("WINPAD_PLACE").and_then(|p| Place::parse(&p)).unwrap_or_default(),
         view: View::parse(env("WINPAD_VIEW").as_deref()),
@@ -392,6 +394,7 @@ fn run(keys: bool) -> Result<(), String> {
     handle
         .insert_source(Timer::from_duration(tick), move |_, _, app: &mut App| {
             app.settle();
+            app.voice_tick();
             // the tree read again every tick for two seconds after an event, else every half second: a
             // resize or a drag sends no event
             ticks = ticks.wrapping_add(1);

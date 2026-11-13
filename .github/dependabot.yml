@@ -1,4 +1,4 @@
-# Dependabot keeps every action's sha pin and the crates of the dialog, the pad and the wallpaper current, weekly.
+# Dependabot keeps every action's sha pin and the crates of the dialog, the pad, the ear and the wallpaper current, weekly.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -16,6 +16,10 @@ updates:
       interval: weekly
   - package-ecosystem: cargo
     directory: /component/winpad
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: /component/ear
     schedule:
       interval: weekly
   - package-ecosystem: cargo

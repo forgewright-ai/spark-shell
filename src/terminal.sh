@@ -1,18 +1,28 @@
 # shellcheck extended-analysis=false
 # --- the terminal: the one module that names it (foot)
-# sets: TERM_CLIENT TERM_CONFIG_REL TERM_DIALOG_REL TERM_HEX TERM_LOGIN_CONF TERM_NAME TERM_OWN
+# sets: TERM_CLIENT TERM_CONFIG_REL TERM_DIALOG_REL TERM_HEX TERM_LOGIN_CONF TERM_NAME TERM_OWN TERM_SHELLS
 TERM_NAME=foot
 TERM_CLIENT=footclient            # its client's process name when it runs as a server
 TERM_OWN='foot footclient'        # its own processes: never apps
 TERM_CONFIG_REL=.config/foot/foot.ini
 TERM_DIALOG_REL=.config/foot/dialog.ini
 TERM_LOGIN_CONF=foot.ini   # the login screen's own config for it, in template/login
+TERM_SHELLS='bash sh zsh fish dash ksh ash mksh tcsh csh'   # a line is typed only where one of these waits for it
 TERM_HEX="242424 f62b5a 47b413 e3c401 24acd4 f2affd 13c299 e6e6e6 616161 ff4d51 35d450 e9e836 5dc5f8 feabf2 24dfc4 ffffff"   # its default colors: text ffffff on ground 242424
 
 term_here() { command -v foot >/dev/null 2>&1; }
 term_missing() { echo 'foot is not installed (spark-shell on desktop)'; }
 term_config_file() { printf '%s\n' "$HOME/$TERM_CONFIG_REL"; }
 term_dialog_pad() { sed -n 's/^pad=\([0-9]*\)x\([0-9]*\).*/\1 \2/p' "$HOME/$TERM_DIALOG_REL" 2>/dev/null | head -1; }   # -> "X Y", the dialog window's padding
+term_at_prompt() {   # term_at_prompt PID -> 0 when a shell waits at the terminal's prompt: it is in front of the tty and nothing runs in it
+    _tap=$(pgrep -P "$1" 2>/dev/null | head -1); [ -n "$_tap" ] || return 1
+    _taf=${SPARK_SHELL_PROC:-/proc}/$_tap/stat
+    # shellcheck disable=SC2046   # the fields of /proc/PID/stat after the name: state ppid pgrp session tty tpgid
+    set -- $(sed 's/^.*) //' "$_taf" 2>/dev/null)
+    [ -n "${6:-}" ] && [ "$3" = "$6" ] || return 1
+    _tan=$(sed -n 's/^[0-9]* (\(.*\)) .*/\1/p' "$_taf" 2>/dev/null)
+    case " $TERM_SHELLS " in *" ${_tan#-} "*) return 0 ;; *) return 1 ;; esac
+}
 term_is_ours() { case ${TERM:-} in foot*) return 0 ;; *) return 1 ;; esac; }   # TERM says we run inside it
 term_own_process() { [ "${1##*/}" = foot ]; }                                 # term_own_process COMM
 term_runs() { [ "${1:-}" = foot ] && [ "${2:-}" = -e ]; }                      # term_runs WORD1 WORD2: a line that runs a command in a window

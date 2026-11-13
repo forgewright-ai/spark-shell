@@ -8,4 +8,5 @@ __pycache__/
 .claude/
 component/dialog/target/
 component/winpad/target/
+component/ear/target/
 component/wallpaper/target/

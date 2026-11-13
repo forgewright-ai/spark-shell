@@ -279,6 +279,7 @@ cmd_off() {   # cmd_off [desktop|login]
         power_off
         mcp_off
         semantic_off
+        voice_off
         machine_off
         echo "packages stay installed -- the package manager removes them if you want"
         return 0
@@ -489,6 +490,7 @@ cmd_check_lines() {   # the checks, a row each; false when one fails
     check_login
     check_dialog
     check_semantic
+    check_voice
     check_apps
     check_bar
     check_top

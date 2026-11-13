@@ -37,7 +37,7 @@ def bindings(source, overrides):
         raise ValueError("desktop-keys.json must be an object of action: key")
     lines = source.splitlines()
     known, seen, result = set(), {}, []
-    action, scope = None, "default"
+    action, scope, last = None, "default", None
     for i, line in enumerate(lines):
         stripped = line.strip()
         if stripped.startswith("mode ") and stripped.endswith("{"):
@@ -47,19 +47,31 @@ def bindings(source, overrides):
         elif stripped.startswith("# action: "):
             action = stripped[len("# action: "):]
         elif stripped.startswith("bindsym "):
-            if action is None:
-                raise ValueError("binding has no named action: " + stripped)
-            if action in known:
-                raise ValueError("duplicate desktop action: " + action)
-            known.add(action)
-            _, default, command = stripped.split(None, 2)
+            rest = stripped[len("bindsym "):].split(None, 1)
+            flags = ""
+            while rest[0].startswith("--"):   # a --release binding belongs to the press binding before it
+                flags += rest[0] + " "
+                rest = rest[1].split(None, 1)
+            default, command = rest
+            if flags:
+                if last is None:
+                    raise ValueError("a release binding with no binding before it: " + stripped)
+                action = last
+            else:
+                if action is None:
+                    raise ValueError("binding has no named action: " + stripped)
+                if action in known:
+                    raise ValueError("duplicate desktop action: " + action)
+                known.add(action)
             key = chord(overrides.get(action, default.replace("$mod", "Super")))
-            identity = (scope, key.lower())
+            identity = (scope, flags, key.lower())
             if identity in seen:
                 raise ValueError("desktop key conflict: " + seen[identity] + " and " + action)
             seen[identity] = action
-            lines[i] = line[:len(line) - len(line.lstrip())] + "bindsym " + key + " " + command
-            result.append((action, key.replace("Mod4", "Super").replace("Mod1", "Alt")))
+            lines[i] = line[:len(line) - len(line.lstrip())] + "bindsym " + flags + key + " " + command
+            if not flags:
+                result.append((action, key.replace("Mod4", "Super").replace("Mod1", "Alt")))
+                last = action
             action = None
     unknown = set(overrides) - known
     if unknown:

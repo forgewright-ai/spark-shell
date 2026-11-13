@@ -90,6 +90,7 @@
 #   spark-shell desktop pad view [icons|titles]
 #                                     the pad's icons alone, or with titles
 #   spark-shell desktop pad band [on|off]
+#   spark-shell desktop voice [status|toggle|off]  the ear types what you say
 #                                     the pad with its band, or its handle alone
 #   spark-shell desktop notifications [do-not-disturb on|off|dismiss|restore]
 #                                     do not disturb, and the last few
@@ -213,6 +214,8 @@ REPO=$(cd "$(dirname "$SELF")" && pwd)
 . "$REPO/src/dialog.sh"
 # shellcheck source=src/winpad.sh
 . "$REPO/src/winpad.sh"
+# shellcheck source=src/voice.sh
+. "$REPO/src/voice.sh"
 # shellcheck source=src/semantic.sh
 . "$REPO/src/semantic.sh"
 # shellcheck source=src/home.sh

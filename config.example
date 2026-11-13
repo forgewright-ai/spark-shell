@@ -195,6 +195,15 @@ DIALOG_TALK=yes
 # word search alone.
 DIALOG_SEMANTIC=yes
 
+# Voice: hold Super+Space, or click the mic on a terminal's band, and the
+# words you say go in the terminal's line as you speak. spark-shell on
+# desktop fetches the ear's engine (sherpa-onnx with an English model,
+# 110 MB). no leaves the voice out.
+VOICE=yes
+# Your own engine in the ear's place: a command that prints level, type
+# and erase lines on stdout until its stdin closes. Empty: spark-ear.
+VOICE_ENGINE=
+
 # The dialog's animation as it opens, waits and closes: moon, ripple,
 # tide, embers, sun or flight, or none for no motion. Empty, the one the
 # palette brings (dracula's embers, nord's tide); a new palette brings

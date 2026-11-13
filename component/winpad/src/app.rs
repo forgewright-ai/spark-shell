@@ -2,7 +2,7 @@
 //! window, drawn with cairo and pango; a docked pad keeps its strip with a second surface, empty, on
 //! the background layer. The pointer, the keys while it has them, and sway's list.
 
-use crate::buttons::{Band, Glyph};
+use crate::buttons::{Band, Glyph, Mic};
 use crate::keys::Keyboard;
 use crate::order::History;
 use crate::pad::{self, Click, Edge, Gesture, Grab, Hit, Item, KeyAct, Layout, ListAct, Metrics, Place, Rect, Sides, View, Want, Win};
@@ -70,6 +70,17 @@ pub struct Titles {
     pub term: String,
     pub title: String,
     pub term_title: String,
+    /// The mic on a terminal's band (WINPAD_VOICE=yes), and spark-shell's voice state it follows.
+    pub voice: bool,
+    pub voice_state: Option<PathBuf>,
+}
+
+/// How a window's buttons were last drawn: its focus, its lit button, and on a terminal the mic.
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct Shown {
+    pub(crate) focused: bool,
+    pub(crate) hover: Option<Glyph>,
+    pub(crate) mic: Option<Mic>,
 }
 
 pub struct Config {
@@ -271,7 +282,9 @@ pub struct App {
     /// The button under the pointer, and the state each window's buttons were last drawn in: its focus and
     /// its lit button.
     deco_hover: Option<(i64, Glyph)>,
-    sent: HashMap<i64, (bool, Option<Glyph>)>,
+    sent: HashMap<i64, Shown>,
+    /// The mic as the voice state last said.
+    voice: Mic,
     history: History,
     /// The width of one character of a title, in the title's font.
     cell: f64,
@@ -356,6 +369,7 @@ impl App {
             deco_press: None,
             deco_hover: None,
             sent: HashMap::new(),
+            voice: Mic::default(),
             history: History::default(),
             cell,
             burst_until: None,
@@ -527,6 +541,20 @@ impl App {
                     }
                     TimeoutAction::Drop
                 });
+        }
+    }
+
+    /// The voice state read, ten times a second: the mic and its bars follow it on every terminal's band.
+    pub fn voice_tick(&mut self) {
+        let t = &self.cfg.titles;
+        if !t.voice {
+            return;
+        }
+        let text = t.voice_state.as_ref().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+        let next = crate::buttons::mic_state(&text, &self.voice);
+        if next != self.voice {
+            self.voice = next;
+            self.title_sync();
         }
     }
 

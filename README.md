@@ -64,7 +64,7 @@ help lists them by subject. The bindings are named actions in
 `~/.config/spark-shell/home-keys.json`. The defaults:
 
     Super+Return opens a terminal window.
-    Super+Space opens or focuses home, including its conversation view.
+    Super+Space opens home; held, it listens and types what you say.
     Super+Alt+Space switches focus between floating and tiled windows.
     Super+q closes the window.
     Super+Shift+c reloads the desktop after spark-shell on.
@@ -78,6 +78,7 @@ help lists them by subject. The bindings are named actions in
     Super+Shift+arrow moves the window: in the tiling, or to the next screen.
     Super+Shift+h/j/k/l move the window in the tiling too.
     The buttons at a title's left end close, minimize, and fill the screen.
+    The mic on a terminal's band listens until clicked again.
     Super+f makes a window fill the screen.
     Super+r resizes the window, until Enter.
     The mouse resizes too: drag the strip between two windows.

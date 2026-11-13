@@ -77,7 +77,7 @@ render_expr() {   # -> the sed script that renders a template, one s command a l
     # fontconfig's own list, whose first is the proportional DejaVu Sans
     case $_fs in "$NEON"|"$NEON":*|'Monaspace '*) _ff="$_fs,$NEON_OLD${_fs#"${_fs%%:*}"}" ;; *) _ff=$_fs ;; esac   # each of the curated faces, as Neon
     e="$e${NL}s|@FONT@|$(esc "$_ff")|g"
-    e="$e${NL}s|@BAND_GLYPHS@|$(esc "$(winpad_buttons)")|g"
+    e="$e${NL}s|@BAND_GLYPHS@|$(esc "$(winpad_buttons)")|g${NL}s|@BAND_TERM_GLYPHS@|$(esc "$(winpad_buttons)$(winpad_mic)")|g"
     e="$e${NL}s|@BAR_MODE@|$(bar_mode)|g${NL}s|@BAR_FONT@|$(esc "$(bar_font "$_fs")")|g${NL}s|@BAR_LINE_FONT@|$(esc "$(bar_line_font "$_fs")")|g"
     e="$e${NL}s|@BAR_POSITION@|$BAR_POSITION|g${NL}s|@BAR_TRAY@|$(bar_tray_output)|g${NL}s|@NOTIFY_ANCHOR@|$(notify_anchor)|g"
     e="$e${NL}s|@FOOT_COLORS@|$(term_colors_section)|g"
@@ -233,8 +233,9 @@ desktop_look_apply() {   # on and on desktop: the renders, the pointer, and a ru
     elif bar_stale; then desktop_reload "the bar starts again on this spark-shell"; fi   # after an update the bar still ran the old code until a logout: a reload starts it on the new
     look_burst   # the open terminals take the look too: after an upgrade, the slots their new shells draw in
 }
+look_inputs() { printf '%s %s' "$(winpad_cmd 2>/dev/null || echo -)" "$(voice_here && echo voice || echo -)"; }   # what the titles are rendered from, beyond the look
 desktop_apply() {
-    ! winpad_coming || EXPR=$(render_expr)   # a winpad is about to be fetched: the titles are rendered with their buttons already
+    _dai=$(look_inputs)
     desktop_look_apply
     seat_apply
     sound_apply
@@ -246,7 +247,8 @@ desktop_apply() {
     semantic_install
     wallpaper_install
     winpad_install
-    winpad_came || { EXPR=$(render_expr); desktop_look_apply; }   # none came: the titles again, plain
+    voice_install
+    [ "$(look_inputs)" = "$_dai" ] || { EXPR=$(render_expr); desktop_look_apply; }   # a component came: the titles follow
     winpad_session
     motion_row
     mcp_apply

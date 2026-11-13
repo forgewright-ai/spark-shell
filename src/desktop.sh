@@ -22,6 +22,7 @@ runtime_adopt() {
 }
 
 # cmd_desktop [WORDS] -- sway as a child, never exec: the EXIT trap cleans TMP
+home_open() { python3 "$REPO/lib/home.py" open "$REPO/spark-shell" "${1:-}"; }   # home_open [VIEW]
 cmd_desktop() {
     config_load
     [ "$OS" = Darwin ] || pm_detect
@@ -36,7 +37,8 @@ cmd_desktop() {
         --pending) layout_pending; return ;;
         --motion) theme_load 2>/dev/null || :; motion_follow; return ;;
         --chat) python3 "$REPO/lib/home.py" open "$REPO/spark-shell" chat; return ;;
-        home) python3 "$REPO/lib/home.py" open "$REPO/spark-shell" "${2:-}"; return ;;
+        home) home_open "${2:-}"; return ;;
+        voice) shift; voice_cmd "$@"; return ;;
         keys) layout_keys; return ;;
         lock) theme_load 2>/dev/null || :; layout_lock; return ;;
         idle) shift; theme_load 2>/dev/null || :; layout_idle "$@"; return ;;   # a failed palette must not keep the lock away
