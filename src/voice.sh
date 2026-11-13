@@ -43,12 +43,17 @@ voice_pid() { _vp=$(cat "$(voice_run_dir)/pid" 2>/dev/null) || return 1; case $_
 voice_set_state() { printf 'listening %s\nlevel %s\n' "$1" "$2" > "$(voice_state).new" && mv "$(voice_state).new" "$(voice_state)"; }
 voice_wanted() { mkdir_private "$(voice_run_dir)"; printf '%s\n' "$1" > "$(voice_want)"; }   # voice_wanted STAMP -- the press's time in ms, or 0
 
-voice_stop() {   # the session told to end: the engine first, so the words it already said are typed and the session wakes on the closed pipe
+voice_stop() {   # the session told to end: the engine first, so its last words are typed; then the session itself
     _vsp=$(voice_pid) || return 1
     rm -f "$(voice_want)"
     _vse=$(cat "$(voice_run_dir)/engine" 2>/dev/null) || _vse=''
     case $_vse in ''|*[!0-9]*) ;; *) kill -TERM "$_vse" 2>/dev/null || : ;; esac
-    kill -TERM "$_vsp" 2>/dev/null || :
+    _vsi=0; while [ "$_vsi" -lt 15 ] && kill -0 "$_vsp" 2>/dev/null; do sleep 0.1; _vsi=$((_vsi + 1)); done
+    kill -0 "$_vsp" 2>/dev/null || return 0
+    # it is still there: a shell runs no trap while its read waits, so the session goes with its own group
+    kill -TERM "-$_vsp" 2>/dev/null || kill -TERM "$_vsp" 2>/dev/null || :
+    voice_set_state 0 0
+    rm -f "$(voice_run_dir)/pid" "$(voice_run_dir)/engine"
 }
 voice_press() {   # the key down: a tap opens home on the release; held, it listens until the release
     ! voice_stop || return 0   # a press while listening ends it

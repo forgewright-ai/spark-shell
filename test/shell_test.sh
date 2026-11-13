@@ -3895,6 +3895,7 @@ for _pk in WINPAD_HEIGHT=0 WINPAD_HEIGHT=9999; do
     sed -i.bak '$d' "$cfg"; rm -f "$cfg.bak"
 done
 ok "config: WINPAD_HEIGHT 0, as many rows as needed, and 9999 taken (#269)"
+if [ "$(uname -s)" != Darwin ]; then   # the voice is the Linux desktop's; on macOS the verb refuses
 # voice (v0.144): the ear's words into the terminal's line, a stand-in engine speaking the contract; the
 # compositor types (wtype), the terminal says whether its shell is at the prompt (a fixture /proc)
 mkdir -p "$H/vx" "$H/proc/4242"
@@ -3966,6 +3967,7 @@ printf 'VOICE=maybe\n' >> "$cfg"; vrun status
 cp "$H/cfg.voice" "$cfg"; vclean
 rm -rf "$H/vx" "$H/proc/4242"
 [ ! -f "$H/tree.voice" ] || cp "$H/tree.voice" "$HOME/win-tree.json"
+fi
 # a change of the area under a real sway (its socket): the bar's text, the bar moved, a screen; refit soon after
 _rsk=$H/rs.sock; "$py3" -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$_rsk" 2>/dev/null || :
 if [ -S "$_rsk" ]; then
@@ -6432,6 +6434,7 @@ with tarfile.open(h + "/assets/model.tar.bz2", "w:bz2") as t:
         && [ "$(cat "$ear_dir/model/tokens.txt")" = 'tokens.txt' ] && [ -f "$ear_dir/model/encoder.int8.onnx" ] \
         && [ ! -e "$ear_dir/lib/c-api.h" ] && [ ! -e "$ear_dir/model/test_wavs" ] && [ ! -e "$ear_dir/lib/sherpa" ] \
         && ok "on: the ear fetched for the signed tag, the engine's library and model checked and taken flat, nothing else out of the archives (v0.144)" || bad "voice install" "$(printf '%s\n' "$out" | grep voice) $(find "$ear_dir" 2>/dev/null | head -8)"
+    printf '#!/bin/sh\nexit 0\n' > "$H/.local/bin/wtype"; chmod +x "$H/.local/bin/wtype"   # a desktop has it; the check says so when it does not
     out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" check 2>&1 || :)
     printf '%s\n' "$out" | grep -q "^ok     voice        spark-ear and its engine ($ear_dir)$" \
         && ok "check: the ear and its engine in place, as the release pins them (v0.144)" || bad "check voice ok" "$(printf '%s\n' "$out" | grep voice)"
