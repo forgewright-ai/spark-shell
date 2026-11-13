@@ -47,7 +47,9 @@ voice_pid() {   # -> the running session's pid; false when none runs, or when wh
     printf '%s\n' "$_vp"
 }
 voice_set_state() { _vss=$(voice_state).$$; printf 'listening %s\nlevel %s\n' "$1" "$2" > "$_vss" 2>/dev/null && mv "$_vss" "$(voice_state)" 2>/dev/null || rm -f "$_vss" 2>/dev/null || :; }
-voice_wanted() { mkdir_private "$(voice_run_dir)"; printf '%s\n' "$1" > "$(voice_want)"; }   # voice_wanted STAMP -- the press's time in ms, or 0
+voice_wanted() { mkdir_private "$(voice_run_dir)"; printf '%s %s.%s\n' "$1" "$$" "$(voice_now_ms)" > "$(voice_want)"; }   # voice_wanted STAMP -- the press's time in ms, or 0, and a token of its own
+voice_want_stamp() { cut -d' ' -f1 "$(voice_want)" 2>/dev/null; }
+voice_want_token() { cut -d' ' -f2 "$(voice_want)" 2>/dev/null; }
 
 voice_stop() {   # the session told to end: the engine first, so its last words are typed; then the session itself
     _vsp=$(voice_pid) || return 1
@@ -67,7 +69,7 @@ voice_press() {   # the key down: a tap opens home on the release; held, it list
     voice_session hold
 }
 voice_release() {   # the key up
-    _vr=$(cat "$(voice_want)" 2>/dev/null) || { voice_stop || :; return 0; }   # the press is listening already
+    _vr=$(voice_want_stamp) && [ -n "$_vr" ] || { voice_stop || :; return 0; }   # the press is listening already
     rm -f "$(voice_want)"
     if [ "$_vr" != 0 ] && [ $(( $(voice_now_ms) - _vr )) -lt 300 ]; then home_open; else voice_stop || :; fi   # a tap opens home; held, the words stay
 }
@@ -83,13 +85,15 @@ voice_now_ms() {   # -> the time in milliseconds; where date has no nanoseconds 
 }
 voice_session() { ( setsid sh "$REPO/spark-shell" desktop voice --listen "$1" </dev/null >/dev/null 2>>"$(voice_run_dir)/log" & ); }   # voice_session hold|now -- voice_listen, apart
 voice_no() {   # voice_no WHY [DETAIL] -- nothing is heard, said where each is read: a notification, and the session's log
-    rm -f "$(voice_want)"
+    voice_drop_want
     mkdir_private "$(voice_run_dir)"
     printf 'voice: %s%s\n' "$1" "${2:+ -- $2}" >> "$(voice_run_dir)/log"
     notify_send voice "Voice: $1"
 }
-voice_listen() {   # voice_listen hold|now -- the session: the engine's words into the focused terminal's line while want stands
+voice_drop_want() { [ "$(voice_want_token)" = "${_vlw:-}" ] || return 0; rm -f "$(voice_want)"; }   # only the file this session was started for
+voice_listen() {   # voice_listen hold|now -- the session: the engine's words into the focused terminal's line while its own want stands
     [ "$1" = now ] || { sleep 0.3; [ -f "$(voice_want)" ] || return 0; }   # a tap: the release took the file
+    _vlw=$(voice_want_token) || _vlw=''   # the session answers for this want alone; a newer one takes over
     _vlc=$(voice_engine) || { voice_no "nothing can hear here (spark-shell on desktop)"; return 0; }
     voice_engine_env
     wm_type_here || { voice_no "$(wm_missing type)"; return 0; }
@@ -108,7 +112,7 @@ voice_listen() {   # voice_listen hold|now -- the session: the engine's words in
         case $_vll in
             level\ *) voice_set_state 1 "${_vll#level }"
                 _vln=$((_vln + 1))
-                if [ "$_vlo" = 1 ] && [ ! -f "$(voice_want)" ]; then exec 3>&-; _vlo=0   # the key is up, or the mic was clicked again
+                if [ "$_vlo" = 1 ] && [ "$(voice_want_token)" != "$_vlw" ]; then exec 3>&-; _vlo=0   # the key is up, the mic was clicked again, or a newer session has the word
                 # the focus every second: no word goes to another window. A tree that does not answer is not a move.
                 elif [ "$_vlo" = 1 ] && [ $((_vln % 10)) = 0 ] && _vlf=$(term_focused_pid) && [ "$_vlf" != "$_vlt" ]; then
                     printf 'voice: the focus moved to %s\n' "$_vlf" >> "$_vld/log"
@@ -119,9 +123,12 @@ voice_listen() {   # voice_listen hold|now -- the session: the engine's words in
         esac
     done < "$_vld/words"
     [ "$_vlo" = 0 ] || exec 3>&-
-    wait "$_vlp" || [ $? != 2 ] || notify_send voice "Voice: $(tail -1 "$_vld/log" 2>/dev/null | sed 's/^spark-ear: //')"
+    _vlr=0; wait "$_vlp" || _vlr=$?
+    printf 'voice: the session ended, the engine said %s, the leash was %s\n' "$_vlr" "$([ "$_vlo" = 1 ] && echo open || echo closed)" >> "$_vld/log"
+    [ "$_vlr" != 2 ] || notify_send voice "Voice: $(grep -v '^voice: ' "$_vld/log" 2>/dev/null | tail -1 | sed 's/^spark-ear: //')"
     voice_set_state 0 0
-    rm -f "$_vld/pid" "$_vld/engine" "$(voice_want)" "$_vld/leash" "$_vld/words"
+    voice_drop_want
+    rm -f "$_vld/pid" "$_vld/engine" "$_vld/leash" "$_vld/words"
 }
 voice_off() { voice_stop || rm -f "$(voice_want)"; }   # off desktop: no session is left listening; the ear and its engine stay
 voice_status() {

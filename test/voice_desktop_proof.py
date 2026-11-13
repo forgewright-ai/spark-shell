@@ -156,6 +156,10 @@ def main():
         def shot(name):
             subprocess.run(["grim", str(evidence / (name + ".png"))], env=env, check=False)
 
+        def why():
+            log = runtime / "spark-shell-voice/log"
+            return (log.read_text().replace("\n", " | ")[-300:] if log.exists() else "(no log)")
+
         sway("output", "*", "resolution", "1920x1080")
         time.sleep(1.5)
         sway("exec", "foot --app-id foot --title busy -e sleep 1000")
@@ -201,9 +205,9 @@ def main():
         lit, lit_after = band_glyphs(glyphs(env, band("shell")))
         bars = [c for c in lit_after if len(lit) == 4 and 0 <= c[0] - (lit[3][0] + lit[3][1]) < 25]
         ok(len(lit) == 4 and bars, "while it listens the bars stand right after the mic, in the room kept for them",
-           ([(c[0], c[1]) for c in lit], [(c[0], c[1]) for c in lit_after]))
+           ([(c[0], c[1]) for c in lit], [(c[0], c[1]) for c in lit_after], state().replace("\n", " "), why()))
         answer = spark("desktop", "voice", "toggle")
-        ok(answer == "voice: off", "clicked again: off", answer)
+        ok(answer == "voice: off", "clicked again: off", (answer, why()))
         wait_for(lambda: "listening 0" in state(), "the state at rest")
         time.sleep(0.7)
         quiet, quiet_after = band_glyphs(glyphs(env, band("shell")))
