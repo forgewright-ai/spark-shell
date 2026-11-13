@@ -39,8 +39,14 @@ voice_here() { [ "$VOICE" != no ] && voice_engine >/dev/null 2>&1; }   # the mic
 voice_run_dir() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-voice"; }
 voice_want() { printf '%s' "$(voice_run_dir)/want"; }
 voice_state() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-voice.state"; }   # listening 0|1, level 0..7: the band reads it
-voice_pid() { _vp=$(cat "$(voice_run_dir)/pid" 2>/dev/null) || return 1; case $_vp in ''|*[!0-9]*) return 1 ;; esac; kill -0 "$_vp" 2>/dev/null && printf '%s\n' "$_vp"; }
-voice_set_state() { printf 'listening %s\nlevel %s\n' "$1" "$2" > "$(voice_state).new" && mv "$(voice_state).new" "$(voice_state)"; }
+voice_pid() {   # -> the running session's pid; false when none runs, or when what ran is a husk nothing reaped
+    _vp=$(cat "$(voice_run_dir)/pid" 2>/dev/null) || return 1
+    case $_vp in ''|*[!0-9]*) return 1 ;; esac
+    kill -0 "$_vp" 2>/dev/null || return 1
+    [ ! -r "/proc/$_vp/cmdline" ] || tr '\0' ' ' < "/proc/$_vp/cmdline" | grep -q spark-shell || return 1
+    printf '%s\n' "$_vp"
+}
+voice_set_state() { _vss=$(voice_state).$$; printf 'listening %s\nlevel %s\n' "$1" "$2" > "$_vss" 2>/dev/null && mv "$_vss" "$(voice_state)" 2>/dev/null || rm -f "$_vss" 2>/dev/null || :; }
 voice_wanted() { mkdir_private "$(voice_run_dir)"; printf '%s\n' "$1" > "$(voice_want)"; }   # voice_wanted STAMP -- the press's time in ms, or 0
 
 voice_stop() {   # the session told to end: the engine first, so its last words are typed; then the session itself

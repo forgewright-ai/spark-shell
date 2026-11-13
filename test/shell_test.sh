@@ -3953,10 +3953,10 @@ chmod +x "$H/vx/ear-hold"
 sed -i.bak '/^VOICE_ENGINE=/d' "$cfg"; rm -f "$cfg.bak"; printf 'VOICE_ENGINE=%s\n' "$H/vx/ear-hold" >> "$cfg"
 vclean; vrun toggle; _vt1=$out; sleep 0.6
 _vt2=$(tr '\n' ' ' < "$vstate" 2>/dev/null); _vt3=$(cat "$H/run/spark-shell-voice/pid" 2>/dev/null)
-kill -0 "${_vt3:-0}" 2>/dev/null && _vt5=alive || _vt5=gone
+vrun status; case $out in *listening*) _vt5=alive ;; *) _vt5="$out" ;; esac
 vrun toggle; _vt4=$out
-_vti=0; while [ "$_vti" -lt 50 ] && kill -0 "${_vt3:-0}" 2>/dev/null; do sleep 0.1; _vti=$((_vti + 1)); done
-kill -0 "${_vt3:-0}" 2>/dev/null && _vt6=alive || _vt6=gone
+_vti=0; while [ "$_vti" -lt 50 ]; do vrun status; case $out in *ready*) break ;; esac; sleep 0.1; _vti=$((_vti + 1)); done
+case $out in *ready*) _vt6=gone ;; *) _vt6="$out" ;; esac
 [ "$_vt1" = 'voice: listening' ] && [ "$_vt2" = 'listening 1 level 1 ' ] && [ "$_vt5" = alive ] && [ "$_vt4" = 'voice: off' ] && [ "$_vt6" = gone ] \
     && grep -qx 'listening 0' "$vstate" && [ "$(sed -n 1p "$HOME/wtype.log")" = '-s 20 -- hey' ] \
     && ok "desktop voice toggle (the mic clicked): it listens, the state carries the level for the band; clicked again, it stops (v0.144)" \
