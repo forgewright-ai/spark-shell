@@ -3953,7 +3953,8 @@ sed -i.bak '/^VOICE_ENGINE=/d' "$cfg"; rm -f "$cfg.bak"; printf 'VOICE_ENGINE=%s
 vclean; vrun toggle; _vt1=$out; sleep 0.6
 _vt2=$(tr '\n' ' ' < "$vstate" 2>/dev/null); _vt3=$(cat "$H/run/spark-shell-voice/pid" 2>/dev/null)
 kill -0 "${_vt3:-0}" 2>/dev/null && _vt5=alive || _vt5=gone
-vrun toggle; _vt4=$out; sleep 0.8
+vrun toggle; _vt4=$out
+_vti=0; while [ "$_vti" -lt 50 ] && kill -0 "${_vt3:-0}" 2>/dev/null; do sleep 0.1; _vti=$((_vti + 1)); done
 kill -0 "${_vt3:-0}" 2>/dev/null && _vt6=alive || _vt6=gone
 [ "$_vt1" = 'voice: listening' ] && [ "$_vt2" = 'listening 1 level 1 ' ] && [ "$_vt5" = alive ] && [ "$_vt4" = 'voice: off' ] && [ "$_vt6" = gone ] \
     && grep -qx 'listening 0' "$vstate" && [ "$(sed -n 1p "$HOME/wtype.log")" = '-s 20 -- hey' ] \
@@ -6349,17 +6350,37 @@ else
     fi
     printf '#!/bin/sh\ncase $1 in -m) echo x86_64 ;; *) exec "%s" "$@" ;; esac\n' "$(command -v uname)" > "$H/.local/bin/uname"
     chmod +x "$H/.local/bin/uname"
+    export SPARK_SHELL_VOICE_RUNTIME_URL=none SPARK_SHELL_VOICE_MODEL_URL=none   # no test reaches the engine's own release; the voice test below names its own files
     C=$H/clone; mkdir -p "$C"
     (cd "$REPO" && tar --exclude=.git --exclude=target --exclude=target2 -cf - .) | (cd "$C" && tar --no-same-owner -xf -)   # the files ours: git refuses a clone another user owns
     printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/dialog.argv"\nexit "${DIALOG_EXIT:-0}"\n' > "$H/stub-dialog"
     sum256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
     sha=$(sum256 "$H/stub-dialog")
     sed "s/^DIALOG_SHA256_X86_64_LINUX_MUSL=.*/DIALOG_SHA256_X86_64_LINUX_MUSL=$sha/" "$REPO/component/dialog/dialog.env" > "$C/component/dialog/dialog.env"
+    printf '#!/bin/sh\nexit 0\n' > "$H/stub-ear"; sha_ear=$(sum256 "$H/stub-ear")
+    sed "s/^EAR_SHA256_X86_64_LINUX_GNU=.*/EAR_SHA256_X86_64_LINUX_GNU=$sha_ear/" "$REPO/component/ear/ear.env" > "$C/component/ear/ear.env"
+    # the engine's two archives, each with its files under a folder of their own: the install takes them flat
+    python3 -I -c 'import io, os, sys, tarfile
+h = sys.argv[1]
+os.makedirs(h + "/assets", exist_ok=True)
+def put(tar, name, text):
+    info = tarfile.TarInfo(name); data = text.encode(); info.size = len(data); tar.addfile(info, io.BytesIO(data))
+with tarfile.open(h + "/assets/runtime.tar.bz2", "w:bz2") as t:
+    put(t, "sherpa/lib/libsherpa-onnx-c-api.so", "the engine")
+    put(t, "sherpa/lib/libonnxruntime.so", "the runtime")
+    put(t, "sherpa/include/c-api.h", "not wanted")
+with tarfile.open(h + "/assets/model.tar.bz2", "w:bz2") as t:
+    for f in ("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt"):
+        put(t, "model/" + f, f)
+    put(t, "model/test_wavs/0.wav", "not wanted")' "$H"
+    sha_rt=$(sum256 "$H/assets/runtime.tar.bz2"); sha_md=$(sum256 "$H/assets/model.tar.bz2")
+    sed "s/^VOICE_RUNTIME_SHA256=.*/VOICE_RUNTIME_SHA256=$sha_rt/; s/^VOICE_MODEL_SHA256=.*/VOICE_MODEL_SHA256=$sha_md/" "$REPO/src/voice.sh" > "$C/src/voice.sh"
     ssh-keygen -q -t ed25519 -N '' -C '' -f "$H/key" >/dev/null
     printf 'spark-shell-release namespaces="git" %s\n' "$(cut -d' ' -f1,2 "$H/key.pub")" > "$C/allowed-signers"
     g() { git -C "$C" -c user.name=test -c user.email=you@example.com -c gpg.format=ssh -c "user.signingkey=$H/key" "$@"; }   # spark:allow-secret (a scratch key, made here)
     g init -q && g add -A && g commit -q -m fixture && g tag -s v9.9 -m 'spark-shell v9.9'
     mkdir -p "$H/assets/v9.9"; cp "$H/stub-dialog" "$H/assets/v9.9/spark-dialog-x86_64-linux-musl"
+    cp "$H/stub-ear" "$H/assets/v9.9/spark-ear-x86_64-linux-gnu"
     mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     bin=$H/.local/share/spark-shell/spark-dialog
     st=0; out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes 2>&1) || st=$?
@@ -6396,6 +6417,30 @@ else
         && ok "on: a clone whose component/dialog/ moved past its tag installs nothing" || bad "dialog past" "$(printf '%s\n' "$out" | grep dialog)"
     g reset -q --hard v9.9
     SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes >/dev/null 2>&1 || :
+    # the voice's install (v0.144): the ear for the signed tag, then the engine's library and its model, each
+    # checked by its sha256 and taken flat out of its archive; a file that does not match installs nothing
+    ear_dir=$H/.local/share/spark-shell/ear; ear_bin=$H/.local/share/spark-shell/spark-ear
+    voice_on() { SPARK_SHELL_DIALOG_URL="file://$H/assets" SPARK_SHELL_VOICE_RUNTIME_URL="file://$H/assets/runtime.tar.bz2" SPARK_SHELL_VOICE_MODEL_URL="file://$H/assets/model.tar.bz2" sh "$C/spark-shell" on "$@" 2>&1; }
+    rm -rf "$ear_dir" "$ear_bin"
+    out=$(voice_on --dry-run || :)
+    printf '%s\n' "$out" | grep -q '^would  voice        fetch spark-ear for v9.9 and its engine (sherpa-onnx 2.0.1 with an English model, 110 MB), the sha256 of each checked$' \
+        && [ ! -e "$ear_bin" ] && ok "on --dry-run: the voice says what it would fetch and fetches nothing (v0.144)" || bad "voice dry" "$(printf '%s\n' "$out" | grep voice)"
+    out=$(voice_on --yes || :)
+    printf '%s\n' "$out" | grep -q "^ok     voice        spark-ear and its engine installed ($ear_dir), sha256 checked$" \
+        && [ -x "$ear_bin" ] && [ "$(sum256 "$ear_bin")" = "$sha_ear" ] \
+        && [ "$(cat "$ear_dir/lib/libsherpa-onnx-c-api.so")" = 'the engine' ] && [ -f "$ear_dir/lib/libonnxruntime.so" ] \
+        && [ "$(cat "$ear_dir/model/tokens.txt")" = 'tokens.txt' ] && [ -f "$ear_dir/model/encoder.int8.onnx" ] \
+        && [ ! -e "$ear_dir/lib/c-api.h" ] && [ ! -e "$ear_dir/model/test_wavs" ] && [ ! -e "$ear_dir/lib/sherpa" ] \
+        && ok "on: the ear fetched for the signed tag, the engine's library and model checked and taken flat, nothing else out of the archives (v0.144)" || bad "voice install" "$(printf '%s\n' "$out" | grep voice) $(find "$ear_dir" 2>/dev/null | head -8)"
+    out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" check 2>&1 || :)
+    printf '%s\n' "$out" | grep -q "^ok     voice        spark-ear and its engine ($ear_dir)$" \
+        && ok "check: the ear and its engine in place, as the release pins them (v0.144)" || bad "check voice ok" "$(printf '%s\n' "$out" | grep voice)"
+    rm -rf "$ear_dir" "$ear_bin"; cp "$H/assets/model.tar.bz2" "$H/model.keep"; printf 'x' >> "$H/assets/model.tar.bz2"
+    out=$(voice_on --yes || :)
+    printf '%s\n' "$out" | grep -q '^todo   voice        the model fetched is not the one spark-shell pins: not installed$' \
+        && [ ! -e "$ear_dir/model/tokens.txt" ] && ok "on: a model with another sha256 is refused, none installed (v0.144)" || bad "voice tampered" "$(printf '%s\n' "$out" | grep voice)"
+    cp "$H/model.keep" "$H/assets/model.tar.bz2"
+    rm -rf "$ear_dir" "$ear_bin"
     # spark's MCP list (issue 8): each provider put on it through spark mcp add; a server of yours under one of the names stays; an older clone's line is replaced
     cat > "$H/.local/bin/spark" <<'STUB'
 #!/bin/sh

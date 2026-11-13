@@ -66,7 +66,10 @@ voice_toggle() {   # the mic clicked
     voice_session now
     echo "voice: listening"
 }
-voice_now_ms() { date +%s%N | cut -c1-13; }
+voice_now_ms() {   # -> the time in milliseconds; where date has no nanoseconds (BSD), whole seconds
+    _vnm=$(date +%s%N 2>/dev/null)
+    case $_vnm in ''|*[!0-9]*) printf '%s\n' "$(( $(date +%s) * 1000 ))" ;; *) printf '%s\n' "$(( _vnm / 1000000 ))" ;; esac
+}
 voice_session() { ( setsid sh "$REPO/spark-shell" desktop voice --listen "$1" </dev/null >/dev/null 2>>"$(voice_run_dir)/log" & ); }   # voice_session hold|now -- voice_listen, apart
 voice_listen() {   # voice_listen hold|now -- the session: the engine's words into the focused terminal's line while want stands
     [ "$1" = now ] || { sleep 0.3; [ -f "$(voice_want)" ] || return 0; }   # a tap: the release took the file

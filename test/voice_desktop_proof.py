@@ -189,7 +189,13 @@ def main():
         time.sleep(0.5)
         answer = spark("desktop", "voice", "toggle")
         ok(answer == "voice: listening", "the mic clicked on the shell: listening", answer)
-        wait_for(lambda: "listening 1" in state(), "the state says listening")
+        try:
+            wait_for(lambda: "listening 1" in state(), "the state says listening")
+        except AssertionError:
+            log = runtime / "spark-shell-voice/log"
+            raise AssertionError("the session never listened: state %r, log %r, windows %r"
+                                 % (state(), log.read_text()[-400:] if log.exists() else "(none)",
+                                    [(w["name"], w.get("pid"), w.get("focused")) for w in windows(json.loads(sway("-t", "get_tree")), [])]))
         time.sleep(1.2)
         shot("2-listening")
         lit, lit_after = band_glyphs(glyphs(env, band("shell")))
