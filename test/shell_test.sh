@@ -906,10 +906,15 @@ else
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: foot 1.28 gets [colors-dark] alone" || bad "foot 1.28 section" "$(grep -n '^\[' "$foot")"
     grep -q '^client.focused *#ff5555 #ff5555 #000000 #802b2b80 #ff5555$' "$sway" && grep -q '^client.unfocused *#060606 #060606 #555555 #060606 #060606$' "$sway" && ! grep -q '^client\.unfocused.*#ff5555' "$sway" && grep -q '^default_border normal 1$' "$sway" && grep -q '^default_floating_border normal 1$' "$sway" && grep -q '^titlebar_border_thickness 1$' "$sway" && grep -q '^title_align left$' "$sway" && ! grep -q '^smart_borders' "$sway" \
         && ok "sway: the chrome (v0.140): a title band and a one-pixel frame in one shade, the surface shade on the focused window (#0f0f0f), four percent above the ground on the others (#060606) with muted text; the accent only as the focused indicator, the drop area of a moving window (#47), at a quarter: #ff5555 halved with alpha 80, as sway takes it (#49)" || bad "sway focused" "$(grep -n 'client\|border' "$sway")"
+    grep -qxF 'for_window [shell=".*"] title_format "  %title"' "$sway" && grep -qxF 'for_window [app_id="foot"] title_format "  terminal   %title"' "$sway" \
+        && ok "sway: with no winpad on the machine the titles are plain: no button is drawn that does not click (v0.143)" || bad "band plain" "$(grep -n title_format "$sway")"
+    printf '#!/bin/sh\n' > "$HOME/winpad-here"; chmod +x "$HOME/winpad-here"
+    SPARK_SHELL_WINPAD=$HOME/winpad-here sh "$SH" on --yes >/dev/null
     _bg=' &#x2715;  &#x25BD;  &#x25A1; '
     grep -qxF "for_window [shell=\".*\"] title_format \"$_bg  %title\"" "$sway" && grep -qxF "for_window [app_id=\"foot\"] title_format \"$_bg  terminal   %title\"" "$sway" \
         && grep -qF 'pub const GLYPH_REFS: [&str; 3] = ["&#x2715;", "&#x25BD;", "&#x25A1;"];' "$REPO/component/winpad/src/buttons.rs" \
-        && ok "sway: the close, minimize and fill buttons are the start of every title, sway's own pixels, so they move with the window (v0.142), written as character references so the render stays ASCII; the pad's are the same three" || bad "band glyphs" "$(grep -n title_format "$sway")"
+        && ok "sway: with a winpad, the close, minimize and fill buttons are the start of every title, sway's own pixels, so they move with the window (v0.142), written as character references so the render stays ASCII; the component's are the same three" || bad "band glyphs" "$(grep -n title_format "$sway")"
+    sh "$SH" on --yes >/dev/null; rm -f "$HOME/winpad-here"
     grep -qxF "bindsym Mod4+space exec $REPO/spark-shell desktop home" "$sway" \
         && ! grep -q '^bindsym Mod4+[ds] ' "$sway" \
         && ok "sway: Super+Space opens home, without separate desktop chat keys" || bad "sway home render" "$(grep -n 'desktop home' "$sway")"
@@ -1024,14 +1029,14 @@ else
     # The stand-in holds its lock as the real pad does, so a pad on restarts (a new look) is still one running
     psd=$H/padsway; mkdir -p "$psd" "$H/padrun"; pslog=$H/padsway.log; plock=$H/padrun/spark-shell-winpad.pid
     printf '#!/bin/sh\ncase "$*" in "-t get_version") echo "{\\"human_readable\\":\\"1.10\\"}" ;; "-- "*) shift; echo "$*" >> "%s" ;; esac\n' "$pslog" > "$psd/swaymsg"
-    printf '#!/bin/sh\ntrap '"'"'[ -z "${PAD_LOCK:-}" ] || rm -f "$PAD_LOCK"; exit 0'"'"' TERM\n[ -z "${PAD_LOCK:-}" ] || echo $$ > "$PAD_LOCK"\nwhile :; do sleep 0.1; done\n' > "$psd/spark-winpad"
+    printf '#!/bin/sh\ntrap '"'"'[ -z "${WINPAD_LOCK:-}" ] || rm -f "$WINPAD_LOCK"; exit 0'"'"' TERM\n[ -z "${WINPAD_LOCK:-}" ] || echo $$ > "$WINPAD_LOCK"\nwhile :; do sleep 0.1; done\n' > "$psd/spark-winpad"
     chmod +x "$psd/swaymsg" "$psd/spark-winpad"
     padon() { rm -f "$pslog"; XDG_RUNTIME_DIR=$H/padrun SPARK_SHELL_WINPAD=$psd/spark-winpad SWAYSOCK=/nonexistent PATH="$psd:$PATH" sh "$SH" on --yes "$@" 2>&1; }
     padasked() { grep -qxF "exec $REPO/spark-shell desktop pad start" "$pslog" 2>/dev/null; }
     out=$(padon || :)
     printf '%s\n' "$out" | grep -qx 'ok     pad          the pad runs for this session now' && padasked \
         && ok "on: a session with no pad (begun before an update to v0.140) has sway start it, as login does" || bad "pad session start" "$out | $(cat "$pslog" 2>&1)"
-    PAD_LOCK=$plock "$psd/spark-winpad" & ppad=$!
+    WINPAD_LOCK=$plock "$psd/spark-winpad" & ppad=$!
     i=0; while [ ! -s "$plock" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
     out=$(padon || :)
     ! printf '%s\n' "$out" | grep -q '^[a-z]* *pad  .*for this session' && ! padasked \
@@ -1040,6 +1045,20 @@ else
     out=$(padon --dry-run || :)
     printf '%s\n' "$out" | grep -qx 'would  pad          start the pad for this session, through sway as at login' && ! padasked \
         && ok "on --dry-run: the pad it would start is said, sway not asked" || bad "pad session dry" "$out | $(cat "$pslog" 2>&1)"
+    # the pad's settings as a config from v0.142 or before names them, PAD_*: on says what it would do, then writes them
+    # once under their WINPAD_ names; a setting the config holds under both keeps its new line (v0.143)
+    _pc=$HOME/.config/spark-shell/config; cp "$_pc" "$H/cfg.renames"
+    printf 'PAD_PLACE=left center\nPAD_SIDE_WIDTH=72\nPAD_VIEW=titles\nWINPAD_VIEW=icons\n' >> "$_pc"
+    out=$(padon --dry-run || :)
+    printf '%s\n' "$out" | grep -q '^would  config       3 settings of the pad take their WINPAD_ names, PAD_ before' && grep -qx 'PAD_PLACE=left center' "$_pc" \
+        && ok "on --dry-run: the pad's settings it would rename are said, the config as it was (v0.143)" || bad "config renames dry" "$out"
+    out=$(padon || :)
+    printf '%s\n' "$out" | grep -q '^ok     config       3 settings of the pad are WINPAD_ now' && grep -qx 'WINPAD_PLACE=left center' "$_pc" && grep -qx 'WINPAD_SIDE_WIDTH=72' "$_pc" \
+        && [ "$(grep -c '^WINPAD_VIEW=' "$_pc")" = 1 ] && grep -qx 'WINPAD_VIEW=icons' "$_pc" && ! grep -q '^PAD_' "$_pc" \
+        && ok "on: the pad's settings named PAD_ are written under their WINPAD_ names, once; one held under both keeps its new line (v0.143)" || bad "config renames" "$out | $(grep 'PAD_' "$_pc")"
+    out=$(padon || :)
+    ! printf '%s\n' "$out" | grep -q ' config .*WINPAD_' && ok "on again: no setting is left to rename" || bad "config renames twice" "$out"
+    cp "$H/cfg.renames" "$_pc"
     # a new drawing of the pointer reaches a running sway once: sway loads a cursor theme again only for a new name or size (#48)
     pd=$HOME/.local/share/icons; seen=$HOME/.local/state/spark-shell/pointer.seen; cmds=$H/swaymsg.cmds
     printf '#!/bin/sh\n[ "$1" != -- ] || { shift; echo "$*" >> "%s"; }\n' "$cmds" > "$H/.local/bin/swaymsg"
@@ -3697,17 +3716,17 @@ nw_tree "$(rf_win 5 con 0 1216 42 944 1022 '')" "$_lt"; win_run new
 # the pad (v0.133): spark-winpad's stand-in records how it was started and the signals it takes, holds its lock as the
 # real one does, and turns hidden on SIGUSR2
 mkdir -p "$H/padbin" "$H/run"
-cat > "$H/padbin/spark-winpad" <<'PAD_STUB'
+cat > "$H/padbin/spark-winpad" <<'WINPAD_STUB'
 #!/bin/sh
 printf '%s\n' "$*" >> "$HOME/pad.log"
-env | grep -E '^(SPARK_SHELL|PAD_[A-Z_]+)=' | sort > "$HOME/winpad.env"
+env | grep -E '^(SPARK_SHELL|WINPAD_[A-Z_]+)=' | sort > "$HOME/winpad.env"
 trap 'echo usr1 >> "$HOME/pad.sig"' USR1
-trap 'echo usr2 >> "$HOME/pad.sig"; if grep -qx "hidden 1" "$PAD_STATE"; then printf "hidden 0\n" > "$PAD_STATE"; else printf "hidden 1\n" > "$PAD_STATE"; fi' USR2
-trap 'rm -f "$PAD_LOCK"; exit 0' TERM
-printf 'hidden 0\ncount 2\n' > "$PAD_STATE"
-echo $$ > "$PAD_LOCK"   # last, as the real pad takes its lock once its signals are set
+trap 'echo usr2 >> "$HOME/pad.sig"; if grep -qx "hidden 1" "$WINPAD_STATE"; then printf "hidden 0\n" > "$WINPAD_STATE"; else printf "hidden 1\n" > "$WINPAD_STATE"; fi' USR2
+trap 'rm -f "$WINPAD_LOCK"; exit 0' TERM
+printf 'hidden 0\ncount 2\n' > "$WINPAD_STATE"
+echo $$ > "$WINPAD_LOCK"   # last, as the real pad takes its lock once its signals are set
 while :; do sleep 0.1; done
-PAD_STUB
+WINPAD_STUB
 chmod +x "$H/padbin/spark-winpad"
 padr() { rm -f "$HOME/win.log"; rc=0; out=$(XDG_RUNTIME_DIR=$H/run SPARK_SHELL_WINPAD=$H/padbin/spark-winpad SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop pad "$@" 2>&1) || rc=$?; }
 pad_up() { _pu=0; while [ "$_pu" -lt 40 ] && [ ! -s "$H/run/spark-shell-winpad.pid" ]; do sleep 0.1; _pu=$((_pu + 1)); done; }
@@ -3723,11 +3742,11 @@ pad_tree; padr
 padr keys; pad_up
 _pe=$(cat "$HOME/winpad.env" 2>/dev/null)
 [ "$rc" = 0 ] && [ "$out" = 'the pad has the keys: Enter brings the window back, Esc leaves' ] && [ "$(cat "$HOME/pad.log" 2>/dev/null)" = '--keys' ] \
-    && printf '%s\n' "$_pe" | grep -qx "SPARK_SHELL=$SH" && printf '%s\n' "$_pe" | grep -qx 'PAD_PLACE=bottom center' && printf '%s\n' "$_pe" | grep -qx 'PAD_WIDTH=0' && printf '%s\n' "$_pe" | grep -qx 'PAD_SIDE_WIDTH=36' \
-    && printf '%s\n' "$_pe" | grep -qx 'PAD_BAR=top' && printf '%s\n' "$_pe" | grep -qx "PAD_LOCK=$H/run/spark-shell-winpad.pid" && printf '%s\n' "$_pe" | grep -qx "PAD_STATE=$H/run/spark-shell-winpad.state" \
-    && printf '%s\n' "$_pe" | grep -qx 'PAD_ACCENT=ff5555' && printf '%s\n' "$_pe" | grep -qx 'PAD_FG=aaaaaa' && [ "$(printf '%s\n' "$_pe" | grep -cE '^PAD_(SURFACE|LIT|BAND_HEX|MUTED)=[0-9a-f]{6}$')" = 4 ] \
-    && printf '%s\n' "$_pe" | grep -qx 'PAD_BAND=off' && printf '%s\n' "$_pe" | grep -qx 'PAD_GAP=8' && printf '%s\n' "$_pe" | grep -qx 'PAD_VIEW=icons' && printf '%s\n' "$_pe" | grep -qx 'PAD_HEIGHT=0' \
-    && printf '%s\n' "$_pe" | grep -qE '^PAD_FONT=.+ [0-9]+(px)?$' && printf '%s\n' "$_pe" | grep -qE '^PAD_ALPHA=[0-9.]+$' && printf '%s\n' "$_pe" | grep -q '^PAD_BAR_PID=' \
+    && printf '%s\n' "$_pe" | grep -qx "SPARK_SHELL=$SH" && printf '%s\n' "$_pe" | grep -qx 'WINPAD_PLACE=bottom center' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_WIDTH=0' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_SIDE_WIDTH=36' \
+    && printf '%s\n' "$_pe" | grep -qx 'WINPAD_BAR=top' && printf '%s\n' "$_pe" | grep -qx "WINPAD_LOCK=$H/run/spark-shell-winpad.pid" && printf '%s\n' "$_pe" | grep -qx "WINPAD_STATE=$H/run/spark-shell-winpad.state" \
+    && printf '%s\n' "$_pe" | grep -qx 'WINPAD_ACCENT=ff5555' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_FG=aaaaaa' && [ "$(printf '%s\n' "$_pe" | grep -cE '^WINPAD_(SURFACE|LIT|BAND_HEX|MUTED)=[0-9a-f]{6}$')" = 4 ] \
+    && printf '%s\n' "$_pe" | grep -qx 'WINPAD_BAND=off' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_GAP=8' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_VIEW=icons' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_HEIGHT=0' \
+    && printf '%s\n' "$_pe" | grep -qE '^WINPAD_FONT=.+ [0-9]+(px)?$' && printf '%s\n' "$_pe" | grep -qE '^WINPAD_ALPHA=[0-9.]+$' && printf '%s\n' "$_pe" | grep -q '^WINPAD_BAR_PID=' \
     && ok "desktop pad keys (Super+minus): no pad running, spark-winpad starts with --keys, the look, the place, the bar's place and its files in its environment (v0.133); the band's setting, its color apart, and the outer gap as its margin (#265, #266); the view, icons by default, and the height, 0 by default (#269)" || bad "pad keys start" "rc=$rc $out $(cat "$HOME/pad.log" 2>&1) | $_pe"
 padr keys; pad_sig usr1 1
 [ "$rc" = 0 ] && [ "$(grep -c '' "$HOME/pad.log")" = 1 ] && [ "$(grep -c '^usr1$' "$HOME/pad.sig" 2>/dev/null)" = 1 ] && ok "desktop pad keys: a pad running takes SIGUSR1, none other starts (v0.133)" || bad "pad keys signal" "rc=$rc $out $(cat "$HOME/pad.log" "$HOME/pad.sig" 2>&1)"
@@ -3761,95 +3780,101 @@ pad_down
 # where it sits: the keys the pad writes after a drag, each checked; a pad of v0.134.1 sends three, one of v0.134.2 the height too (#269)
 cfg=$HOME/.config/spark-shell/config; cp "$cfg" "$H/cfg.pad"
 padr place 'left center' 0 72
-[ "$rc" = 0 ] && [ "$out" = 'the pad sits at the left edge, in the middle' ] && grep -qx 'PAD_PLACE=left center' "$cfg" && grep -qx 'PAD_WIDTH=0' "$cfg" && grep -qx 'PAD_SIDE_WIDTH=72' "$cfg" && ! grep -q '^PAD_HEIGHT=' "$cfg" \
-    && ok "desktop pad place: an edge and where along it, the widths, in the config (v0.133); three words, as a pad of v0.134.1 sends them, write no height (#269)" || bad "pad place" "rc=$rc $out $(grep PAD_ "$cfg")"
+[ "$rc" = 0 ] && [ "$out" = 'the pad sits at the left edge, in the middle' ] && grep -qx 'WINPAD_PLACE=left center' "$cfg" && grep -qx 'WINPAD_WIDTH=0' "$cfg" && grep -qx 'WINPAD_SIDE_WIDTH=72' "$cfg" && ! grep -q '^WINPAD_HEIGHT=' "$cfg" \
+    && ok "desktop pad place: an edge and where along it, the widths, in the config (v0.133); three words, as a pad of v0.134.1 sends them, write no height (#269)" || bad "pad place" "rc=$rc $out $(grep WINPAD_ "$cfg")"
 padr place 'bottom start' 480 36 76
-[ "$rc" = 0 ] && [ "$out" = 'the pad sits at the bottom edge, at its left end' ] && grep -qx 'PAD_PLACE=bottom start' "$cfg" && grep -qx 'PAD_WIDTH=480' "$cfg" && grep -qx 'PAD_SIDE_WIDTH=36' "$cfg" && grep -qx 'PAD_HEIGHT=76' "$cfg" \
-    && ok "desktop pad place: the height fourth, in the config as PAD_HEIGHT, the place and the widths with it (#269)" || bad "pad place height" "rc=$rc $out $(grep PAD_ "$cfg")"
+[ "$rc" = 0 ] && [ "$out" = 'the pad sits at the bottom edge, at its left end' ] && grep -qx 'WINPAD_PLACE=bottom start' "$cfg" && grep -qx 'WINPAD_WIDTH=480' "$cfg" && grep -qx 'WINPAD_SIDE_WIDTH=36' "$cfg" && grep -qx 'WINPAD_HEIGHT=76' "$cfg" \
+    && ok "desktop pad place: the height fourth, in the config as WINPAD_HEIGHT, the place and the widths with it (#269)" || bad "pad place height" "rc=$rc $out $(grep WINPAD_ "$cfg")"
 padr place 'top center' 0 36
-[ "$rc" = 0 ] && [ "$out" = 'the pad sits at the top edge, in the middle' ] && grep -qx 'PAD_PLACE=top center' "$cfg" && grep -qx 'PAD_HEIGHT=76' "$cfg" \
-    && ok "desktop pad place: three words after a height leave the height as it was (#269)" || bad "pad place height kept" "rc=$rc $out $(grep PAD_ "$cfg")"
+[ "$rc" = 0 ] && [ "$out" = 'the pad sits at the top edge, in the middle' ] && grep -qx 'WINPAD_PLACE=top center' "$cfg" && grep -qx 'WINPAD_HEIGHT=76' "$cfg" \
+    && ok "desktop pad place: three words after a height leave the height as it was (#269)" || bad "pad place height kept" "rc=$rc $out $(grep WINPAD_ "$cfg")"
 padr place 'bottom center' 0 36 tall
-[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: pad place: the height is pixels, 0 to 9999 (0: as many rows as needed)' ] && grep -qx 'PAD_PLACE=top center' "$cfg" && grep -qx 'PAD_HEIGHT=76' "$cfg" \
-    && ok "desktop pad place: a height that is not whole pixels is refused, the config as it was (#269)" || bad "pad place height bad" "rc=$rc $out $(grep PAD_ "$cfg")"
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: pad place: the height is pixels, 0 to 9999 (0: as many rows as needed)' ] && grep -qx 'WINPAD_PLACE=top center' "$cfg" && grep -qx 'WINPAD_HEIGHT=76' "$cfg" \
+    && ok "desktop pad place: a height that is not whole pixels is refused, the config as it was (#269)" || bad "pad place height bad" "rc=$rc $out $(grep WINPAD_ "$cfg")"
 padr place 'bottom center' 0 36 0 9
 _pp1=$rc$out; padr place 'bottom center' 0
-[ "$_pp1" = '1spark-shell desktop: pad place takes PLACE WIDTH SIDE [HEIGHT]: "bottom center" 0 36 0' ] && [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: pad place takes PLACE WIDTH SIDE [HEIGHT]: "bottom center" 0 36 0' ] && grep -qx 'PAD_PLACE=top center' "$cfg" \
+[ "$_pp1" = '1spark-shell desktop: pad place takes PLACE WIDTH SIDE [HEIGHT]: "bottom center" 0 36 0' ] && [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: pad place takes PLACE WIDTH SIDE [HEIGHT]: "bottom center" 0 36 0' ] && grep -qx 'WINPAD_PLACE=top center' "$cfg" \
     && ok "desktop pad place: five words or two are refused in one line, the config as it was (#269)" || bad "pad place count" "$_pp1 | rc=$rc $out"
 padr place 'free 300 200' 600 36
-[ "$rc" = 0 ] && [ "$out" = 'the pad sits where you left it' ] && grep -qx 'PAD_PLACE=free 300 200' "$cfg" && grep -qx 'PAD_WIDTH=600' "$cfg" && ok "desktop pad place: free, where it was left (v0.133)" || bad "pad place free" "rc=$rc $out"
+[ "$rc" = 0 ] && [ "$out" = 'the pad sits where you left it' ] && grep -qx 'WINPAD_PLACE=free 300 200' "$cfg" && grep -qx 'WINPAD_WIDTH=600' "$cfg" && ok "desktop pad place: free, where it was left (v0.133)" || bad "pad place free" "rc=$rc $out"
 padr place middle 0 36
-[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: pad place: top, bottom, left or right and center, start, end or pixels along that edge, or free X Y' ] && grep -qx 'PAD_PLACE=free 300 200' "$cfg" \
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: pad place: top, bottom, left or right and center, start, end or pixels along that edge, or free X Y' ] && grep -qx 'WINPAD_PLACE=free 300 200' "$cfg" \
     && ok "desktop pad place: a place it cannot be is refused, the config as it was (v0.133)" || bad "pad place bad" "rc=$rc $out"
 padr place 'bottom end' 0 20
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: pad place: the width at a side is pixels, 36 to 9999' ] && ok "desktop pad place: a side narrower than one icon is refused (v0.133)" || bad "pad place side" "rc=$rc $out"
-printf 'PAD_PLACE=sideways\n' >> "$cfg"; padr
-[ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'PAD_PLACE=sideways in .*: top, bottom, left or right' && ok "config: PAD_PLACE out of its shapes refused in one line (v0.133)" || bad "pad config" "rc=$rc $out"
+printf 'WINPAD_PLACE=sideways\n' >> "$cfg"; padr
+[ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'WINPAD_PLACE=sideways in .*: top, bottom, left or right' && ok "config: WINPAD_PLACE out of its shapes refused in one line (v0.133)" || bad "pad config" "rc=$rc $out"
 cp "$H/cfg.pad" "$cfg"
+# the pad's settings as a config from v0.142 or before names them: read as they are until on writes the new names (v0.143)
+pad_down; printf 'PAD_PLACE=left center\nPAD_SIDE_WIDTH=72\nPAD_VIEW=titles\n' >> "$cfg"; pad_tree; padr keys; pad_up
+_pe=$(cat "$HOME/winpad.env" 2>/dev/null)
+printf '%s\n' "$_pe" | grep -qx 'WINPAD_PLACE=left center' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_SIDE_WIDTH=72' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_VIEW=titles' \
+    && ok "config: the pad's settings under their names through v0.142 (PAD_PLACE, PAD_SIDE_WIDTH, PAD_VIEW) are read as they are (v0.143)" || bad "pad old names" "rc=$rc $out $_pe"
+pad_down; cp "$H/cfg.pad" "$cfg"
 # the pad's band (#266): off by default, a switch of its own in the config; a running pad starts again to take it
 padr band
 [ "$rc" = 0 ] && [ "$out" = "pad band off $dot the handle alone across its top" ] && ok "desktop pad band: off by default, the handle alone, said in one line (#266, #269)" || bad "pad band bare" "rc=$rc $out"
 padr band on
-[ "$rc" = 0 ] && [ "$out" = "pad band on $dot the band under its handle says pad and how many wait" ] && grep -qx 'PAD_BAND=on' "$cfg" && ok "desktop pad band on: in the config, with its receipt (#266)" || bad "pad band on" "rc=$rc $out $(grep PAD_ "$cfg")"
+[ "$rc" = 0 ] && [ "$out" = "pad band on $dot the band under its handle says pad and how many wait" ] && grep -qx 'WINPAD_BAND=on' "$cfg" && ok "desktop pad band on: in the config, with its receipt (#266)" || bad "pad band on" "rc=$rc $out $(grep WINPAD_ "$cfg")"
 padr band on
 [ "$rc" = 1 ] && [ "$out" = "spark-shell desktop: the pad's band is on already" ] && ok "desktop pad band on: on already, refused in one line (#266)" || bad "pad band again" "rc=$rc $out"
 padr band maybe
-[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: pad band takes on or off' ] && grep -qx 'PAD_BAND=on' "$cfg" && ok "desktop pad band: a word that is neither refused, the config as it was (#266)" || bad "pad band word" "rc=$rc $out"
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: pad band takes on or off' ] && grep -qx 'WINPAD_BAND=on' "$cfg" && ok "desktop pad band: a word that is neither refused, the config as it was (#266)" || bad "pad band word" "rc=$rc $out"
 pad_tree; padr keys; pad_up
-_pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'PAD_BAND=on' "$HOME/winpad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
+_pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'WINPAD_BAND=on' "$HOME/winpad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
 padr band off
 _pi=0; while [ "$_pi" -lt 40 ] && [ "$(grep -c '' "$HOME/pad.log" 2>/dev/null)" -lt 2 ]; do sleep 0.1; _pi=$((_pi + 1)); done
-_pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'PAD_BAND=off' "$HOME/winpad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
-[ "$rc" = 0 ] && [ "$out" = "pad band off $dot the handle alone across its top" ] && grep -qx 'PAD_BAND=off' "$cfg" && [ "$(grep -c '' "$HOME/pad.log")" = 2 ] && grep -qx 'PAD_BAND=off' "$HOME/winpad.env" && grep -qE '^PAD_BAND_HEX=[0-9a-f]{6}$' "$HOME/winpad.env" \
+_pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'WINPAD_BAND=off' "$HOME/winpad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
+[ "$rc" = 0 ] && [ "$out" = "pad band off $dot the handle alone across its top" ] && grep -qx 'WINPAD_BAND=off' "$cfg" && [ "$(grep -c '' "$HOME/pad.log")" = 2 ] && grep -qx 'WINPAD_BAND=off' "$HOME/winpad.env" && grep -qE '^WINPAD_BAND_HEX=[0-9a-f]{6}$' "$HOME/winpad.env" \
     && ok "desktop pad band off: a running pad starts again without its band, its color still handed apart (#266)" || bad "pad band again pad" "rc=$rc $out $(cat "$HOME/pad.log" "$HOME/winpad.env" 2>&1)"
 pad_down
-printf 'PAD_BAND=maybe\n' >> "$cfg"; padr band
-[ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'PAD_BAND=maybe in .*: on or off' && ok "config: PAD_BAND other than on or off refused in one line (#266)" || bad "pad band config" "rc=$rc $out"
-sed -i.bak '/^PAD_BAND=/d' "$cfg"; rm -f "$cfg.bak"
-rm -f "$HOME/win.log"; rc=0; out=$(PAD_BAND=c3d0ee XDG_RUNTIME_DIR=$H/run SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop pad band 2>&1) || rc=$?
-[ "$rc" = 0 ] && [ "$out" = "pad band off $dot the handle alone across its top" ] && ok "config: a band's color a pad of v0.134 hands down as PAD_BAND, in no config file, leaves the default (#266)" || bad "pad band old pad env" "rc=$rc $out"
+printf 'WINPAD_BAND=maybe\n' >> "$cfg"; padr band
+[ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'WINPAD_BAND=maybe in .*: on or off' && ok "config: WINPAD_BAND other than on or off refused in one line (#266)" || bad "pad band config" "rc=$rc $out"
+sed -i.bak '/^WINPAD_BAND=/d' "$cfg"; rm -f "$cfg.bak"
+rm -f "$HOME/win.log"; rc=0; out=$(WINPAD_BAND=c3d0ee XDG_RUNTIME_DIR=$H/run SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop pad band 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = "pad band off $dot the handle alone across its top" ] && ok "config: a band's color a pad of v0.134 hands down as WINPAD_BAND, in no config file, leaves the default (#266)" || bad "pad band old pad env" "rc=$rc $out"
 # the pad's view (#269): icons by default, titles a switch of its own in the config; a running pad starts again to take it
 padr view
-[ "$rc" = 0 ] && [ "$out" = "pad view icons $dot one icon a window, its title beside it on hover" ] && ! grep -q '^PAD_VIEW=' "$cfg" && ok "desktop pad view: icons by default, said in one line, nothing written (#269)" || bad "pad view bare" "rc=$rc $out"
+[ "$rc" = 0 ] && [ "$out" = "pad view icons $dot one icon a window, its title beside it on hover" ] && ! grep -q '^WINPAD_VIEW=' "$cfg" && ok "desktop pad view: icons by default, said in one line, nothing written (#269)" || bad "pad view bare" "rc=$rc $out"
 padr view titles
-[ "$rc" = 0 ] && [ "$out" = "pad view titles $dot a slot a window, its icon, its app and its title" ] && grep -qx 'PAD_VIEW=titles' "$cfg" && ok "desktop pad view titles: in the config, with its receipt (#269)" || bad "pad view titles" "rc=$rc $out $(grep PAD_ "$cfg")"
+[ "$rc" = 0 ] && [ "$out" = "pad view titles $dot a slot a window, its icon, its app and its title" ] && grep -qx 'WINPAD_VIEW=titles' "$cfg" && ok "desktop pad view titles: in the config, with its receipt (#269)" || bad "pad view titles" "rc=$rc $out $(grep WINPAD_ "$cfg")"
 padr view
 [ "$rc" = 0 ] && [ "$out" = "pad view titles $dot a slot a window, its icon, its app and its title" ] && ok "desktop pad view: the view the config holds, said in one line (#269)" || bad "pad view bare titles" "rc=$rc $out"
 padr view titles
 [ "$rc" = 1 ] && [ "$out" = "spark-shell desktop: the pad's view is titles already" ] && ok "desktop pad view titles: titles already, refused in one line (#269)" || bad "pad view again" "rc=$rc $out"
 padr view grid
 _pv1=$rc$out; padr view icons titles
-[ "$_pv1" = '1spark-shell desktop: pad view takes icons or titles' ] && [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: pad view takes icons or titles' ] && grep -qx 'PAD_VIEW=titles' "$cfg" \
+[ "$_pv1" = '1spark-shell desktop: pad view takes icons or titles' ] && [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: pad view takes icons or titles' ] && grep -qx 'WINPAD_VIEW=titles' "$cfg" \
     && ok "desktop pad view: another word, or two, refused in one line, the config as it was (#269)" || bad "pad view word" "$_pv1 | rc=$rc $out"
 padr place 'bottom center' 0 36 76
 pad_tree; padr keys; pad_up
-_pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'PAD_VIEW=titles' "$HOME/winpad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
+_pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'WINPAD_VIEW=titles' "$HOME/winpad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
 _pe=$(cat "$HOME/winpad.env" 2>/dev/null)
 padr view icons
 _pi=0; while [ "$_pi" -lt 40 ] && [ "$(grep -c '' "$HOME/pad.log" 2>/dev/null)" -lt 2 ]; do sleep 0.1; _pi=$((_pi + 1)); done
-_pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'PAD_VIEW=icons' "$HOME/winpad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
-[ "$rc" = 0 ] && [ "$out" = "pad view icons $dot one icon a window, its title beside it on hover" ] && grep -qx 'PAD_VIEW=icons' "$cfg" && printf '%s\n' "$_pe" | grep -qx 'PAD_VIEW=titles' && printf '%s\n' "$_pe" | grep -qx 'PAD_HEIGHT=76' \
-    && [ "$(grep -c '' "$HOME/pad.log")" = 2 ] && grep -qx 'PAD_VIEW=icons' "$HOME/winpad.env" && grep -qx 'PAD_HEIGHT=76' "$HOME/winpad.env" && grep -qx 'PAD_BAND=off' "$HOME/winpad.env" && grep -qE '^PAD_BAND_HEX=[0-9a-f]{6}$' "$HOME/winpad.env" && grep -qx 'PAD_GAP=8' "$HOME/winpad.env" \
+_pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'WINPAD_VIEW=icons' "$HOME/winpad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
+[ "$rc" = 0 ] && [ "$out" = "pad view icons $dot one icon a window, its title beside it on hover" ] && grep -qx 'WINPAD_VIEW=icons' "$cfg" && printf '%s\n' "$_pe" | grep -qx 'WINPAD_VIEW=titles' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_HEIGHT=76' \
+    && [ "$(grep -c '' "$HOME/pad.log")" = 2 ] && grep -qx 'WINPAD_VIEW=icons' "$HOME/winpad.env" && grep -qx 'WINPAD_HEIGHT=76' "$HOME/winpad.env" && grep -qx 'WINPAD_BAND=off' "$HOME/winpad.env" && grep -qE '^WINPAD_BAND_HEX=[0-9a-f]{6}$' "$HOME/winpad.env" && grep -qx 'WINPAD_GAP=8' "$HOME/winpad.env" \
     && ok "desktop pad view icons: a running pad in titles, its height in its environment, starts again in icons, the band and the gap as they were (#269)" || bad "pad view again pad" "rc=$rc $out $(cat "$HOME/pad.log" "$HOME/winpad.env" 2>&1) | $_pe"
 pad_down
-for _pk in PAD_VIEW=grid PAD_VIEW=Icons 'PAD_VIEW=icons titles'; do
+for _pk in WINPAD_VIEW=grid WINPAD_VIEW=Icons 'WINPAD_VIEW=icons titles'; do
     printf '%s\n' "$_pk" >> "$cfg"; padr view
     [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -qF "${_pk} in " && printf '%s\n' "$out" | grep -q ': icons or titles$' || bad "pad view config $_pk" "rc=$rc $out"
     sed -i.bak '$d' "$cfg"; rm -f "$cfg.bak"
 done
-ok "config: PAD_VIEW other than icons or titles refused in one line (#269)"
-for _pk in PAD_HEIGHT=-1 PAD_HEIGHT=76px PAD_HEIGHT=076 PAD_HEIGHT=10000 'PAD_HEIGHT=7 6'; do
+ok "config: WINPAD_VIEW other than icons or titles refused in one line (#269)"
+for _pk in WINPAD_HEIGHT=-1 WINPAD_HEIGHT=76px WINPAD_HEIGHT=076 WINPAD_HEIGHT=10000 'WINPAD_HEIGHT=7 6'; do
     printf '%s\n' "$_pk" >> "$cfg"; padr view
     [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -qF "${_pk} in " && printf '%s\n' "$out" | grep -qF ': pixels, 0 to 9999 (0: as many rows as needed)' || bad "pad height config $_pk" "rc=$rc $out"
     sed -i.bak '$d' "$cfg"; rm -f "$cfg.bak"
 done
-ok "config: PAD_HEIGHT other than whole pixels, 0 to 9999, refused in one line (#269)"
-for _pk in PAD_HEIGHT=0 PAD_HEIGHT=9999; do
+ok "config: WINPAD_HEIGHT other than whole pixels, 0 to 9999, refused in one line (#269)"
+for _pk in WINPAD_HEIGHT=0 WINPAD_HEIGHT=9999; do
     printf '%s\n' "$_pk" >> "$cfg"; padr view
     [ "$rc" = 0 ] || bad "pad height config $_pk taken" "rc=$rc $out"
     sed -i.bak '$d' "$cfg"; rm -f "$cfg.bak"
 done
-ok "config: PAD_HEIGHT 0, as many rows as needed, and 9999 taken (#269)"
+ok "config: WINPAD_HEIGHT 0, as many rows as needed, and 9999 taken (#269)"
 # a change of the area under a real sway (its socket): the bar's text, the bar moved, a screen; refit soon after
 _rsk=$H/rs.sock; "$py3" -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$_rsk" 2>/dev/null || :
 if [ -S "$_rsk" ]; then
@@ -6022,7 +6047,7 @@ for kv in DIALOG_ATTACH=maybe DIALOG_MODEL=1 DIALOG_TALK=off 'DIALOG_ATTACH_TYPE
 done
 ok "config: DIALOG_ATTACH, DIALOG_MODEL and DIALOG_TALK take yes or no, DIALOG_ATTACH_TYPES lower-case types; anything else is refused in one line"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
-grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u DIALOG_ICONS -u DIALOG_SPACING -u BAR_GLYPHS -u BAR_WORKSPACES -u GLYPH_FAMILY -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START -u PAD_PLACE -u PAD_WIDTH -u PAD_SIDE_WIDTH -u PAD_BAND -u PAD_VIEW -u PAD_HEIGHT'" "$SRC" && grep -q '^PAD_PLACE=bottom center$' "$REPO/config.example" && grep -q '^PAD_WIDTH=0$' "$REPO/config.example" && grep -q '^PAD_SIDE_WIDTH=36$' "$REPO/config.example" && grep -q '^PAD_BAND=off$' "$REPO/config.example" && grep -q '^PAD_VIEW=icons$' "$REPO/config.example" && grep -q '^PAD_HEIGHT=0$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" && grep -q '^DIALOG_ANIMATION=$' "$REPO/config.example" && grep -q '^DIALOG_ICONS=on$' "$REPO/config.example" && grep -q '^DIALOG_SPACING=groups$' "$REPO/config.example" && grep -q '^BAR_GLYPHS=signs$' "$REPO/config.example" && grep -q '^GLYPH_FAMILY=stone$' "$REPO/config.example" && ! grep -q '^BAR_WORKSPACES=' "$REPO/config.example" && grep -q '^WALLPAPER_MOTION=off$' "$REPO/config.example" \
+grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u DIALOG_ICONS -u DIALOG_SPACING -u BAR_GLYPHS -u BAR_WORKSPACES -u GLYPH_FAMILY -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START -u WINPAD_PLACE -u WINPAD_WIDTH -u WINPAD_SIDE_WIDTH -u WINPAD_BAND -u WINPAD_VIEW -u WINPAD_HEIGHT'" "$SRC" && grep -q '^WINPAD_PLACE=bottom center$' "$REPO/config.example" && grep -q '^WINPAD_WIDTH=0$' "$REPO/config.example" && grep -q '^WINPAD_SIDE_WIDTH=36$' "$REPO/config.example" && grep -q '^WINPAD_BAND=off$' "$REPO/config.example" && grep -q '^WINPAD_VIEW=icons$' "$REPO/config.example" && grep -q '^WINPAD_HEIGHT=0$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" && grep -q '^DIALOG_ANIMATION=$' "$REPO/config.example" && grep -q '^DIALOG_ICONS=on$' "$REPO/config.example" && grep -q '^DIALOG_SPACING=groups$' "$REPO/config.example" && grep -q '^BAR_GLYPHS=signs$' "$REPO/config.example" && grep -q '^GLYPH_FAMILY=stone$' "$REPO/config.example" && ! grep -q '^BAR_WORKSPACES=' "$REPO/config.example" && grep -q '^WALLPAPER_MOTION=off$' "$REPO/config.example" \
     && ok "config: the dialog's keys, the bar's set (#160) and the glyph family (#248) are unset for what spark-shell starts, and config.example shows their defaults, BAR_WORKSPACES no more" || bad "dialog keys" "$(grep -n DIALOG "$REPO/config.example")"
 # the local gate (#155): every python3 test ci.yml runs is in the gate's list, read from ci.yml itself, with the lint and the
 # dialog's checks; the pre-push hook runs its quick part

@@ -44,7 +44,7 @@ const NAMESPACE: &str = "spark-winpad";
 const BTN_LEFT: u32 = 0x110;
 /// How long the tree is read every tick after an event.
 const BURST: Duration = Duration::from_secs(2);
-/// The least width at a side spark-shell keeps (PAD_SIDE_WIDTH, 36 to 9999): a column's cell is narrower at a
+/// The least width at a side spark-shell keeps (WINPAD_SIDE_WIDTH, 36 to 9999): a column's cell is narrower at a
 /// small text size, and the layout makes the same column of it.
 const SIDE_LEAST: i32 = 36;
 
@@ -76,16 +76,16 @@ pub struct Config {
     pub look: Look,
     pub titles: Titles,
     pub place: Place,
-    /// The icons alone (the default), or the titled slots (PAD_VIEW=titles).
+    /// The icons alone (the default), or the titled slots (WINPAD_VIEW=titles).
     pub view: View,
     /// The most width at the top, the bottom or free (0: the room's), and at a side.
     pub width: i32,
     pub side_width: i32,
-    /// The most height (0: as many rows as the windows need): PAD_HEIGHT.
+    /// The most height (0: as many rows as the windows need): WINPAD_HEIGHT.
     pub height: i32,
-    /// The margin from an edge: PAD_GAP, the desktop's outer gap.
+    /// The margin from an edge: WINPAD_GAP, the desktop's outer gap.
     pub gap: i32,
-    /// The band with its words under the handle (PAD_BAND=on).
+    /// The band with its words under the handle (WINPAD_BAND=on).
     pub band: bool,
     pub spark_shell: String,
     pub state_file: Option<PathBuf>,

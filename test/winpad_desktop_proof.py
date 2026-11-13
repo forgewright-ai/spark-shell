@@ -40,6 +40,7 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -50,7 +51,7 @@ sys.path.insert(0, str(REPO / "test"))
 from home_desktop_proof import Pointer  # noqa: E402  the repo's virtual pointer: motion, button, frame
 
 W, H = 1920, 1080
-GAP = 8           # sway's outer gap here, as spark-shell's GAPS_OUTER (#265); the pad's margin comes in PAD_GAP
+GAP = 8           # sway's outer gap here, as spark-shell's GAPS_OUTER (#265); the pad's margin comes in WINPAD_GAP
 BADGES = "\u2777\u2778\u2779"   # the filled circled two, three and four: what a group's badge may read here
 failed = 0
 
@@ -117,7 +118,7 @@ def rgb(hexa):
 
 
 def text_px(font):
-    """The text size in pixels of a pango font, as spark-winpad reads PAD_FONT: points at 96 dpi, or px."""
+    """The text size in pixels of a pango font, as spark-winpad reads WINPAD_FONT: points at 96 dpi, or px."""
     size = (font.split() or [""])[-1]
     try:
         return float(size[:-2]) if size.endswith("px") else float(size) * 96 / 72
@@ -126,7 +127,7 @@ def text_px(font):
 
 
 def lengths(font):
-    """The pad's lengths at the text size it was handed (PAD_FONT, the bar's), as component/winpad/src/pad.rs's
+    """The pad's lengths at the text size it was handed (WINPAD_FONT, the bar's), as component/winpad/src/pad.rs's
     Metrics::for_text makes them: the mock-up's at 16 px (36 an icon's cell, 6 the handle, 228 a slot), in
     proportion at any other."""
     k = min(max(text_px(font) / 16, 0.5), 3.0)
@@ -149,7 +150,7 @@ def pad_binary():
 
 def shim(root, binary):
     """spark-winpad as spark-shell starts it, read on the way: a script named spark-winpad writes the environment
-    spark-shell hands the pad (its colors, PAD_GAP, PAD_BAND, PAD_VIEW, PAD_HEIGHT) and points the pad's
+    spark-shell hands the pad (its colors, WINPAD_GAP, WINPAD_BAND, WINPAD_VIEW, WINPAD_HEIGHT) and points the pad's
     SPARK_SHELL at a second one, which writes each call the pad makes and runs spark-shell with it. The apps
     adapter and the assets stay beside it, for the icons and the dialog's mark."""
     folder = root / "shim"
@@ -164,7 +165,7 @@ def shim(root, binary):
                       "exec sh %s \"$@\"\n"
                       % (shlex.quote(str(calls)), shlex.quote(str(calls) + ".areas"), shlex.quote(str(REPO / "spark-shell"))))
     pad = folder / "spark-winpad"
-    pad.write_text("#!/bin/sh\nenv | grep '^PAD_' > %s\nSPARK_SHELL=%s exec %s \"$@\"\n"
+    pad.write_text("#!/bin/sh\nenv | grep '^WINPAD_' > %s\nSPARK_SHELL=%s exec %s \"$@\"\n"
                    % (shlex.quote(str(handed)), shlex.quote(str(logger)), shlex.quote(str(binary))))
     for script in (logger, pad):
         script.chmod(0o755)
@@ -331,7 +332,7 @@ def round_in(palette, binary, evidence):
            "XDG_STATE_HOME": str(root / ".local/state"), "XDG_DATA_HOME": str(root / ".local/share"),
            "XDG_RUNTIME_DIR": str(runtime), "WLR_BACKENDS": "headless", "WLR_RENDERER": "pixman",
            "WLR_LIBINPUT_NO_DEVICES": "1", "SPARK_SHELL_NO_APPLY": "1", "SPARK_SHELL_WINPAD": str(pad)}
-    for name in ("SWAYSOCK", "I3SOCK", "WAYLAND_DISPLAY", "DISPLAY", "PAD_BAND", "PAD_GAP", "PAD_VIEW", "PAD_HEIGHT"):
+    for name in ("SWAYSOCK", "I3SOCK", "WAYLAND_DISPLAY", "DISPLAY", "WINPAD_BAND", "WINPAD_GAP", "WINPAD_VIEW", "WINPAD_HEIGHT"):
         env.pop(name, None)
     # a real swaybar on top, its line spark-shell's own, so the bar's block is the one people see
     config = root / "sway.conf"
@@ -501,12 +502,12 @@ def round_in(palette, binary, evidence):
         ok(any(m.startswith("_spark-shell.min.tiled.") for m in marks), "its mark says it left the tiling", marks)
         wait_for(pad_pid, "spark-winpad started by the minimize")
         given = dict(line.split("=", 1) for line in wait_for(lambda: handed.exists() and handed.read_text(), "the pad's environment").splitlines() if "=" in line)
-        gap = int(given.get("PAD_GAP") or 8)
-        ok(given.get("PAD_BAND") in (None, "off") and gap == GAP, "spark-shell hands the pad the band off and the outer gap as its margin",
-           {k: given.get(k) for k in ("PAD_BAND", "PAD_GAP")})
-        ok(given.get("PAD_VIEW") in (None, "icons") and given.get("PAD_HEIGHT") in (None, "0"),
-           "and the icons view, as many rows as needed, by default", {k: given.get(k) for k in ("PAD_VIEW", "PAD_HEIGHT")})
-        m = lengths(given.get("PAD_FONT", ""))
+        gap = int(given.get("WINPAD_GAP") or 8)
+        ok(given.get("WINPAD_BAND") in (None, "off") and gap == GAP, "spark-shell hands the pad the band off and the outer gap as its margin",
+           {k: given.get(k) for k in ("WINPAD_BAND", "WINPAD_GAP")})
+        ok(given.get("WINPAD_VIEW") in (None, "icons") and given.get("WINPAD_HEIGHT") in (None, "0"),
+           "and the icons view, as many rows as needed, by default", {k: given.get(k) for k in ("WINPAD_VIEW", "WINPAD_HEIGHT")})
+        m = lengths(given.get("WINPAD_FONT", ""))
         SLOT, CELL, BAND, TOOL, CTL, HANDLE = m["slot"], m["cell"], m["band"], m["tool"], m["ctl"], m["handle"]   # at 16 px: 228, 40, 24, 36, 24, 6
         ROW = HANDLE + TOOL                    # a row of icons under the handle
         inset = int(m["icon"] / 3 + 0.5)
@@ -529,8 +530,8 @@ def round_in(palette, binary, evidence):
         move(W // 2, 300)   # the pointer off the pad
         time.sleep(0.8)
         img = capture("two-windows")
-        surface, lit, fg, muted = rgb(given["PAD_SURFACE"]), rgb(given["PAD_LIT"]), rgb(given["PAD_FG"]), rgb(given["PAD_MUTED"])
-        band, accent = rgb(given["PAD_BAND_HEX"]), rgb(given["PAD_ACCENT"])
+        surface, lit, fg, muted = rgb(given["WINPAD_SURFACE"]), rgb(given["WINPAD_LIT"]), rgb(given["WINPAD_FG"]), rgb(given["WINPAD_MUTED"])
+        band, accent = rgb(given["WINPAD_BAND_HEX"]), rgb(given["WINPAD_ACCENT"])
         top = H - gap - ROW            # the pad's top: the handle, a row of icons under it, over the pad's margin
         cells = top + HANDLE           # the icons' row
         row = [r for r in runs(img, cells + 2, (surface, lit), 6) if r[1] >= 2 * TOOL]
@@ -710,7 +711,7 @@ def round_in(palette, binary, evidence):
         ok(len(said) == 8 and said[3:5] == ["bottom", "center"] and int(said[7]) >= two,
            "the pad asks spark-shell to keep its height: desktop pad place ... %s" % (said[7] if len(said) == 8 else "?"), said)
         kept = (settings / "config").read_text()
-        ok(("PAD_HEIGHT=%s" % said[7]) in kept if len(said) == 8 else False, "and spark-shell keeps it, PAD_HEIGHT", [ln for ln in kept.splitlines() if ln.startswith("PAD_")])
+        ok(("WINPAD_HEIGHT=%s" % said[7]) in kept if len(said) == 8 else False, "and spark-shell keeps it, WINPAD_HEIGHT", [ln for ln in kept.splitlines() if ln.startswith("WINPAD_")])
 
         # 11. shrunk from its left side until the foots fold into one icon, the app with the most windows first
         left, top = (box[0], box[1]) if box else ((W - two_w) // 2, H - gap - two)
@@ -749,14 +750,14 @@ def round_in(palette, binary, evidence):
         # none: a few accent pixels at most, the fringes a font's smoothing puts on an icon's letter (Ubuntu's tile N)
         ok(len(three) >= 20 and len(other) < min(8, len(three) // 4), "the group of three foots wears a badge in the accent at its icon's top right, the other app none (%d px)" % len(three),
            (len(three), len(other)))
-        monaspace = has_font("Monaspace Neon") and "monaspace neon" in given.get("PAD_FONT", "").lower()
+        monaspace = has_font("Monaspace Neon") and "monaspace neon" in given.get("WINPAD_FONT", "").lower()
         references = {}
         if monaspace:
             # the glyphs as foot draws them in the pad's font at the badge's size (a quarter over the text's), in the
             # accent on the pad's surface; [colors] is foot's section before 1.25 and [colors-dark] since, so both
-            hexes = {"background": given["PAD_SURFACE"].lstrip("#"), "foreground": given["PAD_ACCENT"].lstrip("#")}
+            hexes = {"background": given["WINPAD_SURFACE"].lstrip("#"), "foreground": given["WINPAD_ACCENT"].lstrip("#")}
             colors = [arg for section in ("colors", "colors-dark") for k, v in hexes.items() for arg in ("-o", "%s.%s=%s" % (section, k, v))]
-            ref = subprocess.Popen(["foot", "--app-id", "badges", "--font", "Monaspace Neon:pixelsize=%d" % round(text_px(given["PAD_FONT"]) * 1.25), *colors,
+            ref = subprocess.Popen(["foot", "--app-id", "badges", "--font", "Monaspace Neon:pixelsize=%d" % round(text_px(given["WINPAD_FONT"]) * 1.25), *colors,
                                     "sh", "-c", "printf '\\033[2J\\033[H\\033[?25l%s'; exec sleep 3600" % "  ".join(BADGES)],
                                    env=env, cwd=root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             children.append(ref)
@@ -897,7 +898,7 @@ def round_in(palette, binary, evidence):
         # 16. the titled view: a slot a window, its words as the dialog's, the handle line across it
         shell("desktop", "pad", "band", "off")
         said = shell("desktop", "pad", "view", "titles")
-        wait_for(lambda: handed_env().get("PAD_VIEW") == "titles" and pad_pid(), "the pad again in the titled view (%s)" % said)
+        wait_for(lambda: handed_env().get("WINPAD_VIEW") == "titles" and pad_pid(), "the pad again in the titled view (%s)" % said)
         subprocess.run(["swaymsg", "[pid=%d] focus" % a], env=env, capture_output=True)
         shell("desktop", "window", "down")
         wait_for(lambda: on_pad(a), "the first window on the titled pad")
@@ -981,7 +982,7 @@ def round_in(palette, binary, evidence):
            "its words read as a window named spark with its title: spark, then home (%d px of ink, the same as %d)" % tuple(ink_w),
            (likeness(words[0], words[1]) if words[0] else None, ink_w))
         said = shell("desktop", "pad", "view", "icons")
-        wait_for(lambda: handed_env().get("PAD_VIEW") in (None, "icons") and pad_pid(), "the pad in the icons view (%s)" % said)
+        wait_for(lambda: handed_env().get("WINPAD_VIEW") in (None, "icons") and pad_pid(), "the pad in the icons view (%s)" % said)
         settle(lambda: bottom() == edge - gap - ROW - GAP)
         move(W // 2, 200)
         time.sleep(0.8)
@@ -992,6 +993,16 @@ def round_in(palette, binary, evidence):
         cell_icon = icon_box(left + (TOOL - icon) // 2, top + HANDLE + (TOOL - icon) // 2)
         found = the_s(cell_icon)
         ok(reads_s(found), "and in the icons view, the default, its cell is the same S: %s" % (found[:3],), found)
+        # the keeper (v0.143): a winpad that ends by itself is started again; one stopped on purpose stays stopped
+        was = pad_pid()
+        os.kill(was, signal.SIGKILL)
+        settle(lambda: pad_pid() not in (None, was), 8)
+        now = pad_pid()
+        ok(now not in (None, was), "a winpad that ends by itself is started again by its keeper", (was, now))
+        if now not in (None, was):
+            os.kill(now, signal.SIGTERM)
+            time.sleep(3)
+            ok(pad_pid() is None, "and one stopped on purpose stays stopped", pad_pid())
     except AssertionError as e:
         ok(False, str(e))
         try:

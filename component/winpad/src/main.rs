@@ -26,18 +26,18 @@ It keeps the
 order the windows were focused in, and the tick spark-winpad.back (spark-shell
 desktop window back, Super+Tab) focuses the window before.
 
-spark-shell sets the look and the place in the environment: PAD_FG,
-PAD_ACCENT, PAD_MUTED, PAD_SURFACE, PAD_LIT, PAD_BAND_HEX (rrggbb),
-PAD_CLOSE, PAD_MIN, PAD_FILL and PAD_GROUND (the buttons' colors and the
-ground's), PAD_TERM (the terminal's app), PAD_TITLE and PAD_TERM_TITLE
+spark-shell sets the look and the place in the environment: WINPAD_FG,
+WINPAD_ACCENT, WINPAD_MUTED, WINPAD_SURFACE, WINPAD_LIT, WINPAD_BAND_HEX (rrggbb),
+WINPAD_CLOSE, WINPAD_MIN, WINPAD_FILL and WINPAD_GROUND (the buttons' colors and the
+ground's), WINPAD_TERM (the terminal's app), WINPAD_TITLE and WINPAD_TERM_TITLE
 (the title format after the buttons),
-PAD_ALPHA, PAD_FONT, PAD_VIEW (icons, the default, or titles: a slot a
-window with its title), PAD_BAND (on: the band under the handle; off, the
-default), PAD_GAP (the pixels off an edge, 8), PAD_PLACE, PAD_WIDTH,
-PAD_SIDE_WIDTH, PAD_HEIGHT (the most height, 0: as many rows as needed),
-and the files PAD_LOCK, PAD_STATE and PAD_BAR_PID; SPARK_SHELL names
+WINPAD_ALPHA, WINPAD_FONT, WINPAD_VIEW (icons, the default, or titles: a slot a
+window with its title), WINPAD_BAND (on: the band under the handle; off, the
+default), WINPAD_GAP (the pixels off an edge, 8), WINPAD_PLACE, WINPAD_WIDTH,
+WINPAD_SIDE_WIDTH, WINPAD_HEIGHT (the most height, 0: as many rows as needed),
+and the files WINPAD_LOCK, WINPAD_STATE and WINPAD_BAR_PID; SPARK_SHELL names
 spark-shell itself, and the assets beside it give the dialog spark's S,
-the dark one or the light one by PAD_SURFACE. After a drag or a resize it
+the dark one or the light one by WINPAD_SURFACE. After a drag or a resize it
 runs spark-shell desktop pad place PLACE WIDTH SIDE_WIDTH HEIGHT, and each
 time the strip it keeps appears, goes, moves to another edge or changes
 its thickness, spark-shell desktop window refit.
@@ -119,52 +119,52 @@ fn config() -> spark_winpad::app::Config {
     };
     Config {
         look: Look {
-            fg: color("PAD_FG", "383a42"),
-            accent: color("PAD_ACCENT", "4078f2"),
-            muted: color("PAD_MUTED", "696c77"),
-            surface: color("PAD_SURFACE", "ebebec"),
-            lit: color("PAD_LIT", "dcdcdd"),
-            band: color("PAD_BAND_HEX", "c3d0ee"),
-            alpha: env("PAD_ALPHA")
+            fg: color("WINPAD_FG", "383a42"),
+            accent: color("WINPAD_ACCENT", "4078f2"),
+            muted: color("WINPAD_MUTED", "696c77"),
+            surface: color("WINPAD_SURFACE", "ebebec"),
+            lit: color("WINPAD_LIT", "dcdcdd"),
+            band: color("WINPAD_BAND_HEX", "c3d0ee"),
+            alpha: env("WINPAD_ALPHA")
                 .and_then(|v| v.trim().parse::<f64>().ok())
                 .filter(|a| a.is_finite())
                 .map_or(1.0, |a| a.clamp(0.0, 1.0)),
-            font: env("PAD_FONT").unwrap_or_else(|| "Monaspace Neon 12".into()),
+            font: env("WINPAD_FONT").unwrap_or_else(|| "Monaspace Neon 12".into()),
         },
         titles: Titles {
-            colors: [hex("PAD_CLOSE", "e45649"), hex("PAD_MIN", "c18401"), hex("PAD_FILL", "50a14f")],
-            ground: hex("PAD_GROUND", "fafafa"),
-            term: env("PAD_TERM").unwrap_or_default(),
-            title: env("PAD_TITLE").unwrap_or_else(|| "%title".into()),
-            term_title: env("PAD_TERM_TITLE").unwrap_or_else(|| "%title".into()),
+            colors: [hex("WINPAD_CLOSE", "e45649"), hex("WINPAD_MIN", "c18401"), hex("WINPAD_FILL", "50a14f")],
+            ground: hex("WINPAD_GROUND", "fafafa"),
+            term: env("WINPAD_TERM").unwrap_or_default(),
+            title: env("WINPAD_TITLE").unwrap_or_else(|| "%title".into()),
+            term_title: env("WINPAD_TERM_TITLE").unwrap_or_else(|| "%title".into()),
         },
-        place: env("PAD_PLACE").and_then(|p| Place::parse(&p)).unwrap_or_default(),
-        view: View::parse(env("PAD_VIEW").as_deref()),
-        width: num("PAD_WIDTH", 0),
-        side_width: num("PAD_SIDE_WIDTH", 36),
-        height: num("PAD_HEIGHT", 0),
-        gap: gap(env("PAD_GAP").as_deref()),
-        band: env("PAD_BAND").is_some_and(|v| v.trim().eq_ignore_ascii_case("on")),
+        place: env("WINPAD_PLACE").and_then(|p| Place::parse(&p)).unwrap_or_default(),
+        view: View::parse(env("WINPAD_VIEW").as_deref()),
+        width: num("WINPAD_WIDTH", 0),
+        side_width: num("WINPAD_SIDE_WIDTH", 36),
+        height: num("WINPAD_HEIGHT", 0),
+        gap: gap(env("WINPAD_GAP").as_deref()),
+        band: env("WINPAD_BAND").is_some_and(|v| v.trim().eq_ignore_ascii_case("on")),
         spark_shell: env("SPARK_SHELL").unwrap_or_else(|| "spark-shell".into()),
-        state_file: env("PAD_STATE").map(Into::into),
-        bar_pid: env("PAD_BAR_PID").map(Into::into),
+        state_file: env("WINPAD_STATE").map(Into::into),
+        bar_pid: env("WINPAD_BAR_PID").map(Into::into),
     }
 }
 
-/// The margin off an edge: PAD_GAP's whole pixels, 0 to 200; the desktop's outer gap when it says none.
+/// The margin off an edge: WINPAD_GAP's whole pixels, 0 to 200; the desktop's outer gap when it says none.
 fn gap(v: Option<&str>) -> i32 {
     v.and_then(|v| v.trim().parse::<i32>().ok())
         .filter(|n| (0..=200).contains(n))
         .unwrap_or(spark_winpad::pad::GAP)
 }
 
-/// The one pad: PAD_LOCK held for the pad's life, its pid in it. None when another pad holds it.
+/// The one pad: WINPAD_LOCK held for the pad's life, its pid in it. None when another pad holds it.
 #[cfg(target_os = "linux")]
 fn lock() -> Result<Option<std::fs::File>, String> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
     use std::os::unix::io::AsRawFd;
-    let path = std::env::var_os("PAD_LOCK").map(std::path::PathBuf::from).unwrap_or_else(|| {
+    let path = std::env::var_os("WINPAD_LOCK").map(std::path::PathBuf::from).unwrap_or_else(|| {
         let dir = std::env::var_os("XDG_RUNTIME_DIR").map_or_else(std::env::temp_dir, Into::into);
         dir.join("spark-shell-app.pid")
     });

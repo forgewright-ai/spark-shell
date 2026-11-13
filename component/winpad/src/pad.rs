@@ -5,7 +5,7 @@
 use serde_json::Value;
 
 /// The lengths the pad is drawn with, at a text size: the mock-up's at 16 px (Monaspace Neon 12),
-/// in proportion at any other. The air off an edge (PAD_GAP), the snapping distances and the grips stay as they are.
+/// in proportion at any other. The air off an edge (WINPAD_GAP), the snapping distances and the grips stay as they are.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Metrics {
     /// A titled slot at its widest: the icon and 18 cells of title.
@@ -16,7 +16,7 @@ pub struct Metrics {
     pub tool: i32,
     /// A titled row's height.
     pub cell: i32,
-    /// The band's height, under the handle (PAD_BAND=on).
+    /// The band's height, under the handle (WINPAD_BAND=on).
     pub band: i32,
     /// The handle across the pad's top.
     pub handle: i32,
@@ -24,7 +24,7 @@ pub struct Metrics {
     pub ctl: i32,
     /// An icon's side.
     pub icon: i32,
-    /// The air between the pad and an edge: the windows' outer gap, PAD_GAP.
+    /// The air between the pad and an edge: the windows' outer gap, WINPAD_GAP.
     pub gap: i32,
     /// How near an edge or a snapping point a drop snaps to it, and how near the pointer takes an edge in a drag.
     pub snap: i32,
@@ -38,7 +38,7 @@ pub struct Metrics {
     pub tip: i32,
 }
 
-/// The pad's margin from an edge when PAD_GAP says none: the desktop's outer gap.
+/// The pad's margin from an edge when WINPAD_GAP says none: the desktop's outer gap.
 pub const GAP: i32 = 8;
 
 impl Metrics {
@@ -65,7 +65,7 @@ impl Metrics {
     }
 }
 
-/// What a cell shows: an icon alone (the default), or a titled slot (PAD_VIEW=titles).
+/// What a cell shows: an icon alone (the default), or a titled slot (WINPAD_VIEW=titles).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum View {
     #[default]
@@ -74,7 +74,7 @@ pub enum View {
 }
 
 impl View {
-    /// PAD_VIEW: titles is the titled slots; unset or anything else, the icons.
+    /// WINPAD_VIEW: titles is the titled slots; unset or anything else, the icons.
     pub fn parse(v: Option<&str>) -> View {
         match v {
             Some(v) if v.trim().eq_ignore_ascii_case("titles") => View::Titles,
@@ -1151,7 +1151,7 @@ mod tests {
         );
         assert_eq!(position(Place::Dock(Edge::Left, Along::At(100)), 36, 211, aw, ah, &m), (8, 8));
         assert_eq!(position(Place::Free(5000, -20), 200, 64, aw, ah, &m), (1720, 0));
-        // PAD_GAP's margin
+        // WINPAD_GAP's margin
         let wide = Metrics { gap: 16, ..m };
         assert_eq!(position(Place::default(), 684, 64, aw, ah, &wide), (618, 1054 - 16 - 64));
     }

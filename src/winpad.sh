@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- winpad
-# sets: WINPAD_BIN
-# reads: BAR_PID DIALOG_URL OS PANEL_SEP REPO STATE_DIR TERM_NAME TMP WM_NAME
+# sets: WINPAD_BIN WINPAD_KEEP
+# reads: BAR_PID DIALOG_URL MODE OS PANEL_SEP REPO STATE_DIR TERM_NAME TMP WM_NAME
 WINPAD_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-winpad
 winpad_lock() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-winpad.pid"; }   # the pad's lock, its pid inside
 winpad_state() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-winpad.state"; }   # what the pad says of itself: hidden 0|1, count N
@@ -17,6 +17,14 @@ winpad_want_sha() {   # -> the sha256 the release tag's tree pins for this machi
 }
 winpad_ok() { [ -x "$WINPAD_BIN" ] && _pdw=$(winpad_want_sha) && [ -n "$_pdw" ] && [ "$(sha256_of "$WINPAD_BIN")" = "$_pdw" ]; }   # the binary in place is the one the tree pins
 winpad_cmd() { if [ -n "${SPARK_SHELL_WINPAD:-}" ]; then [ -x "$SPARK_SHELL_WINPAD" ] && printf '%s' "$SPARK_SHELL_WINPAD"; elif winpad_ok; then printf '%s' "$WINPAD_BIN"; else return 1; fi; }   # -> SPARK_SHELL_WINPAD (another build, as it is), else the pinned pad; false when none
+winpad_here() { [ -n "${_winpad_coming:-}" ] || winpad_cmd >/dev/null 2>&1; }   # a winpad can run on this machine, or this run is about to fetch one
+winpad_buttons() { ! winpad_here || printf '%s' ' &#x2715;  &#x25BD;  &#x25A1; '; }   # -> close, minimize, fill, the start of every title, as pango character references so the render stays ASCII (the component's GLYPH_REFS); nothing where no winpad can run: no button is drawn that does not click
+winpad_coming() {   # on desktop, before it renders: true when no winpad is in place and the release pins one to fetch
+    _winpad_coming=''
+    ! winpad_cmd >/dev/null 2>&1 && [ "$DIALOG_URL" != none ] && [ -n "$(winpad_want_sha)" ] || return 1
+    _winpad_coming=1
+}
+winpad_came() { [ -n "${_winpad_coming:-}" ] && [ "$MODE" != dry ] || return 0; _winpad_coming=''; winpad_cmd >/dev/null 2>&1; }   # after the install: false when the one awaited did not come; a dry run fetches none and says so in its row
 winpad_install() {   # the pad's row of on desktop: in place as pinned, or fetched for the signed tag and checked
     _pdt=$(wallpaper_target) || { skip pad "no spark-winpad built for $(uname -m) yet: Super+minus brings back the window minimized last"; return 0; }
     _pdr=$(winpad_release_tag) || { row todo pad "this clone is past its release: spark-winpad comes with the next tag"; return 0; }
@@ -33,6 +41,7 @@ winpad_install() {   # the pad's row of on desktop: in place as pinned, or fetch
     rm -f "${WINPAD_BIN%/*}/spark-pad"   # the binary under its name through v0.141
     row ok pad "spark-winpad installed for $_pdr ($WINPAD_BIN), sha256 checked"
     _winpad_again=''; winpad_again   # a pad running the build before takes the new one
+    for _pdx in pid state log; do rm -f "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-pad.$_pdx"; done   # spark-pad's, through v0.141
 }
 winpad_session() {   # on desktop's last pad row: the pad runs for the session (v0.140), and sway starts it at login alone, so a session that began before, as an update's, has none until this starts it, through sway, as login does
     wm_up && winpad_cmd >/dev/null || return 0
@@ -58,19 +67,22 @@ winpad_list() {   # winpad_list TREEFILE -> the windows on the pad, oldest first
         | "\(.id)\t\(.app_id // .window_properties.class // "a window")\t\(.name // "")"' "$1" 2>/dev/null || :
 }
 winpad_count() { wm_session || { echo 0; return; }; wm_tree | jq '[.. | objects | select(.type == "workspace" and .name == "__i3_scratch") | .floating_nodes[]? | select(any((.marks // [])[]; startswith("_spark-shell.min.")))] | length' 2>/dev/null || echo 0; }   # -> how many windows wait on the pad
-winpad_run() {   # winpad_run [--keys] -- spark-winpad started in its own session; false when none can run here
+# the keeper: winpad again when it ends by itself, a crash; a stop on purpose (0) stays a stop, and so does a session
+# that is gone or a winpad that ends five times within a minute of its start
+WINPAD_KEEP='n=0; while :; do t=$(date +%s); "$0" "$@"; rc=$?; case $rc in 0|2) break ;; esac; [ -S "${XDG_RUNTIME_DIR:-/nonexistent}/${WAYLAND_DISPLAY:-none}" ] || break; [ $(( $(date +%s) - t )) -lt 60 ] || n=0; n=$((n + 1)); [ "$n" -le 5 ] || break; echo "spark-winpad ended ($rc): started again" >&2; sleep 1; done'
+winpad_run() {   # winpad_run [--keys] -- spark-winpad started in its own session, under its keeper; false when none can run here
     _pdc=$(winpad_cmd) || return 1
     theme_load 2>/dev/null || :
     _pdlog=${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-winpad.log
     mkdir_private "$STATE_DIR"
     (
-        # PAD_BAND on|off, PAD_BAND_HEX its color; PAD_GAP the outer gap; PAD_VIEW icons|titles; PAD_HEIGHT 0 as many as needed
-        SPARK_SHELL=$REPO/spark-shell PAD_FG=$HEX_FG PAD_ACCENT=$HEX_ACCENT PAD_MUTED=$PANEL_MUTED PAD_GROUND=$HEX_BG PAD_CLOSE=$HEX_ANSI_1 PAD_MIN=$HEX_ANSI_3 PAD_FILL=$HEX_ANSI_2 PAD_SURFACE=$PANEL_BG PAD_LIT=$PANEL_HI PAD_BAND_HEX=$PANEL_BAND
-        PAD_ALPHA=$ALPHA PAD_FONT=$(bar_line_font) PAD_PLACE=$PAD_PLACE PAD_WIDTH=$PAD_WIDTH PAD_SIDE_WIDTH=$PAD_SIDE_WIDTH PAD_HEIGHT=${PAD_HEIGHT:-0} PAD_BAR=$(bar_place)
-        PAD_TERM=$TERM_NAME PAD_TITLE=$BAND_TITLE PAD_TERM_TITLE=$BAND_TERM_TITLE PAD_BAND=${PAD_BAND:-off} PAD_VIEW=${PAD_VIEW:-icons} PAD_GAP=${GAPS_OUTER:-} PAD_LOCK=$(winpad_lock) PAD_STATE=$(winpad_state) PAD_BAR_PID=$BAR_PID
-        export SPARK_SHELL PAD_FG PAD_ACCENT PAD_MUTED PAD_GROUND PAD_CLOSE PAD_MIN PAD_FILL PAD_TERM PAD_TITLE PAD_TERM_TITLE PAD_SURFACE PAD_LIT PAD_BAND_HEX PAD_ALPHA PAD_FONT PAD_PLACE PAD_WIDTH PAD_SIDE_WIDTH PAD_HEIGHT PAD_BAR PAD_BAND PAD_VIEW PAD_GAP PAD_LOCK PAD_STATE PAD_BAR_PID
-        if command -v setsid >/dev/null 2>&1; then setsid "$_pdc" "$@" </dev/null >/dev/null 2>"$_pdlog" &
-        else ( trap '' HUP; exec "$_pdc" "$@" ) </dev/null >/dev/null 2>"$_pdlog" & fi
+        # WINPAD_BAND on|off, WINPAD_BAND_HEX its color; WINPAD_GAP the outer gap; WINPAD_VIEW icons|titles; WINPAD_HEIGHT 0 as many as needed
+        SPARK_SHELL=$REPO/spark-shell WINPAD_FG=$HEX_FG WINPAD_ACCENT=$HEX_ACCENT WINPAD_MUTED=$PANEL_MUTED WINPAD_GROUND=$HEX_BG WINPAD_CLOSE=$HEX_ANSI_1 WINPAD_MIN=$HEX_ANSI_3 WINPAD_FILL=$HEX_ANSI_2 WINPAD_SURFACE=$PANEL_BG WINPAD_LIT=$PANEL_HI WINPAD_BAND_HEX=$PANEL_BAND
+        WINPAD_ALPHA=$ALPHA WINPAD_FONT=$(bar_line_font) WINPAD_PLACE=$WINPAD_PLACE WINPAD_WIDTH=$WINPAD_WIDTH WINPAD_SIDE_WIDTH=$WINPAD_SIDE_WIDTH WINPAD_HEIGHT=${WINPAD_HEIGHT:-0} WINPAD_BAR=$(bar_place)
+        WINPAD_TERM=$TERM_NAME WINPAD_TITLE=$BAND_TITLE WINPAD_TERM_TITLE=$BAND_TERM_TITLE WINPAD_BAND=${WINPAD_BAND:-off} WINPAD_VIEW=${WINPAD_VIEW:-icons} WINPAD_GAP=${GAPS_OUTER:-} WINPAD_LOCK=$(winpad_lock) WINPAD_STATE=$(winpad_state) WINPAD_BAR_PID=$BAR_PID
+        export SPARK_SHELL WINPAD_FG WINPAD_ACCENT WINPAD_MUTED WINPAD_GROUND WINPAD_CLOSE WINPAD_MIN WINPAD_FILL WINPAD_TERM WINPAD_TITLE WINPAD_TERM_TITLE WINPAD_SURFACE WINPAD_LIT WINPAD_BAND_HEX WINPAD_ALPHA WINPAD_FONT WINPAD_PLACE WINPAD_WIDTH WINPAD_SIDE_WIDTH WINPAD_HEIGHT WINPAD_BAR WINPAD_BAND WINPAD_VIEW WINPAD_GAP WINPAD_LOCK WINPAD_STATE WINPAD_BAR_PID
+        if command -v setsid >/dev/null 2>&1; then setsid sh -c "$WINPAD_KEEP" "$_pdc" "$@" </dev/null >/dev/null 2>"$_pdlog" &
+        else ( trap '' HUP; exec sh -c "$WINPAD_KEEP" "$_pdc" "$@" ) </dev/null >/dev/null 2>"$_pdlog" & fi
     )
 }
 winpad_wake() { winpad_pid >/dev/null || winpad_run 2>/dev/null || :; }   # the pad up when it is not; never waited for
@@ -101,33 +113,33 @@ layout_pad() {   # layout_pad [keys|toggle|place PLACE WIDTH SIDE [HEIGHT]|band 
         place) shift
             # a pad sends three; the height in the config stays then
             case $# in 3|4) ;; *) refuse "pad place takes PLACE WIDTH SIDE [HEIGHT]: \"bottom center\" 0 36 0" ;; esac
-            pad_place_ok "$1" || refuse "pad place: top, bottom, left or right and center, start, end or pixels along that edge, or free X Y"
-            pad_width_ok "$2" 0 || refuse "pad place: the width is pixels, 0 to 9999 (0: as wide as the screen allows)"
-            pad_width_ok "$3" 36 || refuse "pad place: the width at a side is pixels, 36 to 9999"
-            [ "$#" = 3 ] || pad_width_ok "$4" 0 || refuse "pad place: the height is pixels, 0 to 9999 (0: as many rows as needed)"
-            config_set PAD_PLACE "$1" >/dev/null; config_set PAD_WIDTH "$2" >/dev/null; config_set PAD_SIDE_WIDTH "$3" >/dev/null
-            [ "$#" = 3 ] || config_set PAD_HEIGHT "$4" >/dev/null
-            PAD_PLACE=$1; PAD_WIDTH=$2; PAD_SIDE_WIDTH=$3; [ "$#" = 3 ] || PAD_HEIGHT=$4; export PAD_PLACE PAD_WIDTH PAD_SIDE_WIDTH PAD_HEIGHT
-            [ -n "${PAD_LOCK:-}" ] || winpad_again   # drawn again at its place; the pad's own save after a drag keeps it as it is
+            winpad_place_ok "$1" || refuse "pad place: top, bottom, left or right and center, start, end or pixels along that edge, or free X Y"
+            winpad_width_ok "$2" 0 || refuse "pad place: the width is pixels, 0 to 9999 (0: as wide as the screen allows)"
+            winpad_width_ok "$3" 36 || refuse "pad place: the width at a side is pixels, 36 to 9999"
+            [ "$#" = 3 ] || winpad_width_ok "$4" 0 || refuse "pad place: the height is pixels, 0 to 9999 (0: as many rows as needed)"
+            config_set WINPAD_PLACE "$1" >/dev/null; config_set WINPAD_WIDTH "$2" >/dev/null; config_set WINPAD_SIDE_WIDTH "$3" >/dev/null
+            [ "$#" = 3 ] || config_set WINPAD_HEIGHT "$4" >/dev/null
+            WINPAD_PLACE=$1; WINPAD_WIDTH=$2; WINPAD_SIDE_WIDTH=$3; [ "$#" = 3 ] || WINPAD_HEIGHT=$4; export WINPAD_PLACE WINPAD_WIDTH WINPAD_SIDE_WIDTH WINPAD_HEIGHT
+            [ -n "${WINPAD_LOCK:-}" ] || winpad_again   # drawn again at its place; the pad's own save after a drag keeps it as it is
             echo "the pad sits $(winpad_place_words "$1")"; return ;;
         band) [ "$#" -le 2 ] || refuse "pad band takes on or off"
             case ${2:-} in
-                '') echo "pad band $PAD_BAND $PANEL_SEP $(winpad_band_words "$PAD_BAND")"; return ;;
+                '') echo "pad band $WINPAD_BAND $PANEL_SEP $(winpad_band_words "$WINPAD_BAND")"; return ;;
                 on|off) ;;
                 *) refuse "pad band takes on or off" ;;
             esac
-            [ "$2" != "$PAD_BAND" ] || refuse "the pad's band is $2 already"
-            config_set PAD_BAND "$2" >/dev/null; PAD_BAND=$2; export PAD_BAND
+            [ "$2" != "$WINPAD_BAND" ] || refuse "the pad's band is $2 already"
+            config_set WINPAD_BAND "$2" >/dev/null; WINPAD_BAND=$2; export WINPAD_BAND
             winpad_again   # drawn again, with the band or without it
             echo "pad band $2 $PANEL_SEP $(winpad_band_words "$2")"; return ;;
-        view) [ "$#" -le 2 ] || refuse "pad view takes icons or titles"   # PAD_VIEW
+        view) [ "$#" -le 2 ] || refuse "pad view takes icons or titles"   # WINPAD_VIEW
             case ${2:-} in
-                '') echo "pad view $PAD_VIEW $PANEL_SEP $(winpad_view_words "$PAD_VIEW")"; return ;;
+                '') echo "pad view $WINPAD_VIEW $PANEL_SEP $(winpad_view_words "$WINPAD_VIEW")"; return ;;
                 icons|titles) ;;
                 *) refuse "pad view takes icons or titles" ;;
             esac
-            [ "$2" != "$PAD_VIEW" ] || refuse "the pad's view is $2 already"
-            config_set PAD_VIEW "$2" >/dev/null; PAD_VIEW=$2; export PAD_VIEW
+            [ "$2" != "$WINPAD_VIEW" ] || refuse "the pad's view is $2 already"
+            config_set WINPAD_VIEW "$2" >/dev/null; WINPAD_VIEW=$2; export WINPAD_VIEW
             winpad_again   # drawn again in that view
             echo "pad view $2 $PANEL_SEP $(winpad_view_words "$2")"; return ;;
         ''|keys|toggle|start|again) ;;

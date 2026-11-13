@@ -77,6 +77,7 @@ render_expr() {   # -> the sed script that renders a template, one s command a l
     # fontconfig's own list, whose first is the proportional DejaVu Sans
     case $_fs in "$NEON"|"$NEON":*|'Monaspace '*) _ff="$_fs,$NEON_OLD${_fs#"${_fs%%:*}"}" ;; *) _ff=$_fs ;; esac   # each of the curated faces, as Neon
     e="$e${NL}s|@FONT@|$(esc "$_ff")|g"
+    e="$e${NL}s|@BAND_GLYPHS@|$(esc "$(winpad_buttons)")|g"
     e="$e${NL}s|@BAR_MODE@|$(bar_mode)|g${NL}s|@BAR_FONT@|$(esc "$(bar_font "$_fs")")|g${NL}s|@BAR_LINE_FONT@|$(esc "$(bar_line_font "$_fs")")|g"
     e="$e${NL}s|@BAR_POSITION@|$BAR_POSITION|g${NL}s|@BAR_TRAY@|$(bar_tray_output)|g${NL}s|@NOTIFY_ANCHOR@|$(notify_anchor)|g"
     e="$e${NL}s|@FOOT_COLORS@|$(term_colors_section)|g"
@@ -233,6 +234,7 @@ desktop_look_apply() {   # on and on desktop: the renders, the pointer, and a ru
     look_burst   # the open terminals take the look too: after an upgrade, the slots their new shells draw in
 }
 desktop_apply() {
+    ! winpad_coming || EXPR=$(render_expr)   # a winpad is about to be fetched: the titles are rendered with their buttons already
     desktop_look_apply
     seat_apply
     sound_apply
@@ -244,6 +246,7 @@ desktop_apply() {
     semantic_install
     wallpaper_install
     winpad_install
+    winpad_came || { EXPR=$(render_expr); desktop_look_apply; }   # none came: the titles again, plain
     winpad_session
     motion_row
     mcp_apply

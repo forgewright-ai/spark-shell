@@ -203,7 +203,7 @@ def main():
     settings = root / ".config/spark-shell"
     settings.mkdir(parents=True)
     (settings / "config").write_text("DESKTOP=sway\nDISPLAY_IDLE=0\nDISPLAY_LOCK=0\nBAR_TEXT=10\n"
-                                     + ("PAD_PLACE=left center\n" if pad else ""))
+                                     + ("WINPAD_PLACE=left center\n" if pad else ""))
 
     def spark(*args):
         done = subprocess.run(["sh", str(REPO / "spark-shell"), *args], env=env, stdin=subprocess.DEVNULL,

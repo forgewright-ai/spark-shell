@@ -124,35 +124,35 @@ BAR_TRAY=no
 # end, or pixels from the edge's start; or free X Y, anywhere on the
 # screen. The pad writes these four when you drag it, or resize it from
 # a corner or a side. The bar's edge starts at the bar.
-PAD_PLACE=bottom center
+WINPAD_PLACE=bottom center
 
 # The most width the pad takes at the top, the bottom or floating, in
 # pixels; 0 is as wide as the screen allows. The width sets its columns
 # of icons, 36 pixels each.
-PAD_WIDTH=0
+WINPAD_WIDTH=0
 
 # The most width the pad takes at the left or the right edge: 36 is one
 # column of icons.
-PAD_SIDE_WIDTH=36
+WINPAD_SIDE_WIDTH=36
 
 # The most height the pad takes, in pixels, which sets its rows of
 # icons; 0 is as many rows as its windows need. When the pad is too
 # small for its windows, the windows of one app fold into one icon,
 # until the icons fit.
-PAD_HEIGHT=0
+WINPAD_HEIGHT=0
 
 # How the pad shows its windows: icons, one icon a window, its app and
 # its title in a label beside the pad while the pointer is on it; or
 # titles, a slot a window with its icon, its app and its title, as in
 # v0.134.1. spark-shell desktop pad view icons|titles sets this; a saved
 # theme does not carry it.
-PAD_VIEW=icons
+WINPAD_VIEW=icons
 
 # The pad's band, which says pad and how many windows wait, under the
 # handle across its top: on or off. Off, the pad has its handle alone,
 # and the lit window's title shows in a label beside it. spark-shell
 # desktop pad band on|off sets this; a saved theme does not carry it.
-PAD_BAND=off
+WINPAD_BAND=off
 
 # The theme: none (the terminal's own colors: foot's own sixteen on the
 # desktop, the console's at the console), a palette's name, or a

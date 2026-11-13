@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.143
+
+One name through winpad, and no button that does not click.
+
+- The pad's six settings are WINPAD_PLACE, WINPAD_WIDTH,
+  WINPAD_SIDE_WIDTH, WINPAD_HEIGHT, WINPAD_VIEW and WINPAD_BAND. A config
+  that names them PAD_ is still read, and spark-shell on writes the new
+  names once.
+- On a machine with no winpad the titles are plain: no close, minimize
+  or fill is drawn there.
+- A winpad that ends by itself is started again. One stopped on purpose
+  stays stopped.
+- The update removes the three files spark-pad left in the runtime
+  folder.
+
 ## v0.142
 
 One window component, winpad, and buttons that move with their window.

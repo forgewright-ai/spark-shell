@@ -119,6 +119,7 @@ cmd_on() {   # cmd_on [desktop|login]
     if [ "$MODE" != dry ]; then
         case ${1:-} in login) config_set LOGIN yes ;; desktop) config_set DESKTOP sway ;; esac
     fi
+    config_renames
     # why the desktop's packages are not in the row above
     if _dna=$(desktop_na) && [ -n "$_dna" ]; then
         [ "$DESKTOP" != sway ] || skip desktop "$_dna"

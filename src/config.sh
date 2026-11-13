@@ -25,7 +25,7 @@ load_env() {
     done < "$1"
 }
 # the keys spark-shell exports; a shell or desktop it starts gets them unset
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u BAR_POSITION -u BAR_TEXT -u BAR_TRAY -u WINDOWS -u LOGIN -u DIALOG_SEMANTIC -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u DIALOG_ICONS -u DIALOG_SPACING -u BAR_GLYPHS -u BAR_WORKSPACES -u GLYPH_FAMILY -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START -u PAD_PLACE -u PAD_WIDTH -u PAD_SIDE_WIDTH -u PAD_BAND -u PAD_VIEW -u PAD_HEIGHT'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u BAR_POSITION -u BAR_TEXT -u BAR_TRAY -u WINDOWS -u LOGIN -u DIALOG_SEMANTIC -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u DIALOG_ICONS -u DIALOG_SPACING -u BAR_GLYPHS -u BAR_WORKSPACES -u GLYPH_FAMILY -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START -u WINPAD_PLACE -u WINPAD_WIDTH -u WINPAD_SIDE_WIDTH -u WINPAD_BAND -u WINPAD_VIEW -u WINPAD_HEIGHT'
 
 # short_host -> this machine's short name; on a Mac LocalHostName, by
 # scutil's full path (/usr/sbin is not on every PATH; hostname -s moves)
@@ -99,20 +99,23 @@ config_load() {
     : "${DO_NOT_DISTURB:=no}"   # the notifications kept out of sight, as mako's do-not-disturb mode, across logins
     # the pad: its place, its most width at the top, the bottom or floating (0: the screen's) and at a side,
     # its most height (0: as many rows as its windows need)
-    : "${PAD_PLACE:=bottom center}" "${PAD_WIDTH:=0}" "${PAD_SIDE_WIDTH:=36}" "${PAD_HEIGHT:=0}"
-    pad_place_ok "$PAD_PLACE" || { echo "spark-shell: PAD_PLACE=$PAD_PLACE in $CONFIG: top, bottom, left or right and center, start, end or pixels along that edge (bottom center), or free X Y" >&2; exit 1; }
-    pad_width_ok "$PAD_WIDTH" 0 || { echo "spark-shell: PAD_WIDTH=$PAD_WIDTH in $CONFIG: pixels, 0 to 9999 (0: as wide as the screen allows)" >&2; exit 1; }
-    pad_width_ok "$PAD_SIDE_WIDTH" 36 || { echo "spark-shell: PAD_SIDE_WIDTH=$PAD_SIDE_WIDTH in $CONFIG: pixels, 36 to 9999" >&2; exit 1; }
-    pad_width_ok "$PAD_HEIGHT" 0 || { echo "spark-shell: PAD_HEIGHT=$PAD_HEIGHT in $CONFIG: pixels, 0 to 9999 (0: as many rows as needed)" >&2; exit 1; }
+    for k in PLACE WIDTH SIDE_WIDTH HEIGHT VIEW BAND; do   # a config from v0.142 or before names them PAD_*: read here, written under the new names by spark-shell on
+        eval "v=\${PAD_$k:-}; w=\${WINPAD_$k:-}"; [ -z "$v" ] || [ -n "$w" ] || { eval "WINPAD_$k=\$v"; export "WINPAD_$k"; }
+    done
+    : "${WINPAD_PLACE:=bottom center}" "${WINPAD_WIDTH:=0}" "${WINPAD_SIDE_WIDTH:=36}" "${WINPAD_HEIGHT:=0}"
+    winpad_place_ok "$WINPAD_PLACE" || { echo "spark-shell: WINPAD_PLACE=$WINPAD_PLACE in $CONFIG: top, bottom, left or right and center, start, end or pixels along that edge (bottom center), or free X Y" >&2; exit 1; }
+    winpad_width_ok "$WINPAD_WIDTH" 0 || { echo "spark-shell: WINPAD_WIDTH=$WINPAD_WIDTH in $CONFIG: pixels, 0 to 9999 (0: as wide as the screen allows)" >&2; exit 1; }
+    winpad_width_ok "$WINPAD_SIDE_WIDTH" 36 || { echo "spark-shell: WINPAD_SIDE_WIDTH=$WINPAD_SIDE_WIDTH in $CONFIG: pixels, 36 to 9999" >&2; exit 1; }
+    winpad_width_ok "$WINPAD_HEIGHT" 0 || { echo "spark-shell: WINPAD_HEIGHT=$WINPAD_HEIGHT in $CONFIG: pixels, 0 to 9999 (0: as many rows as needed)" >&2; exit 1; }
     # the pad's view: icons, one a window with its title on hover; titles, a slot a window with icon, app and title
-    : "${PAD_VIEW:=icons}"
-    case $PAD_VIEW in icons|titles) ;; *) echo "spark-shell: PAD_VIEW=$PAD_VIEW in $CONFIG: icons or titles" >&2; exit 1 ;; esac
-    # the pad's band: off (the handle alone) or on. A pad hands its band's color down as PAD_BAND to what it
+    : "${WINPAD_VIEW:=icons}"
+    case $WINPAD_VIEW in icons|titles) ;; *) echo "spark-shell: WINPAD_VIEW=$WINPAD_VIEW in $CONFIG: icons or titles" >&2; exit 1 ;; esac
+    # the pad's band: off (the handle alone) or on. A pad hands its band's color down as WINPAD_BAND to what it
     # runs, so a value the config does not hold is that color and falls back to off
-    : "${PAD_BAND:=off}"
-    case $PAD_BAND in on|off) ;;
-        *) if grep -q '^PAD_BAND=' "$CONFIG" 2>/dev/null; then echo "spark-shell: PAD_BAND=$PAD_BAND in $CONFIG: on or off" >&2; exit 1; fi
-           PAD_BAND=off ;;
+    : "${WINPAD_BAND:=off}"
+    case $WINPAD_BAND in on|off) ;;
+        *) if grep -q '^WINPAD_BAND=' "$CONFIG" 2>/dev/null; then echo "spark-shell: WINPAD_BAND=$WINPAD_BAND in $CONFIG: on or off" >&2; exit 1; fi
+           WINPAD_BAND=off ;;
     esac
     for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR BAR_TRAY DIALOG_ATTACH DIALOG_MODEL DIALOG_TALK DIALOG_SEMANTIC LOGIN DO_NOT_DISTURB; do
         eval "v=\$$k"
@@ -138,10 +141,10 @@ config_load() {
         input_valid "$k" "$v" || { echo "spark-shell: invalid $k in $CONFIG" >&2; exit 1; }
     done
     export POINTER_TAP POINTER_SCROLL POINTER_SPEED KEY_REPEAT_DELAY KEY_REPEAT_RATE KEY_CAPS
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR BAR_POSITION BAR_TEXT BAR_TRAY WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK DIALOG_SEMANTIC DIALOG_ANIMATION DIALOG_ICONS DIALOG_SPACING BAR_GLYPHS GLYPH_FAMILY WALLPAPER_MOTION LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB PAD_PLACE PAD_WIDTH PAD_SIDE_WIDTH PAD_BAND PAD_VIEW PAD_HEIGHT
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR BAR_POSITION BAR_TEXT BAR_TRAY WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK DIALOG_SEMANTIC DIALOG_ANIMATION DIALOG_ICONS DIALOG_SPACING BAR_GLYPHS GLYPH_FAMILY WALLPAPER_MOTION LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB WINPAD_PLACE WINPAD_WIDTH WINPAD_SIDE_WIDTH WINPAD_BAND WINPAD_VIEW WINPAD_HEIGHT
 }
-pad_place_ok() { printf '%s\n' "$1" | grep -qE '^((top|bottom|left|right) (center|start|end|[0-9]{1,5})|free [0-9]{1,5} [0-9]{1,5})$'; }   # pad_place_ok PLACE -> 0 for an edge and where along it (bottom center, left 300), or free X Y
-pad_width_ok() { case $1 in ''|*[!0-9]*|0?*) return 1 ;; 0) [ "$2" = 0 ] ;; *) [ "${#1}" -le 4 ] && [ "$1" -ge "$2" ] ;; esac; }   # pad_width_ok N LEAST -> 0 for whole pixels, LEAST to 9999 (0 alone where LEAST is 0)
+winpad_place_ok() { printf '%s\n' "$1" | grep -qE '^((top|bottom|left|right) (center|start|end|[0-9]{1,5})|free [0-9]{1,5} [0-9]{1,5})$'; }   # winpad_place_ok PLACE -> 0 for an edge and where along it (bottom center, left 300), or free X Y
+winpad_width_ok() { case $1 in ''|*[!0-9]*|0?*) return 1 ;; 0) [ "$2" = 0 ] ;; *) [ "${#1}" -le 4 ] && [ "$1" -ge "$2" ] ;; esac; }   # winpad_width_ok N LEAST -> 0 for whole pixels, LEAST to 9999 (0 alone where LEAST is 0)
 ANIMATION_NAMES='moon ripple tide embers sun flight'   # gallery/animation's pieces, in the theme row's order; none is no motion
 # the piece each palette brings with its drawing
 ANIM_PAIRED="tokyonight-night:moon nord:tide everforest-dark:embers gruvbox-dark:sun catppuccin-mocha:moon dracula:embers rose-pine:ripple selenized-dark:tide solarized-light:sun catppuccin-latte:flight tokyonight-day:flight gruvbox-light:sun everforest-light:ripple rose-pine-dawn:sun selenized-light:tide one-light:flight"
@@ -161,6 +164,15 @@ anim_now() {   # -> the piece the dialog plays: none with no palette, else the o
 }
 SAVER_NAMES='spark starfield drift'   # lib/saver.py's list, in its order: what DISPLAY_SAVER takes besides clock
 KB_RE='^[a-z]{2,10}(\+[a-z0-9_-]{1,24})?( [a-z]{2,10}(\+[a-z0-9_-]{1,24})?){0,7}$'   # one to eight layouts, a variant after a plus: us us+intl
+config_renames() {   # spark-shell on: the pad's settings a config from v0.142 or before names PAD_*, written once under their WINPAD_* names
+    [ -f "$CONFIG" ] && _crn=$(grep -cE '^PAD_(PLACE|WIDTH|SIDE_WIDTH|HEIGHT|VIEW|BAND)=' "$CONFIG") || return 0
+    need config "$_crn settings of the pad take their WINPAD_ names, PAD_ before ($CONFIG)" || return 0
+    # a setting the config already holds under its new name keeps that line; the old one goes
+    awk 'NR == FNR { if ($0 ~ /^WINPAD_[A-Z_]*=/) { k = $0; sub(/=.*/, "", k); have[k] = 1 }; next }
+        /^PAD_(PLACE|WIDTH|SIDE_WIDTH|HEIGHT|VIEW|BAND)=/ { k = $0; sub(/=.*/, "", k); if (!(("WIN" k) in have)) print "WIN" $0; next }
+        { print }' "$CONFIG" "$CONFIG" > "$TMP/config" && cp "$TMP/config" "$CONFIG"
+    ok config "$_crn settings of the pad are WINPAD_ now ($CONFIG)"
+}
 config_set() {   # config_set KEY VALUE -- one line replaced or added; a value load_env would refuse is refused first
     case $2 in *[';`$()|&<>']*) printf 'spark-shell: %s=%s cannot be kept: a value holds none of ; ` $ ( ) | & < >\n' "$1" "$2" >&2; exit 1 ;; esac
     [ "$(printf '%s' "$2" | tr -d '\001-\037\177')" = "$2" ] || { printf 'spark-shell: %s cannot be kept: a value holds no control character, a new line included\n' "$1" >&2; exit 1; }   # a new line would be a second line of the config
