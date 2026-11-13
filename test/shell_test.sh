@@ -920,10 +920,11 @@ else
         && grep -qF 'pub const GLYPH_REFS: [&str; 3] = ["&#x2715;", "&#x25BD;", "&#x25A1;"];' "$REPO/component/winpad/src/buttons.rs" \
         && ok "sway: with a winpad, the close, minimize and fill buttons are the start of every title, sway's own pixels, so they move with the window (v0.142), written as character references so the render stays ASCII; the component's are the same three" || bad "band glyphs" "$(grep -n title_format "$sway")"
     printf 'VOICE_ENGINE=/bin/true\n' >> "$HOME/.config/spark-shell/config"
+    printf '#!/bin/sh\nexit 0\n' > "$HOME/.local/bin/wtype"; chmod +x "$HOME/.local/bin/wtype"   # a desktop has it; without it no mic is drawn
     SPARK_SHELL_WINPAD=$HOME/winpad-here sh "$SH" on --yes >/dev/null
     grep -qxF "for_window [app_id=\"foot\"] title_format \"$_bg <span foreground='#aa0000'>&#x25CB;</span>         terminal   %title\"" "$sway" && grep -qxF "for_window [shell=\".*\"] title_format \"$_bg  %title\"" "$sway" \
         && ok "sway: with a voice, a terminal's title has the mic after the buttons, a red ring (the palette's red) with the bars' room; other windows none (v0.144)" || bad "band mic" "$(grep -n title_format "$sway")"
-    sed -i.bak '/^VOICE_ENGINE=/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak"
+    sed -i.bak '/^VOICE_ENGINE=/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak" "$HOME/.local/bin/wtype"
     sh "$SH" on --yes >/dev/null; rm -f "$HOME/winpad-here"
     grep -qxF "bindsym Mod4+space exec $REPO/spark-shell desktop voice press" "$sway" \
         && grep -qxF "bindsym --release Mod4+space exec $REPO/spark-shell desktop voice release" "$sway" \
