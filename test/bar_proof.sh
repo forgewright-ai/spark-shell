@@ -21,6 +21,9 @@ set -eu
 REPO=${REPO:?the clone path}
 PART=${PROOF_PART:-all}
 export HOME=${HOME:?}
+# A home of its own, always: this proof writes the config and installs spark-shell over it, and CI gives it
+# a user of its own. A home that already holds a config is someone's, and the proof stops rather than take it.
+[ ! -e "$HOME/.config/spark-shell/config" ] || { echo "refusing: $HOME holds a spark-shell config; this proof needs a home of its own"; exit 2; }
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/bar-proof-runtime} SPARK_SHELL_ROOT=$HOME/root SPARK_SHELL_DIALOG_URL=none LANG=C.UTF-8
 export SPARK_SHELL_FONT_URL=${FONT_ZIP:+file://$FONT_ZIP}; [ -n "$SPARK_SHELL_FONT_URL" ] || SPARK_SHELL_FONT_URL=none
 export WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1
