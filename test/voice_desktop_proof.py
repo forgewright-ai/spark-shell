@@ -219,9 +219,11 @@ def main():
            ([(c[0], c[1]) for c in lit], [c[0] for c in lit_after], [c[0] for c in after], why()))
         box = band("shell", "right")
         meter = glyphs(env, box)
-        ok(meter and meter[-1][0] + meter[-1][1] >= box[2] - 6,
-           "the meter runs at the band's right end, where nothing was drawn at rest",
-           ([(c[0], c[1]) for c in meter], [(c[0], c[1]) for c in rest_end], why()))
+        # two characters of slack: where the desktop's own font is not installed the blocks come from
+        # another face, narrower than the cells kept for them, and the line ends that much short
+        ok(meter and meter[-1][0] + meter[-1][1] >= box[2] - 2 * cell and meter[-1][0] + meter[-1][1] - meter[0][0] >= box[2] / 2,
+           "the meter runs in the cells kept for it at the band's right end, where nothing was drawn at rest",
+           ([(c[0], c[1]) for c in meter], box[2], cell, [(c[0], c[1]) for c in rest_end], why()))
         if meter:
             text = [c[3] for c in lit_after] or [c[3] for c in lit[:3]]
             apart = lambda c: sum(abs(a - b) for a, b in zip(meter[-1][3], c))   # noqa: E731
