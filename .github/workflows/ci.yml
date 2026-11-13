@@ -71,9 +71,14 @@ jobs:
       - name: shellcheck
         # spark-shell and test/shell_test.sh turn off the data flow
         # analysis: 0.11.0's took over 10 GB on them and stopped the box
-        # twice. The runner's 0.9.0 has none and calls that directive
-        # unknown (SC1107), so the line leaves that one out.
-        run: shellcheck -x -S warning -e SC1107 spark-shell lib/shim/xterm test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/desktop_proof.sh test/wifi_proof.sh test/login_upgrade_proof.sh test/dhcp_proof.sh test/gate.sh test/semantic_measure.sh .githooks/pre-push
+        # twice. A version that calls that directive unknown gets SC1107
+        # excluded. The two big files are checked one at a time, each in a
+        # process of its own: together they took the runner down.
+        run: |
+          shellcheck --version | sed -n '2p'
+          shellcheck -x -S warning -e SC1107 spark-shell
+          shellcheck -x -S warning -e SC1107 test/shell_test.sh
+          shellcheck -x -S warning -e SC1107 lib/shim/xterm test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/desktop_proof.sh test/wifi_proof.sh test/login_upgrade_proof.sh test/dhcp_proof.sh test/gate.sh test/semantic_measure.sh .githooks/pre-push
       - name: zizmor over .github/workflows
         # the workflows are code too: zizmor (pinned, in a venv of its own)
         # reads every file under .github/workflows; medium and above fail.
