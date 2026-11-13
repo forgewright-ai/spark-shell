@@ -4339,7 +4339,7 @@ spark-shell changes how this machine works:
                xdg-desktop-portal-wlr xdg-desktop-portal-gtk
                gsettings-desktop-schemas bluez bluez-utils python-dbus
                python-gobject xorg-xwayland xorg-xrandr mpv mesa python-numpy
-               pipewire wireplumber pipewire-pulse pipewire-alsa (sudo)
+               wtype pipewire wireplumber pipewire-pulse pipewire-alsa (sudo)
   login        logging in on tty1 starts the desktop
                Alt+F2 is a plain shell
 

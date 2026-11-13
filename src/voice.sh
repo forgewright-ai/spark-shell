@@ -43,9 +43,11 @@ voice_pid() { _vp=$(cat "$(voice_run_dir)/pid" 2>/dev/null) || return 1; case $_
 voice_set_state() { printf 'listening %s\nlevel %s\n' "$1" "$2" > "$(voice_state).new" && mv "$(voice_state).new" "$(voice_state)"; }
 voice_wanted() { mkdir_private "$(voice_run_dir)"; printf '%s\n' "$1" > "$(voice_want)"; }   # voice_wanted STAMP -- the press's time in ms, or 0
 
-voice_stop() {   # the session told to end: its words are already typed, the engine ends with the leash
+voice_stop() {   # the session told to end: the engine first, so the words it already said are typed and the session wakes on the closed pipe
     _vsp=$(voice_pid) || return 1
     rm -f "$(voice_want)"
+    _vse=$(cat "$(voice_run_dir)/engine" 2>/dev/null) || _vse=''
+    case $_vse in ''|*[!0-9]*) ;; *) kill -TERM "$_vse" 2>/dev/null || : ;; esac
     kill -TERM "$_vsp" 2>/dev/null || :
 }
 voice_press() {   # the key down: a tap opens home on the release; held, it listens until the release
@@ -77,6 +79,7 @@ voice_listen() {   # voice_listen hold|now -- the session: the engine's words in
     voice_set_state 1 0
     # shellcheck disable=SC2086   # the engine's words are a command line
     $_vlc --max 60 < "$_vld/leash" > "$_vld/words" 2>>"$_vld/log" & _vlp=$!
+    echo "$_vlp" > "$_vld/engine"
     exec 3> "$_vld/leash"; _vlo=1   # the leash: closed, the engine says its last words and ends
     trap '[ "$_vlo" = 0 ] || { exec 3>&-; _vlo=0; }' TERM INT HUP   # told to stop: the leash goes now, not at the next level
     _vln=0
@@ -92,7 +95,7 @@ voice_listen() {   # voice_listen hold|now -- the session: the engine's words in
     [ "$_vlo" = 0 ] || exec 3>&-
     wait "$_vlp" || [ $? != 2 ] || notify_send voice "Voice: $(tail -1 "$_vld/log" 2>/dev/null | sed 's/^spark-ear: //')"
     voice_set_state 0 0
-    rm -f "$_vld/pid" "$(voice_want)" "$_vld/leash" "$_vld/words"
+    rm -f "$_vld/pid" "$_vld/engine" "$(voice_want)" "$_vld/leash" "$_vld/words"
 }
 voice_off() { voice_stop || rm -f "$(voice_want)"; }   # off desktop: no session is left listening; the ear and its engine stay
 voice_status() {

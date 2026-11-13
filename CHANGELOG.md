@@ -17,7 +17,9 @@ Voice: hold Super+Space and talk; the words land in the terminal's line.
 - VOICE=no leaves the voice out; VOICE_ENGINE names your own engine, a
   command that speaks the ear's contract.
 - The mic is red in every palette; while listening it is a dot, with
-  five bars that follow your voice.
+  five bars that follow your voice. It closes by itself after a minute.
+- The words come out in lower case, without punctuation: that is what
+  this model gives.
 - wtype joins the desktop's packages.
 
 ## v0.143
