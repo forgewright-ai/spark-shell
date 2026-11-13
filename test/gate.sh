@@ -61,10 +61,10 @@ ascii() {   # the file list of ci.yml's ascii step, read from it
     done
 }
 templates() { if grep -rnE '#[0-9a-fA-F]{6}' template; then echo "a hex color is in a template"; return 1; fi; }
-shellcheck_ci() {   # the run line of ci.yml's shellcheck step, as it is
-    cmd=$(sed -n 's/^ *run: \(shellcheck .*\)$/\1/p' "$ci" | head -1)
-    [ -n "$cmd" ] || { echo "no shellcheck step in $ci"; return 1; }
-    eval "$cmd"
+shellcheck_ci() {   # ci.yml's shellcheck step, each of its calls as it is
+    cmds=$(sed -n 's/^ *run: \(shellcheck -x .*\)$/\1/p; s/^ *\(shellcheck -x .*\)$/\1/p' "$ci")
+    [ -n "$cmds" ] || { echo "no shellcheck step in $ci"; return 1; }
+    printf '%s\n' "$cmds" | while IFS= read -r cmd; do eval "$cmd" || exit 1; done
 }
 _name=privacy; step privacy
 _name=ascii; step ascii
