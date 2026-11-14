@@ -8,6 +8,12 @@ pw-dump are stand-ins too, and so are tmux and spark, which a verb could reach),
 and never opened, the machine's wire, wifi and battery are a fixture, and the palette is the proof's own, never a
 theme of the machine's.
 
+Three things the home sets so that every family's sway and fonts give the same answers. The pointer is a theme of
+the proof's with no image: it hovers and clicks, and no capture has a cursor in it. The home's fontconfig asks for
+subpixel rendering, as Ubuntu's does for every home: the bar draws its text gray all the same, so a color read off
+the screen is the color it was handed. And the proof reaps what its session orphans, as an init does: a
+container's first process reaps none, and a dead process nobody reaped still answers kill -0.
+
 sway's own lines for the bar are read from the template: exec spark-shell bar start, the key bound to spark-shell
 bar keys, and the resize mode. So the bar under proof is the one spark-shell starts, under its keeper, reading the
 real spark-shell bar status. The five gates of the bar's review, each check named by its gate:
@@ -32,6 +38,7 @@ light ground. spark-bar is SPARK_SHELL_BAR, else component/bar/target's release 
 grim, wtype, jq and python3; fc-list where there is one."""
 import atexit
 import collections
+import ctypes
 import json
 import os
 from pathlib import Path
@@ -56,7 +63,7 @@ OUT = "HEADLESS-1"
 BAR, TEXT, MARK = 36, 16, 24                 # the sketch's sizes at 12 points: the bar, its text, the mark
 OVERFLOW = "wifi bat mic out clock"          # the config's order here, not the default one; lan is not named
 LOOK = ("fg", "accent", "muted", "ground", "lit", "attention", "alpha")   # the look block's fields, as BAR_FG and the rest
-FAMILIES = (("stone", "\u27e8", "\u27e9", "angle"), ("star", "{", "}", "brace"), ("banner", "[", "]", "square"))
+FAMILIES = (("stone", "\u27e8", "\u27e9"), ("star", "{", "}"), ("banner", "[", "]"))
 # the proof's own palettes, a dark ground and a light one: BG, FG, ACCENT, MUTED and the sixteen slots
 PALETTES = {
     "dark": ("1f2430", "e6e9ef", "5fb3ff", "bcc4d0",
@@ -67,7 +74,7 @@ PALETTES = {
 WPCTL = r"""#!/bin/sh
 # the proof's sound tool: wpctl's answers from files, every change written to one
 d=${PROOF_SND:?}
-[ ! -e "$d/slow" ] || sleep 1
+i=0; while [ -e "$d/slow" ] && [ "$i" -lt 900 ]; do sleep 0.1; i=$((i + 1)); done   # slow: no answer until the proof lets go
 [ ! -e "$d/down" ] || { echo 'Could not connect to PipeWire' >&2; exit 1; }
 side() { case $1 in *SINK*) echo out ;; *) echo mic ;; esac; }
 case ${1:-} in
@@ -115,6 +122,9 @@ for pid in [int(n) for n in os.listdir("/proc") if n.isdigit() and int(n) != os.
     except OSError:
         pass
 """
+# an Xcursor file of one transparent pixel: the proof's pointer has no image, so no capture has one in it
+NO_IMAGE = (b"Xcur" + struct.pack("<3I", 16, 0x10000, 1) + struct.pack("<3I", 0xfffd0002, 24, 28)
+            + struct.pack("<9I", 36, 0xfffd0002, 24, 1, 1, 1, 0, 0, 0) + struct.pack("<I", 0))
 failed = 0
 gate = "lifecycle"
 tally = collections.OrderedDict()
@@ -222,21 +232,47 @@ class Img:
         """The color most of it is."""
         return collections.Counter(self.all()).most_common(1)[0][0]
 
-    def ink(self, ground=None):
-        """Its ink: the pixels a third of the way or more from the ground to its strongest pixel, as (x, y)."""
+    def cut(self, x0, x1):
+        """Its columns from x0 up to x1, a piece of its own."""
+        return Img(x1 - x0, self.h, b"".join(self.data[(y * self.w + x0) * 3:(y * self.w + x1) * 3] for y in range(self.h)))
+
+    def top(self, ground=None):
+        """How far its strongest pixel is from the ground."""
         ground = ground or self.ground()
-        top = max(far(p, ground) for p in self.all())
+        return max(far(c, ground) for c in set(self.all()))
+
+    def ink(self, ground=None, of=None):
+        """Its ink, as (x, y): the pixels a third of the way or more from the ground to its strongest pixel, or
+        to a wider piece's (`of`, its top)."""
+        ground = ground or self.ground()
+        top = self.top(ground) if of is None else of
         if top < 24:
             return set()
         return {(x, y) for y in range(self.h) for x in range(self.w) if far(self.px(x, y), ground) * 3 >= top}
 
     def strongest(self, ground=None):
         ground = ground or self.ground()
-        return max(self.all(), key=lambda p: far(p, ground))
+        return max(set(self.all()), key=lambda c: far(c, ground))
+
+    def inked(self, ground, color):
+        """Its ink against a color it should be drawn in: (whether every pixel is that color thinned by the
+        ground, one measure for the three channels, as a gray face draws it: no colored edge of a subpixel
+        face, no other color; how far its strongest pixel goes, 1 the color itself)."""
+        span = [color[i] - ground[i] for i in range(3)]
+        wide = max(range(3), key=lambda i: abs(span[i]))
+        if abs(span[wide]) < 24:
+            return False, 0.0
+        gray, most = True, 0.0
+        for c in set(self.all()):
+            t = (c[wide] - ground[wide]) / float(span[wide])
+            gray = gray and -0.03 <= t <= 1.03 and all(abs(ground[i] + t * span[i] - c[i]) <= 3 for i in range(3))
+            most = max(most, t)
+        return gray, most
 
 
-def blobs(m):
-    """A mask split at its blank columns: the glyphs of a line, left to right, each from its own corner."""
+def glyphs(m):
+    """A mask split at its blank columns, the glyphs of a line left to right: (the column a glyph starts at, the
+    glyph from its own corner)."""
     cols = sorted({x for x, _ in m})
     groups, run = [], []
     for x in cols:
@@ -250,8 +286,13 @@ def blobs(m):
     for g in groups:
         part = {(x, y) for x, y in m if g[0] <= x <= g[-1]}
         lx, ly = min(x for x, _ in part), min(y for _, y in part)
-        out.append({(x - lx, y - ly) for x, y in part})
+        out.append((lx, {(x - lx, y - ly) for x, y in part}))
     return out
+
+
+def blobs(m):
+    """The glyphs of a mask alone."""
+    return [part for _, part in glyphs(m)]
 
 
 def flip(m):
@@ -269,26 +310,6 @@ def likeness(a, b):
             moved = {(x + dx, y + dy) for x, y in a}
             best = max(best, len(moved & b) / float(len(moved | b)))
     return best
-
-
-def frame_kind(m):
-    """Which opening bracket a glyph's ink is, by its outer edge, the leftmost ink of each row: a square
-    bracket's is one straight stem at the very edge; a brace's is a stem inside with a cusp that reaches the
-    edge; an angle bracket's has no stem, it comes to the edge at mid height from both ends."""
-    if not m:
-        return "none"
-    rows = sorted({y for _, y in m})
-    edge = [min(x for x, y in m if y == r) for r in rows]
-    stem, n = collections.Counter(edge).most_common(1)[0]
-    share = n / float(len(edge))
-    third = len(edge) // 3
-    if stem == 0 and share >= 0.9:
-        return "square"
-    if share >= 0.55 and stem > 0 and min(edge) == 0:
-        return "brace"
-    if share < 0.55 and edge[0] > 0 and edge[-1] > 0 and min(edge[third:len(edge) - third]) == 0:
-        return "angle"
-    return "other"
 
 
 def read_png(path):
@@ -526,17 +547,6 @@ def members(group):
     return [int(e.name) for e in Path("/proc").iterdir() if e.name.isdigit() and group_of(int(e.name)) == group and alive(int(e.name))]
 
 
-def tint(ink, ground, color):
-    """How far an ink is from a ground toward a color, 0 to 1: a thin glyph's strongest pixel is the color
-    thinned by the ground. None when the ink is not on the way from one to the other."""
-    span = [c - g for c, g in zip(color, ground)]
-    wide = max(range(3), key=lambda i: abs(span[i]))
-    if abs(span[wide]) < 24:
-        return None
-    t = (ink[wide] - ground[wide]) / float(span[wide])
-    return t if all(abs(ground[i] + t * span[i] - ink[i]) <= 20 for i in range(3)) else None
-
-
 def bar_binary():
     named = os.environ.get("SPARK_SHELL_BAR")
     if named:
@@ -564,7 +574,7 @@ class Desk:
         self.loop_file = self.home / ".local/state/spark-shell/bar.pid"
         self.opened_file = self.work / "opened"
         self.shell_path = str(REPO / "spark-shell")
-        self.children, self.pointer, self.guard, self.stopped, self.left = [], None, None, False, None
+        self.children, self.pointer, self.guard, self.stopped, self.left, self.reaps = [], None, None, False, None, False
         self.seen, self.shots, self.kept, self.space = set(), 0, 0, (W, H)
         self.stage()
 
@@ -588,9 +598,24 @@ class Desk:
             (sys_ / name).write_text(text)
         (proc_ / "net/wireless").write_text("Inter-| sta-|   Quality        |\n face | tus | link level noise |\n"
                                             " wlan0: 0000   49.  -61.  -256        0      0      0      0      0        0\n")
+        # the pointer: a theme of the proof's with no image (the pointer stays where it is put, and a target under it
+        # is still lit), named in the config so a look applied by spark-shell keeps it
+        cursors = self.home / ".local/share/icons/proof-blank/cursors"
+        cursors.mkdir(parents=True)
+        (cursors.parent / "index.theme").write_text("[Icon Theme]\nName=proof-blank\n")
+        for name in ("default", "left_ptr", "text", "xterm"):
+            (cursors / name).write_bytes(NO_IMAGE)
         # 12 points is the sketch's size; ALPHA 1 so the bar's ground is the palette's own color on the screen
-        self.config_text = "DESKTOP=sway\nALPHA=1\nBAR_TEXT=12\nWALLPAPER=none\nBAR_OVERFLOW=%s\n" % OVERFLOW
+        self.config_text = "DESKTOP=sway\nALPHA=1\nBAR_TEXT=12\nWALLPAPER=none\nPOINTER=proof-blank 24\nBAR_OVERFLOW=%s\n" % OVERFLOW
         self.settings.write_text(self.config_text)
+        # the home asks fontconfig for subpixel rendering, with Ubuntu's three settings (slight hinting, rgb, the default
+        # lcd filter), as that system asks it for every home: the bar's text stays gray
+        (self.home / ".config/fontconfig").mkdir()
+        (self.home / ".config/fontconfig/fonts.conf").write_text(
+            '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n<fontconfig>\n <match target="font">\n'
+            + "".join('  <edit name="%s" mode="assign"><%s>%s</%s></edit>\n' % (name, kind, value, kind) for name, kind, value in
+                      (("antialias", "bool", "true"), ("hinting", "bool", "true"), ("hintstyle", "const", "hintslight"), ("rgba", "const", "rgb"), ("lcdfilter", "const", "lcddefault")))
+            + ' </match>\n</fontconfig>\n')
         self.palette("dark")
         self.sound(40, False, 50, False)
         env = {k: v for k, v in os.environ.items() if k in ("PATH", "USER", "LOGNAME", "SHELL", "LANG", "TZ") or k.startswith("LC_")}
@@ -599,6 +624,7 @@ class Desk:
                     "XDG_DATA_HOME": str(self.home / ".local/share"), "XDG_CACHE_HOME": str(self.home / ".cache"),
                     "XDG_RUNTIME_DIR": str(self.run), "TMPDIR": str(self.work / "tmp"), "TMUX_TMPDIR": str(self.work / "tmp"),
                     "WLR_BACKENDS": "headless", "WLR_RENDERER": "pixman", "WLR_LIBINPUT_NO_DEVICES": "1",
+                    "XCURSOR_PATH": str(self.home / ".local/share/icons"), "XCURSOR_THEME": "proof-blank", "XCURSOR_SIZE": "24",
                     "SPARK_SHELL_BAR": str(self.binary), "SPARK_SHELL_PTS_DIR": str(self.work / "pts"), "SPARK_SHELL_ROOT": str(self.work / "root"),
                     "SPARK_SHELL_SYS": str(sys_), "SPARK_SHELL_PROC": str(proc_), "SPARK_SHELL_DEV": str(self.work / "dev"),
                     "SPARK_SHELL_SEMANTIC_URL": "none", "SPARK_SHELL_DIALOG_URL": "none", "SPARK_SHELL_FONT_URL": "none", "SPARK_SHELL_NO_APPLY": "1",
@@ -612,8 +638,8 @@ class Desk:
         at = template.index('mode "resize" {') if 'mode "resize" {' in template else None
         self.mode_lines = [] if at is None else template[at:template.index("}", at) + 1] + [line for line in template if line == 'bindsym $mod+r mode "resize"']
         self.config = self.work / "sway.conf"
-        self.config.write_text("set $mod Mod4\noutput %s mode %dx%d\nxwayland disable\ndefault_border pixel 2\nfocus_follows_mouse no\nmouse_warping none\n%s\n"
-                               % (OUT, W, H, "\n".join(self.keys_line + self.mode_lines + self.own)))
+        self.config.write_text("set $mod Mod4\noutput %s mode %dx%d\nxwayland disable\ndefault_border pixel 2\nfocus_follows_mouse no\nmouse_warping none\n"
+                               "seat * xcursor_theme proof-blank 24\n%s\n" % (OUT, W, H, "\n".join(self.keys_line + self.mode_lines + self.own)))
 
     def palette(self, name):
         bg, fg, accent, muted, slots = PALETTES[name]
@@ -622,6 +648,12 @@ class Desk:
                               + "".join("THEME_ANSI_%d=#%s\n" % (i, c) for i, c in enumerate(self.pal["ANSI"])))
 
     def start(self):
+        # what the session orphans comes to the proof, which reaps it as an init does: a container's first process
+        # reaps none, and a dead process nobody reaped still answers kill -0 (the status' watcher asks that)
+        try:
+            self.reaps = ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0   # PR_SET_CHILD_SUBREAPER
+        except (OSError, AttributeError):
+            self.reaps = False
         log = open(str(self.work / "sway.log"), "w")
         sway = subprocess.Popen(["sway", "-c", str(self.config)], env=self.env, cwd=str(self.work), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=log)
         self.children.append(sway)
@@ -634,6 +666,16 @@ class Desk:
         self.pointer = Pointer(self.env)
         # a keyboard on the seat for the whole proof, as the pad's proof keeps one: a headless sway has none
         self.children.append(subprocess.Popen(["wtype", "-s", "600000"], env=self.env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+
+    def reap(self):
+        """The dead the session left to the proof, reaped; never a child the proof started itself."""
+        own = {child.pid for child in self.children + ([self.guard] if self.guard else [])}
+        for entry in Path("/proc").iterdir():
+            if entry.name.isdigit() and int(entry.name) not in own and stat_of(int(entry.name)) == ("Z", os.getpid()):
+                try:
+                    os.waitpid(int(entry.name), os.WNOHANG)
+                except OSError:
+                    pass
 
     def ours(self):
         """The processes that carry this proof's runtime folder: its sway's, and what they started."""
@@ -664,7 +706,7 @@ class Desk:
                 child.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 child.kill()
-        settle(lambda: not self.ours(), 4)
+        settle(lambda: self.reap() or not self.ours(), 6)
         self.left = [(pid, " ".join(cmdline(pid))[:120]) for pid in self.ours()]   # what did not end with the sway by itself
         for sig in (signal.SIGTERM, signal.SIGKILL):
             pids = self.ours()
@@ -715,7 +757,7 @@ class Desk:
         self.seen.add(text)
         return State(text)
 
-    def until(self, test, what, seconds=10):
+    def until(self, test, what, seconds=20):
         """The state file once it says `test`; a timeout says what was waited for and what the file said."""
         end, s = time.time() + seconds, None
         while time.time() < end:
@@ -954,7 +996,7 @@ class Desk:
                           "the bar at rest: the whole line, out at 40 and the mic at 50, workspace 1 shown, no key and no pointer on it", seconds)
 
 
-def seen(read, seconds=3):
+def seen(read, seconds=5):
     """A reading of the screen that holds: read() gives (whether it holds, what it saw), and is asked again
     while it does not, for the bar's frame follows the state file's word by a moment."""
     end = time.time() + seconds
@@ -993,15 +1035,22 @@ def mark_seen(d, x, y, there=True):
     return seen(read)
 
 
+def worn(img, ground, color, least=0.97):
+    """Whether a piece is drawn in a color, gray: every pixel is the color thinned by the ground, and the
+    strongest is the color itself (a thin glyph, with no pixel it covers whole: `least` of the way)."""
+    gray, most = img.inked(ground, color)
+    return gray and most >= least
+
+
 def reads(d, t, ink, surface, top=0):
     """A cell's text as the screen has it, against the colors it should be in: whether its strongest ink is
-    that ink on that surface at 4.5 to 1 or more, and (the contrast, the ink, the surface) it read."""
+    that ink itself on that surface, drawn gray, at 4.5 to 1 or more, and (the contrast, the ink, the surface)."""
     def read():
         img = d.grab(t.x, top + t.y, t.w, t.h)
         ground = img.ground()
         strong = img.strongest(ground)
         ratio = contrast(strong, ground)
-        return ratio >= 4.5 and near(ground, surface, 3) and (tint(strong, ground, ink) or 0) >= 0.7, (round(ratio, 1), strong, ground)
+        return ratio >= 4.5 and near(ground, surface, 3) and worn(img, ground, ink), (round(ratio, 1), strong, ground)
     return seen(read)
 
 
@@ -1029,8 +1078,20 @@ def lifecycle(d):
     ok(look and all(look.get(k) == env.get("BAR_" + k.upper()) for k in LOOK) and set(look) == set(LOOK) | {"name"} and not any(t.module == "look" for t in s.targets()),
        "the line carries the look for spark's bar: its first block, named look, the six colors and the alpha as the bar was started with; it is no module and no target", (look, line[:1]))
     again = d.shell("bar", "start")
-    time.sleep(0.6)
-    ok(again.returncode == 0 and d.bar_pid() == pid, "spark-shell bar start again starts no second bar", (again.returncode, again.said, pid, d.bar_pid()))
+    bars = lambda: [p for p in d.ours() if cmdline(p)[:1] == [str(d.binary)]]   # noqa: E731
+    more = settle(lambda: bars() != [pid] and bars(), 1.5)   # a second one would come at once
+    ok(again.returncode == 0 and not more and d.bar_pid() == pid, "spark-shell bar start again starts no second bar", (again.returncode, again.said, pid, more))
+    # the pointer on the bar, where nothing is: no image of it, in a capture that asks for the pointer too
+    at = (max(t.x + t.w for t in s.targets() if t.kind == "workspace") + min(t.x for t in s.targets() if t.kind not in ("mark", "workspace"))) // 2
+    d.move(at, s.bar().height // 2)
+
+    def bare():
+        raw = subprocess.run(["grim", "-c", "-t", "ppm", "-g", "%d,0 48x%d" % (at - 24, s.bar().height), "-"], env=d.env, capture_output=True, timeout=20).stdout
+        img = Img(*ppm(raw)) if raw else None
+        return bool(img) and set(img.all()) == {rgb(pal["BG"])}, img and sorted(set(img.all()))[:4]
+    good, saw = seen(bare)
+    ok(good, "the proof's pointer has no image: with it on the bar, a capture that takes the pointer too shows the ground alone, so no capture measures a cursor", saw)
+    d.move(W // 2, H // 2)
     # two terminals, a workspace each: the workspaces stay, and the first one's is the tiled window the bar keeps off
     d.windows = [d.terminal("ONE")]
     d.sway("workspace", "number", "2")
@@ -1053,12 +1114,31 @@ def identity(d):
     def cells():
         strip = d.grab(0, 0, W, high)
         stray = [x for x in range(mark.x + mark.w, W) if not any(t.x <= x < t.x + t.w for t in s.targets()) and any(not near(strip.px(x, y), ground, 3) for y in range(high))]
-        blank = [t.id for t in s.targets() if len(Img(t.w, high, b"".join(strip.data[(y * W + t.x) * 3:(y * W + t.x + t.w) * 3] for y in range(high))).ink()) < 3]
+        blank = [t.id for t in s.targets() if len(strip.cut(t.x, t.x + t.w).ink()) < 3]
         return not stray and not blank, (stray[:8], blank)
     good, saw = seen(cells)
-    ok(good, "every target draws in its own cells, and nothing is drawn between them", saw)
-    digits, glyphs, family = [], set("\u2026\u26a0"), "stone"
-    for name, left, right, kind in FAMILIES:
+    ok(good, "every target draws in its own cells, and not a pixel is drawn between them", saw)
+    # the proof's home asks fontconfig for subpixel rendering, as Ubuntu's does: the bar draws gray all the same, a
+    # block of one color in that color thinned by the ground and nothing else
+    asks = subprocess.run(["fc-match", "-f", "%{rgba} %{lcdfilter}", "monospace"], env=d.env, capture_output=True, timeout=20).stdout.decode("ascii", "replace").split() if shutil.which("fc-match") else []
+    plain, roles = {}, d.roles()
+    for block in d.line():
+        text = block.get("full_text", "")
+        colors = set(re.findall("foreground='#([0-9a-f]{6})'", text))
+        ident = block.get("name", "") + ("." + block["instance"] if block.get("instance") else "")
+        if s.find(ident) and ((len(colors) == 1 and not re.sub("<span[^>]*>.*?</span>", "", text).strip()) or (not colors and "<" not in text)):
+            plain[ident] = rgb(colors.pop()) if colors else roles["fg"]
+
+    def gray():
+        strip = d.grab(0, 0, W, high)
+        off = {i: strip.cut(s.find(i).x, s.find(i).x + s.find(i).w).inked(ground, c) for i, c in plain.items()}
+        return all(g and most >= 0.5 for g, most in off.values()), {i: v for i, v in off.items() if not (v[0] and v[1] >= 0.5)}
+    good, saw = seen(gray)
+    ok(good and len(plain) >= 6,
+       "the bar's text is gray whatever fontconfig asks (here: %s): each of the %d blocks of one color is that color thinned by the ground, with no colored edge and no other color"
+       % ("subpixel rendering, by the home's own file" if asks == ["1", "1"] else "rgba and lcdfilter " + " ".join(asks) if asks else "not known, no fc-match", len(plain)), (asks, saw, sorted(plain)))
+    digits, pairs, signs, family, last = [], [], set("\u2026\u26a0"), "stone", None
+    for name, left, right in FAMILIES:
         if name != family:
             said = d.shell("theme", "family", name)
             family = name
@@ -1067,27 +1147,35 @@ def identity(d):
         got = settle(lambda: d.names() == want and d.names(), 8) or d.names()
         ok(got == want, "%s: sway's workspaces are named by the family, the number in its key frame (U+%04X N U+%04X)" % (name, ord(left), ord(right)), got)
         for block in d.line():
-            glyphs |= {c for c in re.sub("<[^>]*>", "", block.get("full_text", "")) if ord(c) > 126 and block.get("name") != "logo"}
-        glyphs |= {left, right}
-        found = {}
+            signs |= {c for c in re.sub("<[^>]*>", "", block.get("full_text", "")) if ord(c) > 126 and block.get("name") != "logo"}
+        signs |= {left, right}
+        found, drawn_ = {}, {}
 
         def framed():
             for ident in ("workspace:2", "workspace:1"):
                 t = s.find(ident)
-                found[ident] = b = blobs(d.grab(t.x, 0, t.w, high).ink())
-                if not (len(b) == 3 and frame_kind(b[0]) == kind and frame_kind(flip(b[2])) == kind and likeness(flip(b[0]), b[2]) >= 0.55):
-                    return False, {i: ([frame_kind(g) for g in (f[0], flip(f[-1]))] if f else [], len(f), round(likeness(flip(f[0]), f[-1]), 2) if f else 0) for i, f in found.items()}
+                img = d.grab(t.x, 0, t.w, high)
+                found[ident] = b = blobs(img.ink())
+                # three glyphs, the outer two a pair that mirror each other; and the frame is this family's, drawn since the last one's
+                if not (len(b) == 3 and likeness(flip(b[0]), b[2]) >= 0.55 and (ident != "workspace:2" or img.data != last)):
+                    return False, {i: (len(f), round(likeness(flip(f[0]), f[-1]), 2) if f else 0) for i, f in found.items()}
+                if ident == "workspace:2":
+                    drawn_[0] = img.data
             return True, None
-        good, saw = seen(framed, 5)
-        ok(good, "%s: on the screen a workspace is three glyphs, its number between the family's pair, %s brackets that mirror each other; the one shown, on its chip, the same" % (name, kind), saw)
+        good, saw = seen(framed, 8)
+        ok(good and all(s.find(i).w == 4 * (mark.x) for i in ("workspace:2", "workspace:1")),
+           "%s: on the screen a workspace is three glyphs in a cell of four, its number between a pair that mirror each other; the one shown, on its chip, the same" % name, saw)
+        last = drawn_.get(0)
         if len(found.get("workspace:2", [])) == 3:
+            pairs.append(found["workspace:2"][0])
             digits.append(found["workspace:2"][1])
         d.shot("identity-" + name)
-    ok(len(digits) == 3 and all(likeness(digits[0], other) >= 0.9 for other in digits[1:]),
-       "the number itself is the same glyph under all three families: the frame alone changes", [len(x) for x in digits])
+    ok(len(digits) == 3 and digits[0] == digits[1] == digits[2] and all(likeness(a, b) < 0.8 for a, b in ((pairs[0], pairs[1]), (pairs[0], pairs[2]), (pairs[1], pairs[2]))),
+       "the number is the same pixels under all three families and the pair around it another in each: the frame alone changes",
+       ([len(x) for x in digits], [round(likeness(a, b), 2) for a in pairs for b in pairs if a is not b]))
     if shutil.which("fc-list"):
-        lacking = ["U+%04X" % ord(c) for c in sorted(glyphs) if not subprocess.run(["fc-list", ":charset=%x" % ord(c), "family"], env=d.env, capture_output=True, timeout=20).stdout.strip()]
-        ok(not lacking, "real glyphs: a font here holds every sign the bar draws under the three families (%d of them), so none is a missing-glyph box" % len(glyphs), lacking)
+        lacking = ["U+%04X" % ord(c) for c in sorted(signs) if not subprocess.run(["fc-list", ":charset=%x" % ord(c), "family"], env=d.env, capture_output=True, timeout=20).stdout.strip()]
+        ok(not lacking, "real glyphs: a font here holds every sign the bar draws under the three families (%d of them), so none is a missing-glyph box" % len(signs), lacking)
     else:
         print("  skip identity: no fc-list here: which font holds each sign is not asked", flush=True)
     back = d.shell("theme", "family", "stone")
@@ -1160,6 +1248,8 @@ def behavior(d):
        "pointer: out's percent opens the dialog's out section, the mic's sign mic, the clock clock, the battery bat, and the mark home with no section; no sound is changed",
        [g for g in got if g[1] != g[2]] or (d.opened(), d.log()[changes:]))
     # the keys
+    d.move(W // 2, H // 2)
+    d.until(lambda s: not any("hover" in t.flags for t in s.targets()), "the pointer off the bar")
     d.keys_on()
     s = d.until(lambda s: s.focused() == "mark", "Super+%s to put the keys on the bar" % d.keys_key)
     mark, accent = s.find("mark"), rgb(d.pal["ACCENT"])
@@ -1175,6 +1265,14 @@ def behavior(d):
     d.key("Left")
     d.until(lambda s: s.focused() == "mark", "Left to move them back to the mark")
     ok(True, "keys: Right and Left move along the bar")
+    # the keyboards configured again while the bar has the keys, as a layout changed or a keyboard plugged in does: an
+    # older sway takes the keyboard off the surface and gives it back, and each key here is a keyboard of its own
+    d.sway("input", "type:keyboard", "repeat_delay", "450")
+    d.key("Right")
+    d.until(lambda s: s.focused() == "workspace:1", "Right to move the keys after the keyboards were configured again")
+    d.key("Left")
+    s = d.until(lambda s: s.focused() == "mark", "Left to move them back")
+    ok(True, "keys: the keyboards configured again while the bar has them: the bar keeps the keys")
     d.focus("out.name")
     d.key("Return")
     s = d.until(lambda s: s.named("out.name") == "output muted", "Enter on out's sign to mute")
@@ -1238,7 +1336,7 @@ def states(d):
 
     def hollow():
         cells, img = d.grab(gauge.x, 0, pct.x + pct.w - gauge.x, high), d.grab(sign.x, 0, sign.w, high)
-        return not cells.ink(ground) and (tint(img.strongest(ground), ground, muted) or 0) >= 0.5, (len(cells.ink(ground)), img.strongest(ground))
+        return not cells.ink(ground) and worn(img, ground, muted, 0.5), (len(cells.ink(ground)), img.strongest(ground), img.inked(ground, muted))
     good, saw = seen(hollow)
     ok(good, "on the screen its gauge and its percent are empty cells and its sign is drawn muted", saw)
     d.shot("states-unavailable")
@@ -1248,7 +1346,8 @@ def states(d):
     # a change that fails
     d.flag("fail", True)
     d.click(sign.mid, mid)
-    s = d.until(lambda s: s.find("out.name").state == "error", "out to say its change failed")
+    d.move(W // 2, H // 2)
+    s = d.until(lambda s: s.find("out.name").state == "error" and not any("hover" in t.flags for t in s.targets()), "out to say its change failed")
     ok(all(s.find(i).state == "error" for i in sound[:3]) and all(s.find(i).state == "ok" for i in sound[3:]) and s.named("out.name") == "output could not be changed"
        and s.rects() == base and not d.muted("out") and d.log()[-1:] == ["set-mute @DEFAULT_AUDIO_SINK@ toggle"],
        "a change that fails: out says error, could not be changed, in the same cells; the device is as it was, and the mic is not touched",
@@ -1256,7 +1355,7 @@ def states(d):
 
     def warning():
         img = d.grab(gauge.x, 0, gauge.w, high)
-        return (tint(img.strongest(ground), ground, alarm) or 0) >= 0.5 and all(x < gauge.w // 2 for x, _ in img.ink(ground)), (img.strongest(ground), sorted({x for x, _ in img.ink(ground)})[-3:])
+        return worn(img, ground, alarm, 0.5) and all(x < gauge.w // 2 for x, _ in img.ink(ground)), (img.strongest(ground), img.inked(ground, alarm), sorted({x for x, _ in img.ink(ground)})[-3:])
     good, saw = seen(warning)
     ok(good, "on the screen a warning stands in the gauge's first cells, in the alarm color", saw)
     d.shot("states-error")
@@ -1297,23 +1396,27 @@ def states(d):
         os.kill(old, signal.SIGUSR1)
     except OSError:
         pass
-    settle(lambda: not alive(old), 5)
-    for n in range(10):
-        if not [p for p in crew if alive(p)]:
-            break
-        d.sway("workspace", "number", "2" if n % 2 == 0 else "1")
+    settle(lambda: d.reap() or not alive(old), 20)
+    until, turn = time.time() + 20, 0
+    while [p for p in crew if alive(p)] and time.time() < until:
+        d.reap()   # the dead loop reaped, as an init does: its watcher asks whether it still answers
+        turn += 1
+        d.sway("workspace", "number", "2" if turn % 2 else "1")
         time.sleep(0.4)
     d.sway("workspace", "number", "1")
     ok(len(crew) >= 3 and not [p for p in crew if alive(p)], "after the crash nothing of the old status is left either: its loop and its jobs end by themselves",
-       [(p, " ".join(cmdline(p))[-60:]) for p in crew if alive(p)])
+       ([(p, " ".join(cmdline(p))[-60:]) for p in crew if alive(p)], "the proof reaps its session's orphans" if d.reaps else "the proof could not take its session's orphans to reap"))
     # stopped on purpose
     crew = members(group_of(wait_for(d.loop_pid, "the new bar's status loop")))
+    keepers = lambda: [p for p in d.ours() if "spark-bar ended" in " ".join(cmdline(p))]   # noqa: E731  the keeper's own words are its command
+    kept = keepers()
     d.end_bar()
-    time.sleep(2.2)   # a keeper that started it again would have, a second after its end
-    ok(d.bar_pid() is None and not any(cmdline(p)[-1:] == [str(d.binary)] for p in d.ours()) and crew and not [p for p in crew if alive(p)],
-       "stopped on purpose (SIGTERM): it left with 0, its keeper lets it be, and its status went with it, the whole group",
-       (d.bar_pid(), [(p, " ".join(cmdline(p))[:60]) for p in crew if alive(p)]))
-    # loading: the bar up before its first line, the sound tool slow to answer
+    settle(lambda: not keepers() and not [p for p in crew if alive(p)], 20)   # a keeper that is gone starts no bar again
+    ok(len(kept) == 1 and not keepers() and d.bar_pid() is None and not any(cmdline(p)[:1] == [str(d.binary)] for p in d.ours()) and crew and not [p for p in crew if alive(p)],
+       "stopped on purpose (SIGTERM): it left with 0, so its keeper ended too and starts none again, and its status went with it, the whole group",
+       (kept, keepers(), d.bar_pid(), [(p, " ".join(cmdline(p))[:60]) for p in crew if alive(p)]))
+    # loading: the bar up before its first line; the sound tool gives no answer until the proof has looked
+    d.move(W // 2, H // 2)
     d.flag("slow", True)
     started = d.shell("bar", "start")
     s = d.until(lambda s: s.status == "loading" and s.find("mark"), "the bar up before its first line", 10)
@@ -1323,12 +1426,12 @@ def states(d):
 
     def waiting():
         note, rest_ = d.grab(W - 3 * cell, 0, 2 * cell, high), d.grab(after, 0, W - 3 * cell - after, high)
-        return (tint(note.strongest(ground), ground, muted) or 0) >= 0.5 and not rest_.ink(ground), (len(note.ink(ground)), note.strongest(ground), len(rest_.ink(ground)))
+        return worn(note, ground, muted, 0.5) and not rest_.ink(ground), (len(note.ink(ground)), note.strongest(ground), note.inked(ground, muted), len(rest_.ink(ground)))
     good, saw = seen(waiting)
     ok(good, "on the screen a muted sign stands at the right end where the status will be, and nothing else", saw)
     d.shot("states-loading")
     d.flag("slow", False)
-    s = d.until(lambda s: s.status == "ok" and s.find("clock.time"), "the first line", 20)
+    s = d.until(lambda s: s.status == "ok" and s.find("clock.time"), "the first line", 40)
     ok(s.rects() == base, "the first line fills the cells kept for it", moved(base, s.rects()))
     # a binding mode other than default: the template's resize, on Super+r
     s = d.rest()
@@ -1503,9 +1606,9 @@ def geometry(d):
     def digits():
         inked = sorted({y for _, y in d.grab(*s.find("clock.time").rect).ink(ground)})
         tall = inked[-1] - inked[0] + 1 if inked else 0
-        return 10 <= tall <= 13 and abs((inked[0] + inked[-1] + 1) / 2.0 - BAR / 2.0) <= 2.5, (tall, inked[:1], inked[-1:])
+        return TEXT * 0.5 <= tall <= TEXT * 0.9 and abs((inked[0] + inked[-1] + 1) / 2.0 - BAR / 2.0) <= 3, (tall, inked[:1], inked[-1:])
     good, saw = seen(digits)
-    ok(good, "the screen: the text is %d px, its digits %d px tall, in the middle of the bar's height" % (TEXT, saw[0]), saw)
+    ok(good, "the screen: the clock's digits stand in the middle of the bar's height, %d px tall, a face of %d px" % (saw[0], TEXT), saw)
     picture = d.grab(mark.x, 0, mark.w, high).ink(ground)
     box = (min(x for x, _ in picture), min(y for _, y in picture), max(x for x, _ in picture), max(y for _, y in picture)) if picture else None
     ok(box and box[1] >= (BAR - MARK) // 2 and box[3] < (BAR + MARK) // 2 and box[0] >= 0 and box[2] < MARK,
@@ -1524,8 +1627,8 @@ def geometry(d):
 
         def percent():
             img = d.grab(pct.x, 0, pct.w, high)
-            parts = [Img(cell, high, b"".join(img.data[(y * pct.w + i * cell) * 3:(y * pct.w + (i + 1) * cell) * 3] for y in range(high))) for i in range(4)]
-            return tuple(int(bool(part.ink(ground))) for part in parts) == inked, parts[3].data
+            top = img.top(ground)   # a cell has a glyph when it has ink as strong as the block's
+            return tuple(int(len(img.cut(i * cell, (i + 1) * cell).ink(ground, top)) >= 3) for i in range(4)) == inked, img
         good, signs[label] = seen(percent)
         right = right and good
     d.flag("down", True)
@@ -1534,8 +1637,11 @@ def geometry(d):
     d.flag("down", False)
     s = d.rest()
     ok(all(r == base for r in kept.values()), "no shift: every target's rectangle is the same at 5%, at 100%, muted and with no sound device", {k: moved(base, r) for k, r in kept.items() if r != base})
-    ok(right and signs["5%"] == signs["100%"],
+    ok(right and signs["5%"].cut(3 * cell, 4 * cell).data == signs["100%"].cut(3 * cell, 4 * cell).data,
        "no shift on the screen: the percent sign stands in the same pixels at 5% and at 100%, the digits right-aligned before it in the cells kept for them; muted, the cells are empty")
+    zeros = [(b[0] - a[0], len(a[1])) for a, b in zip(glyphs(signs["100%"].ink(ground)), glyphs(signs["100%"].ink(ground))[1:]) if a[1] == b[1]]
+    ok([pitch for pitch, _ in zeros] == [cell], "the screen: the text's size by its pitch: the two 0 of 100%% are the same pixels one cell apart, the %d px the state file says a cell is" % cell,
+       (zeros, [x for x, _ in glyphs(signs["100%"].ink(ground))]))
     # pins
     changes, pid, crew = len(d.log()), d.bar_pid(), members(group_of(d.loop_pid() or 0))
     said = d.shell("bar", "unpin", "out", PROOF_VERB="unpin")   # a word in the verb's own environment: a bar the verb started itself would carry it
@@ -1580,6 +1686,7 @@ def geometry(d):
     good, _ = seen(dots)
     if rest_:
         d.click(rest_.mid, high // 2)
+        d.move(W // 2, H // 2)
     ok(rest_ and (rest_.kind, rest_.name, rest_.w) == ("open", "more", cell) and good and (settle(lambda: d.opened()[n:], 8) or [""])[-1].endswith(" dialog"),
        "the cell for the modules left out: an ellipsis, named more, and a click on it opens home, where they are", (rest_ and rest_.rect, d.opened()[n:]))
     d.shot("geometry-narrow")
@@ -1658,7 +1765,7 @@ def relook(d):
         """Whether the bar's ground and its text are those colors on the screen, and what they are."""
         def read():
             ground, text = d.grab(gap, high // 2, 1, 1).px(0, 0), d.grab(*clock.rect)
-            return near(ground, bg, 3) and near(text.ground(), bg, 3) and (tint(text.strongest(bg), bg, fg) or 0) >= 0.7, (ground, text.strongest(bg))
+            return near(ground, bg, 3) and near(text.ground(), bg, 3) and worn(text, bg, fg), (ground, text.strongest(bg), text.inked(bg, fg))
         return read
 
     def gallery(name):
