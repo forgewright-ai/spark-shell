@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.147
+
+- A window that floats keeps the desktop's frame, so its buttons stay
+  where they are. An app that draws its own, like Firefox, gives them up
+  and shows the band every other window has.
+- A terminal rounds its size down to whole characters; those leftover
+  pixels are now split between the two sides, so a placed window sits
+  with even gaps instead of a wider one at the right and the bottom.
+
 ## v0.146
 
 Punctuation while you speak, and a better line when you stop.

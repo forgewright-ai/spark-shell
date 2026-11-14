@@ -3554,18 +3554,18 @@ win_run left; _wl=$(cat "$HOME/win.log" 2>/dev/null)
 win_run right; _wr=$(cat "$HOME/win.log" 2>/dev/null)
 win_run up; _wu=$(cat "$HOME/win.log" 2>/dev/null)
 win_run down; _wd=$(cat "$HOME/win.log" 2>/dev/null)
-[ "$_wl" = '-- [con_id=7] mark --add _spark-shell.tiled.7, floating enable, resize set width 944 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.LF.7, mark --add _spark-shell.area.1216.42.1888.1022.7' ] \
-    && [ "$_wr" = '-- [con_id=7] mark --add _spark-shell.tiled.7, floating enable, resize set width 944 px height 1022 px, move absolute position 2160 42, mark --add _spark-shell.place.RF.7, mark --add _spark-shell.area.1216.42.1888.1022.7' ] \
-    && [ "$_wu" = '-- [con_id=7] mark --add _spark-shell.tiled.7, floating enable, resize set width 1888 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.FF.7, mark --add _spark-shell.area.1216.42.1888.1022.7, mark --add _spark-shell.from.tiled.7' ] \
+[ "$_wl" = '-- [con_id=7] mark --add _spark-shell.tiled.7, floating enable, border normal 1, resize set width 944 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.LF.7, mark --add _spark-shell.area.1216.42.1888.1022.7' ] \
+    && [ "$_wr" = '-- [con_id=7] mark --add _spark-shell.tiled.7, floating enable, border normal 1, resize set width 944 px height 1022 px, move absolute position 2160 42, mark --add _spark-shell.place.RF.7, mark --add _spark-shell.area.1216.42.1888.1022.7' ] \
+    && [ "$_wu" = '-- [con_id=7] mark --add _spark-shell.tiled.7, floating enable, border normal 1, resize set width 1888 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.FF.7, mark --add _spark-shell.area.1216.42.1888.1022.7, mark --add _spark-shell.from.tiled.7' ] \
     && [ "$_wd" = '-- [con_id=7] mark --add _spark-shell.min.tiled.7, move scratchpad' ] && [ "$out" = 'the window is on the pad: a click or Super+minus brings it back' ] \
     && ok "desktop window left, right: the focused window floats at that half of its workspace's area, one command by its con_id (#182), marked as one the keys took from the tiling (v0.133); up fills the area and down minimizes, in one press (v0.140)" || bad "window snap" "$_wl | $_wr | $_wu | $_wd | $out"
 win_run float
-[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=7] floating enable, resize set width 1258 px height 681 px, move position center' ] && [ "$out" = 'the window is floating' ] \
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=7] floating enable, border normal 1, resize set width 1258 px height 681 px, move position center' ] && [ "$out" = 'the window is floating' ] \
     && ok "desktop window float: a tiled window floats at two thirds of its workspace, centered (#182)" || bad "window float" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
 win_tree floating_con true 0; win_run float
 [ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=7] floating disable, mark --add _spark-shell.yours.7' ] && [ "$out" = 'the window is tiled' ] && ok "desktop window float: a floating window tiles again (#182), the person's choice, so a new window's rule leaves it tiled (#262)" || bad "window tile" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
 win_tree con true 1; win_run left
-[ "$(cat "$HOME/win.log")" = '-- [con_id=7] fullscreen disable, mark --add _spark-shell.tiled.7, floating enable, resize set width 944 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.LF.7, mark --add _spark-shell.area.1216.42.1888.1022.7' ] && ok "desktop window: a full screen window leaves full screen before its snap (#182)" || bad "window full" "$(cat "$HOME/win.log" 2>&1)"
+[ "$(cat "$HOME/win.log")" = '-- [con_id=7] fullscreen disable, mark --add _spark-shell.tiled.7, floating enable, border normal 1, resize set width 944 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.LF.7, mark --add _spark-shell.area.1216.42.1888.1022.7' ] && ok "desktop window: a full screen window leaves full screen before its snap (#182)" || bad "window full" "$(cat "$HOME/win.log" 2>&1)"
 win_tree con false 0; win_run left
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: no window has the focus' ] && [ ! -e "$HOME/win.log" ] && ok "desktop window: no window with the focus, refused in one line, nothing sent (#182)" || bad "window none" "rc=$rc $out"
 win_run sideways
@@ -3575,7 +3575,7 @@ win_run restore x7
 # the window states: each key reads the place the floating window sits at (its rect on the area's two by two grid);
 # Up and Down step it a row, past the top it is maximized, past the bottom minimized; Super+minus brings it back
 win_at() { printf '{"type":"root","nodes":[{"type":"output","name":"HDMI-A-1","nodes":[{"type":"workspace","id":3,"num":1,"rect":{"x":1216,"y":42,"width":1888,"height":1022},"nodes":[],"floating_nodes":[{"type":"floating_con","id":7,"focused":true,"fullscreen_mode":0,"rect":{"x":%s,"y":%s,"width":%s,"height":%s},"nodes":[]}]}]}]}\n' "$1" "$2" "$3" "$4" > "$HOME/win-tree.json"; }
-_wq='-- [con_id=7] floating enable, resize set width'
+_wq='-- [con_id=7] floating enable, border normal 1, resize set width'
 win_at 2160 42 944 1022; win_run down
 [ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = "$_wq 944 px height 511 px, move absolute position 2160 553, mark --add _spark-shell.place.RB.7, mark --add _spark-shell.area.1216.42.1888.1022.7" ] && [ "$out" = 'the window is in the bottom right quarter' ] \
     && ok "desktop window: Super+Down on the right half takes it to the bottom right quarter" || bad "window right down" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
@@ -3611,7 +3611,7 @@ win_tree con true 0; win_run min
 [ "$(cat "$HOME/win.log")" = '-- [con_id=7] mark --add _spark-shell.min.tiled.7, move scratchpad' ] && ok "desktop window min: a tiled window is minimized, marked tiled" || bad "window min" "$(cat "$HOME/win.log" 2>&1)"
 printf '{"type":"root","nodes":[{"type":"output","name":"__i3","nodes":[{"type":"workspace","name":"__i3_scratch","rect":{"x":0,"y":0,"width":0,"height":0},"nodes":[],"floating_nodes":[{"type":"floating_con","id":5,"marks":["_spark-shell.min.tiled.5"],"nodes":[]},{"type":"floating_con","id":8,"marks":[],"nodes":[]},{"type":"floating_con","id":9,"marks":["_spark-shell.min.RB.9"],"nodes":[]}]}]},{"type":"output","name":"HDMI-A-1","nodes":[{"type":"workspace","name":"1","focused":true,"rect":{"x":1216,"y":42,"width":1888,"height":1022},"nodes":[],"floating_nodes":[]}]}]}\n' > "$HOME/win-tree.json"
 win_run restore
-[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=9] unmark _spark-shell.min.RB.9, scratchpad show, floating disable, floating enable, resize set width 944 px height 511 px, move absolute position 2160 553, mark --add _spark-shell.place.RB.9, mark --add _spark-shell.area.1216.42.1888.1022.9' ] \
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=9] unmark _spark-shell.min.RB.9, scratchpad show, floating disable, floating enable, border normal 1, resize set width 944 px height 511 px, move absolute position 2160 553, mark --add _spark-shell.place.RB.9, mark --add _spark-shell.area.1216.42.1888.1022.9' ] \
     && [ "$out" = 'the window is back, in the bottom right quarter' ] && ok "desktop window restore: the window minimized last comes back at the place it left" || bad "window restore" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
 printf '{"type":"root","nodes":[{"type":"output","name":"__i3","nodes":[{"type":"workspace","name":"__i3_scratch","nodes":[],"floating_nodes":[{"type":"floating_con","id":5,"marks":["_spark-shell.min.tiled.5"],"nodes":[]}]}]}]}\n' > "$HOME/win-tree.json"
 win_run restore
@@ -3627,7 +3627,7 @@ win_atm 1216 553 1888 511 '"_spark-shell.tiled.7"'; win_run down
 [ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=7] unmark _spark-shell.tiled.7, mark --add _spark-shell.min.tiled.7, move scratchpad' ] && [ "$out" = 'the window is on the pad: a click or Super+minus brings it back' ] \
     && ok "desktop window: a window the keys took from the tiling goes to the pad marked tiled, from the bottom half too: Super+Down twice on a tiled window brings it back tiled (v0.133)" || bad "window tiled min" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
 win_atm 2160 42 944 1022 '"_spark-shell.tiled.7"'; win_run down
-[ "$(cat "$HOME/win.log")" = "-- [con_id=7] unmark _spark-shell.tiled.7, floating enable, resize set width 944 px height 511 px, move absolute position 2160 553, mark --add _spark-shell.place.RB.7, mark --add _spark-shell.area.1216.42.1888.1022.7" ] && ok "desktop window: a second place a key gives ends the tiling's mark, so that place is the one that comes back from the pad (v0.133)" || bad "window tiled step" "$(cat "$HOME/win.log" 2>&1)"
+[ "$(cat "$HOME/win.log")" = "-- [con_id=7] unmark _spark-shell.tiled.7, floating enable, border normal 1, resize set width 944 px height 511 px, move absolute position 2160 553, mark --add _spark-shell.place.RB.7, mark --add _spark-shell.area.1216.42.1888.1022.7" ] && ok "desktop window: a second place a key gives ends the tiling's mark, so that place is the one that comes back from the pad (v0.133)" || bad "window tiled step" "$(cat "$HOME/win.log" 2>&1)"
 win_atm 1216 553 1888 511 '"_spark-shell.tiled.7"'; win_run float
 [ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=7] unmark _spark-shell.tiled.7, floating disable, mark --add _spark-shell.yours.7' ] && [ "$out" = 'the window is tiled' ] \
     && ok "desktop window float: a window tiled again by the float key leaves its tiling mark behind (v0.133)" || bad "window tiled float" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
@@ -3635,7 +3635,7 @@ win_atm 1216 553 1888 511 ''; win_run down
 [ "$(cat "$HOME/win.log")" = '-- [con_id=7] mark --add _spark-shell.min.FB.7, move scratchpad' ] && ok "desktop window: a window floating by itself still comes back at the place it left (v0.133)" || bad "window floating min" "$(cat "$HOME/win.log" 2>&1)"
 # the fill glyph (v0.140): toggle fills the area, and from the whole area goes back where the window came from
 win_atm 1216 42 1888 1022 '"_spark-shell.place.FF.7","_spark-shell.area.1216.42.1888.1022.7","_spark-shell.from.RF.7"'; win_run toggle
-[ "$(cat "$HOME/win.log")" = '-- [con_id=7] unmark _spark-shell.place.FF.7, unmark _spark-shell.area.1216.42.1888.1022.7, unmark _spark-shell.from.RF.7, floating enable, resize set width 944 px height 1022 px, move absolute position 2160 42, mark --add _spark-shell.place.RF.7, mark --add _spark-shell.area.1216.42.1888.1022.7' ] && [ "$out" = 'the window is on the right half' ] \
+[ "$(cat "$HOME/win.log")" = '-- [con_id=7] unmark _spark-shell.place.FF.7, unmark _spark-shell.area.1216.42.1888.1022.7, unmark _spark-shell.from.RF.7, floating enable, border normal 1, resize set width 944 px height 1022 px, move absolute position 2160 42, mark --add _spark-shell.place.RF.7, mark --add _spark-shell.area.1216.42.1888.1022.7' ] && [ "$out" = 'the window is on the right half' ] \
     && ok "desktop window toggle: a window that fills the area goes back where it came from (v0.140)" || bad "window toggle back" "$out $(cat "$HOME/win.log" 2>&1)"
 win_atm 1216 42 1888 1022 '"_spark-shell.place.FF.7","_spark-shell.area.1216.42.1888.1022.7","_spark-shell.from.tiled.7","_spark-shell.tiled.7"'; win_run toggle
 [ "$(cat "$HOME/win.log")" = '-- [con_id=7] unmark _spark-shell.tiled.7, unmark _spark-shell.place.FF.7, unmark _spark-shell.area.1216.42.1888.1022.7, unmark _spark-shell.from.tiled.7, floating disable' ] && [ "$out" = 'the window is tiled' ] \
@@ -3657,7 +3657,7 @@ rf_win() { printf '{"type":"%s","id":%s,"pid":%s,"app_id":"foot","fullscreen_mod
 pa() { printf '"_spark-shell.place.%s.%s","_spark-shell.area.%s.%s"' "$1" "$2" "$3" "$2"; }   # pa PLACE ID AREA -> the two a key gives, AREA X.Y.W.H
 _A=1216.42.1888.1022; _A2=1276.42.1828.1022   # the area of the tests, and the same with a strip 60 pixels wide at the left
 win_atm 2160 42 944 1022 "$(pa LF 7 "$_A"),\"_spark-shell.tiled.7\""; win_run down
-[ "$(cat "$HOME/win.log")" = "-- [con_id=7] unmark _spark-shell.tiled.7, unmark _spark-shell.place.LF.7, unmark _spark-shell.area.$_A.7, floating enable, resize set width 944 px height 511 px, move absolute position 2160 553, mark --add _spark-shell.place.RB.7, mark --add _spark-shell.area.$_A.7" ] \
+[ "$(cat "$HOME/win.log")" = "-- [con_id=7] unmark _spark-shell.tiled.7, unmark _spark-shell.place.LF.7, unmark _spark-shell.area.$_A.7, floating enable, border normal 1, resize set width 944 px height 511 px, move absolute position 2160 553, mark --add _spark-shell.place.RB.7, mark --add _spark-shell.area.$_A.7" ] \
     && ok "desktop window: a key takes the place a window wore and gives it the new one, with the area it was placed on (#264)" || bad "place replaced" "$(cat "$HOME/win.log" 2>&1)"
 win_atm 1216 553 1888 511 "$(pa FB 7 "$_A")"; win_run down
 [ "$(cat "$HOME/win.log")" = "-- [con_id=7] unmark _spark-shell.place.FB.7, unmark _spark-shell.area.$_A.7, mark --add _spark-shell.min.FB.7, move scratchpad" ] \
@@ -3692,8 +3692,8 @@ win_run refit
     && ok "desktop window refit: the area as it was, a window at its place is left as it is and one dragged by hand loses its place (#264)" || bad "refit same" "rc=$rc $out | $(cat "$HOME/win.log" 2>&1)"
 rf_tree 1216 42 1888 1022 '' "$(rf_win 7 floating_con 0 1208 41 944 1022 "$(pa LF 7 "$_A")"),$(rf_win 8 floating_con 0 2168 41 944 1022 "$(pa RF 8 "$_A")")" ''
 win_run refit
-[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = "$(printf '%s\n' "-- [con_id=7] resize set width 944 px height 1022 px, move absolute position 1216 42, unmark _spark-shell.area.$_A.7, mark --add _spark-shell.area.$_A.7" "-- [con_id=8] resize set width 944 px height 1022 px, move absolute position 2160 42, unmark _spark-shell.area.$_A.8, mark --add _spark-shell.area.$_A.8")" ] \
-    && [ "$out" = '2 windows are at their places again' ] && ok "desktop window refit: the area as it was, two halves sway moved 8 pixels by itself as a strip came and went take their places again, neither lost (#273)" || bad "refit nudged" "rc=$rc $out | $(cat "$HOME/win.log" 2>&1)"
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = "$(printf '%s\n' "-- [con_id=7] move absolute position 1216 42, unmark _spark-shell.area.$_A.7, mark --add _spark-shell.area.$_A.7" "-- [con_id=8] move absolute position 2160 42, unmark _spark-shell.area.$_A.8, mark --add _spark-shell.area.$_A.8")" ] \
+    && [ "$out" = '2 windows are at their places again' ] && ok "desktop window refit: the area as it was, two halves sway moved 8 pixels by itself as a strip came and went are moved back, their own size kept, neither lost (#273)" || bad "refit nudged" "rc=$rc $out | $(cat "$HOME/win.log" 2>&1)"
 rf_tree 1216 42 1888 1022 '' "$(rf_win 7 floating_con 0 1216 42 944 1022 "$(pa LF 7 "$_A")")" ''
 win_run refit
 [ "$rc" = 0 ] && [ ! -e "$HOME/win.log" ] && [ "$out" = 'the windows the keys placed are at their places' ] && ok "desktop window refit: nothing to move, nothing sent (#264)" || bad "refit none to move" "rc=$rc $out"
@@ -3702,7 +3702,7 @@ win_run refit
 [ "$rc" = 0 ] && [ ! -e "$HOME/win.log" ] && [ "$out" = 'no window in sight has a place the keys gave it' ] && ok "desktop window refit: no window wears a place, said in one line (#264)" || bad "refit no place" "rc=$rc $out"
 printf '{"type":"root","nodes":[{"type":"output","name":"__i3","nodes":[{"type":"workspace","name":"__i3_scratch","nodes":[],"floating_nodes":[{"type":"floating_con","id":9,"marks":["_spark-shell.min.RB.9"],"nodes":[]}]}]},{"type":"output","name":"HDMI-A-1","nodes":[{"type":"workspace","name":"1","focused":true,"rect":{"x":1276,"y":42,"width":1828,"height":1022},"nodes":[],"floating_nodes":[]}]}]}\n' > "$HOME/win-tree.json"
 win_run restore
-[ "$(cat "$HOME/win.log")" = "-- [con_id=9] unmark _spark-shell.min.RB.9, scratchpad show, floating disable, floating enable, resize set width 914 px height 511 px, move absolute position 2190 553, mark --add _spark-shell.place.RB.9, mark --add _spark-shell.area.$_A2.9" ] \
+[ "$(cat "$HOME/win.log")" = "-- [con_id=9] unmark _spark-shell.min.RB.9, scratchpad show, floating disable, floating enable, border normal 1, resize set width 914 px height 511 px, move absolute position 2190 553, mark --add _spark-shell.place.RB.9, mark --add _spark-shell.area.$_A2.9" ] \
     && ok "desktop window restore: back at its place on the area as it is now, wearing it again (#264)" || bad "restore place" "$(cat "$HOME/win.log" 2>&1)"
 # a new window (#262): the sway rule's mark, then one decision from one read of the tree
 nw='{"type":"con","id":9,"pid":9,"app_id":"foot","fullscreen_mode":0,"marks":["_spark-shell.new"],"rect":{"x":1216,"y":42,"width":1888,"height":1022},"nodes":[]}'
@@ -3710,20 +3710,20 @@ nw_tree() { printf '{"type":"root","nodes":[{"type":"output","name":"HDMI-A-1","
 _lt=$(rf_win 7 floating_con 0 1216 42 944 511 "$(pa LT 7 "$_A")"); _rt=$(rf_win 8 floating_con 0 2160 42 944 511 "$(pa RT 8 "$_A")")
 _lb=$(rf_win 10 floating_con 0 1216 553 944 511 "$(pa LB 10 "$_A")"); _rb=$(rf_win 11 floating_con 0 2160 553 944 511 "$(pa RB 11 "$_A")")
 nw_tree "$nw" "$_lt,$_rt"; win_run new
-[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = "-- [con_id=9] unmark _spark-shell.new, floating enable, resize set width 1888 px height 511 px, move absolute position 1216 553, mark --add _spark-shell.place.FB.9, mark --add _spark-shell.area.$_A.9" ] \
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = "-- [con_id=9] unmark _spark-shell.new, floating enable, border normal 1, resize set width 1888 px height 511 px, move absolute position 1216 553, mark --add _spark-shell.place.FB.9, mark --add _spark-shell.area.$_A.9" ] \
     && [ "$out" = 'the new window is on the bottom half' ] && ok "desktop window new: two windows the keys placed in the top quarters, the new one floats in the bottom half, wearing it (#262)" || bad "new bottom half" "rc=$rc $out | $(cat "$HOME/win.log" 2>&1)"
 nw_tree "$nw" "$_lt,$_rt,$_lb,$_rb"; win_run new
-[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=9] unmark _spark-shell.new, floating enable, resize set width 1258 px height 681 px, move position center' ] \
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=9] unmark _spark-shell.new, floating enable, border normal 1, resize set width 1258 px height 681 px, move position center' ] \
     && [ "$out" = 'the new window floats at two thirds of the screen, centered: no place is free' ] && ok "desktop window new: every place taken, the new one floats at two thirds, centered, on top (#262)" || bad "new center" "rc=$rc $out | $(cat "$HOME/win.log" 2>&1)"
 nw_tree "$nw,$(rf_win 5 con 0 1216 42 944 1022 '')" "$_lt"; win_run new
 [ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=9] unmark _spark-shell.new' ] && [ "$out" = 'the new window tiles' ] && ok "desktop window new: a workspace with a tiled window tiles the new one (#262)" || bad "new tiled" "rc=$rc $out | $(cat "$HOME/win.log" 2>&1)"
 nw_tree "$nw" ''; win_run new
 [ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=9] unmark _spark-shell.new' ] && [ "$out" = 'the new window tiles' ] && ok "desktop window new: alone on its workspace, it tiles (#262)" || bad "new alone" "rc=$rc $out"
 nw_tree "$nw" "$(rf_win 7 floating_con 0 1216 42 944 1022 '')"; win_run new
-[ "$(cat "$HOME/win.log")" = "-- [con_id=9] unmark _spark-shell.new, floating enable, resize set width 944 px height 1022 px, move absolute position 2160 42, mark --add _spark-shell.place.RF.9, mark --add _spark-shell.area.$_A.9" ] && [ "$out" = 'the new window is on the right half' ] \
+[ "$(cat "$HOME/win.log")" = "-- [con_id=9] unmark _spark-shell.new, floating enable, border normal 1, resize set width 944 px height 1022 px, move absolute position 2160 42, mark --add _spark-shell.place.RF.9, mark --add _spark-shell.area.$_A.9" ] && [ "$out" = 'the new window is on the right half' ] \
     && ok "desktop window new: a window at the left half (placed before v0.134.1, by its rect), the new one takes the right half: a half first (#262)" || bad "new right half" "$out | $(cat "$HOME/win.log" 2>&1)"
 nw_tree "$nw" "$_lt,$_rb"; win_run new
-[ "$(cat "$HOME/win.log")" = "-- [con_id=9] unmark _spark-shell.new, floating enable, resize set width 944 px height 511 px, move absolute position 2160 42, mark --add _spark-shell.place.RT.9, mark --add _spark-shell.area.$_A.9" ] && [ "$out" = 'the new window is in the top right quarter' ] \
+[ "$(cat "$HOME/win.log")" = "-- [con_id=9] unmark _spark-shell.new, floating enable, border normal 1, resize set width 944 px height 511 px, move absolute position 2160 42, mark --add _spark-shell.place.RT.9, mark --add _spark-shell.area.$_A.9" ] && [ "$out" = 'the new window is in the top right quarter' ] \
     && ok "desktop window new: no half free, the first quarter free in reading order (#262)" || bad "new quarter" "$out | $(cat "$HOME/win.log" 2>&1)"
 nw_tree "$nw" "$(rf_win 13 floating_con 0 1400 200 800 600 '')"; win_run new
 [ "$(cat "$HOME/win.log")" = '-- [con_id=9] unmark _spark-shell.new' ] && [ "$out" = 'the new window tiles' ] && ok "desktop window new: a window floating at no place is none the keys placed: the new one tiles (#262)" || bad "new free" "$out | $(cat "$HOME/win.log" 2>&1)"
@@ -3793,7 +3793,7 @@ win_at 2160 42 944 1022
 line=$(_pdl)
 [ "$(printf '%s' "$line" | jq -r '[.[] | select(.name == "pad")] | length')" = 0 ] && ok "bar: no window on the pad, no block for it (v0.133)" || bad "bar pad gone" "$line"
 pad_tree; rm -f "$HOME/win.log"; rc=0; out=$(XDG_RUNTIME_DIR=$H/run env -u SPARK_SHELL_WINPAD SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop pad keys 2>&1) || rc=$?
-[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=9] unmark _spark-shell.min.RB.9, scratchpad show, floating disable, floating enable, resize set width 944 px height 511 px, move absolute position 2160 553, mark --add _spark-shell.place.RB.9, mark --add _spark-shell.area.1216.42.1888.1022.9' ] && [ "$out" = 'the window is back, in the bottom right quarter' ] \
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=9] unmark _spark-shell.min.RB.9, scratchpad show, floating disable, floating enable, border normal 1, resize set width 944 px height 511 px, move absolute position 2160 553, mark --add _spark-shell.place.RB.9, mark --add _spark-shell.area.1216.42.1888.1022.9' ] && [ "$out" = 'the window is back, in the bottom right quarter' ] \
     && ok "desktop pad keys: no spark-winpad here, Super+minus brings back the window minimized last, as before the pad (v0.133)" || bad "pad keys fallback" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
 # the window keys put a window on the pad: the pad starts, never waited for
 win_at 2160 553 944 511; rm -f "$HOME/win.log"; rc=0; out=$(XDG_RUNTIME_DIR=$H/run SPARK_SHELL_WINPAD=$H/padbin/spark-winpad SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop window down 2>&1) || rc=$?; pad_up

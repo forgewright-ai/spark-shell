@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # The window keys: a place is a half or a quarter of the workspace's area, a two by two grid;
-# sets: LAYOUT_PLACE_SLACK
+# sets: LAYOUT_PLACE_ROUND LAYOUT_PLACE_SLACK
 # reads: OS REPO TMP WM_NAME
 # past the top the window fills the area, past the bottom it goes to the pad; a free window
 # fills the area at once, or goes to the pad at once with its place
@@ -17,12 +17,13 @@ layout_window_said() {   # layout_window_said PLACE -> where the window is, in w
     esac
 }
 layout_window_near() { _wd=$(($1 - $2)); [ "${_wd#-}" -le 2 ]; }   # layout_window_near A B -- two pixels apart at most: a client's own rounding
+layout_window_about() { _wd=$(($1 - $2)); [ "${_wd#-}" -le "$LAYOUT_PLACE_ROUND" ]; }   # layout_window_about A B -- at a place, give or take the rounding split between its sides
 layout_window_fits() { [ "$1" -le $(($2 + 2)) ] && [ "$1" -ge $(($2 - $2 / 8)) ]; }   # layout_window_fits GOT WANT -- a size that fills its place: a terminal rounds itself down to whole cells (foot's 1918x537 for 1920x540), an eighth at most
 layout_window_place() {   # layout_window_place RX RY RW RH X Y W H -> the place a floating window's rect sits at on that area, or free
     for _wp in FF LF RF FT FB LT RT LB RB; do
         # shellcheck disable=SC2046   # four numbers, split on purpose
         set -- "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" $(layout_window_at "$_wp" "$5" "$6" "$7" "$8")
-        if layout_window_near "$1" "$9" && layout_window_near "$2" "${10}" && layout_window_fits "$3" "${11}" && layout_window_fits "$4" "${12}"; then echo "$_wp"; return; fi
+        if layout_window_about "$1" "$9" && layout_window_about "$2" "${10}" && layout_window_fits "$3" "${11}" && layout_window_fits "$4" "${12}"; then echo "$_wp"; return; fi
         set -- "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8"
     done
     echo free
@@ -42,6 +43,7 @@ layout_window_next() {   # layout_window_next KEY PLACE -> the place the key tak
 layout_place_marks() { printf ', mark --add _spark-shell.place.%s.%s, mark --add _spark-shell.area.%s.%s.%s.%s.%s' "$1" "$2" "$3" "$4" "$5" "$6" "$2"; }   # layout_place_marks PLACE ID X Y W H -> the place and the area a window wears, after a command
 layout_place_unmarks() { [ "$1" = - ] || { printf '%s\n' "$1" | tr ',' '\n' | grep . | sed 's/^/unmark /; s/$/, /' | tr -d '\n'; }; }   # layout_place_unmarks MARKS|- -> "unmark M, " for each of a comma list
 LAYOUT_PLACE_SLACK=32   # twice the outer gap and more: how far sway itself may move a placed window when the area's corner moves
+LAYOUT_PLACE_ROUND=16   # a client rounds its size down to its own grid, a terminal to whole cells: that much is split between the two sides, so the gaps stay even; a window shorter than that lost room and is resized back
 layout_refit_soon() {   # a refit half a second on and again a second later: sway lays out a bar or a screen a moment after the command; only under a real sway
     wm_live || return 0
     ( sleep 0.5; sh "$REPO/spark-shell" desktop window refit; sleep 1; sh "$REPO/spark-shell" desktop window refit ) </dev/null >/dev/null 2>&1 &
@@ -85,11 +87,18 @@ layout_window_refit() {   # layout_window_refit -- after layout_window read the 
         fi
         # shellcheck disable=SC2046   # four numbers, split on purpose
         set -- $(layout_window_at "$_rk" "$_ax" "$_ay" "$_aw" "$_ah")
-        if layout_window_near "$_rx" "$1" && layout_window_near "$_ry" "$2" && layout_window_fits "$_rw" "$3" && layout_window_fits "$_rh" "$4"; then
+        # a client that has settled on its own grid keeps the size it chose, and the pixels it left over are
+        # split between the two sides; one that lost room is resized back to its place first
+        _rdw=$(($3 - _rw)); _rdh=$(($4 - _rh)); _rtx=$1; _rty=$2; _rsp=''
+        if [ "$_rdw" -ge 0 ] && [ "$_rdw" -le "$LAYOUT_PLACE_ROUND" ] && [ "$_rdh" -ge 0 ] && [ "$_rdh" -le "$LAYOUT_PLACE_ROUND" ]; then
+            _rsp=1; _rtx=$(($1 + _rdw / 2)); _rty=$(($2 + _rdh / 2))
+        fi
+        if layout_window_near "$_rx" "$_rtx" && layout_window_near "$_ry" "$_rty" && layout_window_fits "$_rw" "$3" && layout_window_fits "$_rh" "$4"; then
             [ "$_rq" != - ] || wm_on "con_id=$_ri" "mark --add _spark-shell.area.$_ax.$_ay.$_aw.$_ah.$_ri" </dev/null >/dev/null 2>&1 || :   # there already
             continue
         fi
-        _rc="resize set width $3 px height $4 px, move absolute position $1 $2, $(layout_place_unmarks "$_rq")mark --add _spark-shell.area.$_ax.$_ay.$_aw.$_ah.$_ri"
+        _rc="move absolute position $_rtx $_rty, $(layout_place_unmarks "$_rq")mark --add _spark-shell.area.$_ax.$_ay.$_aw.$_ah.$_ri"
+        [ -n "$_rsp" ] || _rc="resize set width $3 px height $4 px, $_rc"
         wm_on "con_id=$_ri" "$_rc" </dev/null >/dev/null 2>&1 && _rm=$((_rm + 1)) || :
     done < "$TMP/refit"
     [ "$_rm" = 0 ] || winpad_look
@@ -136,9 +145,9 @@ layout_window_new() {   # layout_window_new -- after layout_window read the tree
                 layout_window_covered "$TMP/new" "$@" || { _nn=$_np; break; }
             done
             if [ -n "$_nn" ]; then
-                _nc="$_nc, floating enable, resize set width $3 px height $4 px, move absolute position $1 $2$(layout_place_marks "$_nn" "$_ni" "$_nx" "$_ny" "$_nw" "$_nh")"; _ns="is $(layout_window_said "$_nn")"
+                _nc="$_nc, floating enable, border ${BORDER:-normal 1}, resize set width $3 px height $4 px, move absolute position $1 $2$(layout_place_marks "$_nn" "$_ni" "$_nx" "$_ny" "$_nw" "$_nh")"; _ns="is $(layout_window_said "$_nn")"
             else
-                _nc="$_nc, floating enable, resize set width $((_nw * 2 / 3)) px height $((_nh * 2 / 3)) px, move position center"; _ns='floats at two thirds of the screen, centered: no place is free'
+                _nc="$_nc, floating enable, border ${BORDER:-normal 1}, resize set width $((_nw * 2 / 3)) px height $((_nh * 2 / 3)) px, move position center"; _ns='floats at two thirds of the screen, centered: no place is free'
             fi
         fi
     fi
@@ -164,10 +173,10 @@ layout_window_from() {   # layout_window_from WHERE -> the command and its words
         LF|RF|FT|FB|LT|RT|LB|RB)
             # shellcheck disable=SC2046   # four numbers, split on purpose
             set -- "$1" $(layout_window_at "$1" "$_dax" "$_day" "$_daw" "$_dah")
-            _dc="${_dc}floating enable, resize set width $4 px height $5 px, move absolute position $2 $3$(layout_place_marks "$1" "$_did" "$_dax" "$_day" "$_daw" "$_dah")"; _ds=$(layout_window_said "$1") ;;
+            _dc="${_dc}floating enable, border ${BORDER:-normal 1}, resize set width $4 px height $5 px, move absolute position $2 $3$(layout_place_marks "$1" "$_did" "$_dax" "$_day" "$_daw" "$_dah")"; _ds=$(layout_window_said "$1") ;;
         *)  # shellcheck disable=SC2046   # four numbers, split on purpose
             set -- $(printf '%s\n' "$1" | tr '.' ' ')
-            _dc="${_dc}floating enable, resize set width $3 px height $4 px, move absolute position $1 $2"; _ds="back where it was" ;;
+            _dc="${_dc}floating enable, border ${BORDER:-normal 1}, resize set width $3 px height $4 px, move absolute position $1 $2"; _ds="back where it was" ;;
     esac
 }
 layout_window() {   # layout_window float|left|right|up|down|max|min|toggle|restore [ID] | move DIR | back | refit | new -- the focused window, or the window ID; every placed window in sight; the window just opened (the sway rule's)
@@ -208,7 +217,7 @@ layout_window() {   # layout_window float|left|right|up|down|max|min|toggle|rest
         from) layout_window_from "$_dfrom" ;;
         move) layout_window_move "$_dmv" ;;
         float) if [ "$3" = floating_con ]; then _dc="${_du}${_dun}floating disable, mark --add _spark-shell.yours.$2"; _ds="tiled"   # tiled by the person: a new window's rule leaves it tiled
-            else _dc="${_dfs}${_du}${_dun}floating enable, resize set width $(($7 * 2 / 3)) px height $(($8 * 2 / 3)) px, move position center"; _ds="floating"; fi ;;
+            else _dc="${_dfs}${_du}${_dun}floating enable, border ${BORDER:-normal 1}, resize set width $(($7 * 2 / 3)) px height $(($8 * 2 / 3)) px, move position center"; _ds="floating"; fi ;;
         *) [ -z "$_dwid" ] || case $_dk in left|right|up|down) _dp=free ;; esac   # a window named by its ID goes to the half the word says
             _dn=$(layout_window_next "$_dk" "$_dp")
             [ -z "$_dwid" ] || case $_dk in up) _dn=FT ;; down) _dn=FB ;; esac
@@ -222,7 +231,7 @@ layout_window() {   # layout_window float|left|right|up|down|max|min|toggle|rest
                 if [ "$_dn" = FF ]; then _dfm=$_dp; [ "$_dfm" != free ] || { _dfm=$(printf '%s' "$_dr" | tr ' ' '.'); [ "$3" = floating_con ] || _dfm=tiled; }; _dfm=", mark --add _spark-shell.from.$_dfm.$2"; fi
                 # shellcheck disable=SC2046   # four numbers, split on purpose
                 set -- "$@" $(layout_window_at "$_dn" "$5" "$6" "$7" "$8")
-                _dc="${_dfs}${_dtm}${_dun}floating enable, resize set width ${11} px height ${12} px, move absolute position $9 ${10}$(layout_place_marks "$_dn" "$2" "$5" "$6" "$7" "$8")$_dfm"; _ds=$(layout_window_said "$_dn")
+                _dc="${_dfs}${_dtm}${_dun}floating enable, border ${BORDER:-normal 1}, resize set width ${11} px height ${12} px, move absolute position $9 ${10}$(layout_place_marks "$_dn" "$2" "$5" "$6" "$7" "$8")$_dfm"; _ds=$(layout_window_said "$_dn")
             fi ;;
     esac
     wm_on "con_id=$2" "$_dc" >/dev/null 2>&1 || refuse "$WM_NAME refused: $_dc"
@@ -258,7 +267,7 @@ layout_window_restore() {   # layout_window_restore [ID] -- the window ID from t
             # shellcheck disable=SC2046,SC2086   # four numbers, split on purpose
             set -- $(layout_window_at "$_dk" $_da)
             # shellcheck disable=SC2086   # four numbers, split on purpose
-            _dc="$_dc, floating disable, floating enable, resize set width $3 px height $4 px, move absolute position $1 $2$(layout_place_marks "$_dk" "$_di" $_da)"; _ds=$(layout_window_said "$_dk") ;;
+            _dc="$_dc, floating disable, floating enable, border ${BORDER:-normal 1}, resize set width $3 px height $4 px, move absolute position $1 $2$(layout_place_marks "$_dk" "$_di" $_da)"; _ds=$(layout_window_said "$_dk") ;;
     esac
     wm_on "con_id=$_di" "$_dc" >/dev/null 2>&1 || refuse "$WM_NAME refused: $_dc"
     winpad_look

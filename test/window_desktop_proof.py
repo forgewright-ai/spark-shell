@@ -77,10 +77,14 @@ def nodes(node):
 
 
 def fills(got, want):
+    """Does the window fill its place? A client that rounds its size down to its own grid leaves up to
+    LAYOUT_PLACE_ROUND over, and the desktop splits that between the two sides, so the window sits
+    anywhere from the place's corner to the corner plus what it left over."""
     gx, gy, gw, gh = got
     wx, wy, ww, wh = want
-    return (abs(gx - wx) <= 2 and abs(gy - wy) <= 2 and ww - ww // 8 <= gw <= ww + 2
-            and wh - wh // 8 <= gh <= wh + 2)
+    ox, oy = max(0, min(16, ww - gw)), max(0, min(16, wh - gh))
+    return (wx - 2 <= gx <= wx + ox + 2 and wy - 2 <= gy <= wy + oy + 2
+            and ww - ww // 8 <= gw <= ww + 2 and wh - wh // 8 <= gh <= wh + 2)
 
 
 def places(area):
