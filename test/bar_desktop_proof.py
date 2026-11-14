@@ -834,8 +834,15 @@ class Desk:
         return {k: rgb(look.get(k) or env.get("BAR_" + k.upper()) or "000000") for k in LOOK[:-1]}
 
     def grab(self, x, y, w, h):
-        raw = subprocess.run(["grim", "-t", "ppm", "-g", "%d,%d %dx%d" % (x, y, w, h), "-"], env=self.env, capture_output=True, check=True, timeout=20).stdout
-        return Img(*ppm(raw))
+        # grim ended by a signal is the capture's fall, not the bar's (a container's small shared memory can run
+        # out for a moment while a wallpaper is drawn): it is asked again, three times at most
+        for left in (2, 1, 0):
+            got = subprocess.run(["grim", "-t", "ppm", "-g", "%d,%d %dx%d" % (x, y, w, h), "-"], env=self.env, capture_output=True, timeout=20)
+            if got.returncode == 0:
+                return Img(*ppm(got.stdout))
+            if got.returncode > 0 or not left:
+                got.check_returncode()
+            time.sleep(0.5)
 
     def shot(self, name, output=OUT):
         self.shots += 1
