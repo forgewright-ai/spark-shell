@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.147
+## v0.146.1
 
 - A window that floats keeps the desktop's frame, so its buttons stay
   where they are. An app that draws its own, like Firefox, gives them up
