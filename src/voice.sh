@@ -1,9 +1,10 @@
 # shellcheck extended-analysis=false
 # --- voice: the ear hears, the words go in the terminal's line, the band shows it
-# sets: EAR_BIN VOICE_DIR VOICE_MODEL_SHA256 VOICE_MODEL_URL VOICE_PUNCT_SHA256 VOICE_PUNCT_URL VOICE_REWRITE_SHA256 VOICE_REWRITE_URL VOICE_RUNTIME_SHA256 VOICE_RUNTIME_URL
+# sets: EAR_BIN VOICE_DIR VOICE_MODEL_SHA256 VOICE_MODEL_URL VOICE_PUNCT_SHA256 VOICE_PUNCT_URL VOICE_REWRITE_SHA256 VOICE_REWRITE_URL VOICE_RUNTIME_SHA256 VOICE_RUNTIME_URL VOICE_TAP_MS
 # reads: DIALOG_URL OS REPO STATE_DIR TMP
 EAR_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-ear
 VOICE_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/ear   # the engine: lib/ and model/
+VOICE_TAP_MS=${SPARK_SHELL_VOICE_TAP_MS:-300}; case $VOICE_TAP_MS in ''|*[!0-9]*) VOICE_TAP_MS=300 ;; esac   # a tap: the key up within this of the key down; tests: longer, where two starts take more than that
 VOICE_RUNTIME_URL=${SPARK_SHELL_VOICE_RUNTIME_URL:-https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-linux-x64-shared-lib.tar.bz2}   # sherpa-onnx; file:// or none in the tests
 VOICE_RUNTIME_SHA256=532c45bbd41036d83cd70606797529aa8086c2053395a58967736c727625b120
 VOICE_MODEL_URL=${SPARK_SHELL_VOICE_MODEL_URL:-https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-80ms-int8.tar.bz2}   # NVIDIA's streaming FastConformer, English
@@ -86,7 +87,7 @@ voice_release() {   # voice_release [wrap] -- the key up
     _vr=$(voice_want_stamp) && [ -n "$_vr" ] || { voice_stop || :; return 0; }   # the press is listening already
     _vk=$(voice_want_kind)
     rm -f "$(voice_want)"
-    [ "$_vr" != 0 ] && [ $(( $(voice_now_ms) - _vr )) -lt 300 ] || { voice_stop || :; return 0; }   # held: the words stay
+    [ "$_vr" != 0 ] && [ $(( $(voice_now_ms) - _vr )) -lt "$VOICE_TAP_MS" ] || { voice_stop || :; return 0; }   # held: the words stay
     [ "$_vk" = wrap ] || home_open   # a tap of the plain key opens home; the wrapping key is for holding
 }
 voice_toggle() {   # the mic clicked
@@ -108,7 +109,7 @@ voice_no() {   # voice_no WHY [DETAIL] -- nothing is heard, said where each is r
 }
 voice_drop_want() { [ "$(voice_want_token)" = "${_vlw:-}" ] || return 0; rm -f "$(voice_want)"; }   # only the file this session was started for
 voice_listen() {   # voice_listen hold|now -- the session: the engine's words into the focused terminal's line while its own want stands
-    [ "$1" = now ] || { sleep 0.3; [ -f "$(voice_want)" ] || return 0; }   # a tap: the release took the file
+    [ "$1" = now ] || { sleep "$((VOICE_TAP_MS / 1000)).$(printf '%03d' "$((VOICE_TAP_MS % 1000))")"; [ -f "$(voice_want)" ] || return 0; }   # a tap: the release took the file
     _vlw=$(voice_want_token) || _vlw=''   # the session answers for this want alone; a newer one takes over
     _vlk=$(voice_want_kind) || _vlk=plain   # plain words, or your prefix and suffix around them
     _vlc=$(voice_engine) || { voice_no "nothing can hear here (spark-shell on desktop)"; return 0; }
