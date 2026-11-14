@@ -24,14 +24,14 @@ status leaves and no click: workspaces go for it, a module never.
 
 The status is spark-shell's: the bar runs SPARK_SHELL bar status with
 SPARK_BAR=1, in a process group of its own, and reads the i3bar protocol as
-swaybar does, a line a refresh. A block's name is its module, full_text is
+sway's bar does, a line a refresh. A block's name is its module, full_text is
 pango markup, and the bar reads its own fields too: cells (the character
 cells kept), optional (a label, dropped first), label (the control's name
 and state), control (toggle, level or open), state (ok, unavailable or
 error). The module logo is the mark. The block named look is no module: it
 says the look, each value a string (fg, accent, muted, ground, lit and
 attention as rrggbb, alpha as 0 to 1), and every bar is drawn again in a
-look that changed. Clicks go to its stdin as swaybar writes them (name,
+look that changed. Clicks go to its stdin as sway's bar writes them (name,
 instance, button, x, y, relative_x, relative_y, width, height; buttons
 1 left, 2 middle, 3 right, 4 wheel up, 5 wheel down). When the status ends,
 its stream or the program itself, its group is told to end and it is started
@@ -259,12 +259,13 @@ fn run() -> Result<(), String> {
                     Err(e) => return Err(e),
                 }
             }
-            // a workspace or an output changed: the workspaces are read again, once; the mode: the mode is
+            // a workspace or an output changed: the workspaces are read again, once. The mode is read after any
+            // event: a reload puts it back to default and says so with a workspace event alone
             let events = sway::split(&mut buf);
             if events.iter().any(|(kind, _)| *kind != sway::EVENT_MODE) {
                 app.read_workspaces();
             }
-            if events.iter().any(|(kind, _)| *kind == sway::EVENT_MODE) && !app.stop {
+            if !events.is_empty() && !app.stop {
                 app.read_mode();
             }
             Ok(PostAction::Continue)

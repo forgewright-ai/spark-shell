@@ -37,13 +37,26 @@ impl Feed {
     /// Starts `PROGRAM bar status` with SPARK_BAR=1, in a process group of its own; its lines and its
     /// end are sent to `tx` under `gen`.
     pub fn start(program: &str, gen: u64, tx: Sender<Said>) -> std::io::Result<Feed> {
-        let mut child = Command::new(program)
+        let mut command = Command::new(program);
+        command
             .args(["bar", "status"])
             .env("SPARK_BAR", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .process_group(0)
-            .spawn()?;
+            .process_group(0);
+        // the bar keeps the signals it reads blocked, and a child inherits that: a shell that leaves the mask as
+        // it found it would never get its redraw (USR1) or its end (TERM). The child starts with none blocked
+        unsafe {
+            command.pre_exec(|| {
+                let mut none = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+                libc::sigemptyset(none.as_mut_ptr());
+                match libc::sigprocmask(libc::SIG_SETMASK, none.as_ptr(), std::ptr::null_mut()) {
+                    0 => Ok(()),
+                    _ => Err(std::io::Error::last_os_error()),
+                }
+            });
+        }
+        let mut child = command.spawn()?;
         let pid = libc::pid_t::try_from(child.id()).unwrap_or(0);
         let stdin = child.stdin.take();
         if let Some(i) = &stdin {
@@ -166,6 +179,30 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(5));
         }
+    }
+
+    #[test]
+    fn a_child_starts_with_no_signal_blocked() {
+        // as the bar does: the signals it reads are blocked where the child is started
+        let mut set = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+        unsafe {
+            libc::sigemptyset(set.as_mut_ptr());
+            libc::sigaddset(set.as_mut_ptr(), libc::SIGUSR1);
+            libc::sigaddset(set.as_mut_ptr(), libc::SIGTERM);
+            libc::pthread_sigmask(libc::SIG_BLOCK, set.as_ptr(), std::ptr::null_mut());
+        }
+        // no shell between: one may clear the mask itself, another keeps what it is handed
+        let path = std::env::temp_dir().join(format!("spark-bar-test-{}-mask", std::process::id()));
+        let says_its_mask = "#!/usr/bin/awk -f\nBEGIN { while ((getline l < \"/proc/self/status\") > 0) if (l ~ /^SigBlk/) print l; exit }\n";
+        std::fs::write(&path, says_its_mask).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let (tx, rx) = channel::<Said>();
+        let feed = Feed::start(&path.to_string_lossy(), 1, tx).unwrap();
+        let (lines, _) = heard(&rx, 1, vec![], 0, |lines, ends| !lines.is_empty() && ends >= 1);
+        feed.end();
+        let _ = std::fs::remove_file(&path);
+        let mask = lines[0].trim_start_matches("SigBlk:").trim();
+        assert!(!mask.is_empty() && mask.bytes().all(|b| b == b'0'), "the child's blocked signals: {mask}");
     }
 
     #[test]
