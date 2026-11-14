@@ -3940,7 +3940,8 @@ voice_tree foot; vclean; vrun --listen now
     && ok "desktop voice: the engine's words typed into the terminal's line as they come, an erase as backspaces; at rest after (v0.144)" || bad "voice typed" "rc=$rc $out $(cat "$HOME/wtype.log" "$vstate" 2>&1)"
 vclean; vrun --listen hold
 [ "$rc" = 0 ] && [ ! -e "$HOME/wtype.log" ] && [ ! -e "$HOME/notify.log" ] && ok "desktop voice: a tap, the key up within 0.3 s, hears nothing (v0.144)" || bad "voice tap" "rc=$rc $out"
-vclean; vrun press; vrun release; sleep 0.5; _i=0; while [ "$_i" -lt 50 ] && ! grep -q '^home ' "$HOME/home.log" 2>/dev/null; do sleep 0.1; _i=$((_i + 1)); done   # home opens apart: waited for, a busy machine takes longer
+# a tap is the key up within 0.3 s of the key down, by the clock: on a busy machine the two calls can take longer than that, so the tap is made again, five times at most
+_vt=0; while :; do vclean; vrun press; vrun release; sleep 0.5; _i=0; while [ "$_i" -lt 20 ] && ! grep -q '^home ' "$HOME/home.log" 2>/dev/null; do sleep 0.1; _i=$((_i + 1)); done; _vt=$((_vt + 1)); grep -q '^home ' "$HOME/home.log" 2>/dev/null || [ "$_vt" -ge 5 ] && break; done
 [ "$rc" = 0 ] && grep -q '^home ' "$HOME/home.log" && [ ! -e "$HOME/wtype.log" ] && ok "desktop voice press then release at once: home opens, as Super+Space did (v0.144)" || bad "voice press tap" "rc=$rc $out $(cat "$HOME/home.log" 2>&1)"
 vclean; vrun press; sleep 0.7; vrun release; sleep 0.5
 [ "$rc" = 0 ] && [ ! -e "$HOME/home.log" ] && grep -qx -- '-s 20 -- hey' "$HOME/wtype.log" && ok "desktop voice press held past 0.3 s: it listens, the release ends it, no home (v0.144)" || bad "voice press hold" "rc=$rc $out $(cat "$HOME/wtype.log" "$HOME/home.log" 2>&1)"
