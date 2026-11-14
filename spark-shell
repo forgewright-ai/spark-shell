@@ -103,6 +103,9 @@
 #   spark-shell bar top|bottom        the bar at the top or the bottom
 #   spark-shell bar text [auto|N]     the bar's text size, auto: by the screen
 #   spark-shell bar tray [on|off]     the apps' icons at the bar's end
+#   spark-shell bar pin [NAME...]     what the bar shows; pin a module to it
+#   spark-shell bar unpin NAME...     take a module off the bar
+#   spark-shell bar keys              the keyboard on the bar (Super+equal)
 #   spark-shell dialog [SECTION]      open home (Super+Space), SECTION first
 #   spark-shell dialog chat           conversation inside home
 #   spark-shell dialog about          the version, license and credits
@@ -214,6 +217,8 @@ REPO=$(cd "$(dirname "$SELF")" && pwd)
 . "$REPO/src/dialog.sh"
 # shellcheck source=src/winpad.sh
 . "$REPO/src/winpad.sh"
+# shellcheck source=src/sparkbar.sh
+. "$REPO/src/sparkbar.sh"
 # shellcheck source=src/voice.sh
 . "$REPO/src/voice.sh"
 # shellcheck source=src/semantic.sh

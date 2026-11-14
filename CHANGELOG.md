@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.147
+
+The bar is spark's own: spark-bar, a new component.
+
+- spark-bar draws the bar on every screen, at the top or the bottom: the
+  logo, the workspaces, then the modules, each in cells kept for it, so
+  nothing moves when a value changes. At the default size it is 36 px
+  tall with 16 px text and a 24 px logo.
+- A workspace's number wears the glyph family's key frame: angle
+  brackets in stone, {2} in star, [2] in banner. Star's triangles and
+  banner's Roman numbers are gone.
+- Sound is the first module you act on from the bar: the sign mutes, the
+  gauge takes a click and the wheel, the percent opens the section. A
+  device that is missing, or a change that fails, is said in the same
+  cells.
+- spark-shell bar pin and unpin choose what the bar shows (BAR_PINS). A
+  bar short of width drops modules in BAR_OVERFLOW's order.
+- Super+equal puts the keyboard on the bar: the arrows move, Enter acts,
+  Esc leaves.
+- spark-shell on desktop fetches spark-bar, pinned by sha256, and it is
+  started again if it ends. Where it cannot run, sway's bar draws the
+  line as before. With the tray on, sway's bar hosts the apps' icons
+  alone, at the bar's end.
+
 ## v0.146.1
 
 - A window that floats keeps the desktop's frame, so its buttons stay

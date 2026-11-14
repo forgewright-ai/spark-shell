@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --------------------------------------------------------------- renders
 # sets: DESKTOP_RENDERED RENDERED USER_DIRS USER_DIRS_ROLES
-# reads: CONFIG_DIR HEX_KEYS MODE NEON NEON_OLD NL OS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_SEEN POINTER_THEMES REPO SCREENS_CONF SLOT_KEYS STATE_DIR TAB TERM_APP_RE TERM_CONFIG_REL TERM_DIALOG_REL TERM_NAME THEME_KEYS TMP WALL_COVER WALL_KEYS WIN_KEYS WM_CONFIG_REL WM_NAME
+# reads: CONFIG_DIR HEX_KEYS MODE NEON NEON_OLD NL OS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_SEEN POINTER_THEMES REPO SCREENS_CONF SLOT_KEYS STATE_DIR TAB TERM_APP_RE TERM_CONFIG_REL TERM_DIALOG_REL TERM_NAME THEME_KEYS TMP WALL_COVER WALL_KEYS WIN_KEYS WM_CONFIG_REL WM_NAME WM_TRAY
 # a symlink for a file used as-is, a rendered file where a value is baked
 # in. A file marked `rendered by spark-shell` is ours to render again; any
 # other is yours and moves to <path>.bak. The first .bak stays for off; a
@@ -80,6 +80,11 @@ render_expr() {   # -> the sed script that renders a template, one s command a l
     e="$e${NL}s|@BAND_GLYPHS@|$(esc "$(winpad_buttons)")|g${NL}s|@BAND_MIC@|$(esc "$(winpad_mic)")|g"
     e="$e${NL}s|@BAR_MODE@|$(bar_mode)|g${NL}s|@BAR_FONT@|$(esc "$(bar_font "$_fs")")|g${NL}s|@BAR_LINE_FONT@|$(esc "$(bar_line_font "$_fs")")|g"
     e="$e${NL}s|@BAR_POSITION@|$BAR_POSITION|g${NL}s|@BAR_TRAY@|$(bar_tray_output)|g${NL}s|@NOTIFY_ANCHOR@|$(notify_anchor)|g"
+    # the bar's lines in sway's config: spark-bar's start, or sway's own bar where spark-bar draws none; the tray's host with the first alone
+    _rbh='/^@BAR_HOST@/d'
+    if sparkbar_draws; then e="$e${NL}s|^@BAR_OWN@||${NL}/^@BAR_SWAY@/d"; [ "$BAR_TRAY" != yes ] || _rbh='s|^@BAR_HOST@||'
+    else e="$e${NL}/^@BAR_OWN@/d${NL}s|^@BAR_SWAY@||"; fi
+    e="$e${NL}$_rbh${NL}s|@WM_TRAY@|$WM_TRAY|g"
     e="$e${NL}s|@FOOT_COLORS@|$(term_colors_section)|g${NL}s|@TERM_APPS@|$(esc "$TERM_APP_RE")|g"
     if desktop_wanted; then e="$e${NL}s|@LAYOUT_SLOTS@|yes|g"; else e="$e${NL}s|@LAYOUT_SLOTS@|no|g"; fi   # sgr.sh: the five slots in foot only where the desktop's foot.ini sets them
     e="$e${NL}s|@SCREENS_CONF@|$(esc "$SCREENS_CONF")|g${NL}s|@IDLE_EXEC@|$(esc "$(idle_exec)")|g${NL}s|@KB_LAYOUT@|$(esc "$(kb_line layout)")|g${NL}s|@KB_VARIANT@|$(esc "$(kb_line variant)")|g"
@@ -170,6 +175,7 @@ desktop_reload() {   # desktop_reload [WHY] -- a running sway reads its new conf
     wall_cover; [ -z "$WALL_COVER" ] || sleep 0.25   # drawn before the reload stops sway's own
     wm_reload >/dev/null 2>&1 || { wall_uncover; return 0; }
     wall_uncover
+    sparkbar_again   # spark's bar outlives a reload: started again here, it runs this spark-shell and takes what changed
     winpad_again   # the bar may have started again: a pad keeping its strip starts after it, so the new bar is not inside that strip
     # a reload gives the gaps to new workspaces only: the ones open take them now
     [ -z "${GAPS_INNER:-}" ] || { wm_cmd "gaps inner all set $GAPS_INNER" >/dev/null 2>&1; wm_cmd "gaps outer all set $GAPS_OUTER" >/dev/null 2>&1; } || :
@@ -233,7 +239,7 @@ desktop_look_apply() {   # on and on desktop: the renders, the pointer, and a ru
     elif bar_stale; then desktop_reload "the bar starts again on this spark-shell"; fi   # after an update the bar still ran the old code until a logout: a reload starts it on the new
     look_burst   # the open terminals take the look too: after an upgrade, the slots their new shells draw in
 }
-look_inputs() { printf '%s %s' "$(winpad_cmd 2>/dev/null || echo -)" "$(voice_here && echo voice || echo -)"; }   # what the titles are rendered from, beyond the look
+look_inputs() { printf '%s %s %s' "$(winpad_cmd 2>/dev/null || echo -)" "$(voice_here && echo voice || echo -)" "$(sparkbar_cmd 2>/dev/null || echo -)"; }   # what the titles and the bar's lines are rendered from, beyond the look
 desktop_apply() {
     _dai=$(look_inputs)
     desktop_look_apply
@@ -246,9 +252,11 @@ desktop_apply() {
     dialog_install
     semantic_install
     wallpaper_install
+    sparkbar_install
     winpad_install
     voice_install
-    [ "$(look_inputs)" = "$_dai" ] || { EXPR=$(render_expr); desktop_look_apply; }   # a component came: the titles follow
+    [ "$(look_inputs)" = "$_dai" ] || { EXPR=$(render_expr); desktop_look_apply; }   # a component came: the titles and the bar's lines follow
+    sparkbar_session   # the bar first: the pad starts after it
     winpad_session
     motion_row
     mcp_apply

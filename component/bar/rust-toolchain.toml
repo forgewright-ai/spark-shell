@@ -1,0 +1,7 @@
+# The bar's toolchain, pinned like the player's: the release binary is
+# reproducible from this file, Cargo.lock and the tree.
+[toolchain]
+channel = "1.99.1"
+profile = "minimal"
+components = ["rustfmt", "clippy"]
+targets = ["x86_64-unknown-linux-gnu"]

@@ -1,8 +1,9 @@
 # shellcheck extended-analysis=false
 # --- the config: the readers of the settings and the theme
-# sets: ANIMATION_NAMES ANIM_PAIRED CONFIG_UNSET GLYPH_FAMILIES KB_RE PATH_REFUSED PATH_SAID SAVER_NAMES THEME_KEYS
+# sets: ANIMATION_NAMES ANIM_PAIRED BAR_MODULES CONFIG_UNSET GLYPH_FAMILIES KB_RE PATH_REFUSED PATH_SAID SAVER_NAMES THEME_KEYS
 # reads: CONFIG CONFIG_DIR OS REPO TERM_NAME TMP
 GLYPH_FAMILIES='stone star banner'
+BAR_MODULES='workspaces pad lan bt wifi out mic due notifications light kb bat clock'   # what the bar can show, in its order
 # load_env FILE [env] -> each KEY=value exported; the file wins over the
 # environment (sway's children inherit login's keys), `env` keeps a set key
 load_env() {
@@ -25,7 +26,7 @@ load_env() {
     done < "$1"
 }
 # the keys spark-shell exports; a shell or desktop it starts gets them unset
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u BAR_POSITION -u BAR_TEXT -u BAR_TRAY -u WINDOWS -u LOGIN -u DIALOG_SEMANTIC -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u DIALOG_ICONS -u DIALOG_SPACING -u BAR_GLYPHS -u BAR_WORKSPACES -u GLYPH_FAMILY -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START -u WINPAD_PLACE -u WINPAD_WIDTH -u WINPAD_SIDE_WIDTH -u WINPAD_BAND -u WINPAD_VIEW -u WINPAD_HEIGHT -u VOICE -u VOICE_ENGINE -u VOICE_PREFIX -u VOICE_SUFFIX'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u BAR_POSITION -u BAR_TEXT -u BAR_TRAY -u BAR_PINS -u BAR_OVERFLOW -u WINDOWS -u LOGIN -u DIALOG_SEMANTIC -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u DIALOG_ICONS -u DIALOG_SPACING -u BAR_GLYPHS -u BAR_WORKSPACES -u GLYPH_FAMILY -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START -u WINPAD_PLACE -u WINPAD_WIDTH -u WINPAD_SIDE_WIDTH -u WINPAD_BAND -u WINPAD_VIEW -u WINPAD_HEIGHT -u VOICE -u VOICE_ENGINE -u VOICE_PREFIX -u VOICE_SUFFIX'
 
 # short_host -> this machine's short name; on a Mac LocalHostName, by
 # scutil's full path (/usr/sbin is not on every PATH; hostname -s moves)
@@ -63,12 +64,16 @@ config_load() {
     : "${BAR_POSITION:=top}"               # where the bar sits: top or bottom
     : "${BAR_TEXT:=auto}"                  # the bar's text size: auto (the text size, larger on a screen of many pixels) or 6 to 40
     : "${BAR_TRAY:=no}"                    # the apps' own icons (the tray) at the bar's end: yes or no
+    : "${BAR_PINS:=}"                      # the modules pinned to the bar, a space between; empty: every one this machine has
+    : "${BAR_OVERFLOW:=due light bt lan wifi kb mic out notifications bat clock}"   # the modules that leave a bar short of width, the first first
     : "${WINDOWS:=split}"                  # how new windows sit on a workspace: split (side by side), tabs or stacked
     : "${LOGIN:=no}"                       # the login screen on tty1: yes or no
     case $WINDOWS in split|tabs|stacked) ;;
         *) echo "spark-shell: WINDOWS=$WINDOWS in $CONFIG: split, tabs or stacked" >&2; exit 1 ;; esac
     case $BAR_POSITION in top|bottom) ;; *) echo "spark-shell: BAR_POSITION=$BAR_POSITION in $CONFIG: top or bottom" >&2; exit 1 ;; esac
     case $BAR_TEXT in auto|[6-9]|[1-3][0-9]|40) ;; *) echo "spark-shell: BAR_TEXT=$BAR_TEXT in $CONFIG: auto, or a size from 6 to 40" >&2; exit 1 ;; esac
+    words_in "$BAR_PINS" "$BAR_MODULES" || { echo "spark-shell: BAR_PINS=$BAR_PINS in $CONFIG: modules of the bar, a space between ($BAR_MODULES), or nothing for every one" >&2; exit 1; }
+    words_in "$BAR_OVERFLOW" "${BAR_MODULES#workspaces }" || { echo "spark-shell: BAR_OVERFLOW=$BAR_OVERFLOW in $CONFIG: modules of the bar, a space between, the first to leave first (${BAR_MODULES#workspaces })" >&2; exit 1; }
     alpha_ok "$ALPHA" || { echo "spark-shell: ALPHA=$ALPHA in $CONFIG: 0 to 1 (0.95)" >&2; exit 1; }
     font_ok "$FONT" || { echo "spark-shell: FONT=$FONT in $CONFIG: a face and its size as $TERM_NAME takes them (Monaspace Neon:size=11): letters, digits, spaces and : = . + _ -" >&2; exit 1; }
     wall_value_ok "$WALLPAPER" || { echo "spark-shell: WALLPAPER=$WALLPAPER in $CONFIG: default, a drawing's name, #rrggbb or a picture's full path, with $PATH_SAID" >&2; exit 1; }
@@ -144,8 +149,9 @@ config_load() {
         input_valid "$k" "$v" || { echo "spark-shell: invalid $k in $CONFIG" >&2; exit 1; }
     done
     export POINTER_TAP POINTER_SCROLL POINTER_SPEED KEY_REPEAT_DELAY KEY_REPEAT_RATE KEY_CAPS
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR BAR_POSITION BAR_TEXT BAR_TRAY WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK DIALOG_SEMANTIC DIALOG_ANIMATION DIALOG_ICONS DIALOG_SPACING BAR_GLYPHS GLYPH_FAMILY WALLPAPER_MOTION LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB VOICE VOICE_ENGINE VOICE_PREFIX VOICE_SUFFIX WINPAD_PLACE WINPAD_WIDTH WINPAD_SIDE_WIDTH WINPAD_BAND WINPAD_VIEW WINPAD_HEIGHT
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR BAR_POSITION BAR_TEXT BAR_TRAY BAR_PINS BAR_OVERFLOW WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK DIALOG_SEMANTIC DIALOG_ANIMATION DIALOG_ICONS DIALOG_SPACING BAR_GLYPHS GLYPH_FAMILY WALLPAPER_MOTION LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB VOICE VOICE_ENGINE VOICE_PREFIX VOICE_SUFFIX WINPAD_PLACE WINPAD_WIDTH WINPAD_SIDE_WIDTH WINPAD_BAND WINPAD_VIEW WINPAD_HEIGHT
 }
+words_in() { for _wi in $1; do case " $2 " in *" $_wi "*) ;; *) return 1 ;; esac; done; }   # words_in WORDS KNOWN -> 0 when each of WORDS is one of KNOWN
 winpad_place_ok() { printf '%s\n' "$1" | grep -qE '^((top|bottom|left|right) (center|start|end|[0-9]{1,5})|free [0-9]{1,5} [0-9]{1,5})$'; }   # winpad_place_ok PLACE -> 0 for an edge and where along it (bottom center, left 300), or free X Y
 winpad_width_ok() { case $1 in ''|*[!0-9]*|0?*) return 1 ;; 0) [ "$2" = 0 ] ;; *) [ "${#1}" -le 4 ] && [ "$1" -ge "$2" ] ;; esac; }   # winpad_width_ok N LEAST -> 0 for whole pixels, LEAST to 9999 (0 alone where LEAST is 0)
 ANIMATION_NAMES='moon ripple tide embers sun flight'   # gallery/animation's pieces, in the theme row's order; none is no motion

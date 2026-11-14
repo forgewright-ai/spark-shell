@@ -75,40 +75,58 @@ client.unfocused        #@PANEL_LOW@ #@PANEL_LOW@ #@HEX_MUTED@ #@PANEL_LOW@ #@PA
 client.urgent           #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@HEX_BG@ #@HEX_ANSI_1@ #@HEX_ANSI_1@
 
 # The bar, at the top of the screen or at its bottom (BAR_POSITION): the
-# workspaces, then what this machine has of lan, wifi, bluetooth, sound
-# out and mic, notifications waiting, battery, and the date and time.
-# spark-shell bar status draws it every 15 s and at once after a click.
-# The two gauges take the mouse: a click sets, the wheel nudges, a right
-# click mutes. A click on any other block opens its panel. spark-shell
-# bar top|bottom moves it, spark-shell bar off --desktop hides it. Its
-# text is BAR_TEXT's size, or the text size made larger on a screen of
-# many pixels (auto). The apps' own icons (the tray) are off unless
-# BAR_TRAY=yes: each app draws its icon in its own colors and shapes, and
-# the bar's glyphs are the palette's. The AI and the machine stay on
-# tmux's line.
-bar {
-    position @BAR_POSITION@
-    mode @BAR_MODE@
-    font pango:@BAR_LINE_FONT@
-    tray_output @BAR_TRAY@
-    status_command @REPO@/spark-shell bar status
-    workspace_buttons yes
-    # workspaces are named number:glyph (spark-shell bar status names them): the glyph alone
-    strip_workspace_numbers yes
-    status_padding 2
-    status_edge_padding 10
-    colors {
-        background #@HEX_BG@@BAR_ALPHA@
-        statusline #@HEX_FG@
-        separator #@HEX_MUTED@
-        # border background text
-        focused_workspace #@HEX_ACCENT@ #@HEX_ACCENT@ #@HEX_BG@
-        active_workspace #@HEX_MUTED@ #@HEX_MUTED@ #@HEX_BG@
-        inactive_workspace #@HEX_BG@@BAR_ALPHA@ #@HEX_BG@@BAR_ALPHA@ #@HEX_MUTED@
-        urgent_workspace #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@HEX_BG@
-        binding_mode #@HEX_ACCENT@ #@HEX_ACCENT@ #@HEX_BG@
-    }
-}
+# workspaces, each number in the glyph family's frame, then what this
+# machine has of lan, wifi, bluetooth, sound out and mic, notifications
+# waiting, battery, and the date and time.
+# spark-bar draws it from spark-shell bar status, a line every 15 s and
+# at once after a click; where spark-bar cannot run, or the bar is
+# hidden, sway's own bar runs the same line. Sound's sign mutes, its
+# gauge takes a click and the wheel, its percent opens the section; a
+# click on any other block opens its section. spark-shell bar pin and
+# unpin choose what it shows, bar top|bottom moves it, bar off --desktop
+# hides it. Its text is BAR_TEXT's size, or the text size made larger on
+# a screen of many pixels (auto). The apps' own icons (the tray) are off
+# unless BAR_TRAY=yes: beside spark-bar, sway's bar hosts them alone,
+# over the strip spark-bar leaves clear at its right end on the first
+# screen, placed by spark-shell bar tray --place once it runs.
+@BAR_OWN@exec @REPO@/spark-shell bar start
+@BAR_HOST@bar {
+@BAR_HOST@    id @WM_TRAY@
+@BAR_HOST@    position @BAR_POSITION@
+@BAR_HOST@    mode invisible
+@BAR_HOST@    hidden_state show
+@BAR_HOST@    modifier none
+@BAR_HOST@    tray_output @BAR_TRAY@
+@BAR_HOST@    workspace_buttons no
+@BAR_HOST@    binding_mode_indicator no
+@BAR_HOST@    colors {
+@BAR_HOST@        background #@HEX_BG@00
+@BAR_HOST@    }
+@BAR_HOST@}
+@BAR_HOST@exec_always @REPO@/spark-shell bar tray --place
+@BAR_SWAY@bar {
+@BAR_SWAY@    position @BAR_POSITION@
+@BAR_SWAY@    mode @BAR_MODE@
+@BAR_SWAY@    font pango:@BAR_LINE_FONT@
+@BAR_SWAY@    tray_output @BAR_TRAY@
+@BAR_SWAY@    status_command @REPO@/spark-shell bar status
+@BAR_SWAY@    workspace_buttons yes
+@BAR_SWAY@    # workspaces are named number:glyph (spark-shell bar status names them): the glyph alone
+@BAR_SWAY@    strip_workspace_numbers yes
+@BAR_SWAY@    status_padding 2
+@BAR_SWAY@    status_edge_padding 10
+@BAR_SWAY@    colors {
+@BAR_SWAY@        background #@HEX_BG@@BAR_ALPHA@
+@BAR_SWAY@        statusline #@HEX_FG@
+@BAR_SWAY@        separator #@HEX_MUTED@
+@BAR_SWAY@        # border background text
+@BAR_SWAY@        focused_workspace #@HEX_ACCENT@ #@HEX_ACCENT@ #@HEX_BG@
+@BAR_SWAY@        active_workspace #@HEX_MUTED@ #@HEX_MUTED@ #@HEX_BG@
+@BAR_SWAY@        inactive_workspace #@HEX_BG@@BAR_ALPHA@ #@HEX_BG@@BAR_ALPHA@ #@HEX_MUTED@
+@BAR_SWAY@        urgent_workspace #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@HEX_BG@
+@BAR_SWAY@        binding_mode #@HEX_ACCENT@ #@HEX_ACCENT@ #@HEX_BG@
+@BAR_SWAY@    }
+@BAR_SWAY@}
 
 # key: Super+Return opens a terminal window.
 # action: terminal.open
@@ -337,6 +355,10 @@ bindsym XF86AudioMicMute exec @REPO@/spark-shell bar volume mic
 bindsym XF86MonBrightnessUp exec @REPO@/spark-shell bar light up
 # action: desktop.bar-light-down
 bindsym XF86MonBrightnessDown exec @REPO@/spark-shell bar light down
+
+# key: Super+equal puts the keyboard on the bar: the arrows move, Enter acts.
+# action: desktop.bar-keys
+bindsym $mod+equal exec @REPO@/spark-shell bar keys
 
 mode "resize" {
     # action: resize.resize-shrink-width-10px

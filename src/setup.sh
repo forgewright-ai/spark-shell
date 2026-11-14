@@ -280,6 +280,7 @@ cmd_off() {   # cmd_off [desktop|login]
         mcp_off
         semantic_off
         voice_off
+        sparkbar_off
         machine_off
         echo "packages stay installed -- the package manager removes them if you want"
         return 0
@@ -304,6 +305,7 @@ cmd_off() {   # cmd_off [desktop|login]
     power_off
     mcp_off
     semantic_off
+    [ "$OS" = Darwin ] || sparkbar_off
     machine_off
     pm_detect
     console_off   # the palette, the font, the login screen and the boot, as they were
@@ -337,6 +339,7 @@ off_would() {   # off_would [desktop|login]
     fi
     _mo=$(mcp_mine); [ -z "$_mo" ] || row would mcp "take$_mo off spark's MCP list"
     semantic_off
+    [ "$OS" = Darwin ] || sparkbar_off
     ! machine_there || row would machine "remove what the desktop told spark's prompt line ($(files_home "$(machine_dir)"))"
     if [ "${1:-}" = desktop ]; then
         [ "$DESKTOP" = none ] || row would config "DESKTOP=none ($CONFIG)"

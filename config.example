@@ -105,6 +105,16 @@ DO_NOT_DISTURB=no
 # --desktop sets this.
 DESKTOP_BAR=yes
 
+# What is pinned to the bar: names from workspaces pad lan bt wifi out
+# mic due notifications light kb bat clock, a space between. Empty pins
+# every one. Unpinning takes the shortcut off the bar, not the device.
+# spark-shell bar pin and unpin set this. Where spark-bar cannot run,
+# sway's bar draws the bar and shows every one.
+BAR_PINS=
+
+# What leaves a bar short of width, the first name first.
+BAR_OVERFLOW=due light bt lan wifi kb mic out notifications bat clock
+
 # Where the bar sits: top or bottom. The notifications come in the right
 # corner by it. spark-shell bar top|bottom sets this.
 BAR_POSITION=top
@@ -233,9 +243,10 @@ DIALOG_SPACING=groups
 BAR_GLYPHS=signs
 
 # The glyph family: stone (the default), star or banner. It sets the
-# dialog's signs, the bar's gauges and workspaces, and the animations
-# while the dialog waits. Settings > theme changes it, and a saved theme
-# keeps it. BAR_WORKSPACES, the setting before it, is ignored.
+# dialog's signs, the bar's gauges, the frame around a workspace's
+# number, and the animations while the dialog waits. Settings > theme
+# changes it, and a saved theme keeps it. BAR_WORKSPACES, the setting
+# before it, is ignored.
 GLYPH_FAMILY=stone
 
 # Clock presentation on the bar, Calendar and idle screen.

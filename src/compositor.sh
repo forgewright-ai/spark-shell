@@ -1,11 +1,12 @@
 # shellcheck extended-analysis=false
 # --- the compositor: the one module that names it (sway)
-# sets: WM_CONFIG_REL WM_LOGIN_CONF WM_NAME WM_OWN
+# sets: WM_CONFIG_REL WM_LOGIN_CONF WM_NAME WM_OWN WM_TRAY
 # reads: REPO
 WM_NAME=sway
 WM_OWN='sway swaybar swaybg swaymsg swaylock swayidle'   # its own processes: never apps, never ended
 WM_CONFIG_REL=.config/sway/config
 WM_LOGIN_CONF=sway.conf   # the login screen's own config for it, in template/login
+WM_TRAY=spark-tray   # its bar that hosts the apps' icons alone, beside spark's bar: the id the template gives it
 
 wm_session() { [ -n "${SWAYSOCK:-}" ]; }         # inside a session
 wm_live() { [ -S "${SWAYSOCK:-}" ]; }            # its socket is open
@@ -27,7 +28,8 @@ wm_workspaces() { swaymsg -t get_workspaces 2>/dev/null; }
 wm_inputs() { swaymsg -t get_inputs 2>/dev/null; }
 wm_version() { swaymsg -t get_version 2>/dev/null; }
 wm_bar_config() { swaymsg -t get_bar_config "$@" 2>/dev/null; }
-wm_bar_id() { swaymsg -t get_bar_config 2>/dev/null | tr -d '[]" \n' | cut -d, -f1; }
+wm_bar_id() { swaymsg -t get_bar_config 2>/dev/null | tr -d '[]" \n' | tr ',' '\n' | grep -vx "$WM_TRAY" | sed -n 1p; }   # -> the bar it draws itself, never the tray's host
+wm_tray_place() { swaymsg -- "bar $WM_TRAY output $1; bar $WM_TRAY tray_output $1; bar $WM_TRAY height $3; bar $WM_TRAY tray_padding $4; bar $WM_TRAY gaps 0 0 0 $2; bar $WM_TRAY mode hide" >/dev/null 2>&1; }   # wm_tray_place OUTPUT LEFT HEIGHT PADDING -- the tray's host shown, LEFT pixels in from the screen's left edge
 wm_events() { swaymsg -r -t subscribe -m "$1" 2>/dev/null; }   # wm_events '["window"]' -> one event a line
 wm_events_for() { exec timeout "$1" swaymsg -r -t subscribe -m "$2" 2>/dev/null; }   # wm_events_for SECONDS EVENTS, in the background: the job becomes the watcher
 

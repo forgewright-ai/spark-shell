@@ -94,6 +94,7 @@ help lists them by subject. The bindings are named actions in
     Super+Ctrl+space goes to the next keyboard layout.
     The volume and mute keys set the sound, and the mic mute key the mic.
     The brightness keys set the screen's brightness.
+    Super+equal puts the keyboard on the bar: the arrows move, Enter acts.
     Typing exit in the first window also leaves the desktop.
 
 ## Config

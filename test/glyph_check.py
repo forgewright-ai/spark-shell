@@ -4,8 +4,8 @@ one cell wide, or this fails, and with it the build.
 
 The families are read where they live: the dialog's share in component/dialog/src/glyphs.rs (the model's sign,
 a choice's on and off, the branch, the bullet, thinking's sign, the gauge pair, the dots) and the
-shell's in spark-shell's family_set (the gauge pair, thinking's sign, the dots and the workspaces'
-frames; Banner's workspaces are Roman numbers, plain letters). The two must agree where they share a
+shell's in spark-shell's family_set (the gauge pair, thinking's sign, the dots and the key frame, the
+pair around a workspace's number and a key). The two must agree where they share a
 slot. A glyph passes when fc-query lists it in the font's charset and Unicode gives it one cell: not
 East Asian Wide or Fullwidth, and not a mark or a format character, which take none.
 
@@ -26,7 +26,6 @@ import unicodedata
 import zipfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ROMAN = "IVXLCDM"
 
 
 def octal(s):
@@ -58,12 +57,12 @@ def shell_families(sh):
     body = body.group(0)
     out = {}
     for name, fe in re.findall(r"^\s+(star|banner|\*)\) _fe='([^']*)'", body, re.M):
-        on, off, think, wl, wr = fe.split(" ")
+        on, off, think, kl, kr = fe.split(" ")
         out["stone" if name == "*" else name] = {
             "gauge_on": octal(on),
             "gauge_off": octal(off),
             "think": octal(think),
-            "ws": "" if wl == "-" else octal(wl) + octal(wr),
+            "key": octal(kl) + octal(kr),
         }
     dot = re.search(r'_fb=\$\(printf "\$_fe ((?:\\[0-7]{3})+)"\)', body)
     if set(out) != {"stone", "star", "banner"} or not dot:
@@ -152,9 +151,7 @@ def main():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     for name in ("stone", "star", "banner"):
-        glyphs = list(dict.fromkeys(list(dialog[name].values()) + list(shell[name]["ws"]) + [track]))
-        if name == "banner":
-            glyphs += list(ROMAN)
+        glyphs = list(dict.fromkeys(list(dialog[name].values()) + list(shell[name]["key"]) + [track]))
         for g in glyphs:
             why = one_cell(g)
             if why:

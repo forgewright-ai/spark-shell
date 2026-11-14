@@ -61,7 +61,7 @@ jobs:
       - name: ascii docs
         run: |
           tab=$(printf '\t')
-          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell src/*.sh test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/desktop_proof.sh test/dialog_pty.py lib/terminal.py test/terminal_test.py lib/saver.py test/saver_test.py lib/office.py test/office_test.py $(find template distro gallery/theme component/dialog/src component/dialog/tests component/wallpaper/src component/winpad/src -type f ! -name '*.txt' | sort) component/dialog/Cargo.toml component/dialog/deny.toml component/dialog/dialog.env component/dialog/rust-toolchain.toml component/wallpaper/Cargo.toml component/wallpaper/deny.toml component/wallpaper/wallpaper.env component/wallpaper/rust-toolchain.toml component/winpad/Cargo.toml component/winpad/deny.toml component/winpad/winpad.env component/winpad/rust-toolchain.toml; do
+          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell src/*.sh test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/bar_build.sh test/desktop_proof.sh test/dialog_pty.py lib/terminal.py test/terminal_test.py lib/saver.py test/saver_test.py lib/office.py test/office_test.py $(find template distro gallery/theme component/dialog/src component/dialog/tests component/wallpaper/src component/winpad/src component/bar/src -type f ! -name '*.txt' | sort) component/dialog/Cargo.toml component/dialog/deny.toml component/dialog/dialog.env component/dialog/rust-toolchain.toml component/wallpaper/Cargo.toml component/wallpaper/deny.toml component/wallpaper/wallpaper.env component/wallpaper/rust-toolchain.toml component/winpad/Cargo.toml component/winpad/deny.toml component/winpad/winpad.env component/winpad/rust-toolchain.toml component/bar/Cargo.toml component/bar/deny.toml component/bar/bar.env component/bar/rust-toolchain.toml; do
             if LC_ALL=C grep -n "[^ -~${tab}]" "$f"; then
               echo "non-ASCII in $f"; exit 1; fi; done
       - name: no hex color in a template (the look is the 16 slots)
@@ -83,7 +83,7 @@ jobs:
           tar -xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$RUNNER_TEMP"
           sudo install -m 755 "$RUNNER_TEMP/shellcheck-v0.11.0/shellcheck" /usr/local/bin/shellcheck
           shellcheck --version | sed -n '2p'
-          shellcheck -x -S warning -e SC1107 spark-shell lib/shim/xterm test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/desktop_proof.sh test/wifi_proof.sh test/login_upgrade_proof.sh test/dhcp_proof.sh test/gate.sh test/semantic_measure.sh .githooks/pre-push
+          shellcheck -x -S warning -e SC1107 spark-shell lib/shim/xterm test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/bar_build.sh test/desktop_proof.sh test/wifi_proof.sh test/login_upgrade_proof.sh test/dhcp_proof.sh test/gate.sh test/semantic_measure.sh .githooks/pre-push
       - name: zizmor over .github/workflows
         # the workflows are code too: zizmor (pinned, in a venv of its own)
         # reads every file under .github/workflows; medium and above fail.
@@ -287,7 +287,7 @@ jobs:
     # drawn in it in two palettes, the pictures kept for a look. No seat,
     # no GPU, no sound card: a proof of the install and the render, said
     # so; a screen is a machine's proof.
-    needs: [lint, winpad, ear]   # the pad's and the ear's builds, proven on each family's sway (test/winpad_desktop_proof.py, test/voice_desktop_proof.py)
+    needs: [lint, winpad, ear, bar]   # the pad's, the ear's and the bar's builds, proven on each family's sway (test/winpad_desktop_proof.py, test/voice_desktop_proof.py, test/bar_desktop_proof.py)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -372,6 +372,11 @@ jobs:
         with:
           name: spark-ear-x86_64-linux-gnu
           path: ear-build
+      - name: the bar's build, the one the bar job made
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333   # v8.0.2
+        with:
+          name: spark-bar-x86_64-linux-gnu
+          path: bar-build
       - name: spark-shell on as a plain user, the config read by sway, a headless sway with a foot in it
         # sway's package on Arch, Void and Fedora sets cap_sys_nice on the
         # binary; a container's bounding set lacks it, so a plain user's
@@ -393,6 +398,9 @@ jobs:
           # the voice on this family's sway: a stand-in engine's words typed into a terminal at its prompt, the mic on its band and the meter at the band's right end
           chmod 755 ear-build/spark-ear; ear-build/spark-ear --version
           su ada -c "PATH=/opt/nocap:\$PATH SPARK_SHELL_WINPAD='$GITHUB_WORKSPACE/winpad-build/spark-winpad' python3 -I '$GITHUB_WORKSPACE/test/voice_desktop_proof.py' \$HOME/proof/voice"
+          # the bar on this family's sway: the frame, the framed workspaces, the pins, the audio controls by pointer and by key, both edges, two screens
+          chmod 755 bar-build/spark-bar; bar-build/spark-bar --version
+          su ada -c "PATH=/opt/nocap:\$PATH SPARK_SHELL_WINPAD='$GITHUB_WORKSPACE/winpad-build/spark-winpad' SPARK_SHELL_BAR='$GITHUB_WORKSPACE/bar-build/spark-bar' python3 -I '$GITHUB_WORKSPACE/test/bar_desktop_proof.py' \$HOME/proof/bar"
       - name: the notifications as drawn, kept for a look
         if: always()
         run: mkdir -p proof && cp -R ~ada/proof/. proof/ 2>/dev/null || true   # ~ada: the proof user's home, by its name
@@ -625,12 +633,64 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
         with:
           manifest-path: component/ear/Cargo.toml
+  bar:
+    # the bar (component/bar/, v0.147): the format, clippy, its tests, the release
+    # build twice and its sha256 against component/bar/bar.env, all in the pinned
+    # Debian 12 image the pad job uses, so the build is reproducible
+    # and release.yml builds the same bytes; the binary kept as an
+    # artifact. The first build of a new bar prints the sha256 to pin.
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    container: rust:1.99.1-slim-bookworm@sha256:24707e70a4f1e23d9a7b25202ec43126d28a52294b96aad5c670df1fd1f1d400
+    steps:
+      - name: git, for the checkout
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the format, clippy and the tests
+        working-directory: component/bar
+        run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
+      - name: the release build, twice, the same bytes
+        run: |
+          set -eu
+          one=$(sh test/bar_build.sh | cut -d' ' -f1)
+          (cd component/bar && cargo clean --release --target x86_64-unknown-linux-gnu)
+          two=$(sh test/bar_build.sh | cut -d' ' -f1)
+          echo "built $one, from clean again $two"
+          if [ "$one" != "$two" ]; then echo "two builds of one tree differ: the build is not reproducible"; exit 1; fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        with:
+          name: spark-bar-x86_64-linux-gnu
+          path: component/bar/target/x86_64-unknown-linux-gnu/release/spark-bar
+          retention-days: 14
+      - name: the sha256 component/bar/bar.env pins
+        run: |
+          set -eu
+          got=$(sha256sum component/bar/target/x86_64-unknown-linux-gnu/release/spark-bar | cut -d' ' -f1)
+          want=$(sed -n 's/^BAR_SHA256_X86_64_LINUX_GNU=//p' component/bar/bar.env)
+          if [ "$got" != "$want" ]; then echo "the build is not the binary component/bar/bar.env pins -- BAR_SHA256_X86_64_LINUX_GNU=$got"; exit 1; fi
+  bar-deny:
+    # cargo-deny over the bar's crates (advisories, licences), on the
+    # runner: the action is a container of its own
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: cargo-deny (advisories, licences, no network crate)
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
+        with:
+          manifest-path: component/bar/Cargo.toml
   green:
     # the one name a ruleset on main can require: it needs every job above
     # and fails when any of them failed, was cancelled or was skipped. A
     # pull request from this repository's own branch is the one run whose
     # jobs are all skipped on purpose, and green skips with them.
-    needs: [lint, linux, debian, ubuntu, arch, void, fedora, opensuse, desktop, macos, dialog, wallpaper, wallpaper-deny, winpad, winpad-deny, ear, ear-deny]
+    needs: [lint, linux, debian, ubuntu, arch, void, fedora, opensuse, desktop, macos, dialog, wallpaper, wallpaper-deny, winpad, winpad-deny, ear, ear-deny, bar, bar-deny]
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 2

@@ -150,7 +150,8 @@ layout_pad() {   # layout_pad [keys|toggle|place PLACE WIDTH SIDE [HEIGHT]|band 
         '') if [ "$_pdn" = 0 ]; then echo "no window is on the pad"
             else _pdw=window; [ "$_pdn" = 1 ] || _pdw=windows
                 echo "the pad has $_pdn $_pdw: $(cut -f2 "$TMP/pad" | paste -sd, - | sed 's/,/, /g')"; fi ;;
-        start) winpad_wake ;;   # resident: it sets the buttons on each title and keeps the focus order
+        start) winpad_pid >/dev/null || ! winpad_here || ! sparkbar_draws || sparkbar_wait   # sway starts the bar and the pad at once at login: where spark's bar draws, its lock first, two seconds at most, so a pad keeping its strip starts after the bar
+            winpad_wake ;;   # resident: it sets the buttons on each title and keeps the focus order
         keys) [ "$_pdn" != 0 ] || refuse "no window is on the pad"
             if _pdp=$(winpad_pid); then kill -USR1 "$_pdp" 2>/dev/null || :
             elif ! winpad_run --keys; then layout_window restore; return; fi   # no pad here: the window minimized last comes back

@@ -468,7 +468,8 @@ help_keys() {   # -> SUBJECT<tab>WHAT<tab>BINDING<tab>KEY, a desktop key a row; 
         "desktop	capture the screen	desktop.desktop-capture-screen	Print" \
         "desktop	capture an area	desktop.desktop-capture-area	Shift+Print" \
         "desktop	capture the window	desktop.desktop-capture-window	Super+Print" \
-        "desktop	next keyboard layout	desktop.desktop-keyboard-next	Super+Ctrl+space"
+        "desktop	next keyboard layout	desktop.desktop-keyboard-next	Super+Ctrl+space" \
+        "desktop	put the keyboard on the bar	desktop.bar-keys	Super+equal"
 }
 provide_about_rows() {   # -> the about section's rows resource: the facts, project, license, credits, then help's keys
     _av=$(panel_version); _ad=''

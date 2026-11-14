@@ -27,8 +27,8 @@ REPO = Path(__file__).resolve().parents[1]
 FAMILIES = ("stone", "star", "banner")
 LABELS = {  # workspace N on the bar, as the family names it
     "stone": lambda n: "\u27e8%d\u27e9" % n,
-    "star": lambda n: "\u25c2%d\u25b8" % n,
-    "banner": lambda n: {1: "I", 2: "II", 3: "III", 7: "VII"}[n],
+    "star": lambda n: "{%d}" % n,
+    "banner": lambda n: "[%d]" % n,
 }
 SPACES = (1, 2, 3, 7)
 
