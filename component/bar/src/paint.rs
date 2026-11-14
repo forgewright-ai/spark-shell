@@ -27,6 +27,7 @@ const CAIRO_FORMAT_ARGB32: c_int = 0;
 const CAIRO_OPERATOR_SOURCE: c_int = 1;
 const CAIRO_OPERATOR_OVER: c_int = 2;
 const CAIRO_FILTER_GOOD: c_int = 1;
+const CAIRO_ANTIALIAS_GRAY: c_int = 2;
 const PANGO_SCALE: c_int = 1024;
 
 /// The functions of libcairo.so.2, libpango-1.0.so.0, libpangocairo-1.0.so.0 and libgobject-2.0.so.0.
@@ -56,6 +57,9 @@ pub struct Lib {
     fill: unsafe extern "C" fn(*mut Cairo),
     clip: unsafe extern "C" fn(*mut Cairo),
     move_to: unsafe extern "C" fn(*mut Cairo, f64, f64),
+    font_options_create: unsafe extern "C" fn() -> *mut c_void,
+    font_options_set_antialias: unsafe extern "C" fn(*mut c_void, c_int),
+    font_options_destroy: unsafe extern "C" fn(*mut c_void),
     font_description_from_string: unsafe extern "C" fn(*const c_char) -> *mut FontDesc,
     font_description_free: unsafe extern "C" fn(*mut FontDesc),
     font_description_get_size: unsafe extern "C" fn(*mut FontDesc) -> c_int,
@@ -64,10 +68,13 @@ pub struct Lib {
     layout_set_text: unsafe extern "C" fn(*mut PangoLayout, *const c_char, c_int),
     layout_set_markup: unsafe extern "C" fn(*mut PangoLayout, *const c_char, c_int),
     layout_get_pixel_size: unsafe extern "C" fn(*mut PangoLayout, *mut c_int, *mut c_int),
+    layout_get_context: unsafe extern "C" fn(*mut PangoLayout) -> *mut c_void,
+    layout_context_changed: unsafe extern "C" fn(*mut PangoLayout),
     #[allow(clippy::type_complexity)]
     parse_markup: unsafe extern "C" fn(*const c_char, c_int, u32, *mut c_void, *mut c_void, *mut c_void, *mut c_void) -> c_int,
     cairo_create_layout: unsafe extern "C" fn(*mut Cairo) -> *mut PangoLayout,
     cairo_show_layout: unsafe extern "C" fn(*mut Cairo, *mut PangoLayout),
+    cairo_context_set_font_options: unsafe extern "C" fn(*mut c_void, *const c_void),
     object_unref: unsafe extern "C" fn(*mut c_void),
 }
 
@@ -121,6 +128,9 @@ impl Lib {
             fill: sym!(cairo, c, "cairo_fill"),
             clip: sym!(cairo, c, "cairo_clip"),
             move_to: sym!(cairo, c, "cairo_move_to"),
+            font_options_create: sym!(cairo, c, "cairo_font_options_create"),
+            font_options_set_antialias: sym!(cairo, c, "cairo_font_options_set_antialias"),
+            font_options_destroy: sym!(cairo, c, "cairo_font_options_destroy"),
             font_description_from_string: sym!(pango, p, "pango_font_description_from_string"),
             font_description_free: sym!(pango, p, "pango_font_description_free"),
             font_description_get_size: sym!(pango, p, "pango_font_description_get_size"),
@@ -129,9 +139,12 @@ impl Lib {
             layout_set_text: sym!(pango, p, "pango_layout_set_text"),
             layout_set_markup: sym!(pango, p, "pango_layout_set_markup"),
             layout_get_pixel_size: sym!(pango, p, "pango_layout_get_pixel_size"),
+            layout_get_context: sym!(pango, p, "pango_layout_get_context"),
+            layout_context_changed: sym!(pango, p, "pango_layout_context_changed"),
             parse_markup: sym!(pango, p, "pango_parse_markup"),
             cairo_create_layout: sym!(pc, q, "pango_cairo_create_layout"),
             cairo_show_layout: sym!(pc, q, "pango_cairo_show_layout"),
+            cairo_context_set_font_options: sym!(pc, q, "pango_cairo_context_set_font_options"),
             object_unref: sym!(gobject, g, "g_object_unref"),
             _libs: vec![],
         };
@@ -142,11 +155,18 @@ impl Lib {
     }
 
     /// A layout on `cr` in the bar's font with a text on it: pango markup when `markup` and pango takes
-    /// it, the same characters as plain text when it does not. The caller unrefs it.
+    /// it, the same characters as plain text when it does not. Its edges are gray whatever the system
+    /// asks of its fonts: the ground may be seen through, and the screen's subpixel order is not known
+    /// here. The caller unrefs it.
     unsafe fn layout(&self, cr: *mut Cairo, font: &Font, s: &str, markup: bool) -> *mut PangoLayout {
         let t = CString::new(s.replace('\0', "")).unwrap_or_default();
         let null = std::ptr::null_mut();
         let l = (self.cairo_create_layout)(cr);
+        let gray = (self.font_options_create)();
+        (self.font_options_set_antialias)(gray, CAIRO_ANTIALIAS_GRAY);
+        (self.cairo_context_set_font_options)((self.layout_get_context)(l), gray);
+        (self.font_options_destroy)(gray);
+        (self.layout_context_changed)(l);
         (self.layout_set_font_description)(l, font.desc);
         if markup && (self.parse_markup)(t.as_ptr(), -1, 0, null, null, null, null) != 0 {
             (self.layout_set_markup)(l, t.as_ptr(), -1);

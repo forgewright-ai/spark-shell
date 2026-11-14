@@ -866,10 +866,8 @@ impl Dispatch2<WlKeyboard, App> for KeyData {
                 state: WEnum::Value(KeyState::Pressed),
                 ..
             } => app.key(key),
-            // the keyboard left the surface that held it: the keys are given back
-            wl_keyboard::Event::Leave { surface, .. } if app.outs.iter().any(|o| o.keyer.as_ref().is_some_and(|l| *l.wl_surface() == surface)) => {
-                app.keys_off();
-            }
+            // a leave is not the end of the keys, as on the pad: sway leaves and enters the same surface again
+            // when a keyboard is configured (one plugged in, a layout changed), and Escape gives them back
             _ => {}
         }
     }

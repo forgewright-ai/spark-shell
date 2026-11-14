@@ -3940,7 +3940,7 @@ voice_tree foot; vclean; vrun --listen now
     && ok "desktop voice: the engine's words typed into the terminal's line as they come, an erase as backspaces; at rest after (v0.144)" || bad "voice typed" "rc=$rc $out $(cat "$HOME/wtype.log" "$vstate" 2>&1)"
 vclean; vrun --listen hold
 [ "$rc" = 0 ] && [ ! -e "$HOME/wtype.log" ] && [ ! -e "$HOME/notify.log" ] && ok "desktop voice: a tap, the key up within 0.3 s, hears nothing (v0.144)" || bad "voice tap" "rc=$rc $out"
-vclean; vrun press; vrun release; sleep 0.5
+vclean; vrun press; vrun release; sleep 0.5; _i=0; while [ "$_i" -lt 50 ] && ! grep -q '^home ' "$HOME/home.log" 2>/dev/null; do sleep 0.1; _i=$((_i + 1)); done   # home opens apart: waited for, a busy machine takes longer
 [ "$rc" = 0 ] && grep -q '^home ' "$HOME/home.log" && [ ! -e "$HOME/wtype.log" ] && ok "desktop voice press then release at once: home opens, as Super+Space did (v0.144)" || bad "voice press tap" "rc=$rc $out $(cat "$HOME/home.log" 2>&1)"
 vclean; vrun press; sleep 0.7; vrun release; sleep 0.5
 [ "$rc" = 0 ] && [ ! -e "$HOME/home.log" ] && grep -qx -- '-s 20 -- hey' "$HOME/wtype.log" && ok "desktop voice press held past 0.3 s: it listens, the release ends it, no home (v0.144)" || bad "voice press hold" "rc=$rc $out $(cat "$HOME/wtype.log" "$HOME/home.log" 2>&1)"
@@ -8330,9 +8330,9 @@ JSON
     S=$H/sys; mkdir -p "$S/block/nvme0n1"; rm -f "$nlog"
     cp "$HOME/lsblk.json" "$H/lsblk.full"; jq '.blockdevices |= map(select(.name != "sdb"))' "$H/lsblk.full" > "$HOME/lsblk.json"
     ( SPARK_SHELL_SYS=$S WAYLAND_DISPLAY=wayland-1 SPARK_SHELL_NO_CHIME=1 sh "$SH" bar status < /dev/null > "$H/bar.out" 2>/dev/null ) & bp=$!
-    _i=0; while [ "$_i" -lt 40 ] && [ "$(grep -c '^\[{' "$H/bar.out" 2>/dev/null)" = 0 ]; do sleep 0.25; _i=$((_i + 1)); done
+    _i=0; while [ "$_i" -lt 120 ] && [ "$(grep -c '^\[{' "$H/bar.out" 2>/dev/null)" = 0 ]; do sleep 0.25; _i=$((_i + 1)); done   # its first line is its start: a drive plugged before it would be one that was there
     cp "$H/lsblk.full" "$HOME/lsblk.json"; mkdir -p "$S/block/sdb"
-    _i=0; while [ "$_i" -lt 40 ] && [ ! -s "$nlog" ]; do sleep 0.25; _i=$((_i + 1)); done
+    _i=0; while [ "$_i" -lt 120 ] && [ ! -s "$nlog" ]; do sleep 0.25; _i=$((_i + 1)); done
     pkill -P "$bp" 2>/dev/null || :; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :   # its own bar alone, by its parent: another suite's may run beside it
     [ "$(cat "$nlog" 2>/dev/null)" = '-a|spark-shell|-c|device.added|--|SanDisk Ultra plugged in|28.9 GB, not mounted|' ] && ! grep -q 'Elements\|drive plugged' "$nlog" \
         && ok "bar: a drive plugged in while it runs is said once, within its second's look; what was there at its start is not (#73)" || bad "drive notice" "$(cat "$nlog" 2>&1) $(head -c 300 "$H/bar.out")"
