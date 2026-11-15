@@ -300,7 +300,7 @@ layout_keyboard() {   # layout_keyboard [next | LAYOUT...]
             _a=$(kb_names | cut -f1); _i=0
             for _x in $KEYBOARD; do if [ "$_i" = "${_a:-0}" ]; then echo "$PANEL_TICK $_x"; else echo "  $_x"; fi; _i=$((_i + 1)); done ;;
         next) wm_up || refuse "switches the desktop's keyboard: run it inside it (Super+Ctrl+space)"
-            wm_input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || refuse "$WM_NAME took no layout switch"
+            wm_kb_layout next >/dev/null 2>&1 || refuse "$WM_NAME took no layout switch"
             bar_redraw; kb_names | awk -F '\t' '{print "keyboard " $($1 + 2)}' ;;
         *) [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
             _w=$(printf '%s ' "$@" | sed 's/ $//')

@@ -3244,7 +3244,9 @@ cat > "$H/lx/swaymsg" <<'STUB'
 echo "$*" >> "$HOME/swaymsg.log"
 case "$*" in
     "-t get_version") echo '{"major":1}' ;;
-    "-t get_inputs") echo '[{"type":"keyboard","xkb_layout_names":["English (US)","Portuguese (Brazil)"],"xkb_active_layout_index":1}]' ;;
+    "-t get_inputs") v='{"identifier":"0:0:wlr_virtual_keyboard_v1","name":"virtual keyboard","type":"keyboard"'   # the virtual keyboards share one identifier: one that never typed has no keymap, one that typed has a layout
+        if [ -e "$HOME/kb-virtual-only" ]; then echo "[$v,\"xkb_layout_names\":[]}]"
+        else echo "[$v,\"xkb_layout_names\":[]},{\"identifier\":\"1:1:AT_Translated_Set_2_keyboard\",\"name\":\"AT Translated Set 2 keyboard\",\"type\":\"keyboard\",\"xkb_layout_names\":[\"English (US)\",\"Portuguese (Brazil)\"],\"xkb_active_layout_index\":1},$v,\"xkb_layout_names\":[\"English (US)\"],\"xkb_active_layout_index\":0},{\"identifier\":\"2:10:TPPS/2_Elan_TrackPoint\",\"type\":\"pointer\"}]"; fi ;;
     "-t get_workspaces") [ ! -e "$HOME/ws-styled" ] || { cat "$HOME/ws-styled"; exit 0; }   # the workspaces' style test (#160)
         [ -e "$HOME/ws-test" ] || exit 0   # only the workspace glyphs' test asks
         if [ -e "$HOME/ws-later" ]; then echo '[{"num":1,"name":"1:x"},{"num":5,"name":"5"}]'
@@ -3384,7 +3386,18 @@ rc=0; out=$(SPARK_SHELL_XKB_LST=$H/xkb/evdev.lst PATH="$H/lx:$PATH" sh "$SH" des
     && ok "desktop keyboard: a layout xkb does not list is refused, the config kept" || bad "keyboard unknown" "rc=$rc $out"
 rm -f "$HOME/swaymsg.log"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop keyboard next 2>&1) || rc=$?
-[ "$rc" = 0 ] && grep -qx -- '-- input type:keyboard xkb_switch_layout next' "$HOME/swaymsg.log" && ok "desktop keyboard next: sway goes to the next layout" || bad "keyboard next" "rc=$rc $out $(cat "$HOME/swaymsg.log")"
+[ "$rc" = 0 ] && [ "$(grep 'xkb_switch_layout' "$HOME/swaymsg.log")" = '-- input "1:1:AT_Translated_Set_2_keyboard" xkb_switch_layout next' ] \
+    && ok "desktop keyboard next: sway goes to the next layout on the real keyboard, by its identifier; the two virtual keyboards beside it share one identifier, one with a layout and one with no keymap, and that identifier is sent nothing; no command names every keyboard" || bad "keyboard next" "rc=$rc $out $(cat "$HOME/swaymsg.log")"
+# a virtual keyboard that never typed, so with no keymap, alone on the seat: nothing is sent, the switch is refused in
+# one line. A layout switch that reached such a keyboard ended sway 1.12, the session with it
+touch "$HOME/kb-virtual-only"; rm -f "$HOME/swaymsg.log"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop keyboard next 2>&1) || rc=$?
+rc2=0; out2=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel keyboard next 2>&1) || rc2=$?
+rc3=0; out3=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel keyboard use br 2>&1) || rc3=$?
+rm -f "$HOME/kb-virtual-only"
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: sway took no layout switch' ] && [ "$rc2" = 1 ] && [ "$out2" = 'sway took no layout switch' ] && [ "$rc3" = 1 ] && [ "$out3" = "$out2" ] \
+    && [ "$(grep -c -- '-t get_inputs' "$HOME/swaymsg.log")" -ge 3 ] && ! grep -q 'xkb_switch_layout' "$HOME/swaymsg.log" \
+    && ok "a virtual keyboard with no keymap alone: desktop keyboard next, the dialog's next and its layout by name each ask for the keyboards and send no layout switch at all; each says so in one line" || bad "keyboard next, virtual alone" "rc=$rc $out | $rc2 $out2 | $rc3 $out3 | $(cat "$HOME/swaymsg.log" 2>&1)"
 # native input preferences: applied, kept, bounded, and reversible
 [ "$(grep -c '^input type:touchpad tap enabled$' "$swc")" = 1 ] && grep -qx 'input type:keyboard repeat_rate 25' "$swc" \
     && ok "input defaults: tap to click on touchpads, repeat at 25 per second" || bad "input defaults" "$(grep '^input' "$swc")"
@@ -3777,14 +3790,17 @@ _pe=$(cat "$HOME/winpad.env" 2>/dev/null)
 padr keys; pad_sig usr1 1
 [ "$rc" = 0 ] && [ "$(grep -c '' "$HOME/pad.log")" = 1 ] && [ "$(grep -c '^usr1$' "$HOME/pad.sig" 2>/dev/null)" = 1 ] && ok "desktop pad keys: a pad running takes SIGUSR1, none other starts (v0.133)" || bad "pad keys signal" "rc=$rc $out $(cat "$HOME/pad.log" "$HOME/pad.sig" 2>&1)"
 _pdl() { XDG_RUNTIME_DIR=$H/run SPARK_SHELL_WINPAD=$H/padbin/spark-winpad SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null; }
+_pdf() { SPARK_BAR=1 XDG_RUNTIME_DIR=$H/run SPARK_SHELL_WINPAD=$H/padbin/spark-winpad SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null | jq -r '.[1] | [.name, .group, .sign, .text, .cells, .bold, .state, (.level // "-"), .set, .pinned, .label, .toggle] | map(tostring) | join("|")' || echo unread; }   # -> the first module of spark's bar's line, its fields with a bar between
 padsign=$(printf '\342\212\237')
-line=$(_pdl)
+line=$(_pdl); _pf1=$(_pdf)
 [ "$(printf '%s' "$line" | jq -r '.[0].name')" = pad ] && [ "$(printf '%s' "$line" | jq -r '.[0].full_text')" = "<span foreground='#555555'>$padsign</span> 2" ] \
     && ok "bar: the pad's block first while windows wait on it, its sign muted while the pad is in sight, and how many (v0.133)" || bad "bar pad shown" "$line"
 padr toggle; pad_sig usr2 1
 [ "$rc" = 0 ] && [ "$out" = 'the pad is hidden' ] && pad_hidden_is 1 && ok "desktop pad toggle (the bar's click): the pad takes SIGUSR2 and hides (v0.133)" || bad "pad toggle hide" "rc=$rc $out $(cat "$H/run/spark-shell-winpad.state" 2>&1)"
-line=$(_pdl)
+line=$(_pdl); _pf2=$(_pdf)
 [ "$(printf '%s' "$line" | jq -r '.[0].full_text')" = "<span foreground='#ff5555'>$padsign</span> 2" ] && ok "bar: the pad's sign in the accent while the pad is hidden (v0.133)" || bad "bar pad hidden" "$line"
+[ "$_pf1" = "pad|windows|$padsign|2|2|false|ok|-|false|false|pad, 2 windows|true" ] && [ "$_pf2" = "pad|windows|$padsign|2|2|false|off|-|false|false|pad hidden, 2 windows|true" ] \
+    && ok "spark's bar, the pad (v0.148): the first module while windows wait on it, its sign and how many in two cells; ok while the pad is in sight, off while it is hidden; a click toggles it in place" || bad "facts pad" "$_pf1 | $_pf2"
 padr toggle; pad_sig usr2 2
 [ "$rc" = 0 ] && [ "$out" = 'the pad is back in sight' ] && pad_hidden_is 0 && ok "desktop pad toggle: a hidden pad comes back in sight (v0.133)" || bad "pad toggle show" "rc=$rc $out"
 pad_down
@@ -4071,6 +4087,13 @@ line=$(SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar 
 pip=$(printf '\342\226\260'); pipoff=$(printf '\342\226\261'); g=$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "gauge") | .full_text'); k=$(printf '%s' "$line" | jq -r '.[] | select(.name == "kb") | .full_text')
 [ "$(printf '%s' "$g" | LC_ALL=C grep -o "$pip" | wc -l | tr -d ' ')" = 2 ] && [ "$(printf '%s' "$g" | LC_ALL=C grep -o "$pipoff" | wc -l | tr -d ' ')" = 3 ] && [ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "name") | .full_text')" = "<span foreground='#ff5555'>$(printf '\342\230\274')</span>" ] && [ "$k" = "<span foreground='#555555'>$(printf '\342\214\227')</span> us+intl" ] \
     && ok "bar: light, a sun in the accent with its gauge (47: two of five cells), and kb, a key grid muted with the layout in use (sway's second, us+intl)" || bad "bar light kb" "$line"
+_ff() { jq -r --arg n "$1" '.[1:][] | select(.name == $n) | [.name, .group, .sign, .text, .cells, .bold, .state, (.level // "-"), .set, .pinned, .label, .toggle] | map(tostring) | join("|")' || echo unread; }   # _ff NAME -> that module of spark's bar's line on stdin, its fields with a bar between
+line=$(SPARK_BAR=1 SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null)
+cp "$HOME/.config/spark-shell/config" "$H/config.keep"; printf 'BAR_PINS=out light\n' >> "$HOME/.config/spark-shell/config"
+_fl=$(SPARK_BAR=1 SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null | _ff light); mv "$H/config.keep" "$HOME/.config/spark-shell/config"
+[ "$(printf '%s' "$line" | _ff light)" = "light|seat|$(printf '\342\230\274')||0|false|ok|47|true|false|brightness 47%|false" ] && [ "$(printf '%s' "$line" | _ff kb)" = "kb|seat|$(printf '\342\214\227')|us+intl|7|false|ok|-|false|false|keyboard us+intl|true" ] \
+    && [ "$_fl" = "light|seat|$(printf '\342\230\274')||0|false|ok|47|true|true|brightness 47%|false" ] \
+    && ok "spark's bar, the seat (v0.148): light is its sun and a level of 47 the bar can set, pinned once BAR_PINS names it; kb its sign and the layout in use as its text, in the widest layout's cells, a click its toggle" || bad "facts light kb" "$line | $_fl"
 # the workspaces' names (#248): a workspace named by its number, or a layout's "3 writing", takes its label in the glyph
 # family, stone's number in angle brackets by default; one the user named is left, and so is one past the end of nothing
 WSO=${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/spark-shell}; WSO=${WSO:-$HOME/.local/state/spark-shell}/ws-order   # the order the bar drew before the families, in the runtime dir when a login has one
@@ -4134,7 +4157,7 @@ rows=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel keyboard --list 2>
 printf '%s\n' "$rows" | grep -q 'br	keyboard use br$' && printf '%s\n' "$rows" | grep -q 'the next layout	keyboard next$' && ok "the dialog's keyboard section: the layouts, the one in use ticked, the others one Enter away, and the next" || bad "keyboard rows" "$rows"
 rm -f "$HOME/swaymsg.log"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel keyboard use br 2>&1) || rc=$?
-[ "$rc" = 0 ] && [ "$out" = 'the keyboard is br' ] && grep -qx -- '-- input type:keyboard xkb_switch_layout 2' "$HOME/swaymsg.log" && ok "the dialog: keyboard use br switches to its index (2)" || bad "keyboard use" "rc=$rc $out $(cat "$HOME/swaymsg.log")"
+[ "$rc" = 0 ] && [ "$out" = 'the keyboard is br' ] && [ "$(grep 'xkb_switch_layout' "$HOME/swaymsg.log")" = '-- input "1:1:AT_Translated_Set_2_keyboard" xkb_switch_layout 2' ] && ok "the dialog: keyboard use br switches to its index (2), on the keyboard that has layouts alone" || bad "keyboard use" "rc=$rc $out $(cat "$HOME/swaymsg.log")"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display idle 5 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'idle screen after 5 minutes' ] && grep -qx 'DISPLAY_IDLE=5' "$HOME/.config/spark-shell/config" && ok "the dialog: display idle 5 sets it, and says the idle screen, as the command does (#68)" || bad "display idle from dialog" "rc=$rc $out"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display lock 20 2>&1) || rc=$?
@@ -4182,6 +4205,9 @@ printf '#!/bin/sh\necho "$*" >> "$HOME/chime.log"\n' > "$H/lx/pw-play"; chmod +x
 line=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null); SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once >/dev/null 2>&1; sleep 1
 [ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "due") | .full_text')" = "<span foreground='#ff5555'>$(printf '\342\247\227')</span> a long title from another ca" ] && [ "$(grep -c . "$HOME/chime.log" 2>/dev/null)" = 1 ] \
     && ok "bar: the latest reminder due (another tool's, in UTC, its folded title joined), cut at 28 characters, and one chime for the two due, not at every line" || bad "due block" "$(printf '%s' "$line" | jq -c '.[] | select(.name == "due")') chimes=$(cat "$HOME/chime.log" 2>&1)"
+line=$(REM_LOOK=1 SPARK_BAR=1 SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null)
+[ "$(printf '%s' "$line" | _ff due)" = "due|tasks|$(printf '\342\247\227')||0|false|asks|-|false|false|reminder due: a long title from another ca|false" ] && ! printf '%s' "$line" | jq -r '.[1:][] | .sign + .text' | grep -q 'a long title' \
+    && ok "spark's bar, a reminder due (v0.148): its sign alone, in state asks; the title is in the label, never on the bar" || bad "facts due" "$line"
 rows=$(NL reminders --list)
 printf '%s\n' "$rows" | grep -q "a long title from another calendar, folded across two lines; done	reminders show" && ! printf '%s\n' "$rows" | grep -q 'an old meeting\|a weekly one' \
     && printf '%s\n' "$rows" | grep -q 'again in 10 minutes	reminders snooze ' \
@@ -4589,101 +4615,181 @@ else
     st=0; out=$(sh "$SH" bar volume louder 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell bar: volume takes up, down, mute or mic' ] && ok "bar volume: a wrong word is refused in one line" || bad "volume refuse" "st=$st $out"
     rm -f "$HOME/level" "$HOME/clevel"   # restore this fixture's baseline after the volume-key tests
-    # spark's bar (v0.147): one line for both readers. Every block says the cells it keeps, the widest it gets, and its
-    # label in plain text; no block's text, its markup gone, is wider than its cells: in signs, in words, on spark's bar,
-    # muted, recording, the wire down
+    # one command, two readers (v0.148). Sway's bar has its blocks as before spark-bar: every block says the cells it keeps,
+    # the widest it gets, and its label in plain text, and no block's text, its markup gone, is wider than its cells: in
+    # signs and in words, muted, recording, the wire down. Spark's bar (SPARK_BAR) has facts: the look, then an object a
+    # module, for it to draw in its own look
     cfg=$HOME/.config/spark-shell/config; mkdir -p "$H/run"
-    over() { printf '%s' "$1" | jq -r '[.[] | select(.name != "look") | select(((.full_text | gsub("<[^>]*>"; "") | gsub("&amp;"; "&") | gsub("&lt;"; "<") | gsub("&gt;"; ">") | length) > .cells) or (.label | length) == 0 or (.control | IN("open", "toggle", "level") | not) or (.state | IN("ok", "unavailable", "error") | not) or has("level")) | .name + ":" + .instance] | join(" ")' || echo unread; }   # the look is no block; a line jq cannot read is no pass
+    over() { printf '%s' "$1" | jq -r '[.[] | select(((.full_text | gsub("<[^>]*>"; "") | gsub("&amp;"; "&") | gsub("&lt;"; "<") | gsub("&gt;"; ">") | length) > .cells) or (.label | length) == 0 or (.control | IN("open", "toggle", "level") | not) or (.state | IN("ok", "unavailable", "error") | not) or has("level")) | .name + ":" + .instance] | join(" ")' || echo unread; }   # a line jq cannot read is no pass
     sb() { SPARK_BAR=1 sh "$SH" bar status --once; }
-    aud() { printf '%s' "$line" | jq -r --arg n "$1" --arg i "$2" --arg k "$3" '.[] | select(.name == $n and .instance == $i) | .[$k]'; }   # aud NAME INSTANCE KEY -> that field
     l1=$(sh "$SH" bar status --once); l2=$(sb)
     lifted() { sed -n 's/^format=<span foreground="#\([0-9a-f]\{6\}\)">&#x25B8; and %h more<\/span>$/\1/p' "$HOME/.config/mako/config"; }   # -> the muted lifted until it reads at 4.5 to 1, as the notifications wear it
     pm=$(lifted)
     printf 'BAR_GLYPHS=words\n' >> "$cfg"; touch "$H/muted"; echo 'state: RUNNING' > "$P/asound/card0/pcm0c/sub0/status"; echo 0 > "$S/class/net/eth0/carrier"; l3=$(sb); l4=$(sh "$SH" bar status --once)
     sed -i.bak '/^BAR_GLYPHS=/d' "$cfg"; rm -f "$cfg.bak" "$H/muted"; echo closed > "$P/asound/card0/pcm0c/sub0/status"; echo 1 > "$S/class/net/eth0/carrier"
-    [ -n "$l1" ] && [ -n "$l3" ] && [ -z "$(over "$l1")$(over "$l2")$(over "$l3")$(over "$l4")" ] && [ "$(printf '%s' "$l2" | jq -r '[.[] | select(.name == "wifi" or .name == "bat" or .name == "logo" or .name == "lan") | .cells] | join(" ")')" = '3 1 5 9 1' ] \
+    [ -n "$l1" ] && [ -n "$l4" ] && [ -z "$(over "$l1")$(over "$l4")" ] && [ "$(printf '%s' "$l1" | jq -r '[.[] | select(.name == "wifi" or .name == "bat" or .name == "logo" or .name == "lan") | .cells] | join(" ")')" = '3 1 5 9 1' ] \
         && [ "$(printf '%s' "$l1" | jq -r '[.[] | select(.name == "wifi" or .name == "bat" or .name == "lan" or .name == "bt") | .label] | unique | join("; ")')" = 'battery 80%; bluetooth MAJOR V connected; lan connected; wifi 70%' ] \
-        && ok "bar: every block keeps its cells and has a label, a control and a state, and none a level; no text is wider than its cells, in signs and in words, on either bar (v0.147)" || bad "bar cells" "$(over "$l1") | $(over "$l2") | $(over "$l3") | $(over "$l4") | $l2"
-    # the look travels in the line: on spark's bar its first block, the seven values spark-bar is started with and no
-    # other field; sway's bar has none
-    [ "$(printf '%s' "$l2" | jq -c '.[0]')" = "{\"name\":\"look\",\"fg\":\"aaaaaa\",\"accent\":\"ff5555\",\"muted\":\"$pm\",\"ground\":\"000000\",\"lit\":\"1e1e1e\",\"attention\":\"aa5500\",\"alpha\":\"0.95\"}" ] \
-        && printf '%s' "$l2" | jq -e '.[0] | ([.fg, .accent, .muted, .ground, .lit, .attention] | all(type == "string" and test("^[0-9a-f]{6}$"))) and (.alpha | type == "string")' >/dev/null \
+        && ok "sway's bar: every block keeps its cells and has a label, a control and a state, and none a level; no text is wider than its cells, in signs and in words (v0.147)" || bad "bar cells" "$(over "$l1") | $(over "$l4") | $l1"
+    # the facts' shape, the contract with spark-bar; fbad names what is not it. A module is the twelve fields in their
+    # order, the level left out where it has none; each field of its type; the group the module's own; the text within
+    # its cells; the time alone bold; a level 0 to 100, on a level's module alone; set and pinned true on those alone;
+    # toggle true on out, kb and pad alone, where a click changes the module in place; the modules in the bar's order.
+    # fplain: no markup, no block of sway's bar and no color past the look
+    fbad() { printf '%s' "$1" | jq -r '
+        ["pad", "lan", "bt", "wifi", "out", "mic", "due", "light", "kb", "bat", "clock", "notifications"] as $order
+        | {pad: "windows", lan: "connections", bt: "connections", wifi: "connections", out: "sound", mic: "sound", due: "tasks", light: "seat", kb: "seat", bat: "seat", clock: "time", notifications: "time"} as $group
+        | (if .[0].name == "look" then [] else ["look"] end)
+        + ([.[1:][] | .name as $n | $order | index($n)] | if . == (sort | unique) then [] else ["order"] end)
+        + [.[1:][] | select((
+            ((keys_unsorted == ["name", "group", "sign", "text", "cells", "bold", "state", "level", "set", "pinned", "label", "toggle"]) or (keys_unsorted == ["name", "group", "sign", "text", "cells", "bold", "state", "set", "pinned", "label", "toggle"]))
+            and ([.name, .group, .sign, .text, .state, .label] | all(type == "string")) and ([.bold, .set, .pinned, .toggle] | all(type == "boolean")) and (.cells | type == "number" and . >= 0 and . == floor)
+            and .toggle == (.name | IN("out", "kb", "pad"))
+            and $group[.name] == .group and (.state | IN("ok", "muted", "off", "missing", "wrong", "asks", "records")) and (.label | length) > 0 and (.text | length) <= .cells and .bold == (.name == "clock")
+            and ((has("level") | not) or ((.level | type == "number" and . >= 0 and . <= 100 and . == floor) and (.name | IN("out", "mic", "light", "wifi"))))
+            and ((.set | not) or (has("level") and (.name | IN("out", "mic", "light")))) and ((.pinned | not) or (.name | IN("out", "mic", "light", "wifi")))
+        ) | not) | .name] | join(" ")' 2>/dev/null || echo unread; }
+    fplain() { ! printf '%s' "$1" | jq -c '.[1:]' | grep -q "<span\|foreground\|full_text\|markup\|separator\|instance\|&amp;\|aaaaaa\|ff5555\|555555\|000000\|1e1e1e\|aa5500\|aa0000\|$pm"; }
+    frow() { printf '%s' "$line" | jq -r --arg n "$1" '.[1:][] | select(.name == $n) | [.name, .group, .sign, .text, .cells, .bold, .state, (.level // "-"), .set, .pinned, .label] | map(tostring) | join("|")' || echo unread; }   # frow NAME -> that module's fact: its fields in the contract's order, a bar between, - for no level; a line jq cannot read is no pass
+    fnames() { printf '%s' "$1" | jq -r '[.[] | .name] | join(" ")' || echo unread; }
+    g_lan=$(printf '\342\207\205'); g_bt=$(printf '\342\234\246'); g_bt_off=$(printf '\342\234\247'); g_wifi=$(printf '\342\227\240'); g_out=$(printf '\342\227\200'); g_out_off=$(printf '\342\227\201')
+    g_mic=$(printf '\342\227\211'); g_mic_off=$(printf '\342\227\213'); g_rec=$(printf '\342\227\217')
+    [ -z "$(fbad "$l2")$(fbad "$l3")" ] && fplain "$l2" && fplain "$l3" && [ "$(fnames "$l2")" = 'look lan bt wifi out mic bat clock' ] && [ "$(fnames "$l3")" = "$(fnames "$l2")" ] \
+        && [ "$(fbad '[{"name":"look"},{"name":"clock","group":"time","sign":"","text":"12:00","cells":4,"bold":false,"state":"fine","set":true,"pinned":true,"label":"","toggle":false},{"name":"lan","group":"sound","sign":"","text":"","cells":0,"bold":false,"state":"ok","set":false,"pinned":false,"label":"lan","toggle":false},{"name":"mic","group":"sound","sign":"","text":"","cells":0,"bold":false,"state":"ok","level":50,"set":true,"pinned":false,"label":"mic","toggle":true}]')" = 'order clock lan mic' ] \
+        && [ "$(printf '%s' "$l2" | jq -r '[.[1:][] | select(.toggle) | .name] | join(" ")')" = out ] \
+        && ok "spark's bar reads facts (v0.148): the look, then lan, bt, wifi, out, mic, bat and the clock, each the contract's fields in their order and of their types, its text within its cells, toggle true on out alone of these; no markup, no block of sway's bar and no color past the look, in signs and in words" || bad "facts shape" "$(fbad "$l2") | $(fbad "$l3") | $l2 | $l3"
+    # the look travels in the line: on spark's bar its first object, the eleven values and no other field, each a string;
+    # the muted is the palette's own, the dim tone, not the one lifted for the dialog; the gauge's pair is the glyph
+    # family's; sway's bar has no such object, and its spans keep the palette's muted
+    look="{\"name\":\"look\",\"fg\":\"aaaaaa\",\"accent\":\"ff5555\",\"muted\":\"555555\",\"ground\":\"000000\",\"lit\":\"1e1e1e\",\"attention\":\"aa5500\",\"alert\":\"aa0000\",\"alpha\":\"0.95\",\"full\":\"$pip\",\"light\":\"$pipoff\",\"motion\":\"yes\"}"
+    [ "$(printf '%s' "$l2" | jq -c '.[0]')" = "$look" ] \
+        && printf '%s' "$l2" | jq -e '.[0] | ([.fg, .accent, .muted, .ground, .lit, .attention, .alert] | all(type == "string" and test("^[0-9a-f]{6}$"))) and ([.alpha, .full, .light, .motion] | all(type == "string"))' >/dev/null \
         && [ "$(printf '%s' "$l2$l3" | grep -o '"name":"look"' | grep -c '')" = 2 ] && ! printf '%s' "$l1$l4" | grep -q '"look"\|"fg"\|"ground"' \
-        && ok "the look on spark's bar: the line's first block, the text, the accent, the muted, the ground, the lit shade, the attention and the alpha, each a string, a color its six hex digits, nothing else in it; sway's bar has no such block" || bad "bar look" "$(printf '%s' "$l2" | jq -c '.[0]') | $l1"
-    # the muted on spark's bar is the one lifted until it reads on the ground, the dialog's and the pad's: every muted
-    # span of the line and the look's own; sway's bar draws the palette's muted as before. That, sound's out and the
-    # clock apart, the two lines are the same blocks
-    [ "${#pm}" = 6 ] && [ "$pm" != 555555 ] && ! printf '%s' "$l2$l3" | grep -q "#555555'" && printf '%s' "$l2" | grep -q "#$pm'" && printf '%s' "$l3" | grep -q "#$pm'" && ! printf '%s' "$l1$l4" | grep -q "$pm" && printf '%s' "$l1" | grep -q "#555555'" \
-        && [ "$(printf '%s' "$l2" | sed "s/#$pm'/#555555'/g" | jq -c '[.[1:][] | select(.name != "out" and .name != "clock")]')" = "$(printf '%s' "$l1" | jq -c '[.[] | select(.name != "out" and .name != "clock")]')" ] \
-        && [ "$(printf '%s' "$l3" | sed "s/#$pm'/#555555'/g" | jq -c '[.[1:][] | select(.name != "out" and .name != "clock")]')" = "$(printf '%s' "$l4" | jq -c '[.[] | select(.name != "out" and .name != "clock")]')" ] \
-        && ok "the muted on spark's bar is the lifted one ($pm over 555555 here), in every muted span and in the look, in signs and in words; sway's bar keeps the palette's own, and but for that, sound's out and the clock the two lines are the same" || bad "bar muted" "pm=$pm | $l2 | $l1"
-    # sound on spark's bar: the sign toggles mute, the gauge is the level, the percent opens the section and leaves first;
-    # the mic's sign opens its section. Sway's bar has no percent and its sign opens the section, as before
+        && [ "${#pm}" = 6 ] && [ "$pm" != 555555 ] && ! printf '%s' "$l2$l3" | grep -q "$pm" && printf '%s' "$l1" | grep -q "#555555'" && ! printf '%s' "$l1$l4" | grep -q "$pm" \
+        && ok "the look on spark's bar: the line's first object, the text, the accent, the muted, the ground, the lit shade, the attention, the alert, the alpha, the family's gauge pair and the motion, each a string, a color its six hex digits, nothing else in it; the muted is the palette's own (555555), never the lifted one ($pm); sway's bar has no such object" || bad "bar look" "$(printf '%s' "$l2" | jq -c '.[0]') | $l1"
+    # the motion and the family, read at each line: BAR_MOTION=no says motion no, star's lines are the gauge's pair; a
+    # motion that is neither yes nor no is refused in one line, as its neighbours are
+    cp "$cfg" "$H/config.keep"; printf 'BAR_MOTION=no\nGLYPH_FAMILY=star\n' >> "$cfg"; line=$(sb)
+    cp "$H/config.keep" "$cfg"; printf 'BAR_MOTION=maybe\n' >> "$cfg"; out=$(sh "$SH" status 2>&1 | head -1); st2=0; sh "$SH" status >/dev/null 2>&1 || st2=$?; mv "$H/config.keep" "$cfg"
+    [ "$(printf '%s' "$line" | jq -r '.[0] | [.motion, .full, .light] | join(" ")')" = "no $(printf '\342\224\201') $(printf '\342\224\200')" ] && [ -z "$(fbad "$line")" ] \
+        && [ "$st2" = 1 ] && [ "$out" = "spark-shell: BAR_MOTION=maybe in $cfg: yes or no" ] && grep -qx 'BAR_MOTION=yes' "$REPO/config.example" \
+        && ok "BAR_MOTION=no: the look says motion no at the next line; star's heavy and light lines are its gauge pair; a motion that is neither is refused in one line; config.example shows yes" || bad "bar motion" "$(printf '%s' "$line" | jq -c '.[0]') st=$st2 $out"
+    # the modules at rest: a sign each, the word of none; wifi's signal a level the bar cannot set; the battery its number
+    # as text and no sign
     line=$l2
-    [ "$(printf '%s' "$line" | jq -r '[.[] | select(.name == "out" or .name == "mic") | .name + ":" + .instance + "=" + .control] | join(" ")')" = 'out:name=toggle out:gauge=level out:pct=open mic:name=open mic:gauge=level' ] \
-        && [ "$(count "$(aud out gauge full_text)" "$pip")" = 2 ] && [ "$(aud out gauge cells)" = 5 ] && [ "$(aud out pct full_text)" = "<span foreground='#aaaaaa'> 40%</span>" ] && [ "$(aud out pct cells)" = 4 ] && [ "$(aud out pct optional)" = true ] \
-        && [ "$(aud out name label)" = 'output 40%' ] && [ "$(aud mic gauge label)" = 'microphone 50%' ] && [ "$(count "$(aud mic gauge full_text)" "$pip")" = 3 ] && [ "$(aud out name full_text)" = "$(printf '%s' "$l1" | jq -r '.[] | select(.name == "out" and .instance == "name") | .full_text')" ] \
-        && [ "$(printf '%s' "$l1" | jq -r '.[] | select(.name == "out" and .instance == "name") | .control')" = open ] && [ "$(aud out gauge level)" = null ] && [ "$(aud mic gauge level)" = null ] \
-        && ok "spark's bar: out is its sign (toggle), its gauge (2 of 5 cells at 40%) and its percent, right-aligned in four cells, optional (open); mic its sign (open) and its gauge (3 of 5 at 50%); the level is in the label and the cells, no field of its own; the sign on sway's bar still opens" || bad "audio pilot line" "$line"
-    # the clock on spark's bar: two blocks, the date first to leave a bar short of width, with no space of its own after
-    # it (spark-bar keeps a cell between a module's blocks), then the time
-    printf '%s' "$(aud clock date full_text)|$(aud clock time full_text)" | grep -Eq "^<span foreground='#$pm'>[A-Za-z]+ [0-9]{2} [A-Za-z]+</span>\|[0-9]{2}:[0-9]{2}$" \
-        && printf '%s' "$line" | jq -e '(.[] | select(.instance == "date")) as $d | (.[] | select(.instance == "time")) as $t | $d.name == "clock" and $t.name == "clock" and $d.optional == true and $d.cells == 10 and ($d.full_text | endswith("</span>")) and ($d.label | startswith("date ")) and $t.cells == 5 and ($t | has("optional") | not) and ($t.label | startswith("time ")) and ([.[] | select(.name == "clock")] | length) == 2' >/dev/null \
-        && ok "spark's bar, the clock: the date, muted, in its own ten cells with no space after it, the first to leave a short bar; then the time in the text color" || bad "clock blocks" "$(aud clock date full_text)|$(aud clock time full_text)"
-    touch "$H/muted"; line=$(sb); rm -f "$H/muted"
-    [ "$(aud out name full_text)" = "<span foreground='#$pm'>$(printf '\342\227\201')</span>" ] && [ "$(aud out pct full_text)" = '    ' ] && [ "$(aud out pct label)" = 'output muted' ] && [ "$(count "$(aud out gauge full_text)" "$pip")" = 2 ] && [ "$(count "$(aud out gauge full_text)" "#$pm")" = 2 ] && [ "$(aud out name state)" = ok ] \
-        && ok "spark's bar, out muted: the hollow sign, the gauge muted with its level remembered, the percent blank in its cells, the label says muted" || bad "audio pilot muted" "$line"
-    # no audio system, and a device with no volume control: the same cells, the hollow sign muted, the gauge and the percent empty
+    [ "$(frow lan)" = "lan|connections|$g_lan||0|false|ok|-|false|false|lan connected" ] && [ "$(frow bt)" = "bt|connections|$g_bt||0|false|ok|-|false|false|bluetooth MAJOR V connected" ] \
+        && [ "$(frow wifi)" = "wifi|connections|$g_wifi||0|false|ok|70|false|false|wifi 70%" ] && [ "$(frow bat)" = "bat|seat||80%|5|false|ok|-|false|false|battery 80%" ] \
+        && ok "facts at rest: lan and bt their signs, ok; wifi its sign and its signal, a level of 70 the bar reads and cannot set, not pinned; the battery no sign, 80% as its text in five cells" || bad "facts at rest" "$line"
+    # sound: out is pinned by default, so its control, the gauge and the number, is on the bar; the level is a field of
+    # its own, never in a text; mic has its level too, not pinned. The sign on sway's bar still opens the section
+    [ "$(frow out)" = "out|sound|$g_out||0|false|ok|40|true|true|output 40%" ] && [ "$(frow mic)" = "mic|sound|$g_mic||0|false|ok|50|true|false|microphone 50%" ] \
+        && [ "$(printf '%s' "$l1" | jq -r '[.[] | select(.name == "out" or .name == "mic") | .name + ":" + .instance + "=" + .control] | join(" ")')" = 'out:name=open out:gauge=level mic:name=open mic:gauge=level' ] \
+        && ok "facts, sound: out is its sign, a level of 40 the bar can set, pinned (out is the default pin); mic its sign and a level of 50, not pinned; on sway's bar the signs open and the gauges set, as before" || bad "facts sound" "$line"
+    # the clock: the time alone, the one bold text; no date on spark's bar. Sway's bar keeps its one block, the date first
+    printf '%s' "$(frow clock)" | grep -Eq '^clock\|time\|\|[0-9]{2}:[0-9]{2}\|5\|true\|ok\|-\|false\|false\|time [0-9]{2}:[0-9]{2}$' && [ "$(printf '%s' "$line" | jq '[.[] | select(.name == "clock")] | length')" = 1 ] \
+        && [ "$(printf '%s' "$line" | jq -r '[.[1:][] | select(.bold) | .name] | join(" ")')" = clock ] && ! printf '%s' "$line" | grep -q 'date ' && printf '%s' "$l1" | grep -q 'date [A-Za-z]* [0-9]* [A-Za-z]*, time [0-9]' \
+        && ok "facts, the clock: the time alone in five cells, bold, the one bold module, no sign and no date; sway's bar keeps the date in its block" || bad "facts clock" "$(frow clock) | $line"
+    # the words set: the sign is the word, the same in every state; the state says the rest. Muted, recording, the wire down
+    line=$l3
+    [ "$(frow lan)" = 'lan|connections|lan||0|false|wrong|-|false|false|lan not connected' ] && [ "$(frow bt)" = 'bt|connections|bt||0|false|ok|-|false|false|bluetooth MAJOR V connected' ] \
+        && [ "$(frow wifi)" = 'wifi|connections|wifi||0|false|ok|70|false|false|wifi 70%' ] && [ "$(frow out)" = 'out|sound|out||0|false|off|40|true|true|output muted' ] \
+        && [ "$(frow mic)" = 'mic|sound|mic||0|false|records|50|true|false|microphone 50%, recording' ] && [ "$(frow bat)" = 'bat|seat|bat|80%|5|false|ok|-|false|false|battery 80%' ] \
+        && ok "facts in words: lan, bt, wifi, out, mic and bat are their words, in every state; the wire down is wrong; out muted is off, since no word is hollow, and keeps its level; the mic recording is records" || bad "facts words" "$line"
+    # the states, in signs. Muted: the hollow sign, the level remembered; in words, where no word is hollow, muted is
+    # sent as off, so the tone says it. A wire down: wrong. Recording: the dot, records
+    touch "$H/muted" "$H/cmuted"; echo 0 > "$S/class/net/eth0/carrier"; line=$(sb)
+    cp "$cfg" "$H/config.keep"; printf 'BAR_GLYPHS=words\n' >> "$cfg"; _fw=$(sb | jq -r '[.[1:][] | select(.name == "out" or .name == "mic") | [.name, .sign, .state, .level, .set] | map(tostring) | join("|")] | join(" ")' || echo unread); mv "$H/config.keep" "$cfg"
+    rm -f "$H/muted" "$H/cmuted"; echo 1 > "$S/class/net/eth0/carrier"
+    [ "$(frow out)" = "out|sound|$g_out_off||0|false|muted|40|true|true|output muted" ] && [ "$(frow mic)" = "mic|sound|$g_mic_off||0|false|muted|50|true|false|microphone muted" ] \
+        && [ "$(frow lan)" = "lan|connections|$g_lan||0|false|wrong|-|false|false|lan not connected" ] && [ -z "$(fbad "$line")" ] && [ "$_fw" = 'out|out|off|40|true mic|mic|off|50|true' ] \
+        && ok "facts, muted: out and mic wear their hollow signs in state muted, each with the level it keeps, and can still be set; in words both are off, their words and levels as they were; the wire down is the same sign in state wrong" || bad "facts muted" "$line | $_fw"
+    echo 'state: RUNNING' > "$P/asound/card0/pcm0c/sub0/status"; touch "$H/cmuted"; line=$(sb); echo closed > "$P/asound/card0/pcm0c/sub0/status"; rm -f "$H/cmuted"
+    [ "$(frow mic)" = "mic|sound|$g_rec||0|false|records|50|true|false|microphone muted, recording" ] && [ "$(frow out)" = "out|sound|$g_out||0|false|ok|40|true|true|output 40%" ] \
+        && ok "facts, recording: the mic's sign is the dot in state records, muted or not; out is as it was" || bad "facts recording" "$line"
+    # bluetooth with nothing connected is missing, its sign solid; turned off, the hollow star in state off. Wifi not connected: off, and
+    # no level. A battery under 15: wrong; charging: a plus after its number, and ok
+    mkdir -p "$H/btoff"; printf '#!/bin/sh\ncase "$*" in show) printf "Controller 00:11:22:33:44:55 (public)\\n\\tPowered: no\\n" ;; esac\n' > "$H/btoff/bluetoothctl"; chmod +x "$H/btoff/bluetoothctl"
+    touch "$H/bt-none"; echo down > "$S/class/net/wlan0/operstate"; echo 10 > "$S/class/power_supply/BAT0/capacity"; line=$(sb); _f1="$(frow bt)/$(frow wifi)/$(frow bat)"
+    echo Charging > "$S/class/power_supply/BAT0/status"; line=$(PATH="$H/btoff:$PATH" SPARK_BAR=1 sh "$SH" bar status --once); _f2="$(frow bt)/$(frow bat)/$(fbad "$line")"
+    rm -rf "$H/bt-none" "$H/btoff"; echo up > "$S/class/net/wlan0/operstate"; echo 80 > "$S/class/power_supply/BAT0/capacity"; echo Discharging > "$S/class/power_supply/BAT0/status"
+    [ "$_f1" = "bt|connections|$g_bt||0|false|missing|-|false|false|bluetooth on/wifi|connections|$g_wifi||0|false|off|-|false|false|wifi not connected/bat|seat||10%|5|false|wrong|-|false|false|battery 10% low" ] \
+        && [ "$_f2" = "bt|connections|$g_bt_off||0|false|off|-|false|false|bluetooth off/bat|seat||10%+|5|false|ok|-|false|false|battery 10% charging/" ] \
+        && ok "facts: bluetooth on with nothing connected is the solid star in state missing, never the look of a device connected; off is the hollow star in state off; wifi not connected is off with no level; a battery at 10 is wrong, and ok with a plus while it charges" || bad "facts states" "$_f1 | $_f2"
+    # no audio system, and a device with no volume control: out and mic stay on the line, missing, the hollow sign, a level
+    # of 0 the bar cannot set, so a pinned control keeps its cells; the label says why. Nothing else of a bare machine is there
     mv "$S" "$S.full"; mv "$P" "$P.full"; mkdir -p "$S" "$P"; line=$(sb); rm -rf "$S" "$P"; mv "$S.full" "$S"; mv "$P.full" "$P"
-    [ "$(printf '%s' "$line" | jq -r '[.[] | .name + ":" + .instance] | join(" ")')" = 'look: out:name out:gauge out:pct mic:name mic:gauge clock:date clock:time logo:' ] \
-        && [ "$(printf '%s' "$line" | jq -r '[.[] | select(.name == "out" or .name == "mic") | .state] | unique | join(" ")')" = unavailable ] && [ "$(aud out name label)" = 'output not available: no audio system found' ] && [ "$(aud mic name label)" = 'microphone not available: no audio system found' ] \
-        && [ "$(aud out name full_text)" = "<span foreground='#$pm'>$(printf '\342\227\201')</span>" ] && [ "$(aud out gauge full_text)" = '     ' ] && [ "$(aud out gauge cells)" = 5 ] && [ "$(aud out pct full_text)" = '    ' ] && [ -z "$(over "$line")" ] \
-        && ok "spark's bar with no audio system: out and mic stay on the line in their cells, unavailable, the label says why" || bad "audio unavailable" "$line"
+    [ "$(fnames "$line")" = 'look out mic clock' ] && [ -z "$(fbad "$line")" ] \
+        && [ "$(frow out)" = "out|sound|$g_out_off||0|false|missing|0|false|true|output not available: no audio system found" ] && [ "$(frow mic)" = "mic|sound|$g_mic_off||0|false|missing|0|false|false|microphone not available: no audio system found" ] \
+        && ok "facts with no audio system: out and mic stay on the line, missing, hollow, a level of 0 that cannot be set, the label says why; a machine with no other hardware has them and the clock alone" || bad "facts missing" "$line"
     echo 'state: RUNNING' > "$P/asound/card1/pcm0p/sub0/status"; line=$(sb); l5=$(sh "$SH" bar status --once); echo closed > "$P/asound/card1/pcm0p/sub0/status"
-    [ "$(aud out name state)" = unavailable ] && [ "$(aud out name label)" = 'output not available: HDMI has no volume control here, so it cannot be muted or set' ] && [ "$(aud out gauge full_text)" = '     ' ] && [ "$(aud mic name state)" = ok ] \
+    [ "$(frow out)" = "out|sound|$g_out_off||0|false|missing|0|false|true|output not available: HDMI has no volume control here, so it cannot be muted or set" ] && [ "$(frow mic)" = "mic|sound|$g_mic||0|false|ok|50|true|false|microphone 50%" ] \
         && [ "$(printf '%s' "$l5" | jq -r '[.[] | select(.name == "out") | .instance + "=" + .state] | join(" ")')" = 'name=unavailable' ] \
-        && ok "a device with no volume control: unavailable in the same cells, named in the label; sway's bar keeps its sign alone" || bad "audio no control" "$line"
-    # a direct change that fails: said on spark's bar's next line, the sign red and the warning in the gauge's first
-    # cell; the next change that works clears it, and so does the next timed line. Sway's bar draws sound as before
+        && ok "a device with no volume control: missing on spark's bar, named in the label; sway's bar keeps its sign alone, unavailable" || bad "facts no control" "$line | $l5"
+    # a direct change that fails: said on spark's bar's next line, out in state wrong; the next change that works clears
+    # it, and so does the next timed line. Sway's bar draws sound as before
     mkdir -p "$H/failbin"; printf '#!/bin/sh\ncase "$*" in *sset*) exit 1 ;; esac\nexec "%s/.local/bin/amixer" "$@"\n' "$H" > "$H/failbin/amixer"; chmod +x "$H/failbin/amixer"
     st=0; PATH="$H/failbin:$PATH" sh "$SH" bar volume up || st=$?; line=$(sb); l5=$(sh "$SH" bar status --once)
-    [ "$st" = 0 ] && [ -e "$H/run/spark-shell-bar.failed.out" ] && [ "$(aud out name state)" = error ] && [ "$(aud out name label)" = 'output could not be changed' ] && [ "$(aud out name full_text)" = "<span foreground='#aa0000'>$(printf '\342\227\200')</span>" ] \
-        && [ "$(aud out gauge full_text)" = "<span foreground='#aa0000'>$(printf '\342\232\240')</span>    " ] && [ "$(aud out pct full_text)" = '    ' ] && [ "$(aud mic name state)" = ok ] && [ -z "$(over "$line")$(over "$l5")" ] \
-        && [ "$(printf '%s' "$l5" | jq -c '[.[] | select(.name == "out" or .name == "mic")]')" = "$(printf '%s' "$l1" | jq -c '[.[] | select(.name == "out" or .name == "mic")]')" ] && ! printf '%s' "$l5" | grep -q "$(printf '\342\232\240')" && ! grep -q 'failed' "$cfg" \
-        && ok "a change that fails (the volume key, a click): spark's bar's next line says error, the sign red, the warning in the gauge's first cell; sway's bar draws out and mic as before the failure, no warning; the mark is in the runtime folder, never in the config" || bad "audio error" "st=$st $line | $l5"
+    [ "$st" = 0 ] && [ -e "$H/run/spark-shell-bar.failed.out" ] && [ "$(frow out)" = "out|sound|$g_out||0|false|wrong|40|true|true|output could not be changed" ] && [ "$(frow mic)" = "mic|sound|$g_mic||0|false|ok|50|true|false|microphone 50%" ] \
+        && [ -z "$(fbad "$line")$(over "$l5")" ] && [ "$(printf '%s' "$l5" | jq -c '[.[] | select(.name == "out" or .name == "mic")]')" = "$(printf '%s' "$l1" | jq -c '[.[] | select(.name == "out" or .name == "mic")]')" ] && ! grep -q 'failed' "$cfg" \
+        && ok "a change that fails (the volume key, a click): spark's bar's next line says out is wrong, could not be changed, its sign and its level as they are; sway's bar draws out and mic as before the failure; the note of it is in the runtime folder, never in the config" || bad "facts wrong" "st=$st $line | $l5"
     sh "$SH" bar volume up; line=$(sb)
-    [ ! -e "$H/run/spark-shell-bar.failed.out" ] && [ "$(aud out name state)" = ok ] && ok "the next change that works clears the error" || bad "audio recovery" "$line"
+    [ ! -e "$H/run/spark-shell-bar.failed.out" ] && [ "$(frow out)" = "out|sound|$g_out||0|false|ok|40|true|true|output 40%" ] && ok "the next change that works clears the failure: out is ok again" || bad "audio recovery" "$line"
     : > "$H/run/spark-shell-bar.failed.mic"
     SPARK_BAR=1 sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
     for _i in $(seq 1 100); do [ "$(grep -c '^\[{' "$H/bar.out")" -ge 1 ] && break; sleep .1; done
     kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
     [ ! -e "$H/run/spark-shell-bar.failed.mic" ] && [ "$(grep '^\[{' "$H/bar.out" | head -1 | sed 's/,$//' | jq -r '[.[] | select(.name == "mic") | .state] | unique | join(" ")')" = ok ] \
-        && ok "a timed line clears the error: the mic reads clean again" || bad "audio recovery timed" "$(head -3 "$H/bar.out")"
+        && ok "a timed line clears the failure: the mic reads clean again" || bad "audio recovery timed" "$(head -3 "$H/bar.out")"
     rm -f "$HOME/level"
-    # the clicks on spark's bar: the sign mutes, Home and End on the gauge set 0 and 100, the wheel down takes 5, the
-    # percent and the mic's sign open their sections
-    rm -f "$amlog" "$H/.local/state/foot.log"
+    # the clicks on spark's bar name the part: name (the sign), gauge, pct (the number), text. Out's sign mutes; a gauge
+    # sets, 0 and 100 at its ends (Home and End); the wheel takes 5 on any part; a level's number opens its section, as
+    # the mic's sign does and brightness's (the display section); the keyboard's sign and text go to the next layout;
+    # the flag and any other part open their section
+    rm -f "$amlog" "$H/.local/state/foot.log" "$H/.local/state/swaymsg.log"
     printf '[\n,{"name":"out","instance":"name","button":1,"relative_x":8,"width":16}\n,{"name":"out","instance":"gauge","button":1,"relative_x":0,"width":80}\n,{"name":"out","instance":"gauge","button":1,"relative_x":80,"width":80}\n,{"name":"out","instance":"gauge","button":5}\n,{"name":"out","instance":"pct","button":1,"relative_x":32,"width":64}\n,{"name":"mic","instance":"name","button":1,"relative_x":8,"width":16}\n' > "$H/clicks"
-    SPARK_BAR=1 sh "$SH" bar status < "$H/clicks" > "$H/bar.out" 2> "$H/bar.err" & bp=$!
-    for _i in $(seq 1 100); do [ "$(wc -l < "$amlog" 2>/dev/null || echo 0)" -ge 4 ] && [ "$(grep -vc '^--version' "$H/.local/state/foot.log" 2>/dev/null || echo 0)" -ge 2 ] && break; sleep .1; done
+    printf ',{"name":"mic","instance":"gauge","button":1,"relative_x":40,"width":80}\n,{"name":"mic","instance":"pct","button":4}\n,{"name":"out","instance":"pct","button":4}\n,{"name":"light","instance":"pct","button":1,"relative_x":8,"width":64}\n,{"name":"kb","instance":"name","button":1}\n,{"name":"kb","instance":"text","button":1}\n,{"name":"wifi","instance":"gauge","button":1,"relative_x":40,"width":80}\n,{"name":"notifications","instance":"text","button":1}\n,{"name":"clock","instance":"text","button":1}\n,{"name":"due","instance":"name","button":1}\n' >> "$H/clicks"
+    mkdir -p "$H/kbsway"   # the keyboards on the seat: one with two layouts between two virtual ones, which share an identifier, one with a layout and one with no keymap
+    cat > "$H/kbsway/swaymsg" <<'KBSWAY_STUB'
+#!/bin/sh
+case "$*" in
+    '-t get_inputs') echo asked >> "$HOME/kb.asked"
+        v0='{"identifier":"0:0:wlr_virtual_keyboard_v1","type":"keyboard","xkb_layout_names":[]}'; v1='{"identifier":"0:0:wlr_virtual_keyboard_v1","type":"keyboard","xkb_layout_names":["English (US)"],"xkb_active_layout_index":0}'
+        if [ -e "$HOME/kb-virtual-only" ]; then echo "[$v1,$v0]"; else echo "[$v1,{\"identifier\":\"1:1:kb\",\"type\":\"keyboard\",\"xkb_layout_names\":[\"English (US)\",\"English (intl)\"],\"xkb_active_layout_index\":0},$v0]"; fi ;;
+    *) exec "$HOME/.local/bin/swaymsg" "$@" ;;
+esac
+KBSWAY_STUB
+    chmod +x "$H/kbsway/swaymsg"
+    SPARK_BAR=1 PATH="$H/kbsway:$PATH" sh "$SH" bar status < "$H/clicks" > "$H/bar.out" 2> "$H/bar.err" & bp=$!
+    for _i in $(seq 1 200); do [ "$(wc -l < "$amlog" 2>/dev/null || echo 0)" -ge 7 ] && [ "$(grep -vc '^--version' "$H/.local/state/foot.log" 2>/dev/null || echo 0)" -ge 7 ] && break; sleep .1; done
     kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
-    [ "$(cat "$amlog" 2>/dev/null)" = "$(printf '%s\n' '-c 0 sset Master toggle' '-c 0 sset Master 0%' '-c 0 sset Master 100%' '-c 0 sset Master 5%-')" ] \
-        && [ "$(sort "$H/.local/state/foot.log" 2>/dev/null | grep -v '^--version')" = "$(printf '%s\n' "--config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog mic | " "--config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog out | ")" ] \
-        && ok "spark's bar, the clicks: out's sign toggles mute and opens nothing, its gauge sets 0 and 100 at its ends and the wheel takes 5, its percent opens the out section, the mic's sign the mic section" || bad "audio pilot clicks" "$(cat "$amlog" 2>&1); $(cat "$H/.local/state/foot.log" 2>&1); $(cat "$H/bar.err")"
-    rm -f "$HOME/level" "$HOME/muted" "$amlog"
-    # what the loop starts is no bar's line: home opened by a click carries neither spark-bar's word nor the pins
-    # spark-bar was started with (it reads the config's); the loop itself still draws for spark-bar
-    mkdir -p "$H/envfoot"; printf '#!/bin/sh\nprintf "SPARK_BAR=%%s BAR_PINS=%%s\\n" "${SPARK_BAR-unset}" "${BAR_PINS-unset}" >> "$HOME/foot.env"\n' > "$H/envfoot/foot"; chmod +x "$H/envfoot/foot"; rm -f "$HOME/foot.env"
+    [ "$(cat "$amlog" 2>/dev/null)" = "$(printf '%s\n' '-c 0 sset Master toggle' '-c 0 sset Master 0%' '-c 0 sset Master 100%' '-c 0 sset Master 5%-' '-c 0 sset Capture 50%' '-c 0 sset Capture 5%+' '-c 0 sset Master 5%+')" ] \
+        && [ "$(sort "$H/.local/state/foot.log" 2>/dev/null | grep -v '^--version' | sed "s|^--config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog ||; s/ | \$//" | paste -sd' ' -)" = 'clock display mic notifications out reminders wifi' ] \
+        && [ "$(grep 'xkb_switch_layout' "$H/.local/state/swaymsg.log" 2>/dev/null | sort -u)" = 'input "1:1:kb" xkb_switch_layout next' ] && [ "$(grep -c 'xkb_switch_layout' "$H/.local/state/swaymsg.log")" = 2 ] \
+        && ok "spark's bar, the clicks: out's sign toggles mute and opens nothing; a gauge sets, 0 and 100 at its ends, the mic's too; the wheel takes 5 on a number; out's number, the mic's sign, brightness's number (display), wifi's gauge, the flag, the time and a reminder due open their sections; the keyboard's sign and its text go to the next layout, on the real keyboard alone, never on the identifier the virtual ones share" || bad "facts clicks" "$(cat "$amlog" 2>&1); $(cat "$H/.local/state/foot.log" 2>&1); $(cat "$H/.local/state/swaymsg.log" 2>&1); $(cat "$H/bar.err")"
+    # the same click with the two virtual keyboards alone on the seat, one that typed and one that never did, so with
+    # no keymap: the keyboards are asked for and no layout switch is sent, since the identifier they share would reach
+    # both. One that reached a keyboard with no keymap ended sway 1.12, the session with it
+    touch "$HOME/kb-virtual-only"; rm -f "$HOME/kb.asked" "$H/.local/state/swaymsg.log"; printf '[\n,{"name":"kb","instance":"text","button":1}\n,{"name":"kb","instance":"name","button":1}\n' > "$H/clicks"
+    SPARK_BAR=1 PATH="$H/kbsway:$PATH" sh "$SH" bar status < "$H/clicks" > "$H/bar.out" 2> "$H/bar.err" & bp=$!
+    for _i in $(seq 1 100); do [ "$(grep -c '' "$HOME/kb.asked" 2>/dev/null || echo 0)" -ge 2 ] && break; sleep .1; done; sleep 0.3
+    kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
+    [ "$(grep -c '' "$HOME/kb.asked" 2>/dev/null)" = 2 ] && ! grep -q 'xkb_switch_layout' "$H/.local/state/swaymsg.log" 2>/dev/null \
+        && ok "the bar's click on the keyboard with two virtual keyboards alone, one with a layout and one with no keymap under the same identifier: the keyboards are asked for, each click, and no layout switch is sent" || bad "kb click, virtual alone" "$(cat "$HOME/kb.asked" "$H/.local/state/swaymsg.log" 2>&1); $(cat "$H/bar.err")"
+    rm -rf "$HOME/level" "$HOME/clevel" "$HOME/muted" "$amlog" "$H/kbsway" "$HOME/kb-virtual-only" "$HOME/kb.asked"
+    # what the loop starts is no bar's line: home opened by a click carries neither spark-bar's word nor the pins and
+    # the hidden the loop was started with. The loop's own line reads the config's at each line, never the ones of its
+    # start: lan, hidden in its environment alone, is on it, and mic, pinned there alone, is not pinned
+    mkdir -p "$H/envfoot"; printf '#!/bin/sh\nprintf "SPARK_BAR=%%s BAR_PINS=%%s BAR_HIDE=%%s\\n" "${SPARK_BAR-unset}" "${BAR_PINS-unset}" "${BAR_HIDE-unset}" >> "$HOME/foot.env"\n' > "$H/envfoot/foot"; chmod +x "$H/envfoot/foot"; rm -f "$HOME/foot.env"
     printf '[\n,{"name":"logo","instance":"","button":1,"relative_x":4,"width":16}\n' > "$H/clicks"
-    SPARK_BAR=1 BAR_PINS='out mic' PATH="$H/envfoot:$PATH" sh "$SH" bar status < "$H/clicks" > "$H/bar.out" 2> "$H/bar.err" & bp=$!
+    SPARK_BAR=1 BAR_PINS='out mic' BAR_HIDE=lan PATH="$H/envfoot:$PATH" sh "$SH" bar status < "$H/clicks" > "$H/bar.out" 2> "$H/bar.err" & bp=$!
     for _i in $(seq 1 100); do [ -s "$HOME/foot.env" ] && [ "$(grep -c '^\[{' "$H/bar.out")" -ge 1 ] && break; sleep .1; done
     kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
-    [ "$(sort -u "$HOME/foot.env" 2>/dev/null)" = 'SPARK_BAR=unset BAR_PINS=unset' ] && grep '^\[{' "$H/bar.out" | head -1 | grep -q '^\[{"name":"look",' \
-        && ok "the loop under spark-bar keeps SPARK_BAR and the pins it was started with to itself: home opened by a click on the logo has neither in its environment, and the loop's line still has the look" || bad "loop environment" "$(cat "$HOME/foot.env" 2>&1) $(head -2 "$H/bar.out")"
+    [ "$(sort -u "$HOME/foot.env" 2>/dev/null)" = 'SPARK_BAR=unset BAR_PINS=unset BAR_HIDE=unset' ] && grep '^\[{' "$H/bar.out" | head -1 | grep -q '^\[{"name":"look",' \
+        && [ "$(grep '^\[{' "$H/bar.out" | head -1 | sed 's/,$//' | jq -r '[.[] | select(.name == "lan" or .name == "mic") | .name + "=" + (.pinned | tostring)] | join(" ")')" = 'lan=false mic=false' ] \
+        && ok "the loop under spark-bar keeps SPARK_BAR, and the pins and the hidden it was started with, to itself: home opened by a click on the logo has none in its environment; the loop's line still has the look, and reads the pins and the hidden from the config, not from its start" || bad "loop environment" "$(cat "$HOME/foot.env" 2>&1) $(head -3 "$H/bar.out")"
     rm -rf "$H/envfoot" "$HOME/foot.env"
     # the look follows a look change with no start: the palette file a look change writes, a preview too, is read by
-    # the loop. Spark's bar: the next line's look says it, one line a change, its blocks in the new colors. Sway's bar:
-    # the last line recolored, then the next, as before spark-bar
+    # the loop. Spark's bar: the next line's look says it, one line a change; its modules carry no color, so none
+    # changes. Sway's bar: the last line recolored, then the next, as before spark-bar
     lk() { grep '^\[{' "$H/bar.out" | sed -n "${1}p" | sed 's/,$//' | jq -c "$2"; }   # lk N FILTER -> of the loop's Nth line
     lines_are() { _la=0; while [ "$_la" -lt 100 ] && [ "$(grep -c '^\[{' "$H/bar.out")" -lt "$1" ]; do sleep 0.1; _la=$((_la + 1)); done; }   # lines_are N -- the loop has drawn N lines
     pv() { printf '%s\n' "$_pv" | sed -n "s/^$1=//p"; }   # pv KEY -> its value in the palette file of the preview
@@ -4691,12 +4797,12 @@ else
     SPARK_BAR=1 sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
     lines_are 1; pvw nord; lines_are 2; _pv=$(cat "$H/.local/state/spark-shell/bar.palette" 2>&1 || :); pvw off; lines_are 3; sleep 0.3
     kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
-    [ "$(grep -c '^\[{' "$H/bar.out")" = 3 ] && [ "$(lk 1 '.[0]')" = "{\"name\":\"look\",\"fg\":\"aaaaaa\",\"accent\":\"ff5555\",\"muted\":\"$pm\",\"ground\":\"000000\",\"lit\":\"1e1e1e\",\"attention\":\"aa5500\",\"alpha\":\"0.95\"}" ] \
-        && [ "$(grep '^\[{' "$H/bar.out" | sed 's/,$//' | jq -c '.[0] | .name == "look" and ([.fg, .accent, .muted, .ground, .lit, .attention] | all(type == "string" and test("^[0-9a-f]{6}$"))) and (.alpha | type == "string")' | paste -sd' ' -)" = 'true true true' ] \
-        && [ "$(pv HEX_ACCENT) $(pv HEX_BG)" = '88c0d0 2e3440' ] && [ "$(pv PANEL_MUTED)" != "$(pv HEX_MUTED)" ] && [ "$(lk 2 '.[0]')" = "{\"name\":\"look\",\"fg\":\"$(pv HEX_FG)\",\"accent\":\"$(pv HEX_ACCENT)\",\"muted\":\"$(pv PANEL_MUTED)\",\"ground\":\"$(pv HEX_BG)\",\"lit\":\"$(pv PANEL_HI)\",\"attention\":\"$(pv HEX_ANSI_3)\",\"alpha\":\"$(pv ALPHA)\"}" ] \
-        && lk 2 . | grep -q "#$(pv PANEL_MUTED)'" && ! lk 2 . | grep -q "#$(pv HEX_MUTED)'" \
-        && [ "$(lk 2 '.[] | select(.name == "lan") | .full_text')" = "\"<span foreground='#88c0d0'>$(printf '\342\207\205')</span>\"" ] && [ "$(lk 3 '.[0]')" = "$(lk 1 '.[0]')" ] && [ "$(lk 3 '[.[] | select(.name != "clock")]')" = "$(lk 1 '[.[] | select(.name != "clock")]')" ] \
-        && ok "spark's bar follows a look with no start: a preview's palette file changes the next line's look, all seven values, and its blocks' colors, the muted the preview's lifted one, in one line; the preview off, the look in use is back; every line carries its look" || bad "look follows" "$(grep -c '^\[{' "$H/bar.out") | $(lk 1 '.[0]') | $(lk 2 '.[0]') | $(lk 3 '.[0]') | $_pv"
+    [ "$(grep -c '^\[{' "$H/bar.out")" = 3 ] && [ "$(lk 1 '.[0]')" = "$look" ] \
+        && [ "$(grep '^\[{' "$H/bar.out" | sed 's/,$//' | jq -c '.[0] | .name == "look" and ([.fg, .accent, .muted, .ground, .lit, .attention, .alert] | all(type == "string" and test("^[0-9a-f]{6}$"))) and ([.alpha, .full, .light, .motion] | all(type == "string"))' | paste -sd' ' -)" = 'true true true' ] \
+        && [ "$(pv HEX_ACCENT) $(pv HEX_BG)" = '88c0d0 2e3440' ] && [ "$(pv HEX_MUTED)" != 555555 ] && [ "$(pv HEX_ANSI_1)" != aa0000 ] \
+        && [ "$(lk 2 '.[0]')" = "{\"name\":\"look\",\"fg\":\"$(pv HEX_FG)\",\"accent\":\"$(pv HEX_ACCENT)\",\"muted\":\"$(pv HEX_MUTED)\",\"ground\":\"$(pv HEX_BG)\",\"lit\":\"$(pv PANEL_HI)\",\"attention\":\"$(pv HEX_ANSI_3)\",\"alert\":\"$(pv HEX_ANSI_1)\",\"alpha\":\"$(pv ALPHA)\",\"full\":\"$pip\",\"light\":\"$pipoff\",\"motion\":\"yes\"}" ] \
+        && [ "$(lk 2 '[.[1:][] | select(.name != "clock")]')" = "$(lk 1 '[.[1:][] | select(.name != "clock")]')" ] && [ "$(lk 2 '.[1:] | length')" -ge 6 ] && [ "$(lk 3 '.[0]')" = "$(lk 1 '.[0]')" ] && [ "$(lk 3 '[.[] | select(.name != "clock")]')" = "$(lk 1 '[.[] | select(.name != "clock")]')" ] \
+        && ok "spark's bar follows a look with no start: a preview's palette file changes the next line's look, its seven colors and the alpha, the muted and the alert the preview's own, in one line, and no module with it: the colors are the look's alone; the preview off, the look in use is back; every line carries its look" || bad "look follows" "$(grep -c '^\[{' "$H/bar.out") | $(lk 1 '.[0]') | $(lk 2 '.[0]') | $(lk 3 '.[0]') | $_pv"
     sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
     lines_are 1; pvw nord; lines_are 3; pvw off; lines_are 5; sleep 0.3
     kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
@@ -4744,45 +4850,98 @@ EVSWAY_STUB
     done
     [ -z "$_wf" ] && ok "a line no bar reads ends the loop at that write, by the trap where the broken pipe is a signal and by the failed write where it is ignored: the loop gone, its pid file with it, the watcher's reader and subscriber after it" || bad "loop outlives its bar" "$_wf $(cat "$H/bar.err" 2>&1 | tail -2)"
     rm -rf "$H/evsway" "$H/bar.fifo" "$HOME/ev.log" "$HOME/ev.pid"
-    # the pins: listed, a module unpinned and pinned back, the names held to the bar's modules, the config's two keys.
-    # Sway's bar shows every module: where spark-bar draws no bar the list still reads and its last line says so, and a
-    # pin or an unpin is refused in one line, nothing written
+    # the pins and the hidden (v0.148), the config's two keys: a pin puts a level's control, a gauge and a number, on the
+    # bar, and a hide takes a module off it. Sway's bar shows every module: where spark-bar draws no bar the list still
+    # reads and its last line says so, and each of the four verbs is refused in one line, nothing written
     dot=$(printf '\302\267'); nopin="pins need spark-bar: sway's bar draws the bar here, and it shows every module (spark-shell on desktop)"
+    nohide="hide and show need spark-bar: sway's bar draws the bar here, and it shows every module (spark-shell on desktop)"
+    mods='pad lan bt wifi out mic due light kb bat clock notifications'
+    nshown() { printf '%s\n' "$1" | grep -c "^[a-z]*  *$2 *$dot " || :; }   # nshown LIST shown|pinned|hidden -> how many lines say so
     st=0; out=$(sh "$SH" bar pin 2>&1) || st=$?
-    st2=0; out2=$(sh "$SH" bar unpin out 2>&1) || st2=$?; st3=0; out3=$(sh "$SH" bar pin out 2>&1) || st3=$?
-    [ "$st" = 0 ] && [ "$(printf '%s\n' "$out" | grep -c '')" = 14 ] && [ "$(printf '%s\n' "$out" | grep -c ' pinned ')" = 13 ] && [ "$(printf '%s\n' "$out" | tail -1)" = "$nopin" ] \
-        && [ "$st2" = 1 ] && [ "$out2" = "spark-shell bar: $nopin" ] && [ "$st3" = 1 ] && [ "$out3" = "spark-shell bar: $nopin" ] && ! grep -q '^BAR_PINS' "$cfg" \
-        && ok "bar pin with no spark-bar here: the modules listed, then a line that sway's bar shows every one; pin NAME and unpin NAME refused in one line, the config as it was" || bad "bar pin no spark-bar" "st=$st $out | $st2 $out2 | $st3 $out3 | $(grep BAR_PINS "$cfg")"
+    _rf=''; for _v in 'unpin out' 'pin mic' 'hide lan' 'show lan'; do
+        _w=$nopin; case $_v in hide*|show*) _w=$nohide ;; esac   # a hide's refusal never speaks of pins
+        st2=0; out2=$(sh "$SH" bar $_v 2>&1) || st2=$?; [ "$st2" = 1 ] && [ "$out2" = "spark-shell bar: $_w" ] || _rf="$_rf [$_v: $st2 $out2]"
+    done
+    [ "$st" = 0 ] && [ "$(printf '%s\n' "$out" | grep -c '')" = 14 ] && [ "$(nshown "$out" shown)" = 12 ] && [ "$(nshown "$out" pinned)" = 1 ] && [ "$(printf '%s\n' "$out" | tail -1)" = "$nopin" ] \
+        && [ -z "$_rf" ] && ! grep -q '^BAR_PINS\|^BAR_HIDE' "$cfg" \
+        && ok "bar pin with no spark-bar here: the modules listed, then a line that sway's bar shows every one; pin, unpin, hide and show NAME refused in one line, each in its verb's own words, the config as it was" || bad "bar pin no spark-bar" "st=$st $out | $_rf | $(grep 'BAR_PINS\|BAR_HIDE' "$cfg")"
     printf '#!/bin/sh\nexit 0\n' > "$H/pinbar"; chmod +x "$H/pinbar"   # a spark-bar can run here; with no session none is started
     pb() { SPARK_SHELL_BAR=$H/pinbar sh "$SH" bar "$@"; }
+    fpin() { sb | jq -r '[.[1:][] | select(.pinned) | .name] | join(" ")' || echo unread; }   # -> the modules the line says are pinned
     st=0; out=$(pb pin 2>&1) || st=$?
-    [ "$st" = 0 ] && [ "$(printf '%s\n' "$out" | grep -c '')" = 13 ] && [ "$(printf '%s\n' "$out" | grep -c ' pinned ')" = 13 ] && printf '%s\n' "$out" | grep -qx "out           pinned   $dot the sound: mute, the level, the percent" \
-        && ok "bar pin: a line a module, pinned or not, and what it shows; every one pinned by default" || bad "bar pin list" "st=$st $out"
-    st=0; out=$(pb unpin out 2>&1) || st=$?
-    [ "$st" = 0 ] && [ "$out" = "unpinned out $dot the shortcut is off the bar, not the device $dot the bar shows workspaces, pad, lan, bt, wifi, mic, due, notifications, light, kb, bat, clock" ] && grep -qx 'BAR_PINS=workspaces pad lan bt wifi mic due notifications light kb bat clock' "$cfg" \
-        && pb pin | grep -qx "out           unpinned $dot the sound: mute, the level, the percent" \
-        && ok "bar unpin out: the first unpin writes every module but that one; the receipt says the device stays" || bad "bar unpin" "st=$st $out $(grep BAR_PINS "$cfg")"
-    st=0; out=$(pb unpin out 2>&1) || st=$?; st2=0; out2=$(pb pin sound 2>&1) || st2=$?; st3=0; out3=$(pb unpin 2>&1) || st3=$?
-    [ "$st" = 1 ] && [ "$out" = 'spark-shell bar: out not pinned' ] && [ "$st2" = 1 ] && [ "$out2" = 'spark-shell bar: sound is not a module of the bar: workspaces pad lan bt wifi out mic due notifications light kb bat clock' ] && [ "$st3" = 1 ] \
-        && ok "bar pin and unpin: a name that is no module, a module not pinned and no name at all are refused in one line" || bad "bar pin refuse" "$st $out | $st2 $out2 | $st3 $out3"
+    [ "$st" = 0 ] && [ "$(printf '%s\n' "$out" | grep -c '')" = 13 ] && [ "$(nshown "$out" shown)" = 12 ] && printf '%s\n' "$out" | grep -qx "out           pinned $dot the sound, its sign mutes; pinned, a gauge and a number set the level" \
+        && [ "$(printf '%s\n' "$out" | cut -d' ' -f1 | paste -sd' ' -)" = "workspaces $mods" ] && [ "$(fpin)" = out ] \
+        && ok "bar pin: a line a module, in the bar's order, shown, pinned or hidden, and what it shows; out alone is pinned by default, and the line says so" || bad "bar pin list" "st=$st $out | $(fpin)"
+    # a pin and an unpin: BAR_PINS in the bar's order, none when no level is pinned; the line says it at once
+    st=0; out=$(pb pin mic 2>&1) || st=$?; _f1=$(fpin); st2=0; out2=$(pb unpin out mic 2>&1) || st2=$?
+    [ "$st" = 0 ] && [ "$out" = "pinned mic $dot the bar shows a gauge and a number for out, mic" ] && [ "$_f1" = 'out mic' ] \
+        && [ "$st2" = 0 ] && [ "$out2" = "unpinned out mic $dot the bar shows no gauge now" ] && grep -qx 'BAR_PINS=none' "$cfg" && grep -qx 'BAR_HIDE=' "$cfg" && [ -z "$(fpin)" ] && [ "$(nshown "$(pb pin)" pinned)" = 0 ] \
+        && [ "$(fnames "$(sb)")" = 'look lan bt wifi out mic bat clock' ] \
+        && ok "bar pin mic, bar unpin out mic: the receipt says which levels have their gauge and number on the bar; BAR_PINS=none when none has, and every module stays on the line, its sign alone" || bad "bar pin unpin" "st=$st $out $_f1 | $st2 $out2 | $(grep 'BAR_PINS\|BAR_HIDE' "$cfg")"
+    st=0; out=$(pb unpin out 2>&1) || st=$?; st3=0; out3=$(pb unpin 2>&1) || st3=$?; st4=0; out4=$(pb pin clock 2>&1) || st4=$?
+    [ "$st" = 1 ] && [ "$out" = 'spark-shell bar: out not pinned' ] \
+        && [ "$st3" = 1 ] && [ "$out3" = "spark-shell bar: unpin takes a module's name: $mods" ] && [ "$st4" = 1 ] && [ "$out4" = 'spark-shell bar: clock has no level to pin: a pin is for out mic light wifi' ] && grep -qx 'BAR_PINS=none' "$cfg" \
+        && ok "bar pin and unpin: a module with no level, a level not pinned and no name at all are refused in one line, nothing written" || bad "bar pin refuse" "$st $out | $st3 $out3 | $st4 $out4"
+    # the four are verbs before modules' names alone. A sentence that begins with one is words, as before they were
+    # verbs: it goes to the words path whole, spark reads it where the path asks spark, and nothing is pinned or hidden
+    cp "$H/.local/bin/spark" "$H/spark.keep"; _c0=$(cksum < "$cfg")
+    printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/spark.argv"; printf "{\\"why\\": \\"a question\\", \\"answer\\": \\"The clock is on the bar.\\", \\"steps\\": []}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
+    _ws=''; for _v in 'show the clock' 'hide everything but the time' 'pin sound' 'unpin it' 'hide lan now'; do
+        rm -f "$HOME/spark.argv"; out=$(pb $_v 2>&1) || :
+        [ "$(printf '%s\n' "$out" | sed -n 1p)" = "panel> $_v" ] || _ws="$_ws [$_v: $out]"
+        case $_v in show*) ;; *) grep -qx "do this on the desktop: $_v" "$HOME/spark.argv" 2>/dev/null || _ws="$_ws [$_v: spark not asked]" ;; esac   # show the clock is read as a layout's words, by the same path
+    done
+    mv "$H/spark.keep" "$H/.local/bin/spark"; rm -f "$HOME/spark.argv"
+    [ -z "$_ws" ] && [ "$(cksum < "$cfg")" = "$_c0" ] \
+        && ok "bar show the clock, bar hide everything but the time, bar pin sound, bar unpin it, bar hide lan now: a word that is no module makes the line words, the words path has it whole and nothing is pinned or hidden" || bad "bar verbs and words" "$_ws | $(grep '^BAR_' "$cfg")"
     st=0; out=$(pb pin out 2>&1) || st=$?; st2=0; out2=$(pb pin out 2>&1) || st2=$?
-    [ "$st" = 0 ] && [ "$out" = "pinned out $dot the bar shows workspaces, pad, lan, bt, wifi, out, mic, due, notifications, light, kb, bat, clock" ] && grep -qx 'BAR_PINS=' "$cfg" && [ "$st2" = 1 ] && [ "$out2" = 'spark-shell bar: out pinned already' ] \
-        && ok "bar pin out: the last one missing pinned, the config's line is empty again, every module; pinned again is refused" || bad "bar pin back" "st=$st $out $(grep BAR_PINS "$cfg") | $st2 $out2"
-    # a hidden bar is sway's too, unseen: the same refusal, in its own words; the pins are read as the config is loaded,
-    # a quoted line without its quotes
-    printf 'DESKTOP=sway\nDESKTOP_BAR=no\nBAR_PINS="out mic"\n' > "$cfg"; st=0; out=$(pb unpin mic 2>&1) || st=$?; out2=$(pb pin 2>&1)
-    printf 'DESKTOP=sway\nBAR_PINS="out mic"\n' > "$cfg"; st3=0; out3=$(pb unpin mic 2>&1) || st3=$?
-    [ "$st" = 1 ] && [ "$out" = 'spark-shell bar: pins need the bar shown: it is hidden (spark-shell bar on --desktop shows it)' ] && [ "$(printf '%s\n' "$out2" | grep -c '')" = 14 ] && [ "$(printf '%s\n' "$out2" | tail -1)" = 'pins need the bar shown: it is hidden (spark-shell bar on --desktop shows it)' ] \
-        && [ "$(printf '%s\n' "$out2" | grep -c ' pinned ')" = 2 ] && [ "$(printf '%s\n' "$out2" | grep -c ' unpinned ')" = 11 ] && printf '%s\n' "$out2" | grep -q '^mic  *pinned ' && printf '%s\n' "$out2" | grep -q '^out  *pinned ' \
-        && [ "$st3" = 0 ] && [ "$out3" = "unpinned mic $dot the shortcut is off the bar, not the device $dot the bar shows out" ] && grep -qx 'BAR_PINS=out' "$cfg" \
-        && ok "bar pin with the bar hidden: refused, and the list says why in its last line; BAR_PINS in quotes is read without them, out and mic pinned, and an unpin writes the rest" || bad "bar pin hidden, quoted" "st=$st $out | $out2 | $st3 $out3 | $(grep BAR_PINS "$cfg")"
+    [ "$st" = 0 ] && [ "$out" = "pinned out $dot the bar shows a gauge and a number for out" ] && grep -qx 'BAR_PINS=out' "$cfg" && [ "$st2" = 1 ] && [ "$out2" = 'spark-shell bar: out pinned already' ] && [ "$(fpin)" = out ] \
+        && ok "bar pin out: pinned back, the config's line is out again; pinned again is refused" || bad "bar pin back" "st=$st $out $(grep BAR_PINS "$cfg") | $st2 $out2"
+    # a hide and a show: BAR_HIDE in the bar's order; a hidden module is not in spark's bar's line, and sway's bar's
+    # line has every one as before; a pinned level that is hidden gives up its place in the receipt
+    l5=$(sh "$SH" bar status --once | jq -c '[.[] | .name]') || :
+    st=0; out=$(pb hide out lan 2>&1) || st=$?; line=$(sb); _l1=$(pb pin 2>&1) || :
+    [ "$st" = 0 ] && [ "$out" = "hidden out lan $dot the shortcut is off the bar, not the device $dot the bar shows workspaces, pad, bt, wifi, mic, due, light, kb, bat, clock, notifications" ] && grep -qx 'BAR_HIDE=lan out' "$cfg" && grep -qx 'BAR_PINS=out' "$cfg" \
+        && [ "$(fnames "$line")" = 'look bt wifi mic bat clock' ] && [ -z "$(fbad "$line")" ] && [ "$(nshown "$_l1" hidden)" = 2 ] && [ "$(nshown "$_l1" pinned)" = 0 ] && printf '%s\n' "$_l1" | grep -qx "lan           hidden $dot the wired network" \
+        && [ "$(sh "$SH" bar status --once | jq -c '[.[] | .name]')" = "$l5" ] && printf '%s' "$l5" | grep -q '"lan".*"out"' \
+        && ok "bar hide out lan: the receipt says the device stays and what the bar shows; BAR_HIDE in the bar's order; neither is in spark's bar's line, the list says hidden, and sway's bar's line keeps every module" || bad "bar hide" "st=$st $out | $(grep 'BAR_PINS\|BAR_HIDE' "$cfg") | $line | $_l1"
+    st=0; out=$(pb hide lan 2>&1) || st=$?; st2=0; out2=$(pb show bt 2>&1) || st2=$?; st3=0; out3=$(pb hide workspaces 2>&1) || st3=$?; st4=0; out4=$(pb pin out 2>&1) || st4=$?; st5=0; out5=$(pb hide 2>&1) || st5=$?
+    st6=0; out6=$(pb unpin out 2>&1) || st6=$?; st7=0; out7=$(pb pin out 2>&1) || st7=$?
+    [ "$st" = 1 ] && [ "$out" = 'spark-shell bar: lan hidden already' ] && [ "$st2" = 1 ] && [ "$out2" = 'spark-shell bar: bt not hidden' ] && [ "$st3" = 1 ] && [ "$out3" = 'spark-shell bar: the workspaces stay on the bar (spark-shell bar off --desktop hides the bar)' ] \
+        && [ "$st4" = 1 ] && [ "$out4" = 'spark-shell bar: out is hidden (spark-shell bar show out)' ] && [ "$st5" = 1 ] && [ "$out5" = "spark-shell bar: hide takes a module's name: $mods" ] \
+        && [ "$st6" = 0 ] && [ "$out6" = "unpinned out $dot the bar shows no gauge now" ] && [ "$st7" = 1 ] && [ "$out7" = "$out4" ] && grep -qx 'BAR_HIDE=lan out' "$cfg" \
+        && ok "bar hide and show: a module hidden already, one not hidden, the workspaces and no name at all are refused in one line; a hidden level takes no pin until it is shown, and gives one up" || bad "bar hide refuse" "$st $out | $st2 $out2 | $st3 $out3 | $st4 $out4 | $st5 $out5 | $st6 $out6 | $st7 $out7"
+    st=0; out=$(pb show lan out 2>&1) || st=$?; st2=0; out2=$(pb pin out 2>&1) || st2=$?
+    [ "$st" = 0 ] && [ "$out" = "shown lan out $dot the bar shows workspaces, pad, lan, bt, wifi, out, mic, due, light, kb, bat, clock, notifications" ] && grep -qx 'BAR_HIDE=' "$cfg" && [ "$st2" = 0 ] \
+        && [ "$(fnames "$(sb)")" = 'look lan bt wifi out mic bat clock' ] && [ "$(fpin)" = out ] \
+        && ok "bar show lan out: both are on the line again, the config's line empty; out takes its pin back" || bad "bar show" "st=$st $out | $st2 $out2 | $(grep 'BAR_PINS\|BAR_HIDE' "$cfg")"
+    # a BAR_PINS line of v0.147 named the modules shown. One that names a module with no level is read as that: what it
+    # leaves out is hidden and out is pinned, in the line and in the list; the next verb writes the two keys as they
+    # are now. A line of levels alone is today's: out and mic pinned, nothing hidden. In quotes, read without them
+    printf 'DESKTOP=sway\nBAR_PINS=workspaces pad lan bt wifi mic due notifications light kb bat clock\n' > "$cfg"; line=$(sb); _l1=$(pb pin 2>&1) || :
+    printf 'DESKTOP=sway\nBAR_PINS="clock out"\n' > "$cfg"; _f1="$(fnames "$(sb)") / $(fpin)"; st=0; out=$(pb show mic 2>&1) || st=$?; _f2="$(fnames "$(sb)") / $(fpin)"
+    [ "$(fnames "$line")" = 'look lan bt wifi mic bat clock' ] && [ -z "$(fbad "$line")" ] && printf '%s\n' "$_l1" | grep -qx "out           hidden $dot the sound, its sign mutes; pinned, a gauge and a number set the level" && [ "$(nshown "$_l1" hidden)" = 1 ] && [ "$(nshown "$_l1" pinned)" = 0 ] \
+        && [ "$_f1" = 'look out clock / out' ] && [ "$st" = 0 ] && [ "$out" = "shown mic $dot the bar shows workspaces, out, mic, clock" ] && [ "$_f2" = 'look out mic clock / out' ] \
+        && grep -qx 'BAR_PINS=out' "$cfg" && grep -qx 'BAR_HIDE=pad lan bt wifi due light kb bat notifications' "$cfg" && [ "$(grep -c '^BAR_' "$cfg")" = 2 ] \
+        && ok "a BAR_PINS line of v0.147: the modules it leaves out are hidden and out is pinned, in the line and in the list, with or without quotes; the next show writes BAR_PINS and BAR_HIDE as they are now, each once" || bad "bar pins of v0.147" "$line | $_l1 | $_f1 | $st $out | $_f2 | $(grep '^BAR_' "$cfg")"
+    printf 'DESKTOP=sway\nBAR_PINS="out mic"\n' > "$cfg"; _f1="$(fnames "$(sb)") / $(fpin)"; st=0; out=$(pb unpin mic 2>&1) || st=$?
+    [ "$_f1" = 'look lan bt wifi out mic bat clock / out mic' ] && [ "$st" = 0 ] && [ "$out" = "unpinned mic $dot the bar shows a gauge and a number for out" ] && grep -qx 'BAR_PINS=out' "$cfg" && grep -qx 'BAR_HIDE=' "$cfg" \
+        && ok "BAR_PINS of levels alone, in quotes: out and mic pinned and nothing hidden; an unpin writes the rest" || bad "bar pins quoted" "$_f1 | $st $out | $(grep '^BAR_' "$cfg")"
+    # a hidden bar is sway's too, unseen: the same refusal, in its own words and its verb's, and the list says why in its last line
+    printf 'DESKTOP=sway\nDESKTOP_BAR=no\nBAR_PINS=out mic\n' > "$cfg"; st=0; out=$(pb unpin mic 2>&1) || st=$?; st2=0; out3=$(pb hide lan 2>&1) || st2=$?; out2=$(pb pin 2>&1)
+    [ "$st" = 1 ] && [ "$out" = 'spark-shell bar: pins need the bar shown: it is hidden (spark-shell bar on --desktop shows it)' ] && [ "$st2" = 1 ] && [ "$out3" = 'spark-shell bar: hide and show need the bar shown: it is hidden (spark-shell bar on --desktop shows it)' ] && [ "$(printf '%s\n' "$out2" | grep -c '')" = 14 ] \
+        && [ "$(printf '%s\n' "$out2" | tail -1)" = 'pins need the bar shown: it is hidden (spark-shell bar on --desktop shows it)' ] && [ "$(nshown "$out2" pinned)" = 2 ] && [ "$(nshown "$out2" shown)" = 11 ] && grep -qx 'BAR_PINS=out mic' "$cfg" && ! grep -q '^BAR_HIDE' "$cfg" \
+        && ok "bar pin with the bar hidden: an unpin and a hide are refused, the hide with no word of pins, and the list says why in its last line; the config as it was" || bad "bar pin hidden bar" "st=$st $out | $st2 $out3 | $out2 | $(grep '^BAR_' "$cfg")"
     rm -f "$H/pinbar"; printf 'DESKTOP=sway\n' > "$cfg"
-    _br=''; for _bk in 'BAR_PINS=out sound' 'BAR_OVERFLOW=workspaces' 'BAR_OVERFLOW=clock logo'; do printf 'DESKTOP=sway\n%s\n' "$_bk" > "$cfg"; ! sh "$SH" status >/dev/null 2>&1 || _br="$_br $_bk"; done
-    printf 'DESKTOP=sway\nBAR_PINS=clock out\nBAR_OVERFLOW=out clock\n' > "$cfg"; st=0; sh "$SH" status >/dev/null 2>&1 || st=$?
-    out=$(printf 'DESKTOP=sway\nBAR_PINS=out sound\n' > "$cfg"; sh "$SH" status 2>&1 | head -1); printf 'DESKTOP=sway\n' > "$cfg"
-    [ -z "$_br" ] && [ "$st" = 0 ] && [ "$out" = "spark-shell: BAR_PINS=out sound in $cfg: modules of the bar, a space between (workspaces pad lan bt wifi out mic due notifications light kb bat clock), or nothing for every one" ] \
-        && grep -qx 'BAR_PINS=' "$REPO/config.example" && grep -qx 'BAR_OVERFLOW=due light bt lan wifi kb mic out notifications bat clock' "$REPO/config.example" && grep -q "^CONFIG_UNSET=.* -u BAR_PINS -u BAR_OVERFLOW " "$SRC" \
-        && ok "config: BAR_PINS and BAR_OVERFLOW take the bar's modules in any order; another name, the workspaces in the overflow, are refused in one line; config.example shows both" || bad "bar pins config" "$_br st=$st $out"
+    # the config's keys: BAR_PINS takes levels, none, or a line of v0.147; BAR_HIDE and BAR_OVERFLOW the line's modules
+    _br=''; for _bk in 'BAR_PINS=out sound' 'BAR_PINS=none out' 'BAR_HIDE=workspaces' 'BAR_HIDE=clock logo' 'BAR_OVERFLOW=workspaces' 'BAR_OVERFLOW=clock logo'; do printf 'DESKTOP=sway\n%s\n' "$_bk" > "$cfg"; ! sh "$SH" status >/dev/null 2>&1 || _br="$_br $_bk"; done
+    for _bk in 'BAR_PINS=wifi out' 'BAR_PINS=none' 'BAR_PINS=clock out workspaces' 'BAR_HIDE=clock due' 'BAR_OVERFLOW=out clock' 'BAR_OVERFLOW=due light bt lan wifi kb mic out notifications bat clock'; do printf 'DESKTOP=sway\n%s\n' "$_bk" > "$cfg"; sh "$SH" status >/dev/null 2>&1 || _br="$_br not:$_bk"; done
+    out=$(printf 'DESKTOP=sway\nBAR_PINS=out sound\n' > "$cfg"; sh "$SH" status 2>&1 | head -1); out2=$(printf 'DESKTOP=sway\nBAR_HIDE=clock logo\n' > "$cfg"; sh "$SH" status 2>&1 | head -1); printf 'DESKTOP=sway\n' > "$cfg"
+    [ -z "$_br" ] && [ "$out" = "spark-shell: BAR_PINS=out sound in $cfg: levels of the bar, a space between (out mic light wifi), or none" ] && [ "$out2" = "spark-shell: BAR_HIDE=clock logo in $cfg: modules of the bar, a space between ($mods), or nothing" ] \
+        && grep -qx 'BAR_PINS=out' "$REPO/config.example" && grep -qx 'BAR_HIDE=' "$REPO/config.example" && grep -qx 'BAR_OVERFLOW=due pad light bt lan wifi kb bat mic out' "$REPO/config.example" \
+        && grep -q "^CONFIG_UNSET=.* -u BAR_PINS -u BAR_HIDE -u BAR_OVERFLOW -u BAR_MOTION " "$SRC" \
+        && sh "$SH" -h | grep -qx '  spark-shell bar hide NAME...      take a module off the bar' && sh "$SH" -h | grep -qx '  spark-shell bar show NAME...      put a hidden module on the bar again' \
+        && ok "config: BAR_PINS takes the levels in any order, none, or a line of v0.147; BAR_HIDE and BAR_OVERFLOW the line's modules, v0.147's overflow with the clock and the notifications too; another name, none beside a level, the workspaces, are refused in one line; config.example shows the keys, the overflow with the pad and without the time's two, and the help the verbs" || bad "bar pins config" "$_br | $out | $out2"
     # the out page switches the card: ALSA's default for new programs, in spark-shell's own marked file, the ! form alsa.conf takes for a name
     st=0; out=$(sh "$SH" bar panel out use hdmi 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'out HDMI for programs started from now' ] && [ "$(sed -n '2,3p' "$H/.config/alsa/asoundrc" 2>/dev/null | paste -sd ' ' -)" = 'defaults.pcm.!card HDMI defaults.ctl.!card HDMI' ] && head -1 "$H/.config/alsa/asoundrc" | grep -q '^# rendered by spark-shell' \
@@ -5378,16 +5537,17 @@ SPARKBAR_STUB
     [ "$(grep -cxF "exec $REPO/spark-shell bar start" "$H/.local/state/swaymsg.log")" = 1 ] && printf '%s\n' "$out" | grep -qx 'would  bar          start the bar for this session, through sway as at login' \
         && ok "on in a session with no bar running: sway is asked to start it, once, as login does; the dry run says it would" || bad "bar session start" "$(cat "$H/.local/state/swaymsg.log") | $out"
     sbr bar start; sb_up 1
-    [ "$rc" = 0 ] && [ "$(grep -c '' "$HOME/sbar.log")" = 1 ] && sbe "SPARK_SHELL=$SH" && sbe 'BAR_POSITION=top' && sbe 'BAR_FONT=DejaVu Sans Mono 12' && [ "$(grep -cE '^BAR_(FG|ACCENT|MUTED|GROUND|LIT|ATTENTION)=[0-9a-f]{6}$' "$HOME/sbar.env")" = 6 ] \
-        && sbe 'BAR_ALPHA=0.95' && sbe 'BAR_PINS=' && sbe 'BAR_OVERFLOW=due light bt lan wifi kb mic out notifications bat clock' \
+    [ "$rc" = 0 ] && [ "$(grep -c '' "$HOME/sbar.log")" = 1 ] && sbe "SPARK_SHELL=$SH" && sbe 'BAR_POSITION=top' && sbe 'BAR_FONT=DejaVu Sans Mono 12' && [ "$(grep -cE '^BAR_(FG|ACCENT|MUTED|GROUND|LIT|ATTENTION|ALERT)=[0-9a-f]{6}$' "$HOME/sbar.env")" = 7 ] \
+        && sbe 'BAR_ALPHA=0.95' && sbe "BAR_GAUGE_FULL=$pip" && sbe "BAR_GAUGE_LIGHT=$pipoff" && sbe 'BAR_MOTION=yes' && ! grep -q '^BAR_PINS=\|^BAR_HIDE=\|^BAR_FULL=\|^BAR_LIGHT=' "$HOME/sbar.env" \
+        && sbe 'BAR_OVERFLOW=due pad light bt lan wifi kb bat mic out' \
         && sbe 'BAR_TRAY_WIDTH=0' && sbe 'BAR_TRAY_OUTPUT=' && sbe "BAR_LOCK=$block" && sbe "BAR_STATE=$H/run/spark-shell-bar.state" \
-        && ok "bar start: spark-bar runs with the look, the place, the pins, the overflow and its files in its environment" || bad "bar start" "rc=$rc $out $(cat "$HOME/sbar.log" "$HOME/sbar.env" 2>&1)"
+        && ok "bar start: spark-bar runs with the look (its seven colors, the alpha, the glyph family's gauge pair, the motion), the place, the overflow and its files in its environment; the pins and the hidden are not handed to it: each line says them; the shell's own signs, BAR_FULL and BAR_LIGHT, never reach it" || bad "bar start" "rc=$rc $out $(cat "$HOME/sbar.log" "$HOME/sbar.env" 2>&1)"
     sbr bar start; sleep 0.3; sbr bar keys; _i=0; while [ "$_i" -lt 20 ] && [ ! -s "$HOME/sbar.sig" ]; do sleep 0.1; _i=$((_i + 1)); done
     [ "$rc" = 0 ] && [ "$out" = 'the bar has the keys: the arrows move, Enter acts, Esc leaves' ] && [ "$(grep -c '' "$HOME/sbar.log")" = 1 ] && [ "$(cat "$HOME/sbar.sig" 2>/dev/null)" = usr1 ] \
         && ok "bar start again starts no second bar; bar keys (Super+equal) sends the running one SIGUSR1" || bad "bar keys" "rc=$rc $out $(cat "$HOME/sbar.log" "$HOME/sbar.sig" 2>&1)"
-    [ "$(SPARK_BAR=1 sh "$SH" bar status --once | jq -r '.[0] | [.name, .fg, .accent, .muted, .ground, .lit, .attention, .alpha] | join(" ")')" = "look $(sbv BAR_FG) $(sbv BAR_ACCENT) $(sbv BAR_MUTED) $(sbv BAR_GROUND) $(sbv BAR_LIT) $(sbv BAR_ATTENTION) $(sbv BAR_ALPHA)" ] && ! grep -q '^SPARK_BAR=' "$HOME/sbar.env" \
-        && [ -n "$(lifted)" ] && [ "$(sbv BAR_MUTED)" = "$(lifted)" ] \
-        && ok "the look in the line is the one spark-bar is started with, value for value: the same seven before its first line and in each, the muted the lifted one" || bad "look and start" "$(SPARK_BAR=1 sh "$SH" bar status --once | jq -c '.[0]') $(cat "$HOME/sbar.env")"
+    [ "$(SPARK_BAR=1 sh "$SH" bar status --once | jq -r '.[0] | [.name, .fg, .accent, .muted, .ground, .lit, .attention, .alert, .alpha, .full, .light, .motion] | join(" ")')" = "look $(sbv BAR_FG) $(sbv BAR_ACCENT) $(sbv BAR_MUTED) $(sbv BAR_GROUND) $(sbv BAR_LIT) $(sbv BAR_ATTENTION) $(sbv BAR_ALERT) $(sbv BAR_ALPHA) $(sbv BAR_GAUGE_FULL) $(sbv BAR_GAUGE_LIGHT) $(sbv BAR_MOTION)" ] && ! grep -q '^SPARK_BAR=' "$HOME/sbar.env" \
+        && [ -n "$(lifted)" ] && [ "$(sbv BAR_MUTED)" != "$(lifted)" ] && [ "$(sbv BAR_MUTED)" = "$(sed -n 's/^client\.unfocused  *#[0-9a-f]* #[0-9a-f]* #\([0-9a-f]\{6\}\) .*/\1/p' "$sway")" ] \
+        && ok "the look in the line is the one spark-bar is started with, value for value: the same eleven before its first line and in each, the muted the palette's own, not the lifted one" || bad "look and start" "$(SPARK_BAR=1 sh "$SH" bar status --once | jq -c '.[0]') $(cat "$HOME/sbar.env")"
     # the restarts go through sway, so the new bar is sway's child with the session's environment. Sway's part is played
     # from here: the start line it is sent runs, apart, without the caller's bar keys; a reload is counted; the stub
     # behind logs as before
@@ -5402,32 +5562,41 @@ exec "$SBSWAY_NEXT" "$@"
 SBSWAY_STUB
     chmod +x "$H/sbsway/swaymsg"
     sbr() { rc=0; out=$(SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/sock SBSWAY_NEXT=$H/.local/bin/swaymsg PATH="$H/sbsway:$PATH" sh "$SH" "$@" 2>&1) || rc=$?; }
-    : > "$H/.local/state/swaymsg.log"; sbr bar unpin due; sb_up 2; _p1=$(grep '^BAR_PINS=' "$HOME/sbar.env"); sbr bar pin due; sb_up 3
-    [ "$_p1" = 'BAR_PINS=workspaces pad lan bt wifi out mic notifications light kb bat clock' ] && sbe 'BAR_PINS=' && [ "$(grep -c '' "$HOME/sbar.log")" = 3 ] && [ "$(grep -cxF "exec $REPO/spark-shell bar start" "$H/.local/state/swaymsg.log")" = 2 ] \
-        && ok "bar unpin and pin: the running bar ends and sway starts the next, each time, with the new pins from the config, shown at once" || bad "bar pins again" "$_p1 $(cat "$HOME/sbar.log" "$HOME/sbar.env" "$H/.local/state/swaymsg.log" 2>&1)"
-    # a shell that cannot reach the session (ssh: no socket; a socket whose sway is gone) ends no bar: the config is
+    # a pin and a hide start no bar (v0.148): the running one stays, sway is asked for nothing, and the status loop,
+    # told, says it in its next line: the hidden module gone from it, the pinned level pinned
+    : > "$H/.local/state/swaymsg.log"; _bp0=$(cat "$block" 2>/dev/null || :)
+    SPARK_BAR=1 sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
+    lines_are 1; sbr bar hide lan; _o1="$rc $out"; lines_are 2; sbr bar pin mic; _o2="$rc $out"; lines_are 3; sleep 0.3
+    kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
+    [ "${_o1%% *}" = 0 ] && [ "${_o2%% *}" = 0 ] && [ "$(lk 1 '[.[] | select(.name == "lan" or .name == "mic") | .name + "=" + (.pinned | tostring)] | join(" ")')" = '"lan=false mic=false"' ] \
+        && [ "$(lk 2 '[.[] | select(.name == "lan" or .name == "mic") | .name + "=" + (.pinned | tostring)] | join(" ")')" = '"mic=false"' ] && [ "$(lk 3 '[.[] | select(.name == "lan" or .name == "mic") | .name + "=" + (.pinned | tostring)] | join(" ")')" = '"mic=true"' ] \
+        && [ -n "$_bp0" ] && [ "$(cat "$block" 2>/dev/null)" = "$_bp0" ] && kill -0 "$_bp0" 2>/dev/null && [ "$(grep -c '' "$HOME/sbar.log")" = 1 ] && [ ! -s "$H/.local/state/swaymsg.log" ] \
+        && ok "bar hide and bar pin: no bar is ended and none started, sway is asked for nothing; the status loop's next line has the hidden module no more, and the one after says the level pinned" || bad "bar pins no restart" "$_o1 | $_o2 | $(cat "$HOME/sbar.log" "$H/.local/state/swaymsg.log" 2>&1) | $(cat "$H/bar.out")"
+    sbr bar show lan; sbr bar unpin mic
+    # a shell that cannot reach the session (ssh: no socket; a socket whose sway is gone) does the same: the config is
     # written, the running bar stays as it is, and none is started
     mkdir -p "$H/deadsway"; printf '#!/bin/sh\nexit 1\n' > "$H/deadsway/swaymsg"; chmod +x "$H/deadsway/swaymsg"; _bp0=$(cat "$block" 2>/dev/null || :); : > "$H/.local/state/swaymsg.log"
-    st=0; out2=$(SPARK_SHELL_BAR=$H/barbin/spark-bar env -u SWAYSOCK sh "$SH" bar unpin due 2>&1) || st=$?; _p1=$(grep -c '^BAR_PINS=workspaces pad lan bt wifi out mic notifications light kb bat clock$' "$HOME/.config/spark-shell/config" || :)
-    st2=0; out3=$(SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/gone.sock PATH="$H/deadsway:$PATH" sh "$SH" bar pin due 2>&1) || st2=$?; sleep 0.3
-    [ "$st" = 0 ] && [ "$st2" = 0 ] && [ "$_p1" = 1 ] && grep -qx 'BAR_PINS=' "$HOME/.config/spark-shell/config" && [ -n "$_bp0" ] && [ "$(cat "$block" 2>/dev/null)" = "$_bp0" ] && kill -0 "$_bp0" 2>/dev/null && [ "$(grep -c '' "$HOME/sbar.log")" = 3 ] && [ ! -s "$H/.local/state/swaymsg.log" ] \
-        && ok "bar unpin and pin from a shell that cannot reach the session: the config is written, the running bar is not ended and none is started; it takes the pins at its next start" || bad "bar again no session" "$st $out2 | $st2 $out3 | $(cat "$block" 2>&1) $_bp0 $(cat "$HOME/sbar.log")"
+    st=0; out2=$(SPARK_SHELL_BAR=$H/barbin/spark-bar env -u SWAYSOCK sh "$SH" bar hide due 2>&1) || st=$?; _p1=$(grep -c '^BAR_HIDE=due$' "$HOME/.config/spark-shell/config" || :)
+    st2=0; out3=$(SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/gone.sock PATH="$H/deadsway:$PATH" sh "$SH" bar show due 2>&1) || st2=$?; sleep 0.3
+    [ "$st" = 0 ] && [ "$st2" = 0 ] && [ "$_p1" = 1 ] && grep -qx 'BAR_HIDE=' "$HOME/.config/spark-shell/config" && [ -n "$_bp0" ] && [ "$(cat "$block" 2>/dev/null)" = "$_bp0" ] && kill -0 "$_bp0" 2>/dev/null && [ "$(grep -c '' "$HOME/sbar.log")" = 1 ] && [ ! -s "$H/.local/state/swaymsg.log" ] \
+        && ok "bar hide and show from a shell that cannot reach the session: the config is written, the running bar is not ended and none is started; its line says it" || bad "bar again no session" "$st $out2 | $st2 $out3 | $(cat "$block" 2>&1) $_bp0 $(cat "$HOME/sbar.log")"
     rm -rf "$H/deadsway"
-    sbr bar bottom; sb_up 4
-    [ "$rc" = 0 ] && sbe 'BAR_POSITION=bottom' && [ "$(grep -c '' "$HOME/sbar.log")" = 4 ] && grep -q '^anchor=bottom-right$' "$HOME/.config/mako/config" && ok "bar bottom: the bar starts again at the bottom, the notifications by it" || bad "bar bottom again" "rc=$rc $out $(cat "$HOME/sbar.log" 2>&1)"
-    sbr bar top; sb_up 5; _bp0=$(cat "$block" 2>/dev/null || :); sbr bar top; sleep 0.3
-    [ "$rc" = 0 ] && sbe 'BAR_POSITION=top' && [ -n "$_bp0" ] && [ "$(cat "$block" 2>/dev/null)" = "$_bp0" ] && [ "$(grep -c '' "$HOME/sbar.log")" = 5 ] && ok "bar top: the bar starts again at the top; asked again where it sits already, it is left running" || bad "bar top again" "rc=$rc $out $(cat "$HOME/sbar.log" 2>&1)"
+    printf 'GLYPH_FAMILY=star\nBAR_MOTION=no\n' >> "$HOME/.config/spark-shell/config"   # the next start's look is the config's: star's pair, no motion
+    sbr bar bottom; sb_up 2; sed -i.bak '/^GLYPH_FAMILY=/d; /^BAR_MOTION=/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak"
+    [ "$rc" = 0 ] && sbe 'BAR_POSITION=bottom' && sbe "BAR_GAUGE_FULL=$(printf '\342\224\201')" && sbe "BAR_GAUGE_LIGHT=$(printf '\342\224\200')" && sbe 'BAR_MOTION=no' && [ "$(grep -c '' "$HOME/sbar.log")" = 2 ] && grep -q '^anchor=bottom-right$' "$HOME/.config/mako/config" && ok "bar bottom: the bar starts again at the bottom, the notifications by it" || bad "bar bottom again" "rc=$rc $out $(cat "$HOME/sbar.log" 2>&1)"
+    sbr bar top; sb_up 3; _bp0=$(cat "$block" 2>/dev/null || :); sbr bar top; sleep 0.3
+    [ "$rc" = 0 ] && sbe 'BAR_POSITION=top' && sbe "BAR_GAUGE_FULL=$pip" && sbe 'BAR_MOTION=yes' && [ -n "$_bp0" ] && [ "$(cat "$block" 2>/dev/null)" = "$_bp0" ] && [ "$(grep -c '' "$HOME/sbar.log")" = 3 ] && ok "bar top: the bar starts again at the top; asked again where it sits already, it is left running" || bad "bar top again" "rc=$rc $out $(cat "$HOME/sbar.log" 2>&1)"
     # a look change starts no bar: the palette file takes the look, the eight values of it, and the bar's loop reads it
     sbr panel theme alpha 0.9; _pal=$(cat "$H/.local/state/spark-shell/bar.palette" 2>&1 || :); _o1=$out; sbr panel theme alpha 0.95; sleep 0.3
-    [ "$_o1" = 'alpha at 0.9' ] && [ "$(cat "$block" 2>/dev/null)" = "$_bp0" ] && [ "$(grep -c '' "$HOME/sbar.log")" = 5 ] && [ "$(printf '%s\n' "$_pal" | cut -d= -f1 | paste -sd' ' -)" = 'HEX_FG HEX_ACCENT HEX_MUTED HEX_ANSI_1 HEX_ANSI_3 HEX_BG PANEL_HI PANEL_MUTED ALPHA' ] \
-        && [ "$(printf '%s\n' "$_pal" | grep -v '^HEX_ANSI_1=\|^HEX_MUTED=')" = "$(printf 'HEX_FG=%s\nHEX_ACCENT=%s\nHEX_ANSI_3=%s\nHEX_BG=%s\nPANEL_HI=%s\nPANEL_MUTED=%s\nALPHA=0.9\n' "$(sbv BAR_FG)" "$(sbv BAR_ACCENT)" "$(sbv BAR_ATTENTION)" "$(sbv BAR_GROUND)" "$(sbv BAR_LIT)" "$(sbv BAR_MUTED)")" ] \
+    [ "$_o1" = 'alpha at 0.9' ] && [ "$(cat "$block" 2>/dev/null)" = "$_bp0" ] && [ "$(grep -c '' "$HOME/sbar.log")" = 3 ] && [ "$(printf '%s\n' "$_pal" | cut -d= -f1 | paste -sd' ' -)" = 'HEX_FG HEX_ACCENT HEX_MUTED HEX_ANSI_1 HEX_ANSI_3 HEX_BG PANEL_HI ALPHA' ] \
+        && [ "$(printf '%s\n' "$_pal" | grep -v '^HEX_ANSI_1=')" = "$(printf 'HEX_FG=%s\nHEX_ACCENT=%s\nHEX_MUTED=%s\nHEX_ANSI_3=%s\nHEX_BG=%s\nPANEL_HI=%s\nALPHA=0.9\n' "$(sbv BAR_FG)" "$(sbv BAR_ACCENT)" "$(sbv BAR_MUTED)" "$(sbv BAR_ATTENTION)" "$(sbv BAR_GROUND)" "$(sbv BAR_LIT)")" ] \
         && grep -qx 'ALPHA=0.95' "$H/.local/state/spark-shell/bar.palette" \
-        && ok "a look change (the transparency) starts no bar again: the running one stays, and the palette file holds the look for its loop, the five colors of a line and the ground, the lit shade, the muted lifted and the alpha" || bad "look change no restart" "$_o1 | $_pal | $(cat "$HOME/sbar.log")"
+        && ok "a look change (the transparency) starts no bar again: the running one stays, and the palette file holds the look for its loop, the five colors of a line and the ground, the lit shade and the alpha, the values spark-bar was started with" || bad "look change no restart" "$_o1 | $_pal | $(cat "$HOME/sbar.log")"
     # the tray: sway's bar as the host alone, unseen until it is placed over the strip at the bar's right end
     mkdir -p "$H/traybin"; rm -f "$H/tray.sock"; python3 -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$H/tray.sock"
     printf '#!/bin/sh\ncase "$*" in "-t get_outputs") echo "[{\\"name\\":\\"DP-1\\",\\"active\\":true,\\"rect\\":{\\"x\\":0,\\"y\\":0,\\"width\\":1920,\\"height\\":1080}}]" ;; "-t get_version") echo "{\\"human_readable\\":\\"stub\\"}" ;; "-t get_bar_config") echo "[\\"spark-tray\\"]" ;; "-- "*) shift; echo "$*" >> "$HOME/tray.log" ;; reload) echo reload >> "$HOME/tray.log" ;; esac\n' > "$H/traybin/swaymsg"; chmod +x "$H/traybin/swaymsg"
     str() { rc=0; out=$(SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/tray.sock SBSWAY_NEXT=$H/traybin/swaymsg PATH="$H/sbsway:$H/traybin:$PATH" sh "$SH" "$@" 2>&1) || rc=$?; }
-    str bar tray on; sb_up 6
+    str bar tray on; sb_up 4
     [ "$rc" = 0 ] && grep -q '^    id spark-tray$' "$sway" && grep -q '^    mode invisible$' "$sway" && grep -q '^    tray_output \*$' "$sway" && grep -q '^    workspace_buttons no$' "$sway" && grep -q '^        background #[0-9a-f]\{6\}00$' "$sway" \
         && grep -q "^exec_always $REPO/spark-shell bar tray --place\$" "$sway" && grep -q "^exec $REPO/spark-shell bar start\$" "$sway" && ! grep -q 'status_command' "$sway" && [ "$(grep -c '^bar {$' "$sway")" = 1 ] \
         && sbe 'BAR_TRAY_WIDTH=144' && sbe 'BAR_TRAY_OUTPUT=DP-1' && ! grep -q 'bar spark-tray mode \(dock\|invisible\)' "$HOME/tray.log" \
@@ -5435,7 +5604,7 @@ SBSWAY_STUB
     rm -f "$HOME/tray.log"; str bar tray --place
     [ "$rc" = 0 ] && [ "$(cat "$HOME/tray.log" 2>/dev/null)" = 'bar spark-tray output DP-1; bar spark-tray tray_output DP-1; bar spark-tray height 36; bar spark-tray tray_padding 8; bar spark-tray gaps 0 0 0 1776; bar spark-tray mode hide' ] && [ "$(cat "$H/run/spark-shell-bar.tray")" = 'DP-1 1920 36' ] \
         && ok "bar tray --place (sway's, at login and after a reload): the host shown on the first screen, the bar's height, 144 pixels wide at the right end" || bad "tray place" "rc=$rc $out $(cat "$HOME/tray.log" 2>&1)"
-    str bar tray off; sb_up 7
+    str bar tray off; sb_up 5
     ! grep -q 'spark-tray' "$sway" && ! grep -q '^bar {$' "$sway" && sbe 'BAR_TRAY_WIDTH=0' && ok "bar tray off: no bar of sway's beside spark-bar at all" || bad "tray host off" "$(grep -n 'bar\|tray' "$sway" | head)"
     # the bar's own loop, under spark-bar: a font the screen asks for that the bar was not started with starts the bar
     # again, apart from the loop, once for that font; what it starts is no bar's line (no SPARK_BAR in the new bar)
@@ -5443,18 +5612,18 @@ SBSWAY_STUB
     for _n in 1 2; do
         SPARK_BAR=1 BAR_FONT='Other Mono 9' SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/tray.sock SBSWAY_NEXT=$H/traybin/swaymsg PATH="$H/sbsway:$H/traybin:$PATH" sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
         for _i in $(seq 1 100); do [ "$(grep -c '^\[{' "$H/bar.out")" -ge 1 ] && [ -s "$H/run/spark-shell-bar.font" ] && break; sleep .1; done
-        [ "$_n" = 2 ] || sb_up 8; sleep 0.5; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
+        [ "$_n" = 2 ] || sb_up 6; sleep 0.5; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
     done
-    [ "$(cat "$H/run/spark-shell-bar.font" 2>/dev/null)" = 'DejaVu Sans Mono 12' ] && [ "$(grep -c '' "$HOME/sbar.log")" = 8 ] && sbe 'BAR_FONT=DejaVu Sans Mono 12' && ! grep -q 'bar [^ ]* font' "$HOME/tray.log" 2>/dev/null \
+    [ "$(cat "$H/run/spark-shell-bar.font" 2>/dev/null)" = 'DejaVu Sans Mono 12' ] && [ "$(grep -c '' "$HOME/sbar.log")" = 6 ] && sbe 'BAR_FONT=DejaVu Sans Mono 12' && ! grep -q 'bar [^ ]* font' "$HOME/tray.log" 2>/dev/null \
         && ! grep -q '^SPARK_BAR=' "$HOME/sbar.env" && grep -q '"name":"look"' "$H/bar.out" \
         && ok "the loop under spark-bar: another font for the screen starts the bar again once, apart from the loop, through sway; a second loop with the same font asks for none, and sway is sent no font; the loop draws for spark-bar and what it starts does not carry that word" || bad "font follow spark-bar" "$(cat "$H/run/spark-shell-bar.font" "$HOME/sbar.log" "$H/bar.err" 2>&1)"
     # hidden: spark-bar ends and sway's bar, unseen, runs the line as before; shown again, sway starts spark-bar
     : > "$H/.local/state/swaymsg.log"; sbr bar off --desktop
     [ "$rc" = 0 ] && [ ! -s "$block" ] && grep -q '^bar {$' "$sway" && grep -q '^    mode invisible$' "$sway" && grep -q 'status_command' "$sway" && ! grep -q 'bar start' "$sway" && ok "bar off --desktop: spark-bar ends; sway's bar, never drawn, keeps the line running" || bad "bar off spark-bar" "rc=$rc $out"
     st=0; out2=$(SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/sock sh "$SH" bar keys 2>&1) || st=$?
-    : > "$H/.local/state/swaymsg.log"; sbr bar on --desktop; sb_up 9
+    : > "$H/.local/state/swaymsg.log"; sbr bar on --desktop; sb_up 7
     [ "$st" = 1 ] && [ "$out2" = 'spark-shell bar: the bar is hidden (spark-shell bar on --desktop shows it)' ] && [ "$rc" = 0 ] && grep -q "^exec $REPO/spark-shell bar start\$" "$sway" && ! grep -q '^bar {$' "$sway" && grep -qxF "exec $REPO/spark-shell bar start" "$H/.local/state/swaymsg.log" \
-        && [ -s "$block" ] && [ "$(grep -c '' "$HOME/sbar.log")" = 9 ] && sbe 'BAR_POSITION=top' \
+        && [ -s "$block" ] && [ "$(grep -c '' "$HOME/sbar.log")" = 7 ] && sbe 'BAR_POSITION=top' \
         && ok "bar on --desktop: the config starts spark-bar again, sway is asked to start it now and it runs; the keys on a hidden bar are refused" || bad "bar on spark-bar" "st=$st $out2 rc=$rc $out $(cat "$H/.local/state/swaymsg.log" "$HOME/sbar.log")"
     sb_end
     st=0; out=$(SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/sock sh "$SH" bar keys 2>&1) || st=$?
@@ -5466,7 +5635,7 @@ SBSWAY_STUB
     sbn bar start; _c1=$(cksum < "$sway"); _r1=$(grep -c reload "$HOME/sbsway.log" 2>/dev/null || :); _o1="$rc $out"
     _g1=''; ! { grep -q '^bar {$' "$sway" && grep -q "^    status_command $REPO/spark-shell bar status\$" "$sway" && grep -q '^    mode dock$' "$sway" && ! grep -q 'bar start' "$sway"; } || _g1=1
     sbn bar start
-    [ "$_c0" = 1 ] && [ "${_r0:-0}" = 0 ] && [ "$_o1" = '0 ' ] && [ -n "$_g1" ] && [ "$_r1" = 1 ] && [ "$rc" = 0 ] && [ "$(cksum < "$sway")" = "$_c1" ] && [ "$(grep -c reload "$HOME/sbsway.log")" = 1 ] && [ ! -s "$block" ] && [ "$(grep -c '' "$HOME/sbar.log")" = 9 ] \
+    [ "$_c0" = 1 ] && [ "${_r0:-0}" = 0 ] && [ "$_o1" = '0 ' ] && [ -n "$_g1" ] && [ "$_r1" = 1 ] && [ "$rc" = 0 ] && [ "$(cksum < "$sway")" = "$_c1" ] && [ "$(grep -c reload "$HOME/sbsway.log")" = 1 ] && [ ! -s "$block" ] && [ "$(grep -c '' "$HOME/sbar.log")" = 7 ] \
         && ok "bar start with no spark-bar to start, as sway's config still asks: the config rendered again with sway's own bar and sway reloaded, so the bar is back; nothing from a shell with no session, and nothing the second time" || bad "bar start none" "$_c0 $_r0 | $_o1 | $_g1 $_r1 | $rc $out | $(grep -n '^bar\|bar start\|status_command' "$sway")"
     # the pad's start waits for the bar: sway starts both at once at login, and a pad keeping its strip starts after
     # the bar has its lock, two seconds at most; where spark-bar draws no bar the pad starts at once, as before. A sleep
@@ -5493,13 +5662,13 @@ SLP_STUB
     pad_gone; pst "$H/barbin/spark-bar" || :; pad_there; _w1="$(cat "$HOME/spad.log" 2>&1 || :) $(slept) $(sort -u "$HOME/slp.log" 2>&1 || :)"   # no bar comes: twenty waits of a tenth, then the pad
     pad_gone; : > "$HOME/slp.hold"; pst "$H/barbin/spark-bar" & pp=$!
     _i=0; while [ "$_i" -lt 100 ] && [ ! -s "$HOME/slp.log" ]; do sleep 0.1; _i=$((_i + 1)); done; _w2="$(cat "$HOME/spad.log" 2>/dev/null || :)|$(cat "$plock" 2>/dev/null || :)"   # it waits: no pad yet
-    sbr bar start; sb_up 10; rm -f "$HOME/slp.hold"; wait "$pp" || :; pad_there; _w2="$_w2|$(cat "$HOME/spad.log" 2>&1 || :) $(slept)"
+    sbr bar start; sb_up 8; rm -f "$HOME/slp.hold"; wait "$pp" || :; pad_there; _w2="$_w2|$(cat "$HOME/spad.log" 2>&1 || :) $(slept)"
     sb_end; pad_gone; pst '' || :; pad_there; _w3="$(cat "$HOME/spad.log" 2>&1 || :) $(slept)"   # no spark-bar here: no wait
     [ "$_w1" = 'no-bar 20 0.1' ] && [ "$_w2" = '||bar-up 1' ] && [ "$_w3" = 'no-bar 0' ] \
         && ok "desktop pad start where spark-bar draws: the pad starts once the bar has its lock, and after two seconds without one; where spark-bar draws no bar it starts at once" || bad "pad after bar" "$_w1 | $_w2 | $_w3"
     pad_gone; rm -rf "$H/spad" "$H/slp" "$HOME/slp.hold"
     # off: a running bar ends and its binary and runtime files go, the folder of its drawn logo too
-    sbr bar start; sb_up 11; mkdir -p "$H/.local/share/spark-shell" "$H/run/spark-shell-bar.icons"; : > "$H/run/spark-shell-bar.icons/logo-24.png"; cp "$H/barbin/spark-bar" "$H/.local/share/spark-shell/spark-bar"
+    sbr bar start; sb_up 9; mkdir -p "$H/.local/share/spark-shell" "$H/run/spark-shell-bar.icons"; : > "$H/run/spark-shell-bar.icons/logo-24.png"; cp "$H/barbin/spark-bar" "$H/.local/share/spark-shell/spark-bar"
     out=$(sh "$SH" off --dry-run 2>&1 || :); _d1=$(printf '%s\n' "$out" | grep -c "^would  bar          spark-bar ended and removed ($H/.local/share/spark-shell/spark-bar)\$" || :)
     out=$(sh "$SH" off desktop --yes 2>&1 || :); _i=0; while [ "$_i" -lt 20 ] && [ -s "$block" ]; do sleep 0.1; _i=$((_i + 1)); done
     [ "$_d1" = 1 ] && [ -s "$HOME/sbar.log" ] && printf '%s\n' "$out" | grep -qx "ok     bar          spark-bar ended and removed ($H/.local/share/spark-shell/spark-bar)" && [ ! -e "$H/.local/share/spark-shell/spark-bar" ] && [ ! -e "$block" ] && [ -z "$(find "$H/run" -name 'spark-shell-bar.*' 2>/dev/null)" ] \
@@ -8220,12 +8389,13 @@ STUB
     # the bar's count: mako's notifications, on the screen (9) and gone (12), that nobody looked at; bar seen ID (mako's click) and bare (the block's click, dismiss) count them looked at
     nb() { REM_LOOK=1 XDG_RUNTIME_DIR=$H/run sh "$SH" bar status --once 2>/dev/null | jq -r '[.[] | select(.name == "notifications") | .instance + "=" + (.full_text | gsub("<[^>]*>"; ""))] | join(" ")'; }
     mkdir -p "$H/run"; rm -f "$H/run/spark-shell/notify-seen"
-    _n1=$(nb); XDG_RUNTIME_DIR=$H/run sh "$SH" bar seen 12 >/dev/null 2>&1; _n2=$(nb); XDG_RUNTIME_DIR=$H/run sh "$SH" bar seen 9 77 >/dev/null 2>&1; _n3=$(nb)
+    nf() { REM_LOOK=1 SPARK_BAR=1 XDG_RUNTIME_DIR=$H/run sh "$SH" bar status --once 2>/dev/null | jq -r '. as $l | [.[1:][] | select(.name == "notifications") | [.name, .group, .sign, .text, .cells, .bold, .state, (.level // "-"), .set, .pinned, .label, .toggle] | map(tostring) | join("|")] | join(" ") + (if $l[-1].name == "notifications" then "" else " not last" end)' || echo unread; }   # -> the notifications module of spark's bar's line, its fields with a bar between; said when it is not the line's last
+    _n1=$(nb); _nf1=$(nf); XDG_RUNTIME_DIR=$H/run sh "$SH" bar seen 12 >/dev/null 2>&1; _n2=$(nb); XDG_RUNTIME_DIR=$H/run sh "$SH" bar seen 9 77 >/dev/null 2>&1; _n3=$(nb); _nf3=$(nf)
     _dnd=$(printf '\342\217\276'); _note=$(printf '\342\232\221')
     [ "$_n1" = "dnd=$_dnd count=$_note 2" ] && [ "$_n2" = "dnd=$_dnd count=$_note 1" ] && [ "$_n3" = "dnd=$_dnd" ] && [ "$(cat "$H/run/spark-shell/notify-seen")" = "$(printf '9\n12')" ] \
         && ok "bar: the notifications nobody looked at, the flag and how many beside do not disturb; one looked at by its id, then the other: do not disturb alone, an id mako does not hold not kept (#71)" || bad "bar count" "$_n1 | $_n2 | $_n3 | $(cat "$H/run/spark-shell/notify-seen" 2>&1)"
     printf 'Notification 14: Ping\n  App name: chat\n' > "$HOME/mako.list"; _n4=$(nb)
-    cp "$HOME/.config/spark-shell/config" "$H/config.keep"; printf 'BAR_GLYPHS=words\n' >> "$HOME/.config/spark-shell/config"; _n5=$(nb); cp "$H/config.keep" "$HOME/.config/spark-shell/config"
+    cp "$HOME/.config/spark-shell/config" "$H/config.keep"; printf 'BAR_GLYPHS=words\n' >> "$HOME/.config/spark-shell/config"; _n5=$(nb); _nf5=$(nf); cp "$H/config.keep" "$HOME/.config/spark-shell/config"
     XDG_RUNTIME_DIR=$H/run sh "$SH" bar seen >/dev/null 2>&1; _n6=$(nb)
     [ "$_n4" = "dnd=$_dnd count=$_note 1" ] && [ "$_n5" = "dnd=do not disturb count=new 1" ] && [ "$_n6" = "dnd=$_dnd" ] \
         && ok "bar: a new one on the screen counts, the one looked at stays looked at; in words, new 1; bar seen, bare, looks at them all" || bad "bar count new" "$_n4 | $_n5 | $_n6"
@@ -8234,6 +8404,12 @@ STUB
     out=$(sh "$SH" desktop notifications do-not-disturb off 2>&1 || :); [ "$out" = 'do not disturb off' ] && [ ! -e "$HOME/mako.dnd" ] && grep -qx 'DO_NOT_DISTURB=no' "$HOME/.config/spark-shell/config" \
         && ok "desktop notifications do-not-disturb off: said, mako's mode gone, the config too" || bad "dnd off cli" "$out"
     [ -z "$(nb)" ] && ok "bar: do not disturb off and every notification looked at: no notifications block" || bad "bar no count" "$(nb)"
+    _nf6=$(nf); cp "$HOME/mako.list" "$H/mako.keep"; printf 'Notification 15: Pong\n  App name: chat\n' > "$HOME/mako.list"; _nf7=$(nf)
+    cp "$HOME/.config/spark-shell/config" "$H/config.keep"; printf 'BAR_GLYPHS=words\n' >> "$HOME/.config/spark-shell/config"; _nf8=$(nf); mv "$H/config.keep" "$HOME/.config/spark-shell/config"; mv "$H/mako.keep" "$HOME/mako.list"
+    [ "$_nf1" = "notifications|time|$_dnd|2|2|false|ok|-|false|false|do not disturb, 2 not seen|false" ] && [ "$_nf3" = "notifications|time|$_dnd||2|false|ok|-|false|false|do not disturb|false" ] \
+        && [ "$_nf5" = 'notifications|time|quiet|1|2|false|ok|-|false|false|do not disturb, 1 not seen|false' ] && [ "$_nf8" = 'notifications|time|notes|1|2|false|ok|-|false|false|notifications, 1 not seen|false' ] && [ "$_nf6" = "notifications|time|$_note||2|false|ok|-|false|false|notifications|false" ] \
+        && [ "$_nf7" = "notifications|time|$_note|1|2|false|ok|-|false|false|notifications, 1 not seen|false" ] \
+        && ok "spark's bar, the notifications (v0.148): one module, always there where mako is and the line's last: the moon in do not disturb, else the flag, with nothing after it when every one was looked at; how many were not is its text, in two cells; in words, notes for the flag and quiet for do not disturb" || bad "facts notifications" "$_nf1 | $_nf3 | $_nf5 | $_nf6 | $_nf7 | $_nf8"
     out=$(sh "$SH" desktop notifications 2>&1 || :); [ "$out" = "$(printf 'do not disturb off\n  firefox: Saved')" ] && ok "desktop notifications: do not disturb, then the last few with their app" || bad "notifications cli" "$out"
     # a notification's words are any site's: scrubbed text stays plain, dash's echo made \033 a real escape again
     _mk=$(cat "$HOME/mako.history"); printf 'Notification 21: hello\\033[2Jgone\n  App name: browser\n' > "$HOME/mako.history"

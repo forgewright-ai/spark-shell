@@ -24,10 +24,10 @@ brings that window back; Super+minus, Enter on the group and Enter on its list b
 Then the band on, the bar at the bottom: the handle and the band stand where the pad is, over a strip of both and
 the row, and the bar where it was. Last the titled view (desktop pad view titles): slots of 228 px, an item's
 words read as the dialog's, the handle line across them. Then the dialog on the pad (v0.134.3): a foot whose app
-id is spark-dialog wears spark's own mark, the block-letter S of the assets beside spark-shell, the dark one's
-yellow on a dark surface and the light one's on a light one, in both views, and its words are spark, then its
-title, the same pixels as a window named spark with that title, whose icon is no S. The screen is captured at each
-step into the evidence directory.
+id is spark-dialog wears spark's own mark, the diamond in the chevron of the assets beside spark-shell, in its
+light ink on a dark surface and its dark ink on a light one, in both views, and its words are spark, then its
+title, the same pixels as a window named spark with that title, whose icon holds none of that ink. The screen is
+captured at each step into the evidence directory.
 
 Nothing here rests on a number read at the start: a bar in a fallback font grows a pixel once its line is
 drawn, so every length is read from the edge the bar does not touch, or as the pad's own.
@@ -932,13 +932,10 @@ def round_in(palette, binary, evidence):
         ok(wait_for(lambda: pad_empty() and bottom() == edge - GAP, "the pad with no window", seconds=10), "a click on its slot brings it back, and the pad's surfaces go")
 
         # 17. the dialog on the pad (v0.134.3): a foot whose app id is spark-dialog, as the dialog's window, wears
-        #     spark's own mark, the S of the assets beside spark-shell, its three bands top to bottom: the dark one
-        #     (#ffe066, #e0b400, #d24a2a) on a dark surface, the light one (#d4a400, #a87e00, #c2401f) on a light one,
-        #     never recolored. An icon of 22 to 24 px smooths the thin bands, so the yellow and the red read within a
-        #     few steps; the ochre, the thickest, reads as it is. The light S has nothing as bright as the dark one's
-        #     yellow, and on a light ground the dark S keeps it: none there is the light S. Its words are spark, then
-        #     its title: the same pixels as a window whose app is named spark with that title, whose icon, the
-        #     letter tile, is no S: the mark is the dialog's alone
+        #     spark's own mark, the diamond in the chevron of the assets beside spark-shell (v0.148), in one ink:
+        #     the light one (#e9e7dc) on a dark surface, the dark one (#080a0f) on a light one, never recolored.
+        #     Its words are spark, then its title: the same pixels as a window whose app is named spark with that
+        #     title, whose icon, the letter tile, holds none of that ink: the mark is the dialog's alone
         dialog = open_foot("HOME", app="spark-dialog")
         twin = open_foot("HOME", app="org.example.spark")
         minimize(dialog)
@@ -953,7 +950,7 @@ def round_in(palette, binary, evidence):
         left = row[0][0] if row else (W - 2 * SLOT) // 2
         ground = pixel(img, left + SLOT // 2, top + HANDLE + 2)
         dark = (ground[0] * 299 + ground[1] * 587 + ground[2] * 114) // 1000 < 128
-        yellow, ochre, red = (rgb(c) for c in (("ffe066", "e0b400", "d24a2a") if dark else ("d4a400", "a87e00", "c2401f")))
+        ink = rgb("e9e7dc" if dark else "080a0f")
         icon = m["icon"]
 
         def inks(box, color, tolerance):
@@ -963,19 +960,19 @@ def round_in(palette, binary, evidence):
         def icon_box(x, y):
             return (x - 2, y - 2, icon + 4, icon + 4)
 
-        def the_s(box):
-            """The S's three bands in a box, each a count of pixels, and the dark S's yellow where the light one stands."""
-            return (inks(box, yellow, 28), inks(box, ochre, 12), inks(box, red, 28), 0 if dark else inks(box, rgb("ffe066"), 24))
+        def the_mark(box):
+            """The mark's ink in a box, a count of pixels: its two solid shapes fill a good part of an icon."""
+            return inks(box, ink, 24)
 
-        def reads_s(found):
-            return found[0] >= 2 and found[1] >= 1 and found[2] >= 2 and found[3] == 0
+        def reads_mark(found):
+            return found >= 24
 
         titled_icon = icon_box(left + inset, top + HANDLE + (CELL - icon) // 2)
         twin_icon = icon_box(left + SLOT + inset, top + HANDLE + (CELL - icon) // 2)
-        found, twin_found = the_s(titled_icon), the_s(twin_icon)
-        ok(reads_s(found), "the dialog's icon is spark's S for a %s ground, its bands %s: yellow, ochre and red pixels %s"
-           % ("dark" if dark else "light", ", ".join("#%02x%02x%02x" % c for c in (yellow, ochre, red)), found[:3]), found)
-        ok(twin_found[0] == 0 and twin_found[1] == 0, "the window named spark beside it wears no S: the mark is the dialog's", twin_found)
+        found, twin_found = the_mark(titled_icon), the_mark(twin_icon)
+        ok(reads_mark(found), "the dialog's icon is spark's mark for a %s ground, in its own ink #%02x%02x%02x: %d pixels of it"
+           % (("dark" if dark else "light",) + ink + (found,)), found)
+        ok(twin_found == 0, "the window named spark beside it holds none of that ink: the mark is the dialog's", twin_found)
         words = [mask(img, (left + i * SLOT + text_dx, top + HANDLE + 2, text_w, CELL - 4), fg, 60) for i in (0, 1)]
         ink_w = [max((x for x, _ in w_), default=-1) + 1 for w_ in words]
         ok(words[0] and likeness(words[0], words[1]) >= 0.9 and abs(ink_w[0] - ink_w[1]) <= 1,
@@ -991,8 +988,8 @@ def round_in(palette, binary, evidence):
         row = [r for r in runs(img, top + HANDLE + 2, (surface, lit), 6) if r[1] >= 2 * TOOL]
         left = row[0][0] if row else (W - 2 * TOOL) // 2
         cell_icon = icon_box(left + (TOOL - icon) // 2, top + HANDLE + (TOOL - icon) // 2)
-        found = the_s(cell_icon)
-        ok(reads_s(found), "and in the icons view, the default, its cell is the same S: %s" % (found[:3],), found)
+        found = the_mark(cell_icon)
+        ok(reads_mark(found), "and in the icons view, the default, its cell is the same mark: %d pixels of its ink" % found, found)
         # the keeper (v0.143): a winpad that ends by itself is started again; one stopped on purpose stays stopped
         was = pad_pid()
         os.kill(was, signal.SIGKILL)

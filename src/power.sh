@@ -296,11 +296,11 @@ panel_act_keyboard() {   # the keyboard steps: the repeat and caps settings, the
     case $_a in
         repeat-delay|repeat-rate|caps) input_setting keyboard "$_a" "$_arg" ;;
         next) wm_up || { echo "a layout switch needs the desktop"; return 1; }
-            wm_input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || { echo "$WM_NAME took no layout switch"; return 1; }
+            wm_kb_layout next >/dev/null 2>&1 || { echo "$WM_NAME took no layout switch"; return 1; }
             bar_redraw; echo "the keyboard is $(kb_active)" ;;
         use) wm_up || { echo "a layout switch needs the desktop"; return 1; }
             _i=$(printf '%s\n' $KEYBOARD | awk -v n="$(panel_lower "$_arg")" 'tolower($0) == n {print NR - 1; exit}'); [ -n "$_i" ] || { echo "no layout $_arg in KEYBOARD ($KEYBOARD)"; return 1; }
-            wm_input type:keyboard xkb_switch_layout "$_i" >/dev/null 2>&1 || { echo "$WM_NAME took no layout switch"; return 1; }
+            wm_kb_layout "$_i" >/dev/null 2>&1 || { echo "$WM_NAME took no layout switch"; return 1; }
             bar_redraw; echo "the keyboard is $_arg" ;;
         *) echo "$_a is not something keyboard does"; return 1 ;;
     esac

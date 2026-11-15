@@ -99,21 +99,30 @@ POINTER_SPEED=0
 DO_NOT_DISTURB=no
 
 # The bar on the desktop's screen: yes (shown) or no (hidden). It shows
-# the workspaces, then lan, wifi, bluetooth, sound out and mic, the
-# notifications that came while nobody looked, battery, and the date and
-# time, each only when this machine has it. spark-shell bar on|off
-# --desktop sets this.
+# the workspaces, then the windows on the pad, lan, bluetooth, wifi,
+# sound out and mic, a reminder that is due, brightness, the keyboard's
+# layout, battery, the time and the notifications, each only when this
+# machine has it. spark-shell bar on|off --desktop sets this.
 DESKTOP_BAR=yes
 
-# What is pinned to the bar: names from workspaces pad lan bt wifi out
-# mic due notifications light kb bat clock, a space between. Empty pins
-# every one. Unpinning takes the shortcut off the bar, not the device.
-# spark-shell bar pin and unpin set this. Where spark-bar cannot run,
-# sway's bar draws the bar and shows every one.
-BAR_PINS=
+# The levels pinned to the bar, each with a gauge and a number beside
+# its sign: names from out mic light wifi, a space between, or none.
+# spark-shell bar pin and unpin set this.
+BAR_PINS=out
 
-# What leaves a bar short of width, the first name first.
-BAR_OVERFLOW=due light bt lan wifi kb mic out notifications bat clock
+# What is hidden from the bar: names from pad lan bt wifi out mic due
+# light kb bat clock notifications, a space between. Hiding takes the
+# shortcut off the bar, not the device. spark-shell bar hide and show
+# set this. Where spark-bar cannot run, sway's bar draws the bar and
+# shows every one.
+BAR_HIDE=
+
+# What leaves a bar short of width, the first name first. The time and
+# the notifications never leave.
+BAR_OVERFLOW=due pad light bt lan wifi kb bat mic out
+
+# The bar's motion, a number's digits flowing to a new level: yes or no.
+BAR_MOTION=yes
 
 # Where the bar sits: top or bottom. The notifications come in the right
 # corner by it. spark-shell bar top|bottom sets this.

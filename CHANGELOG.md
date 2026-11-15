@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.148
+
+The bar gets a look of its own, and spark-shell its new logo.
+
+- The workspaces are ten places, always, in the glyph family's own
+  pair: full where a workspace is, light where none is. Where you are
+  is a plate with the number in two digits. A window that asks for you
+  turns its place the attention color.
+- Color means something: all that is well is the text color, the
+  accent is only where you are, red is for what is wrong or records.
+- The time stands alone, in bold, after a hairline; the date is in the
+  time section. The notifications sign is always beside the time: the
+  flag, or the moon in do not disturb, with the count while something
+  waits.
+- A level shows its gauge only when it is pinned: spark-shell bar pin
+  and unpin take out, mic, light and wifi. The speaker is pinned from
+  the start: its sign, its gauge, its percent. A change shows at once
+  and its digits flow; BAR_MOTION=no stops the flow.
+- spark-shell bar hide and show take a module off the bar and put it
+  back (BAR_HIDE). BAR_PINS now names the pinned levels; a line from
+  v0.147 is still read, and what it left out stays hidden.
+- Under the pointer a thing becomes a chip in its own color, as the
+  window controls do. With the keyboard on the bar, a line in the
+  accent says where the keys are.
+- A state is said by a sign's form and tone, never by a second sign
+  beside it: muted is hollow in the text color, off and missing are
+  dim, wrong is red. A reminder that is due is its sign alone, and the
+  battery its number.
+- The shell tells spark-bar facts, and spark-bar decides the look.
+- The logo is the diamond in the chevron, on the bar and on the pad.
+
 ## v0.147
 
 The bar is spark's own: spark-bar, a new component.

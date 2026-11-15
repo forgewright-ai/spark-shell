@@ -1,6 +1,6 @@
 //! Drawing with cairo and pango: opened at run time by their sonames, so the binary needs no -devel
 //! package and runs on each family's own. Only the functions used are typed, each under its name in
-//! cairo.h, pango-layout.h, pango-markup.h and pangocairo.h.
+//! cairo.h, pango-font.h, pango-layout.h and pangocairo.h. The bar's text is plain: no markup is read.
 
 use crate::bar;
 use libloading::Library;
@@ -29,6 +29,7 @@ const CAIRO_OPERATOR_OVER: c_int = 2;
 const CAIRO_FILTER_GOOD: c_int = 1;
 const CAIRO_ANTIALIAS_GRAY: c_int = 2;
 const PANGO_SCALE: c_int = 1024;
+const PANGO_WEIGHT_BOLD: c_int = 700;
 
 /// The functions of libcairo.so.2, libpango-1.0.so.0, libpangocairo-1.0.so.0 and libgobject-2.0.so.0.
 pub struct Lib {
@@ -64,14 +65,12 @@ pub struct Lib {
     font_description_free: unsafe extern "C" fn(*mut FontDesc),
     font_description_get_size: unsafe extern "C" fn(*mut FontDesc) -> c_int,
     font_description_get_size_is_absolute: unsafe extern "C" fn(*mut FontDesc) -> c_int,
+    font_description_set_weight: unsafe extern "C" fn(*mut FontDesc, c_int),
     layout_set_font_description: unsafe extern "C" fn(*mut PangoLayout, *mut FontDesc),
     layout_set_text: unsafe extern "C" fn(*mut PangoLayout, *const c_char, c_int),
-    layout_set_markup: unsafe extern "C" fn(*mut PangoLayout, *const c_char, c_int),
-    layout_get_pixel_size: unsafe extern "C" fn(*mut PangoLayout, *mut c_int, *mut c_int),
+    layout_get_size: unsafe extern "C" fn(*mut PangoLayout, *mut c_int, *mut c_int),
     layout_get_context: unsafe extern "C" fn(*mut PangoLayout) -> *mut c_void,
     layout_context_changed: unsafe extern "C" fn(*mut PangoLayout),
-    #[allow(clippy::type_complexity)]
-    parse_markup: unsafe extern "C" fn(*const c_char, c_int, u32, *mut c_void, *mut c_void, *mut c_void, *mut c_void) -> c_int,
     cairo_create_layout: unsafe extern "C" fn(*mut Cairo) -> *mut PangoLayout,
     cairo_show_layout: unsafe extern "C" fn(*mut Cairo, *mut PangoLayout),
     cairo_context_set_font_options: unsafe extern "C" fn(*mut c_void, *const c_void),
@@ -135,13 +134,12 @@ impl Lib {
             font_description_free: sym!(pango, p, "pango_font_description_free"),
             font_description_get_size: sym!(pango, p, "pango_font_description_get_size"),
             font_description_get_size_is_absolute: sym!(pango, p, "pango_font_description_get_size_is_absolute"),
+            font_description_set_weight: sym!(pango, p, "pango_font_description_set_weight"),
             layout_set_font_description: sym!(pango, p, "pango_layout_set_font_description"),
             layout_set_text: sym!(pango, p, "pango_layout_set_text"),
-            layout_set_markup: sym!(pango, p, "pango_layout_set_markup"),
-            layout_get_pixel_size: sym!(pango, p, "pango_layout_get_pixel_size"),
+            layout_get_size: sym!(pango, p, "pango_layout_get_size"),
             layout_get_context: sym!(pango, p, "pango_layout_get_context"),
             layout_context_changed: sym!(pango, p, "pango_layout_context_changed"),
-            parse_markup: sym!(pango, p, "pango_parse_markup"),
             cairo_create_layout: sym!(pc, q, "pango_cairo_create_layout"),
             cairo_show_layout: sym!(pc, q, "pango_cairo_show_layout"),
             cairo_context_set_font_options: sym!(pc, q, "pango_cairo_context_set_font_options"),
@@ -154,26 +152,27 @@ impl Lib {
         })
     }
 
-    /// A layout on `cr` in the bar's font with a text on it: pango markup when `markup` and pango takes
-    /// it, the same characters as plain text when it does not. Its edges are gray whatever the system
-    /// asks of its fonts: the ground may be seen through, and the screen's subpixel order is not known
-    /// here. The caller unrefs it.
-    unsafe fn layout(&self, cr: *mut Cairo, font: &Font, s: &str, markup: bool) -> *mut PangoLayout {
+    /// A layout on `cr` in the bar's font, or its bold, with a plain text on it. Its edges are gray
+    /// whatever the system asks of its fonts: the ground may be seen through, and the screen's subpixel
+    /// order is not known here. The caller unrefs it.
+    unsafe fn layout(&self, cr: *mut Cairo, font: &Font, s: &str, bold: bool) -> *mut PangoLayout {
         let t = CString::new(s.replace('\0', "")).unwrap_or_default();
-        let null = std::ptr::null_mut();
         let l = (self.cairo_create_layout)(cr);
         let gray = (self.font_options_create)();
         (self.font_options_set_antialias)(gray, CAIRO_ANTIALIAS_GRAY);
         (self.cairo_context_set_font_options)((self.layout_get_context)(l), gray);
         (self.font_options_destroy)(gray);
         (self.layout_context_changed)(l);
-        (self.layout_set_font_description)(l, font.desc);
-        if markup && (self.parse_markup)(t.as_ptr(), -1, 0, null, null, null, null) != 0 {
-            (self.layout_set_markup)(l, t.as_ptr(), -1);
-        } else {
-            (self.layout_set_text)(l, t.as_ptr(), -1);
-        }
+        (self.layout_set_font_description)(l, if bold { font.bold } else { font.desc });
+        (self.layout_set_text)(l, t.as_ptr(), -1);
         l
+    }
+
+    /// A layout's width and height in logical pixels, to the part of a pixel pango has them.
+    unsafe fn size(&self, l: *mut PangoLayout) -> (f64, f64) {
+        let (mut w, mut h) = (0, 0);
+        (self.layout_get_size)(l, &mut w, &mut h);
+        (w as f64 / PANGO_SCALE as f64, h as f64 / PANGO_SCALE as f64)
     }
 }
 
@@ -193,9 +192,10 @@ impl Rgb {
     }
 }
 
-/// The bar's font, as spark-shell names it (BAR_FONT).
+/// The bar's font, as spark-shell names it (BAR_FONT), and its bold: the time's and the plate's.
 pub struct Font {
     desc: *mut FontDesc,
+    bold: *mut FontDesc,
     /// The text's size in pixels.
     pub px: f64,
 }
@@ -213,12 +213,17 @@ impl Font {
             } else {
                 size * 96.0 / 72.0
             };
-            Font { desc, px }
+            let bold = (lib.font_description_from_string)(spec.as_ptr());
+            (lib.font_description_set_weight)(bold, PANGO_WEIGHT_BOLD);
+            Font { desc, bold, px }
         }
     }
 
     pub fn free(&self, lib: &Lib) {
-        unsafe { (lib.font_description_free)(self.desc) }
+        unsafe {
+            (lib.font_description_free)(self.desc);
+            (lib.font_description_free)(self.bold);
+        }
     }
 }
 
@@ -271,14 +276,13 @@ impl Ruler {
         }
     }
 
-    /// The width a line takes in logical pixels, uncut: pango markup, or plain text.
-    pub fn width(&self, lib: &Lib, font: &Font, s: &str, markup: bool) -> f64 {
+    /// The width a plain text takes in logical pixels.
+    pub fn width(&self, lib: &Lib, font: &Font, s: &str) -> f64 {
         unsafe {
-            let l = lib.layout(self.cr, font, s, markup);
-            let (mut tw, mut th) = (0, 0);
-            (lib.layout_get_pixel_size)(l, &mut tw, &mut th);
+            let l = lib.layout(self.cr, font, s, false);
+            let (tw, _) = lib.size(l);
             (lib.object_unref)(l as *mut c_void);
-            tw as f64
+            tw
         }
     }
 
@@ -290,19 +294,13 @@ impl Ruler {
     }
 }
 
-/// How a line of text sits in its box.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Align {
-    Left,
-    Center,
-}
-
 /// A canvas in shared memory (ARGB, as wl_shm's Argb8888), drawn in logical pixels at a scale.
 pub struct Canvas<'a> {
     lib: &'a Lib,
     font: &'a Font,
     surface: *mut CairoSurface,
     cr: *mut Cairo,
+    scale: f64,
 }
 
 impl<'a> Canvas<'a> {
@@ -323,7 +321,7 @@ impl<'a> Canvas<'a> {
             (lib.set_source_rgba)(cr, 0.0, 0.0, 0.0, 0.0);
             (lib.paint)(cr);
             (lib.set_operator)(cr, CAIRO_OPERATOR_OVER);
-            Some(Canvas { lib, font, surface, cr })
+            Some(Canvas { lib, font, surface, cr, scale })
         }
     }
 
@@ -335,20 +333,34 @@ impl<'a> Canvas<'a> {
         }
     }
 
-    /// One line in a box `w` wide and `h` tall at x, y: at its left edge or centered, in the middle of its
-    /// height, and cut where the box ends. Pango markup when `markup` says so.
+    /// A logical place on the nearest device pixel: text set there is as sharp as the scale lets it be.
+    fn snap(&self, v: f64) -> f64 {
+        (v * self.scale).round() / self.scale
+    }
+
+    /// A glyph, or a few, in the middle of a box `w` wide and `h` tall at x, y, plain or bold. `fit`: drawn
+    /// as wide as the box and cut at it, so the family's pair joins from cell to cell whatever the font's
+    /// own advance is at this scale, and a run of it ends where its last cell does. `shift`: moved down by
+    /// that part of the box's height (up when negative) and cut at the box: a digit on its way.
     #[allow(clippy::too_many_arguments)]
-    pub fn text(&self, x: f64, y: f64, w: f64, h: f64, s: &str, markup: bool, c: Rgb, align: Align) {
+    pub fn glyph(&self, x: f64, y: f64, w: f64, h: f64, s: &str, c: Rgb, bold: bool, fit: bool, shift: f64) {
         unsafe {
-            let l = self.lib.layout(self.cr, self.font, s, markup);
-            let (mut tw, mut th) = (0, 0);
-            (self.lib.layout_get_pixel_size)(l, &mut tw, &mut th);
-            let tx = if align == Align::Center { x + ((w - tw as f64) / 2.0).max(0.0) } else { x };
+            let l = self.lib.layout(self.cr, self.font, s, bold);
+            let (tw, th) = self.lib.size(l);
+            let ty = self.snap(y + (h - th) / 2.0) + shift * h;
             (self.lib.save)(self.cr);
-            (self.lib.rectangle)(self.cr, x, y, w, h);
-            (self.lib.clip)(self.cr);
+            if fit || shift != 0.0 {
+                (self.lib.rectangle)(self.cr, x, y, w, h);
+                (self.lib.clip)(self.cr);
+            }
             (self.lib.set_source_rgba)(self.cr, c.0, c.1, c.2, 1.0);
-            (self.lib.move_to)(self.cr, tx.round(), (y + (h - th as f64) / 2.0).round());
+            if fit && tw > 0.0 && (tw - w).abs() > 0.01 {
+                (self.lib.translate)(self.cr, x, ty);
+                (self.lib.scale)(self.cr, w / tw, 1.0);
+                (self.lib.move_to)(self.cr, 0.0, 0.0);
+            } else {
+                (self.lib.move_to)(self.cr, self.snap(x + (w - tw) / 2.0), ty);
+            }
             (self.lib.cairo_show_layout)(self.cr, l);
             (self.lib.restore)(self.cr);
             (self.lib.object_unref)(l as *mut c_void);

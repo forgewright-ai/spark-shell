@@ -65,12 +65,15 @@ sparkbar_run() {   # spark-bar started in its own session, under its keeper; fal
     _sblog=$(sparkbar_file log)
     mkdir_private "$STATE_DIR"
     (
-        # the look before its first line (each line carries it then: bar_look), the muted lifted as the pad's; BAR_TRAY_WIDTH pixels stay clear at the right end of BAR_TRAY_OUTPUT, for the tray's host
+        # the look before its first line, value for value the one each line carries then (bar_look): the muted the palette's own, the alert its red, the glyph family's gauge pair, the motion;
+        # BAR_TRAY_WIDTH pixels stay clear at the right end of BAR_TRAY_OUTPUT, for the tray's host
         _sbs=''; [ "$BAR_TRAY" != yes ] || _sbs=$(sparkbar_tray_screen) || _sbs=''
         BAR_TRAY_OUTPUT=${_sbs% *}; BAR_TRAY_WIDTH=0; [ -z "$_sbs" ] || BAR_TRAY_WIDTH=$(( $(sparkbar_height) * SPARKBAR_TRAY_SLOTS ))
-        SPARK_SHELL=$REPO/spark-shell BAR_FONT=$(bar_line_font) BAR_FG=$HEX_FG BAR_ACCENT=$HEX_ACCENT BAR_MUTED=$PANEL_MUTED BAR_GROUND=$HEX_BG BAR_LIT=$PANEL_HI BAR_ATTENTION=$HEX_ANSI_3 BAR_ALPHA=$ALPHA
-        BAR_LOCK=$(sparkbar_file pid) BAR_STATE=$(sparkbar_file state)   # BAR_PINS and BAR_OVERFLOW as config_load read them
-        export SPARK_SHELL BAR_POSITION BAR_FONT BAR_FG BAR_ACCENT BAR_MUTED BAR_GROUND BAR_LIT BAR_ATTENTION BAR_ALPHA BAR_PINS BAR_OVERFLOW BAR_TRAY_WIDTH BAR_TRAY_OUTPUT BAR_LOCK BAR_STATE
+        SPARK_SHELL=$REPO/spark-shell BAR_FONT=$(bar_line_font) BAR_FG=$HEX_FG BAR_ACCENT=$HEX_ACCENT BAR_MUTED=$HEX_MUTED BAR_GROUND=$HEX_BG BAR_LIT=$PANEL_HI BAR_ATTENTION=$HEX_ANSI_3 BAR_ALERT=$HEX_ANSI_1 BAR_ALPHA=$ALPHA
+        family_set "$GLYPH_FAMILY"; BAR_GAUGE_FULL=$FAM_ON BAR_GAUGE_LIGHT=$FAM_OFF   # never as BAR_FULL or BAR_LIGHT: those are the shell's own signs
+        BAR_LOCK=$(sparkbar_file pid) BAR_STATE=$(sparkbar_file state)   # BAR_OVERFLOW as config_load read it
+        unset BAR_PINS BAR_HIDE   # the pins and the hidden are each line's to say (bar_shown): a bar started with them would hand its line's loop the ones of its start
+        export SPARK_SHELL BAR_POSITION BAR_FONT BAR_FG BAR_ACCENT BAR_MUTED BAR_GROUND BAR_LIT BAR_ATTENTION BAR_ALERT BAR_ALPHA BAR_GAUGE_FULL BAR_GAUGE_LIGHT BAR_MOTION BAR_OVERFLOW BAR_TRAY_WIDTH BAR_TRAY_OUTPUT BAR_LOCK BAR_STATE
         if command -v setsid >/dev/null 2>&1; then setsid sh -c "$SPARKBAR_KEEP" "$_sbc" </dev/null >/dev/null 2>"$_sblog" &
         else ( trap '' HUP; exec sh -c "$SPARKBAR_KEEP" "$_sbc" ) </dev/null >/dev/null 2>"$_sblog" & fi
     )
@@ -88,7 +91,7 @@ sparkbar_stop() {   # sparkbar_stop PID -- the bar told to end (it leaves with 0
 }
 sparkbar_wait() { _sbi=0; while [ "$_sbi" -lt 20 ] && ! sparkbar_pid >/dev/null; do sleep 0.1; _sbi=$((_sbi + 1)); done; }   # the bar's lock, waited for two seconds at most
 sparkbar_settle() { sparkbar_wait; _winpad_again=''; winpad_again; }   # the new bar has its lock, then the pad starts again: a pad keeping its strip starts after the bar, so the bar is not inside that strip
-sparkbar_again() {   # the bar as the config has it now: a running one ended, so the next takes a new place, text or pins, and one started where it draws, through sway as at login, so it is sway's child in the session's environment; once a run
+sparkbar_again() {   # the bar as the config has it now: a running one ended, so the next takes a new place or text, and one started where it draws, through sway as at login, so it is sway's child in the session's environment; once a run
     [ -z "${_sparkbar_again:-}" ] || return 0; _sparkbar_again=1
     _sbo=$(sparkbar_pid) || _sbo=''; _sbd=''; ! sparkbar_draws || _sbd=1
     [ -n "$_sbo$_sbd" ] || return 0   # none runs and none draws here: sway is not asked
@@ -104,10 +107,11 @@ sparkbar_font_again() {   # sparkbar_font_again FONT -- the status loop's: its b
     if command -v setsid >/dev/null 2>&1; then setsid sh "$REPO/spark-shell" bar again </dev/null >/dev/null 2>&1 &
     else ( trap '' HUP; exec sh "$REPO/spark-shell" bar again ) </dev/null >/dev/null 2>&1 & fi
 }
-sparkbar_no_pins() {   # -> why a pin changes nothing here; nothing where spark-bar draws the bar and holds to the pins
+sparkbar_no_pins() {   # sparkbar_no_pins pin|unpin|hide|show -> why it changes nothing here, in the verb's own words; nothing where spark-bar draws the bar and holds to both
     ! sparkbar_draws || return 0
-    if [ "$DESKTOP_BAR" != yes ]; then echo "pins need the bar shown: it is hidden (spark-shell bar on --desktop shows it)"
-    else echo "pins need spark-bar: sway's bar draws the bar here, and it shows every module (spark-shell on desktop)"; fi
+    case $1 in hide|show) _snw='hide and show need' ;; *) _snw='pins need' ;; esac
+    if [ "$DESKTOP_BAR" != yes ]; then echo "$_snw the bar shown: it is hidden (spark-shell bar on --desktop shows it)"
+    else echo "$_snw spark-bar: sway's bar draws the bar here, and it shows every module (spark-shell on desktop)"; fi
 }
 sparkbar_keys() {   # Super+equal: the keyboard on the bar
     [ "$DESKTOP_BAR" = yes ] || refuse_in bar "the bar is hidden (spark-shell bar on --desktop shows it)"

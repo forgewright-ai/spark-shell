@@ -1,17 +1,18 @@
 //! The bar on the screens: a surface on the wlr layer shell's bottom layer on each output, where swaybar
-//! docks, drawn with cairo and pango. It draws what the pure half laid out and hands the pointer and
-//! the keys back to it: no value and no place is decided here. Nothing moves by itself: there is no
-//! animation, so reduced motion is what the bar always is.
+//! docks, drawn with cairo and pango. It draws the frame the pure half says and hands the pointer and
+//! the keys back to it: no value, no place and no tone is decided here. One thing moves by itself: a
+//! level's number flows to its new digits. While one does, the bar draws on the surface's frame
+//! callbacks; at rest it asks for none and does not wake.
 
-use crate::bar::{self, Act, Edge, KeyAct, Layout, Metrics, Module, Paint, Prefs, Scene, Shown, Status, Tone, Workspace};
+use crate::bar::{self, Act, Draw, Edge, KeyAct, Layout, Levels, Metrics, Module, Prefs, Press, Scene, Shown, Status, Tone, View, Workspace};
 use crate::keys::Keyboard;
-use crate::paint::{Align, Canvas, Font, Lib, Picture, Rgb, Ruler};
+use crate::paint::{Canvas, Font, Lib, Picture, Rgb, Ruler};
 use crate::status::{Feed, Said};
 use crate::sway::Ipc;
 use calloop::channel::Sender;
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::LoopHandle;
-use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
+use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, FrameCallbackData, Region};
 use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::{Shape as Cursor, WpCursorShapeDeviceV1};
@@ -26,7 +27,7 @@ use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use wayland_client::globals::GlobalList;
 use wayland_client::protocol::wl_keyboard::{self, KeyState, WlKeyboard};
 use wayland_client::protocol::wl_output::{Transform, WlOutput};
@@ -44,17 +45,23 @@ const BTN_MIDDLE: u32 = 0x112;
 /// The pixels of scroll that make one wheel step: a notch of a wheel.
 const WHEEL_STEP: f64 = 15.0;
 
-/// The palette's slots, as spark-shell hands them over: in the environment at the start, then in each
-/// status line.
-#[derive(Clone, Copy, PartialEq)]
+/// The look, as spark-shell hands it over: in the environment at the start, then in each status line.
+/// The palette's slots, the ground's alpha, the glyph family's gauge pair and whether the digits flow.
+#[derive(Clone, PartialEq)]
 pub struct Look {
     pub fg: Rgb,
     pub accent: Rgb,
+    /// The dim tone.
     pub muted: Rgb,
     pub ground: Rgb,
     pub lit: Rgb,
     pub attention: Rgb,
+    /// Red.
+    pub alert: Rgb,
     pub alpha: f64,
+    pub full: String,
+    pub light: String,
+    pub motion: bool,
 }
 
 impl Look {
@@ -68,7 +75,24 @@ impl Look {
             ground: color(said.ground, self.ground),
             lit: color(said.lit, self.lit),
             attention: color(said.attention, self.attention),
+            alert: color(said.alert, self.alert),
             alpha: said.alpha.unwrap_or(self.alpha),
+            full: said.full.clone().unwrap_or_else(|| self.full.clone()),
+            light: said.light.clone().unwrap_or_else(|| self.light.clone()),
+            motion: said.motion.unwrap_or(self.motion),
+        }
+    }
+
+    /// The color a tone is drawn in.
+    fn color(&self, tone: Tone) -> Rgb {
+        match tone {
+            Tone::Text => self.fg,
+            Tone::Dim => self.muted,
+            Tone::Alert => self.alert,
+            Tone::Attention => self.attention,
+            Tone::Accent => self.accent,
+            Tone::Ground => self.ground,
+            Tone::Lit => self.lit,
         }
     }
 
@@ -107,6 +131,8 @@ struct Out {
     /// The target the keys are on, by its id: it stays through a new line.
     focus: Option<String>,
     hover: Option<usize>,
+    /// A frame callback was asked of the bar's surface and has not come: the next frame of a number's flow.
+    waiting: bool,
 }
 
 struct Ptr {
@@ -141,6 +167,10 @@ pub struct App {
     /// The status as spark-shell last said it, and every output's workspaces as sway last listed them.
     status: Status,
     modules: Vec<Module>,
+    /// The levels as they are drawn: the line's, or the hand's since.
+    levels: Levels,
+    /// When the bar started: the time the numbers flow by is counted from it.
+    started: Instant,
     workspaces: Vec<Workspace>,
     /// sway's binding mode; none in the default one.
     mode: Option<String>,
@@ -183,7 +213,7 @@ impl App {
         let font = Font::new(&lib, &cfg.font);
         let ruler = Ruler::new(&lib);
         // one cell: the width of "0" in the bar's font
-        let m = Metrics::for_text(font.px, ruler.width(&lib, &font, "0", false));
+        let m = Metrics::for_text(font.px, ruler.width(&lib, &font, "0"));
         Ok(App {
             registry: RegistryState::new(globals),
             outputs: OutputState::new(globals, qh),
@@ -199,12 +229,14 @@ impl App {
             font,
             ruler,
             m,
-            look: cfg.look,
+            look: cfg.look.clone(),
             cfg,
             ipc,
             outs: vec![],
             status: Status::Loading,
             modules: vec![],
+            levels: Levels::default(),
+            started: Instant::now(),
             workspaces: vec![],
             mode: None,
             feed: None,
@@ -235,20 +267,26 @@ impl App {
         }
     }
 
+    /// The time, in milliseconds since the bar started.
+    fn now(&self) -> u64 {
+        self.started.elapsed().as_millis() as u64
+    }
+
     /// What the status child said: a line replaces the last one; its end breaks the status. Only the
     /// running child is heard: one that ended may say its end twice (its exit and its stream's), and a
-    /// line of its may still come after.
+    /// line of its may still come after. A line's levels are the truth: one the hand set since is drawn
+    /// as the line says, though the line itself is the same as the last.
     pub fn said(&mut self, said: Said) {
         let Some(lived) = self.feed.as_ref().map(Feed::lived) else { return };
         match said {
             Said::Line(gen, line) if gen == self.gen => {
-                let Some((blocks, look)) = bar::parse_refresh(&line) else { return };
-                let modules = bar::modules(blocks);
+                let Some((modules, look)) = bar::parse_refresh(&line) else { return };
                 if bar::steady(lived.as_secs()) {
                     self.failures = 0;
                 }
                 self.set_look(self.cfg.look.with(&look));
-                if self.status != Status::Ok || modules != self.modules {
+                let moved = self.levels.said(&modules, self.now());
+                if self.status != Status::Ok || modules != self.modules || moved {
                     self.status = Status::Ok;
                     self.modules = modules;
                     self.relayout();
@@ -328,8 +366,6 @@ impl App {
 
     /// Every bar laid out again by the pure half, and the state file with them.
     fn relayout(&mut self) {
-        let (lib, font, ruler) = (&self.lib, &self.font, &self.ruler);
-        let measure = |s: &str, markup: bool| ruler.width(lib, font, s, markup).ceil() as i32;
         for (oi, o) in self.outs.iter_mut().enumerate() {
             if o.width <= 0 {
                 continue;
@@ -340,10 +376,11 @@ impl App {
                 edge: self.cfg.edge,
                 status: self.status,
                 modules: &self.modules,
+                levels: &self.levels,
                 workspaces: &self.workspaces,
                 mode: self.mode.as_deref(),
             };
-            o.layout = bar::layout(&scene, &self.cfg.prefs, &self.m, &measure);
+            o.layout = bar::layout(&scene, &self.cfg.prefs, &self.m);
             // the pointer stays where it is: what is under it now
             o.hover = self.pointer.as_ref().filter(|p| p.out == Some(oi)).and_then(|p| o.layout.hit(p.pos.0, p.pos.1));
             // the keys stay on their target; when it is gone, on the first
@@ -376,7 +413,7 @@ impl App {
                 hover: self.outs[oi].hover,
             })
             .collect();
-        let text = bar::state_text(self.status, self.mode.as_deref(), &bars);
+        let text = bar::state_text(self.status, self.mode.as_deref(), &self.levels, &bars);
         if text == self.written {
             return;
         }
@@ -479,9 +516,10 @@ impl App {
         self.write_state();
     }
 
-    /// What a click or a key asked for: a click for spark-shell, or a command for sway.
-    fn act(&mut self, act: Act) {
-        match act {
+    /// What a click or a key asked for: a click for spark-shell, or a command for sway; and the level it
+    /// changes, drawn at once.
+    fn act(&mut self, press: Press) {
+        match press.act {
             Act::Send(click) => {
                 if let Some(feed) = self.feed.as_mut() {
                     feed.click(&click);
@@ -495,6 +533,11 @@ impl App {
             }
             Act::Nothing => {}
         }
+        if let Some((module, level)) = press.set {
+            if self.levels.set(&module, level, self.now()) {
+                self.relayout();
+            }
+        }
     }
 
     fn key(&mut self, code: u32) {
@@ -502,15 +545,15 @@ impl App {
             return;
         };
         let Some(k) = self.kb.key(code) else { return };
-        match self.outs[oi].layout.key(self.focus_on(oi).unwrap_or(0), k) {
+        match self.outs[oi].layout.key(self.focus_on(oi).unwrap_or(0), k, &self.levels) {
             KeyAct::Focus(i) => {
                 let o = &mut self.outs[oi];
                 o.focus = o.layout.targets.get(i).map(|t| t.id.clone());
                 self.dirty = true;
                 self.write_state();
             }
-            KeyAct::Do { act, leave } => {
-                self.act(act);
+            KeyAct::Do { press, leave } => {
+                self.act(press);
                 if leave {
                     self.keys_off();
                 }
@@ -536,8 +579,8 @@ impl App {
 
     /// A button (1 left, 2 middle, 3 right, 4 wheel up, 5 wheel down) on an output's bar.
     fn press(&mut self, oi: usize, pos: (f64, f64), button: u32) {
-        let act = self.outs[oi].layout.press(pos.0, pos.1, button);
-        self.act(act);
+        let press = self.outs[oi].layout.press(pos.0, pos.1, button, &self.levels);
+        self.act(press);
     }
 
     /// Spark's mark at a scale, loaded once: the mark's side in that scale's pixels.
@@ -557,6 +600,9 @@ impl App {
         }
     }
 
+    /// One bar drawn: the frame the pure half says for now, each thing in its tone's color. While a number
+    /// on this bar is on its way the next frame is asked of the surface, once; a bar at rest asks for none,
+    /// and neither does one whose change shows no number.
     fn draw(&mut self, oi: usize) {
         if self.outs[oi].layer.is_none() || self.outs[oi].width <= 0 {
             return;
@@ -564,6 +610,7 @@ impl App {
         let scale = self.outs[oi].scale.max(1);
         self.load_mark(scale);
         let focus = self.focus_on(oi);
+        let now = self.now();
         let o = &self.outs[oi];
         let (lay, look) = (&o.layout, &self.look);
         let (w, h) = (o.width, self.m.height);
@@ -572,60 +619,51 @@ impl App {
             eprintln!("spark-bar: no shared memory for a frame");
             return;
         };
+        let view = View {
+            hover: o.hover,
+            focus,
+            full: &look.full,
+            light: &look.light,
+            levels: &self.levels,
+            motion: look.motion,
+            at: now,
+        };
         {
             let Some(c) = Canvas::new(&self.lib, &self.font, data, bw, bh, bw * 4, scale as f64) else {
                 return;
             };
-            let fill = |r: bar::Rect, color: Rgb, alpha: f64| c.fill(r.x as f64, r.y as f64, r.w as f64, r.h as f64, color, alpha);
-            let text = |r: bar::Rect, s: &str, markup: bool, color: Rgb, align: Align| {
-                c.text(r.x as f64, r.y as f64, r.w as f64, r.h as f64, s, markup, color, align);
-            };
             c.fill(0.0, 0.0, w as f64, h as f64, look.ground, look.alpha);
-            // the chip behind the target under the pointer, the bar's whole height
-            if let Some(t) = o.hover.and_then(|i| lay.targets.get(i)) {
-                fill(t.rect, look.lit, 1.0);
-            }
-            for cell in &lay.cells {
-                match &cell.paint {
-                    Paint::Mark => {
+            for draw in lay.frame(&view) {
+                match draw {
+                    Draw::Fill { rect: r, tone } => c.fill(r.x as f64, r.y as f64, r.w as f64, r.h as f64, look.color(tone), 1.0),
+                    Draw::Mark { rect: r } => {
                         if let Some(p) = self.marks.get(&scale).and_then(Option::as_ref) {
-                            c.picture(p, cell.rect.x as f64, cell.rect.y as f64, cell.rect.w as f64);
+                            c.picture(p, r.x as f64, r.y as f64, r.w as f64);
                         }
                     }
-                    Paint::Workspace { label, tone } => {
-                        let color = match tone {
-                            Tone::Focused => {
-                                fill(cell.rect, look.accent, 1.0);
-                                look.ground
-                            }
-                            Tone::Visible => look.fg,
-                            Tone::Other => look.muted,
-                            Tone::Urgent => {
-                                fill(lay.inner_line(cell.rect), look.attention, 1.0);
-                                look.attention
-                            }
-                        };
-                        text(cell.rect, label, false, color, Align::Center);
-                    }
-                    Paint::Mode(name) => {
-                        fill(cell.rect, look.accent, 1.0);
-                        text(cell.rect, name, false, look.ground, Align::Center);
-                    }
-                    Paint::Markup(s) => text(cell.rect, s, true, look.fg, Align::Left),
-                    Paint::Note(sign) => text(cell.rect, sign, false, look.muted, Align::Center),
+                    Draw::Glyph {
+                        rect: r,
+                        text,
+                        tone,
+                        bold,
+                        fit,
+                        shift,
+                    } => c.glyph(r.x as f64, r.y as f64, r.w as f64, r.h as f64, &text, look.color(tone), bold, fit, shift),
                 }
             }
-            // the line under the target the keys are on
-            if let Some(t) = focus.and_then(|i| lay.targets.get(i)) {
-                fill(lay.underline(t.rect), look.accent, 1.0);
-            }
         }
+        // the next frame, only while a number on this bar is on its way
+        let ask = lay.moving(&view) && !o.waiting;
         let Some(layer) = o.layer.as_ref() else { return };
         let surface = layer.wl_surface();
         surface.set_buffer_scale(scale);
         if buffer.attach_to(surface).is_ok() {
             surface.damage_buffer(0, 0, bw, bh);
+            if ask {
+                surface.frame(&self.qh, FrameCallbackData(surface.clone()));
+            }
             layer.commit();
+            self.outs[oi].waiting |= ask;
         }
     }
 
@@ -658,6 +696,7 @@ impl LayerShellHandler for App {
             if o.layer.as_ref() == Some(layer) {
                 o.layer = None;
                 o.width = 0;
+                o.waiting = false;
             }
             if o.keyer.as_ref() == Some(layer) {
                 o.keyer = None;
@@ -691,7 +730,14 @@ impl CompositorHandler for App {
 
     fn transform_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlSurface, _: Transform) {}
 
-    fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlSurface, _: u32) {}
+    /// The frame a draw asked for while a number was on its way: that bar drawn again, as far as the
+    /// number is now; the draw asks for the next one until the number rests.
+    fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &WlSurface, _: u32) {
+        if let Some(oi) = self.out_of(surface) {
+            self.outs[oi].waiting = false;
+            self.draw(oi);
+        }
+    }
 
     fn surface_enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlSurface, _: &WlOutput) {}
 
@@ -716,6 +762,7 @@ impl OutputHandler for App {
             layout: Layout::default(),
             focus: None,
             hover: None,
+            waiting: false,
         });
         self.add_bar(self.outs.len() - 1);
     }

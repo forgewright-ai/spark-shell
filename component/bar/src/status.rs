@@ -182,6 +182,24 @@ mod tests {
     }
 
     #[test]
+    fn a_gauge_click_shows_the_level_the_shells_own_arithmetic_sets() {
+        // spark-shell's line for a click on a gauge (src/bar.sh, bar_click), run by sh itself for every place along
+        // gauges of six widths: the level the bar draws at once is the one the status sets
+        let line = r#"for w in 35 40 45 50 80 100; do x=0; while [ "$x" -le "$w" ]; do
+            l=$(( (x * 100 / w + 2) / 5 * 5 )); [ "$l" -le 100 ] || l=100; [ "$l" -ge 0 ] || l=0
+            echo "$w $x $l"; x=$((x + 1)); done; done"#;
+        let said = Command::new("sh").args(["-c", line]).stdin(Stdio::null()).output().unwrap();
+        assert!(said.status.success());
+        let mut places = 0;
+        for row in String::from_utf8_lossy(&said.stdout).lines() {
+            let n: Vec<i32> = row.split(' ').map(|f| f.parse().unwrap()).collect();
+            assert_eq!(bar::level_at(n[1], n[0]), Some(n[2]), "{row}");
+            places += 1;
+        }
+        assert_eq!(places, 36 + 41 + 46 + 51 + 81 + 101);
+    }
+
+    #[test]
     fn a_child_starts_with_no_signal_blocked() {
         // as the bar does: the signals it reads are blocked where the child is started
         let mut set = std::mem::MaybeUninit::<libc::sigset_t>::uninit();

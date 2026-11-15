@@ -6,7 +6,8 @@ repositories; the fonts and the model are pinned to one release.
 
 ## The logo
 
-- The S in `asset/` -- https://github.com/forgewright-ai/spark -- MIT.
+- The spark-shell nested diamond and chevron in `asset/` -- the approved spark-shell identity.
+  The dark/light SVGs and 16, 19, 22 and 26 px PNGs share the same canonical geometry.
 
 ## The prompt
 

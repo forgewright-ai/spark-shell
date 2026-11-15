@@ -103,8 +103,11 @@
 #   spark-shell bar top|bottom        the bar at the top or the bottom
 #   spark-shell bar text [auto|N]     the bar's text size, auto: by the screen
 #   spark-shell bar tray [on|off]     the apps' icons at the bar's end
-#   spark-shell bar pin [NAME...]     what the bar shows; pin a module to it
-#   spark-shell bar unpin NAME...     take a module off the bar
+#   spark-shell bar pin [NAME...]     list the bar's modules, or put a level's
+#                                     gauge and number on it (out mic light wifi)
+#   spark-shell bar unpin NAME...     take them off again, the sign stays
+#   spark-shell bar hide NAME...      take a module off the bar
+#   spark-shell bar show NAME...      put a hidden module on the bar again
 #   spark-shell bar keys              the keyboard on the bar (Super+equal)
 #   spark-shell dialog [SECTION]      open home (Super+Space), SECTION first
 #   spark-shell dialog chat           conversation inside home

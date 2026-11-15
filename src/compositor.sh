@@ -43,6 +43,14 @@ wm_exec_at() { SWAYSOCK=$1 swaymsg -- exec "$2"; }   # through another session's
 wm_workspace() { swaymsg -- workspace "$@"; }
 wm_output() { swaymsg -- output "$@"; }
 wm_input() { swaymsg -- input "$@"; }
+# the layout switched on the keyboards that have layouts, by identifier, and never on type:keyboard: sway 1.12 ends, the
+# session with it, when a layout switch reaches a keyboard with no keymap, as a virtual keyboard that never typed is.
+# Every virtual keyboard has the one identifier, so an identifier is sent only where each keyboard under it has a layout
+wm_kb_layout() {   # wm_kb_layout next|INDEX -> 0 when the keyboards took it; false, and nothing sent, where no identifier is safe
+    _wkl=$(wm_inputs | jq -r '[.[] | select(.type == "keyboard" and (.identifier | type) == "string")] | group_by(.identifier)[] | select(all(.[]; (.xkb_layout_names // [] | length) > 0)) | .[0].identifier | @json' 2>/dev/null) || return 1
+    [ -n "$_wkl" ] || return 1
+    printf '%s\n' "$_wkl" | while IFS= read -r _wki; do swaymsg -- "input $_wki xkb_switch_layout $1" || exit 1; done
+}
 wm_tick() { swaymsg -t send_tick "$1"; }   # wm_tick PAYLOAD -- a word to every subscriber of ticks
 wm_reload() { swaymsg reload; }
 wm_exit() { swaymsg exit; }
