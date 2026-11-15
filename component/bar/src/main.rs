@@ -43,20 +43,21 @@ The status is spark-shell's: the bar runs SPARK_SHELL bar status with
 SPARK_BAR=1, in a process group of its own, and reads its stream as sway's
 bar does, a line a refresh: a JSON array of objects that say facts, and no
 markup. The object named look says the look, each value a string: fg,
-accent, muted (the dim tone), ground, lit, attention and alert (red) as
-rrggbb, alpha as 0 to 1, full and light (the family's gauge pair, a glyph
-each), motion (yes or no). Every other object with a name is a module, in
-the bar's order: name, group, sign (its glyph or its word), text and cells
-(the cells kept for the text), bold, state (ok, muted, off, missing, wrong,
-asks or records), level (0 to 100, when it has one), set (the level can be
-set from the bar), pinned (its gauge and number are on the bar), toggle (a
-click on its sign or its text changes something in place and opens nothing)
-and label (its name and state in words). The bar picks every tone by the
-state: the text's color for what is well; muted dims its sign and its
-gauge, and its number is not drawn; off and missing are dim, and missing
-draws no gauge and no number; the sign is red for wrong and records, and
-the attention color for asks; a module with no sign says its state on its
-text.
+accent, muted (the dim tone), ground, lit, attention, alert (red) and ink
+(what is written on the accent: the plate's digits and the keys' line
+there; without one, the ground's color) as rrggbb, alpha as 0 to 1, full
+and light (the family's gauge pair, a glyph each), motion (yes or no).
+Every other object with a name is a module, in the bar's order: name,
+group, sign (its glyph or its word), text and cells (the cells kept for the
+text), bold, state (ok, muted, off, missing, wrong, asks or records), level
+(0 to 100, when it has one), set (the level can be set from the bar),
+pinned (its gauge and number are on the bar), toggle (a click on its sign
+or its text changes something in place and opens nothing) and label (its
+name and state in words). The bar picks every tone by the state: the text's
+color for what is well; muted dims its sign and its gauge, and its number
+is not drawn; off and missing are dim, and missing draws no gauge and no
+number; the sign is red for wrong and records, and the attention color for
+asks; a module with no sign says its state on its text.
 
 Clicks go to its stdin as sway's bar writes them (name, instance, button,
 x, y, relative_x, relative_y, width, height; buttons 1 left, 2 middle, 3
@@ -75,8 +76,8 @@ and it is started again after 1 s, then 2, 4, up to 30; a line from a
 status that has run 10 s starts the count anew.
 
 SIGUSR1 puts the keyboard on the bar of the focused output, and a line in
-the accent stands under the part the keys are on (in the ground's color on
-the plate): Tab and Shift+Tab go round the targets, and Left and Right too;
+the accent stands under the part the keys are on (in the ink on the
+plate): Tab and Shift+Tab go round the targets, and Left and Right too;
 Up and Down are the wheel on any part of a level that can be set, and Home
 and End its ends on its gauge; Enter or Space is a click, and gives the
 keyboard back, except on the sign or the text of a module that says toggle,
@@ -84,13 +85,20 @@ where the keys stay; Escape gives it back, and so does a button pressed off
 the bar, or the pointer moved more than three cells there. SIGTERM or
 SIGINT ends the bar, and its status with it.
 
+An output rests while the workspace it shows has the rest name (BAR_REST),
+or that name, a space and more: it has no bar, nothing drawn, no room
+kept, no pointer and no keys, and a bar that had the keys gives them back
+first. When it shows another workspace its bar is back. A workspace with
+such a name has no place on any output's bar.
+
 spark-shell sets the look and the place in the environment: BAR_POSITION
 (top, the default, or bottom), BAR_FONT (a pango font, Monaspace Neon 12),
-BAR_FG, BAR_ACCENT, BAR_MUTED, BAR_GROUND, BAR_LIT, BAR_ATTENTION and
-BAR_ALERT (rrggbb), BAR_ALPHA (0 to 1), BAR_GAUGE_FULL and BAR_GAUGE_LIGHT
-(the gauge pair, a glyph each; the star family's without them), BAR_MOTION
-(yes, the default, or no), BAR_OVERFLOW, BAR_TRAY_WIDTH (pixels kept clear
-at the right end) on BAR_TRAY_OUTPUT (none: every output), and the files
+BAR_FG, BAR_ACCENT, BAR_MUTED, BAR_GROUND, BAR_LIT, BAR_ATTENTION,
+BAR_ALERT and BAR_INK (rrggbb), BAR_ALPHA (0 to 1), BAR_GAUGE_FULL and
+BAR_GAUGE_LIGHT (the gauge pair, a glyph each; the star family's without
+them), BAR_MOTION (yes, the default, or no), BAR_OVERFLOW, BAR_REST (the
+rest name; none: no output rests), BAR_TRAY_WIDTH (pixels kept clear at
+the right end) on BAR_TRAY_OUTPUT (none: every output), and the files
 BAR_LOCK (XDG_RUNTIME_DIR/spark-shell-bar.pid, held for the bar's life with
 its pid in it: a second bar ends at once) and BAR_STATE
 (XDG_RUNTIME_DIR/spark-shell-bar.state); SPARK_SHELL names spark-shell
@@ -106,14 +114,16 @@ tabs:
   status  loading|ok|error
   mode    NAME
   level   MODULE LEVEL
+  rest    OUTPUT
   output  NAME WIDTH HEIGHT top|bottom SCALE
   target  OUTPUT ID X Y W H KIND STATE FLAGS NAME
   dropped OUTPUT ID
 
 The mode line is there only in a binding mode other than default, with its
-name; a level line for each module that has a level, as it is drawn. ID is
-mark, workspace:N, MODULE.PART (name, gauge, pct or text) or more; X Y W H
-is the part as wide as it is drawn, the bar's whole height; KIND is mark,
+name; a level line for each module that has a level, as it is drawn; a rest
+line for each output that rests, which has no output line and no target. ID
+is mark, workspace:N, MODULE.PART (name, gauge, pct or text) or more; X Y W
+H is the part as wide as it is drawn, the bar's whole height; KIND is mark,
 workspace, toggle (the sign or the text of a module that says toggle),
 level (a gauge that can be set) or open; STATE is the module's (ok for the
 mark, a workspace and more); FLAGS are focused, hover, selected, urgent,
@@ -200,6 +210,7 @@ fn config() -> spark_bar::app::Config {
             lit: color("BAR_LIT", "dcdcdd"),
             attention: color("BAR_ATTENTION", "e45649"),
             alert: color("BAR_ALERT", "e45649"),
+            ink: env("BAR_INK").and_then(|v| Rgb::hex(&v)),
             alpha: env("BAR_ALPHA").and_then(|v| bar::alpha(&v)).unwrap_or(1.0),
             full: env("BAR_GAUGE_FULL").and_then(|v| bar::pair_glyph(&v)).unwrap_or_else(|| bar::PAIR.0.into()),
             light: env("BAR_GAUGE_LIGHT").and_then(|v| bar::pair_glyph(&v)).unwrap_or_else(|| bar::PAIR.1.into()),
@@ -215,6 +226,7 @@ fn config() -> spark_bar::app::Config {
                 .unwrap_or(0),
             &env("BAR_TRAY_OUTPUT").unwrap_or_default(),
         ),
+        rest: env("BAR_REST").unwrap_or_default(),
         spark_shell: env("SPARK_SHELL").unwrap_or_else(|| "spark-shell".into()),
         state_file: runtime_file("BAR_STATE", "spark-shell-bar.state"),
     }
@@ -280,7 +292,8 @@ fn run() -> Result<(), String> {
     let handle = event_loop.handle();
     let (tx, rx) = channel::<Said>();
     let mut app = App::new(&globals, &queue.handle(), handle.clone(), lib, cfg, ipc, tx)?;
-    // the outputs' names and scales before the first surface
+    // sway's workspaces, then the outputs' names and scales, before the first surface: an output at rest gets none
+    app.read_workspaces();
     queue.roundtrip(&mut app).map_err(|e| format!("the compositor: {e}"))?;
     WaylandSource::new(conn.clone(), queue)
         .insert(handle.clone())
@@ -329,7 +342,6 @@ fn run() -> Result<(), String> {
             }
         })
         .map_err(|e| format!("event loop: {}", e.error))?;
-    app.read_workspaces();
     app.read_mode();
     app.start_status();
     let ran = event_loop.run(None, &mut app, |app| {

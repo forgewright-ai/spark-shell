@@ -327,6 +327,8 @@ pub struct Look {
     pub attention: Option<Color>,
     /// Red: what is wrong, what records.
     pub alert: Option<Color>,
+    /// What is written on the accent: the plate's digits, and the keys' line on it.
+    pub ink: Option<Color>,
     pub alpha: Option<f64>,
     /// The pair's full glyph and its light one: the gauges' cells and the workspaces' places.
     pub full: Option<String>,
@@ -345,6 +347,7 @@ impl Look {
             lit: color("lit"),
             attention: color("attention"),
             alert: color("alert"),
+            ink: color("ink"),
             alpha: v["alpha"].as_str().and_then(alpha),
             full: v["full"].as_str().and_then(pair_glyph),
             light: v["light"].as_str().and_then(pair_glyph),
@@ -608,6 +611,17 @@ pub fn workspaces(v: &Value) -> Vec<Workspace> {
     all
 }
 
+/// Whether a workspace's name is a rest name: the rest name itself, or the rest name, a space and more
+/// (idle, idle DP-1). With no rest name, none is.
+pub fn rests(rest: &str, name: &str) -> bool {
+    !rest.is_empty() && name.strip_prefix(rest).is_some_and(|more| more.is_empty() || more.starts_with(' '))
+}
+
+/// Whether an output rests: the workspace it shows now has a rest name. Such an output has no bar.
+pub fn resting(rest: &str, workspaces: &[Workspace], output: &str) -> bool {
+    workspaces.iter().any(|w| w.output == output && w.visible && rests(rest, &w.name))
+}
+
 /// sway's binding mode, from its answer to get_binding_state: its name, or None in the default mode.
 pub fn mode(v: &Value) -> Option<String> {
     v["name"].as_str().filter(|n| !n.is_empty() && *n != "default").map(String::from)
@@ -684,11 +698,13 @@ impl Place {
 }
 
 /// The run's places on an output's bar: one for each of 1 to 10, whether a workspace is there or not, then
-/// one for every other workspace (a higher number, a name), in the order sway's list was put in.
-fn places(workspaces: &[Workspace], output: &str) -> Vec<Place> {
+/// one for every other workspace (a higher number, a name), in the order sway's list was put in. A
+/// workspace with a rest name is left out, on every output's bar.
+fn places(workspaces: &[Workspace], output: &str, rest: &str) -> Vec<Place> {
+    let workspaces: Vec<&Workspace> = workspaces.iter().filter(|w| !rests(rest, &w.name)).collect();
     let mut out = vec![];
     for n in 1..=PLACES {
-        let there: Vec<&Workspace> = workspaces.iter().filter(|w| w.num == Some(n)).collect();
+        let there: Vec<&Workspace> = workspaces.iter().copied().filter(|w| w.num == Some(n)).collect();
         out.push(Place::of(
             format!("workspace:{n}"),
             format!("workspace {n}"),
@@ -698,7 +714,7 @@ fn places(workspaces: &[Workspace], output: &str) -> Vec<Place> {
             output,
         ));
     }
-    for w in workspaces.iter().filter(|w| !placed(w)) {
+    for w in workspaces.iter().copied().filter(|w| !placed(w)) {
         out.push(Place::of(w.id(), w.title(), w.command(), w.plate(), &[w], output));
     }
     out
@@ -797,8 +813,10 @@ pub enum Tone {
     Attention,
     /// The plate and the keys' line, and nothing else.
     Accent,
-    /// The ground's color: the plate's digits, and the keys' line on it.
+    /// The ground's color: the plate's digits, and the keys' line on it, when the look says no ink.
     Ground,
+    /// The look's ink: the plate's digits, and the keys' line on it.
+    Ink,
     /// The chip under the pointer.
     Lit,
     /// A dim part on a chip: the dim color raised toward the text's by RAISE, so the pointer never lowers
@@ -909,6 +927,8 @@ pub struct Scene<'a> {
     pub workspaces: &'a [Workspace],
     /// sway's binding mode, on every output; none in the default one.
     pub mode: Option<&'a str>,
+    /// The rest name: a workspace named so has no place; empty for none.
+    pub rest: &'a str,
 }
 
 /// A bar laid out: its targets in the keys' order (left to right), what stands whatever the pointer and
@@ -1028,7 +1048,7 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
 
     // the workspaces' run
     let mut x = cell + m.mark + cell;
-    for p in places(scene.workspaces, scene.output) {
+    for p in places(scene.workspaces, scene.output, scene.rest) {
         let rect = Rect::new(x, 0, PLACE_CELLS * cell, h);
         x += PLACE_CELLS * cell;
         if rect.right() > scene.width {
@@ -1370,7 +1390,20 @@ pub struct View<'a> {
     pub levels: &'a Levels,
     /// Whether the digits flow; when not, a number changes in place.
     pub motion: bool,
+    /// Whether the look says an ink.
+    pub ink: bool,
     pub at: u64,
+}
+
+impl View<'_> {
+    /// The tone of what is written on the accent: the look's ink, or the ground's color when it says none.
+    fn written(&self) -> Tone {
+        if self.ink {
+            Tone::Ink
+        } else {
+            Tone::Ground
+        }
+    }
 }
 
 impl Layout {
@@ -1408,7 +1441,7 @@ impl Layout {
     }
 
     /// The keys' line on the plate: as wide as the plate, and raised from its foot by its own thickness. It is
-    /// drawn in the ground's color there, the accent on the accent could not be seen, and the strip of
+    /// drawn in the plate's digits' tone there, the accent on the accent could not be seen, and the strip of
     /// accent left under it makes it a line and not a shorter plate.
     pub fn plate_line(&self, plate: Rect) -> Rect {
         let (plate, stroke) = (self.boxed(plate), self.stroke());
@@ -1515,7 +1548,7 @@ impl Layout {
                     rect: self.boxed(t.rect),
                     tone: Tone::Accent,
                 });
-                out.push(glyph(t.rect, label, Tone::Ground, true, false, 0.0));
+                out.push(glyph(t.rect, label, v.written(), true, false, 0.0));
             }
             What::Text { glyphs, bold } => {
                 for (i, g) in glyphs.iter().enumerate() {
@@ -1546,7 +1579,7 @@ impl Layout {
     /// A frame: everything the bar draws over its ground, in order. What stands whatever happens, then
     /// each target in its tone; the part under the pointer last, on a chip of the lit tone (the plate does
     /// not change); and over all, the line under the part the keys are on, in the accent, or on the plate
-    /// in the ground's color and its own thickness higher.
+    /// in the plate's digits' tone and its own thickness higher.
     pub fn frame(&self, v: &View) -> Vec<Draw> {
         let mut out = self.fixed.clone();
         let hover = v.hover.filter(|i| self.targets.get(*i).is_some_and(|t| !matches!(t.what, What::Plate(_))));
@@ -1566,7 +1599,7 @@ impl Layout {
             out.push(match t.what {
                 What::Plate(_) => Draw::Fill {
                     rect: self.plate_line(t.rect),
-                    tone: Tone::Ground,
+                    tone: v.written(),
                 },
                 _ => Draw::Fill {
                     rect: self.line(t),
@@ -1647,14 +1680,17 @@ fn field(s: &str) -> String {
 }
 
 /// The state file's text: the status, sway's binding mode while one is on, each level as it is drawn,
-/// then each output with its targets and what it left out.
-pub fn state_text(status: Status, mode: Option<&str>, levels: &Levels, bars: &[Shown]) -> String {
+/// each output that rests, then each output that has a bar with its targets and what it left out.
+pub fn state_text(status: Status, mode: Option<&str>, levels: &Levels, resting: &[&str], bars: &[Shown]) -> String {
     let mut out = format!("bar\t1\nstatus\t{}\n", status.word());
     if let Some(name) = mode {
         out += &format!("mode\t{}\n", field(name));
     }
     for (module, level) in levels.each() {
         out += &format!("level\t{}\t{level}\n", field(module));
+    }
+    for output in resting {
+        out += &format!("rest\t{}\n", field(output));
     }
     for b in bars {
         let (l, name) = (b.layout, field(b.output));
@@ -1810,6 +1846,7 @@ mod tests {
             levels,
             workspaces,
             mode,
+            rest: "",
         };
         layout(&scene, prefs, &M)
     }
@@ -1848,6 +1885,7 @@ mod tests {
             levels: &levels_of(&modules),
             workspaces,
             mode,
+            rest: "",
         };
         layout(&scene, &Prefs::default(), m)
     }
@@ -1880,7 +1918,7 @@ mod tests {
         }
     }
 
-    /// A frame at rest: no pointer, no keys, the star pair, the digits free to flow.
+    /// A frame at rest: no pointer, no keys, the star pair, the digits free to flow, no ink.
     fn view(levels: &Levels) -> View<'_> {
         View {
             hover: None,
@@ -1889,6 +1927,7 @@ mod tests {
             light: LIGHT,
             levels,
             motion: true,
+            ink: false,
             at: 0,
         }
     }
@@ -3067,6 +3106,48 @@ mod tests {
     }
 
     #[test]
+    fn with_an_ink_the_plates_digits_and_its_keys_line_are_the_ink() {
+        let l = sheet(1200);
+        let levels = levels_of(&mods(SHEET));
+        let inked = View { ink: true, ..view(&levels) };
+        // the digits on the plate: the ink when the look says one, the ground's color when it says none
+        let digits = |tone: Tone| Draw::Glyph {
+            rect: Rect::new(74, 0, 30, 36),
+            text: "02".into(),
+            tone,
+            bold: true,
+            fit: false,
+            shift: 0.0,
+        };
+        let plate = fill(Rect::new(74, 4, 30, 28), Tone::Accent);
+        assert_eq!(shows(&l, "workspace:2", false, &inked), [plate.clone(), digits(Tone::Ink)]);
+        assert_eq!(shows(&l, "workspace:2", false, &view(&levels)), [plate, digits(Tone::Ground)]);
+        // the keys' line on the plate too, where it was
+        let keyed = |ink: bool| {
+            l.frame(&View {
+                focus: l.find("workspace:2"),
+                ink,
+                ..view(&levels)
+            })
+        };
+        assert_eq!(keyed(true).last(), Some(&fill(Rect::new(74, 28, 30, 2), Tone::Ink)));
+        assert_eq!(keyed(false).last(), Some(&fill(Rect::new(74, 28, 30, 2), Tone::Ground)));
+        // those two alone: with an ink nothing is drawn in the ground's color, without one nothing in the ink,
+        // and no other tone changes
+        let (with, without) = (tones(&keyed(true)), tones(&keyed(false)));
+        assert_eq!(with.iter().filter(|t| **t == Tone::Ink).count(), 2);
+        assert!(!with.contains(&Tone::Ground) && !without.contains(&Tone::Ink));
+        let grounded: Vec<Tone> = with.iter().map(|t| if *t == Tone::Ink { Tone::Ground } else { *t }).collect();
+        assert_eq!(grounded, without);
+        // any other part's line is the accent, with an ink too
+        let v = View {
+            focus: l.find("workspace:3"),
+            ..inked
+        };
+        assert_eq!(l.frame(&v).last(), Some(&fill(Rect::new(104, 30, 30, 2), Tone::Accent)));
+    }
+
+    #[test]
     fn short_of_width_the_numbers_go_then_the_gauges_then_whole_modules() {
         // the run ends at 344, five cells of room, the status's 570 and the edge's 20: 984 fits whole
         assert!(sheet(984).dropped.is_empty());
@@ -3827,7 +3908,7 @@ mod tests {
             focus: None,
             hover: None,
         }];
-        let text = state_text(Status::Ok, None, &levels, &bars);
+        let text = state_text(Status::Ok, None, &levels, &[], &bars);
         assert!(text.contains("target\tA\tout.name\t750\t0\t10\t36\ttoggle\tok\t-\toutput 55%\n"), "{text}");
         assert!(text.contains("target\tA\tkb.text\t1020\t0\t20\t36\ttoggle\tok\t-\tkeyboard us\n"));
         assert_eq!(text.matches("\ttoggle\t").count(), 3);
@@ -4173,6 +4254,77 @@ mod tests {
     }
 
     #[test]
+    fn an_output_rests_while_it_shows_a_workspace_with_the_rest_name() {
+        // the rest name itself, or the rest name, a space and more
+        for name in ["idle", "idle DP-1", "idle ", "idle two words"] {
+            assert!(rests("idle", name), "{name:?}");
+        }
+        for name in ["idler", "", "Idle", " idle", "idle\tDP-1", "idle-DP-1", "1:idle", "1", "id"] {
+            assert!(!rests("idle", name), "{name:?}");
+        }
+        // BAR_REST unset or empty: no name rests, the empty one neither
+        for name in ["", " ", "idle", " idle", "1"] {
+            assert!(!rests("", name), "{name:?}");
+        }
+        // an output rests by the workspace it shows now, each output by its own
+        let mut all = vec![
+            ws(1, "1", "A", false, false, false),
+            ws(-1, "idle", "A", true, true, false),
+            ws(2, "2", "B", true, false, false),
+            ws(-1, "idle B", "B", false, false, false),
+        ];
+        assert!(resting("idle", &all, "A"));
+        assert!(!resting("idle", &all, "B"), "its rest workspace is there and not shown");
+        assert!(!resting("idle", &all, "C") && !resting("", &all, "A") && !resting("idler", &all, "A"));
+        (all[2].visible, all[3].visible) = (false, true);
+        assert!(resting("idle", &all, "A") && resting("idle", &all, "B"));
+        (all[0].visible, all[1].visible) = (true, false);
+        assert!(!resting("idle", &all, "A") && resting("idle", &all, "B"));
+        assert!(!resting("idle", &five(), "A") && !resting("idle", &[], "A"));
+    }
+
+    #[test]
+    fn a_rest_workspace_has_no_place_on_any_bar() {
+        let two = vec![ws(1, "1", "A", true, true, false), ws(2, "2", "A", false, false, false)];
+        let mut three = two.clone();
+        three.push(ws(-1, "idle DP-1", "DP-1", true, false, true));
+        let on = |output: &str, rest: &str, workspaces: &[Workspace]| {
+            let scene = Scene {
+                output,
+                width: 1200,
+                edge: Edge::Top,
+                status: Status::Ok,
+                modules: &[],
+                levels: &Levels::default(),
+                workspaces,
+                mode: None,
+                rest,
+            };
+            layout(&scene, &Prefs::default(), &M)
+        };
+        // with it the run is the run of 1 and 2 alone, on the bar of the screen that shows it too
+        for output in ["A", "DP-1"] {
+            assert_eq!(on(output, "idle", &three), on(output, "idle", &two), "{output}");
+            assert_eq!(on(output, "idle", &three).targets.len(), 11);
+        }
+        // BAR_REST unset: a place after the tenth as any workspace with a name has, the plate on its own screen
+        let (a, own) = (on("A", "", &three), on("DP-1", "", &three));
+        let place = target(&a, "workspace:idle DP-1");
+        assert_eq!(
+            (a.targets.len(), place.rect, place.what.clone(), place.urgent),
+            (12, Rect::new(344, 0, 30, 36), What::Place { full: true }, true)
+        );
+        assert_eq!(target(&own, "workspace:idle DP-1").what, What::Plate("id".into()));
+        // a name that only begins with the rest name keeps its place
+        three[2].name = "idler".into();
+        assert_eq!(on("A", "idle", &three).targets.len(), 12);
+        // one of the ten places stands when its workspace has the rest name, with no workspace in it
+        let nine = [ws(9, "9", "A", true, true, false)];
+        let l = on("A", "9", &nine);
+        assert_eq!((l.targets.len(), target(&l, "workspace:9").what.clone()), (11, What::Place { full: false }));
+    }
+
+    #[test]
     fn before_the_first_line_and_after_a_break_a_dim_sign_stands_for_the_status() {
         for (status, sign) in [(Status::Loading, ELLIPSIS), (Status::Error, WARNING)] {
             // the last line's modules are not shown: the mark and the run are
@@ -4226,7 +4378,7 @@ mod tests {
             target\tA\tout.pct\t580\t0\t30\t36\topen\tok\t-\toutput 55%\n\
             target\tA\tclock.text\t660\t0\t50\t36\topen\tok\t-\t13:29\n\
             target\tA\tnotifications.name\t740\t0\t10\t36\topen\tasks\t-\t2 notifications\n";
-        assert_eq!(state_text(Status::Ok, None, &levels, &bars), want);
+        assert_eq!(state_text(Status::Ok, None, &levels, &[], &bars), want);
         // what a bar short of width gave up, in the order it went
         let l = lay_on("A", 673, Edge::Bottom, Status::Ok, &m, &levels, &all, None, &Prefs::default());
         let bars = [Shown {
@@ -4236,7 +4388,7 @@ mod tests {
             focus: None,
             hover: None,
         }];
-        let text = state_text(Status::Ok, None, &levels, &bars);
+        let text = state_text(Status::Ok, None, &levels, &[], &bars);
         assert!(
             text.contains("output\tA\t673\t36\tbottom\t1\n") && text.ends_with("\t2 notifications\ndropped\tA\tout.pct\n"),
             "{text}"
@@ -4250,17 +4402,17 @@ mod tests {
             focus: None,
             hover: None,
         }];
-        let text = state_text(Status::Ok, None, &levels_of(&mods(SHEET)), &bars);
+        let text = state_text(Status::Ok, None, &levels_of(&mods(SHEET)), &[], &bars);
         assert!(text.contains("target\tA\tmore\t483\t0\t10\t36\topen\tok\t-\tmore\n"), "{text}");
         assert!(text.ends_with("dropped\tA\tout.pct\ndropped\tA\tout.gauge\ndropped\tA\tlan\ndropped\tA\tbt\ndropped\tA\twifi\ndropped\tA\tout\ndropped\tA\tmic\ndropped\tA\tlight\ndropped\tA\tkb\n"));
         // every level drawn, pinned or not, in the line's order; the hand's change at once
         let mut levels = levels_of(&mods(SHEET));
         levels.set("out", 60, 10);
-        assert!(state_text(Status::Ok, None, &levels, &bars)
+        assert!(state_text(Status::Ok, None, &levels, &[], &bars)
             .starts_with("bar\t1\nstatus\tok\nlevel\twifi\t70\nlevel\tout\t60\nlevel\tmic\t40\nlevel\tlight\t80\noutput\tA\t"));
         // no output yet, and a broken status
-        assert_eq!(state_text(Status::Loading, None, &Levels::default(), &[]), "bar\t1\nstatus\tloading\n");
-        assert!(state_text(Status::Error, None, &Levels::default(), &bars).starts_with("bar\t1\nstatus\terror\noutput\tA\t"));
+        assert_eq!(state_text(Status::Loading, None, &Levels::default(), &[], &[]), "bar\t1\nstatus\tloading\n");
+        assert!(state_text(Status::Error, None, &Levels::default(), &[], &bars).starts_with("bar\t1\nstatus\terror\noutput\tA\t"));
         // every state by its own word
         for state in ["ok", "muted", "off", "missing", "wrong", "asks", "records"] {
             let (l, levels) = in_state(state);
@@ -4272,10 +4424,36 @@ mod tests {
                 hover: None,
             }];
             assert!(
-                state_text(Status::Ok, None, &levels, &bars).contains(&format!("target\tA\tout.name\t1030\t0\t10\t36\topen\t{state}\t-\tout\n")),
+                state_text(Status::Ok, None, &levels, &[], &bars).contains(&format!("target\tA\tout.name\t1030\t0\t10\t36\topen\t{state}\t-\tout\n")),
                 "{state}"
             );
         }
+    }
+
+    #[test]
+    fn the_state_file_names_an_output_that_rests_and_gives_it_no_bar() {
+        let l = sheet(1200);
+        let levels = levels_of(&mods(SHEET));
+        let bars = [Shown {
+            output: "A",
+            scale: 1,
+            layout: &l,
+            focus: None,
+            hover: None,
+        }];
+        let (both, one) = (
+            state_text(Status::Ok, None, &levels, &["B"], &bars),
+            state_text(Status::Ok, None, &levels, &[], &bars),
+        );
+        // one line after the levels, before the outputs that have a bar, and nothing else differs
+        assert!(both.contains("level\tlight\t80\nrest\tB\noutput\tA\t1200\t36\ttop\t1\n"), "{both}");
+        assert_eq!(both.replacen("rest\tB\n", "", 1), one);
+        assert!(!one.contains("rest\t") && !both.contains("output\tB") && !both.contains("target\tB"));
+        // every output at rest, and a name that would break the file
+        assert_eq!(
+            state_text(Status::Ok, Some("m"), &Levels::default(), &["A", "B\tC"], &[]),
+            "bar\t1\nstatus\tok\nmode\tm\nrest\tA\nrest\tB C\n"
+        );
     }
 
     #[test]
@@ -4297,6 +4475,7 @@ mod tests {
             Status::Ok,
             None,
             &levels,
+            &[],
             &[Shown {
                 output: "A\tB",
                 scale: 1,
@@ -4427,7 +4606,7 @@ mod tests {
                     focus: Some(3),
                     hover: Some(900),
                 }];
-                assert!(state_text(Status::Ok, Some("m"), &levels, &bars).starts_with("bar\t1\n"));
+                assert!(state_text(Status::Ok, Some("m"), &levels, &[], &bars).starts_with("bar\t1\n"));
             }
         };
         let odd = [
@@ -4548,6 +4727,7 @@ mod tests {
                 lit: Some([0x3c, 0x38, 0x36]),
                 attention: Some([0xfa, 0xbd, 0x2f]),
                 alert: Some([0xfb, 0x49, 0x34]),
+                ink: None,
                 alpha: Some(0.95),
                 full: Some("\u{2501}".into()),
                 light: Some("\u{2500}".into()),
@@ -4646,6 +4826,12 @@ mod tests {
             (said("alert", r#""fb4934""#).alert, said("alert", "16468276").alert),
             (Some([0xfb, 0x49, 0x34]), None)
         );
+        // the ink is a color as the others are; left out, empty or wrong it is none, and the ground stands for it
+        assert_eq!(said("ink", r#""1F2430""#).ink, Some([0x1f, 0x24, 0x30]));
+        assert_eq!(look_of(SHEET).ink, None);
+        for bad in [r#""""#, r#""1f243""#, r#""ground""#, "2041904", "null"] {
+            assert_eq!(said("ink", bad).ink, None, "{bad}");
+        }
     }
 
     #[test]
@@ -4748,8 +4934,8 @@ mod tests {
         }];
         let levels = Levels::default();
         let (on, off) = (
-            state_text(Status::Ok, Some("resize"), &levels, &bars),
-            state_text(Status::Ok, None, &levels, &bars),
+            state_text(Status::Ok, Some("resize"), &levels, &[], &bars),
+            state_text(Status::Ok, None, &levels, &[], &bars),
         );
         // one line after the status, and nothing else differs: the mode is no target
         assert!(on.starts_with("bar\t1\nstatus\tok\nmode\tresize\noutput\tA\t1200\t36\ttop\t1\n"));
@@ -4757,11 +4943,11 @@ mod tests {
         assert!(!off.contains("mode"));
         // with no output yet, and a name that would break the file
         assert_eq!(
-            state_text(Status::Loading, Some("resize"), &levels, &[]),
+            state_text(Status::Loading, Some("resize"), &levels, &[], &[]),
             "bar\t1\nstatus\tloading\nmode\tresize\n"
         );
         assert_eq!(
-            state_text(Status::Error, Some("re\tsize\r\nnow"), &levels, &[]),
+            state_text(Status::Error, Some("re\tsize\r\nnow"), &levels, &[], &[]),
             "bar\t1\nstatus\terror\nmode\tre size  now\n"
         );
     }

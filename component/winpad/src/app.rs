@@ -90,6 +90,8 @@ pub struct Config {
     pub gap: i32,
     /// The band with its words under the handle (WINPAD_BAND=on).
     pub band: bool,
+    /// The rest workspace's name (WINPAD_REST): no pad on a screen that shows it; empty, never.
+    pub rest: String,
     pub spark_shell: String,
     pub state_file: Option<PathBuf>,
     pub bar_pid: Option<PathBuf>,
@@ -248,6 +250,8 @@ pub struct App {
     ipc: Ipc,
     outs: Vec<Out>,
     wins: Vec<Win>,
+    /// The screens at rest, as the tree last said.
+    resting: Vec<String>,
     icon_paths: HashMap<String, String>,
     pictures: HashMap<String, Option<Picture>>,
     hidden: bool,
@@ -338,6 +342,7 @@ impl App {
             ipc,
             outs: vec![],
             wins: vec![],
+            resting: vec![],
             icon_paths: HashMap::new(),
             pictures: HashMap::new(),
             hidden: false,
@@ -392,6 +397,11 @@ impl App {
 
     fn visible(&self) -> bool {
         !self.wins.is_empty() && (!self.hidden || self.keys.is_some())
+    }
+
+    /// The pad on a screen: in sight, and the screen not at rest.
+    fn visible_on(&self, oi: usize) -> bool {
+        self.visible() && self.outs.get(oi).is_some_and(|o| !self.resting.contains(&o.name))
     }
 
     /// The windows' apps by name, oldest first: what a group folds by.
@@ -479,14 +489,19 @@ impl App {
 
     /// Each screen's surfaces as the state wants them: made, laid out again, or taken away.
     pub fn apply(&mut self) {
-        // a list whose group is gone, or under a drag or a hidden pad, closes
-        if self.list.is_some() && (!self.visible() || self.drag.is_some() || self.list_group().is_none()) {
+        // a list whose group is gone, or under a drag or a pad that went, closes
+        let gone = |l: &List| !self.visible_on(l.out) || self.drag.is_some() || self.list_group().is_none();
+        if self.list.as_ref().is_some_and(gone) {
             self.drop_list();
         }
-        if !self.visible() {
-            // a press or a drag the pad went under is let go: its surface is gone, its release never comes
+        // a press or a drag the pad went under is let go: its surface is gone, its release never comes
+        if self.press.as_ref().is_some_and(|p| !self.visible_on(p.out)) {
             self.press = None;
+        }
+        if self.drag.as_ref().is_some_and(|d| !self.visible_on(d.out)) {
             self.drag = None;
+        }
+        if self.hover.is_some_and(|(oi, _)| !self.visible_on(oi)) {
             self.hover = None;
         }
         for oi in 0..self.outs.len() {
@@ -577,7 +592,7 @@ impl App {
 
     /// The strip the pad keeps on a screen, made, moved or given back: kept as it is through a drag.
     fn apply_strip(&mut self, oi: usize) {
-        let want = if self.visible() { self.strip_for(oi) } else { None };
+        let want = if self.visible_on(oi) { self.strip_for(oi) } else { None };
         if self.outs[oi].strip.as_ref().map(|k| (k.edge, k.thick)) == want {
             return;
         }
@@ -634,7 +649,7 @@ impl App {
     /// While the pad has the keys, the screen it has them on holds a surface of one transparent pixel
     /// on the top layer that takes the keyboard; it takes no pointer and shows nothing.
     fn apply_keyer(&mut self, oi: usize) {
-        let want = self.visible() && self.keys.as_ref().is_some_and(|k| k.out == self.outs[oi].name);
+        let want = self.visible_on(oi) && self.keys.as_ref().is_some_and(|k| k.out == self.outs[oi].name);
         if !want {
             self.outs[oi].keyer = None;
             return;
@@ -671,7 +686,7 @@ impl App {
     }
 
     fn apply_one(&mut self, oi: usize) {
-        if !self.visible() {
+        if !self.visible_on(oi) {
             // the strip given back first, then the pad goes
             self.apply_strip(oi);
             self.outs[oi].surf = None;
@@ -742,7 +757,8 @@ impl App {
         l.commit();
     }
 
-    /// sway's tree read again: the title bands in sight, the focus order, and the windows on the pad, oldest first.
+    /// sway's tree read again: the title bands in sight, the focus order, the windows on the pad, oldest first,
+    /// and the screens at rest.
     pub fn refresh_list(&mut self) {
         self.list_dirty = false;
         let Ok(tree) = self.ipc.tree() else {
@@ -758,13 +774,23 @@ impl App {
         self.title_sync();
         self.history.seed(&crate::order::in_sight(&tree));
         let wins = pad::minimized(&tree);
-        if wins == self.wins {
+        let resting = pad::resting(&tree, &self.cfg.rest);
+        if wins == self.wins && resting == self.resting {
             return;
         }
         let added = wins.len() > self.wins.len();
         self.wins = wins;
+        self.resting = resting;
         if self.wins.is_empty() {
             self.keys = None;
+        }
+        // the keys go back when their screen starts to rest, as the bar's do: kept, the pad would take the
+        // keyboard again when the idle screen ends
+        if self.keys.as_ref().is_some_and(|k| self.resting.contains(&k.out)) {
+            self.list = None;
+            if self.keys.take().is_some_and(|k| k.temp) {
+                self.hidden = true;
+            }
         }
         let cells = self.cells_for_keys();
         if added && self.keys.is_some() {
@@ -832,7 +858,7 @@ impl App {
     }
 
     /// Super+minus: the pad in sight with the keyboard on it, on the screen sway has the focus on,
-    /// the newest picked.
+    /// the newest picked. Not on a screen at rest, and not kept for when it is back.
     pub fn keys_on(&mut self) {
         if self.wins.is_empty() {
             self.keys_wanted = true;
@@ -843,6 +869,9 @@ impl App {
             .focused_output()
             .or_else(|| self.outs.first().map(|o| o.name.clone()))
             .unwrap_or_default();
+        if self.resting.contains(&out) {
+            return;
+        }
         let temp = self.keys.as_ref().map_or(self.hidden, |k| k.temp);
         self.keys = Some(Keys { out, temp });
         if let Some(l) = self.list.as_mut() {

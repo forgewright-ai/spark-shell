@@ -317,7 +317,7 @@ win_said() { case ${1:-split} in tabs) echo 'in tabs' ;; *) win_words "$1" ;; es
 transparency_of() { awk -v a="${1:-1}" 'BEGIN { printf "%d", (1 - a) * 100 + 0.5 }'; }   # transparency_of ALPHA -> a percent
 
 # PANEL_PAD 0x0: the dialog draws the margins
-PANEL_KEYS="PANEL_SIZE PANEL_PAD PANEL_LOW PANEL_BG PANEL_HI PANEL_BAND PANEL_MUTED NOTIFY_PAD NOTIFY_WIDTH NOTIFY_HEIGHT"   # NOTIFY_*: mako's air, width and most height, pixels
+PANEL_KEYS="PANEL_SIZE PANEL_PAD PANEL_LOW PANEL_BG PANEL_HI PANEL_BAND PANEL_MUTED PANEL_INK PANEL_INK_URGENT PANEL_ATTENTION NOTIFY_PAD NOTIFY_WIDTH NOTIFY_HEIGHT"   # NOTIFY_*: mako's air, width and most height, pixels
 panel_load() {
     # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
     PANEL_LOW=$(hex_mix "$HEX_BG" "$HEX_FG" 4); PANEL_BG=$(hex_mix "$HEX_BG" "$HEX_FG" 9); PANEL_HI=$(hex_mix "$HEX_BG" "$HEX_FG" 18); PANEL_BAND=$(hex_mix "$PANEL_BG" "$HEX_ACCENT" 25); PANEL_PAD=0x0
@@ -327,8 +327,30 @@ panel_load() {
     # muted lifted until it reads at 4.5 to 1
     _pl=35; PANEL_MUTED=$(hex_mix "$HEX_MUTED" "$HEX_FG" "$_pl")
     while [ "$_pl" -lt 100 ] && [ "$(hex_contrast "$PANEL_MUTED" "$PANEL_BG")" -lt 450 ]; do _pl=$((_pl + 5)); PANEL_MUTED=$(hex_mix "$HEX_MUTED" "$HEX_FG" "$_pl"); done
+    # what is written on the accent (the plate's digits, the title of the band with the focus), on the red (an urgent
+    # band's title, close's chip) and in the attention color on the ground: each as the palette has it where it reads at
+    # 4.5 to 1, else lifted until it does
+    # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
+    { PANEL_INK=$(hex_lift "$HEX_BG" "$HEX_ACCENT" "$HEX_FG"); PANEL_INK_URGENT=$(hex_lift "$HEX_BG" "$HEX_ANSI_1" "$HEX_FG"); PANEL_ATTENTION=$(hex_lift "$HEX_ANSI_3" "$HEX_BG" "$HEX_FG"); }
     for k in $PANEL_KEYS; do export "${k?}"; done
 }
+hex_lift() {   # hex_lift INK FILL ALT -> rrggbb that reads at 4.5 to 1 on FILL: INK itself; else INK pushed by fives away from FILL, to black or to white; else ALT, pushed the same way; one awk, for it runs at every start
+    awk -v a="$1" -v f="$2" -v b="$3" 'function h(c, i) { return index("0123456789abcdef", substr(tolower(c), i, 1)) - 1 }
+        function v(c, i) { return h(c, i) * 16 + h(c, i + 1) }
+        function lin(x) { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ^ 2.4 }
+        function lum(r, g, b) { return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b) }
+        function reads(r, g, b,   x) { x = lum(r, g, b); return (x > F ? (x + 0.05) / (F + 0.05) : (F + 0.05) / (x + 0.05)) >= 4.5 }
+        function push(c,   r, g, b, e, p, x, y, z) {
+            r = v(c, 1); g = v(c, 3); b = v(c, 5); e = lum(r, g, b) < F ? 0 : 255
+            for (p = 0; p <= 100; p += 5) {
+                x = int(r + (e - r) * p / 100); y = int(g + (e - g) * p / 100); z = int(b + (e - b) * p / 100)
+                if (reads(x, y, z)) { OUT = sprintf("%02x%02x%02x", x, y, z); return 1 }
+            }
+            OUT = sprintf("%02x%02x%02x", e, e, e); return 0
+        }
+        BEGIN { F = lum(v(f, 1), v(f, 3), v(f, 5)); if (!push(a) && !push(b)) OUT = reads(0, 0, 0) ? "000000" : "ffffff"; printf "%s", OUT }'   # both on one side of a mid fill: the end that reads
+}
+hex_lit() { if [ "$(hex_contrast "$2" 000000)" -le "$(hex_contrast "$1" 000000)" ]; then hex_mix "$1" ffffff 40; else hex_mix "$1" 000000 40; fi; }   # hex_lit FILL INK -> FILL two fifths away from INK, to white where INK is the darker: a chip under the pointer, on which INK reads no worse
 hex_contrast() {   # hex_contrast RRGGBB RRGGBB -> WCAG contrast times 100
     awk -v a="$1" -v b="$2" 'function h(c, i) { return index("0123456789abcdef", substr(tolower(c), i, 1)) - 1 }
         function ch(c, i,   v) { v = (h(c, i) * 16 + h(c, i + 1)) / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ^ 2.4 }

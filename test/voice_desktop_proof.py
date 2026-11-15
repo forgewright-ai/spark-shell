@@ -4,7 +4,8 @@ the window that has the focus, the mic on every title band in the title's color,
 right end while it listens, in cells kept for it, so nothing on the band moves and the meter follows the
 window. The voice is a window's capability, like its buttons: what the words mean is the window's own affair.
 The pointer on a button or on the mic draws its chip, the glyph and a cell at each side: close's in its
-own color, the others' in the band's lit tone, and nothing on the band moves for it.
+own color, the others' in the band's lit tone, and nothing on the band moves for it. An urgent window's band
+is close's own red: its buttons and the mic wear the title's color there, and every chip the urgent lit tone.
 
 python3 test/voice_desktop_proof.py [EVIDENCE_DIRECTORY]. A throwaway HOME and a sway of its own.
 SPARK_SHELL_WINPAD names the pad's build, which draws the mic. Needs sway, swaymsg, foot, grim, wtype, python3."""
@@ -243,6 +244,10 @@ def main():
             move(x + mark[0] + mark[1] / 2 + off * cell, y + h // 2)
             return settle(lambda: chip_on(name, mark, color, ink))
 
+        def band_text(kind):   # the color sway writes a band's title in: the text of its client line in the render
+            words = next((line.split() for line in render.splitlines() if line.split()[:1] == ["client." + kind]), [])
+            return rgb(words[3]) if len(words) > 3 else rgb(look["WINPAD_GROUND"])
+
         def three_cells(width):   # half a cell either way: a glyph from another face has a width of its own
             return 2.5 * cell <= width <= 3.5 * cell
 
@@ -263,7 +268,8 @@ def main():
         time.sleep(1.5)
         shot("1-at-rest")
         look = handed()
-        close, ground = rgb(look["WINPAD_CLOSE"]), rgb(look["WINPAD_GROUND"])   # the ground's color is the title's on the band with the focus
+        close, title = rgb(look["WINPAD_CLOSE"]), band_text("focused")
+        close_ink = rgb(look.get("WINPAD_CLOSE_INK") or look["WINPAD_GROUND"])   # the glyph on close's chip
         marks, after = band_glyphs(glyphs(env, band("shell")))
         ok(len(marks) == 4, "the focused terminal's band: the three buttons and the mic, four single glyphs", [(c[0], c[1]) for c in marks])
         if len(marks) == 4:
@@ -300,9 +306,10 @@ def main():
             tall = band("shell")[3] - 4   # the title's line: the band less sway's padding over and under it
             pointer = Pointer(env)
             for i, what, tone in ((0, "close", close), (1, "minimize", band_tone), (2, "fill", band_tone), (3, "the mic", band_tone)):
-                found = hover("shell", marks[i], tone, ground)
-                ok(found and found[5] >= 4, "the pointer on %s, with the focus: a chip in %s, the glyph in the title's color"
-                   % (what, "close's color" if i == 0 else "the band's lit tone"), (found, tone, ground))
+                ink = close_ink if i == 0 else title
+                found = hover("shell", marks[i], tone, ink)
+                ok(found and found[5] >= 4, "the pointer on %s, with the focus: a chip in %s"
+                   % (what, "close's color, the glyph in close's ink" if i == 0 else "the band's lit tone, the glyph in the title's color"), (found, tone, ink))
                 if not found:
                     continue
                 ok(three_cells(found[1]) and abs(found[0] + found[1] / 2 - 1.5 * cell) <= cell / 3,
@@ -316,17 +323,68 @@ def main():
             beside = hover("shell", marks[2], band_tone, off=1.2) and not chip_on("shell", marks[3], band_tone)
             ok(beside and hover("shell", marks[3], band_tone, off=-1.2) and not chip_on("shell", marks[2], band_tone),
                "a button takes the pointer across its three cells: beside fill's chip it is fill's, a cell on the mic's", beside)
-            for i, what, ink in ((1, "minimize", own[1]), (0, "close", ground), (3, "the mic", None)):
+            for i, what, ink in ((1, "minimize", own[1]), (0, "close", close_ink), (3, "the mic", None)):
                 found = hover(LONG, busy[i], close if i == 0 else lit_tone, ink)
                 ok(found and (ink is None or found[5] >= 4) and three_cells(found[1]),
                    "the pointer on %s, without the focus: a chip in %s, %s"
-                   % (what, "close's color" if i == 0 else "the lit tone", "the glyph in the ground's" if i == 0 else "the glyph as it was"), (found, ink, cell))
+                   % (what, "close's color" if i == 0 else "the lit tone", "the glyph in close's ink" if i == 0 else "the glyph as it was"), (found, ink, cell))
             ok(terminal("shell")["focused"], "the pointer on another window's buttons leaves the focus where it was")
             r = terminal("shell")["rect"]
             move(r["x"] + r["width"] // 2, r["y"] + r["height"] // 2)
             ok(settle(lambda: not chip_on(LONG, busy[3], lit_tone) and sorted(c[0] for c in glyphs(env, band("shell"))) == sorted(c[0] for c in at_rest)),
                "the pointer gone, the chips go and the band stands as it stood", (sorted(c[0] for c in glyphs(env, band("shell"))), sorted(c[0] for c in at_rest)))
             shot("1-pointer-gone")
+            # an urgent window's band is close's own red, where close's color could not be seen: the three buttons
+            # and the mic wear the title's color there, as on the band with the focus, and under the pointer every
+            # chip, close's too, is the urgent lit tone with the glyph as it was
+            ok(look.get("WINPAD_URGENT_LIT") and look.get("WINPAD_CLOSE_INK"),
+               "spark-shell hands the pad the lit tone of an urgent band and the ink on close's chip",
+               {k: look.get(k) for k in ("WINPAD_URGENT_LIT", "WINPAD_CLOSE_INK", "WINPAD_LIT", "WINPAD_GROUND")})
+            urgent_tone, urgent_title = rgb(look.get("WINPAD_URGENT_LIT") or look["WINPAD_LIT"]), band_text("urgent")
+            waiting = terminal(LONG)["id"]
+
+            def in_title_color(c, i):   # nearer the title's color than the button's own; close's own is the band's, unseen there
+                return i in (0, 3) or apart(c[3], urgent_title) < apart(c[3], own[i])
+
+            def urgent_band():   # the urgent band's buttons and mic, once all four are seen where they stood, in the title's color
+                found = band_glyphs(glyphs(env, band(LONG)))[0][:4]
+                stood = len(found) == 4 and all(abs(a[0] - b[0]) <= 2 for a, b in zip(found, busy))
+                return found if stood and all(in_title_color(c, i) for i, c in enumerate(found)) else None
+
+            sway("[con_id=%d]" % waiting, "urgent", "enable")
+            wait_for(lambda: terminal(LONG)["urgent"], "sway marks the window urgent")
+            urgent = settle(urgent_band)
+            shot("1-urgent")
+            ok(urgent, "an urgent window's band: close, minimize, fill and the mic all seen, in the title's color, where they stood",
+               ([(c[0], c[3]) for c in band_glyphs(glyphs(env, band(LONG)))[0][:4]], [c[0] for c in busy[:4]], urgent_title, own))
+            if urgent:
+                urgent_rest = glyphs(env, band(LONG))
+                ok(not any(chip_on(LONG, mark, urgent_tone) for mark in urgent),
+                   "at rest the urgent band has no chip: its lit tone is not the band's own color", (urgent_tone, close))
+                for i, what in enumerate(("close", "minimize", "fill", "the mic")):
+                    found = hover(LONG, urgent[i], urgent_tone, urgent_title)
+                    ok(found and found[5] >= 4 and three_cells(found[1]),
+                       "the pointer on %s, on the urgent band: a chip in the urgent lit tone, the glyph in the title's color" % what,
+                       (found, urgent_tone, urgent_title, cell))
+                    now = others(LONG, urgent[i], glyphs(env, band(LONG)))
+                    ok(now == others(LONG, urgent[i], urgent_rest), "and nothing else on the band moves", (now, others(LONG, urgent[i], urgent_rest)))
+                    if i == 0:
+                        shot("1-urgent-close-under-the-pointer")
+            ok(terminal("shell")["focused"] and terminal(LONG)["urgent"], "the pointer on its buttons leaves the focus and the urgency where they were")
+            # the focus ends the urgency, as on any sway; the focus back on the shell, the band stands as it stood
+            move(r["x"] + r["width"] // 2, r["y"] + r["height"] // 2)
+            sway("[con_id=%d]" % waiting, "focus")
+            wait_for(lambda: not terminal(LONG)["urgent"], "the focus ends the urgency")
+            sway("[title=shell]", "focus")
+            wait_for(lambda: terminal("shell")["focused"], "the focus back on the shell")
+
+            def calm_band():   # the band as it stood before: all four where they stood, the three buttons in their own colors
+                found = band_glyphs(glyphs(env, band(LONG)))[0][:4]
+                stood = len(found) == 4 and all(abs(a[0] - b[0]) <= 2 for a, b in zip(found, busy))
+                return stood and all(apart(found[i][3], own[i]) < apart(found[3][3], own[i]) for i in range(3))
+
+            ok(settle(calm_band), "the urgency over, the three buttons wear their own colors again",
+               [(c[0], c[3]) for c in band_glyphs(glyphs(env, band(LONG)))[0][:4]])
         spill = glyphs(env, band(LONG, "right"))
         ok(sum(c[1] for c in spill) <= 4,
            "a name longer than its band is cut: it stops at the meter's cells and is not drawn under them",
@@ -358,7 +416,7 @@ def main():
            ([(c[0], c[1]) for c in meter], box[2], cell, [(c[0], c[1]) for c in rest_end], why()))
         if meter and len(lit) == 4:
             text = [c[3] for c in lit_after] or [c[3] for c in lit[:3]]
-            bars, red = chip(env, box, ground), chip(env, box, close)
+            bars, red = chip(env, box, title), chip(env, box, close)
             ok(bars and not red and min(apart(lit[3][3], c) for c in text) < apart(lit[3][3], close),
                "the meter and the mic's dot wear the band's own text color, not close's red", (bars, red, lit[3][3], text, close))
         # the band is the window's own frame: a narrower screen carries the meter to the band's new right end

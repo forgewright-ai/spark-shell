@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.148.2
+
+- The idle screen is the clock alone again: the bar and the pad leave a
+  screen while it rests, and are back with your workspace.
+- On an urgent window's band the close button can be seen: its controls
+  wear the title's color, as on the band with the focus.
+- What is written on the accent reads at 4.5 to 1 in every palette: the
+  plate's digits, the title of the band with the focus, an urgent
+  band's title, and the color of a workspace that asks for you. Where a
+  palette's own colors already read, nothing changes.
+
 ## v0.148.1
 
 - The workspaces stay still: every place is as wide as the plate, so

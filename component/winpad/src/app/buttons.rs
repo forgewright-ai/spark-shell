@@ -153,7 +153,7 @@ impl App {
             let around = if self.is_term(&b.app) { &t.term_title } else { &t.title };
             let line = buttons::title(
                 buttons::room(b.rect, self.cell),
-                &buttons::buttons(b.focused, hover, &t.style, mic),
+                &buttons::buttons(b.kind(), hover, &t.style, mic),
                 around,
                 &b.name,
                 &buttons::meter(mic),

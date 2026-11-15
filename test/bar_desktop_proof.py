@@ -36,16 +36,18 @@ named by its gate:
 3 states         muted, off, the wire down, a microphone that records, a reminder and a window that ask, no
                  sound device, the status shell killed while its jobs hold its pipe and back with none of them
                  left, the bar ended with ABRT and started again by its keeper, stopped on purpose, loading
-                 before the first line, and a binding mode
+                 before the first line, a binding mode, and a screen at rest: no bar and no room kept while it
+                 shows the rest workspace
 4 accessibility  the tones on the screen are the look's, the accent on the plate and the keys' line alone; the
-                 text reads at 4.5 to 1 on the ground and on a chip; under the pointer each part alone stands on
-                 a chip of the lit tone, in its own color, a dim one raised, every sign's chip the same size;
-                 the keys go through every target once, left to right, a line at the plate's foot under the one
-                 they are on; every control has a name; nothing moves at rest
+                 text reads at 4.5 to 1 on the ground and on a chip, and the plate's digits are the look's ink;
+                 under the pointer each part alone stands on a chip of the lit tone, in its own color, a dim one
+                 raised, every sign's chip the same size; the keys go through every target once, left to right,
+                 a line at the plate's foot under the one they are on; every control has a name; nothing moves
+                 at rest
 5 geometry       the spec's numbers at 16 px, by the state file and by the screen: the run of 300 px, the plate
                  of 30 by 28 in its place, gaps of one, three and five cells, the hairline before the time; no
                  cell moves with a value, a state or the workspace shown; what a bar short of width gives up, in
-                 order; the bottom edge; two screens, each with its own plate
+                 order; the bottom edge; two screens, each with its own plate, one at rest alone
 
 BAR_PROOF_FONT names a face for the proof's config and hides the Monaspace faces from the proof's home: this
 machine as one of the rows that have DejaVu Sans Mono alone. BAR_PROOF_TIMES says how long each gate took.
@@ -80,8 +82,9 @@ OVERFLOW = "kb wifi mic out bat"             # the config's order here, not the 
 MODULES = "pad lan bt wifi out mic due light kb bat clock notifications".split()   # the line's order
 GROUPS = dict(pad="windows", lan="connections", bt="connections", wifi="connections", out="sound", mic="sound", due="tasks",
               light="seat", kb="seat", bat="seat", clock="time", notifications="time")
-LOOK = ("fg", "accent", "muted", "ground", "lit", "attention", "alert", "alpha", "full", "light", "motion")   # the look's slots, as BAR_FG and the rest
-SLOTS = ("BAR_FG", "BAR_ACCENT", "BAR_MUTED", "BAR_GROUND", "BAR_LIT", "BAR_ATTENTION", "BAR_ALERT", "BAR_ALPHA", "BAR_GAUGE_FULL", "BAR_GAUGE_LIGHT", "BAR_MOTION")
+LOOK = ("fg", "accent", "muted", "ground", "lit", "attention", "alert", "alpha", "full", "light", "motion", "ink")   # the look's slots, as BAR_FG and the rest
+SLOTS = ("BAR_FG", "BAR_ACCENT", "BAR_MUTED", "BAR_GROUND", "BAR_LIT", "BAR_ATTENTION", "BAR_ALERT", "BAR_ALPHA", "BAR_GAUGE_FULL", "BAR_GAUGE_LIGHT", "BAR_MOTION", "BAR_INK")
+RESTS = "idle"                               # the rest name spark-shell hands the bar (BAR_REST): the idle screen's workspaces
 FACT = {"name", "group", "sign", "text", "cells", "bold", "state", "set", "pinned", "label", "toggle"}   # a module's fields; level where it has one
 KINDS = ("mark", "workspace", "level", "open", "toggle")
 STATES = ("ok", "muted", "off", "missing", "wrong", "asks", "records")
@@ -97,6 +100,8 @@ PALETTES = {
     "light": ("f4f1ea", "2b2f38", "1a5fb4", "8f74a6",
               "2b2f38 b3261e 2f6f2f 7a4f00 1a5fb4 7b3fa0 0e6b6b d9d5cc 5c6370 c0392b 3c8a3c 8f6200 2f76d0 8d50b5 168080 f4f1ea"),
 }
+# the light one with an accent its ground does not read on, 2 to 1: what is written on that accent is another ink
+PALETTES["pale"] = PALETTES["light"][:2] + ("5fb3ff",) + PALETTES["light"][3:]
 MACHINE = (("class/net/eth0/carrier", "1\n"), ("class/net/wlan0/operstate", "up\n"), ("class/power_supply/BAT0/capacity", "64\n"))   # what a check changes, as it is at rest
 WPCTL = r"""#!/bin/sh
 # the proof's sound tool: wpctl's answers from files, every change written to one
@@ -622,6 +627,7 @@ class State:
 
     def __init__(self, text):
         self.text, self.status, self.mode, self.levels, self.outputs, self.odd = text, "", "", collections.OrderedDict(), collections.OrderedDict(), []
+        self.resting = []   # the outputs at rest: no bar on them
         for line in text.splitlines():
             f = line.split("\t")
             try:
@@ -633,6 +639,8 @@ class State:
                     self.mode = f[1]
                 elif f[0] == "level" and len(f) == 3:
                     self.levels[f[1]] = int(f[2])
+                elif f[0] == "rest" and len(f) == 2:
+                    self.resting.append(f[1])
                 elif f[0] == "output" and len(f) == 6:
                     self.outputs[f[1]] = Strip(f)
                 elif f[0] == "target" and len(f) == 11:
@@ -684,7 +692,8 @@ class State:
         bars = ["%s %dx%d %s: %s%s" % (b.name, b.width, b.height, b.edge,
                                          " ".join(t.id + ("[%s %s]" % (t.state, ",".join(sorted(t.flags))) if t.flags - {"empty"} or t.state != "ok" else "") for t in b.targets),
                                          (" left out: " + " ".join(b.dropped)) if b.dropped else "") for b in self.outputs.values()]
-        return "status %s%s, levels %s; %s" % (self.status, (", mode " + self.mode) if self.mode else "", " ".join("%s %d" % kv for kv in self.levels.items()), "; ".join(bars))
+        return "status %s%s%s, levels %s; %s" % (self.status, (", mode " + self.mode) if self.mode else "", (", at rest " + " ".join(self.resting)) if self.resting else "",
+                                                 " ".join("%s %d" % kv for kv in self.levels.items()), "; ".join(bars))
 
 
 def moved(a, b):
@@ -968,14 +977,21 @@ class Desk:
             pass
 
     def keep_failure(self):
-        """A failed check leaves the state file, the bar's log and the screen in the directory; the first few."""
+        """A failed check leaves the state file, the bar's log, what the sound tool heard, the processes and the
+        screen in the directory; the first few."""
         if self.stopped or self.kept >= 6:
             return
         self.kept += 1
         self.keep_log()
-        try:
-            shutil.copyfile(str(self.state_file), str(self.evidence / ("failure-%02d-bar.state" % self.kept)))
-        except OSError:
+        for kept, name in ((self.state_file, "bar.state"), (self.snd / "log", "sound.log")):
+            try:
+                shutil.copyfile(str(kept), str(self.evidence / ("failure-%02d-%s" % (self.kept, name))))
+            except OSError:
+                pass
+        try:   # a click that never lands: is the status loop there, is its reader, is one of its jobs still at work
+            listed = subprocess.run(["ps", "-eo", "pid,ppid,pgid,stat,etimes,args"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10).stdout
+            (self.evidence / ("failure-%02d-processes.txt" % self.kept)).write_text(listed)
+        except (OSError, subprocess.SubprocessError):
             pass
         try:
             subprocess.run(["grim", str(self.evidence / ("failure-%02d.png" % self.kept))], env=self.env, stdin=subprocess.DEVNULL, capture_output=True, timeout=10)
@@ -1265,7 +1281,7 @@ class Desk:
 
     def at_rest(self, s):
         b = s.bar()
-        return bool(s.status == "ok" and not s.mode and len(s.outputs) == 1 and b and b.width == W and b.edge == "top" and not b.dropped
+        return bool(s.status == "ok" and not s.mode and not s.resting and len(s.outputs) == 1 and b and b.width == W and b.edge == "top" and not b.dropped
                     and s.ids() == REST and all(t.state == "ok" for t in b.targets) and dict(s.levels) == {"wifi": 70, "out": 40, "mic": 50}
                     and (s.named("out.name"), s.named("mic.name")) == ("output 40%", "microphone 50%")
                     and s.find("workspace:1").flags == {"selected", "visible"} and ("empty" in s.find("workspace:2").flags) == (not self.windows)
@@ -1374,16 +1390,26 @@ def run_reads(d, strip, s, output=OUT):
     return not off, off
 
 
-def plate_reads(d, strip, t):
+def plate_reads(d, strip, t, ink=None):
     """The plate on a capture: its box as the accent fills it, measured (x, y, w, h); whether all in it lies
-    between the accent and the ground; and the columns of its label's ink, counted from its left."""
-    accent = d.tones["accent"]
+    between the accent and the ink its label is written in, the ground's color unless another is named; and the
+    columns of its label's ink, counted from its left."""
+    accent, ink = d.tones["accent"], d.ground if ink is None else ink
     inset = round(strip.h / 9.0)
     box = strip.box(t.x + 1, inset, accent)
     inner = strip.part(t.x, inset, t.w, strip.h - 2 * inset)
-    lies, most = inner.reach(accent, d.ground)
-    cols = sorted({i % inner.w for i, c in enumerate(inner.pixels()) if (along(c, accent, d.ground) or 0) >= 0.5})
+    lies, most = inner.reach(accent, ink)
+    cols = sorted({i % inner.w for i, c in enumerate(inner.pixels()) if (along(c, accent, ink) or 0) >= 0.5})
     return box, lies and most >= 0.9, cols
+
+
+def no_bar(d, at=(0, 0), width=W):
+    """Whether no bar is drawn at the top of the screen at `at`, with no window there: the rows a bar would have and
+    twelve under them are one flat color, so nothing stands in them and nothing ends where a bar would."""
+    def read():
+        colors = d.grab(at[0], at[1], width, d.high + 12).colors()
+        return len(colors) == 1, sorted(colors)[:4]
+    return seen(read)
 
 
 def label_stands(cols, cell):
@@ -1458,17 +1484,17 @@ def lifecycle(d):
        "the bar runs spark-shell bar status itself, with SPARK_BAR=1: every value it shows is the real loop's", (stat_of(loop), cmdline(loop)))
     env, pal = d.bar_env(), d.pal
     want = {"SPARK_SHELL": d.shell_path, "BAR_POSITION": "top", "BAR_FG": pal["FG"], "BAR_ACCENT": pal["ACCENT"], "BAR_MUTED": pal["MUTED"], "BAR_GROUND": pal["BG"],
-            "BAR_ATTENTION": pal["ANSI"][3], "BAR_ALERT": pal["ANSI"][1], "BAR_ALPHA": "1", "BAR_GAUGE_FULL": FAMILIES[0][1], "BAR_GAUGE_LIGHT": FAMILIES[0][2],
-            "BAR_MOTION": "yes", "BAR_OVERFLOW": OVERFLOW, "BAR_TRAY_WIDTH": "0", "BAR_LOCK": str(d.lock), "BAR_STATE": str(d.state_file)}
+            "BAR_ATTENTION": pal["ANSI"][3], "BAR_ALERT": pal["ANSI"][1], "BAR_INK": pal["BG"], "BAR_ALPHA": "1", "BAR_GAUGE_FULL": FAMILIES[0][1], "BAR_GAUGE_LIGHT": FAMILIES[0][2],
+            "BAR_MOTION": "yes", "BAR_OVERFLOW": OVERFLOW, "BAR_REST": RESTS, "BAR_TRAY_WIDTH": "0", "BAR_LOCK": str(d.lock), "BAR_STATE": str(d.state_file)}
     ok(all(env.get(k) == v for k, v in want.items()) and env.get("BAR_FONT", "").endswith(" 12") and (not d.face or env.get("BAR_FONT") == d.face + " 12")
        and re.fullmatch("[0-9a-f]{6}", env.get("BAR_LIT", "")) and "BAR_PINS" not in env and "BAR_HIDE" not in env,
-       "spark-shell starts it with the look of its first line: the proof's own palette, its muted and its red as they are, stone's gauge pair, motion, 12 point text; the config's overflow order, its two files, and no pins: those are each line's to say",
+       "spark-shell starts it with the look of its first line: the proof's own palette, its muted and its red as they are, the ground as the ink, for it reads on this accent, stone's gauge pair, motion, 12 point text; the config's overflow order, the rest name %s, its two files, and no pins: those are each line's to say" % RESTS,
        {k: env.get(k) for k in list(want) + ["BAR_FONT", "BAR_LIT", "BAR_PINS", "BAR_HIDE"] if env.get(k) != want.get(k)})
     line = d.line()
     look, mods = (line[0] if line and line[0].get("name") == "look" else {}), line[1:]
     ok(look and set(look) == set(LOOK) | {"name"} and all(look[k] == env.get(v) for k, v in zip(LOOK, SLOTS)) and all(isinstance(v, str) for v in look.values())
        and not any(t.module == "look" for t in s.targets()),
-       "the line carries the look for spark's bar: its first object, named look, the seven colors, the alpha, the gauge pair and the motion, each a string, as the bar was started with; it is no module and no target", (look, line[:1]))
+       "the line carries the look for spark's bar: its first object, named look, the seven colors, the alpha, the gauge pair, the motion and the ink, each a string, as the bar was started with; it is no module and no target", (look, line[:1]))
     order = [m.get("name") for m in mods]
     ok(order == [n for n in MODULES if n in order] and len(order) >= 9
        and all(set(m) - {"level"} == FACT and m["state"] in STATES and m["group"] == GROUPS.get(m["name"]) and "<" not in m["sign"] + m["text"] and isinstance(m["cells"], int) for m in mods)
@@ -2082,6 +2108,49 @@ def states(d):
     s = d.until(lambda s: not s.mode, "the default mode again")
     good, saw = mode(False)
     ok(good and s.rects() == base, "back in the default mode the name is gone", (s.brief(), saw))
+    # a screen at rest: the workspace it shows has the rest name, as the idle screen's has; a name that only begins
+    # with it is a workspace as any other
+    pid, inset, near_ = d.bar_pid(), high // 9, RESTS + "r"
+    area = lambda key: next(((w["rect"]["x"], w["rect"]["y"], w["rect"]["width"], w["rect"]["height"]) for w in d.ask("get_workspaces") if key in (w["name"], w["num"])), None)   # noqa: E731  a workspace's rectangle, by its name or its number
+    drawn_at = lambda t: seen(lambda: (lambda b: (b == (t.x, inset, t.w, high - 2 * inset), b))(plate_reads(d, d.strip(), t)[0]))   # noqa: E731  the plate, on the screen
+    d.sway("workspace", near_)
+    on_it = d.until(lambda s: not s.resting and "visible" in s.find("workspace:" + near_).flags, "the workspace named %s shown, the bar there" % near_)
+    good, saw = drawn_at(on_it.find("workspace:" + near_))
+    under = settle(lambda: area(near_) == (0, high, W, H - high), 5)
+    ok(good and under and not stays(base, on_it.rects()) and d.bar_pid() == pid,
+       "a workspace named %s is not the rest one: the bar stays, its plate on that workspace's place, and the windows' area begins under it" % near_, (saw, area(near_), on_it.brief()))
+    d.shell("bar", "keys")
+    d.until(lambda s: s.focused() == "mark", "the keys on the bar")
+    d.sway("workspace", RESTS)
+    gone = d.until(lambda s: s.resting == [OUT] and not s.outputs, "the screen at rest in the state file")
+    whole = settle(lambda: area(RESTS) == (0, 0, W, H), 5)
+    good, saw = no_bar(d)
+    ok(whole and good and gone.status == "ok" and d.bar_pid() == pid,
+       "a screen at rest (the workspace named %s, the bar's BAR_REST): the state file names the screen at rest and no bar on it, the workspace's rectangle is the whole screen, no room kept, and nothing is drawn where the bar was; the same process" % RESTS,
+       (area(RESTS), saw, gone.brief(), pid, d.bar_pid()))
+    d.shot("states-rest")
+    d.sway("workspace", "number", "1")
+    back = d.until(d.at_rest, "the bar back on workspace 1 as it was, no key on it")
+    good, saw = drawn_at(back.plate())
+    under = settle(lambda: area(1) == (0, high, W, H - high), 5)
+    ok(back.rects() == base and good and under and d.bar_pid() == pid,
+       "workspace 1 shown again: the bar is back as it was, every target in its rectangle, the plate drawn in its place, the windows' area under it; the keys it had went back when it left, and no target has them",
+       (moved(base, back.rects()), saw, area(1), back.brief()))
+    # a bar started while its screen rests, as its keeper starts one: none there either, until another workspace is shown
+    d.sway("workspace", RESTS)
+    d.until(lambda s: s.resting == [OUT] and not s.outputs, "the screen at rest again")
+    d.end_bar()
+    started = d.shell("bar", "start")
+    again = d.until(lambda s: s.status == "ok" and s.resting == [OUT] and not s.outputs, "a bar started on the screen at rest, its first line read", 30)
+    good, saw = no_bar(d)
+    now = d.bar_pid()
+    ok(started.returncode == 0 and now not in (None, pid) and good and area(RESTS) == (0, 0, W, H),
+       "a bar started while its screen rests draws none there: another process, its status read, and the state file names the screen at rest, no room is kept, nothing is drawn",
+       (started.said, pid, now, saw, area(RESTS), again.brief()))
+    d.sway("workspace", "number", "1")
+    back = d.until(d.at_rest, "the new bar on workspace 1")
+    good, saw = drawn_at(back.plate())
+    ok(back.rects() == base and good and d.bar_pid() == now, "and its bar comes with workspace 1: every target in its rectangle, the plate drawn; the same process", (moved(base, back.rects()), saw, now, d.bar_pid()))
 
 
 def tones_at_rest(d, s):
@@ -2444,7 +2513,39 @@ def geometry(d):
     both_say = d.until(lambda s: s.named("out.name", other) == "output muted" and s.named("out.name") == "output muted", "out muted by a click on the second screen's bar")
     ok(not s.focused(OUT) and d.muted("out"), "the keys go to the bar of the screen that has the focus, and a click on the second screen's bar acts: out is muted, and both bars say so", both_say.brief())
     d.click(at_["x"] + sign.mid, at_["y"] + high // 2)
-    d.until(lambda s: s.named("out.name") == "output 40%", "out unmuted")
+    s = d.until(lambda s: s.named("out.name") == "output 40%", "out unmuted")
+    # the second screen at rest, by its own rest workspace, as the idle screen names it; the first is not
+    idle, second = "%s %s" % (RESTS, other), s.rects(other)
+    area = lambda key: next((w["rect"] for w in d.ask("get_workspaces") if key in (w["name"], w["num"])), None)   # noqa: E731  a workspace's rectangle, by its name or its number
+    mine = lambda: seen(lambda: (lambda b: (b == (here.x, inset, 3 * cell, high - 2 * inset), b))(plate_reads(d, d.strip(width=W), here)[0]))   # noqa: E731  the first screen's plate, on the screen
+    d.sway("workspace", idle)
+    alone = d.until(lambda s: s.resting == [other] and list(s.outputs) == [OUT], "the second screen at rest, the first not")
+    whole = settle(lambda: area(idle) == at_, 5)
+    bare, saw = no_bar(d, (at_["x"], at_["y"]), at_["width"])
+    good, box = mine()
+    ok(whole and bare and good and alone.rects() == base and alone.plate().id == here.id,
+       "two screens, the second at rest (its workspace named %s): it alone has no bar, its workspace's rectangle the whole screen and nothing drawn where its bar was; the first screen's bar stands as it stood, its plate drawn" % idle,
+       (area(idle), saw, box, alone.brief()))
+    ok(not alone.find("workspace:" + idle) and [t.id for t in alone.spaces()] == REST[1:11],
+       "the rest workspace has no place on the first screen's bar: its run is the ten places, as with one screen", alone.brief())
+    # no surface of the bar's is left on the screen at rest, to take the pointer for the keys: the first bar has
+    # the keys, the pointer travels on the second screen, and the keys stay
+    d.sway("focus", "output", OUT)
+    d.shell("bar", "keys")
+    d.until(lambda s: s.focused() == "mark", "the keys on the first screen's bar")
+    for step in (0, 7 * cell):
+        d.move(at_["x"] + at_["width"] // 4 + step, at_["y"] + at_["height"] // 2)
+    d.key("Right")
+    held = d.until(lambda s: s.focused() == "workspace:1", "Right to move the keys, after the pointer travelled on the screen at rest", 5)
+    d.key("Escape")
+    d.until(lambda s: not s.focused(), "Escape to give the keyboard back")
+    ok(held.resting == [other], "while the first screen's bar has the keys the pointer moved %d px on the screen at rest gives no key back: nothing of the bar is there to hear it, and Right still moves the keys" % (7 * cell), held.brief())
+    d.sway("focus", "output", other)
+    d.sway("workspace", "number", str(theirs))
+    both = d.until(lambda s: not s.resting and s.rects(other) == second and s.plate(other).id == there.id, "the second screen's bar back")
+    under = settle(lambda: area(theirs) == dict(at_, y=at_["y"] + high, height=at_["height"] - high), 5)
+    back, saw = seen(lambda: (lambda b: (b == (there.x, inset, 3 * cell, high - 2 * inset), b))(plate_reads(d, d.strip((at_["x"], at_["y"]), at_["width"]), there)[0]))
+    ok(under and back and both.rects() == base, "its own workspace shown again, the second screen's bar is back as it was: every target in its rectangle, its plate drawn, the windows' area under it", (area(theirs), saw, both.brief()))
     d.sway("focus", "output", OUT)
     d.sway("output", other, "unplug")
     s = settle(lambda: (lambda s: s and len(s.outputs) == 1 and s)(d.state()), 8)
@@ -2491,6 +2592,34 @@ def relook(d):
     enter("accessibility", "the light palette")
     contrasts(d)
     tones_at_rest(d, s)
+    # what is written on the accent: a palette whose ground does not read on its accent, so the look says another ink
+    d.palette("pale")
+    d.nudge()
+    plate, inset, accent, look = s.plate(), high // 9, d.tones["accent"], d.line()[0]
+    ink = rgb(look.get("ink") or d.pal["BG"])
+
+    def written():
+        strip = d.strip()
+        box, lies, cols = plate_reads(d, strip, plate, ink)
+        grounded = plate_reads(d, strip, plate)[1]
+        return box == (plate.x, inset, plate.w, high - 2 * inset) and lies and label_stands(cols, d.cell) and not grounded, (box, lies, grounded, cols[:1], cols[-1:])
+    good, saw = seen(written, 20)
+    ok(look.get("accent") == d.pal["ACCENT"] and far(ink, d.ground) >= 48 and contrast(d.ground, accent) < 4.5 <= contrast(ink, accent) and good and d.bar_pid() == bar,
+       "the ink: on this palette's accent its ground reads at %.1f to 1, and the line's look says another ink, #%s, %.1f to 1; on the screen the plate's digits are that ink, and not the ground's color; the same process"
+       % (contrast(d.ground, accent), look.get("ink"), contrast(ink, accent)), (look, saw, bar, d.bar_pid()))
+    d.shot("look-ink")
+    # and before the first line: a bar started under this palette is handed the ink with the rest of its look
+    d.end_bar()
+    d.flag("slow", True)
+    started = d.shell("bar", "start")
+    d.until(lambda s: s.status == "loading" and s.plate().rect == plate.rect, "the bar up before its first line", 10)
+    env = d.bar_env()
+    good, saw = seen(written)
+    d.flag("slow", False)
+    d.until(lambda s: s.status == "ok" and s.find("clock.text"), "the first line", 40)
+    ok(started.returncode == 0 and env.get("BAR_INK") == look.get("ink") and good,
+       "a bar started under this palette has the ink in its environment (BAR_INK), and before its first line the plate's digits are that ink too", (started.said, env.get("BAR_INK"), saw))
+    bar = d.bar_pid()
     enter("identity", "a theme previewed and applied through spark-shell, the bar running")
     said = d.shell("bar", "panel", "theme", "preview", "tokyonight-night")   # the dialog's own step, by its verb
     good, saw = seen(wears(*gallery("tokyonight-night")), 20)

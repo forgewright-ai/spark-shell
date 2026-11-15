@@ -3077,6 +3077,35 @@ L off >/dev/null 2>&1
 old_gone && ok "v0.41 upgrade: off hands it back" || bad "upgrade off" "$(cat "$H/log")"
 
 # the console is the tty, never XDG_VTNR (logind's; Void has none), and
+# the contrast lift (v0.148.2): what is written on the accent (the plate's digits, the title of the band with the focus)
+# and on the red (an urgent band's title) reads at 4.5 to 1 in every shipped palette, and is the ground where that already reads
+fresh
+console_stubs Linux
+desktop_stubs
+mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+L on --yes >/dev/null </dev/null
+reads() { awk -v a="$1" -v b="$2" 'function h(c, i) { return index("0123456789abcdef", substr(c, i, 1)) - 1 }
+    function ch(c, i,   v) { v = (h(c, i) * 16 + h(c, i + 1)) / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ^ 2.4 }
+    function lum(c) { return 0.2126 * ch(c, 1) + 0.7152 * ch(c, 3) + 0.0722 * ch(c, 5) }
+    BEGIN { x = lum(a); y = lum(b); if (x < y) { t = x; x = y; y = t }; printf "%d", (x + 0.05) / (y + 0.05) * 100 }'; }   # reads RRGGBB RRGGBB -> their contrast times 100
+_low=''; _seen=0
+for _lt in "$REPO"/gallery/theme/*.env; do
+    _lt=${_lt##*/}; _lt=${_lt%.env}
+    L theme "$_lt" >/dev/null 2>&1 || :
+    for _lk in focused urgent; do
+        # shellcheck disable=SC2046   # the fill and the text, split on purpose
+        set -- $(sed -n "s/^client\\.$_lk  *#\\([0-9a-f]\\{6\\}\\) #[0-9a-f]* #\\([0-9a-f]\\{6\\}\\) .*/\\1 \\2/p" "$HOME/.config/sway/config")
+        if [ $# = 2 ] && [ "$(reads "$1" "$2")" -ge 450 ]; then _seen=$((_seen + 1)); else _low="$_low $_lt:$_lk:$*"; fi
+    done
+done
+[ -z "$_low" ] && [ "$_seen" -ge 32 ] && ok "the contrast lift: in each of the $((_seen / 2)) palettes the title of the band with the focus and of an urgent band read at 4.5 to 1 (v0.148.2)" || bad "contrast lift" "$_seen read;$_low"
+L theme dracula >/dev/null 2>&1 || :
+grep -q '^client\.focused  *#bd93f9 #bd93f9 #282a36 ' "$HOME/.config/sway/config" && ok "the contrast lift: where the ground already reads on the accent it stays the ink (dracula)" || bad "contrast lift, no change" "$(grep -n '^client.focused ' "$HOME/.config/sway/config")"
+L theme everforest-light >/dev/null 2>&1 || :
+_li=$(sed -n 's/^client\.focused  *#[0-9a-f]* #[0-9a-f]* #\([0-9a-f]\{6\}\) .*/\1/p' "$HOME/.config/sway/config")
+[ -n "$_li" ] && [ "$_li" != fdf6e3 ] && [ "$(SPARK_BAR=1 L bar status --once 2>/dev/null | jq -r '.[0].ink')" = "$_li" ] \
+    && ok "the contrast lift: where it does not, the ink is lifted, and the bar's look says the same ink for its plate (everforest-light)" || bad "contrast lift, the bar's ink" "$_li $(SPARK_BAR=1 L bar status --once 2>&1 | head -c 300)"
+
 # sway gets a private XDG_RUNTIME_DIR when no login manager made one
 fresh
 console_stubs Linux
@@ -3791,6 +3820,7 @@ _pe=$(cat "$HOME/winpad.env" 2>/dev/null)
     && printf '%s\n' "$_pe" | grep -qx "SPARK_SHELL=$SH" && printf '%s\n' "$_pe" | grep -qx 'WINPAD_PLACE=bottom center' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_WIDTH=0' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_SIDE_WIDTH=36' \
     && printf '%s\n' "$_pe" | grep -qx 'WINPAD_BAR=top' && printf '%s\n' "$_pe" | grep -qx "WINPAD_LOCK=$H/run/spark-shell-winpad.pid" && printf '%s\n' "$_pe" | grep -qx "WINPAD_STATE=$H/run/spark-shell-winpad.state" \
     && printf '%s\n' "$_pe" | grep -qx 'WINPAD_ACCENT=ff5555' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_FG=aaaaaa' && [ "$(printf '%s\n' "$_pe" | grep -cE '^WINPAD_(SURFACE|LIT|BAND_HEX|MUTED)=[0-9a-f]{6}$')" = 4 ] \
+    && [ "$(printf '%s\n' "$_pe" | grep -cE '^WINPAD_(BAND_LIT|URGENT_LIT|CLOSE_INK)=[0-9a-f]{6}$')" = 3 ] && printf '%s\n' "$_pe" | grep -qx 'WINPAD_REST=idle' \
     && printf '%s\n' "$_pe" | grep -qx 'WINPAD_BAND=off' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_GAP=8' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_VIEW=icons' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_HEIGHT=0' \
     && printf '%s\n' "$_pe" | grep -qE '^WINPAD_FONT=.+ [0-9]+(px)?$' && printf '%s\n' "$_pe" | grep -qE '^WINPAD_ALPHA=[0-9.]+$' && printf '%s\n' "$_pe" | grep -q '^WINPAD_BAR_PID=' \
     && ok "desktop pad keys (Super+minus): no pad running, spark-winpad starts with --keys, the look, the place, the bar's place and its files in its environment (v0.133); the band's setting, its color apart, and the outer gap as its margin (#265, #266); the view, icons by default, and the height, 0 by default (#269)" || bad "pad keys start" "rc=$rc $out $(cat "$HOME/pad.log" 2>&1) | $_pe"
@@ -4669,10 +4699,10 @@ else
         && [ "$(fbad '[{"name":"look"},{"name":"clock","group":"time","sign":"","text":"12:00","cells":4,"bold":false,"state":"fine","set":true,"pinned":true,"label":"","toggle":false},{"name":"lan","group":"sound","sign":"","text":"","cells":0,"bold":false,"state":"ok","set":false,"pinned":false,"label":"lan","toggle":false},{"name":"mic","group":"sound","sign":"","text":"","cells":0,"bold":false,"state":"ok","level":50,"set":true,"pinned":false,"label":"mic","toggle":true}]')" = 'order clock lan mic' ] \
         && [ "$(printf '%s' "$l2" | jq -r '[.[1:][] | select(.toggle) | .name] | join(" ")')" = out ] \
         && ok "spark's bar reads facts (v0.148): the look, then lan, bt, wifi, out, mic, bat and the clock, each the contract's fields in their order and of their types, its text within its cells, toggle true on out alone of these; no markup, no block of sway's bar and no color past the look, in signs and in words" || bad "facts shape" "$(fbad "$l2") | $(fbad "$l3") | $l2 | $l3"
-    # the look travels in the line: on spark's bar its first object, the eleven values and no other field, each a string;
+    # the look travels in the line: on spark's bar its first object, the twelve values and no other field, each a string;
     # the muted is the palette's own, the dim tone, not the one lifted for the dialog; the gauge's pair is the glyph
     # family's; sway's bar has no such object, and its spans keep the palette's muted
-    look="{\"name\":\"look\",\"fg\":\"aaaaaa\",\"accent\":\"ff5555\",\"muted\":\"555555\",\"ground\":\"000000\",\"lit\":\"1e1e1e\",\"attention\":\"aa5500\",\"alert\":\"aa0000\",\"alpha\":\"0.95\",\"full\":\"$pip\",\"light\":\"$pipoff\",\"motion\":\"yes\"}"
+    look="{\"name\":\"look\",\"fg\":\"aaaaaa\",\"accent\":\"ff5555\",\"muted\":\"555555\",\"ground\":\"000000\",\"lit\":\"1e1e1e\",\"attention\":\"b26619\",\"alert\":\"aa0000\",\"alpha\":\"0.95\",\"full\":\"$pip\",\"light\":\"$pipoff\",\"motion\":\"yes\",\"ink\":\"000000\"}"   # the attention lifted to read on the ground (aa5500 is 4.0 on black), the ink the ground where it reads on the accent (v0.148.2)
     [ "$(printf '%s' "$l2" | jq -c '.[0]')" = "$look" ] \
         && printf '%s' "$l2" | jq -e '.[0] | ([.fg, .accent, .muted, .ground, .lit, .attention, .alert] | all(type == "string" and test("^[0-9a-f]{6}$"))) and ([.alpha, .full, .light, .motion] | all(type == "string"))' >/dev/null \
         && [ "$(printf '%s' "$l2$l3" | grep -o '"name":"look"' | grep -c '')" = 2 ] && ! printf '%s' "$l1$l4" | grep -q '"look"\|"fg"\|"ground"' \
@@ -4812,7 +4842,7 @@ KBSWAY_STUB
     [ "$(grep -c '^\[{' "$H/bar.out")" = 3 ] && [ "$(lk 1 '.[0]')" = "$look" ] \
         && [ "$(grep '^\[{' "$H/bar.out" | sed 's/,$//' | jq -c '.[0] | .name == "look" and ([.fg, .accent, .muted, .ground, .lit, .attention, .alert] | all(type == "string" and test("^[0-9a-f]{6}$"))) and ([.alpha, .full, .light, .motion] | all(type == "string"))' | paste -sd' ' -)" = 'true true true' ] \
         && [ "$(pv HEX_ACCENT) $(pv HEX_BG)" = '88c0d0 2e3440' ] && [ "$(pv HEX_MUTED)" != 555555 ] && [ "$(pv HEX_ANSI_1)" != aa0000 ] \
-        && [ "$(lk 2 '.[0]')" = "{\"name\":\"look\",\"fg\":\"$(pv HEX_FG)\",\"accent\":\"$(pv HEX_ACCENT)\",\"muted\":\"$(pv HEX_MUTED)\",\"ground\":\"$(pv HEX_BG)\",\"lit\":\"$(pv PANEL_HI)\",\"attention\":\"$(pv HEX_ANSI_3)\",\"alert\":\"$(pv HEX_ANSI_1)\",\"alpha\":\"$(pv ALPHA)\",\"full\":\"$pip\",\"light\":\"$pipoff\",\"motion\":\"yes\"}" ] \
+        && [ "$(lk 2 '.[0]')" = "{\"name\":\"look\",\"fg\":\"$(pv HEX_FG)\",\"accent\":\"$(pv HEX_ACCENT)\",\"muted\":\"$(pv HEX_MUTED)\",\"ground\":\"$(pv HEX_BG)\",\"lit\":\"$(pv PANEL_HI)\",\"attention\":\"$(pv PANEL_ATTENTION)\",\"alert\":\"$(pv HEX_ANSI_1)\",\"alpha\":\"$(pv ALPHA)\",\"full\":\"$pip\",\"light\":\"$pipoff\",\"motion\":\"yes\",\"ink\":\"$(pv PANEL_INK)\"}" ] \
         && [ "$(lk 2 '[.[1:][] | select(.name != "clock")]')" = "$(lk 1 '[.[1:][] | select(.name != "clock")]')" ] && [ "$(lk 2 '.[1:] | length')" -ge 6 ] && [ "$(lk 3 '.[0]')" = "$(lk 1 '.[0]')" ] && [ "$(lk 3 '[.[] | select(.name != "clock")]')" = "$(lk 1 '[.[] | select(.name != "clock")]')" ] \
         && ok "spark's bar follows a look with no start: a preview's palette file changes the next line's look, its seven colors and the alpha, the muted and the alert the preview's own, in one line, and no module with it: the colors are the look's alone; the preview off, the look in use is back; every line carries its look" || bad "look follows" "$(grep -c '^\[{' "$H/bar.out") | $(lk 1 '.[0]') | $(lk 2 '.[0]') | $(lk 3 '.[0]') | $_pv"
     sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
@@ -5557,7 +5587,7 @@ SPARKBAR_STUB
     sbr bar start; sleep 0.3; sbr bar keys; _i=0; while [ "$_i" -lt 20 ] && [ ! -s "$HOME/sbar.sig" ]; do sleep 0.1; _i=$((_i + 1)); done
     [ "$rc" = 0 ] && [ "$out" = 'the bar has the keys: the arrows move, Enter acts, Esc leaves' ] && [ "$(grep -c '' "$HOME/sbar.log")" = 1 ] && [ "$(cat "$HOME/sbar.sig" 2>/dev/null)" = usr1 ] \
         && ok "bar start again starts no second bar; bar keys (Super+equal) sends the running one SIGUSR1" || bad "bar keys" "rc=$rc $out $(cat "$HOME/sbar.log" "$HOME/sbar.sig" 2>&1)"
-    [ "$(SPARK_BAR=1 sh "$SH" bar status --once | jq -r '.[0] | [.name, .fg, .accent, .muted, .ground, .lit, .attention, .alert, .alpha, .full, .light, .motion] | join(" ")')" = "look $(sbv BAR_FG) $(sbv BAR_ACCENT) $(sbv BAR_MUTED) $(sbv BAR_GROUND) $(sbv BAR_LIT) $(sbv BAR_ATTENTION) $(sbv BAR_ALERT) $(sbv BAR_ALPHA) $(sbv BAR_GAUGE_FULL) $(sbv BAR_GAUGE_LIGHT) $(sbv BAR_MOTION)" ] && ! grep -q '^SPARK_BAR=' "$HOME/sbar.env" \
+    [ "$(SPARK_BAR=1 sh "$SH" bar status --once | jq -r '.[0] | [.name, .fg, .accent, .muted, .ground, .lit, .attention, .alert, .alpha, .full, .light, .motion, .ink] | join(" ")')" = "look $(sbv BAR_FG) $(sbv BAR_ACCENT) $(sbv BAR_MUTED) $(sbv BAR_GROUND) $(sbv BAR_LIT) $(sbv BAR_ATTENTION) $(sbv BAR_ALERT) $(sbv BAR_ALPHA) $(sbv BAR_GAUGE_FULL) $(sbv BAR_GAUGE_LIGHT) $(sbv BAR_MOTION) $(sbv BAR_INK)" ] && ! grep -q '^SPARK_BAR=' "$HOME/sbar.env" && sbe 'BAR_REST=idle' \
         && [ -n "$(lifted)" ] && [ "$(sbv BAR_MUTED)" != "$(lifted)" ] && [ "$(sbv BAR_MUTED)" = "$(sed -n 's/^client\.unfocused  *#[0-9a-f]* #[0-9a-f]* #\([0-9a-f]\{6\}\) .*/\1/p' "$sway")" ] \
         && ok "the look in the line is the one spark-bar is started with, value for value: the same eleven before its first line and in each, the muted the palette's own, not the lifted one" || bad "look and start" "$(SPARK_BAR=1 sh "$SH" bar status --once | jq -c '.[0]') $(cat "$HOME/sbar.env")"
     # the restarts go through sway, so the new bar is sway's child with the session's environment. Sway's part is played
@@ -5600,8 +5630,8 @@ SBSWAY_STUB
     [ "$rc" = 0 ] && sbe 'BAR_POSITION=top' && sbe "BAR_GAUGE_FULL=$pip" && sbe 'BAR_MOTION=yes' && [ -n "$_bp0" ] && [ "$(cat "$block" 2>/dev/null)" = "$_bp0" ] && [ "$(grep -c '' "$HOME/sbar.log")" = 3 ] && ok "bar top: the bar starts again at the top; asked again where it sits already, it is left running" || bad "bar top again" "rc=$rc $out $(cat "$HOME/sbar.log" 2>&1)"
     # a look change starts no bar: the palette file takes the look, the eight values of it, and the bar's loop reads it
     sbr panel theme alpha 0.9; _pal=$(cat "$H/.local/state/spark-shell/bar.palette" 2>&1 || :); _o1=$out; sbr panel theme alpha 0.95; sleep 0.3
-    [ "$_o1" = 'alpha at 0.9' ] && [ "$(cat "$block" 2>/dev/null)" = "$_bp0" ] && [ "$(grep -c '' "$HOME/sbar.log")" = 3 ] && [ "$(printf '%s\n' "$_pal" | cut -d= -f1 | paste -sd' ' -)" = 'HEX_FG HEX_ACCENT HEX_MUTED HEX_ANSI_1 HEX_ANSI_3 HEX_BG PANEL_HI ALPHA' ] \
-        && [ "$(printf '%s\n' "$_pal" | grep -v '^HEX_ANSI_1=')" = "$(printf 'HEX_FG=%s\nHEX_ACCENT=%s\nHEX_MUTED=%s\nHEX_ANSI_3=%s\nHEX_BG=%s\nPANEL_HI=%s\nALPHA=0.9\n' "$(sbv BAR_FG)" "$(sbv BAR_ACCENT)" "$(sbv BAR_MUTED)" "$(sbv BAR_ATTENTION)" "$(sbv BAR_GROUND)" "$(sbv BAR_LIT)")" ] \
+    [ "$_o1" = 'alpha at 0.9' ] && [ "$(cat "$block" 2>/dev/null)" = "$_bp0" ] && [ "$(grep -c '' "$HOME/sbar.log")" = 3 ] && [ "$(printf '%s\n' "$_pal" | cut -d= -f1 | paste -sd' ' -)" = 'HEX_FG HEX_ACCENT HEX_MUTED HEX_ANSI_1 HEX_ANSI_3 HEX_BG PANEL_HI ALPHA PANEL_INK PANEL_ATTENTION' ] \
+        && [ "$(printf '%s\n' "$_pal" | grep -v '^HEX_ANSI_[13]=')" = "$(printf 'HEX_FG=%s\nHEX_ACCENT=%s\nHEX_MUTED=%s\nHEX_BG=%s\nPANEL_HI=%s\nALPHA=0.9\nPANEL_INK=%s\nPANEL_ATTENTION=%s\n' "$(sbv BAR_FG)" "$(sbv BAR_ACCENT)" "$(sbv BAR_MUTED)" "$(sbv BAR_GROUND)" "$(sbv BAR_LIT)" "$(sbv BAR_INK)" "$(sbv BAR_ATTENTION)")" ] \
         && grep -qx 'ALPHA=0.95' "$H/.local/state/spark-shell/bar.palette" \
         && ok "a look change (the transparency) starts no bar again: the running one stays, and the palette file holds the look for its loop, the five colors of a line and the ground, the lit shade and the alpha, the values spark-bar was started with" || bad "look change no restart" "$_o1 | $_pal | $(cat "$HOME/sbar.log")"
     # the tray: sway's bar as the host alone, unseen until it is placed over the strip at the bar's right end

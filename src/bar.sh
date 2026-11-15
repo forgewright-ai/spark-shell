@@ -487,8 +487,8 @@ bar_shown() {   # -> _pinned and _hidden, a list of names each
 # own, the dim tone, and the alert its red
 bar_look() {
     _blm=yes; [ "$(bar_style BAR_MOTION yes | tr -d '"')" != no ] || _blm=no
-    printf '{"name":"look","fg":"%s","accent":"%s","muted":"%s","ground":"%s","lit":"%s","attention":"%s","alert":"%s","alpha":"%s","full":"%s","light":"%s","motion":"%s"}' \
-        "$HEX_FG" "$HEX_ACCENT" "$HEX_MUTED" "$HEX_BG" "$PANEL_HI" "$HEX_ANSI_3" "$HEX_ANSI_1" "$ALPHA" "$FAM_ON" "$FAM_OFF" "$_blm"
+    printf '{"name":"look","fg":"%s","accent":"%s","muted":"%s","ground":"%s","lit":"%s","attention":"%s","alert":"%s","alpha":"%s","full":"%s","light":"%s","motion":"%s","ink":"%s"}' \
+        "$HEX_FG" "$HEX_ACCENT" "$HEX_MUTED" "$HEX_BG" "$PANEL_HI" "${PANEL_ATTENTION:-$HEX_ANSI_3}" "$HEX_ANSI_1" "$ALPHA" "$FAM_ON" "$FAM_OFF" "$_blm" "${PANEL_INK:-$HEX_BG}"
 }
 bar_sign() { _bg=$1; [ -z "$_bw" ] || _bg=$2; }   # bar_sign GLYPH WORD -> _bg, a module's sign: its glyph, or its word where the bar is in words
 # a fact, one module's object: SIGN, then TEXT in the CELLS kept for it, its widest; STATE is ok, muted, off, missing,
@@ -776,7 +776,7 @@ bar_style() { _bv=$(sed -n "s/^$1=//p" "$CONFIG" 2>/dev/null | tail -1); printf 
 bar_redraw() { [ -f "$BAR_PID" ] && read -r p < "$BAR_PID" && kill -USR1 "$p" 2>/dev/null || :; }
 bar_stale() { [ -f "$BAR_PID" ] && [ -n "$(find "$REPO/spark-shell" -newer "$BAR_PID" 2>/dev/null)" ] && read -r _bsp < "$BAR_PID" && kill -0 "$_bsp" 2>/dev/null; }   # -> 0 when the bar predates spark-shell's change
 BAR_PALETTE=$STATE_DIR/bar.palette   # written by a look change, a preview too: the five colors a line is drawn in, then what spark's bar wears beyond them, the ground, the lit shade and the alpha
-bar_palette() { mkdir_private "$STATE_DIR" && printf 'HEX_FG=%s\nHEX_ACCENT=%s\nHEX_MUTED=%s\nHEX_ANSI_1=%s\nHEX_ANSI_3=%s\nHEX_BG=%s\nPANEL_HI=%s\nALPHA=%s\n' "$HEX_FG" "$HEX_ACCENT" "$HEX_MUTED" "$HEX_ANSI_1" "$HEX_ANSI_3" "$HEX_BG" "$PANEL_HI" "$ALPHA" > "$BAR_PALETTE"; }
+bar_palette() { mkdir_private "$STATE_DIR" && printf 'HEX_FG=%s\nHEX_ACCENT=%s\nHEX_MUTED=%s\nHEX_ANSI_1=%s\nHEX_ANSI_3=%s\nHEX_BG=%s\nPANEL_HI=%s\nALPHA=%s\nPANEL_INK=%s\nPANEL_ATTENTION=%s\n' "$HEX_FG" "$HEX_ACCENT" "$HEX_MUTED" "$HEX_ANSI_1" "$HEX_ANSI_3" "$HEX_BG" "$PANEL_HI" "$ALPHA" "$PANEL_INK" "$PANEL_ATTENTION" > "$BAR_PALETTE"; }
 bar_recolor() {   # bar_recolor LINE -> _old's colors swapped for the palette's
     _e=''; _i=0
     for _h in $_old; do _e="${_e}s/#$_h'/#@$_i@'/g;"; _i=$((_i + 1)); done

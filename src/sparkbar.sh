@@ -69,11 +69,12 @@ sparkbar_run() {   # spark-bar started in its own session, under its keeper; fal
         # BAR_TRAY_WIDTH pixels stay clear at the right end of BAR_TRAY_OUTPUT, for the tray's host
         _sbs=''; [ "$BAR_TRAY" != yes ] || _sbs=$(sparkbar_tray_screen) || _sbs=''
         BAR_TRAY_OUTPUT=${_sbs% *}; BAR_TRAY_WIDTH=0; [ -z "$_sbs" ] || BAR_TRAY_WIDTH=$(( $(sparkbar_height) * SPARKBAR_TRAY_SLOTS ))
-        SPARK_SHELL=$REPO/spark-shell BAR_FONT=$(bar_line_font) BAR_FG=$HEX_FG BAR_ACCENT=$HEX_ACCENT BAR_MUTED=$HEX_MUTED BAR_GROUND=$HEX_BG BAR_LIT=$PANEL_HI BAR_ATTENTION=$HEX_ANSI_3 BAR_ALERT=$HEX_ANSI_1 BAR_ALPHA=$ALPHA
+        SPARK_SHELL=$REPO/spark-shell BAR_FONT=$(bar_line_font) BAR_FG=$HEX_FG BAR_ACCENT=$HEX_ACCENT BAR_MUTED=$HEX_MUTED BAR_GROUND=$HEX_BG BAR_LIT=$PANEL_HI BAR_ATTENTION=$PANEL_ATTENTION BAR_INK=$PANEL_INK BAR_ALERT=$HEX_ANSI_1 BAR_ALPHA=$ALPHA
+        BAR_REST=idle   # the idle screen's workspaces (layout_idle): the bar is off a screen that shows one
         family_set "$GLYPH_FAMILY"; BAR_GAUGE_FULL=$FAM_ON BAR_GAUGE_LIGHT=$FAM_OFF   # never as BAR_FULL or BAR_LIGHT: those are the shell's own signs
         BAR_LOCK=$(sparkbar_file pid) BAR_STATE=$(sparkbar_file state)   # BAR_OVERFLOW as config_load read it
         unset BAR_PINS BAR_HIDE   # the pins and the hidden are each line's to say (bar_shown): a bar started with them would hand its line's loop the ones of its start
-        export SPARK_SHELL BAR_POSITION BAR_FONT BAR_FG BAR_ACCENT BAR_MUTED BAR_GROUND BAR_LIT BAR_ATTENTION BAR_ALERT BAR_ALPHA BAR_GAUGE_FULL BAR_GAUGE_LIGHT BAR_MOTION BAR_OVERFLOW BAR_TRAY_WIDTH BAR_TRAY_OUTPUT BAR_LOCK BAR_STATE
+        export BAR_INK BAR_REST SPARK_SHELL BAR_POSITION BAR_FONT BAR_FG BAR_ACCENT BAR_MUTED BAR_GROUND BAR_LIT BAR_ATTENTION BAR_ALERT BAR_ALPHA BAR_GAUGE_FULL BAR_GAUGE_LIGHT BAR_MOTION BAR_OVERFLOW BAR_TRAY_WIDTH BAR_TRAY_OUTPUT BAR_LOCK BAR_STATE
         if command -v setsid >/dev/null 2>&1; then setsid sh -c "$SPARKBAR_KEEP" "$_sbc" </dev/null >/dev/null 2>"$_sblog" &
         else ( trap '' HUP; exec sh -c "$SPARKBAR_KEEP" "$_sbc" ) </dev/null >/dev/null 2>"$_sblog" & fi
     )

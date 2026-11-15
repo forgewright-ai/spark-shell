@@ -10,7 +10,9 @@ color across its top, hide at the end, and it keeps a strip of its own height an
 area ends above it). The pointer on an icon lights it and a label over the pad says its words, as the dialog
 names a window (the app's name, then the title, lowercase). A foot floated across the strip leaves the pad in
 sight above it, and a click on an icon through it brings the tiled window back tiled. The bar's block says how
-many wait, the bar's toggle hides the pad and gives the strip back. The pad dragged from an icon to the left edge
+many wait, the bar's toggle hides the pad and gives the strip back. A screen on the idle screen's workspace (idle,
+or idle and a screen's name) has no pad, keeps no strip and gives the pad no keys, and the pad is back with the
+workspace before; a workspace named idler keeps it. The pad dragged from an icon to the left edge
 in 2 px steps changes its shape once, from a row to a column, docks there and keeps its strip there, and
 spark-shell lays the windows out again once for it, never during the drag. Super+minus (desktop pad keys) shows
 it with the keyboard on it and Enter brings the last one back, and the pad goes once no window waits.
@@ -607,6 +609,44 @@ def round_in(palette, binary, evidence):
         ok(refits() == 3, "spark-shell asked once as the strip went and once as it came", refits())
         ok(refit_ends()[1:3] == [floor, row_floor], "each once sway had the change: the area at sway's gap as the strip went, over the strip as it came (#273)",
            (refit_ends(), floor, row_floor))
+
+        # 6b. the rest: a screen that shows the idle screen's workspace has no pad and keeps no room for it, and
+        #     nothing is stored, so the pad is back with the workspace before. The idle screen's workspace on
+        #     another screen, the name and a space, is a rest too; a name that only starts alike is none
+        ok(given.get("WINPAD_REST") == "idle", "spark-shell names the idle screen's workspace as the pad's rest", given.get("WINPAD_REST"))
+        state_file = runtime / "spark-shell-winpad.state"
+        one_w = TOOL + 1 + CTL   # one icon in a row, hide at its end
+
+        def pad_row():   # the pad's row of cells at the bottom, as the screen shows it now
+            return [r for r in runs(grab(0, cells + 2, W, 1), 0, (surface, lit), 6) if r[1] >= TOOL]
+
+        def workspace(name, rests):
+            """The screen on a workspace: the pad gone and the area at sway's gap when it rests, the pad and its
+            strip there when not, and spark-shell asked once to lay the windows out again when that changed."""
+            was, asked = bool(pad_row()), refits()
+            subprocess.run(["swaymsg", "workspace", name], env=env, capture_output=True)
+            if rests:
+                held = settle(lambda: reaches("bottom") and not pad_row())
+            else:
+                held = settle(lambda: bottom() == row_floor and [r for r in pad_row() if abs(r[1] - one_w) <= 1])
+            settle(lambda: refits() > asked or was != rests, 5)
+            return held and refits() == asked + (1 if was == rests else 0)
+
+        home = next(w["name"] for w in json.loads(subprocess.run(["swaymsg", "-t", "get_workspaces"], env=env, capture_output=True, text=True).stdout) if w["focused"])
+        move(W // 2, 300)   # the pointer off the pad
+        said = state_file.read_text()
+        ok(workspace("idle", True), "on the idle screen's workspace the pad is gone and keeps no room: the area runs to sway's gap", (area(), pad_row(), refits()))
+        capture("rest")
+        ok(state_file.read_text() == said and said.split() == ["hidden", "0", "count", "1"],
+           "nothing is stored for it: the pad's state says what it said, not hidden, one window waiting", (said, state_file.read_text()))
+        ok(workspace("idler", False), "a workspace whose name only starts alike is no rest: the pad and its strip are there", (area(), pad_row(), refits()))
+        ok(workspace("idle HEADLESS-1", True), "the idle screen's workspace of another screen, the name and a space, is a rest too", (area(), pad_row(), refits()))
+        shell("desktop", "pad", "keys")   # Super+minus on a screen at rest: no keys there, and none kept for later
+        ok(workspace(home, False), "back on its own workspace the pad is back as it was, over its strip", (area(), pad_row(), refits()))
+        img = capture("rest-over")
+        at = (pad_row() or [(W // 2, 0)])[0][0] + 4
+        ok(near(pixel(img, at, top + 2), band, 6) and not near(pixel(img, at, top + 2), accent, 6),
+           "Super+minus on the screen at rest gave the pad no keys, there or later: its handle is the band's color, not the accent", pixel(img, at, top + 2))
 
         # 7. the pad dragged from its icon to the left edge in 2 px steps: one change of shape, from a row to a
         #    column docked there with its strip, and one refit, after the drop (#261, #266)

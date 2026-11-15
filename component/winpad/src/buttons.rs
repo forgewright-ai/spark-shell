@@ -7,7 +7,7 @@ use serde_json::Value;
 
 /// A window's title band in sight, where sway draws the buttons and the pad takes the pointer: its rect in
 /// its screen's own pixels, the window's whole rect for what lies over it, its app, the name the window
-/// gives itself and whether it has the focus.
+/// gives itself, whether it has the focus and whether sway marks it urgent.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Band {
     pub id: i64,
@@ -17,6 +17,28 @@ pub struct Band {
     pub app: String,
     pub name: String,
     pub focused: bool,
+    pub urgent: bool,
+}
+
+/// The colors sway paints a band in, which say what its buttons wear: an urgent window's come before the
+/// focus's, as sway picks them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Focus,
+    Urgent,
+    Plain,
+}
+
+impl Band {
+    pub fn kind(&self) -> Kind {
+        if self.urgent {
+            Kind::Urgent
+        } else if self.focused {
+            Kind::Focus
+        } else {
+            Kind::Plain
+        }
+    }
 }
 
 /// The buttons at the left end of a band, in their order: close, minimize, fill the screen or put back,
@@ -71,16 +93,42 @@ pub fn mic_state(text: &str, before: &Mic) -> Mic {
     Mic { listening, bars }
 }
 
-/// What the buttons wear, as spark-shell hands it: close, minimize and fill's colors and the ground's, the
-/// chip's tone on the focused window's band and on the others, all rrggbb, and pango's size for the half
-/// space at a glyph's sides (none: whole spaces).
+/// What the buttons wear, as spark-shell hands it: close, minimize and fill's colors, the glyph's on close's
+/// chip, the chip's tone on the focused window's band, on an urgent one's and on the others, all rrggbb, and
+/// pango's size for the half space at a glyph's sides (none: whole spaces).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Style {
     pub colors: [String; 3],
-    pub ground: String,
+    pub close_ink: String,
     pub band_lit: String,
+    pub urgent_lit: String,
     pub lit: String,
     pub half: Option<String>,
+}
+
+impl Style {
+    /// The style from spark-shell's environment, `get` a variable's value: WINPAD_CLOSE_INK falls back to
+    /// WINPAD_GROUND, WINPAD_BAND_LIT and WINPAD_URGENT_LIT to WINPAD_LIT.
+    pub fn read(get: impl Fn(&str) -> Option<String>) -> Style {
+        let color = |k: &str, d: &str| hex(get(k).as_deref()).unwrap_or_else(|| d.into());
+        let lit = color("WINPAD_LIT", "dcdcdd");
+        let ground = color("WINPAD_GROUND", "fafafa");
+        Style {
+            colors: [color("WINPAD_CLOSE", "e45649"), color("WINPAD_MIN", "c18401"), color("WINPAD_FILL", "50a14f")],
+            close_ink: color("WINPAD_CLOSE_INK", &ground),
+            band_lit: color("WINPAD_BAND_LIT", &lit),
+            urgent_lit: color("WINPAD_URGENT_LIT", &lit),
+            lit,
+            half: half_size(get("WINPAD_HALF").as_deref()),
+        }
+    }
+}
+
+/// A color as pango's markup takes one, its six digits in lower case. Anything else stays out of the
+/// title, as a half space's size does.
+fn hex(v: Option<&str>) -> Option<String> {
+    let v = v?.trim().trim_start_matches('#');
+    (v.len() == 6 && v.bytes().all(|b| b.is_ascii_hexdigit())).then(|| v.to_lowercase())
 }
 
 /// A size for the half space as pango's markup takes one, in 1024ths of a point: digits alone, more than
@@ -92,20 +140,22 @@ pub fn half_size(v: Option<&str>) -> Option<String> {
 }
 
 /// The start of a title, sway's title_format: the three buttons and, where something can hear, the mic, a
-/// space at each side of each. On the focused window they wear the title's own color; on the others close,
-/// minimize and fill wear each its control color, and the mic the title's. The one under the pointer gets a
-/// chip: close's in its control color with the glyph in the ground's, the others' in the band's lit tone
-/// with the glyph as it was. With a half space the chip is the glyph and half a cell at each side, the
-/// other halves outside it; a button is as wide at rest and under the pointer, three cells: sway places a
-/// title's glyphs unrounded, so two half spaces are one cell at any size.
-pub fn buttons(focused: bool, hover: Option<Glyph>, style: &Style, mic: Option<&Mic>) -> String {
+/// space at each side of each. On the focused window's band and on an urgent one's they wear the title's
+/// own color; on the others close, minimize and fill wear each its control color, and the mic the title's.
+/// The one under the pointer gets a chip: close's in its control color with the glyph in close's ink, the
+/// others' in the band's lit tone with the glyph as it was. An urgent band is close's own color, so every
+/// chip there, close's too, is the urgent lit tone and its glyph keeps the title's color. With a half space
+/// the chip is the glyph and half a cell at each side, the other halves outside it; a button is as wide at
+/// rest and under the pointer, three cells: sway places a title's glyphs unrounded, so two half spaces are
+/// one cell at any size.
+pub fn buttons(kind: Kind, hover: Option<Glyph>, style: &Style, mic: Option<&Mic>) -> String {
     let half = style.half.as_ref().map(|n| format!("<span size='{n}'> </span>"));
     let (outer, inner) = half.as_deref().map_or(("", " "), |h| (h, h));
-    let lit = if focused { &style.band_lit } else { &style.lit };
+    let plain = kind == Kind::Plain;
     let mut all: Vec<(Glyph, &str, Option<&str>)> = [Glyph::Close, Glyph::Min, Glyph::Fill]
         .into_iter()
         .enumerate()
-        .map(|(i, g)| (g, GLYPH_REFS[i], (!focused).then_some(style.colors[i].as_str())))
+        .map(|(i, g)| (g, GLYPH_REFS[i], plain.then_some(style.colors[i].as_str())))
         .collect();
     if let Some(m) = mic {
         all.push((Glyph::Mic, MIC_REFS[usize::from(m.listening)], None));
@@ -114,10 +164,11 @@ pub fn buttons(focused: bool, hover: Option<Glyph>, style: &Style, mic: Option<&
     all.into_iter()
         .map(|(g, r, own)| {
             if hover == Some(g) {
-                let (chip, on) = if g == Glyph::Close {
-                    (&style.colors[0], Some(style.ground.as_str()))
-                } else {
-                    (lit, own)
+                let (chip, on) = match (kind, g) {
+                    (Kind::Urgent, _) => (&style.urgent_lit, None),
+                    (_, Glyph::Close) => (&style.colors[0], Some(style.close_ink.as_str())),
+                    (Kind::Focus, _) => (&style.band_lit, own),
+                    (Kind::Plain, _) => (&style.lit, own),
                 };
                 format!("{outer}<span background='#{chip}'{}>{inner}{r}{inner}</span>{outer}", ink(on))
             } else if let Some(c) = own {
@@ -250,6 +301,7 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
         app: String,
         name: String,
         focused: bool,
+        urgent: bool,
         full: bool,
     }
     fn walk(n: &Value, at: Rect, out: &mut Vec<Seen>) {
@@ -274,6 +326,7 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
             app: n["app_id"].as_str().unwrap_or("").to_string(),
             name: n["name"].as_str().unwrap_or("").to_string(),
             focused: n["focused"] == true,
+            urgent: n["urgent"] == true,
             full: num(&n["fullscreen_mode"]) != 0,
         });
     }
@@ -308,6 +361,7 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
                 app: s.app,
                 name: s.name,
                 focused: s.focused,
+                urgent: s.urgent,
             });
         }
     }
@@ -367,8 +421,9 @@ mod tests {
     fn a_style(half: Option<&str>) -> Style {
         Style {
             colors: ["bf616a".into(), "ebcb8b".into(), "a3be8c".into()],
-            ground: "2e3440".into(),
+            close_ink: "eceff4".into(),
             band_lit: "9db0cc".into(),
+            urgent_lit: "d08770".into(),
             lit: "4c566a".into(),
             half: half.map(Into::into),
         }
@@ -377,9 +432,9 @@ mod tests {
     #[test]
     fn the_buttons_wear_the_title_color_with_the_focus_and_their_own_without() {
         let s = a_style(None);
-        assert_eq!(buttons(true, None, &s, None), " &#x2715;  &#x25BD;  &#x25A1; ");
+        assert_eq!(buttons(Kind::Focus, None, &s, None), " &#x2715;  &#x25BD;  &#x25A1; ");
         assert_eq!(
-            buttons(false, None, &s, None),
+            buttons(Kind::Plain, None, &s, None),
             " <span foreground='#bf616a'>&#x2715;</span>  <span foreground='#ebcb8b'>&#x25BD;</span>  <span foreground='#a3be8c'>&#x25A1;</span> "
         );
     }
@@ -387,48 +442,120 @@ mod tests {
     #[test]
     fn under_the_pointer_close_is_a_chip_of_its_own_color_and_the_others_of_the_lit_tone() {
         let s = a_style(None);
-        // close: its control color, the glyph in the ground's, with the focus and without
+        // close: its control color, the glyph in close's ink, with the focus and without
         assert_eq!(
-            buttons(true, Some(Glyph::Close), &s, None),
-            "<span background='#bf616a' foreground='#2e3440'> &#x2715; </span> &#x25BD;  &#x25A1; "
+            buttons(Kind::Focus, Some(Glyph::Close), &s, None),
+            "<span background='#bf616a' foreground='#eceff4'> &#x2715; </span> &#x25BD;  &#x25A1; "
         );
-        assert!(buttons(false, Some(Glyph::Close), &s, None)
-            .starts_with("<span background='#bf616a' foreground='#2e3440'> &#x2715; </span> <span foreground='#ebcb8b'>"));
+        assert!(buttons(Kind::Plain, Some(Glyph::Close), &s, None)
+            .starts_with("<span background='#bf616a' foreground='#eceff4'> &#x2715; </span> <span foreground='#ebcb8b'>"));
         // the others keep their color at rest: the title's on the focused band's lit tone, their own on the others'
         assert_eq!(
-            buttons(true, Some(Glyph::Min), &s, None),
+            buttons(Kind::Focus, Some(Glyph::Min), &s, None),
             " &#x2715; <span background='#9db0cc'> &#x25BD; </span> &#x25A1; "
         );
         assert_eq!(
-            buttons(true, Some(Glyph::Fill), &s, None),
+            buttons(Kind::Focus, Some(Glyph::Fill), &s, None),
             " &#x2715;  &#x25BD; <span background='#9db0cc'> &#x25A1; </span>"
         );
         assert_eq!(
-            buttons(false, Some(Glyph::Min), &s, None),
+            buttons(Kind::Plain, Some(Glyph::Min), &s, None),
             " <span foreground='#bf616a'>&#x2715;</span> <span background='#4c566a' foreground='#ebcb8b'> &#x25BD; </span> <span foreground='#a3be8c'>&#x25A1;</span> "
         );
+    }
+
+    #[test]
+    fn on_an_urgent_band_the_buttons_wear_the_title_color_and_every_chip_the_urgent_tone() {
+        let s = a_style(None);
+        let rest = Mic::default();
+        // at rest as on the band with the focus: close's own color is the urgent band's
+        assert_eq!(buttons(Kind::Urgent, None, &s, None), " &#x2715;  &#x25BD;  &#x25A1; ");
+        assert_eq!(buttons(Kind::Urgent, None, &s, Some(&rest)), buttons(Kind::Focus, None, &s, Some(&rest)));
+        // under the pointer the chip is the urgent tone, close's too, and the glyph keeps the title's color
+        assert_eq!(
+            buttons(Kind::Urgent, Some(Glyph::Close), &s, None),
+            "<span background='#d08770'> &#x2715; </span> &#x25BD;  &#x25A1; "
+        );
+        assert_eq!(
+            buttons(Kind::Urgent, Some(Glyph::Min), &s, None),
+            " &#x2715; <span background='#d08770'> &#x25BD; </span> &#x25A1; "
+        );
+        assert_eq!(
+            buttons(Kind::Urgent, Some(Glyph::Fill), &s, None),
+            " &#x2715;  &#x25BD; <span background='#d08770'> &#x25A1; </span>"
+        );
+        assert_eq!(
+            buttons(Kind::Urgent, Some(Glyph::Mic), &s, Some(&rest)),
+            " &#x2715;  &#x25BD;  &#x25A1; <span background='#d08770'> &#x25CB; </span>"
+        );
+        for hover in [None, Some(Glyph::Close), Some(Glyph::Min), Some(Glyph::Fill), Some(Glyph::Mic)] {
+            let m = buttons(Kind::Urgent, hover, &s, Some(&rest));
+            assert!(!m.contains("foreground") && !m.contains("bf616a"), "{m}");
+            assert_eq!(cells(&m), 12);
+        }
+    }
+
+    #[test]
+    fn a_band_is_urgent_before_it_is_the_focus() {
+        // the tiled window has the focus, the floating one neither; sway marks each urgent in turn
+        let mut tree = a_tree(false);
+        let kinds = |t: &Value| bands(t, 10.0).iter().map(Band::kind).collect::<Vec<_>>();
+        assert_eq!(kinds(&tree), [Kind::Focus, Kind::Plain]);
+        tree["nodes"][1]["nodes"][0]["floating_nodes"][0]["urgent"] = true.into();
+        assert_eq!(kinds(&tree), [Kind::Focus, Kind::Urgent]);
+        // sway paints a window with the focus in the urgent colors until its urgency ends
+        tree["nodes"][1]["nodes"][0]["nodes"][0]["urgent"] = true.into();
+        assert_eq!(kinds(&tree), [Kind::Urgent, Kind::Urgent]);
+    }
+
+    #[test]
+    fn the_style_is_read_with_a_fallback_for_each_color() {
+        fn read(vars: &[(&str, &str)]) -> Style {
+            Style::read(|k| vars.iter().find(|v| v.0 == k).map(|v| v.1.to_string()))
+        }
+        // none handed: the ground on close's chip, the lit tone on an urgent band and on the focused one
+        let s = read(&[("WINPAD_CLOSE", "#BF616A"), ("WINPAD_GROUND", "2e3440"), ("WINPAD_LIT", " 4c566a ")]);
+        assert_eq!(s.colors[0], "bf616a");
+        assert_eq!([&s.close_ink, &s.band_lit, &s.urgent_lit, &s.lit], ["2e3440", "4c566a", "4c566a", "4c566a"]);
+        let s = read(&[
+            ("WINPAD_GROUND", "2e3440"),
+            ("WINPAD_LIT", "4c566a"),
+            ("WINPAD_CLOSE_INK", "eceff4"),
+            ("WINPAD_BAND_LIT", "9db0cc"),
+            ("WINPAD_URGENT_LIT", "d08770"),
+        ]);
+        assert_eq!([&s.close_ink, &s.band_lit, &s.urgent_lit, &s.lit], ["eceff4", "9db0cc", "d08770", "4c566a"]);
+        // what is no color stays out of the title, and its fallback stands
+        let s = read(&[
+            ("WINPAD_GROUND", "2e3440"),
+            ("WINPAD_CLOSE_INK", "fff' size='99"),
+            ("WINPAD_URGENT_LIT", "d0877"),
+        ]);
+        assert_eq!([&s.close_ink, &s.urgent_lit], ["2e3440", "dcdcdd"]);
+        assert_eq!(read(&[]).colors, ["e45649", "c18401", "50a14f"]);
+        assert_eq!(read(&[("WINPAD_HALF", "6144")]).half, Some("6144".into()));
     }
 
     #[test]
     fn the_mic_wears_the_title_color_and_takes_the_same_cells_at_rest_and_listening() {
         let s = a_style(None);
         let rest = Mic::default();
-        assert_eq!(buttons(true, None, &s, Some(&rest)), " &#x2715;  &#x25BD;  &#x25A1;  &#x25CB; ");
-        assert!(buttons(false, None, &s, Some(&rest)).ends_with(" <span foreground='#a3be8c'>&#x25A1;</span>  &#x25CB; "));
+        assert_eq!(buttons(Kind::Focus, None, &s, Some(&rest)), " &#x2715;  &#x25BD;  &#x25A1;  &#x25CB; ");
+        assert!(buttons(Kind::Plain, None, &s, Some(&rest)).ends_with(" <span foreground='#a3be8c'>&#x25A1;</span>  &#x25CB; "));
         let live = Mic {
             listening: true,
             bars: [0, 2, 5, 7, 3, 1, 0, 6],
         };
-        assert_eq!(buttons(true, None, &s, Some(&live)), " &#x2715;  &#x25BD;  &#x25A1;  &#x25CF; ");
+        assert_eq!(buttons(Kind::Focus, None, &s, Some(&live)), " &#x2715;  &#x25BD;  &#x25A1;  &#x25CF; ");
         // under the pointer: the band's lit tone, never close's red
         assert_eq!(
-            buttons(true, Some(Glyph::Mic), &s, Some(&live)),
+            buttons(Kind::Focus, Some(Glyph::Mic), &s, Some(&live)),
             " &#x2715;  &#x25BD;  &#x25A1; <span background='#9db0cc'> &#x25CF; </span>"
         );
-        assert!(buttons(false, Some(Glyph::Mic), &s, Some(&rest)).ends_with("<span background='#4c566a'> &#x25CB; </span>"));
-        assert_eq!(cells(&buttons(true, None, &s, Some(&rest))), 12);
-        assert_eq!(cells(&buttons(true, Some(Glyph::Mic), &s, Some(&live))), 12);
-        assert_eq!(cells(&buttons(false, None, &s, None)), 9);
+        assert!(buttons(Kind::Plain, Some(Glyph::Mic), &s, Some(&rest)).ends_with("<span background='#4c566a'> &#x25CB; </span>"));
+        assert_eq!(cells(&buttons(Kind::Focus, None, &s, Some(&rest))), 12);
+        assert_eq!(cells(&buttons(Kind::Focus, Some(Glyph::Mic), &s, Some(&live))), 12);
+        assert_eq!(cells(&buttons(Kind::Plain, None, &s, None)), 9);
         // the meter is the band's own color, nothing at rest, one cell a level
         assert_eq!(meter(None), "");
         assert_eq!(meter(Some(&rest)), "");
@@ -442,34 +569,35 @@ mod tests {
         let h = "<span size='6144'> </span>";
         let rest = Mic::default();
         assert_eq!(
-            buttons(true, None, &s, Some(&rest)),
+            buttons(Kind::Focus, None, &s, Some(&rest)),
             format!("{h}{h}&#x2715;{h}{h}{h}{h}&#x25BD;{h}{h}{h}{h}&#x25A1;{h}{h}{h}{h}&#x25CB;{h}{h}")
         );
         assert_eq!(
-            buttons(false, None, &s, Some(&rest)),
+            buttons(Kind::Plain, None, &s, Some(&rest)),
             format!(
                 "{h}{h}<span foreground='#bf616a'>&#x2715;</span>{h}{h}{h}{h}<span foreground='#ebcb8b'>&#x25BD;</span>{h}{h}{h}{h}<span foreground='#a3be8c'>&#x25A1;</span>{h}{h}{h}{h}&#x25CB;{h}{h}"
             )
         );
         // the chip takes the inner half at each side, the outer ones stay outside it
         assert_eq!(
-            buttons(true, Some(Glyph::Close), &s, None),
-            format!("{h}<span background='#bf616a' foreground='#2e3440'>{h}&#x2715;{h}</span>{h}{h}{h}&#x25BD;{h}{h}{h}{h}&#x25A1;{h}{h}")
+            buttons(Kind::Focus, Some(Glyph::Close), &s, None),
+            format!("{h}<span background='#bf616a' foreground='#eceff4'>{h}&#x2715;{h}</span>{h}{h}{h}&#x25BD;{h}{h}{h}{h}&#x25A1;{h}{h}")
         );
         assert_eq!(
-            buttons(true, Some(Glyph::Min), &s, None),
+            buttons(Kind::Focus, Some(Glyph::Min), &s, None),
             format!("{h}{h}&#x2715;{h}{h}{h}<span background='#9db0cc'>{h}&#x25BD;{h}</span>{h}{h}{h}&#x25A1;{h}{h}")
         );
-        assert!(buttons(false, Some(Glyph::Fill), &s, None).ends_with(&format!("{h}<span background='#4c566a' foreground='#a3be8c'>{h}&#x25A1;{h}</span>{h}")));
-        assert!(buttons(false, Some(Glyph::Mic), &s, Some(&rest)).ends_with(&format!("{h}<span background='#4c566a'>{h}&#x25CB;{h}</span>{h}")));
+        assert!(buttons(Kind::Plain, Some(Glyph::Fill), &s, None)
+            .ends_with(&format!("{h}<span background='#4c566a' foreground='#a3be8c'>{h}&#x25A1;{h}</span>{h}")));
+        assert!(buttons(Kind::Plain, Some(Glyph::Mic), &s, Some(&rest)).ends_with(&format!("{h}<span background='#4c566a'>{h}&#x25CB;{h}</span>{h}")));
         // a button is as wide at rest and under the pointer: four halves and its glyph, three cells
-        for focused in [true, false] {
+        for kind in [Kind::Focus, Kind::Urgent, Kind::Plain] {
             for hover in [None, Some(Glyph::Close), Some(Glyph::Min), Some(Glyph::Fill), Some(Glyph::Mic)] {
-                let m = buttons(focused, hover, &s, Some(&rest));
+                let m = buttons(kind, hover, &s, Some(&rest));
                 assert_eq!((m.matches(h).count(), cells(&m)), (16, 12), "{m}");
             }
         }
-        assert_eq!(cells(&buttons(true, None, &s, None)), 9);
+        assert_eq!(cells(&buttons(Kind::Focus, None, &s, None)), 9);
         assert_eq!(cells(h), 1);
         assert_eq!(cells(&format!("{h}{h}x")), 2);
     }

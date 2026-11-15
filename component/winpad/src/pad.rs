@@ -912,6 +912,24 @@ pub fn minimized(tree: &Value) -> Vec<Win> {
         .unwrap_or_default()
 }
 
+/// Whether a workspace is the rest's: the rest name, or that name and a space before a screen's own. No
+/// rest name: never.
+pub fn rests(workspace: &str, rest: &str) -> bool {
+    !rest.is_empty() && workspace.strip_prefix(rest).is_some_and(|more| more.is_empty() || more.starts_with(' '))
+}
+
+/// The screens at rest in sway's tree: each whose workspace in sight is the rest's. The pad shows nothing
+/// there and keeps no room; it is read from the tree each time, so the pad is back with another workspace.
+pub fn resting(tree: &Value, rest: &str) -> Vec<String> {
+    tree["nodes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|o| o["type"] == "output" && o["current_workspace"].as_str().is_some_and(|w| rests(w, rest)))
+        .filter_map(|o| o["name"].as_str().map(String::from))
+        .collect()
+}
+
 /// The app an icon is looked up by: a desktop entry's id without .desktop, or its window class.
 pub fn icon_key(app: &str) -> String {
     app.trim().to_lowercase()
@@ -1593,6 +1611,28 @@ mod tests {
             ]
         );
         assert_eq!(minimized(&serde_json::json!({"type":"root","nodes":[]})), vec![]);
+    }
+
+    #[test]
+    fn a_screen_rests_while_it_shows_the_rest_workspace() {
+        assert!(rests("idle", "idle") && rests("idle HDMI-A-1", "idle") && rests("idle ", "idle"));
+        for other in ["idler", "idle-2", "1", "", "Idle", "my idle", " idle"] {
+            assert!(!rests(other, "idle"), "{other}");
+        }
+        // no rest name: never
+        assert!(!rests("idle", "") && !rests("", "") && !rests(" 1", ""));
+        let tree = |a: &str, b: &str| {
+            serde_json::json!({"type": "root", "nodes": [
+                {"type": "output", "name": "__i3", "nodes": []},
+                {"type": "output", "name": "DP-1", "current_workspace": a, "nodes": []},
+                {"type": "output", "name": "HDMI-A-1", "current_workspace": b, "nodes": []}
+            ]})
+        };
+        assert_eq!(resting(&tree("idle", "idle HDMI-A-1"), "idle"), ["DP-1", "HDMI-A-1"]);
+        assert_eq!(resting(&tree("2", "idle HDMI-A-1"), "idle"), ["HDMI-A-1"]);
+        // a state of the screen: its own workspace back, or one named alike, and it rests no more
+        assert!(resting(&tree("2", "idler"), "idle").is_empty());
+        assert!(resting(&tree("idle", "idle HDMI-A-1"), "").is_empty());
     }
 
     #[test]

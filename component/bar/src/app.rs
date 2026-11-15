@@ -61,6 +61,8 @@ pub struct Look {
     pub attention: Rgb,
     /// Red.
     pub alert: Rgb,
+    /// What is written on the accent; none, and it is written in the ground's color.
+    pub ink: Option<Rgb>,
     pub alpha: f64,
     pub full: String,
     pub light: String,
@@ -79,6 +81,7 @@ impl Look {
             lit: color(said.lit, self.lit),
             attention: color(said.attention, self.attention),
             alert: color(said.alert, self.alert),
+            ink: said.ink.map(Rgb::of).or(self.ink),
             alpha: said.alpha.unwrap_or(self.alpha),
             full: said.full.clone().unwrap_or_else(|| self.full.clone()),
             light: said.light.clone().unwrap_or_else(|| self.light.clone()),
@@ -95,6 +98,7 @@ impl Look {
             Tone::Attention => self.attention,
             Tone::Accent => self.accent,
             Tone::Ground => self.ground,
+            Tone::Ink => self.ink.unwrap_or(self.ground),
             Tone::Lit => self.lit,
             Tone::Raised => self.muted.toward(self.fg, bar::RAISE),
         }
@@ -116,6 +120,8 @@ pub struct Config {
     pub font: String,
     pub edge: Edge,
     pub prefs: Prefs,
+    /// BAR_REST: the rest name; empty for none.
+    pub rest: String,
     pub spark_shell: String,
     pub state_file: PathBuf,
 }
@@ -140,6 +146,8 @@ struct Out {
     output: WlOutput,
     name: String,
     scale: i32,
+    /// It shows a rest workspace, as sway's list last said: it has no bar.
+    rests: bool,
     layer: Option<LayerSurface>,
     /// The surface that holds the keyboard while this bar has the keys.
     keyer: Option<LayerSurface>,
@@ -373,8 +381,41 @@ impl App {
         let workspaces = bar::workspaces(&v);
         if workspaces != self.workspaces {
             self.workspaces = workspaces;
+            self.rest();
             self.relayout();
         }
+    }
+
+    /// The rest rule: an output that shows a rest workspace has nothing of the bar, no surface, no room
+    /// kept, no pointer and no keys, and one that shows another workspace has its bar again. It is told
+    /// from sway's list each time, so no bar is left hidden. The keys go back first when their bar rests.
+    fn rest(&mut self) {
+        let rests: Vec<bool> = self.outs.iter().map(|o| bar::resting(&self.cfg.rest, &self.workspaces, &o.name)).collect();
+        let keyed = self.keys.as_deref().and_then(|k| self.outs.iter().position(|o| o.name == k));
+        if keyed.is_some_and(|oi| rests[oi]) {
+            self.keys_off();
+        }
+        for (oi, rests) in rests.into_iter().enumerate() {
+            if rests == self.outs[oi].rests {
+                continue;
+            }
+            self.outs[oi].rests = rests;
+            if !rests {
+                self.add_bar(oi);
+                continue;
+            }
+            let o = &mut self.outs[oi];
+            o.layer = None;
+            o.width = 0;
+            o.hover = None;
+            o.waiting = false;
+            if let Some(p) = self.pointer.as_mut().filter(|p| p.out == Some(oi)) {
+                p.out = None;
+            }
+        }
+        self.apply_catchers();
+        // the keys wait for every catcher to show: one that rest took away may have been the last
+        self.apply_keyers();
     }
 
     /// sway's binding mode read again: at the start and after each mode event.
@@ -406,6 +447,7 @@ impl App {
                 levels: &self.levels,
                 workspaces: &self.workspaces,
                 mode: self.mode.as_deref(),
+                rest: &self.cfg.rest,
             };
             o.layout = bar::layout(&scene, &self.cfg.prefs, &self.m);
             // the pointer stays where it is: what is under it now
@@ -430,6 +472,7 @@ impl App {
 
     /// The state file, written whole beside itself and moved into place; once a change.
     fn write_state(&mut self) {
+        let resting: Vec<&str> = self.outs.iter().filter(|o| o.rests).map(|o| o.name.as_str()).collect();
         let bars: Vec<Shown> = (0..self.outs.len())
             .filter(|&oi| self.outs[oi].width > 0)
             .map(|oi| Shown {
@@ -440,7 +483,7 @@ impl App {
                 hover: self.outs[oi].hover,
             })
             .collect();
-        let text = bar::state_text(self.status, self.mode.as_deref(), &self.levels, &bars);
+        let text = bar::state_text(self.status, self.mode.as_deref(), &self.levels, &resting, &bars);
         if text == self.written {
             return;
         }
@@ -516,12 +559,13 @@ impl App {
         }
     }
 
-    /// While a bar has the keys, every output holds a catcher: a button on it, or the pointer's travel over
-    /// it, gives the keys back as Escape does. It takes no pointer until its size is known.
+    /// While a bar has the keys, every output that has a bar holds a catcher: a button on it, or the
+    /// pointer's travel over it, gives the keys back as Escape does. It takes no pointer until its size is
+    /// known. An output at rest holds none.
     fn apply_catchers(&mut self) {
         let Some(viewporter) = self.viewporter.clone() else { return };
         for oi in 0..self.outs.len() {
-            if self.keys.is_none() {
+            if self.keys.is_none() || self.outs[oi].rests {
                 self.outs[oi].catcher = None;
                 continue;
             }
@@ -606,7 +650,8 @@ impl App {
         }
     }
 
-    /// SIGUSR1: the keyboard on the bar of the output sway has the focus on, the first target picked.
+    /// SIGUSR1: the keyboard on the bar of the output sway has the focus on, the first target picked. An
+    /// output at rest has no bar to take it.
     pub fn keys_on(&mut self) {
         let Some(name) = self
             .ipc
@@ -616,6 +661,9 @@ impl App {
         else {
             return;
         };
+        if self.outs.iter().any(|o| o.name == name && o.rests) {
+            return;
+        }
         for o in &mut self.outs {
             o.focus = (o.name == name).then(|| o.layout.targets.first().map(|t| t.id.clone())).flatten();
         }
@@ -752,6 +800,7 @@ impl App {
             light: &look.light,
             levels: &self.levels,
             motion: look.motion,
+            ink: look.ink.is_some(),
             at: now,
         };
         {
@@ -892,10 +941,12 @@ impl OutputHandler for App {
     fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: WlOutput) {
         let name = self.outputs.info(&output).and_then(|i| i.name).unwrap_or_default();
         let scale = self.scale_of(&output);
+        let rests = bar::resting(&self.cfg.rest, &self.workspaces, &name);
         self.outs.push(Out {
             output,
             name,
             scale,
+            rests,
             layer: None,
             keyer: None,
             catcher: None,
@@ -905,8 +956,12 @@ impl OutputHandler for App {
             hover: None,
             waiting: false,
         });
-        self.add_bar(self.outs.len() - 1);
+        if !rests {
+            self.add_bar(self.outs.len() - 1);
+        }
         self.apply_catchers();
+        // an output at rest is handed no size, which is when the others are written
+        self.write_state();
     }
 
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: WlOutput) {
@@ -916,6 +971,7 @@ impl OutputHandler for App {
             o.scale = scale;
             o.name = name;
         }
+        self.rest();
         self.relayout();
     }
 

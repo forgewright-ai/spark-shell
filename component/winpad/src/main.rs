@@ -29,15 +29,19 @@ desktop window back, Super+Tab) focuses the window before.
 spark-shell sets the look and the place in the environment: WINPAD_FG,
 WINPAD_ACCENT, WINPAD_MUTED, WINPAD_SURFACE, WINPAD_LIT, WINPAD_BAND_HEX (rrggbb),
 WINPAD_CLOSE, WINPAD_MIN, WINPAD_FILL and WINPAD_GROUND (the buttons' colors and the
-ground's), WINPAD_BAND_LIT (the chip under the pointer on the focused window's
-band, rrggbb; WINPAD_LIT's on the others), WINPAD_HALF (half the title's size
-in 1024ths of a point, for half a space at a button's sides; none: whole
-spaces), WINPAD_TERM (the terminal's app), WINPAD_TITLE and WINPAD_TERM_TITLE
-(the title format after the buttons),
+ground's), WINPAD_CLOSE_INK (the glyph on close's chip, rrggbb; none: the
+ground's), WINPAD_BAND_LIT and WINPAD_URGENT_LIT (the chip under the pointer on
+the focused window's band and on an urgent one's, rrggbb; none: WINPAD_LIT's, as
+on the others), WINPAD_HALF (half the title's size in 1024ths of a point, for
+half a space at a button's sides; none: whole spaces), WINPAD_TERM (the
+terminal's app), WINPAD_TITLE and WINPAD_TERM_TITLE (the title format after
+the buttons),
 WINPAD_ALPHA, WINPAD_FONT, WINPAD_VIEW (icons, the default, or titles: a slot a
 window with its title), WINPAD_BAND (on: the band under the handle; off, the
 default), WINPAD_GAP (the pixels off an edge, 8), WINPAD_PLACE, WINPAD_WIDTH,
 WINPAD_SIDE_WIDTH, WINPAD_HEIGHT (the most height, 0: as many rows as needed),
+WINPAD_REST (a workspace's name: no pad and no strip on a screen that shows
+it, or one named with it and a space before more; none: never),
 and the files WINPAD_LOCK, WINPAD_STATE and WINPAD_BAR_PID; SPARK_SHELL names
 spark-shell itself, and the assets beside it give the dialog spark's S,
 the dark one or the light one by WINPAD_SURFACE. After a drag or a resize it
@@ -103,25 +107,17 @@ fn run(_: bool) -> Result<(), String> {
 #[cfg(target_os = "linux")]
 fn config() -> spark_winpad::app::Config {
     use spark_winpad::app::{Config, Look, Titles};
-    use spark_winpad::buttons::{half_size, Style};
+    use spark_winpad::buttons::Style;
     use spark_winpad::pad::{Place, View};
     use spark_winpad::paint::Rgb;
     let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
     let color = |k: &str, d: &str| env(k).and_then(|v| Rgb::hex(&v)).unwrap_or_else(|| Rgb::hex(d).unwrap());
-    // a color kept as its six digits, for sway's markup
-    let hex = |k: &str, d: &str| {
-        env(k)
-            .map(|v| v.trim_start_matches('#').to_lowercase())
-            .filter(|v| Rgb::hex(v).is_some())
-            .unwrap_or_else(|| d.into())
-    };
     let num = |k: &str, d: i32| {
         env(k)
             .and_then(|v| v.trim().parse::<i32>().ok())
             .filter(|n| (0..=100_000).contains(n))
             .unwrap_or(d)
     };
-    let lit = hex("WINPAD_LIT", "dcdcdd");
     Config {
         look: Look {
             fg: color("WINPAD_FG", "383a42"),
@@ -137,13 +133,7 @@ fn config() -> spark_winpad::app::Config {
             font: env("WINPAD_FONT").unwrap_or_else(|| "Monaspace Neon 12".into()),
         },
         titles: Titles {
-            style: Style {
-                colors: [hex("WINPAD_CLOSE", "e45649"), hex("WINPAD_MIN", "c18401"), hex("WINPAD_FILL", "50a14f")],
-                ground: hex("WINPAD_GROUND", "fafafa"),
-                band_lit: hex("WINPAD_BAND_LIT", &lit),
-                lit,
-                half: half_size(env("WINPAD_HALF").as_deref()),
-            },
+            style: Style::read(env),
             term: env("WINPAD_TERM").unwrap_or_default(),
             term_also: env("WINPAD_TERM_ALSO").unwrap_or_default(),
             title: env("WINPAD_TITLE").unwrap_or_else(|| "%title".into()),
@@ -158,6 +148,7 @@ fn config() -> spark_winpad::app::Config {
         height: num("WINPAD_HEIGHT", 0),
         gap: gap(env("WINPAD_GAP").as_deref()),
         band: env("WINPAD_BAND").is_some_and(|v| v.trim().eq_ignore_ascii_case("on")),
+        rest: env("WINPAD_REST").unwrap_or_default(),
         spark_shell: env("SPARK_SHELL").unwrap_or_else(|| "spark-shell".into()),
         state_file: env("WINPAD_STATE").map(Into::into),
         bar_pid: env("WINPAD_BAR_PID").map(Into::into),
