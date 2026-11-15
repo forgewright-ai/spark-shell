@@ -1890,6 +1890,10 @@ def behavior(d):
     d.until(lambda s: s.focused() == "mark", "spark-shell bar keys to put the keys on the bar")
     d.focus("kb.text")
     n, asked = len(d.opened()), len(d.asked())
+    # what the shell may ask of sway here: a switch for each identifier under which every keyboard has a layout,
+    # as sway lists them now. The proof's own keyboard has none on sway 1.12, so nothing; sway 1.9 gives it one
+    seat = d.keyboards()
+    switch = ['-- input "%s" xkb_switch_layout next' % i for i in sorted({i for i, _ in seat if all(k for j, k in seat if j == i)})]
     d.key("Return")
     d.key("Tab", shift=True)
     kept = d.until(lambda s: s.focused() == "kb.name", "the keys still on the bar after Enter on the keyboard's layout: Shift+Tab moves them to its sign", 5)
@@ -1897,9 +1901,9 @@ def behavior(d):
     d.key("Return")
     d.until(lambda s: not s.focused(), "Enter on the logo to give the keyboard back")
     home = settle(lambda: d.opened()[n:], 8) or []
-    ok(kept and home == [dialog] and d.asked()[asked:] == [] and not [a for a in d.asked() if "type:" in a],
-       "keys: Enter on the keyboard's layout, a toggle, keeps the keys on the bar and opens nothing; and with the proof's own keyboard on the seat, which has no layout, the shell asks sway for none, and never for every keyboard at once",
-       (home, d.asked()))
+    ok(kept and home == [dialog] and d.asked()[asked:] == switch and not [a for a in d.asked() if "type:" in a],
+       "keys: Enter on the keyboard's layout, a toggle, keeps the keys on the bar and opens nothing; the shell asks sway to switch only where every keyboard under an identifier has a layout (%d here), never every keyboard at once" % len(switch),
+       (home, d.asked(), seat))
     ok(said.said == "the bar has the keys: the arrows move, Enter acts, Esc leaves" and home[-1:] == [dialog],
        "keys: spark-shell bar keys says so, and Enter on the logo opens home", (said.said, home))
     d.keys_on()
