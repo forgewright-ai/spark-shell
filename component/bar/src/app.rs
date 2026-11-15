@@ -596,7 +596,8 @@ impl App {
                 Off::Came(x, y)
             }
             PointerEventKind::Motion { .. } => Off::Moved(x, y),
-            PointerEventKind::Press { .. } => Off::Pressed,
+            // the wheel too: a scroll this surface spent would look like a frozen window
+            PointerEventKind::Press { .. } | PointerEventKind::Axis { .. } => Off::Pressed,
             PointerEventKind::Leave { .. } => Off::Left,
             _ => return,
         };

@@ -22,7 +22,7 @@ winpad_half() {   # -> half the title font's size as pango's span takes it, 1024
     _wh=$(bar_line_font); _wh=${_wh##* }
     case $_wh in *px) awk -v n="${_wh%px}" 'BEGIN { printf "%d", n * 384 }' ;; *) awk -v n="$_wh" 'BEGIN { printf "%d", n * 512 }' ;; esac
 }
-winpad_room() { _wr=$(winpad_half); if [ -n "$_wr" ]; then printf "<span size='%s'>  </span>" "$_wr"; else printf ' '; fi; }   # -> the cell of room on each side of a control, as two half spaces: the chip under the pointer takes one half of each, and nothing shifts
+winpad_room() { _wr=$(winpad_half); case $_wr in ''|0|*[!0-9]*) printf ' ' ;; *) printf "<span size='%s'>  </span>" "$_wr" ;; esac; }   # -> the cell of room on each side of a control, as two half spaces: the chip under the pointer takes one half of each, and nothing shifts
 winpad_mic() { ! winpad_here || ! voice_here || { _wm=$(winpad_room); printf '%s&#x25CB;%s' "$_wm" "$_wm"; }; }   # -> the mic at rest on a band, in the title's color as the buttons are; the pad takes the title over from here, with the meter at its right end
 winpad_buttons() { ! winpad_here || { _wb=$(winpad_room); printf '%s&#x2715;%s%s&#x25BD;%s%s&#x25A1;%s' "$_wb" "$_wb" "$_wb" "$_wb" "$_wb" "$_wb"; }; }   # -> close, minimize, fill, the start of every title, as pango character references so the render stays ASCII (the component's GLYPH_REFS); nothing where no winpad can run: no button is drawn that does not click
 winpad_install() {   # the pad's row of on desktop: in place as pinned, or fetched for the signed tag and checked
