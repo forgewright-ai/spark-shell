@@ -69,7 +69,10 @@ Clicks go to its stdin as sway's bar writes them (name, instance, button,
 x, y, relative_x, relative_y, width, height; buttons 1 left, 2 middle, 3
 right, 4 wheel up, 5 wheel down): name is the module and instance its part,
 name (the sign), gauge, pct (the number) or text; the mark and the three
-dots send logo. On a level that can be set, the wheel on any of its parts
+dots send logo. A bar dragged by its own ground, where no target is, and
+let go in its screen's other half sends bar with the edge, top or bottom,
+as its instance: spark-shell stands the bar there. The pointer is a hand
+on a target, the arrow on the ground, and a closed hand through a drag. On a level that can be set, the wheel on any of its parts
 (5 a step) and a click on its gauge (the place clicked, rounded to 5)
 change the level drawn at once. The status's lines are the truth, all but
 the old answers: in a burst the status answers each step in turn, and a

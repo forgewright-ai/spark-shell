@@ -167,10 +167,24 @@ struct Out {
 struct Ptr {
     _wl: WlPointer,
     device: Option<WpCursorShapeDeviceV1>,
+    /// The serial of the pointer's last entry: a shape is set by it.
+    serial: u32,
+    /// The shape last asked for; none after an entry, before the first.
+    cursor: Option<Cursor>,
     out: Option<usize>,
     pos: (f64, f64),
     /// The scroll not yet a whole wheel step.
     wheel: f64,
+    /// The left button held on a bar's own ground, where no target is: the press that may become a drag.
+    held: Option<Held>,
+}
+
+/// A press on the bar's own ground: the bar it is on, where, and whether the pointer has gone far enough since
+/// for it to be a drag of the bar.
+struct Held {
+    out: usize,
+    at: (f64, f64),
+    drag: bool,
 }
 
 pub struct App {
@@ -737,6 +751,38 @@ impl App {
         }
     }
 
+    /// The pointer's shape asked of the compositor, once a change.
+    fn shape(&mut self, want: Cursor) {
+        let Some(p) = self.pointer.as_mut() else { return };
+        if p.cursor == Some(want) {
+            return;
+        }
+        if let Some(d) = &p.device {
+            d.set_shape(p.serial, want);
+            p.cursor = Some(want);
+        }
+    }
+
+    /// The pointer's shape at a point of a bar: a hand on what a click acts on, the arrow on the bar's own ground.
+    fn point(&mut self, oi: usize, pos: (f64, f64)) {
+        let on = self.outs.get(oi).is_some_and(|o| o.layout.hit(pos.0, pos.1).is_some());
+        self.shape(if on { Cursor::Pointer } else { Cursor::Default });
+    }
+
+    /// A bar dragged by its ground and let go with the pointer at `y` in its own frame: at the other edge of its
+    /// screen, spark-shell is asked to stand the bar there, on every screen, and keeps the place.
+    fn drop_bar(&mut self, oi: usize, y: f64) {
+        let Some(screen) = self.outs.get(oi).and_then(|o| self.outputs.info(&o.output)).and_then(|i| i.logical_size) else {
+            return;
+        };
+        let to = bar::dropped(self.cfg.edge, y, self.m.height, screen.1);
+        if to != self.cfg.edge {
+            if let Some(feed) = self.feed.as_mut() {
+                feed.click(&bar::stand_at(to));
+            }
+        }
+    }
+
     /// The pointer at a point of an output's bar, or off every bar: the target under it is lit.
     fn hover(&mut self, at: Option<(usize, (f64, f64))>) {
         let mut changed = false;
@@ -1008,9 +1054,12 @@ impl SeatHandler for App {
                 self.pointer = Some(Ptr {
                     _wl: wl,
                     device,
+                    serial: 0,
+                    cursor: None,
                     out: None,
                     pos: (0.0, 0.0),
                     wheel: 0.0,
+                    held: None,
                 });
             }
         }
@@ -1052,24 +1101,33 @@ impl PointerHandler for App {
                         p.out = Some(oi);
                         p.pos = ev.position;
                         p.wheel = 0.0;
-                        if let Some(d) = &p.device {
-                            d.set_shape(serial, Cursor::Default);
-                        }
+                        (p.serial, p.cursor, p.held) = (serial, None, None);
                     }
                     self.hover(Some((oi, ev.position)));
+                    self.point(oi, ev.position);
                 }
                 PointerEventKind::Leave { .. } => {
                     if let Some(p) = self.pointer.as_mut() {
-                        p.out = None;
+                        (p.out, p.held) = (None, None);
                     }
                     self.hover(None);
                 }
                 PointerEventKind::Motion { .. } => {
-                    if let Some(p) = self.pointer.as_mut() {
-                        p.out = Some(oi);
-                        p.pos = ev.position;
+                    let Some(p) = self.pointer.as_mut() else { continue };
+                    p.out = Some(oi);
+                    p.pos = ev.position;
+                    // a press on the bar's own ground is a drag of the bar once the pointer has gone far enough: the
+                    // hand closes, and nothing is lit until it is let go
+                    if let Some(held) = p.held.as_mut() {
+                        let (dx, dy) = (ev.position.0 - held.at.0, ev.position.1 - held.at.1);
+                        held.drag |= dx.hypot(dy) >= bar::DRAG_START;
+                        if held.drag {
+                            self.shape(Cursor::Grabbing);
+                            continue;
+                        }
                     }
                     self.hover(Some((oi, ev.position)));
+                    self.point(oi, ev.position);
                 }
                 PointerEventKind::Press { button, .. } => {
                     let button = match button {
@@ -1078,6 +1136,15 @@ impl PointerHandler for App {
                         BTN_RIGHT => 3,
                         _ => continue,
                     };
+                    if button == 1 && self.outs[oi].layout.hit(ev.position.0, ev.position.1).is_none() {
+                        if let Some(p) = self.pointer.as_mut() {
+                            p.held = Some(Held {
+                                out: oi,
+                                at: ev.position,
+                                drag: false,
+                            });
+                        }
+                    }
                     self.press(oi, ev.position, button);
                 }
                 PointerEventKind::Axis { vertical, .. } => {
@@ -1090,7 +1157,16 @@ impl PointerHandler for App {
                         self.press(oi, ev.position, if steps < 0.0 { 4 } else { 5 });
                     }
                 }
-                PointerEventKind::Release { .. } => {}
+                PointerEventKind::Release { .. } => {
+                    let Some(held) = self.pointer.as_mut().and_then(|p| p.held.take()) else {
+                        continue;
+                    };
+                    if held.drag {
+                        self.drop_bar(held.out, ev.position.1);
+                    }
+                    self.hover(Some((oi, ev.position)));
+                    self.point(oi, ev.position);
+                }
             }
         }
     }

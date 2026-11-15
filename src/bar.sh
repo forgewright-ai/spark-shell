@@ -714,6 +714,11 @@ bar_click() {   # bar_click NAME INSTANCE BUTTON RELX WIDTH X; 4 and 5 are the w
         out:*:5|mic:*:5) bar_snd "$1" -5 ;;
         out:*:2|out:*:3|mic:*:2|mic:*:3) bar_snd "$1" mute ;;
         pad:*:1) sh "$REPO/spark-shell" desktop pad toggle >/dev/null 2>&1 || : ;;
+        # the bar dragged to its screen's other half and let go: it stands there, kept in the config. Run in a session
+        # of its own: the bar it moves is this loop's own, and ends it
+        bar:top:1|bar:bottom:1) if command -v setsid >/dev/null 2>&1; then setsid sh "$REPO/spark-shell" bar "$2" </dev/null >/dev/null 2>&1 &
+            else ( trap '' HUP; sh "$REPO/spark-shell" bar "$2" </dev/null >/dev/null 2>&1 & ); fi ;;
+        bar:*) ;;
         logo:*:1) bar_panel_open '' ;;
         *:*:1) bar_panel_open "$1" ;;
     esac

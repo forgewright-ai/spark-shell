@@ -3817,7 +3817,7 @@ pad_tree; padr
 padr keys; pad_up
 _pe=$(cat "$HOME/winpad.env" 2>/dev/null)
 [ "$rc" = 0 ] && [ "$out" = 'the pad has the keys: Enter brings the window back, Esc leaves' ] && [ "$(cat "$HOME/pad.log" 2>/dev/null)" = '--keys' ] \
-    && printf '%s\n' "$_pe" | grep -qx "SPARK_SHELL=$SH" && printf '%s\n' "$_pe" | grep -qx 'WINPAD_PLACE=bottom center' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_WIDTH=0' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_SIDE_WIDTH=36' \
+    && printf '%s\n' "$_pe" | grep -qx "SPARK_SHELL=$SH" && printf '%s\n' "$_pe" | grep -qx 'WINPAD_PLACE=bar' && printf '%s\n' "$_pe" | grep -qEx "WINPAD_BAR_STATE=($H/run/spark-shell-bar.state)?" && printf '%s\n' "$_pe" | grep -qx 'WINPAD_WIDTH=0' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_SIDE_WIDTH=36' \
     && printf '%s\n' "$_pe" | grep -qx 'WINPAD_BAR=top' && printf '%s\n' "$_pe" | grep -qx "WINPAD_LOCK=$H/run/spark-shell-winpad.pid" && printf '%s\n' "$_pe" | grep -qx "WINPAD_STATE=$H/run/spark-shell-winpad.state" \
     && printf '%s\n' "$_pe" | grep -qx 'WINPAD_ACCENT=ff5555' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_FG=aaaaaa' && [ "$(printf '%s\n' "$_pe" | grep -cE '^WINPAD_(SURFACE|LIT|BAND_HEX|MUTED)=[0-9a-f]{6}$')" = 4 ] \
     && [ "$(printf '%s\n' "$_pe" | grep -cE '^WINPAD_(BAND_LIT|URGENT_LIT|CLOSE_INK)=[0-9a-f]{6}$')" = 3 ] && printf '%s\n' "$_pe" | grep -qx 'WINPAD_REST=idle' \
@@ -3829,13 +3829,19 @@ padr keys; pad_sig usr1 1
 _pdl() { XDG_RUNTIME_DIR=$H/run SPARK_SHELL_WINPAD=$H/padbin/spark-winpad SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null; }
 _pdf() { SPARK_BAR=1 XDG_RUNTIME_DIR=$H/run SPARK_SHELL_WINPAD=$H/padbin/spark-winpad SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null | jq -r '.[1] | [.name, .group, .sign, .text, .cells, .bold, .state, (.level // "-"), .set, .pinned, .label, .toggle] | map(tostring) | join("|")' || echo unread; }   # -> the first module of spark's bar's line, its fields with a bar between
 padsign=$(printf '\342\212\237')
+# the pad ships on the bar (v0.149), where it says itself: spark's bar's line has no module for it while it is in sight
+# there. The rest of this block is a pad at an edge
+_pf0=$(_pdf); printf 'WINPAD_PLACE=bottom center\n' >> "$HOME/.config/spark-shell/config"
+[ -n "$_pf0" ] && [ "${_pf0%%|*}" != pad ] && ok "spark's bar, the pad on the bar (v0.149): in sight there it says itself, and the line has no pad module" || bad "facts pad on the bar" "$_pf0"
 line=$(_pdl); _pf1=$(_pdf)
 [ "$(printf '%s' "$line" | jq -r '.[0].name')" = pad ] && [ "$(printf '%s' "$line" | jq -r '.[0].full_text')" = "<span foreground='#555555'>$padsign</span> 2" ] \
     && ok "bar: the pad's block first while windows wait on it, its sign muted while the pad is in sight, and how many (v0.133)" || bad "bar pad shown" "$line"
 padr toggle; pad_sig usr2 1
 [ "$rc" = 0 ] && [ "$out" = 'the pad is hidden' ] && pad_hidden_is 1 && ok "desktop pad toggle (the bar's click): the pad takes SIGUSR2 and hides (v0.133)" || bad "pad toggle hide" "rc=$rc $out $(cat "$H/run/spark-shell-winpad.state" 2>&1)"
 line=$(_pdl); _pf2=$(_pdf)
+sed -i.bak 's/^WINPAD_PLACE=bottom center$/WINPAD_PLACE=bar/' "$HOME/.config/spark-shell/config"; _pf3=$(_pdf); mv "$HOME/.config/spark-shell/config.bak" "$HOME/.config/spark-shell/config"
 [ "$(printf '%s' "$line" | jq -r '.[0].full_text')" = "<span foreground='#ff5555'>$padsign</span> 2" ] && ok "bar: the pad's sign in the accent while the pad is hidden (v0.133)" || bad "bar pad hidden" "$line"
+[ "$_pf3" = "$_pf2" ] && ok "spark's bar, a pad on the bar that is hidden (v0.149): the line has its module again, off, to bring it back" || bad "facts pad hidden on the bar" "$_pf3 | $_pf2"
 [ "$_pf1" = "pad|windows|$padsign|2|2|false|ok|-|false|false|pad, 2 windows|true" ] && [ "$_pf2" = "pad|windows|$padsign|2|2|false|off|-|false|false|pad hidden, 2 windows|true" ] \
     && ok "spark's bar, the pad (v0.148): the first module while windows wait on it, its sign and how many in two cells; ok while the pad is in sight, off while it is hidden; a click toggles it in place" || bad "facts pad" "$_pf1 | $_pf2"
 padr toggle; pad_sig usr2 2
@@ -3877,12 +3883,16 @@ _pp1=$rc$out; padr place 'bottom center' 0
 padr place 'free 300 200' 600 36
 [ "$rc" = 0 ] && [ "$out" = 'the pad sits where you left it' ] && grep -qx 'WINPAD_PLACE=free 300 200' "$cfg" && grep -qx 'WINPAD_WIDTH=600' "$cfg" && ok "desktop pad place: free, where it was left (v0.133)" || bad "pad place free" "rc=$rc $out"
 padr place middle 0 36
-[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: pad place: top, bottom, left or right and center, start, end or pixels along that edge, or free X Y' ] && grep -qx 'WINPAD_PLACE=free 300 200' "$cfg" \
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: pad place: bar, or top, bottom, left or right and center, start, end or pixels along that edge, or free X Y' ] && grep -qx 'WINPAD_PLACE=free 300 200' "$cfg" \
     && ok "desktop pad place: a place it cannot be is refused, the config as it was (v0.133)" || bad "pad place bad" "rc=$rc $out"
+padr place bar 0 36
+[ "$rc" = 0 ] && [ "$out" = 'the pad sits on the bar, after the workspaces' ] && grep -qx 'WINPAD_PLACE=bar' "$cfg" && ok "desktop pad place bar (v0.149): the pad's place is the bar, said in one line, in the config" || bad "pad place bar" "rc=$rc $out"
+padr place 'bar 3' 0 36; _pb1=$rc; padr place 'free 300 200' 600 36
+[ "$_pb1" = 1 ] && [ "$rc" = 0 ] && grep -qx 'WINPAD_PLACE=free 300 200' "$cfg" && ok "desktop pad place: the bar takes no word after it; and the pad goes back where it was left" || bad "pad place bar words" "$_pb1 rc=$rc $out"
 padr place 'bottom end' 0 20
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: pad place: the width at a side is pixels, 36 to 9999' ] && ok "desktop pad place: a side narrower than one icon is refused (v0.133)" || bad "pad place side" "rc=$rc $out"
 printf 'WINPAD_PLACE=sideways\n' >> "$cfg"; padr
-[ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'WINPAD_PLACE=sideways in .*: top, bottom, left or right' && ok "config: WINPAD_PLACE out of its shapes refused in one line (v0.133)" || bad "pad config" "rc=$rc $out"
+[ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'WINPAD_PLACE=sideways in .*: bar, or top, bottom, left or right' && ok "config: WINPAD_PLACE out of its shapes refused in one line (v0.133)" || bad "pad config" "rc=$rc $out"
 cp "$H/cfg.pad" "$cfg"
 # the pad's settings as a config from v0.142 or before names them: read as they are until on writes the new names (v0.143)
 pad_down; printf 'PAD_PLACE=left center\nPAD_SIDE_WIDTH=72\nPAD_VIEW=titles\n' >> "$cfg"; pad_tree; padr keys; pad_up
@@ -3892,9 +3902,9 @@ printf '%s\n' "$_pe" | grep -qx 'WINPAD_PLACE=left center' && printf '%s\n' "$_p
 pad_down; cp "$H/cfg.pad" "$cfg"
 # the pad's band (#266): off by default, a switch of its own in the config; a running pad starts again to take it
 padr band
-[ "$rc" = 0 ] && [ "$out" = "pad band off $dot the handle alone across its top" ] && ok "desktop pad band: off by default, the handle alone, said in one line (#266, #269)" || bad "pad band bare" "rc=$rc $out"
+[ "$rc" = 0 ] && [ "$out" = "pad band off $dot no band, its grip and its icons alone" ] && ok "desktop pad band: off by default, its grip and its icons alone, said in one line (#266, #269)" || bad "pad band bare" "rc=$rc $out"
 padr band on
-[ "$rc" = 0 ] && [ "$out" = "pad band on $dot the band under its handle says pad and how many wait" ] && grep -qx 'WINPAD_BAND=on' "$cfg" && ok "desktop pad band on: in the config, with its receipt (#266)" || bad "pad band on" "rc=$rc $out $(grep WINPAD_ "$cfg")"
+[ "$rc" = 0 ] && [ "$out" = "pad band on $dot its band says pad and how many wait" ] && grep -qx 'WINPAD_BAND=on' "$cfg" && ok "desktop pad band on: in the config, with its receipt (#266)" || bad "pad band on" "rc=$rc $out $(grep WINPAD_ "$cfg")"
 padr band on
 [ "$rc" = 1 ] && [ "$out" = "spark-shell desktop: the pad's band is on already" ] && ok "desktop pad band on: on already, refused in one line (#266)" || bad "pad band again" "rc=$rc $out"
 padr band maybe
@@ -3904,14 +3914,14 @@ _pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'WINPAD_BAND=on' "$HOME/winpad.env"
 padr band off
 _pi=0; while [ "$_pi" -lt 40 ] && [ "$(grep -c '' "$HOME/pad.log" 2>/dev/null)" -lt 2 ]; do sleep 0.1; _pi=$((_pi + 1)); done
 _pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'WINPAD_BAND=off' "$HOME/winpad.env" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
-[ "$rc" = 0 ] && [ "$out" = "pad band off $dot the handle alone across its top" ] && grep -qx 'WINPAD_BAND=off' "$cfg" && [ "$(grep -c '' "$HOME/pad.log")" = 2 ] && grep -qx 'WINPAD_BAND=off' "$HOME/winpad.env" && grep -qE '^WINPAD_BAND_HEX=[0-9a-f]{6}$' "$HOME/winpad.env" \
+[ "$rc" = 0 ] && [ "$out" = "pad band off $dot no band, its grip and its icons alone" ] && grep -qx 'WINPAD_BAND=off' "$cfg" && [ "$(grep -c '' "$HOME/pad.log")" = 2 ] && grep -qx 'WINPAD_BAND=off' "$HOME/winpad.env" && grep -qE '^WINPAD_BAND_HEX=[0-9a-f]{6}$' "$HOME/winpad.env" \
     && ok "desktop pad band off: a running pad starts again without its band, its color still handed apart (#266)" || bad "pad band again pad" "rc=$rc $out $(cat "$HOME/pad.log" "$HOME/winpad.env" 2>&1)"
 pad_down
 printf 'WINPAD_BAND=maybe\n' >> "$cfg"; padr band
 [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'WINPAD_BAND=maybe in .*: on or off' && ok "config: WINPAD_BAND other than on or off refused in one line (#266)" || bad "pad band config" "rc=$rc $out"
 sed -i.bak '/^WINPAD_BAND=/d' "$cfg"; rm -f "$cfg.bak"
 rm -f "$HOME/win.log"; rc=0; out=$(WINPAD_BAND=c3d0ee XDG_RUNTIME_DIR=$H/run SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop pad band 2>&1) || rc=$?
-[ "$rc" = 0 ] && [ "$out" = "pad band off $dot the handle alone across its top" ] && ok "config: a band's color a pad of v0.134 hands down as WINPAD_BAND, in no config file, leaves the default (#266)" || bad "pad band old pad env" "rc=$rc $out"
+[ "$rc" = 0 ] && [ "$out" = "pad band off $dot no band, its grip and its icons alone" ] && ok "config: a band's color a pad of v0.134 hands down as WINPAD_BAND, in no config file, leaves the default (#266)" || bad "pad band old pad env" "rc=$rc $out"
 # the pad's view (#269): icons by default, titles a switch of its own in the config; a running pad starts again to take it
 padr view
 [ "$rc" = 0 ] && [ "$out" = "pad view icons $dot one icon a window, its title beside it on hover" ] && ! grep -q '^WINPAD_VIEW=' "$cfg" && ok "desktop pad view: icons by default, said in one line, nothing written (#269)" || bad "pad view bare" "rc=$rc $out"
@@ -5652,8 +5662,8 @@ SBSWAY_STUB
         && sbe 'BAR_TRAY_WIDTH=144' && sbe 'BAR_TRAY_OUTPUT=DP-1' && ! grep -q 'bar spark-tray mode \(dock\|invisible\)' "$HOME/tray.log" \
         && ok "bar tray on beside spark-bar: sway's bar is in the config as the tray's host alone, unseen until placed, with no line to draw; spark-bar starts again and leaves four icons' width clear on the first screen" || bad "tray host render" "rc=$rc $out $(grep -n 'bar\|tray' "$sway" | head -20) $(cat "$HOME/sbar.env" "$HOME/tray.log" 2>&1)"
     rm -f "$HOME/tray.log"; str bar tray --place
-    [ "$rc" = 0 ] && [ "$(cat "$HOME/tray.log" 2>/dev/null)" = 'bar spark-tray output DP-1; bar spark-tray tray_output DP-1; bar spark-tray height 36; bar spark-tray tray_padding 8; bar spark-tray gaps 0 0 0 1776; bar spark-tray mode hide' ] && [ "$(cat "$H/run/spark-shell-bar.tray")" = 'DP-1 1920 36' ] \
-        && ok "bar tray --place (sway's, at login and after a reload): the host shown on the first screen, the bar's height, 144 pixels wide at the right end" || bad "tray place" "rc=$rc $out $(cat "$HOME/tray.log" 2>&1)"
+    [ "$rc" = 0 ] && [ "$(cat "$HOME/tray.log" 2>/dev/null)" = 'bar spark-tray output DP-1; bar spark-tray tray_output DP-1; bar spark-tray height 36; bar spark-tray tray_padding 6; bar spark-tray gaps 0 0 0 1776; bar spark-tray mode hide' ] && [ "$(cat "$H/run/spark-shell-bar.tray")" = 'DP-1 1920 36' ] \
+        && ok "bar tray --place (sway's, at login and after a reload): the host shown on the first screen, the bar's height, 144 pixels wide at the right end, its icons 24 px, as the pad's are (v0.149)" || bad "tray place" "rc=$rc $out $(cat "$HOME/tray.log" 2>&1)"
     str bar tray off; sb_up 5
     ! grep -q 'spark-tray' "$sway" && ! grep -q '^bar {$' "$sway" && sbe 'BAR_TRAY_WIDTH=0' && ok "bar tray off: no bar of sway's beside spark-bar at all" || bad "tray host off" "$(grep -n 'bar\|tray' "$sway" | head)"
     # the bar's own loop, under spark-bar: a font the screen asks for that the bar was not started with starts the bar

@@ -42,6 +42,10 @@ const GROUP_GAP: i32 = 5;
 const EDGE_CELLS: i32 = 2;
 /// What a wheel step, or Up or Down, changes a level by, and what a click on a gauge is rounded to.
 pub const STEP: i32 = 5;
+/// How far the pointer goes with the button held on the bar's own ground before the press is a drag of the bar.
+pub const DRAG_START: f64 = 6.0;
+/// The name a drop of the bar is sent under, its instance the edge: spark-shell stands the bar there.
+pub const BAR: &str = "bar";
 /// How far the pointer may travel off the bar, in cells, before a bar that has the keys gives them back.
 pub const TRAVEL_CELLS: i32 = 3;
 /// How far a dim part on a chip is raised from the dim color toward the text's: halfway.
@@ -783,6 +787,36 @@ impl Metrics {
     /// An icon's side: the text's size, four ninths of the height, 16 px of 36.
     pub fn icon(&self) -> i32 {
         (self.height as f64 * 4.0 / 9.0).round() as i32
+    }
+}
+
+/// Where a bar dragged by its ground is let go: the bottom with the pointer in the screen's lower half, else
+/// the top. `y` is the pointer in the bar's own frame, which a held button keeps past the bar: under 0 above
+/// it. `height` is the bar's and `screen` the screen's.
+pub fn dropped(edge: Edge, y: f64, height: i32, screen: i32) -> Edge {
+    let down = match edge {
+        Edge::Top => y,
+        Edge::Bottom => (screen - height) as f64 + y,
+    };
+    if down >= screen as f64 / 2.0 {
+        Edge::Bottom
+    } else {
+        Edge::Top
+    }
+}
+
+/// The click that asks spark-shell to stand the bar at an edge: what a drop at the other edge sends.
+pub fn stand_at(edge: Edge) -> Click {
+    Click {
+        name: BAR.into(),
+        instance: edge.word().into(),
+        button: 1,
+        x: 0,
+        y: 0,
+        relative_x: 0,
+        relative_y: 0,
+        width: 0,
+        height: 0,
     }
 }
 
@@ -4972,6 +5006,29 @@ mod tests {
         let mut all = five();
         all.push(ws(11, "11", "A", false, false, false));
         assert_eq!(mode_said(&in_mode(1200, Status::Ok, "resize", &all)), Some((500, "resize".into())));
+    }
+
+    #[test]
+    fn a_bar_dragged_by_its_ground_lands_at_the_edge_of_the_half_it_is_let_go_in() {
+        // a bar of 36 at the top of a screen 1080 high: the pointer in its own frame, down the screen
+        assert_eq!(dropped(Edge::Top, 20.0, 36, 1080), Edge::Top);
+        assert_eq!(dropped(Edge::Top, 539.0, 36, 1080), Edge::Top);
+        assert_eq!(dropped(Edge::Top, 540.0, 36, 1080), Edge::Bottom);
+        assert_eq!(dropped(Edge::Top, 1079.0, 36, 1080), Edge::Bottom);
+        // at the bottom its frame begins 1044 down: above the bar the pointer is under 0
+        assert_eq!(dropped(Edge::Bottom, 10.0, 36, 1080), Edge::Bottom);
+        assert_eq!(dropped(Edge::Bottom, -504.0, 36, 1080), Edge::Bottom);
+        assert_eq!(dropped(Edge::Bottom, -505.0, 36, 1080), Edge::Top);
+        assert_eq!(dropped(Edge::Bottom, -1044.0, 36, 1080), Edge::Top);
+        // the drop is a click for spark-shell under the bar's own name, the edge its instance
+        let click = stand_at(Edge::Bottom);
+        assert_eq!((click.name.as_str(), click.instance.as_str(), click.button), ("bar", "bottom", 1));
+        assert_eq!(stand_at(Edge::Top).instance, "top");
+        assert!(
+            click_line(&click, true).contains(r#""name":"bar","instance":"bottom","button":1"#),
+            "{}",
+            click_line(&click, true)
+        );
     }
 
     #[test]
