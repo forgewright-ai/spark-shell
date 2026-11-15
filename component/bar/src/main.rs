@@ -37,8 +37,12 @@ click on the dots opens home. The mark, the workspaces and the group time
 stay.
 
 While sway is in a binding mode other than default, the mode's name stands
-after the workspaces, in the attention color, as plain text. It takes the
-room the status leaves and no click.
+five cells before the status, in the attention color, as plain text. It
+takes the room the status leaves and no click.
+
+The room after the workspaces is the pad's: spark-winpad stands there, on
+a surface of its own, when its place is the bar (Apps). The bar draws
+nothing in it, and says where it is in the state file.
 
 The status is spark-shell's: the bar runs SPARK_SHELL bar status with
 SPARK_BAR=1, in a process group of its own, and reads its stream as sway's
@@ -118,12 +122,15 @@ tabs:
   level   MODULE LEVEL
   rest    OUTPUT
   output  NAME WIDTH HEIGHT top|bottom SCALE
+  apps    OUTPUT X W
   target  OUTPUT ID X Y W H KIND STATE FLAGS NAME
   dropped OUTPUT ID
 
 The mode line is there only in a binding mode other than default, with its
 name; a level line for each module that has a level, as it is drawn; a rest
-line for each output that rests, which has no output line and no target. ID
+line for each output that rests, which has no output line and no target; an
+apps line for each output that has a bar, the room after the workspaces it
+keeps for the pad's windows, from X and W wide, in the bar's pixels. ID
 is mark, workspace:N, MODULE.PART (name, gauge, pct or text) or more; X Y W
 H is the part as wide as it is drawn, the bar's whole height; KIND is mark,
 workspace, toggle (the sign or the text of a module that says toggle),

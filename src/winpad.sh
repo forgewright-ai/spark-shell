@@ -75,9 +75,10 @@ winpad_run() {   # winpad_run [--keys] -- spark-winpad started in its own sessio
         SPARK_SHELL=$REPO/spark-shell WINPAD_FG=$HEX_FG WINPAD_ACCENT=$HEX_ACCENT WINPAD_MUTED=$PANEL_MUTED WINPAD_GROUND=$HEX_BG WINPAD_CLOSE=$HEX_ANSI_1 WINPAD_MIN=$HEX_ANSI_3 WINPAD_FILL=$HEX_ANSI_2 WINPAD_SURFACE=$PANEL_BG WINPAD_LIT=$PANEL_HI WINPAD_BAND_HEX=$PANEL_BAND WINPAD_BAND_LIT=$(hex_lit "$HEX_ACCENT" "$PANEL_INK") WINPAD_URGENT_LIT=$(hex_lit "$HEX_ANSI_1" "$PANEL_INK_URGENT") WINPAD_CLOSE_INK=$PANEL_INK_URGENT
         WINPAD_REST=idle   # the idle screen's workspaces (layout_idle): the pad is off a screen that shows one
         WINPAD_ALPHA=$ALPHA WINPAD_FONT=$(bar_line_font) WINPAD_PLACE=$WINPAD_PLACE WINPAD_WIDTH=$WINPAD_WIDTH WINPAD_SIDE_WIDTH=$WINPAD_SIDE_WIDTH WINPAD_HEIGHT=${WINPAD_HEIGHT:-0} WINPAD_BAR=$(bar_place)
+        WINPAD_BAR_STATE=''; ! sparkbar_draws || WINPAD_BAR_STATE=$(sparkbar_file state)   # where spark's bar draws, its state file says the room it keeps for a pad whose place is the bar; with no such bar that pad stands at the bottom's middle
         WINPAD_VOICE=$(voice_here && echo yes || echo no) WINPAD_VOICE_STATE=$(voice_state)
         WINPAD_TERM=$TERM_NAME WINPAD_TERM_ALSO=$TERM_APP_PREFIX WINPAD_TITLE=$BAND_TITLE WINPAD_TERM_TITLE=$BAND_TERM_TITLE WINPAD_BAND=${WINPAD_BAND:-off} WINPAD_VIEW=${WINPAD_VIEW:-icons} WINPAD_GAP=${GAPS_OUTER:-} WINPAD_LOCK=$(winpad_lock) WINPAD_STATE=$(winpad_state) WINPAD_BAR_PID=$BAR_PID
-        export WINPAD_BAND_LIT WINPAD_URGENT_LIT WINPAD_CLOSE_INK WINPAD_REST SPARK_SHELL WINPAD_VOICE WINPAD_VOICE_STATE WINPAD_TERM_ALSO WINPAD_FG WINPAD_ACCENT WINPAD_MUTED WINPAD_GROUND WINPAD_CLOSE WINPAD_MIN WINPAD_FILL WINPAD_TERM WINPAD_TITLE WINPAD_TERM_TITLE WINPAD_SURFACE WINPAD_LIT WINPAD_BAND_HEX WINPAD_ALPHA WINPAD_FONT WINPAD_PLACE WINPAD_WIDTH WINPAD_SIDE_WIDTH WINPAD_HEIGHT WINPAD_BAR WINPAD_BAND WINPAD_VIEW WINPAD_GAP WINPAD_LOCK WINPAD_STATE WINPAD_BAR_PID
+        export WINPAD_BAR_STATE WINPAD_BAND_LIT WINPAD_URGENT_LIT WINPAD_CLOSE_INK WINPAD_REST SPARK_SHELL WINPAD_VOICE WINPAD_VOICE_STATE WINPAD_TERM_ALSO WINPAD_FG WINPAD_ACCENT WINPAD_MUTED WINPAD_GROUND WINPAD_CLOSE WINPAD_MIN WINPAD_FILL WINPAD_TERM WINPAD_TITLE WINPAD_TERM_TITLE WINPAD_SURFACE WINPAD_LIT WINPAD_BAND_HEX WINPAD_ALPHA WINPAD_FONT WINPAD_PLACE WINPAD_WIDTH WINPAD_SIDE_WIDTH WINPAD_HEIGHT WINPAD_BAR WINPAD_BAND WINPAD_VIEW WINPAD_GAP WINPAD_LOCK WINPAD_STATE WINPAD_BAR_PID
         if command -v setsid >/dev/null 2>&1; then setsid sh -c "$WINPAD_KEEP" "$_pdc" "$@" </dev/null >/dev/null 2>"$_pdlog" &
         else ( trap '' HUP; exec sh -c "$WINPAD_KEEP" "$_pdc" "$@" ) </dev/null >/dev/null 2>"$_pdlog" & fi
     )
@@ -93,6 +94,7 @@ winpad_again() {   # a running pad restarted, so it takes a new look or bar plac
 }
 winpad_place_words() {   # winpad_place_words PLACE -> where it sits, in words
     case $1 in
+        bar) echo 'on the bar, after the workspaces' ;;
         free\ *) echo 'where you left it' ;;
         *\ center) echo "at the ${1% *} edge, in the middle" ;;
         top\ start|bottom\ start) echo "at the ${1% *} edge, at its left end" ;;
@@ -102,7 +104,7 @@ winpad_place_words() {   # winpad_place_words PLACE -> where it sits, in words
         *) echo "at the ${1% *} edge" ;;
     esac
 }
-winpad_band_words() { if [ "$1" = on ]; then echo "the band under its handle says pad and how many wait"; else echo "the handle alone across its top"; fi; }   # winpad_band_words on|off -> what the pad shows, in words
+winpad_band_words() { if [ "$1" = on ]; then echo "its band says pad and how many wait"; else echo "no band, its grip and its icons alone"; fi; }   # winpad_band_words on|off -> what the pad shows, in words
 winpad_view_words() { if [ "$1" = titles ]; then echo "a slot a window, its icon, its app and its title"; else echo "one icon a window, its title beside it on hover"; fi; }   # winpad_view_words icons|titles -> how the pad shows its windows, in words
 layout_pad() {   # layout_pad [keys|toggle|place PLACE WIDTH SIDE [HEIGHT]|band [on|off]|view [icons|titles]|start|again] -- the pad
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own Dock"
@@ -110,7 +112,7 @@ layout_pad() {   # layout_pad [keys|toggle|place PLACE WIDTH SIDE [HEIGHT]|band 
         place) shift
             # a pad sends three; the height in the config stays then
             case $# in 3|4) ;; *) refuse "pad place takes PLACE WIDTH SIDE [HEIGHT]: \"bottom center\" 0 36 0" ;; esac
-            winpad_place_ok "$1" || refuse "pad place: top, bottom, left or right and center, start, end or pixels along that edge, or free X Y"
+            winpad_place_ok "$1" || refuse "pad place: bar, or top, bottom, left or right and center, start, end or pixels along that edge, or free X Y"
             winpad_width_ok "$2" 0 || refuse "pad place: the width is pixels, 0 to 9999 (0: as wide as the screen allows)"
             winpad_width_ok "$3" 36 || refuse "pad place: the width at a side is pixels, 36 to 9999"
             [ "$#" = 3 ] || winpad_width_ok "$4" 0 || refuse "pad place: the height is pixels, 0 to 9999 (0: as many rows as needed)"

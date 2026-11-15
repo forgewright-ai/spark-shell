@@ -1,6 +1,6 @@
 [package]
 name = "spark-winpad"
-version = "0.148.2"
+version = "0.149.0"
 edition = "2021"
 rust-version = "1.98"
 license = "MIT"

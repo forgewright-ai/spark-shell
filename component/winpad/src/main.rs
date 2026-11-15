@@ -1,6 +1,6 @@
 //! spark-winpad: spark-shell's windows on a sway desktop, three jobs. The pad: the minimized windows on a
-//! surface of their own on each screen, each with its app's icon and its title; a click or a key brings
-//! one back. The buttons: close, minimize and fill on every title band, drawn by sway, told and clicked
+//! surface of their own on each screen, on the bar after the workspaces or anywhere else, each with its
+//! app's icon and its title; a click or a key brings one back. The buttons: close, minimize and fill on every title band, drawn by sway, told and clicked
 //! here. The order: the windows as they were focused, for Super+Tab. Started with the desktop by
 //! spark-shell, for the session.
 
@@ -18,7 +18,20 @@ The windows are the ones spark-shell put in sway's scratchpad with its mark,
 an icon each. A click on one, or Enter, brings it back through spark-shell
 desktop window restore. When the pad is too small for them, the windows of
 one app fold into one icon, the app with the most first; a click on it, or
-Enter, opens its list. SIGUSR1 puts the keyboard on the pad, SIGUSR2 hides
+Enter, opens its list.
+
+The pad's place (WINPAD_PLACE) is bar, an edge and where along it (bottom
+center, left 300), or free X Y. On the bar it stands in the room spark's
+bar keeps after the workspaces, as the bar's state file says it
+(WINPAD_BAR_STATE: its output and apps lines): its grip, a line, then one
+row of icons, on the bar's own ground, with no hide; the windows the row
+has no cell for fold into its last one. On a screen whose bar has no room
+for it, or with no such bar, it stands at the bottom's middle. Anywhere
+else the pad is a piece of the bar: the bar's ground (WINPAD_GROUND) and a
+fine edge, its grip before the icons and hide after them, and it keeps a
+strip of its own beside the windows while it is docked at an edge. A press
+anywhere on it becomes a drag: near an edge it docks there, the bar's too;
+only with the pointer on the bar itself does it land on the bar. SIGUSR1 puts the keyboard on the pad, SIGUSR2 hides
 or shows it, SIGTERM or SIGINT ends it. The close, minimize and fill buttons at the
 start of every title are sway's own text: the pad tells sway how each
 window's are drawn, by its focus and the pointer, and takes their clicks.
@@ -37,12 +50,13 @@ half a space at a button's sides; none: whole spaces), WINPAD_TERM (the
 terminal's app), WINPAD_TITLE and WINPAD_TERM_TITLE (the title format after
 the buttons),
 WINPAD_ALPHA, WINPAD_FONT, WINPAD_VIEW (icons, the default, or titles: a slot a
-window with its title), WINPAD_BAND (on: the band under the handle; off, the
+window with its title), WINPAD_BAND (on: a band with its words; off, the
 default), WINPAD_GAP (the pixels off an edge, 8), WINPAD_PLACE, WINPAD_WIDTH,
 WINPAD_SIDE_WIDTH, WINPAD_HEIGHT (the most height, 0: as many rows as needed),
 WINPAD_REST (a workspace's name: no pad and no strip on a screen that shows
 it, or one named with it and a space before more; none: never),
-and the files WINPAD_LOCK, WINPAD_STATE and WINPAD_BAR_PID; SPARK_SHELL names
+and the files WINPAD_LOCK, WINPAD_STATE, WINPAD_BAR_PID and
+WINPAD_BAR_STATE; SPARK_SHELL names
 spark-shell itself, and the assets beside it give the dialog spark's S,
 the dark one or the light one by WINPAD_SURFACE. After a drag or a resize it
 runs spark-shell desktop pad place PLACE WIDTH SIDE_WIDTH HEIGHT, and each
@@ -123,6 +137,7 @@ fn config() -> spark_winpad::app::Config {
             fg: color("WINPAD_FG", "383a42"),
             accent: color("WINPAD_ACCENT", "4078f2"),
             muted: color("WINPAD_MUTED", "696c77"),
+            ground: color("WINPAD_GROUND", "fafafa"),
             surface: color("WINPAD_SURFACE", "ebebec"),
             lit: color("WINPAD_LIT", "dcdcdd"),
             band: color("WINPAD_BAND_HEX", "c3d0ee"),
@@ -152,6 +167,7 @@ fn config() -> spark_winpad::app::Config {
         spark_shell: env("SPARK_SHELL").unwrap_or_else(|| "spark-shell".into()),
         state_file: env("WINPAD_STATE").map(Into::into),
         bar_pid: env("WINPAD_BAR_PID").map(Into::into),
+        bar_state: env("WINPAD_BAR_STATE").map(Into::into),
     }
 }
 
@@ -397,6 +413,7 @@ fn run(keys: bool) -> Result<(), String> {
         .insert_source(Timer::from_duration(tick), move |_, _, app: &mut App| {
             app.settle();
             app.voice_tick();
+            app.bar_tick();
             // the tree read again every tick for two seconds after an event, else every half second: a
             // resize or a drag sends no event
             ticks = ticks.wrapping_add(1);

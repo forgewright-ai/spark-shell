@@ -1,6 +1,6 @@
 //! The pad's shape, place and list, pure: what the mock-up drew, in numbers. Every length is in
 //! logical pixels of the screen's usable area (the part sway gives the windows: the bar left out),
-//! its origin at that area's top left corner.
+//! its origin at that area's top left corner; a pad on the bar stands in the bar's own room.
 
 use serde_json::Value;
 
@@ -16,10 +16,10 @@ pub struct Metrics {
     pub tool: i32,
     /// A titled row's height.
     pub cell: i32,
-    /// The band's height, under the handle (WINPAD_BAND=on).
+    /// The band's height (WINPAD_BAND=on).
     pub band: i32,
-    /// The handle across the pad's top.
-    pub handle: i32,
+    /// The grip's room before the cells, at a row's left and at a column's top: its line stands in the middle.
+    pub lead: i32,
     /// Hide's room at the end of the cells.
     pub ctl: i32,
     /// An icon's side.
@@ -52,7 +52,7 @@ impl Metrics {
             tool: s(36.0),
             cell: s(40.0),
             band: s(24.0),
-            handle: s(6.0).max(4),
+            lead: s(20.0),
             ctl: s(24.0),
             icon: s(24.0),
             gap: GAP,
@@ -85,23 +85,28 @@ impl View {
 
 /// What the pad is asked to be: its view, the band, a column at a side (hide under the cells) or a row elsewhere
 /// (hide at the first row's end), and the most width and height it takes; 0 for the width is as wide as the room
-/// allows, 0 for the height as many rows as the windows need.
+/// allows, 0 for the height as many rows as the windows need. On the bar it is one row of icons with no band and
+/// no hide, in the room the bar keeps.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Want {
     pub view: View,
     pub band: bool,
     pub column: bool,
+    pub bar: bool,
     pub w: i32,
     pub h: i32,
 }
 
-/// The pad's shape: the handle across its top, the band under it when it is on, a grid of cells, and hide at the end.
+/// The pad's shape: the grip's room, the band when it is on, a grid of cells, and hide at the end. A row has the
+/// band across its top and the grip's room at its left; a column the grip's room at its top and the band under it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Layout {
     pub view: View,
     pub band: bool,
     /// Hide under the cells, a column's end; else at the end of the first row.
     pub column: bool,
+    /// On the bar: one row, no band, no hide, no grip to size it by.
+    pub bar: bool,
     pub cols: i32,
     pub rows: i32,
     /// A cell's width and height: the icon's square, or a titled slot.
@@ -111,33 +116,68 @@ pub struct Layout {
     pub h: i32,
 }
 
-impl Layout {
-    /// Where the cells begin: under the handle, and under the band when it is on.
-    pub fn top(&self, m: &Metrics) -> i32 {
-        m.handle + if self.band { m.band } else { 0 }
+/// Where the cells begin, from the left and from the top: past the grip's room and the band.
+fn lead(column: bool, band: bool, m: &Metrics) -> (i32, i32) {
+    let band = if band { m.band } else { 0 };
+    if column {
+        (0, m.lead + band)
+    } else {
+        (m.lead, band)
     }
 }
 
-/// The cells' and hide's lengths: a cell's least width and its height, the room at the top, hide's width and height.
-fn parts(want: &Want, m: &Metrics) -> (i32, i32, i32, i32, i32) {
+impl Layout {
+    /// Where the cells begin from the left: past the grip's room in a row.
+    pub fn left(&self, m: &Metrics) -> i32 {
+        lead(self.column, self.band, m).0
+    }
+
+    /// Where the cells begin from the top: under the band in a row, under the grip's room and the band in a column.
+    pub fn top(&self, m: &Metrics) -> i32 {
+        lead(self.column, self.band, m).1
+    }
+
+    /// The band, across the pad: at a row's top, under a column's grip.
+    pub fn band_rect(&self, m: &Metrics) -> Rect {
+        Rect::new(0, if self.column { m.lead } else { 0 }, self.w, if self.band { m.band } else { 0 })
+    }
+
+    /// The grip's room: at a row's left under the band, across a column's top.
+    pub fn lead_rect(&self, m: &Metrics) -> Rect {
+        if self.column {
+            Rect::new(0, 0, self.w, m.lead)
+        } else {
+            Rect::new(0, self.top(m), m.lead, self.h - self.top(m))
+        }
+    }
+}
+
+/// The cells' and hide's lengths: a cell's least width and its height, where the cells begin from the left and from
+/// the top, hide's width and height.
+fn parts(want: &Want, m: &Metrics) -> (i32, i32, i32, i32, i32, i32) {
     let (cw, ch) = match want.view {
         View::Icons => (m.tool, m.tool),
         View::Titles => (m.slot_min, m.cell),
     };
-    let top = m.handle + if want.band { m.band } else { 0 };
-    let (end_w, end_h) = if want.column { (0, 1 + m.ctl) } else { (1 + m.ctl, 0) };
-    (cw, ch, top, end_w, end_h)
+    let (left, top) = lead(want.column, want.band, m);
+    let (end_w, end_h) = match (want.bar, want.column) {
+        (true, _) => (0, 0),
+        (_, true) => (0, 1 + m.ctl),
+        _ => (1 + m.ctl, 0),
+    };
+    (cw, ch, left, top, end_w, end_h)
 }
 
 /// How many columns and rows the asked width and height hold in the room, at least one each, and the width the
-/// cells may take.
+/// cells may take. The bar holds one row.
 fn fit(want: &Want, room: (i32, i32), m: &Metrics) -> (i32, i32, i32) {
-    let (cw, ch, top, end_w, end_h) = parts(want, m);
-    let rw = room.0.max(cw + end_w);
+    let (cw, ch, left, top, end_w, end_h) = parts(want, m);
+    let rw = room.0.max(left + cw + end_w);
     let rh = room.1.max(top + ch + end_h);
     let w = if want.w <= 0 { rw } else { want.w.min(rw) };
     let h = if want.h <= 0 { rh } else { want.h.min(rh) };
-    (((w - end_w) / cw).max(1), ((h - top - end_h) / ch).max(1), w - end_w)
+    let rows = if want.bar { 1 } else { ((h - top - end_h) / ch).max(1) };
+    (((w - left - end_w) / cw).max(1), rows, w - left - end_w)
 }
 
 /// How many cells a pad asked `want` holds in the room: past it, an app's windows fold into one (`group`).
@@ -149,19 +189,19 @@ pub fn capacity(want: &Want, room: (i32, i32), m: &Metrics) -> usize {
 /// The shape of a pad of `k` cells: the width sets the columns, the height the rows. Without a height, as many
 /// columns as the width holds and the rows the cells need; with one, as many rows as it holds and the columns the
 /// cells need, so a pad made two rows high is two rows. Never wider or taller than its whole cells; past them
-/// (when grouping cannot fold enough), rows are added. A titled slot takes 18 cells of title at most, shrunk
-/// evenly down to 8.
+/// (when grouping cannot fold enough), rows are added, but never on the bar, where `group` folds the rest into the
+/// last cell. A titled slot takes 18 cells of title at most, shrunk evenly down to 8.
 pub fn layout(k: usize, want: &Want, room: (i32, i32), m: &Metrics) -> Layout {
     let k = k.max(1) as i32;
     let (fit_cols, fit_rows, inner) = fit(want, room, m);
-    let cols = if want.h > 0 {
+    let cols = if want.h > 0 && !want.bar {
         let rows = k.min(fit_rows);
         ((k + rows - 1) / rows).min(fit_cols)
     } else {
         k.min(fit_cols)
     };
-    let rows = (k + cols - 1) / cols;
-    let (_, ch, top, end_w, end_h) = parts(want, m);
+    let rows = if want.bar { 1 } else { (k + cols - 1) / cols };
+    let (_, ch, left, top, end_w, end_h) = parts(want, m);
     let cw = match want.view {
         View::Icons => m.tool,
         View::Titles => (inner / cols).clamp(m.slot_min, m.slot_max),
@@ -170,11 +210,12 @@ pub fn layout(k: usize, want: &Want, room: (i32, i32), m: &Metrics) -> Layout {
         view: want.view,
         band: want.band,
         column: want.column,
+        bar: want.bar,
         cols,
         rows,
         cw,
         ch,
-        w: cols * cw + end_w,
+        w: left + cols * cw + end_w,
         h: top + rows * ch + end_h,
     }
 }
@@ -195,8 +236,9 @@ impl Item {
 /// The cells for windows of these apps (each window's app's name, oldest first) when `cap` cells hold them: each
 /// window its own while they fit; else the app with the most windows folds into one icon, then the next, until they
 /// fit (on a tie, the app whose window came first). A group stands where its oldest window would. Made big enough
-/// again, each window has its own once more.
-pub fn group(names: &[String], cap: usize) -> Vec<Item> {
+/// again, each window has its own once more. With `rest`, where no cell can be added (the bar's one row), the
+/// cells that are still too many fold into the last one: a group of several apps' windows.
+pub fn group(names: &[String], cap: usize, rest: bool) -> Vec<Item> {
     let cap = cap.max(1);
     let mut folded: Vec<&str> = vec![];
     let mut count = names.len();
@@ -224,6 +266,10 @@ pub fn group(names: &[String], cap: usize) -> Vec<Item> {
             }
         }
         out.push(Item { wins: vec![i] });
+    }
+    if rest && out.len() > cap {
+        let more: Vec<usize> = out.drain(cap - 1..).flat_map(|it| it.wins).collect();
+        out.push(Item { wins: more });
     }
     out
 }
@@ -274,9 +320,10 @@ pub enum Along {
     At(i32),
 }
 
-/// The pad's place: docked at an edge, or free at a corner position.
+/// The pad's place: on the bar, after the workspaces; docked at an edge; or free at a corner position.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Place {
+    Bar,
     Dock(Edge, Along),
     Free(i32, i32),
 }
@@ -288,11 +335,12 @@ impl Default for Place {
 }
 
 impl Place {
-    /// "bottom center", "left start", "top 640", "free 120 300"; None for anything else.
+    /// "bar", "bottom center", "left start", "top 640", "free 120 300"; None for anything else.
     pub fn parse(s: &str) -> Option<Place> {
         let w: Vec<&str> = s.split_whitespace().collect();
         let num = |v: &str| v.parse::<i32>().ok().filter(|n| (-100_000..=100_000).contains(n));
         match w.as_slice() {
+            ["bar"] => Some(Place::Bar),
             ["free", x, y] => Some(Place::Free(num(x)?, num(y)?)),
             [edge, along] => {
                 let edge = match *edge {
@@ -317,6 +365,7 @@ impl Place {
     /// The words parse reads back.
     pub fn words(&self) -> String {
         match self {
+            Place::Bar => "bar".to_string(),
             Place::Free(x, y) => format!("free {x} {y}"),
             Place::Dock(e, a) => {
                 let a = match a {
@@ -338,7 +387,7 @@ impl Place {
     pub fn edge(&self) -> Option<Edge> {
         match self {
             Place::Dock(e, _) => Some(*e),
-            Place::Free(..) => None,
+            Place::Bar | Place::Free(..) => None,
         }
     }
 }
@@ -375,9 +424,11 @@ fn along_at(along: Along, len: i32, span: i32, gap: i32) -> i32 {
     }
 }
 
-/// Where a pad of `w` by `h` stands in a usable area of `aw` by `ah`: its top left corner.
+/// Where a pad of `w` by `h` stands in a usable area of `aw` by `ah`: its top left corner. A pad on the bar is
+/// not in that area: the bar's own room says where it stands.
 pub fn position(place: Place, w: i32, h: i32, aw: i32, ah: i32, m: &Metrics) -> (i32, i32) {
     match place {
+        Place::Bar => (0, 0),
         Place::Dock(Edge::Bottom, a) => (along_at(a, w, aw, m.gap), ah - m.gap - h),
         Place::Dock(Edge::Top, a) => (along_at(a, w, aw, m.gap), m.gap),
         Place::Dock(Edge::Left, a) => (m.gap, along_at(a, h, ah, m.gap)),
@@ -430,8 +481,64 @@ pub fn strip_thick(place: Place, l: &Layout) -> i32 {
     match place {
         Place::Dock(e, _) if e.side() => l.w,
         Place::Dock(..) => l.h,
-        Place::Free(..) => 0,
+        Place::Bar | Place::Free(..) => 0,
     }
+}
+
+/// A bar as its state file says it: the edge it stands at, its height, and the room it keeps for the pad's
+/// windows after the workspaces, from `x` and `w` wide, in the screen's pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BarAt {
+    pub edge: Edge,
+    pub height: i32,
+    pub x: i32,
+    pub w: i32,
+}
+
+/// The bars a state file names, each by its screen: an output line (its height and its edge) and an apps line
+/// (the room). A screen with one of the two alone, or with a line that does not read, has none.
+pub fn bars(text: &str) -> Vec<(String, BarAt)> {
+    let num = |v: &str| v.parse::<i32>().ok().filter(|n| (0..=100_000).contains(n));
+    let mut out: Vec<(String, BarAt)> = vec![];
+    let mut seen: Vec<(String, Edge, i32)> = vec![];
+    for line in text.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        match f.as_slice() {
+            ["output", name, _, height, edge, _] => {
+                let edge = match *edge {
+                    "top" => Edge::Top,
+                    "bottom" => Edge::Bottom,
+                    _ => continue,
+                };
+                if let Some(h) = num(height).filter(|h| *h > 0) {
+                    seen.push((name.to_string(), edge, h));
+                }
+            }
+            ["apps", name, x, w] => {
+                if let (Some((_, edge, height)), Some(x), Some(w)) = (seen.iter().find(|s| s.0 == *name), num(x), num(w)) {
+                    out.push((
+                        name.to_string(),
+                        BarAt {
+                            edge: *edge,
+                            height: *height,
+                            x,
+                            w,
+                        },
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Whether a dragged pad holds the bar: it takes it with the pointer on the bar itself, `into` the windows' area
+/// from the bar's edge under 0, and keeps it until the pointer is half the bar's height into that area, so a
+/// pointer trembling at the bar's edge never flips the pad's shape. Near that edge and off the bar the pad docks
+/// in a strip of its own, as at any edge.
+pub fn drag_bar(held: bool, into: f64, height: i32) -> bool {
+    into < if held { (height / 2) as f64 } else { 0.0 }
 }
 
 /// The sides a grip moves: x -1 the left, 1 the right; y -1 the top, 1 the bottom; 0 neither. A corner moves two.
@@ -446,7 +553,7 @@ pub struct Sides {
 pub enum Hit {
     Item(usize),
     Hide,
-    /// The handle, and the band under it.
+    /// The handle: the grip's room, and the band.
     Handle,
     /// The grips just outside a side or a corner.
     Grip(Sides),
@@ -458,26 +565,28 @@ pub enum Hit {
 /// A cell's rectangle in the pad's coordinates.
 pub fn item_rect(l: &Layout, i: usize, m: &Metrics) -> Rect {
     let (col, row) = (i as i32 % l.cols, i as i32 / l.cols);
-    Rect::new(col * l.cw, l.top(m) + row * l.ch, l.cw, l.ch)
+    Rect::new(l.left(m) + col * l.cw, l.top(m) + row * l.ch, l.cw, l.ch)
 }
 
-/// The hide button's rectangle: past a hairline at the end of the first row, or under a column's cells.
+/// The hide button's rectangle: at the end of the first row, or under a column's cells; nothing on the bar.
 pub fn hide_rect(l: &Layout, m: &Metrics) -> Rect {
     let top = l.top(m);
-    if l.column {
+    if l.bar {
+        Rect::default()
+    } else if l.column {
         Rect::new(0, top + l.rows * l.ch + 1, l.w, m.ctl)
     } else {
-        Rect::new(l.cols * l.cw + 1, top, m.ctl, l.ch)
+        Rect::new(l.left(m) + l.cols * l.cw + 1, top, m.ctl, l.ch)
     }
 }
 
-/// What the point x, y is on a pad of `k` cells docked at `dock`: a cell, hide, the handle or the band, or one of
-/// the grips, `m.grip` wide just outside each side and corner, a corner's reaching `m.grip` along each side. A
-/// docked pad has none at its edge: it grows away from it.
+/// What the point x, y is on a pad of `k` cells docked at `dock`: a cell, hide, the grip's room or the band (the
+/// handle), or one of the grips, `m.grip` wide just outside each side and corner, a corner's reaching `m.grip`
+/// along each side. A docked pad has none at its edge: it grows away from it; a pad on the bar has none at all.
 pub fn hit(l: &Layout, k: usize, m: &Metrics, x: f64, y: f64, dock: Option<Edge>) -> Hit {
     let (w, h, g) = (l.w as f64, l.h as f64, m.grip as f64);
     if !Rect::new(0, 0, l.w, l.h).has(x, y) {
-        if x < -g || y < -g || x >= w + g || y >= h + g {
+        if l.bar || x < -g || y < -g || x >= w + g || y >= h + g {
             return Hit::Nothing;
         }
         let mut sx = if x < g { -1 } else { i8::from(x >= w - g) };
@@ -498,7 +607,7 @@ pub fn hit(l: &Layout, k: usize, m: &Metrics, x: f64, y: f64, dock: Option<Edge>
     if hide_rect(l, m).has(x, y) {
         return Hit::Hide;
     }
-    if y < l.top(m) as f64 {
+    if l.lead_rect(m).has(x, y) || l.band_rect(m).has(x, y) {
         return Hit::Handle;
     }
     (0..k).find(|&i| item_rect(l, i, m).has(x, y)).map_or(Hit::Nothing, Hit::Item)
@@ -659,7 +768,7 @@ pub fn list_row(r: Rect, row: i32, rows: usize, x: f64, y: f64) -> Option<usize>
 pub fn grip_size(place: Place, s: Sides, start: Rect, moved: (f64, f64), room: (i32, i32), m: &Metrics) -> (Option<i32>, Option<i32>) {
     let both = |a: Along| if matches!(a, Along::Center | Along::At(_)) { 2 } else { 1 };
     let (kw, kh) = match place {
-        Place::Free(..) => (1, 1),
+        Place::Bar | Place::Free(..) => (1, 1),
         Place::Dock(e, a) if e.side() => (1, both(a)),
         Place::Dock(_, a) => (both(a), 1),
     };
@@ -969,6 +1078,7 @@ mod tests {
             view,
             band: false,
             column,
+            bar: false,
             w,
             h,
         }
@@ -985,68 +1095,70 @@ mod tests {
     #[test]
     fn icons_at_the_bottom_are_a_row_and_at_a_side_a_column() {
         let m = m();
-        // three windows at the bottom: three cells of 36 under the 6 px handle, a hairline and hide at the row's end
+        // three windows at the bottom: the grip's 20 px, three cells of 36, and hide at the row's end; as high as a cell
         assert_eq!(
             layout(3, &want(View::Icons, false, 0, 0), ROOM, &m),
             Layout {
                 view: View::Icons,
                 band: false,
                 column: false,
+                bar: false,
                 cols: 3,
                 rows: 1,
                 cw: 36,
                 ch: 36,
-                w: 3 * 36 + 1 + 24,
-                h: 6 + 36
+                w: 20 + 3 * 36 + 1 + 24,
+                h: 36
             }
         );
-        // at a side, its 36 px: a column, hide under it past a hairline
+        // at a side, its 36 px: a column, the grip's room over it and hide under it
         assert_eq!(
             layout(3, &want(View::Icons, true, 36, 0), ROOM, &m),
             Layout {
                 view: View::Icons,
                 band: false,
                 column: true,
+                bar: false,
                 cols: 1,
                 rows: 3,
                 cw: 36,
                 ch: 36,
                 w: 36,
-                h: 6 + 3 * 36 + 1 + 24
+                h: 20 + 3 * 36 + 1 + 24
             }
         );
         // the width no longer switches the view: a wide pad is icons, a narrow titled one titled
         assert_eq!(layout(3, &want(View::Icons, false, 1500, 0), ROOM, &m).cw, 36);
         assert_eq!(layout(3, &want(View::Titles, true, 36, 0), ROOM, &m).cw, 132);
         // with no height asked the rows come as the width needs them: seven in a width of three
-        let l = layout(7, &want(View::Icons, false, 3 * 36 + 25, 0), ROOM, &m);
-        assert_eq!((l.cols, l.rows, l.w, l.h), (3, 3, 133, 6 + 108));
+        let l = layout(7, &want(View::Icons, false, 20 + 3 * 36 + 25, 0), ROOM, &m);
+        assert_eq!((l.cols, l.rows, l.w, l.h), (3, 3, 153, 108));
         // never wider than its cells, nor than the room
-        assert_eq!(layout(2, &want(View::Icons, false, 900, 0), ROOM, &m).w, 2 * 36 + 25);
-        assert_eq!(capacity(&want(View::Icons, false, 0, 0), ROOM, &m), 52 * 28);
+        assert_eq!(layout(2, &want(View::Icons, false, 900, 0), ROOM, &m).w, 20 + 2 * 36 + 25);
+        assert_eq!(capacity(&want(View::Icons, false, 0, 0), ROOM, &m), 51 * 28);
     }
 
     #[test]
     fn the_width_sets_the_columns_and_the_height_the_rows() {
         let m = m();
         // a row of four made two rows high from a corner, its width as it was: two of two
-        let l = layout(4, &want(View::Icons, false, 4 * 36 + 25, 6 + 72 + 4), ROOM, &m);
-        assert_eq!((l.cols, l.rows, l.w, l.h), (2, 2, 2 * 36 + 25, 6 + 72));
+        let l = layout(4, &want(View::Icons, false, 20 + 4 * 36 + 25, 72 + 4), ROOM, &m);
+        assert_eq!((l.cols, l.rows, l.w, l.h), (2, 2, 20 + 2 * 36 + 25, 72));
         // three in two rows: two columns, the last row short
-        let l = layout(3, &want(View::Icons, false, 0, 6 + 72), ROOM, &m);
+        let l = layout(3, &want(View::Icons, false, 0, 72), ROOM, &m);
         assert_eq!((l.cols, l.rows), (2, 2));
         // one window in a pad two rows high is one cell: never taller than its cells
-        assert_eq!(layout(1, &want(View::Icons, false, 0, 6 + 72), ROOM, &m).rows, 1);
+        assert_eq!(layout(1, &want(View::Icons, false, 0, 72), ROOM, &m).rows, 1);
         // a square: three by three holds nine
-        let square = want(View::Icons, false, 3 * 36 + 25, 6 + 3 * 36);
+        let square = want(View::Icons, false, 20 + 3 * 36 + 25, 3 * 36);
         assert_eq!(capacity(&square, ROOM, &m), 9);
         let l = layout(9, &square, ROOM, &m);
         assert_eq!((l.cols, l.rows), (3, 3));
         // a column at a side made two columns wide and four rows high
-        let side = want(View::Icons, true, 72, 6 + 4 * 36 + 25);
+        let side = want(View::Icons, true, 72, 20 + 4 * 36 + 25);
         assert_eq!(capacity(&side, ROOM, &m), 8);
         let l = layout(8, &side, ROOM, &m);
-        assert_eq!((l.cols, l.rows, l.w, l.h), (2, 4, 72, 6 + 144 + 25));
+        assert_eq!((l.cols, l.rows, l.w, l.h), (2, 4, 72, 20 + 144 + 25));
         // a width or a height under one cell is still one
         assert_eq!(capacity(&want(View::Icons, false, 10, 10), ROOM, &m), 1);
         // a height past the room is the room
@@ -1059,39 +1171,46 @@ mod tests {
     #[test]
     fn titled_slots_grow_shrink_then_wrap() {
         let m = m();
-        // three windows on a wide screen: three slots at their widest, hide past a hairline, the handle on top
+        // three windows on a wide screen: the grip's room, three slots at their widest, and hide
         assert_eq!(
             layout(3, &want(View::Titles, false, 0, 0), ROOM, &m),
             Layout {
                 view: View::Titles,
                 band: false,
                 column: false,
+                bar: false,
                 cols: 3,
                 rows: 1,
                 cw: 228,
                 ch: 40,
-                w: 684 + 1 + 24,
-                h: 6 + 40
+                w: 20 + 684 + 1 + 24,
+                h: 40
             }
         );
-        // the room for hide comes out of the width: five within 785 keep one row of 152
+        // the room for the grip and for hide comes out of the width: five within 785 keep one row of 148
         let l = layout(5, &want(View::Titles, false, 785, 0), ROOM, &m);
-        assert_eq!((l.cols, l.rows, l.cw, l.w, l.h), (5, 1, 152, 785, 46));
-        // five within 445: three slots a row of 140, two rows
+        assert_eq!((l.cols, l.rows, l.cw, l.w, l.h), (5, 1, 148, 785, 40));
+        // five within 445: three slots a row of 133, two rows
         let l = layout(5, &want(View::Titles, false, 445, 0), ROOM, &m);
-        assert_eq!((l.cols, l.rows, l.cw, l.w, l.h), (3, 2, 140, 445, 6 + 80));
-        // the band on: under the handle, over the slots
+        assert_eq!((l.cols, l.rows, l.cw, l.w, l.h), (3, 2, 133, 444, 80));
+        // the band on: across the top, over the slots; in a column under the grip's room
         let band = Want {
             band: true,
             ..want(View::Titles, false, 0, 0)
         };
-        assert_eq!(layout(3, &band, ROOM, &m).h, 6 + 24 + 40);
-        assert_eq!(layout(3, &band, ROOM, &m).top(&m), 30);
+        let l = layout(3, &band, ROOM, &m);
+        assert_eq!((l.h, l.top(&m), l.left(&m)), (24 + 40, 24, 20));
+        assert_eq!((l.band_rect(&m), l.lead_rect(&m)), (Rect::new(0, 0, l.w, 24), Rect::new(0, 24, 20, 40)));
+        let l = layout(3, &Want { column: true, w: 36, ..band }, ROOM, &m);
+        assert_eq!(
+            (l.top(&m), l.left(&m), l.band_rect(&m), l.lead_rect(&m)),
+            (44, 0, Rect::new(0, 20, 132, 24), Rect::new(0, 0, 132, 20))
+        );
         // titled at a side: one slot at its narrowest, never under it
         let l = layout(3, &want(View::Titles, true, 36, 0), ROOM, &m);
-        assert_eq!((l.cols, l.rows, l.w, l.h), (1, 3, 132, 6 + 120 + 25));
+        assert_eq!((l.cols, l.rows, l.w, l.h), (1, 3, 132, 20 + 120 + 25));
         // two rows asked of a titled pad
-        let l = layout(5, &want(View::Titles, false, 0, 6 + 80), ROOM, &m);
+        let l = layout(5, &want(View::Titles, false, 0, 80), ROOM, &m);
         assert_eq!((l.cols, l.rows, l.cw), (3, 2, 228));
     }
 
@@ -1099,23 +1218,23 @@ mod tests {
     fn an_app_folds_only_when_the_cells_run_out_the_most_windows_first() {
         let apps = names(&["foot", "foot", "firefox", "foot", "xterm", "firefox"]);
         // room for every window: each its own, oldest first
-        assert_eq!(wins(&group(&apps, 6)), vec![vec![0], vec![1], vec![2], vec![3], vec![4], vec![5]]);
-        assert_eq!(wins(&group(&apps, 40)).len(), 6);
+        assert_eq!(wins(&group(&apps, 6, false)), vec![vec![0], vec![1], vec![2], vec![3], vec![4], vec![5]]);
+        assert_eq!(wins(&group(&apps, 40, false)).len(), 6);
         // one cell short: foot, with the most, folds where its oldest stands
-        assert_eq!(wins(&group(&apps, 5)), vec![vec![0, 1, 3], vec![2], vec![4], vec![5]]);
-        assert_eq!(wins(&group(&apps, 4)), vec![vec![0, 1, 3], vec![2], vec![4], vec![5]]);
+        assert_eq!(wins(&group(&apps, 5, false)), vec![vec![0, 1, 3], vec![2], vec![4], vec![5]]);
+        assert_eq!(wins(&group(&apps, 4, false)), vec![vec![0, 1, 3], vec![2], vec![4], vec![5]]);
         // then firefox
-        assert_eq!(wins(&group(&apps, 3)), vec![vec![0, 1, 3], vec![2, 5], vec![4]]);
+        assert_eq!(wins(&group(&apps, 3, false)), vec![vec![0, 1, 3], vec![2, 5], vec![4]]);
         // nothing more to fold: every app one icon, whatever the room
-        assert_eq!(wins(&group(&apps, 2)), vec![vec![0, 1, 3], vec![2, 5], vec![4]]);
-        assert_eq!(wins(&group(&apps, 0)), vec![vec![0, 1, 3], vec![2, 5], vec![4]]);
+        assert_eq!(wins(&group(&apps, 2, false)), vec![vec![0, 1, 3], vec![2, 5], vec![4]]);
+        assert_eq!(wins(&group(&apps, 0, false)), vec![vec![0, 1, 3], vec![2, 5], vec![4]]);
         // a tie: the app whose window came first
         let tie = names(&["b", "a", "a", "b"]);
-        assert_eq!(wins(&group(&tie, 3)), vec![vec![0, 3], vec![1], vec![2]]);
+        assert_eq!(wins(&group(&tie, 3, false)), vec![vec![0, 3], vec![1], vec![2]]);
         // made big enough again, the group opens back into its icons
-        assert_eq!(wins(&group(&tie, 4)), vec![vec![0], vec![1], vec![2], vec![3]]);
-        assert!(group(&tie, 3)[0].group() && !group(&tie, 3)[1].group());
-        assert_eq!(group(&[], 3), vec![]);
+        assert_eq!(wins(&group(&tie, 4, false)), vec![vec![0], vec![1], vec![2], vec![3]]);
+        assert!(group(&tie, 3, false)[0].group() && !group(&tie, 3, false)[1].group());
+        assert_eq!(group(&[], 3, false), vec![]);
     }
 
     #[test]
@@ -1196,61 +1315,157 @@ mod tests {
     fn a_docked_pad_keeps_a_strip_as_thick_as_it_is() {
         let m = m();
         let row = layout(3, &want(View::Icons, false, 0, 0), ROOM, &m);
-        let two = layout(4, &want(View::Icons, false, 0, 6 + 72), ROOM, &m);
+        let two = layout(4, &want(View::Icons, false, 0, 72), ROOM, &m);
         let column = layout(3, &want(View::Icons, true, 36, 0), ROOM, &m);
-        assert_eq!(strip_thick(Place::default(), &row), 42);
-        assert_eq!(strip_thick(Place::Dock(Edge::Top, Along::Start), &row), 42);
+        assert_eq!(strip_thick(Place::default(), &row), 36);
+        assert_eq!(strip_thick(Place::Dock(Edge::Top, Along::Start), &row), 36);
         // two rows: a strip of both
-        assert_eq!(strip_thick(Place::default(), &two), 78);
+        assert_eq!(strip_thick(Place::default(), &two), 72);
         assert_eq!(strip_thick(Place::Dock(Edge::Left, Along::Center), &column), 36);
         assert_eq!(
             strip_thick(
                 Place::Dock(Edge::Right, Along::End),
-                &layout(8, &want(View::Icons, true, 72, 6 + 4 * 36 + 25), ROOM, &m)
+                &layout(8, &want(View::Icons, true, 72, 20 + 4 * 36 + 25), ROOM, &m)
             ),
             72
         );
-        // free: none, it floats over the windows
+        // free: none, it floats over the windows; and none on the bar, which keeps its own
         assert_eq!(strip_thick(Place::Free(0, 0), &row), 0);
-        // the titled row's 46
-        assert_eq!(strip_thick(Place::default(), &layout(3, &want(View::Titles, false, 0, 0), ROOM, &m)), 46);
+        assert_eq!(strip_thick(Place::Bar, &row), 0);
+        // the titled row's 40
+        assert_eq!(strip_thick(Place::default(), &layout(3, &want(View::Titles, false, 0, 0), ROOM, &m)), 40);
     }
 
     #[test]
     fn hits_on_a_row_of_icons() {
         let m = m();
         let l = layout(3, &want(View::Icons, false, 0, 0), ROOM, &m);
-        assert_eq!((l.w, l.h), (133, 42));
-        // the handle across the top, the cells under it, hide past the hairline
-        assert_eq!(hit(&l, 3, &m, 50.0, 3.0, None), Hit::Handle);
-        assert_eq!(hit(&l, 3, &m, 18.0, 20.0, None), Hit::Item(0));
-        assert_eq!(hit(&l, 3, &m, 90.0, 20.0, None), Hit::Item(2));
-        assert_eq!(hit(&l, 3, &m, 108.5, 20.0, None), Hit::Nothing);
-        assert_eq!(hit(&l, 3, &m, 120.0, 20.0, None), Hit::Hide);
-        assert_eq!(item_rect(&l, 2, &m), Rect::new(72, 6, 36, 36));
-        assert_eq!(hide_rect(&l, &m), Rect::new(109, 6, 24, 36));
+        assert_eq!((l.w, l.h), (153, 36));
+        // the grip's room at the left, the handle; the cells after it, hide a pixel past them
+        assert_eq!(hit(&l, 3, &m, 10.0, 20.0, None), Hit::Handle);
+        assert_eq!(hit(&l, 3, &m, 38.0, 20.0, None), Hit::Item(0));
+        assert_eq!(hit(&l, 3, &m, 110.0, 20.0, None), Hit::Item(2));
+        assert_eq!(hit(&l, 3, &m, 128.5, 20.0, None), Hit::Nothing);
+        assert_eq!(hit(&l, 3, &m, 140.0, 20.0, None), Hit::Hide);
+        assert_eq!(item_rect(&l, 2, &m), Rect::new(92, 0, 36, 36));
+        assert_eq!(hide_rect(&l, &m), Rect::new(129, 0, 24, 36));
+        assert_eq!(l.lead_rect(&m), Rect::new(0, 0, 20, 36));
         // the grips, 8 px outside each side, a corner's reaching 8 px along each side
         let g = |x: i8, y: i8| Hit::Grip(Sides { x, y });
         assert_eq!(hit(&l, 3, &m, -3.0, 20.0, None), g(-1, 0));
         assert_eq!(hit(&l, 3, &m, -3.0, -3.0, None), g(-1, -1));
         assert_eq!(hit(&l, 3, &m, 4.0, -3.0, None), g(-1, -1));
         assert_eq!(hit(&l, 3, &m, 50.0, -5.0, None), g(0, -1));
-        assert_eq!(hit(&l, 3, &m, 136.0, 20.0, None), g(1, 0));
-        assert_eq!(hit(&l, 3, &m, 136.0, 44.0, None), g(1, 1));
-        assert_eq!(hit(&l, 3, &m, 50.0, 45.0, None), g(0, 1));
+        assert_eq!(hit(&l, 3, &m, 156.0, 20.0, None), g(1, 0));
+        assert_eq!(hit(&l, 3, &m, 156.0, 38.0, None), g(1, 1));
+        assert_eq!(hit(&l, 3, &m, 50.0, 39.0, None), g(0, 1));
         assert_eq!(hit(&l, 3, &m, -9.0, 20.0, None), Hit::Nothing);
-        assert_eq!(hit(&l, 3, &m, 50.0, 51.0, None), Hit::Nothing);
+        assert_eq!(hit(&l, 3, &m, 50.0, 45.0, None), Hit::Nothing);
         // docked at the bottom: no grip at the edge, the corners by it are the sides'
         let b = Some(Edge::Bottom);
-        assert_eq!(hit(&l, 3, &m, 50.0, 45.0, b), Hit::Nothing);
-        assert_eq!(hit(&l, 3, &m, -3.0, 45.0, b), g(-1, 0));
+        assert_eq!(hit(&l, 3, &m, 50.0, 39.0, b), Hit::Nothing);
+        assert_eq!(hit(&l, 3, &m, -3.0, 39.0, b), g(-1, 0));
         assert_eq!(hit(&l, 3, &m, -3.0, -3.0, b), g(-1, -1));
         assert_eq!(hit(&l, 3, &m, 50.0, -5.0, b), g(0, -1));
         // docked at the left: none at the left
         assert_eq!(hit(&l, 3, &m, -3.0, 20.0, Some(Edge::Left)), Hit::Nothing);
         assert_eq!(hit(&l, 3, &m, -3.0, -3.0, Some(Edge::Left)), g(0, -1));
-        assert_eq!(hit(&l, 3, &m, 136.0, 20.0, Some(Edge::Right)), Hit::Nothing);
+        assert_eq!(hit(&l, 3, &m, 156.0, 20.0, Some(Edge::Right)), Hit::Nothing);
         assert_eq!(hit(&l, 3, &m, 50.0, -5.0, Some(Edge::Top)), Hit::Nothing);
+    }
+
+    #[test]
+    fn on_the_bar_the_pad_is_one_row_with_its_grip_and_no_hide() {
+        let m = m();
+        // the bar keeps 206 px after the workspaces: the grip's 20 and five cells of 36, as high as the bar
+        let bar = Want {
+            view: View::Icons,
+            band: false,
+            column: false,
+            bar: true,
+            w: 206,
+            h: 0,
+        };
+        assert_eq!(capacity(&bar, (206, 36), &m), 5);
+        let l = layout(3, &bar, (206, 36), &m);
+        assert_eq!((l.cols, l.rows, l.w, l.h, l.bar), (3, 1, 20 + 108, 36, true));
+        assert_eq!(
+            (item_rect(&l, 0, &m), hide_rect(&l, &m), l.lead_rect(&m)),
+            (Rect::new(20, 0, 36, 36), Rect::default(), Rect::new(0, 0, 20, 36))
+        );
+        // the grip is the handle, a cell a cell, and nothing sizes it: no grip outside it, nothing at its end
+        assert_eq!(hit(&l, 3, &m, 10.0, 18.0, Some(Edge::Top)), Hit::Handle);
+        assert_eq!(hit(&l, 3, &m, 100.0, 18.0, Some(Edge::Top)), Hit::Item(2));
+        assert_eq!(hit(&l, 3, &m, -3.0, 18.0, Some(Edge::Top)), Hit::Nothing);
+        assert_eq!(hit(&l, 3, &m, 131.0, 18.0, Some(Edge::Top)), Hit::Nothing);
+        assert_eq!(hit(&l, 3, &m, 60.0, 39.0, Some(Edge::Top)), Hit::Nothing);
+        // more cells than the row holds never make a second row, and a height asked of the pad elsewhere is not the bar's
+        let l = layout(9, &Want { h: 200, ..bar }, (206, 36), &m);
+        assert_eq!((l.cols, l.rows, l.w, l.h), (5, 1, 200, 36));
+        // the windows the row has no cell for fold into its last one, after each app's own have folded
+        let apps = names(&["a", "b", "c", "d", "e", "f", "g"]);
+        assert_eq!(wins(&group(&apps, 5, true)), vec![vec![0], vec![1], vec![2], vec![3], vec![4, 5, 6]]);
+        assert_eq!(wins(&group(&apps, 5, false)).len(), 7, "elsewhere a row is added");
+        let apps = names(&["a", "a", "b", "c", "d", "e", "f"]);
+        assert_eq!(wins(&group(&apps, 5, true)), vec![vec![0, 1], vec![2], vec![3], vec![4], vec![5, 6]]);
+        assert_eq!(wins(&group(&apps, 7, true)).len(), 7);
+        assert_eq!(wins(&group(&apps, 1, true)), vec![vec![0, 1, 2, 3, 4, 5, 6]]);
+    }
+
+    #[test]
+    fn the_bars_state_file_says_where_each_bar_stands_and_its_room() {
+        let text = "bar\t1\nstatus\tok\nlevel\tout\t40\noutput\tA\t1920\t36\ttop\t1\napps\tA\t354\t906\ntarget\tA\tmark\t10\t0\t24\t36\tmark\tok\t-\tspark\n\
+                    output\tB\t1280\t27\tbottom\t2\napps\tB\t270\t0\nrest\tC\n";
+        assert_eq!(
+            bars(text),
+            vec![
+                (
+                    "A".to_string(),
+                    BarAt {
+                        edge: Edge::Top,
+                        height: 36,
+                        x: 354,
+                        w: 906
+                    }
+                ),
+                (
+                    "B".to_string(),
+                    BarAt {
+                        edge: Edge::Bottom,
+                        height: 27,
+                        x: 270,
+                        w: 0
+                    }
+                ),
+            ]
+        );
+        // a bar that says no room, an edge that is none of the two, a line that does not read: no bar there
+        assert_eq!(bars("output\tA\t1920\t36\ttop\t1\n"), vec![]);
+        assert_eq!(bars("apps\tA\t354\t906\n"), vec![]);
+        assert_eq!(bars("output\tA\t1920\t36\tleft\t1\napps\tA\t354\t906\n"), vec![]);
+        assert_eq!(bars("output\tA\t1920\t0\ttop\t1\napps\tA\t354\t906\n"), vec![]);
+        assert_eq!(bars("output\tA\t1920\t36\ttop\t1\napps\tA\t-3\tmany\n"), vec![]);
+        assert_eq!(bars(""), vec![]);
+        // the place's word
+        assert_eq!(Place::parse("bar"), Some(Place::Bar));
+        assert_eq!(Place::Bar.words(), "bar");
+        assert_eq!((Place::Bar.side(), Place::Bar.edge()), (false, None));
+        assert_eq!(Place::parse("bar 3"), None);
+    }
+
+    #[test]
+    fn a_drag_takes_the_bar_with_the_pointer_on_it_and_keeps_it_half_its_height_on() {
+        // into the windows' area from the bar's edge: under 0 the pointer is on the bar
+        assert!(drag_bar(false, -1.0, 36));
+        assert!(drag_bar(false, -36.0, 36));
+        // at the bar's edge and near it the pad docks at the edge, as today: the bar is not taken
+        assert!(!drag_bar(false, 0.0, 36));
+        assert!(!drag_bar(false, 17.0, 36));
+        // held, it stays until the pointer is half the bar's height into the area
+        assert!(drag_bar(true, 0.0, 36));
+        assert!(drag_bar(true, 17.9, 36));
+        assert!(!drag_bar(true, 18.0, 36));
+        assert!(!drag_bar(true, 60.0, 36));
     }
 
     #[test]
@@ -1258,14 +1473,14 @@ mod tests {
         let m = m();
         let c = layout(3, &want(View::Icons, true, 36, 0), ROOM, &m);
         assert_eq!(hit(&c, 3, &m, 18.0, 3.0, Some(Edge::Left)), Hit::Handle);
-        assert_eq!(hit(&c, 3, &m, 18.0, 6.0 + 36.0 + 5.0, Some(Edge::Left)), Hit::Item(1));
-        assert_eq!(hide_rect(&c, &m), Rect::new(0, 6 + 108 + 1, 36, 24));
-        assert_eq!(hit(&c, 3, &m, 18.0, 6.0 + 108.0 + 0.5, Some(Edge::Left)), Hit::Nothing);
-        assert_eq!(hit(&c, 3, &m, 18.0, 6.0 + 108.0 + 1.0 + 5.0, Some(Edge::Left)), Hit::Hide);
+        assert_eq!(hit(&c, 3, &m, 18.0, 20.0 + 36.0 + 5.0, Some(Edge::Left)), Hit::Item(1));
+        assert_eq!(hide_rect(&c, &m), Rect::new(0, 20 + 108 + 1, 36, 24));
+        assert_eq!(hit(&c, 3, &m, 18.0, 20.0 + 108.0 + 0.5, Some(Edge::Left)), Hit::Nothing);
+        assert_eq!(hit(&c, 3, &m, 18.0, 20.0 + 108.0 + 1.0 + 5.0, Some(Edge::Left)), Hit::Hide);
         // a grid's last row: an empty cell is nothing
         let g = layout(5, &want(View::Titles, false, 445, 0), ROOM, &m);
-        assert_eq!(hit(&g, 5, &m, 350.0, 6.0 + 40.0 + 10.0, None), Hit::Nothing);
-        assert_eq!(hit(&g, 5, &m, 150.0, 6.0 + 40.0 + 10.0, None), Hit::Item(4));
+        assert_eq!(hit(&g, 5, &m, 350.0, 40.0 + 10.0, None), Hit::Nothing);
+        assert_eq!(hit(&g, 5, &m, 200.0, 40.0 + 10.0, None), Hit::Item(4));
         // titled with the band: the band is the handle's, hide stands at the first row's end
         let band = layout(
             3,
@@ -1277,9 +1492,10 @@ mod tests {
             &m,
         );
         assert_eq!(hit(&band, 3, &m, 300.0, 20.0, None), Hit::Handle);
+        assert_eq!(hit(&band, 3, &m, 10.0, 40.0, None), Hit::Handle);
         assert_eq!(hit(&band, 3, &m, 300.0, 40.0, None), Hit::Item(1));
-        assert_eq!(hit(&band, 3, &m, 690.0, 40.0, None), Hit::Hide);
-        assert_eq!(item_rect(&band, 2, &m), Rect::new(456, 30, 228, 40));
+        assert_eq!(hit(&band, 3, &m, 710.0, 40.0, None), Hit::Hide);
+        assert_eq!(item_rect(&band, 2, &m), Rect::new(476, 24, 228, 40));
     }
 
     #[test]
@@ -1675,7 +1891,7 @@ mod tests {
     fn metrics_scale_with_the_text() {
         assert_eq!(Metrics::for_text(16.0).slot_max, 228);
         assert_eq!(Metrics::for_text(24.0).tool, 54);
-        assert_eq!(Metrics::for_text(24.0).handle, 9);
+        assert_eq!(Metrics::for_text(24.0).lead, 30);
         assert_eq!(Metrics::for_text(f64::NAN), Metrics::for_text(16.0));
         // the air, the snapping and the grips stay as they are at any text size
         let big = Metrics::for_text(24.0);

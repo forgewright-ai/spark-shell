@@ -138,12 +138,13 @@ BAR_TEXT=auto
 # spark-shell bar tray on|off sets this.
 BAR_TRAY=no
 
-# The pad, where minimized windows wait as icons: where it sits. An
-# edge, top, bottom, left or right, then where along it: center, start,
-# end, or pixels from the edge's start; or free X Y, anywhere on the
-# screen. The pad writes these four when you drag it, or resize it from
-# a corner or a side. The bar's edge starts at the bar.
-WINPAD_PLACE=bottom center
+# The pad, where minimized windows wait as icons: where it sits. bar is
+# on the bar, after the workspaces. Or an edge, top, bottom, left or
+# right, then where along it: center, start, end, or pixels from the
+# edge's start; or free X Y, anywhere on the screen. The pad writes
+# these four when you drag it, or resize it from a corner or a side.
+# The bar's edge starts at the bar.
+WINPAD_PLACE=bar
 
 # The most width the pad takes at the top, the bottom or floating, in
 # pixels; 0 is as wide as the screen allows. The width sets its columns

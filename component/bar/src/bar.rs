@@ -955,6 +955,8 @@ pub struct Layout {
     cell: i32,
     inset: i32,
     icon: i32,
+    /// The room for the pad's windows, Apps: after the run, up to the status or the mode's name.
+    pub apps: Rect,
     pub targets: Vec<Target>,
     pub fixed: Vec<Draw>,
     pub dropped: Vec<String>,
@@ -1035,9 +1037,13 @@ fn drop_order(pieces: &[Piece], overflow: &[String]) -> Vec<String> {
 /// gauge, then whole modules in the overflow order, three dots standing for them at the status's left
 /// end. The run and the time's group stay; a bar with no room even for those shows no status.
 ///
-/// sway's binding mode stands one cell after the run, in the room the status leaves: the status is fitted
-/// as if there were no mode, so a mode moves no module and drops none. It is cut five cells before the
-/// status, and is no target.
+/// sway's binding mode stands in the room the status leaves, its name's end five cells before the status:
+/// the status is fitted as if there were no mode, so a mode moves no module and drops none. A name longer
+/// than the room from one cell after the run is cut at its end. It is no target.
+///
+/// The room for the pad's windows (Apps) begins one cell after the run and ends five cells before the
+/// status, or one cell before the mode's name: the pad stands there when it is on the bar, and the bar
+/// draws nothing in it.
 pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
     let (cell, h) = (m.cell.max(1), m.height);
     let mut lay = Layout {
@@ -1143,16 +1149,15 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
     }
     let start = right - cells * cell;
 
-    // the binding mode, in the room between the run and the status
+    // the binding mode, in the room between the run and the status: its end five cells before the status
+    let limit = if cells > 0 { start - GROUP_GAP * cell } else { right };
+    let mut room_end = limit;
     if let Some(name) = scene.mode {
-        let limit = if cells > 0 { start - GROUP_GAP * cell } else { right };
-        for (i, glyph) in glyphs(&plain(name)).into_iter().enumerate() {
-            let rect = Rect::new(run_end + cell + i as i32 * cell, 0, cell, h);
-            if rect.right() > limit {
-                break;
-            }
+        let said = glyphs(&plain(name));
+        let n = ((limit - run_end - cell) / cell).clamp(0, said.len() as i32);
+        for (i, glyph) in said.into_iter().take(n as usize).enumerate() {
             lay.fixed.push(Draw::Glyph {
-                rect,
+                rect: Rect::new(limit - (n - i as i32) * cell, 0, cell, h),
                 text: glyph,
                 tone: Tone::Attention,
                 bold: false,
@@ -1160,7 +1165,12 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
                 shift: 0.0,
             });
         }
+        if n > 0 {
+            room_end = limit - (n + 1) * cell;
+        }
     }
+    // the room for the pad's windows: from one cell after the run
+    lay.apps = Rect::new(run_end + cell, 0, (room_end - run_end - cell).max(0), h);
 
     let mut x = start;
     if let (Some(sign), true) = (note, cells > 0) {
@@ -1710,7 +1720,8 @@ fn field(s: &str) -> String {
 }
 
 /// The state file's text: the status, sway's binding mode while one is on, each level as it is drawn,
-/// each output that rests, then each output that has a bar with its targets and what it left out.
+/// each output that rests, then each output that has a bar with the room it keeps for the pad's
+/// windows, its targets and what it left out.
 pub fn state_text(status: Status, mode: Option<&str>, levels: &Levels, resting: &[&str], bars: &[Shown]) -> String {
     let mut out = format!("bar\t1\nstatus\t{}\n", status.word());
     if let Some(name) = mode {
@@ -1725,6 +1736,7 @@ pub fn state_text(status: Status, mode: Option<&str>, levels: &Levels, resting: 
     for b in bars {
         let (l, name) = (b.layout, field(b.output));
         out += &format!("output\t{name}\t{}\t{}\t{}\t{}\n", l.width, l.height, l.edge.word(), b.scale);
+        out += &format!("apps\t{name}\t{}\t{}\n", l.apps.x, l.apps.w);
         for (i, t) in l.targets.iter().enumerate() {
             let flags: Vec<&str> = [
                 (b.focus == Some(i), "focused"),
@@ -2182,9 +2194,8 @@ mod tests {
             assert!(plate.visible && plate.selected && !plate.empty);
             // every place where it always is, the plate's too, and no room beside it
             assert_eq!(run.iter().map(|t| t.rect).collect::<Vec<_>>(), places, "{n}");
-            // the run ends at 344 wherever the plate is: the mode stands one cell after it
-            let Draw::Glyph { rect, .. } = &l.fixed[0] else { panic!() };
-            assert_eq!(rect.x, 354, "{n}");
+            // the run ends at 344 wherever the plate is: the pad's room begins one cell after it
+            assert_eq!(l.apps.x, 354, "{n}");
         }
         // nor with which workspaces exist, or ask
         let mut all = five();
@@ -2795,8 +2806,8 @@ mod tests {
         let hairline = fill(Rect::new(892, 7, 1, 13), Tone::Dim);
         assert_eq!(l.fixed.last(), Some(&hairline));
         assert_eq!((7, 27 - 7 - 13), (7, 7));
-        // the mode one cell after the run, a glyph a cell
-        assert_eq!(l.fixed[0], glyph(Rect::new(282, 0, 8, 27), "r", Tone::Attention));
+        // the mode's end five cells before the status, a glyph a cell
+        assert_eq!(l.fixed[0], glyph(Rect::new(440, 0, 8, 27), "r", Tone::Attention));
         // a chip: half a cell at each side, the plate's height; the keys' line the last two pixels inside it
         let bt = target(&l, "bt.name");
         assert_eq!((l.chip(bt), l.line(bt)), (Rect::new(556, 3, 16, 21), Rect::new(556, 22, 16, 2)));
@@ -2833,8 +2844,7 @@ mod tests {
             let run: Vec<Rect> = l.targets.iter().filter(|t| t.kind == Kind::Workspace).map(|t| t.rect).collect();
             let want: Vec<Rect> = (0..10).map(|i| Rect::new(66 + i * 45, 0, 45, 54)).collect();
             assert_eq!(run, want, "{n}");
-            let Draw::Glyph { rect, .. } = &l.fixed[0] else { panic!() };
-            assert_eq!(rect.x, 66 + 30 * 15 + 15, "{n}: the mode one cell after the run");
+            assert_eq!(l.apps.x, 66 + 30 * 15 + 15, "{n}: the pad's room one cell after the run");
         }
         // the status: whole cells from two cells before the edge
         let at = |id: &str| rect_of(&l, id);
@@ -4428,6 +4438,7 @@ mod tests {
             status\tok\n\
             level\tout\t55\n\
             output\tA\t770\t36\ttop\t2\n\
+            apps\tA\t354\t86\n\
             target\tA\tmark\t10\t0\t24\t36\tmark\tok\t-\tspark\n\
             target\tA\tworkspace:1\t44\t0\t30\t36\tworkspace\tok\t-\tworkspace 1\n\
             target\tA\tworkspace:2\t74\t0\t30\t36\tworkspace\tok\tfocused,selected,visible\tworkspace 2\n\
@@ -4553,12 +4564,13 @@ mod tests {
         for line in text.lines().skip(2) {
             let want = match line.split('\t').next() {
                 Some("output") => 6,
+                Some("apps") => 4,
                 Some("level") => 3,
                 _ => 11,
             };
             assert_eq!(line.split('\t').count(), want, "{line:?}");
         }
-        assert_eq!(text.lines().count(), 2 + 1 + 1 + 1 + 12 + 4);
+        assert_eq!(text.lines().count(), 2 + 1 + 1 + 1 + 1 + 12 + 4);
         assert!(text.contains("\tbottom\t1\n") && text.contains("\tworkspace tab here\n") && text.contains("\tworkspace:line end\t"));
     }
 
@@ -4937,45 +4949,70 @@ mod tests {
     }
 
     #[test]
-    fn a_binding_mode_stands_one_cell_after_the_run_in_the_attention_color_and_is_no_target() {
+    fn a_binding_mode_stands_five_cells_before_the_status_in_the_attention_color_and_is_no_target() {
         let (with, without) = (in_mode(1200, Status::Ok, "resize", &five()), sheet(1200));
-        // the run ends at 344: plain text from 354, a glyph a cell, no fill behind it
-        assert_eq!(mode_said(&with), Some((354, "resize".into())));
-        assert_eq!(with.fixed[0], glyph(Rect::new(354, 0, 10, 36), "r", Tone::Attention));
+        // the status starts at 610: plain text that ends at 560, a glyph a cell, no fill behind it
+        assert_eq!(mode_said(&with), Some((500, "resize".into())));
+        assert_eq!(with.fixed[0], glyph(Rect::new(500, 0, 10, 36), "r", Tone::Attention));
         assert_eq!(with.fixed.len(), 7, "six glyphs and the hairline");
         assert_eq!(mode_said(&without), None);
         // no target: every target is where it was, the pointer reaches nothing there and the keys pass it by
         assert_eq!((&with.targets, &with.dropped), (&without.targets, &without.dropped));
         let levels = Levels::default();
-        assert_eq!((with.hit(370.0, 10.0), with.press(370.0, 10.0, 1, &levels)), (None, Press::default()));
+        assert_eq!((with.hit(510.0, 10.0), with.press(510.0, 10.0, 1, &levels)), (None, Press::default()));
         assert_eq!(with.key(10, Key::Tab, &levels), KeyAct::Focus(11));
         assert_eq!(with.targets[11].id, "lan.name");
         // a name with markup in it is plain text
-        assert_eq!(mode_said(&in_mode(1200, Status::Ok, "<b>r</b>", &five())), Some((354, "<b>r</b>".into())));
-        // before the first line and after a break it stands too
+        assert_eq!(mode_said(&in_mode(1200, Status::Ok, "<b>r</b>", &five())), Some((480, "<b>r</b>".into())));
+        // before the first line and after a break it stands too, five cells before the note
         for status in [Status::Loading, Status::Error] {
-            assert_eq!(mode_said(&in_mode(1200, status, "resize", &five())), Some((354, "resize".into())));
+            assert_eq!(mode_said(&in_mode(1200, status, "resize", &five())), Some((1050, "resize".into())));
         }
-        // after the last place when a workspace stands past the tenth
+        // a workspace past the tenth makes the run longer and moves no mode
         let mut all = five();
         all.push(ws(11, "11", "A", false, false, false));
-        assert_eq!(mode_said(&in_mode(1200, Status::Ok, "resize", &all)), Some((384, "resize".into())));
+        assert_eq!(mode_said(&in_mode(1200, Status::Ok, "resize", &all)), Some((500, "resize".into())));
     }
 
     #[test]
-    fn a_mode_is_cut_five_cells_before_the_status_and_takes_nothing_from_it() {
-        // the status starts at 610 on the 1200 bar: a long name is cut at 560, whole glyphs only
+    fn the_room_for_the_pads_windows_is_after_the_run() {
+        // the run ends at 344 and the status starts at 610: from one cell after the run to five before the status
+        assert_eq!(sheet(1200).apps, Rect::new(354, 0, 206, 36));
+        // a mode's name takes the room's end, and a cell before it
+        assert_eq!(in_mode(1200, Status::Ok, "resize", &five()).apps, Rect::new(354, 0, 136, 36));
+        // a longer run leaves less, a status that fits whole none, and with no status the room goes to the edge's
+        let mut all = five();
+        all.push(ws(11, "11", "A", false, false, false));
+        assert_eq!(lay(1200, &mods(SHEET), &all).apps, Rect::new(384, 0, 176, 36));
+        assert_eq!(sheet(984).apps, Rect::new(354, 0, 0, 36));
+        assert_eq!(lay(1200, &[], &five()).apps, Rect::new(354, 0, 826, 36));
+        // the state file says it for each bar, after its output
+        let l = sheet(1200);
+        let bars = [Shown {
+            output: "A",
+            scale: 1,
+            layout: &l,
+            focus: None,
+            hover: None,
+        }];
+        let text = state_text(Status::Ok, None, &Levels::default(), &[], &bars);
+        assert!(text.contains("output\tA\t1200\t36\ttop\t1\napps\tA\t354\t206\ntarget\tA\tmark\t"), "{text}");
+    }
+
+    #[test]
+    fn a_mode_is_cut_at_its_end_and_takes_nothing_from_the_status() {
+        // the status starts at 610 on the 1200 bar: a long name has the room from 354 to 560, whole glyphs only
         let long = "a mode with a long name to stand in the bar here";
         let l = in_mode(1200, Status::Ok, long, &five());
         let (x, said) = mode_said(&l).unwrap();
-        assert_eq!((x, said.as_str()), (354, &long[..20]));
+        assert_eq!((x, said.as_str()), (360, &long[..20]));
         assert_eq!(l.targets, sheet(1200).targets);
         // the status is fitted as if there were no mode: at 984 it fits whole and leaves the mode no room
         let l = in_mode(984, Status::Ok, "resize", &five());
         assert_eq!((mode_said(&l), l.dropped.len()), (None, 0));
         // seven more cells of room and the mode stands whole; one pixel less and its last glyph is cut
         assert_eq!(mode_said(&in_mode(1054, Status::Ok, "resize", &five())), Some((354, "resize".into())));
-        assert_eq!(mode_said(&in_mode(1053, Status::Ok, "resize", &five())), Some((354, "resiz".into())));
+        assert_eq!(mode_said(&in_mode(1053, Status::Ok, "resize", &five())), Some((363, "resiz".into())));
         // at any width the status with a mode is the status without one
         for width in 0..=1300 {
             for status in [Status::Ok, Status::Loading, Status::Error] {

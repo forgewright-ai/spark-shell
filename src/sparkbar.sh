@@ -127,7 +127,7 @@ sparkbar_tray_place() {   # the host placed: sway's, at login and after each rel
     [ "$BAR_TRAY" = yes ] && sparkbar_draws || return 0
     _sts=$(sparkbar_tray_screen) || return 0
     _sth=$(sparkbar_height); _stl=$(( ${_sts#* } - _sth * SPARKBAR_TRAY_SLOTS )); [ "$_stl" -ge 0 ] || return 0
-    wm_tray_place "${_sts% *}" "$_stl" "$_sth" "$(( (_sth * 2 + 4) / 9 ))" || return 0   # the icons 1.25 times the text
+    wm_tray_place "${_sts% *}" "$_stl" "$_sth" "$(( (_sth + 3) / 6 ))" || return 0   # the icons one and a half times the text, as the pad's are: 24 px in a bar of 36
     printf '%s %s\n' "$_sts" "$_sth" > "$(sparkbar_file tray)"
 }
 sparkbar_tray_follow() {   # the status loop's: the host follows its screen's width and the bar's height; kept once for each, so nothing repeats

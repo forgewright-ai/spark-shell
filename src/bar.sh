@@ -508,8 +508,9 @@ bar_fact() {   # bar_fact NAME GROUP SIGN TEXT CELLS STATE LABEL [LEVEL [SET]] -
     bar_str "$3"; _bfs=$_bs; bar_str "$4"; _bft=$_bs; bar_str "$7"
     line="$line,{\"name\":\"$1\",\"group\":\"$2\",\"sign\":\"$_bfs\",\"icon\":\"$_bfi\",\"text\":\"$_bft\",\"cells\":$5,\"bold\":$_bfb,\"state\":\"$6\"$_bfl,\"set\":${9:-false},\"pinned\":$_bfp,\"label\":\"$_bs\",\"toggle\":$_bfg}"
 }
-bar_fact_pad() {   # the windows that wait on the pad, and how many; off while the pad is hidden
+bar_fact_pad() {   # the windows that wait on the pad, and how many; off while the pad is hidden. Nothing while the pad is on the bar and in sight: it says itself there
     _pdn=$(winpad_count); [ "${_pdn:-0}" -gt 0 ] 2>/dev/null || return 0
+    [ "$WINPAD_PLACE" != bar ] || winpad_hidden || return 0
     bar_sign "$BAR_PAD" pad pad; _pdw=2; [ "${#_pdn}" -le 2 ] || _pdw=${#_pdn}
     if winpad_hidden; then bar_fact pad windows "$_bg" "$_pdn" "$_pdw" off "pad hidden, $_pdn windows"
     else bar_fact pad windows "$_bg" "$_pdn" "$_pdw" ok "pad, $_pdn windows"; fi
