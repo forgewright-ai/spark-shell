@@ -18,13 +18,8 @@ winpad_want_sha() {   # -> the sha256 the release tag's tree pins for this machi
 winpad_ok() { [ -x "$WINPAD_BIN" ] && _pdw=$(winpad_want_sha) && [ -n "$_pdw" ] && [ "$(sha256_of "$WINPAD_BIN")" = "$_pdw" ]; }   # the binary in place is the one the tree pins
 winpad_cmd() { if [ -n "${SPARK_SHELL_WINPAD:-}" ]; then [ -x "$SPARK_SHELL_WINPAD" ] && printf '%s' "$SPARK_SHELL_WINPAD"; elif winpad_ok; then printf '%s' "$WINPAD_BIN"; else return 1; fi; }   # -> SPARK_SHELL_WINPAD (another build, as it is), else the pinned pad; false when none
 winpad_here() { winpad_cmd >/dev/null 2>&1; }   # a winpad can run on this machine
-winpad_half() {   # -> half the title font's size as pango's span takes it, 1024ths of a point (a pixel is three quarters of one): the half cell of room beside a control
-    _wh=$(bar_line_font); _wh=${_wh##* }
-    case $_wh in *px) awk -v n="${_wh%px}" 'BEGIN { printf "%d", n * 384 }' ;; *) awk -v n="$_wh" 'BEGIN { printf "%d", n * 512 }' ;; esac
-}
-winpad_room() { _wr=$(winpad_half); case $_wr in ''|0|*[!0-9]*) printf ' ' ;; *) printf "<span size='%s'>  </span>" "$_wr" ;; esac; }   # -> the cell of room on each side of a control, as two half spaces: the chip under the pointer takes one half of each, and nothing shifts
-winpad_mic() { ! winpad_here || ! voice_here || { _wm=$(winpad_room); printf '%s&#x25CB;%s' "$_wm" "$_wm"; }; }   # -> the mic at rest on a band, in the title's color as the buttons are; the pad takes the title over from here, with the meter at its right end
-winpad_buttons() { ! winpad_here || { _wb=$(winpad_room); printf '%s&#x2715;%s%s&#x25BD;%s%s&#x25A1;%s' "$_wb" "$_wb" "$_wb" "$_wb" "$_wb" "$_wb"; }; }   # -> close, minimize, fill, the start of every title, as pango character references so the render stays ASCII (the component's GLYPH_REFS); nothing where no winpad can run: no button is drawn that does not click
+winpad_mic() { ! winpad_here || ! voice_here || printf '%s' ' &#x25CB; '; }   # -> the mic at rest on a band, in the title's color as the buttons are; the pad takes the title over from here, with the meter at its right end
+winpad_buttons() { ! winpad_here || printf '%s' ' &#x2715;  &#x25BD;  &#x25A1; '; }   # -> close, minimize, fill, the start of every title, as pango character references so the render stays ASCII (the component's GLYPH_REFS); nothing where no winpad can run: no button is drawn that does not click
 winpad_install() {   # the pad's row of on desktop: in place as pinned, or fetched for the signed tag and checked
     _pdt=$(wallpaper_target) || { skip pad "no spark-winpad built for $(uname -m) yet: Super+minus brings back the window minimized last"; return 0; }
     _pdr=$(winpad_release_tag) || { row todo pad "this clone is past its release: spark-winpad comes with the next tag"; return 0; }
@@ -77,11 +72,11 @@ winpad_run() {   # winpad_run [--keys] -- spark-winpad started in its own sessio
     mkdir_private "$STATE_DIR"
     (
         # WINPAD_BAND on|off, WINPAD_BAND_HEX its color; WINPAD_GAP the outer gap; WINPAD_VIEW icons|titles; WINPAD_HEIGHT 0 as many as needed
-        SPARK_SHELL=$REPO/spark-shell WINPAD_FG=$HEX_FG WINPAD_ACCENT=$HEX_ACCENT WINPAD_MUTED=$PANEL_MUTED WINPAD_GROUND=$HEX_BG WINPAD_CLOSE=$HEX_ANSI_1 WINPAD_MIN=$HEX_ANSI_3 WINPAD_FILL=$HEX_ANSI_2 WINPAD_SURFACE=$PANEL_BG WINPAD_LIT=$PANEL_HI WINPAD_BAND_HEX=$PANEL_BAND WINPAD_BAND_LIT=$(hex_mix "$HEX_ACCENT" "$HEX_FG" 40) WINPAD_HALF=$(winpad_half)
+        SPARK_SHELL=$REPO/spark-shell WINPAD_FG=$HEX_FG WINPAD_ACCENT=$HEX_ACCENT WINPAD_MUTED=$PANEL_MUTED WINPAD_GROUND=$HEX_BG WINPAD_CLOSE=$HEX_ANSI_1 WINPAD_MIN=$HEX_ANSI_3 WINPAD_FILL=$HEX_ANSI_2 WINPAD_SURFACE=$PANEL_BG WINPAD_LIT=$PANEL_HI WINPAD_BAND_HEX=$PANEL_BAND WINPAD_BAND_LIT=$(hex_mix "$HEX_ACCENT" "$HEX_FG" 40)
         WINPAD_ALPHA=$ALPHA WINPAD_FONT=$(bar_line_font) WINPAD_PLACE=$WINPAD_PLACE WINPAD_WIDTH=$WINPAD_WIDTH WINPAD_SIDE_WIDTH=$WINPAD_SIDE_WIDTH WINPAD_HEIGHT=${WINPAD_HEIGHT:-0} WINPAD_BAR=$(bar_place)
         WINPAD_VOICE=$(voice_here && echo yes || echo no) WINPAD_VOICE_STATE=$(voice_state)
         WINPAD_TERM=$TERM_NAME WINPAD_TERM_ALSO=$TERM_APP_PREFIX WINPAD_TITLE=$BAND_TITLE WINPAD_TERM_TITLE=$BAND_TERM_TITLE WINPAD_BAND=${WINPAD_BAND:-off} WINPAD_VIEW=${WINPAD_VIEW:-icons} WINPAD_GAP=${GAPS_OUTER:-} WINPAD_LOCK=$(winpad_lock) WINPAD_STATE=$(winpad_state) WINPAD_BAR_PID=$BAR_PID
-        export WINPAD_BAND_LIT WINPAD_HALF SPARK_SHELL WINPAD_VOICE WINPAD_VOICE_STATE WINPAD_TERM_ALSO WINPAD_FG WINPAD_ACCENT WINPAD_MUTED WINPAD_GROUND WINPAD_CLOSE WINPAD_MIN WINPAD_FILL WINPAD_TERM WINPAD_TITLE WINPAD_TERM_TITLE WINPAD_SURFACE WINPAD_LIT WINPAD_BAND_HEX WINPAD_ALPHA WINPAD_FONT WINPAD_PLACE WINPAD_WIDTH WINPAD_SIDE_WIDTH WINPAD_HEIGHT WINPAD_BAR WINPAD_BAND WINPAD_VIEW WINPAD_GAP WINPAD_LOCK WINPAD_STATE WINPAD_BAR_PID
+        export WINPAD_BAND_LIT SPARK_SHELL WINPAD_VOICE WINPAD_VOICE_STATE WINPAD_TERM_ALSO WINPAD_FG WINPAD_ACCENT WINPAD_MUTED WINPAD_GROUND WINPAD_CLOSE WINPAD_MIN WINPAD_FILL WINPAD_TERM WINPAD_TITLE WINPAD_TERM_TITLE WINPAD_SURFACE WINPAD_LIT WINPAD_BAND_HEX WINPAD_ALPHA WINPAD_FONT WINPAD_PLACE WINPAD_WIDTH WINPAD_SIDE_WIDTH WINPAD_HEIGHT WINPAD_BAR WINPAD_BAND WINPAD_VIEW WINPAD_GAP WINPAD_LOCK WINPAD_STATE WINPAD_BAR_PID
         if command -v setsid >/dev/null 2>&1; then setsid sh -c "$WINPAD_KEEP" "$_pdc" "$@" </dev/null >/dev/null 2>"$_pdlog" &
         else ( trap '' HUP; exec sh -c "$WINPAD_KEEP" "$_pdc" "$@" ) </dev/null >/dev/null 2>"$_pdlog" & fi
     )

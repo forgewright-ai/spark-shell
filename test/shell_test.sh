@@ -920,18 +920,16 @@ else
         && ok "sway: with no winpad on the machine the titles are plain: no button is drawn that does not click (v0.143)" || bad "band plain" "$(grep -n title_format "$sway")"
     printf '#!/bin/sh\n' > "$HOME/winpad-here"; chmod +x "$HOME/winpad-here"
     SPARK_SHELL_WINPAD=$HOME/winpad-here sh "$SH" on --yes >/dev/null
-    # a control's room is a cell each side, as two half spaces: the chip under the pointer takes one half of each, so nothing shifts (v0.148.1)
-    _hs=$(sed -n 's/^font pango:.* \([0-9.]*\)$/\1/p' "$sway" | head -1); _h="<span size='$(awk -v n="$_hs" 'BEGIN { printf "%d", n * 512 }')'>  </span>"
-    _bg="$_h&#x2715;$_h$_h&#x25BD;$_h$_h&#x25A1;$_h"
+    _bg=' &#x2715;  &#x25BD;  &#x25A1; '
     grep -qxF "for_window [shell=\".*\"] title_format \"$_bg  %title\"" "$sway" && grep -qxF "for_window [app_id=\"^(foot|spark-shell-.*)\$\"] title_format \"$_bg  terminal   %title\"" "$sway" \
         && grep -qF 'pub const GLYPH_REFS: [&str; 3] = ["&#x2715;", "&#x25BD;", "&#x25A1;"];' "$REPO/component/winpad/src/buttons.rs" \
         && ok "sway: with a winpad, the close, minimize and fill buttons are the start of every title, sway's own pixels, so they move with the window (v0.142), written as character references so the render stays ASCII; the component's are the same three" || bad "band glyphs" "$(grep -n title_format "$sway")"
     printf 'VOICE_ENGINE=/bin/true\n' >> "$HOME/.config/spark-shell/config"
     printf '#!/bin/sh\nexit 0\n' > "$HOME/.local/bin/wtype"; chmod +x "$HOME/.local/bin/wtype"   # a desktop has it; without it no mic is drawn
     SPARK_SHELL_WINPAD=$HOME/winpad-here sh "$SH" on --yes >/dev/null
-    _mic="$_h&#x25CB;$_h"
+    _mic=' &#x25CB; '
     grep -qxF "for_window [app_id=\"^(foot|spark-shell-.*)\$\"] title_format \"$_bg$_mic  terminal   %title\"" "$sway" && grep -qxF "for_window [shell=\".*\"] title_format \"$_bg$_mic  %title\"" "$sway" \
-        && [ -n "$_hs" ] && ok "sway: with a voice, every title carries the mic after the buttons, a ring in the title's color as they are (v0.148.1): the voice is a window's, like its buttons (v0.145)" || bad "band mic" "$(grep -n title_format "$sway")"
+        && ok "sway: with a voice, every title carries the mic after the buttons, a ring in the title's color as they are (v0.148.1): the voice is a window's, like its buttons (v0.145)" || bad "band mic" "$(grep -n title_format "$sway")"
     sed -i.bak '/^VOICE_ENGINE=/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak" "$HOME/.local/bin/wtype"
     sh "$SH" on --yes >/dev/null; rm -f "$HOME/winpad-here"
     grep -qxF "bindsym --no-repeat Mod4+space exec $REPO/spark-shell desktop voice press" "$sway" \
@@ -5525,7 +5523,7 @@ STUB
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"; sh "$SH" on --yes >/dev/null 2>&1
     grep -q '^bar {$' "$sway" && grep -q "^    status_command $REPO/spark-shell bar status\$" "$sway" && ! grep -q 'bar start' "$sway" && ! grep -q 'spark-tray' "$sway" && ! grep -q '@BAR' "$sway" \
         && grep -q "^bindsym Mod4+equal exec $REPO/spark-shell bar keys\$" "$sway" && grep -qxF 'bindsym $mod+equal exec @REPO@/spark-shell bar keys' "$REPO/template/.config/sway/config" \
-        && sh "$SH" desktop keys | grep -qx 'Super+equal desktop.bar-keys.' && sh "$SH" -h | grep -qx '  spark-shell bar keys              the keyboard on the bar (Super+equal)' && grep -qx '    Super+equal puts the keyboard on the bar: the arrows move, Enter acts.' "$REPO/README.md" \
+        && sh "$SH" desktop keys | grep -qx 'Super+equal desktop.bar-keys.' && sh "$SH" -h | grep -qx '  spark-shell bar keys              the keyboard on the bar (Super+equal)' && grep -qx '    Super+equal puts the keyboard on the bar: arrows move and set, Enter acts.' "$REPO/README.md" \
         && ok "sway's config with no spark-bar here: sway's bar draws the line as before, nothing starts spark-bar; Super+equal is bound, beside the pad's Super+minus, and the keys, the help and the README say so" || bad "render no spark-bar" "$(grep -n 'bar' "$sway" | head -20)"
     mkdir -p "$H/barbin" "$H/run"
     cat > "$H/barbin/spark-bar" <<'SPARKBAR_STUB'

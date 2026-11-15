@@ -3,7 +3,7 @@
 the window that has the focus, the mic on every title band in the title's color, and the meter at the band's
 right end while it listens, in cells kept for it, so nothing on the band moves and the meter follows the
 window. The voice is a window's capability, like its buttons: what the words mean is the window's own affair.
-The pointer on a button or on the mic draws its chip, the glyph and half a cell at each side: close's in its
+The pointer on a button or on the mic draws its chip, the glyph and a cell at each side: close's in its
 own color, the others' in the band's lit tone, and nothing on the band moves for it.
 
 python3 test/voice_desktop_proof.py [EVIDENCE_DIRECTORY]. A throwaway HOME and a sway of its own.
@@ -243,8 +243,8 @@ def main():
             move(x + mark[0] + mark[1] / 2 + off * cell, y + h // 2)
             return settle(lambda: chip_on(name, mark, color, ink))
 
-        def two_cells(width):   # half a cell either way: a glyph from another face has a width of its own
-            return 1.5 * cell <= width <= 2.5 * cell
+        def three_cells(width):   # half a cell either way: a glyph from another face has a width of its own
+            return 2.5 * cell <= width <= 3.5 * cell
 
         def others(name, mark, all_ink):   # where the ink of a band starts, a button's own three cells left out
             lo, hi = mark[0] + mark[1] / 2 - 1.5 * cell, mark[0] + mark[1] / 2 + 1.5 * cell
@@ -288,9 +288,10 @@ def main():
                and apart(busy[3][3], busy_after[0][3]) < min(apart(busy[3][3], c) for c in own),
                "without the focus the three buttons keep their own colors and the mic wears that band's title color",
                ([c[3] for c in busy[:4]], busy_after[0][3], own))
-            # the pointer on a button: its chip, the glyph and half a cell at each side, and nothing on the band moves
-            ok(look.get("WINPAD_HALF") and look.get("WINPAD_BAND_LIT"),
-               "spark-shell hands the pad the half space and the lit tone of the band with the focus",
+            # the pointer on a button: its chip, the glyph and a cell at each side, and nothing on the band moves. A chip
+            # of half cells is not a clean rectangle on every family's pango, so the room stays whole cells
+            ok(look.get("WINPAD_BAND_LIT") and not look.get("WINPAD_HALF"),
+               "spark-shell hands the pad the lit tone of the band with the focus",
                {k: look.get(k) for k in ("WINPAD_HALF", "WINPAD_BAND_LIT", "WINPAD_LIT", "WINPAD_FONT")})
             lit_tone = rgb(look["WINPAD_LIT"])
             band_tone = rgb(look.get("WINPAD_BAND_LIT") or look["WINPAD_LIT"])
@@ -303,8 +304,8 @@ def main():
                    % (what, "close's color" if i == 0 else "the band's lit tone"), (found, tone, ground))
                 if not found:
                     continue
-                ok(two_cells(found[1]) and abs(found[0] + found[1] / 2 - 1.5 * cell) <= cell / 3,
-                   "its chip is the glyph and half a cell at each side, two cells of the button's three", (found, cell))
+                ok(three_cells(found[1]) and abs(found[0] + found[1] / 2 - 1.5 * cell) <= cell / 3,
+                   "its chip is the glyph and a cell at each side, the button's three cells", (found, cell))
                 ok(found[4] and found[3] >= tall - 1, "a clean rectangle as tall as the title's line", (found, tall))
                 now = others("shell", marks[i], glyphs(env, band("shell")))
                 ok(now == others("shell", marks[i], at_rest), "and nothing else on the band moves", (now, others("shell", marks[i], at_rest)))
@@ -316,7 +317,7 @@ def main():
                "a button takes the pointer across its three cells: beside fill's chip it is fill's, a cell on the mic's", beside)
             for i, what, ink in ((1, "minimize", own[1]), (0, "close", ground), (3, "the mic", None)):
                 found = hover(LONG, busy[i], close if i == 0 else lit_tone, ink)
-                ok(found and (ink is None or found[5] >= 4) and two_cells(found[1]),
+                ok(found and (ink is None or found[5] >= 4) and three_cells(found[1]),
                    "the pointer on %s, without the focus: a chip in %s, %s"
                    % (what, "close's color" if i == 0 else "the lit tone", "the glyph in the ground's" if i == 0 else "the glyph as it was"), (found, ink, cell))
             ok(terminal("shell")["focused"], "the pointer on another window's buttons leaves the focus where it was")
