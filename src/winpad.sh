@@ -57,11 +57,12 @@ winpad_pid_in() {   # winpad_pid_in LOCK -> the pid in LOCK when it runs; false 
 winpad_pid() { winpad_pid_in "$(winpad_lock)" || winpad_pid_in "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-pad.pid"; }   # -> the running winpad's pid; the second lock is spark-pad's, its name through v0.141
 winpad_hidden() { winpad_pid >/dev/null || return 0; grep -qx 'hidden 1' "$(winpad_state)" 2>/dev/null; }   # 0 when the pad is hidden, or none runs
 winpad_list() {   # winpad_list TREEFILE -> the windows on the pad, oldest first: ID<tab>APP<tab>TITLE
-    jq -r '.. | objects | select(.type == "workspace" and .name == "__i3_scratch") | .floating_nodes[]?
-        | select(any((.marks // [])[]; startswith("_spark-shell.min.")))
+    jq -r '.. | objects | select(.type == "workspace" and .name == "__i3_scratch") | .floating_nodes[]? | .. | objects
+        | select((.marks? | type) == "array" and any(.marks[]; startswith("_spark-shell.min.")))
         | "\(.id)\t\(.app_id // .window_properties.class // "a window")\t\(.name // "")"' "$1" 2>/dev/null || :
 }
-winpad_count() { wm_session || { echo 0; return; }; wm_tree | jq '[.. | objects | select(.type == "workspace" and .name == "__i3_scratch") | .floating_nodes[]? | select(any((.marks // [])[]; startswith("_spark-shell.min.")))] | length' 2>/dev/null || echo 0; }   # -> how many windows wait on the pad
+# a minimized window is marked wherever it stands in the scratchpad: by itself, or inside the floating container that went with it
+winpad_count() { wm_session || { echo 0; return; }; wm_tree | jq '[.. | objects | select(.type == "workspace" and .name == "__i3_scratch") | .floating_nodes[]? | .. | objects | select((.marks? | type) == "array" and any(.marks[]; startswith("_spark-shell.min.")))] | length' 2>/dev/null || echo 0; }   # -> how many windows wait on the pad
 # the keeper: winpad again when it ends by itself, a crash; a stop on purpose (0) stays a stop, and so does a session
 # that is gone or a winpad that ends five times within a minute of its start
 WINPAD_KEEP='n=0; while :; do t=$(date +%s); "$0" "$@"; rc=$?; case $rc in 0|2) break ;; esac; [ -S "${XDG_RUNTIME_DIR:-/nonexistent}/${WAYLAND_DISPLAY:-none}" ] || break; [ $(( $(date +%s) - t )) -lt 60 ] || n=0; n=$((n + 1)); [ "$n" -le 5 ] || break; echo "spark-winpad ended ($rc): started again" >&2; sleep 1; done'

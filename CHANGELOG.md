@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.149.1
+
+- A window minimized from inside a floating group is on the pad. A
+  split or tabs key on a placed window puts it in a group, and the
+  group goes to the pad whole: each window in it has its icon there,
+  and one of them brings the group back where it was. Before, the
+  window was on no pad and could not be brought back. One already lost
+  this way is on the pad after the update.
+
 ## v0.149
 
 - The bar's signs are icons: the wire, bluetooth, wifi, sound, the

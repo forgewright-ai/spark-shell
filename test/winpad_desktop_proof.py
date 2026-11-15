@@ -1091,6 +1091,55 @@ def round_in(palette, binary, evidence):
         click(left + LEAD + SLOT // 2, top + CELL // 2)
         ok(wait_for(lambda: pad_empty() and bottom() == edge - GAP, "the pad with no window", seconds=10), "a click on its slot brings it back, and the pad's surfaces go")
 
+        # a window inside a floating container (v0.149.1): a split or tabs key on a placed window wraps it, and sway
+        # sends the container to the scratchpad whole. The pad shows each window that went, and one of them brings
+        # the container back, floating where it was
+        state = runtime / "spark-shell-winpad.state"
+
+        def holder(child):
+            """The floating node a window stands in on a workspace in sight: itself, or the container around it."""
+            me = foot(child.pid)
+            return next((n for w in nodes(tree()) if w.get("type") == "workspace" and w.get("name") != "__i3_scratch"
+                         for n in w.get("floating_nodes", []) if me and any(m.get("id") == me["id"] for m in nodes(n))), None)
+
+        def box_of(node):
+            return tuple(node["rect"][k] for k in ("x", "y", "width", "height")) if node else None
+
+        lone = open_foot("nested")
+        shell("desktop", "window", "left")
+        subprocess.run(["swaymsg", "[pid=%d] splith" % lone.pid], env=env, capture_output=True)
+        time.sleep(0.4)
+        around = holder(lone)
+        was = box_of(around)
+        ok(around is not None and around["id"] != foot(lone.pid)["id"], "a split key on a placed window wraps it in a floating container", around and around.get("type"))
+        said = shell("desktop", "window", "min")
+        settle(lambda: on_pad(lone.pid) and "count 1" in state.read_text())
+        ok(on_pad(lone.pid) and "count 1" in state.read_text() and shell("desktop", "pad") == "the pad has 1 window: foot",
+           "minimized there, it went with its container and the pad holds it: one window, by its app (v0.149.1)", (said, state.read_text(), shell("desktop", "pad")))
+        said = shell("desktop", "window", "restore", str(foot(lone.pid)["id"]))
+        settle(lambda: not on_pad(lone.pid) and pad_empty())
+        ok(not on_pad(lone.pid) and pad_empty() and box_of(holder(lone)) == was,
+           "brought back by its ID, as a click on the pad does, it is floating where it was, and the pad is empty", (said, was, box_of(holder(lone))))
+        mate = open_foot("mate", focus=False)
+        for line in ("[pid=%d] mark --add _proof.nest" % lone.pid, "[pid=%d] move container to mark _proof.nest" % mate.pid, "[pid=%d] unmark _proof.nest" % lone.pid,
+                     "[pid=%d] focus" % lone.pid):
+            subprocess.run(["swaymsg", line], env=env, capture_output=True)
+        time.sleep(0.4)
+        both = holder(mate) is not None and holder(lone) is not None and holder(mate)["id"] == holder(lone)["id"]
+        was = box_of(holder(lone))
+        said = shell("desktop", "window", "min")
+        settle(lambda: on_pad(lone.pid) and on_pad(mate.pid) and "count 2" in state.read_text())
+        ok(both and on_pad(lone.pid) and on_pad(mate.pid) and "count 2" in state.read_text(),
+           "two windows in one floating container: minimizing one takes both, and the pad holds both", (both, said, state.read_text()))
+        said = shell("desktop", "window", "restore", str(foot(mate.pid)["id"]))
+        settle(lambda: not on_pad(lone.pid) and not on_pad(mate.pid) and pad_empty())
+        ok(not on_pad(lone.pid) and not on_pad(mate.pid) and pad_empty() and box_of(holder(lone)) == was,
+           "either one brings both back where they were, and the pad is empty", (said, was, box_of(holder(lone))))
+        for child in (lone, mate):
+            child.terminate()
+        wait_for(lambda: foot(lone.pid) is None and foot(mate.pid) is None, "the two windows of the container gone")
+        settle(lambda: pad_empty() and bottom() == edge - GAP)
+
         # 17. the dialog on the pad (v0.134.3): a foot whose app id is spark-dialog, as the dialog's window, wears
         #     spark's own mark, the diamond in the chevron of the assets beside spark-shell (v0.148), in one ink:
         #     the light one (#e9e7dc) on a dark ground, the dark one (#080a0f) on a light one, never recolored.

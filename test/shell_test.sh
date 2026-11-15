@@ -3703,6 +3703,30 @@ pad_tree; win_run restore 5
     && ok "desktop window restore ID: the window named, not the last one, comes back as it left (v0.133)" || bad "window restore id" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
 win_run restore 8
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: window 8 is not on the pad' ] && [ ! -e "$HOME/win.log" ] && ok "desktop window restore ID: a window the pad does not hold is refused, nothing sent (v0.133)" || bad "window restore not on pad" "rc=$rc $out"
+# a window inside a floating container (a split or tabs key on a placed window): the compositor sends the container to the
+# scratchpad whole, so each window in it is marked, a mark is read at any depth there, and one window brings the group
+# back as it left, floating (v0.149.1)
+nest_tree() { printf '{"type":"root","nodes":[{"type":"output","name":"__i3","nodes":[{"type":"workspace","name":"__i3_scratch","nodes":[],"floating_nodes":[%s]}]},{"type":"output","name":"HDMI-A-1","nodes":[{"type":"workspace","id":3,"num":1,"name":"1","focused":%s,"rect":{"x":1216,"y":42,"width":1888,"height":1022},"nodes":[],"floating_nodes":[%s]}]}]}\n' "$1" "$2" "$3" > "$HOME/win-tree.json"; }   # nest_tree SCRATCHPAD FOCUSED FLOATING
+nest_win() { printf '{"type":"con","id":%s,"app_id":"%s","name":"%s","focused":%s,"fullscreen_mode":0,"marks":[%s],"rect":{"x":1216,"y":70,"width":944,"height":994},"nodes":[]}' "$1" "$2" "$3" "$4" "$5"; }   # nest_win ID APP TITLE FOCUSED MARKS
+nest_tree '' false "{\"type\":\"floating_con\",\"id\":8,\"marks\":[],\"layout\":\"tabbed\",\"nodes\":[$(nest_win 7 foot one true ''),$(nest_win 9 zed two false ''),{\"type\":\"con\",\"id\":11,\"marks\":[],\"nodes\":[$(nest_win 12 mpv three false '')]}]}"; win_run min
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=9] mark --add _spark-shell.min.float.9; [con_id=12] mark --add _spark-shell.min.float.12; [con_id=7] mark --add _spark-shell.min.float.7, move scratchpad' ] \
+    && [ "$out" = 'the window is on the pad with the windows beside it: a click or Super+minus brings them back' ] \
+    && ok "desktop window min: a window in a floating container goes with it, every window in it marked (v0.149.1)" || bad "window min in a container" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
+nest_tree '' false "{\"type\":\"floating_con\",\"id\":8,\"marks\":[],\"layout\":\"splith\",\"nodes\":[$(nest_win 7 foot one true ''),{\"type\":\"con\",\"id\":11,\"marks\":[],\"nodes\":[]}]}"; win_run min
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=7] mark --add _spark-shell.min.tiled.7, move scratchpad' ] && [ "$out" = 'the window is on the pad: a click or Super+minus brings it back' ] \
+    && ok "desktop window min: a window alone in a floating container is one window on the pad (v0.149.1)" || bad "window min alone in a container" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
+_ngs="{\"type\":\"floating_con\",\"id\":5,\"app_id\":\"foot\",\"name\":\"~\",\"marks\":[\"_spark-shell.min.FB.5\"],\"nodes\":[]},{\"type\":\"floating_con\",\"id\":8,\"marks\":[],\"nodes\":[$(nest_win 7 foot one false '"_spark-shell.min.tiled.7"')]}"
+nest_tree "$_ngs" true ''; win_run restore 7
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=7] unmark _spark-shell.min.tiled.7, scratchpad show' ] && [ "$out" = 'the window is back, floating' ] \
+    && ok "desktop window restore ID: a window marked inside a container comes back with it, floating as it left (v0.149.1)" || bad "window restore in a container" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
+win_run restore
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=7] unmark _spark-shell.min.tiled.7, scratchpad show' ] && ok "desktop window restore: the last one is found inside a container too (v0.149.1)" || bad "window restore last in a container" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
+_ngg="{\"type\":\"floating_con\",\"id\":8,\"marks\":[],\"nodes\":[$(nest_win 7 foot one false '"_spark-shell.min.float.7"'),$(nest_win 9 zed two false '"x","_spark-shell.min.float.9"'),$(nest_win 12 mpv three false '')]}"
+nest_tree "$_ngg" true ''; win_run restore 7
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=9] unmark _spark-shell.min.float.9; [con_id=7] unmark _spark-shell.min.float.7, scratchpad show' ] && [ "$out" = 'the windows are back, floating' ] \
+    && ok "desktop window restore ID: one window of a group brings the group back, every mark in it gone (v0.149.1)" || bad "window restore group" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
+win_run restore 12
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: window 12 is not on the pad' ] && [ ! -e "$HOME/win.log" ] && ok "desktop window restore ID: a window in a container with no mark is not on the pad (v0.149.1)" || bad "window restore unmarked in a container" "rc=$rc $out"
 # the places the keys give (#264): each key replaces the place and the area a window wears; the pad and the float key
 # end them; refit puts every window in sight that wears a place at that place on the area as it is now, one command a
 # window, and a window that left its place (tiled again, dragged, resized) loses it and stays
@@ -3814,6 +3838,11 @@ padr keys
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: no window is on the pad' ] && [ ! -e "$HOME/pad.log" ] && ok "desktop pad keys: nothing on the pad, refused, no pad started (v0.133)" || bad "pad keys none" "rc=$rc $out"
 pad_tree; padr
 [ "$rc" = 0 ] && [ "$out" = 'the pad has 2 windows: foot, firefox' ] && ok "desktop pad: the windows on the pad by their apps, oldest first; a scratchpad window not put there is none of them (v0.133)" || bad "pad list" "rc=$rc $out"
+nest_tree "$_ngs" true ''; padr
+[ "$rc" = 0 ] && [ "$out" = 'the pad has 2 windows: foot, foot' ] && ok "desktop pad: a window marked inside a container is on the pad (v0.149.1)" || bad "pad list in a container" "rc=$rc $out"
+nest_tree "$_ngg" true ''; padr
+[ "$rc" = 0 ] && [ "$out" = 'the pad has 2 windows: foot, zed' ] && ok "desktop pad: a group's marked windows are each on the pad, the unmarked one is not (v0.149.1)" || bad "pad list group" "rc=$rc $out"
+pad_tree
 padr keys; pad_up
 _pe=$(cat "$HOME/winpad.env" 2>/dev/null)
 [ "$rc" = 0 ] && [ "$out" = 'the pad has the keys: Enter brings the window back, Esc leaves' ] && [ "$(cat "$HOME/pad.log" 2>/dev/null)" = '--keys' ] \

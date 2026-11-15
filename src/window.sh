@@ -179,6 +179,11 @@ layout_window_from() {   # layout_window_from WHERE -> the command and its words
             _dc="${_dc}floating enable, border ${BORDER:-normal 1}, resize set width $3 px height $4 px, move absolute position $1 $2"; _ds="back where it was" ;;
     esac
 }
+layout_window_group() {   # layout_window_group ID -> the other windows of the floating container window ID stands in, an ID a line; nothing for a window by itself; after layout_window read the tree
+    jq -r --argjson i "$1" '[.. | objects | select(.type == "workspace" and .name != "__i3_scratch") | .floating_nodes[]?
+        | select(.id != $i and ([.. | objects | select(.id? == $i)] | length) > 0)][0] // empty
+        | .. | objects | select(.type? == "con" and ((.nodes // []) | length) == 0 and .id != $i and (.app_id != null or .window_properties != null or .pid != null)) | .id' "$TMP/tree" 2>/dev/null
+}
 layout_window() {   # layout_window float|left|right|up|down|max|min|toggle|restore [ID] | move DIR | back | refit | new -- the focused window, or the window ID; every placed window in sight; the window just opened (the sway rule's)
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own window keys"
     case ${1:-} in float|left|right|up|down|max|min|toggle|restore|refit|new|move|back) ;; *) refuse "window takes float, left, right, up, down, max, min, toggle, restore, move, back or refit" ;; esac
@@ -208,7 +213,7 @@ layout_window() {   # layout_window float|left|right|up|down|max|min|toggle|rest
     # shellcheck disable=SC2086   # four numbers, split on purpose
     [ "$3" != floating_con ] || [ "$4" != 0 ] || _dp=$(layout_window_place $_dr "$5" "$6" "$7" "$8")
     _du=''; [ "$_dt" = 0 ] || _du="unmark _spark-shell.tiled.$2, "   # the float key, or the pad, ends what the tiling mark says
-    _dpad=''; _drefit=''
+    _dpad=''; _drefit=''; _dpre=''
     _dk=$1
     if [ "$_dk" = toggle ]; then   # the whole screen, or back where it came from
         _dk=max; _dfrom=$(layout_mark_from "$_dmk"); [ "$_dp" != FF ] || [ -z "$_dfrom" ] || _dk=from
@@ -224,7 +229,16 @@ layout_window() {   # layout_window float|left|right|up|down|max|min|toggle|rest
             if [ "$_dn" = min ]; then
                 _dk=$_dp; [ "$_dk" != free ] || { _dk=float; [ "$3" = floating_con ] || _dk=tiled; }   # the place it leaves, else floating or tiled
                 [ "$_dt" = 0 ] || _dk=tiled   # a window the keys floated from the tiling tiles again when it comes back
-                _dc="${_dfs}${_du}${_dun}mark --add _spark-shell.min.$_dk.$2, move scratchpad"; _ds="on the pad: a click or Super+minus brings it back"; _dpad=1
+                _ds="on the pad: a click or Super+minus brings it back"; _dpad=1
+                # a window inside a floating container (a split or tabs key on a placed window): the compositor sends the
+                # container whole, so each window in it is marked, and the group comes back floating as it left
+                _dgrp=$(layout_window_group "$2")
+                if [ -n "$_dgrp" ]; then
+                    _dk=float
+                    for _dg in $_dgrp; do _dpre="${_dpre}[con_id=$_dg] mark --add _spark-shell.min.float.$_dg; "; done
+                    _ds="on the pad with the windows beside it: a click or Super+minus brings them back"
+                fi
+                _dc="${_dfs}${_du}${_dun}mark --add _spark-shell.min.$_dk.$2, move scratchpad"
             else
                 _dtm=$_du; [ "$3" = floating_con ] || _dtm="mark --add _spark-shell.tiled.$2, "   # from the tiling: it comes back tiled; a second place a key gives it replaces the mark
                 _dfm=''   # the whole screen keeps where it came from, for the double-click back
@@ -234,7 +248,7 @@ layout_window() {   # layout_window float|left|right|up|down|max|min|toggle|rest
                 _dc="${_dfs}${_dtm}${_dun}floating enable, border ${BORDER:-normal 1}, resize set width ${11} px height ${12} px, move absolute position $9 ${10}$(layout_place_marks "$_dn" "$2" "$5" "$6" "$7" "$8")$_dfm"; _ds=$(layout_window_said "$_dn")
             fi ;;
     esac
-    wm_on "con_id=$2" "$_dc" >/dev/null 2>&1 || refuse "$WM_NAME refused: $_dc"
+    wm_send "${_dpre}[con_id=$2] $_dc" >/dev/null 2>&1 || refuse "$WM_NAME refused: $_dc"
     winpad_look
     [ -z "$_drefit" ] || { wm_tree > "$TMP/tree" && layout_window_refit >/dev/null 2>&1 || :; }   # at its place on the new screen
     [ -z "$_dpad" ] || { winpad_wake; bar_redraw; }   # the pad shows it, and the bar's count
@@ -253,11 +267,22 @@ layout_window_back() {   # the window before this one: the pad walks its order (
     echo "the window before"
 }
 layout_window_restore() {   # layout_window_restore [ID] -- the window ID from the pad, else the last one, back at the place it left; after layout_window read the tree
-    _dm=$(jq -r --arg id "${1:-}" '[.. | objects | select(.type == "workspace" and .name == "__i3_scratch") | .floating_nodes[]? | . as $c
-        | select($id == "" or (.id | tostring) == $id) | (.marks // [])[] | select(startswith("_spark-shell.min.")) | "\($c.id) \(.)"] | last // empty' "$TMP/tree" 2>/dev/null)
+    # the window, its mark and the scratchpad's node it stands in: itself, or the floating container that went with it
+    _dm=$(jq -r --arg id "${1:-}" '[.. | objects | select(.type == "workspace" and .name == "__i3_scratch") | .floating_nodes[]? | . as $top
+        | .. | objects | select((.marks? | type) == "array") | . as $c
+        | select($id == "" or (.id | tostring) == $id) | .marks[] | select(startswith("_spark-shell.min.")) | "\($c.id) \(.) \($top.id)"] | last // empty' "$TMP/tree" 2>/dev/null)
     [ -n "$_dm" ] || { [ -z "${1:-}" ] || refuse "window $1 is not on the pad"; refuse "no window is on the pad"; }
-    _di=${_dm%% *}; _dk=${_dm#* }; _dk=${_dk#_spark-shell.min.}; _dk=${_dk%%.*}
+    _di=${_dm%% *}; _dtop=${_dm##* }; _dm=${_dm% *}; _dk=${_dm#* }; _dk=${_dk#_spark-shell.min.}; _dk=${_dk%%.*}
     _dc="unmark ${_dm#* }, scratchpad show"
+    if [ "$_dtop" != "$_di" ]; then   # in a container: the group comes back as it left, floating, and every mark in it goes
+        _dpre=$(jq -r --argjson t "$_dtop" --argjson i "$_di" '[.. | objects | select(.type == "workspace" and .name == "__i3_scratch") | .floating_nodes[]? | select(.id == $t)
+            | .. | objects | select((.marks? | type) == "array" and .id != $i) | . as $c | .marks[] | select(startswith("_spark-shell.min.")) | "[con_id=\($c.id)] unmark \(.); "] | join("")' "$TMP/tree" 2>/dev/null)
+        wm_send "${_dpre}[con_id=$_di] $_dc" >/dev/null 2>&1 || refuse "$WM_NAME refused: $_dc"
+        winpad_look
+        bar_redraw
+        if [ -n "$_dpre" ]; then echo "the windows are back, floating"; else echo "the window is back, floating"; fi
+        return
+    fi
     case $_dk in
         tiled) _dc="$_dc, floating disable"; _ds=tiled ;;
         float) _ds=floating ;;

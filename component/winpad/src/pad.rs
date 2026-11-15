@@ -986,7 +986,8 @@ pub struct Win {
 /// The mark spark-shell gives a window it minimizes.
 pub const MARK: &str = "_spark-shell.min.";
 
-/// The windows spark-shell minimized: in sway's scratchpad, with its mark, oldest first.
+/// The windows spark-shell minimized: in sway's scratchpad, with its mark, oldest first. A window that stood in
+/// a floating container went there with the container, so the mark is read at any depth under a node.
 pub fn minimized(tree: &Value) -> Vec<Win> {
     fn scratch(v: &Value) -> Option<&Value> {
         if v["type"] == "workspace" && v["name"] == "__i3_scratch" {
@@ -994,31 +995,37 @@ pub fn minimized(tree: &Value) -> Vec<Win> {
         }
         v["nodes"].as_array()?.iter().find_map(scratch)
     }
+    fn walk<'a>(v: &'a Value, out: &mut Vec<&'a Value>) {
+        out.push(v);
+        for key in ["nodes", "floating_nodes"] {
+            for c in v[key].as_array().into_iter().flatten() {
+                walk(c, out);
+            }
+        }
+    }
     let Some(ws) = scratch(tree) else { return vec![] };
     let text = |v: &Value| v.as_str().unwrap_or("").to_string();
-    ws["floating_nodes"]
-        .as_array()
-        .map(|nodes| {
-            nodes
-                .iter()
-                .filter(|c| {
-                    c["marks"]
-                        .as_array()
-                        .is_some_and(|ms| ms.iter().any(|m| m.as_str().is_some_and(|m| m.starts_with(MARK))))
-                })
-                .filter_map(|c| {
-                    let app = Some(text(&c["app_id"]))
-                        .filter(|a| !a.is_empty())
-                        .unwrap_or_else(|| text(&c["window_properties"]["class"]));
-                    Some(Win {
-                        id: c["id"].as_i64()?,
-                        app,
-                        title: text(&c["name"]),
-                    })
-                })
-                .collect()
+    let mut all = vec![];
+    for top in ws["floating_nodes"].as_array().into_iter().flatten() {
+        walk(top, &mut all);
+    }
+    all.into_iter()
+        .filter(|c| {
+            c["marks"]
+                .as_array()
+                .is_some_and(|ms| ms.iter().any(|m| m.as_str().is_some_and(|m| m.starts_with(MARK))))
         })
-        .unwrap_or_default()
+        .filter_map(|c| {
+            let app = Some(text(&c["app_id"]))
+                .filter(|a| !a.is_empty())
+                .unwrap_or_else(|| text(&c["window_properties"]["class"]));
+            Some(Win {
+                id: c["id"].as_i64()?,
+                app,
+                title: text(&c["name"]),
+            })
+        })
+        .collect()
 }
 
 /// Whether a workspace is the rest's: the rest name, or that name and a space before a screen's own. No
@@ -1827,6 +1834,23 @@ mod tests {
             ]
         );
         assert_eq!(minimized(&serde_json::json!({"type":"root","nodes":[]})), vec![]);
+    }
+
+    #[test]
+    fn a_window_minimized_inside_a_floating_container_is_on_the_pad() {
+        // a split or tabs key on a placed window wraps it; sway sends the container to the scratchpad whole
+        let tree = serde_json::json!({"type":"root","nodes":[
+            {"type":"output","name":"__i3","nodes":[{"type":"workspace","name":"__i3_scratch","floating_nodes":[
+                {"type":"floating_con","id":8,"app_id":null,"name":null,"marks":[],"nodes":[
+                    {"type":"con","id":7,"app_id":"foot","name":"one","marks":["_spark-shell.min.float.7"]},
+                    {"type":"con","id":9,"app_id":"zed","name":"two","marks":[]},
+                    {"type":"con","id":11,"app_id":null,"marks":[],"nodes":[
+                        {"type":"con","id":12,"app_id":"mpv","name":"three","marks":["_spark-shell.min.tiled.12"]}]}]},
+                {"type":"floating_con","id":10,"app_id":"foot","name":"~","marks":["_spark-shell.min.FB.10"]}
+            ]}]}
+        ]});
+        let ids: Vec<(i64, String)> = minimized(&tree).into_iter().map(|w| (w.id, w.app)).collect();
+        assert_eq!(ids, vec![(7, "foot".into()), (12, "mpv".into()), (10, "foot".into())]);
     }
 
     #[test]
