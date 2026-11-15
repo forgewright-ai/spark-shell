@@ -11,6 +11,22 @@
   full, half, low, and a bolt while it charges.
 - The icons need no font: a machine without Monaspace Neon draws the
   same ones.
+- The pad stands on the bar, after the workspaces: home, workspaces,
+  apps. A minimized window is an icon there, and the windows get back
+  the strip the pad kept at an edge. A config that names a place for
+  the pad keeps it.
+- The pad is still its own. Drag it by its grip, the line before its
+  icons, and it floats or docks at an edge as before. Near the bar's
+  edge it docks in a strip of its own; it lands on the bar only with
+  the pointer on the bar.
+- Off the bar the pad is a piece of the bar: the bar's ground and
+  height, its grip and a fine edge. The handle across its top is gone.
+- The bar moves by the pointer: drag its empty ground to the other half
+  of the screen and it stands at that edge. The pointer is a hand on
+  what a click acts on.
+- sway's mode name stands before the status, so the apps do not move
+  when a mode starts.
+- The tray's icons are 24 px, as the pad's are.
 
 ## v0.148.2
 

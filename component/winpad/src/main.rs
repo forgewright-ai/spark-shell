@@ -307,9 +307,9 @@ fn run(keys: bool) -> Result<(), String> {
 
     let cfg = config();
     let Some(_lock) = lock()? else { return Ok(()) };
-    // the ground spark's mark stands on: the dark S on a dark surface, the light one on a light one
+    // the ground spark's mark stands on, the pad's own and the bar's: the dark S on a dark ground, the light one on a light one
     let byte = |v: f64| (v * 255.0).round().clamp(0.0, 255.0) as u8;
-    let s = cfg.look.surface;
+    let s = cfg.look.ground;
     let dark = spark_winpad::pad::dark_ground(byte(s.0), byte(s.1), byte(s.2));
     if !wayland_sys::client::is_lib_available() {
         return Err("libwayland-client.so.0 is missing (Wayland's client library)".into());

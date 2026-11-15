@@ -510,7 +510,7 @@ bar_fact() {   # bar_fact NAME GROUP SIGN TEXT CELLS STATE LABEL [LEVEL [SET]] -
 }
 bar_fact_pad() {   # the windows that wait on the pad, and how many; off while the pad is hidden. Nothing while the pad is on the bar and in sight: it says itself there
     _pdn=$(winpad_count); [ "${_pdn:-0}" -gt 0 ] 2>/dev/null || return 0
-    [ "$WINPAD_PLACE" != bar ] || winpad_hidden || return 0
+    [ "$(bar_style WINPAD_PLACE bar)" != bar ] || winpad_hidden || return 0   # the place as the config has it now: a drag changes it while this loop runs
     bar_sign "$BAR_PAD" pad pad; _pdw=2; [ "${#_pdn}" -le 2 ] || _pdw=${#_pdn}
     if winpad_hidden; then bar_fact pad windows "$_bg" "$_pdn" "$_pdw" off "pad hidden, $_pdn windows"
     else bar_fact pad windows "$_bg" "$_pdn" "$_pdw" ok "pad, $_pdn windows"; fi

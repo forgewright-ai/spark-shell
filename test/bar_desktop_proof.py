@@ -36,8 +36,8 @@ named by its gate:
 3 states         muted, off, the wire down, a microphone that records, a reminder and a window that ask, no
                  sound device, the status shell killed while its jobs hold its pipe and back with none of them
                  left, the bar ended with ABRT and started again by its keeper, stopped on purpose, loading
-                 before the first line, a binding mode, and a screen at rest: no bar and no room kept while it
-                 shows the rest workspace
+                 before the first line, a binding mode, its name's end five cells before the status or the
+                 dots, and a screen at rest: no bar and no room kept while it shows the rest workspace
 4 accessibility  the tones on the screen are the look's, the accent on the plate and the keys' line alone; the
                  text reads at 4.5 to 1 on the ground and on a chip, and the plate's digits are the look's ink;
                  under the pointer each part alone stands on a chip of the lit tone, in its own color, a dim one
@@ -45,9 +45,17 @@ named by its gate:
                  a line at the plate's foot under the one they are on; every control has a name; nothing moves
                  at rest
 5 geometry       the spec's numbers at 16 px, by the state file and by the screen: the run of 300 px, the plate
-                 of 30 by 28 in its place, gaps of one, three and five cells, the hairline before the time; no
-                 cell moves with a value, a state or the workspace shown; what a bar short of width gives up, in
-                 order; the bottom edge; two screens, each with its own plate, one at rest alone
+                 of 30 by 28 in its place, the room kept for the pad's windows, gaps of one, three and five
+                 cells, the hairline before the time; no cell moves with a value, a state or the workspace
+                 shown; what a bar short of width gives up, in order; the bottom edge, by the verb and by the
+                 bar dragged by its own ground; two screens, each with its own plate, one at rest alone
+
+And a part of its own, pad, where SPARK_SHELL_WINPAD names spark-winpad's build (a note says so where it names
+none): a window minimized through spark-shell starts the pad, which stands on the bar in the room the bar keeps
+for it, on a surface of its own: its grip and a cell a window, a chip under the pointer, no strip kept, no module
+named pad on the line while it is in sight there; hidden and shown; dragged by its grip off the bar, back onto
+it, and to the bar's edge, where it docks in a strip of its own, the bar's line saying the module while the pad
+is off the bar and not while it is on it, by the same status loop; a click on a cell brings the window back.
 
 BAR_PROOF_FONT names a face for the proof's config and hides the Monaspace faces from the proof's home: this
 machine as one of the rows that have DejaVu Sans Mono alone. BAR_PROOF_TIMES says how long each gate took.
@@ -620,12 +628,12 @@ class Strip:
 
     def __init__(self, f):
         self.name, self.width, self.height, self.edge, self.scale = f[1], int(f[2]), int(f[3]), f[4], int(f[5])
-        self.targets, self.dropped = [], []
+        self.targets, self.dropped, self.apps = [], [], None   # apps: the room kept for the pad's windows, (its left, its width)
 
 
 class State:
     """The bar's state file, read: the status, the binding mode, the levels as they are drawn, then each output's
-    bar, its targets and what it left out."""
+    bar, the room it keeps for the pad's windows, its targets and what it left out."""
 
     def __init__(self, text):
         self.text, self.status, self.mode, self.levels, self.outputs, self.odd = text, "", "", collections.OrderedDict(), collections.OrderedDict(), []
@@ -645,6 +653,8 @@ class State:
                     self.resting.append(f[1])
                 elif f[0] == "output" and len(f) == 6:
                     self.outputs[f[1]] = Strip(f)
+                elif f[0] == "apps" and len(f) == 4:
+                    self.outputs[f[1]].apps = (int(f[2]), int(f[3]))
                 elif f[0] == "target" and len(f) == 11:
                     self.outputs[f[1]].targets.append(Target(f))
                 elif f[0] == "dropped" and len(f) == 3:
@@ -656,6 +666,11 @@ class State:
 
     def bar(self, output=OUT):
         return self.outputs.get(output)
+
+    def apps(self, output=OUT):
+        """The room an output's bar keeps for the pad's windows: (its left, its width), or None."""
+        strip = self.outputs.get(output)
+        return strip.apps if strip else None
 
     def targets(self, output=OUT):
         strip = self.outputs.get(output)
@@ -788,6 +803,9 @@ class Desk:
         self.children, self.pointer, self.guard, self.stopped, self.left, self.reaps = [], None, None, False, None, False
         self.seen, self.signs, self.shots, self.kept, self.space, self.windows = set(), set("\u2026\u26a0"), 0, 0, (W, H), []
         self.cell, self.high = CELL, BAR
+        # the pad's build, where SPARK_SHELL_WINPAD names one: the session is handed it, as a machine that has the pad
+        named = os.environ.get("SPARK_SHELL_WINPAD", "")
+        self.pad, self.padded, self.held = (Path(named).resolve() if named and Path(named).is_file() else None), False, False
         self.stage()
 
     def stage(self):
@@ -850,6 +868,8 @@ class Desk:
                     "SPARK_SHELL_SYS": str(sys_), "SPARK_SHELL_PROC": str(proc_), "SPARK_SHELL_DEV": str(self.work / "dev"),
                     "SPARK_SHELL_SEMANTIC_URL": "none", "SPARK_SHELL_DIALOG_URL": "none", "SPARK_SHELL_FONT_URL": "none", "SPARK_SHELL_NO_APPLY": "1",
                     "SPARK_SHELL_NO_CHIME": "1", "PROOF_SND": str(self.snd), "PROOF_OPENED": str(self.opened_file), "PROOF_ASKED": str(self.asked_file)})
+        if self.pad:
+            env["SPARK_SHELL_WINPAD"] = str(self.pad)
         self.env = env
         # sway's lines for the bar, as the template has them: its start, its key, and the resize mode
         template = (REPO / "template/.config/sway/config").read_text().splitlines()
@@ -1045,6 +1065,22 @@ class Desk:
         pid = self.bar_pid()
         return environ_of(pid) if pid else {}
 
+    def pad_pid(self):
+        """The pad that runs: spark-winpad holds its lock, its pid inside."""
+        try:
+            pid = int((self.run / "spark-shell-winpad.pid").read_text().split()[0])
+        except (OSError, ValueError, IndexError):
+            return None
+        return pid if alive(pid) and cmdline(pid)[:1] == [str(self.pad)] else None
+
+    def pad_says(self):
+        """What the pad says of itself in its state file: (whether it is hidden, how many windows wait on it), or None."""
+        said = dict(line.split(None, 1) for line in self.lines_of(self.run / "spark-shell-winpad.state") if " " in line)
+        try:
+            return said["hidden"] == "1", int(said["count"])
+        except (KeyError, ValueError):
+            return None
+
     def sway(self, *words):
         return subprocess.run(["swaymsg", *words], env=self.env, stdin=subprocess.DEVNULL, capture_output=True, encoding="utf-8", errors="replace", timeout=10).stdout
 
@@ -1061,6 +1097,17 @@ class Desk:
                 for child in n.get(key, []):
                     yield from walk(child)
         return next((n for n in walk(self.ask("get_tree") or {}) if n.get("pid") == pid), None)
+
+    def space_of(self, pid):
+        """The name of the workspace a window is on, __i3_scratch for one that waits in the scratchpad; None for no window."""
+        def has(n):
+            return n.get("pid") == pid or any(has(child) for key in ("nodes", "floating_nodes") for child in n.get(key, []))
+        spaces = [w for o in (self.ask("get_tree") or {}).get("nodes", []) for w in o.get("nodes", []) if w.get("type") == "workspace"]
+        return next((w.get("name") for w in spaces if has(w)), None)
+
+    def area(self, key=1):
+        """The windows' area on a workspace, by its name or its number: its rectangle (x, y, w, h), or None."""
+        return next(((w["rect"]["x"], w["rect"]["y"], w["rect"]["width"], w["rect"]["height"]) for w in self.ask("get_workspaces") if key in (w["name"], w["num"])), None)
 
     def shell(self, *words, **more):
         env = dict(self.env)
@@ -1219,6 +1266,7 @@ class Desk:
         return self.until(lambda s: any(s.hovered(o) == t.id for o in s.outputs), "the pointer on " + t.id, 5)
 
     def button(self, down):
+        self.held = bool(down)
         self.pointer.send(5, 2, self.stamp(), 272, 1 if down else 0)   # BTN_LEFT
         self.pointer.send(5, 4)
         self.pointer.sync()
@@ -1267,8 +1315,10 @@ class Desk:
                 self.until(lambda s: s.focused() not in (None, was), "Tab to move the keys on from %s" % was, 5)
             raise AssertionError("Tab never reached %s; the state file says: %s" % (ident, self.state().brief()))
 
-    def terminal(self, title):
-        child = subprocess.Popen([self.real_foot, "--title", title, "sleep", "900"], env=self.env, cwd=str(self.work), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    def terminal(self, title, app=None):
+        """A terminal that sleeps, by its title; under an app id of its own when one is named."""
+        child = subprocess.Popen([self.real_foot, *(["--app-id", app] if app else []), "--title", title, "sleep", "900"], env=self.env, cwd=str(self.work),
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.children.append(child)
         wait_for(lambda: self.node(child.pid), "the terminal " + title)
         return child
@@ -1927,6 +1977,20 @@ def states(d):
     strip = d.strip()
     full, light = pair_of(d, strip, s)
     calm = {i: place(strip, s.find(i)) for i in ("out.name", "bt.name", "mic.name", "notifications.name")}
+    status, letters = min(t.x for t in s.parts()), len(glyphs("resize"))   # where the status begins at rest; the cells of the mode's name
+
+    def mode(there, before):
+        """The binding mode's name on the screen: its cells end five cells before `before`, where the status or its
+        note begins, and nothing else stands between the workspaces and there; or, with there False, no name does."""
+        end = before - 5 * cell
+
+        def read():
+            strip = d.strip()
+            name = strip.part(end - letters * cell, 0, letters * cell, high)
+            cols = sorted({x // cell for x, _ in name.ink(ground, 40)})
+            room = strip.part(run_end, 0, end - letters * cell - run_end, high).colors() == {ground} and strip.part(end, 0, 5 * cell, high).colors() == {ground}
+            return (name.tone(ground, tones) == ["attention"] and cols == list(range(letters)) and room) if there else (name.colors() == {ground} and room), (name.tone(ground, tones), cols, room)
+        return seen(read)
     # what is not well, all at once: out muted, the wire down, bluetooth and wifi off, the battery low, the mic
     # recording, two notifications nobody looked at, and a window waiting on a pad that is hidden
     waits = d.terminal("PAD")
@@ -2100,32 +2164,31 @@ def states(d):
     ok(started.returncode == 0 and s.rects() == frame and not s.levels and good,
        "loading: spark-shell bar start, and before the first line the frame is there, the logo and the ten places where they stay, and three dim dots where the status will end; nothing else", (started.said, s.brief(), saw))
     d.shot("states-loading")
+    # a binding mode before the first line: its name ends five cells before the dots
+    d.sway("mode", "resize")
+    s = d.until(lambda s: s.mode == "resize" and s.status == "loading", "the binding mode in the state file, the status loading", 10)
+    good, saw = mode(True, W - 4 * cell)
+    ok(good and s.rects() == frame and s.apps() == (run_end + cell, W - 4 * cell - (5 + letters + 1) * cell - run_end - cell),
+       "a binding mode while the status loads: its name ends five cells before the dots, and the pad's room one cell before the name", (s.brief(), s.apps(), saw))
+    d.sway("mode", "default")
+    d.until(lambda s: not s.mode, "the default mode again, the status loading", 10)
     d.flag("slow", False)
     s = d.until(lambda s: s.status == "ok" and s.find("clock.text"), "the first line", 40)
     ok(s.rects() == base, "the first line fills the cells kept for it", moved(base, s.rects()))
     # a binding mode other than default: the template's resize, on Super+r
     s = d.rest()
-    after = run_end
     d.chord("logo", "r")
     s = d.until(lambda s: s.mode == "resize", "the binding mode in the state file")
-
-    def mode(there):
-        def read():
-            strip = d.strip()
-            name = strip.part(after + cell, 0, 6 * cell, high)
-            cols = sorted({x // cell for x, _ in name.ink(ground, 40)})
-            room = strip.part(after, 0, cell, high).colors() == {ground} and strip.part(after + 7 * cell, 0, base["lan.name"][0] - 5 * cell - after - 7 * cell, high).colors() == {ground}
-            return (name.tone(ground, tones) == ["attention"] and cols == list(range(6)) and room) if there else (name.colors() == {ground} and room), (name.tone(ground, tones), cols, room)
-        return seen(read)
-    good, saw = mode(True)
-    ok(good and s.rects() == base and not any(t.module == "mode" for t in s.targets()),
-       "a binding mode (Super+r, the template's resize): the state file says mode resize and its name stands one cell after the workspaces, a glyph a cell, in the attention color, as plain text; it is no target, and every target is where it was",
-       (s.brief(), saw))
+    good, saw = mode(True, status)
+    ok(good and s.rects() == base and not any(t.module == "mode" for t in s.targets()) and s.apps() == (run_end + cell, status - (5 + letters + 1) * cell - run_end - cell),
+       "a binding mode (Super+r, the template's resize): the state file says mode resize and its name stands in the room the status leaves, its end five cells before the status, a glyph a cell, in the attention color, as plain text; it is no target, every target is where it was, and the room kept for the pad's windows ends one cell before the name",
+       (s.brief(), s.apps(), saw))
     d.shot("states-mode")
     d.key("Escape")
     s = d.until(lambda s: not s.mode, "the default mode again")
-    good, saw = mode(False)
-    ok(good and s.rects() == base, "back in the default mode the name is gone", (s.brief(), saw))
+    good, saw = mode(False, status)
+    ok(good and s.rects() == base and s.apps() == (run_end + cell, status - 5 * cell - run_end - cell),
+       "back in the default mode the name is gone, and the pad's room runs up to five cells before the status again", (s.brief(), s.apps(), saw))
     # a screen at rest: the workspace it shows has the rest name, as the idle screen's has; a name that only begins
     # with it is a workspace as any other
     pid, inset, near_ = d.bar_pid(), high // 9, RESTS + "r"
@@ -2349,6 +2412,10 @@ def geometry(d):
     ok(spaces[0].x == mark.x + mark.w + cell == 44 and [t.rect for t in spaces] == [(44 + 30 * i, 0, 30, BAR) for i in range(10)] and plate.rect == (44, 0, 30, BAR) and run_end == 344
        and run_end - (mark.x + mark.w + cell) == 300,
        "the run: from 44 px, ten places of 30 px with none between, the plate one of them, 300 px in all", [t.rect for t in spaces])
+    room = (run_end + cell, parts[0].x - 5 * cell - run_end - cell)
+    ok(s.apps() == room and "\noutput\t%s\t%d\t%d\ttop\t1\napps\t%s\t%d\t%d\ntarget\t" % ((OUT, W, BAR, OUT) + room) in s.text,
+       "the room for the pad's windows: the apps line, the one after the output's, names it from one cell after the run, %d px, up to five cells before the status, %d px wide" % room,
+       (s.apps(), room, s.text[:160]))
     area = next(w["rect"] for w in d.ask("get_workspaces") if w["num"] == 1)
     win = d.node(d.windows[0].pid)["rect"]
 
@@ -2493,6 +2560,44 @@ def geometry(d):
         or next(w["rect"] for w in d.ask("get_workspaces") if w["num"] == 1)
     ok(said.returncode == 0 and s.rects() == base and area["y"] - area["x"] == BAR and H - (area["y"] + area["height"]) == area["x"],
        "spark-shell bar top: back at the top, the windows' area %d px under the screen's edge again" % BAR, (said.said[-200:], moved(base, s.rects()), area))
+    # the bar dragged by its own ground, where no target is: let go in the screen's other half, it stands at that edge
+    bare = (run_end + parts[0].x) // 2   # the middle of the room between the workspaces and the status
+    sign = s.find("out.name")
+
+    def drag(start, end):
+        """A press of the left button at row `start` of the bare column, the pointer moved 8 px and on to row `end`, let go there."""
+        d.move(bare, start)
+        d.button(True)
+        d.move(bare, start + (8 if end > start else -8))
+        d.move(bare, end)
+        d.button(False)
+    pid, was = d.bar_pid(), d.conf("BAR_POSITION")
+    drag(high // 2, H // 2 - 2 * high)
+    # two clicks after it, each answered: the shell has read by now whatever the drop sent
+    d.click(sign.mid)
+    d.until(lambda s: s.named("out.name") == "output muted", "out muted by a click after the drop")
+    d.click(sign.mid)
+    s = d.until(lambda s: s.named("out.name") == "output 40%", "out unmuted")
+    moving = [" ".join(cmdline(p)[-2:]) for p in d.ours() if cmdline(p)[-2:] in (["bar", "top"], ["bar", "bottom"])]
+    ok(not any(t.x <= bare < t.x + t.w for t in s.targets()) and d.bar_pid() == pid and s.bar().edge == "top" and d.conf("BAR_POSITION") == was and not moving
+       and s.rects() == base,
+       "the bar pressed on its own ground, where no target is, dragged down and let go in the screen's upper half stays: the same process at the top, the config's BAR_POSITION as it was, and spark-shell was asked nothing",
+       (pid, d.bar_pid(), s.bar().edge, was, d.conf("BAR_POSITION"), moving))
+    d.away()
+    drag(high // 2, H * 3 // 4)
+    s = d.until(lambda s: s.bar().edge == "bottom" and s.status == "ok" and s.find("clock.text"), "the bar at the bottom, dragged there", 30)
+    low, saw = mark_seen(d, mark.x, H - BAR + (BAR - MARK) // 2)
+    lower = d.bar_pid()
+    ok(d.conf("BAR_POSITION") == "bottom" and lower not in (None, pid) and d.bar_env().get("BAR_POSITION") == "bottom" and s.rects() == base and low,
+       "dragged the same way and let go in the screen's lower half, the bar stands at the bottom: its click named bar reached spark-shell, which keeps BAR_POSITION=bottom in the config and started the bar again there; the state file says bottom, and the logo is drawn in the bottom %d rows" % BAR,
+       (d.conf("BAR_POSITION"), pid, lower, s.bar().edge, moved(base, s.rects()), saw))
+    d.shot("geometry-dragged")
+    drag(H - high // 2, H // 4)
+    s = d.until(lambda s: s.bar().edge == "top" and s.status == "ok" and s.find("clock.text"), "the bar at the top again, dragged there", 30)
+    up, saw = mark_seen(d, mark.x, (BAR - MARK) // 2)
+    ok(d.conf("BAR_POSITION") == "top" and d.bar_pid() not in (None, lower) and s.rects() == base and up,
+       "and from the bottom, dragged up and let go in the upper half, it stands at the top again: BAR_POSITION=top, another process, the logo in the top rows", (d.conf("BAR_POSITION"), lower, d.bar_pid(), moved(base, s.rects()), saw))
+    d.away()
     # two screens
     d.sway("create_output")
     s = d.until(lambda s: len(s.outputs) == 2 and all(b.targets and b.targets[-1].id == "notifications.name" for b in s.outputs.values()), "a bar on each of two screens", 15)
@@ -2518,9 +2623,10 @@ def geometry(d):
     ok(good and logo, "on the second screen the logo is drawn too, the same pixels, its plate stands on its own workspace, %d, and the run around it is the pair; the first screen's plate is where it was" % theirs, (saw, r))
     d.sway("mode", "resize")
     s = d.until(lambda s: s.mode == "resize", "the binding mode in the state file")
+    letters = len(glyphs(s.mode))
     good, saw = seen(lambda: (lambda found: (found == [["attention"]] * 2, found))(
-        [d.grab(outs[n]["rect"]["x"] + max(t.x + t.w for t in s.spaces(n)) + cell, outs[n]["rect"]["y"], 6 * cell, high).tone(ground, tones) for n in (OUT, other)]))
-    ok(good, "a binding mode stands after the workspaces on both screens' bars", saw)
+        [d.grab(outs[n]["rect"]["x"] + min(t.x for t in s.parts(n)) - (5 + letters) * cell, outs[n]["rect"]["y"], letters * cell, high).tone(ground, tones) for n in (OUT, other)]))
+    ok(good, "a binding mode stands on both screens' bars, its name's end five cells before the status", saw)
     d.shot("geometry-second-screen", other)
     d.sway("mode", "default")
     d.until(lambda s: not s.mode, "the default mode again")
@@ -2575,6 +2681,241 @@ def geometry(d):
         ok(s.rects() == base, "the second screen unplugged: its bar is gone with it, and the first screen's stands as it stood", s.brief())
     else:
         note("this sway unplugs no screen: the second one stays for the rest of the proof")
+
+
+def amid(img, base, color, slack=4):
+    """A piece of the screen against a color drawn over a base, whatever smooths its edges, gray or subpixel:
+    (whether every pixel lies between the two a channel at a time, whether one at least is the color itself)."""
+    low, top = [min(p, q) - slack for p, q in zip(base, color)], [max(p, q) + slack for p, q in zip(base, color)]
+    colors = img.colors()
+    return all(low[i] <= c[i] <= top[i] for c in colors for i in range(3)), any(near(c, color, 6) for c in colors)
+
+
+def pad_reads(d, strip, x, cells, lit, sizes, on=None):
+    """The pad on a bar's capture, from x: its grip, a line 1 px wide in the dim tone, half the bar's height, in the
+    middle of its room and nothing else there; then a cell a window, each a square of the lit tone in its middle
+    with a letter in the text's color (an app with no icon) and nothing else; the cell `on`, under the pointer, on a
+    chip of the lit tone instead, the cell's width and the plate's height. -> (whether it is so, what was read)"""
+    lead, tool, icon = sizes
+    high, ground, dim, text = strip.h, d.ground, d.tones["dim"], d.tones["text"]
+    inset, at, length = round(high / 9.0), x + lead // 2, high // 2
+    grip = strip.fall(at, high // 2, dim), strip.run(at, high // 2, dim)
+    room = all(strip.part(c, 0, 1, high).colors() == {ground} for c in range(x, x + lead) if c != at)
+    good, saw = grip == (((high - length) // 2, length), (at, 1)) and room, collections.OrderedDict((("grip", grip), ("its room", room)))
+    for i in range(cells):
+        cx = x + lead + i * tool
+        cell = strip.part(cx, 0, tool, high)
+        if i == on:
+            box = strip.box(cx + 1, inset, lit)
+            lies, letter = amid(cell.part(0, inset, tool, high - 2 * inset), lit, text)
+            ends = cell.part(0, 0, tool, inset).colors() == cell.part(0, high - inset, tool, inset).colors() == {ground}
+            good, saw[i] = good and box == (cx, inset, tool, high - 2 * inset) and lies and letter and ends, ("on a chip", box, lies, letter, ends)
+        else:
+            sx, sy = (tool - icon) // 2, (high - icon) // 2
+            box = strip.box(cx + sx + 1, sy, lit)
+            lies, letter = amid(cell.part(sx, sy, icon, icon), lit, text)
+            stray = sorted(inside(cell.ink(ground, 4), [(sx, sy, icon, icon)]))
+            good, saw[i] = good and box == (cx + sx, sy, icon, icon) and lies and letter and not stray, (box, lies, letter, stray[:3])
+    return good, saw
+
+
+def pad(d):
+    """The pad on the bar: a window minimized through spark-shell starts spark-winpad, whose place is the bar by
+    default: it stands in the room the bar's apps line names, on a surface of its own over the bar. Its lengths
+    follow the text's size, as the pad counts them (component/winpad/src/pad.rs, Metrics): at 16 px a grip's room of
+    20, a cell of 36, an icon of 24 and, off the bar, hide's room of 24."""
+    enter("pad", "the pad's windows on the bar: its place, the chip, hidden and shown, dragged off the bar and back, a click")
+    if not d.pad:
+        note("the pad's checks did not run: SPARK_SHELL_WINPAD names no spark-winpad build")
+        return
+    s = d.rest()
+    base, high, ground, tones, pal = s.rects(), d.high, d.ground, d.tones, d.pal
+    lead, tool, icon, hide = (int(n * TEXT / 16.0 + 0.5) for n in (20, 36, 24, 24))
+    sizes, row = (lead, tool, icon), lead + tool + 1 + hide   # row: the pad off the bar with one window, hide after a hairline
+    x0, wide = s.apps()
+    look = d.line()[0]
+    lit, accent = rgb(look.get("lit", "000000")), tones["accent"]
+    free = d.area()   # the windows' area with no pad
+    gx, mid, cell0 = x0 + lead // 2, high // 2, x0 + lead + tool // 2   # the grip's line, the bar's middle row, the first cell's middle
+    running = (d.bar_pid(), d.loop_pid())   # the bar and its status loop: the same ones say the pad's module as its place changes
+
+    def shown(on=None):
+        """The pad on the bar as the screen has it: its grip and one cell, the pointer on the cell or off it."""
+        return seen(lambda: pad_reads(d, d.strip(), x0, 1, lit, sizes, on), 10)
+
+    def bare():
+        """Nothing of the pad on the bar: its grip's room and its first cell are the bar's ground."""
+        return seen(lambda: (lambda colors: (colors == {ground}, sorted(colors)[:4]))(d.strip().part(x0, 0, lead + tool, high).colors()), 10)
+
+    def hold(x, y, there):
+        """The pointer moved to x, y with the button held, and a pixel aside and back until the screen says `there`: the
+        surface a drag is drawn on comes a moment after the drag begins, and the pad follows the moves it hears then."""
+        def read():
+            d.move(x + 1, y)
+            d.move(x, y)
+            return there()
+        return seen(read, 10)
+
+    def lands(w):
+        """A dragged pad that would land at the bar's edge of the windows' area: the accent's line there, 3 px, from
+        the room's start and w wide: the pad's cells on the bar, or the row it is docked."""
+        def read():
+            run = d.grab(0, high, W, 3).run(x0 + 1, 1, accent)
+            return run == (x0, w), run
+        return read
+
+    def floats(x, y):
+        """The pad off the bar with its corner at x, y of the screen: a row with a fine edge of the lit tone, its
+        grip's line in its room and the window's square after it."""
+        def read():
+            img = d.grab(x - 2, y - 2, row + 4, tool + 4)
+            box, grip = img.box(3, 2, lit), img.fall(2 + lead // 2, 2 + tool // 2, tones["dim"])
+            sx, sy = 2 + lead + (tool - icon) // 2, 2 + (tool - icon) // 2
+            square = img.run(sx + 1, sy, lit), img.fall(sx, sy + 1, lit)
+            return box == (2, 2, row, tool) and grip[1] == tool // 2 and square == ((sx, icon), (sy, icon)), (box, grip, square)
+        return read
+
+    def press(x, y):
+        """The button pressed at x, y, the pointer brought there by a move the surface under it hears."""
+        d.move(x + 1, y)
+        d.move(x, y)
+        d.button(True)
+
+    def follows(test):
+        """The bar's state file once it says `test`, or as it is at the end of the wait: the bar follows by itself, through
+        its running status; the proof asks it for no line."""
+        return settle(lambda: (lambda s: s if s is not None and test(s) else None)(d.state()), 30) or d.state()
+
+    def module_on(s):
+        """Whether a state has the pad's module, in sight: ok, one window."""
+        return s.named("pad.name") == "pad, 1 windows" and s.find("pad.name").state == "ok"
+
+    def placed(test):
+        """The config's WINPAD_PLACE once it says `test`, as spark-shell desktop pad place writes it."""
+        return settle(lambda: (lambda p: p if p and test(p) else None)(d.conf("WINPAD_PLACE")), 10)
+    waits = d.terminal("WAITS", app="proofpad")   # an app no icon is found for: the pad draws its letter
+    try:
+        said = d.shell("desktop", "window", "min", str(d.node(waits.pid)["id"]))
+        pid = wait_for(d.pad_pid, "spark-winpad, started for the window minimized")
+        d.padded = True
+        good, saw = shown()
+        env, node = environ_of(pid), d.node(waits.pid) or {}
+        ok(said.returncode == 0 and said.said.startswith("the window is on the pad") and d.space_of(waits.pid) == "__i3_scratch"
+           and any(mark.startswith("_spark-shell.min.") for mark in node.get("marks", [])) and env.get("WINPAD_PLACE") == "bar" and env.get("WINPAD_BAR_STATE") == str(d.state_file),
+           "spark-shell desktop window min: the window waits in the scratchpad under spark-shell's mark, and spark-winpad is started for it, the build SPARK_SHELL_WINPAD names, its place the bar, the default, with the bar's state file named to it",
+           (said.said, node.get("marks"), cmdline(pid), env.get("WINPAD_PLACE"), env.get("WINPAD_BAR_STATE")))
+        want = {"WINPAD_GROUND": pal["BG"], "WINPAD_FG": pal["FG"], "WINPAD_ACCENT": pal["ACCENT"], "WINPAD_LIT": look.get("lit"), "WINPAD_DIM": pal["MUTED"]}
+        ok(all(env.get(key) == value for key, value in want.items()),
+           "the pad is handed the bar's palette: the ground, the text's color, the accent and the lit tone, and the bar's dim tone for its grip", {key: (env.get(key), value) for key, value in want.items()})
+        top = (high - high // 2) // 2
+        ok(good, "the pad stands on the bar, in the room the apps line names, from %d px: its grip's room of %d px, a line of 1 px in the bar's dim tone in its middle, half the bar's height, from row %d to row %d; then a cell of %d px, the window with no icon a square of %d px in the lit tone in its middle, its letter in the text's color; nothing else is drawn there"
+           % (x0, lead, top, top + high // 2, tool, icon), saw)
+        d.shot("pad-on-the-bar")
+        # two lines of the status, each asked for after the one before was read: the second was made with the pad in sight
+        d.says(45)
+        s = d.says(40)
+        names_ = [module.get("name") for module in d.line()[1:]]
+        ok("pad" not in names_ and not s.find("pad.name") and s.rects() == base and s.apps() == (x0, wide) and not any(t.x + t.w > x0 and t.x < x0 + wide for t in s.targets()),
+           "while the pad is in sight on the bar the bar's line has no module named pad, and the bar itself draws nothing in that room: every target where it was, the same room kept; the cells are the pad's own, on its surface over the bar",
+           (names_, s.brief(), s.apps()))
+        ok(d.area() == free and d.pad_says() == (False, 1), "it keeps no strip: the windows' area is the same with the pad on the bar as with no pad", (d.area(), free, d.pad_says()))
+        # under the pointer
+        d.move(cell0, mid)
+        good, saw = shown(on=0)
+        ok(good, "under the pointer the cell stands on a chip of the lit tone, the cell's %d px wide and as high as the plate's box, a ninth of the bar in from its top and from its bottom; the letter on it stays the text's color" % tool, saw)
+        d.shot("pad-chip")
+        d.away()
+        good, saw = shown()
+        ok(good, "the pointer gone, the chip is gone: the cell is as it was", saw)
+        # hidden, and shown again
+        said = d.shell("desktop", "pad", "toggle")
+        off = d.told(lambda s: s.find("pad.name").state == "off", "the pad's module on the bar, off, the pad hidden")
+        good, saw = bare()
+        module = next((module for module in d.line()[1:] if module.get("name") == "pad"), {})
+        ok(said.said == "the pad is hidden" and d.pad_says() == (True, 1) and good and off.named("pad.name") == "pad hidden, 1 windows" and module.get("state") == "off" and d.pad_pid() == pid,
+           "hidden (spark-shell desktop pad toggle): the pad's cells are gone from the bar, and the module named pad is back on the line, off: pad hidden, 1 windows; the same pad runs", (said.said, d.pad_says(), saw, off.brief(), module))
+        said = d.shell("desktop", "pad", "toggle")
+        back = d.told(lambda s: not s.find("pad.name") and s.rects() == base, "no module of the pad on the bar, the pad in sight again")
+        good, saw = shown()
+        names_ = [module.get("name") for module in d.line()[1:]]
+        ok(said.said == "the pad is back in sight" and d.pad_says() == (False, 1) and good and "pad" not in names_ and d.pad_pid() == pid,
+           "a second toggle shows it again: the cells are back in their room, and the module is gone from the line", (said.said, d.pad_says(), saw, names_, back.brief()))
+        # dragged off the bar by its grip: let go in the windows' area, far from every edge, it stays there
+        press(gx, mid)
+        began, saw = hold(gx, mid + 8, lands(lead + tool))
+        px, py = gx + 120, high + 240
+        at = (px - lead // 2, py - tool // 2)   # its corner there: the grip's middle under the pointer
+        there, saw2 = hold(px, py, floats(*at))
+        d.button(False)
+        kept = placed(lambda p: p.startswith("free ")) or ""
+        still, saw3 = seen(floats(*at))
+        gone, saw4 = bare()
+        ok(began and there and kept == "free %d %d" % (at[0], at[1] - high) and min(px, W - px, py - high, H - py) > 96 and still and gone and d.pad_pid() == pid,
+           "dragged by its grip: a press there and the pointer moved down, the pad would land where it stood, a line of the accent at the bar's edge; moved on into the windows' area and let go more than 96 px from every edge, the pad is left there, its grip under the pointer, and off the bar: spark-shell desktop pad place wrote WINPAD_PLACE=%s" % kept,
+           (began, saw, there, saw2, kept, still, saw3, gone, saw4))
+        line = follows(module_on)
+        ok(module_on(line) and line.find("pad.name").kind == "toggle" and not stays(base, line.rects()) and (d.bar_pid(), d.loop_pid()) == running,
+           "off the bar the pad is on the bar's line again: the bar itself, through the status loop that was running, shows the module named pad, ok: pad, 1 windows; no other target has moved",
+           (line.brief(), stays(base, line.rects()), running, d.bar_pid(), d.loop_pid()))
+        d.shot("pad-free")
+        # pressed on its grip again, at the left of the floating pad, and let go with the pointer on the bar: it lands there
+        press(at[0] + lead // 2, at[1] + tool // 2)
+        over, saw = hold(gx, mid, lands(lead + tool))
+        d.button(False)
+        kept = placed(lambda p: p == "bar")
+        d.away()
+        good, saw2 = shown()
+        ok(over and kept == "bar" and good and d.area() == free and d.pad_pid() == pid,
+           "pressed on its grip again and moved up until the pointer is on the bar, the line of the accent says where it lands; let go there, the pad is on the bar again: WINPAD_PLACE=bar, its grip and its cell back in their room, no strip kept",
+           (over, saw, kept, saw2, d.area()))
+        line = follows(lambda s: not s.find("pad.name") and s.rects() == base)
+        ok(not line.find("pad.name") and line.rects() == base and (d.bar_pid(), d.loop_pid()) == running,
+           "on the bar again the pad says itself there: its module is gone from the bar's line, by the same status loop, and every target is where it was", (line.brief(), running, d.bar_pid(), d.loop_pid()))
+        # let go near the bar's edge and not on the bar: it docks at that edge, in a strip of its own
+        gap = int(env.get("WINPAD_GAP") or 8)   # the pad's margin off an edge: the desktop's outer gap, 8 px when none is set
+        press(gx, mid)
+        began, saw = hold(gx, mid + 8, lands(lead + tool))
+        near_, saw2 = hold(gx, high + 30, lands(row))   # 30 px under the bar: within the 48 that take an edge, and not on the bar
+        d.button(False)
+        kept = placed(lambda p: p.startswith("top ")) or ""
+        strip_ = (free[0], free[1] + gap + tool, free[2], free[3] - gap - tool)
+        under = settle(lambda: d.area() == strip_, 10)
+        docked, saw3 = seen(floats(x0, high + gap))
+        gone, saw4 = bare()
+        ok(began and near_ and re.fullmatch(r"top (start|center|end|\d+)", kept) and under and docked and gone and d.pad_pid() == pid,
+           "dragged from the bar and let go %d px under it, near its edge and off the bar, the pad docks at that edge, not on the bar: WINPAD_PLACE=%s, the pad a row under the bar in a strip of its own, the windows' area beginning %d px lower, and nothing of it on the bar"
+           % (30, kept, gap + tool), (began, saw, near_, saw2, kept, d.area(), strip_, docked, saw3, gone, saw4))
+        line = follows(module_on)
+        ok(module_on(line) and not stays(base, line.rects()) and (d.bar_pid(), d.loop_pid()) == running,
+           "docked at the edge, off the bar, it is on the bar's line again: the module named pad, ok: pad, 1 windows, by the same status loop", (line.brief(), stays(base, line.rects()), running, d.bar_pid(), d.loop_pid()))
+        d.shot("pad-docked")
+        # back on the bar by the verb, which starts the pad again there; its widths and its height as the config has them by default
+        said = d.shell("desktop", "pad", "place", "bar", "0", "36", "0")
+        again = settle(lambda: (lambda p: p if p not in (None, pid) else None)(d.pad_pid()), 10)
+        good, saw = shown()
+        ok(said.returncode == 0 and said.said == "the pad sits on the bar, after the workspaces" and d.conf("WINPAD_PLACE") == "bar" and again and good and settle(lambda: d.area() == free, 10),
+           "spark-shell desktop pad place bar: the pad is started again on the bar, its cell in its room, and the strip is given back", (said.said, d.conf("WINPAD_PLACE"), pid, again, saw, d.area()))
+        # two lines again, each asked for after the one before was read: the second was made with the new pad in sight on the bar
+        d.says(45)
+        line = d.says(40)
+        ok(not line.find("pad.name") and line.rects() == base and (d.bar_pid(), d.loop_pid()) == running,
+           "and back on the bar by the verb its module is gone from the bar's line again, by the same status loop", (line.brief(), running, d.bar_pid(), d.loop_pid()))
+        # a click on the cell
+        d.click(cell0)
+        home = settle(lambda: d.space_of(waits.pid) not in (None, "__i3_scratch") and d.space_of(waits.pid), 10)
+        empty = settle(lambda: d.pad_says() == (False, 0), 10)
+        good, saw = bare()
+        s = d.told(lambda s: not s.find("pad.name") and s.rects() == base, "the bar as it was, no window on the pad")
+        ok(home == d.space_of(d.windows[0].pid) and empty and good and d.pad_pid() == again and d.area() == free,
+           "a click on the cell brings the window back, on the workspace shown, and the pad leaves the bar: no window waits on it, and its room is the bar's ground again", (home, d.pad_says(), saw, s.brief()))
+    finally:
+        # as the next gate finds it: no window on the pad, and the pad's place the bar
+        waits.terminate()
+        settle(lambda: not d.node(waits.pid), 5)
+        if d.pad_pid() and d.conf("WINPAD_PLACE") not in (None, "bar"):
+            d.shell("desktop", "pad", "place", "bar", "0", "36", "0")
+        if d.held:
+            d.button(False)
 
 
 def relook(d):
@@ -2671,7 +3012,7 @@ def main():
     on_failure.append(d.keep_failure)
     try:
         d.start()
-        for part in (lifecycle, identity, behavior, states, accessibility, geometry, relook, names):
+        for part in (lifecycle, identity, behavior, states, accessibility, geometry, pad, relook, names):
             at = time.time()
             try:
                 part(d)
@@ -2688,7 +3029,7 @@ def main():
         d.stop()
     global gate
     gate = "lifecycle"
-    ok(d.left == [], "the session over: the bar, its keeper and its status ended with their sway, by themselves", d.left)
+    ok(d.left == [], "the session over: the bar, its keeper and its status%s ended with their sway, by themselves" % (", the pad and its keeper" if d.padded else ""), d.left)
     took = time.time() - began
     counted = ", ".join("%s %d" % (name, good + bad) for name, (good, bad) in tally.items())
     print("bar proof: %s (%s) in %d s; the screens are in %s" % ("every gate holds" if failed == 0 else "%d failed" % failed, counted, took, evidence))

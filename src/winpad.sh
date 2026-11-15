@@ -121,6 +121,7 @@ layout_pad() {   # layout_pad [keys|toggle|place PLACE WIDTH SIDE [HEIGHT]|band 
             [ "$#" = 3 ] || config_set WINPAD_HEIGHT "$4" >/dev/null
             WINPAD_PLACE=$1; WINPAD_WIDTH=$2; WINPAD_SIDE_WIDTH=$3; [ "$#" = 3 ] || WINPAD_HEIGHT=$4; export WINPAD_PLACE WINPAD_WIDTH WINPAD_SIDE_WIDTH WINPAD_HEIGHT
             [ -n "${WINPAD_LOCK:-}" ] || winpad_again   # drawn again at its place; the pad's own save after a drag keeps it as it is
+            bar_redraw   # the bar's line says the pad while it is off the bar, and not while it is on it
             echo "the pad sits $(winpad_place_words "$1")"; return ;;
         band) [ "$#" -le 2 ] || refuse "pad band takes on or off"
             case ${2:-} in

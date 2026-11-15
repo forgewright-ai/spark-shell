@@ -1254,8 +1254,8 @@ impl App {
             let (ox, oy) = (pad_at.0 as f64, pad_at.1 as f64);
             let (w, h) = (lay.w as f64, lay.h as f64);
             let pad_r = Rect::new(pad_at.0, pad_at.1, lay.w, lay.h);
-            // off the bar the pad is a piece of it: the bar's ground, and a fine edge so it reads on any ground, the
-            // accent while the pad has the keys. On the bar it has neither: the bar's own ground shows
+            // off the bar the pad is a piece of it: the bar's ground, and a fine edge (drawn last) so it reads on any
+            // ground, the accent while the pad has the keys. On the bar it has neither: the bar's own ground shows
             if !lay.bar {
                 c.fill(ox, oy, w, h, look.ground, look.alpha);
             }
@@ -1265,13 +1265,6 @@ impl App {
                 c.fill(ox, by, w, b, look.band, look.alpha);
                 let says = pad::band_words(lay.w, self.wins.len(), lit_line.as_deref(), &m);
                 c.text(ox + 6.0, by, w - 12.0, b, &says, look.fg, true, Align::Center);
-            }
-            if !lay.bar {
-                let edge = if keys_here { look.accent } else { look.lit };
-                c.fill(ox, oy, w, 1.0, edge, 1.0);
-                c.fill(ox, oy + h - 1.0, w, 1.0, edge, 1.0);
-                c.fill(ox, oy + 1.0, 1.0, h - 2.0, edge, 1.0);
-                c.fill(ox + w - 1.0, oy + 1.0, 1.0, h - 2.0, edge, 1.0);
             }
             // the grip: a line in the middle of its room, half as long as the room is across, as the bar's hairline
             // is; on the bar, where the pad has no edge, it is the accent while the pad has the keys
@@ -1359,6 +1352,14 @@ impl App {
                         }
                     }
                 }
+            }
+            // the edge last, over a lit cell that reaches it: it runs all around, whatever is lit
+            if !lay.bar {
+                let edge = if keys_here { look.accent } else { look.lit };
+                c.fill(ox, oy, w, 1.0, edge, 1.0);
+                c.fill(ox, oy + h - 1.0, w, 1.0, edge, 1.0);
+                c.fill(ox, oy + 1.0, 1.0, h - 2.0, edge, 1.0);
+                c.fill(ox + w - 1.0, oy + 1.0, 1.0, h - 2.0, edge, 1.0);
             }
             if let (true, Some(line), Some(i)) = (tip, lit_line.as_deref(), lit) {
                 // the lit cell's words beside the pad, away from the edge it sits on

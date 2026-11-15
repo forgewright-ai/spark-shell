@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """Prove the pad on a separate headless sway with a real foot, a real swaybar and spark-winpad:
 python3 test/winpad_desktop_proof.py [EVIDENCE_DIRECTORY]. A throwaway HOME and a sway of its own, once in a
-dark palette and once in solarized-light, as a surface change is proven (the handbook's two palettes).
+dark palette and once in solarized-light, as a surface change is proven (the handbook's two palettes). Sway's
+own bar draws here, never spark's (SPARK_SHELL_BAR is dropped): the pad on spark's bar is proven with that bar.
 
 Each round puts foot windows on the pad as the keys do (spark-shell desktop window: a tiled one with Down twice,
 a floating one with Right then Down twice), and reads what the pad does from the compositor and the screen. By
-default it is a row of icons at the bottom (#269): cells of 36 px under the handle, the 6 px line in the band's
-color across its top, hide at the end, and it keeps a strip of its own height and the outer gap (the workspace's
-area ends above it). The pointer on an icon lights it and a label over the pad says its words, as the dialog
-names a window (the app's name, then the title, lowercase). A foot floated across the strip leaves the pad in
-sight above it, and a click on an icon through it brings the tiled window back tiled. The bar's block says how
-many wait, the bar's toggle hides the pad and gives the strip back. A screen on the idle screen's workspace (idle,
-or idle and a screen's name) has no pad, keeps no strip and gives the pad no keys, and the pad is back with the
-workspace before; a workspace named idler keeps it. The pad dragged from an icon to the left edge
-in 2 px steps changes its shape once, from a row to a column, docks there and keeps its strip there, and
-spark-shell lays the windows out again once for it, never during the drag. Super+minus (desktop pad keys) shows
-it with the keyboard on it and Enter brings the last one back, and the pad goes once no window waits.
+default, with no bar of spark's to stand on, it is a row of icons at the bottom's middle (#269): the grip's room
+of 20 px at its left, cells of 36 px, hide a pixel past them, as high as one cell. It is a piece of the bar: the
+bar's ground, an edge of 1 px in the lit tone inside it all around, and the grip, a line in the palette's dim
+tone in the middle of its room, half as long as the room is across. It keeps a strip of its own height and the
+outer gap (the workspace's area ends above it). The pointer on an icon lights its whole cell and a label over
+the pad says its words, as the dialog names a window (the app's name, then the title, lowercase). A foot floated
+across the strip leaves the pad in sight above it, and a click on an icon through it brings the tiled window back
+tiled. The bar's block says how many wait, the bar's toggle hides the pad and gives the strip back. A screen on
+the idle screen's workspace (idle, or idle and a screen's name) has no pad, keeps no strip and gives the pad no
+keys, and the pad is back with the workspace before; a workspace named idler keeps it. The pad dragged from an
+icon to the left edge in 2 px steps changes its shape once, from a row to a column with the middle of its grip's
+room under the pointer, docks there, the grip's room across its top and hide under its cells, and keeps its
+strip there, and spark-shell lays the windows out again once for it, never during the drag. Super+minus (desktop
+pad keys) shows it with the keyboard on it, its edge the accent while it has the keys, and Enter brings the last
+one back, and the pad goes once no window waits.
 
 Then four windows, three of them foot: the pad resized from its top left corner to two rows keeps a strip as
 thick and asks spark-shell to keep its height; shrunk from its left side to one column it folds the foots into
@@ -23,13 +28,14 @@ one icon whose badge, a filled circled number in the accent at its top right, re
 by the glyph foot draws in that font; without it, by its color); made big enough again the group opens back into
 its icons. A click on the group opens its list beside it, a row a window, the oldest first, and a click on a row
 brings that window back; Super+minus, Enter on the group and Enter on its list bring another, and Up moves a row.
-Then the band on, the bar at the bottom: the handle and the band stand where the pad is, over a strip of both and
-the row, and the bar where it was. Last the titled view (desktop pad view titles): slots of 228 px, an item's
-words read as the dialog's, the handle line across them. Then the dialog on the pad (v0.134.3): a foot whose app
-id is spark-dialog wears spark's own mark, the diamond in the chevron of the assets beside spark-shell, in its
-light ink on a dark surface and its dark ink on a light one, in both views, and its words are spark, then its
-title, the same pixels as a window named spark with that title, whose icon holds none of that ink. The screen is
-captured at each step into the evidence directory.
+Then the band on, the bar at the bottom: the band stands across the pad's top, the grip's room under it at the
+row's left, over a strip of the band and the row, and the bar where it was. Last the titled view (desktop pad
+view titles): slots of 228 px past the grip's room, an item's words read as the dialog's, the edge and the grip
+as on the icons. Then the dialog on the pad (v0.134.3): a foot whose app id is spark-dialog wears spark's own
+mark, the diamond in the chevron of the assets beside spark-shell, in its light ink on a dark ground and its
+dark ink on a light one, in both views, and its words are spark, then its title, the same pixels as a window
+named spark with that title, whose icon holds none of that ink. The screen is captured at each step into the
+evidence directory.
 
 Nothing here rests on a number read at the start: a bar in a fallback font grows a pixel once its line is
 drawn, so every length is read from the edge the bar does not touch, or as the pad's own.
@@ -130,14 +136,14 @@ def text_px(font):
 
 def lengths(font):
     """The pad's lengths at the text size it was handed (WINPAD_FONT, the bar's), as component/winpad/src/pad.rs's
-    Metrics::for_text makes them: the mock-up's at 16 px (36 an icon's cell, 6 the handle, 228 a slot), in
+    Metrics::for_text makes them: the mock-up's at 16 px (36 an icon's cell, 20 the grip's room, 228 a slot), in
     proportion at any other."""
     k = min(max(text_px(font) / 16, 0.5), 3.0)
 
     def s(v):
         return int(v * k + 0.5)
     return {"slot": s(228), "cell": s(40), "ctl": s(24), "band": s(24), "tool": s(36), "icon": s(24), "tip": s(24),
-            "handle": max(s(6), 4)}
+            "lead": s(20)}
 
 
 def pad_binary():
@@ -299,6 +305,33 @@ def blobs(m):
     return out
 
 
+def edge_off(img, box, tone):
+    """The pixels of a pad's edge that are not a tone: the edge is the 1 px inside its rectangle (x, y, w, h), all
+    around. None where the edge runs whole in that tone."""
+    x, y, w, h = box
+    line = [(px, py) for py in (y, y + h - 1) for px in range(x, x + w)]
+    line += [(px, py) for px in (x, x + w - 1) for py in range(y + 1, y + h - 1)]
+    return [p for p in line if not near(pixel(img, *p), tone, 6)]
+
+
+def grip_line(img, room, tone, column=False):
+    """The grip's line in its room (x, y, w, h), as the screen shows it: whether it is the line the pad draws, and
+    the runs of its tone through the room's middle, down a row's room and along a column's. The line is one, 1 px
+    wide, in the middle of the room and half as long as the room is across: its height in a row, its width in a
+    column. A line that begins on half a pixel shows a pixel short."""
+    x, y, w, h = room
+    if column:
+        got, lo, across = runs(img, y + h // 2, (tone,), 6, x, x + w), x, w
+        beside = [pixel(img, x + w // 2, y + h // 2 + d) for d in (-1, 1)]
+    else:
+        got, lo, across = runs_column(img, x + w // 2, (tone,), 6, y, y + h), y, h
+        beside = [pixel(img, x + w // 2 + d, y + h // 2) for d in (-1, 1)]
+    long = across // 2
+    held = (len(got) == 1 and long - 1 <= got[0][1] <= long and abs(2 * got[0][0] + got[0][1] - 2 * lo - across) <= 1
+            and not any(near(p, tone, 6) for p in beside))
+    return held, got
+
+
 def has_font(family):
     """Whether fontconfig gives this family itself, not a fallback."""
     try:
@@ -334,7 +367,10 @@ def round_in(palette, binary, evidence):
            "XDG_STATE_HOME": str(root / ".local/state"), "XDG_DATA_HOME": str(root / ".local/share"),
            "XDG_RUNTIME_DIR": str(runtime), "WLR_BACKENDS": "headless", "WLR_RENDERER": "pixman",
            "WLR_LIBINPUT_NO_DEVICES": "1", "SPARK_SHELL_NO_APPLY": "1", "SPARK_SHELL_WINPAD": str(pad)}
-    for name in ("SWAYSOCK", "I3SOCK", "WAYLAND_DISPLAY", "DISPLAY", "WINPAD_BAND", "WINPAD_GAP", "WINPAD_VIEW", "WINPAD_HEIGHT"):
+    # SPARK_SHELL_BAR too: this is the pad with sway's own bar, where a pad whose place is the bar (the default)
+    # stands at the bottom's middle; a spark-bar named here would have spark-shell take the bar for spark's
+    for name in ("SWAYSOCK", "I3SOCK", "WAYLAND_DISPLAY", "DISPLAY", "WINPAD_BAND", "WINPAD_GAP", "WINPAD_VIEW", "WINPAD_HEIGHT",
+                 "SPARK_SHELL_BAR"):
         env.pop(name, None)
     # a real swaybar on top, its line spark-shell's own, so the bar's block is the one people see
     config = root / "sway.conf"
@@ -510,8 +546,8 @@ def round_in(palette, binary, evidence):
         ok(given.get("WINPAD_VIEW") in (None, "icons") and given.get("WINPAD_HEIGHT") in (None, "0"),
            "and the icons view, as many rows as needed, by default", {k: given.get(k) for k in ("WINPAD_VIEW", "WINPAD_HEIGHT")})
         m = lengths(given.get("WINPAD_FONT", ""))
-        SLOT, CELL, BAND, TOOL, CTL, HANDLE = m["slot"], m["cell"], m["band"], m["tool"], m["ctl"], m["handle"]   # at 16 px: 228, 40, 24, 36, 24, 6
-        ROW = HANDLE + TOOL                    # a row of icons under the handle
+        SLOT, CELL, BAND, TOOL, CTL, LEAD = m["slot"], m["cell"], m["band"], m["tool"], m["ctl"], m["lead"]   # at 16 px: 228, 40, 24, 36, 24, 20
+        ROW = TOOL                             # a row of icons is as high as one cell: the grip's room is at its left
         inset = int(m["icon"] / 3 + 0.5)
         text_dx, text_w = inset + m["icon"] + inset, SLOT - int(inset * 3.75 + m["icon"])   # a titled item's words: past its icon
         row_floor = floor - ROW - gap
@@ -532,21 +568,35 @@ def round_in(palette, binary, evidence):
         move(W // 2, 300)   # the pointer off the pad
         time.sleep(0.8)
         img = capture("two-windows")
-        surface, lit, fg, muted = rgb(given["WINPAD_SURFACE"]), rgb(given["WINPAD_LIT"]), rgb(given["WINPAD_FG"]), rgb(given["WINPAD_MUTED"])
+        # the pad is a piece of the bar: the bar's ground, its edge and a lit cell in the lit tone, the grip's line
+        # in the palette's own dim tone (none handed: the muted one); a label and a group's list keep the surface
+        ok(given.get("WINPAD_GROUND") and given.get("WINPAD_DIM"), "spark-shell hands the pad the bar's ground and the palette's dim tone, the grip's",
+           {k: given.get(k) for k in ("WINPAD_GROUND", "WINPAD_DIM")})
+        ground, surface, lit, fg, muted = (rgb(given[k]) for k in ("WINPAD_GROUND", "WINPAD_SURFACE", "WINPAD_LIT", "WINPAD_FG", "WINPAD_MUTED"))
         band, accent = rgb(given["WINPAD_BAND_HEX"]), rgb(given["WINPAD_ACCENT"])
-        top = H - gap - ROW            # the pad's top: the handle, a row of icons under it, over the pad's margin
-        cells = top + HANDLE           # the icons' row
-        row = [r for r in runs(img, cells + 2, (surface, lit), 6) if r[1] >= 2 * TOOL]
-        want_w = 2 * TOOL + 1 + CTL
+        dim = rgb(given.get("WINPAD_DIM") or given["WINPAD_MUTED"])
+        body = (ground, lit)           # what a row or a column of the pad reads as, off its icons
+        top = H - gap - ROW            # the pad's top: a row of icons over the pad's margin, the cells as high as it
+        row = [r for r in runs(img, top + 2, body, 6) if r[1] >= 2 * TOOL]
+        want_w = LEAD + 2 * TOOL + 1 + CTL
         ok(len(row) == 1 and abs(row[0][1] - want_w) <= 1,
-           "two icons by default: two cells of %d px and hide's past a hairline, %d px wide" % (TOOL, want_w), runs(img, cells + 2, (surface, lit), 6)[:6])
+           "two icons by default: the grip's room of %d px, two cells of %d and hide's a pixel past them, %d px wide" % (LEAD, TOOL, want_w),
+           runs(img, top + 2, body, 6)[:6])
         left = row[0][0] if row else (W - want_w) // 2
-        handle = [r for r in runs(img, top + 2, (band,), 6) if r[0] <= left + 2 and r[0] + r[1] >= left + want_w - 2]
-        ok(handle and all(near(pixel(img, left + 4, top + i), band, 6) for i in range(HANDLE))
-           and near(pixel(img, left + 2, top + HANDLE), surface, 6) and not near(pixel(img, left + 4, top - 1), band, 6),
-           "the handle, %d px in the band's color, runs across the pad's top" % HANDLE,
-           [pixel(img, left + 4, top + i) for i in (-1, 0, HANDLE - 1, HANDLE)])
-        ok(near(pixel(img, left + 4, top - 6), pixel(img, left + 4, top - 30), 6) and not near(pixel(img, left + 4, top - 6), surface, 6),
+        ok(abs(left - (W - want_w) // 2) <= 1, "with no bar of spark's to stand on, it stands at the bottom's middle", (left, (W - want_w) // 2))
+        off = edge_off(img, (left, top, want_w, ROW), lit)
+        ok(not off and near(pixel(img, left + 1, top + 1), ground, 6)
+           and not any(near(pixel(img, *p), lit, 6) for p in ((left + 4, top - 1), (left - 1, top + 4), (left + 4, top + ROW))),
+           "the pad's edge, 1 px in the lit tone, runs inside it all around, on the bar's ground",
+           (off[:4], [pixel(img, *p) for p in ((left, top), (left + 1, top + 1), (left + 4, top - 1), (left - 1, top + 4))]))
+        held, line = grip_line(img, (left, top, LEAD, ROW), dim)
+        ok(held, "the grip, a line of %d px in the dim tone, stands in the middle of its room at the row's left" % (ROW // 2),
+           (line, pixel(img, left + LEAD // 2, top + ROW // 2)))
+        past = left + LEAD + 2 * TOOL   # the pixel between the cells and hide: the pad's body, no hairline
+        ok(all(near(pixel(img, past, y), ground, 6) for y in range(top + 1, top + ROW - 1)),
+           "no hairline stands before hide: the pixel past the cells is the pad's ground", [pixel(img, past, top + i) for i in (1, ROW // 2, ROW - 2)])
+        ok(near(pixel(img, left + 4, top - 6), pixel(img, left + 4, top - 30), 6)
+           and not any(near(pixel(img, left + 4, top - 6), c, 6) for c in (ground, band)),
            "no band over it", pixel(img, left + 4, top - 6))
         line = shell("bar", "status", "--once")
         try:
@@ -559,16 +609,20 @@ def round_in(palette, binary, evidence):
         ok(blocks and blocks[0].get("name") == "pad", "it is the first block of the status line", [b_.get("name") for b_ in blocks][:3])
 
         # 3. the pointer on the first icon lights it, and a label over the pad says its words, 400 ms on
-        first = (left + TOOL // 2, cells + TOOL // 2)
+        cell_x = left + LEAD           # the first cell: past the grip's room
+        first = (cell_x + TOOL // 2, top + TOOL // 2)
         move(*first)
         time.sleep(1.2)
         img = capture("lit")
-        ok(near(pixel(img, left + 2, cells + 2), lit, 6), "the icon under the pointer is lit", pixel(img, left + 2, cells + 2))
+        lit_row = runs(img, top + 2, (lit,), 6, left + 1, left + want_w - 1)
+        lit_col = runs_column(img, cell_x + 2, (lit,), 6, top, top + ROW)
+        ok(lit_row == [(cell_x, TOOL)] and lit_col == [(top, ROW)],
+           "the icon under the pointer is lit: its whole cell, %d px past the pad's left, in the lit tone" % LEAD, (lit_row, lit_col))
         label_y = top - 6 - m["tip"]
-        ground = pixel(img, left + 3, label_y + 2)
-        label = [r for r in runs(img, label_y + 2, (ground,), 6, left, left + 400) if r[0] == left]
-        ok(near(ground, surface, 16) and label, "a label stands over the pad, at the lit icon", (ground, runs(img, label_y + 2, (ground,), 6, left, left + 400)[:4]))
-        parts = words_in(img, (left + 4, label_y + 1, label[0][1] - 8, m["tip"] - 2), ground, fg) if label else None
+        paper = pixel(img, cell_x + 3, label_y + 2)   # the label's ground, as the screen shows it
+        label = [r for r in runs(img, label_y + 2, (paper,), 6, left, left + 400) if r[0] == cell_x]
+        ok(near(paper, surface, 16) and label, "a label stands over the pad, at the lit icon", (paper, runs(img, label_y + 2, (paper,), 6, left, left + 400)[:4]))
+        parts = words_in(img, (cell_x + 4, label_y + 1, label[0][1] - 8, m["tip"] - 2), paper, fg) if label else None
         ok(parts is not None and parts[0]["text"] >= 4 and parts[1]["text"] >= 4 and lowercase(*parts),
            "the label says the lit window's words, the name and the title, lowercase", parts)
 
@@ -580,10 +634,10 @@ def round_in(palette, binary, evidence):
         move(W // 2, 300)
         time.sleep(0.8)
         img = capture("covered")
-        row = [r for r in runs(img, cells + 2, (surface, lit), 6) if r[1] >= 2 * TOOL]
-        over = [x for x in range(left, left + want_w, 4) if not near(pixel(img, x, top - 40), surface, 6)]
+        row = [r for r in runs(img, top + 2, body, 6) if r[1] >= 2 * TOOL]
+        over = [x for x in range(left, left + want_w, 4) if not near(pixel(img, x, top - 40), ground, 6)]
         ok(len(row) == 1 and len(over) >= want_w // 8, "a foot floated across the strip covers the windows' area and not the pad: its row still reads there",
-           (runs(img, cells + 2, (surface, lit), 6)[:6], pixel(img, left + 8, top - 40)))
+           (runs(img, top + 2, body, 6)[:6], pixel(img, left + 8, top - 40)))
 
         # 5. a click on the first icon, the foot still across it, brings the tiled window back, tiled
         click(*first)
@@ -615,10 +669,10 @@ def round_in(palette, binary, evidence):
         #     another screen, the name and a space, is a rest too; a name that only starts alike is none
         ok(given.get("WINPAD_REST") == "idle", "spark-shell names the idle screen's workspace as the pad's rest", given.get("WINPAD_REST"))
         state_file = runtime / "spark-shell-winpad.state"
-        one_w = TOOL + 1 + CTL   # one icon in a row, hide at its end
+        one_w = LEAD + TOOL + 1 + CTL   # one icon in a row: the grip's room, its cell, hide at its end
 
-        def pad_row():   # the pad's row of cells at the bottom, as the screen shows it now
-            return [r for r in runs(grab(0, cells + 2, W, 1), 0, (surface, lit), 6) if r[1] >= TOOL]
+        def pad_row():   # the pad's row at the bottom, as the screen shows it now
+            return [r for r in runs(grab(0, top + 2, W, 1), 0, body, 6) if r[1] >= TOOL]
 
         def workspace(name, rests):
             """The screen on a workspace: the pad gone and the area at sway's gap when it rests, the pad and its
@@ -644,32 +698,35 @@ def round_in(palette, binary, evidence):
         shell("desktop", "pad", "keys")   # Super+minus on a screen at rest: no keys there, and none kept for later
         ok(workspace(home, False), "back on its own workspace the pad is back as it was, over its strip", (area(), pad_row(), refits()))
         img = capture("rest-over")
-        at = (pad_row() or [(W // 2, 0)])[0][0] + 4
-        ok(near(pixel(img, at, top + 2), band, 6) and not near(pixel(img, at, top + 2), accent, 6),
-           "Super+minus on the screen at rest gave the pad no keys, there or later: its handle is the band's color, not the accent", pixel(img, at, top + 2))
+        at = (pad_row() or [((W - one_w) // 2, 0)])[0][0]
+        off = edge_off(img, (at, top, one_w, ROW), lit)
+        ok(not off and not near(pixel(img, at, top), accent, 6),
+           "Super+minus on the screen at rest gave the pad no keys, there or later: its edge is the lit tone, not the accent",
+           (off[:4], pixel(img, at, top)))
 
         # 7. the pad dragged from its icon to the left edge in 2 px steps: one change of shape, from a row to a
         #    column docked there with its strip, and one refit, after the drop (#261, #266)
         img = grab(0, top - 2, W, ROW + 4)
-        one_w = TOOL + 1 + CTL           # one icon in a row, hide at its end
-        row = [r for r in runs(img, HANDLE + 4, (surface, lit), 6) if r[1] >= one_w - 2]
+        one_w = LEAD + TOOL + 1 + CTL    # one icon in a row: the grip's room, its cell, hide at its end
+        row = [r for r in runs(img, 4, body, 6) if r[1] >= one_w - 2]
         left = row[0][0] if row else (W - one_w) // 2
+        cell_x = left + LEAD
         before = refits()
-        move(left + TOOL // 2, cells + TOOL // 2)
+        move(cell_x + TOOL // 2, top + TOOL // 2)
         time.sleep(0.2)
         button(True)
         for i in range(1, 13):   # 6 px with the button held: a drag, not a click
-            move(left + TOOL // 2, cells + TOOL // 2 - i)
+            move(cell_x + TOOL // 2, top + TOOL // 2 - i)
             time.sleep(0.02)
         y = 500
         for i in range(1, 21):
-            move(left + TOOL // 2 + (300 - left - TOOL // 2) * i // 20, cells + TOOL // 2 - 12 + (y - cells - TOOL // 2 + 12) * i // 20)
+            move(cell_x + TOOL // 2 + (300 - cell_x - TOOL // 2) * i // 20, top + TOOL // 2 - 12 + (y - top - TOOL // 2 + 12) * i // 20)
             time.sleep(0.02)
         widths = []   # the pad's width where it stands, at each step: the longest run of its colors around the pointer
         for x in list(range(300, 0, -2)) + [70]:
             move(x, y)
             time.sleep(0.05)
-            widths.append((x, widest(grab(0, y - 40, 640, 80), range(0, 80, 2), (surface, lit, band), 6)))
+            widths.append((x, widest(grab(0, y - 40, 640, 80), range(0, 80, 2), body, 6)))
         shapes = ["column" if n <= TOOL + 4 else "row" if n >= one_w - 4 else "?" for _, n in widths]
         steps = shapes[:-1]
         changes = sum(1 for p, q in zip(steps, steps[1:]) if p != q)
@@ -678,6 +735,17 @@ def round_in(palette, binary, evidence):
            "dragged to the left edge in 2 px steps, the pad turns from a row to a column once, as the pointer comes %s px from the edge" % turn,
            [(x, n) for x, n in widths][::6])
         ok(shapes[-1] == "column", "back out to 70 px the column holds the edge: it lets go at 96", widths[-2:])
+
+        def column_top():
+            """The dragged column's top edge around the pointer at 70, y, as the screen shows it: the run of the lit
+            tone on the row the middle of the grip's room puts it at, and no pad on the row over it."""
+            g = grab(0, y - LEAD // 2 - 1, 640, 2)
+            return [r for r in runs(g, 1, (lit,), 6) if r[0] <= 70 < r[0] + r[1]], [r for r in runs(g, 0, body, 6) if r[0] <= 70 < r[0] + r[1]]
+
+        settle(lambda: column_top() == ([(70 - TOOL // 2, TOOL)], []), 3)
+        ok(column_top() == ([(70 - TOOL // 2, TOOL)], []),
+           "the pad that turned a column holds the middle of its grip's room under the pointer: %d px in and %d down" % (TOOL // 2, LEAD // 2),
+           (column_top(), (70 - TOOL // 2, y - LEAD // 2)))
         move(2, y)
         time.sleep(0.1)
         during = refits()
@@ -687,18 +755,32 @@ def round_in(palette, binary, evidence):
         ok(on_pad(b), "a drag from an icon brings no window back")
         ok(True, "dropped at the left edge, it docks there as a column and keeps its strip: the area starts %d px in" % dock)
         img = capture("left")
-        column = [r for r in runs_column(img, gap + 3, (surface, lit, band), 6) if r[1] >= TOOL]
-        ok(column, "the column's color stands at the left edge", runs_column(img, gap + 3, (surface, lit, band), 6)[:6])
+        column = [r for r in runs_column(img, gap + 3, body, 6) if r[1] >= TOOL]
+        col_h = LEAD + TOOL + 1 + CTL    # one icon in a column: the grip's room over its cell, hide under it
+        ok(len(column) == 1 and column[0][1] == col_h, "the column's color stands at the left edge: the grip's room, its cell and hide under it, %d px high" % col_h,
+           runs_column(img, gap + 3, body, 6)[:6])
+        col_top = column[0][0] if column else 0
+        held, line = grip_line(img, (gap, col_top, TOOL, LEAD), dim, column=True)
+        ok(held, "the grip's line lies across the column's top, %d px in the dim tone in the middle of its room" % (TOOL // 2), line)
         wait_for(lambda: refits() > during, "spark-shell asked after the drop", seconds=5)
         time.sleep(0.6)
         ok(during == before and refits() == before + 1, "spark-shell asked once, after the drop and not during the drag", (before, during, refits()))
         ok(places() and places()[-1][3:5] == ["left", "center"] and len(places()[-1]) == 8,
            "and keeps its place, its widths and its height: desktop pad place PLACE WIDTH SIDE HEIGHT", places()[-1:])
 
-        # 8. Super+minus: the keyboard on the pad, the newest picked; Enter brings it back
+        # 8. Super+minus: the keyboard on the pad, the newest picked; its edge is the accent while it has the keys,
+        #    but where the picked cell, lit whole, reaches the pad's sides; Enter brings the window back
         shell("desktop", "pad", "keys")
+        settle(lambda: near(pixel(grab(gap, col_top, 1, 1), 0, 0), accent, 6), 5)
         time.sleep(0.5)
-        capture("keys")
+        img = capture("keys")
+        off = edge_off(img, (gap, col_top, TOOL, col_h), accent)
+        picked = [p for p in off if col_top + LEAD <= p[1] < col_top + LEAD + TOOL and near(pixel(img, *p), lit, 6)]
+        ok(off == picked and len(off) <= 2 * TOOL and near(pixel(img, gap + 1, col_top + 1), ground, 6),
+           "with the keys the pad's edge is the accent, all around but beside the picked cell, lit whole",
+           ([p for p in off if p not in picked][:4], len(off), pixel(img, gap, col_top), pixel(img, gap + 1, col_top + 1)))
+        held, line = grip_line(img, (gap, col_top, TOOL, LEAD), dim, column=True)
+        ok(held, "and its grip keeps the dim tone", line)
         keys("Return")
         wait_for(lambda: not on_pad(b), "Enter brings the second back")
         ok(True, "Super+minus then Enter brings the newest back")
@@ -718,19 +800,19 @@ def round_in(palette, binary, evidence):
         for child in group:
             minimize(child)
         wait_for(pad_pid, "spark-winpad started for four")
-        four_w = 4 * TOOL + 1 + CTL
+        four_w = LEAD + 4 * TOOL + 1 + CTL
         settle(lambda: bottom() == row_floor)
         move(W // 2, 300)
         time.sleep(0.8)
 
         def pad_box(img):
-            """The pad at the bottom, as the screen shows it: its left, its top, its width and its height. Its cells'
-            last row read across, then its left column up to the handle's top."""
+            """The pad at the bottom, as the screen shows it: its left, its top, its width and its height. Its last
+            rows read across, under its icons, then the grip's room up to the pad's top."""
             y = H - gap - 3
-            row = next((r for r in runs(img, y, (surface, lit), 6) if r[0] <= W // 2 < r[0] + r[1]), None)
+            row = next((r for r in runs(img, y, body, 6) if r[0] <= W // 2 < r[0] + r[1]), None)
             if not row:
                 return None
-            col = next((r for r in runs_column(img, row[0] + 2, (surface, lit, band), 6, H - 400, H - gap) if r[0] + r[1] == H - gap), None)
+            col = next((r for r in runs_column(img, row[0] + 2, body, 6, H - 400, H - gap) if r[0] + r[1] == H - gap), None)
             return (row[0], col[0], row[1], col[1]) if col else None
 
         img = capture("four")
@@ -738,14 +820,14 @@ def round_in(palette, binary, evidence):
         ok(box and abs(box[2] - four_w) <= 1 and box[3] == ROW, "four icons in a row, %d px wide and %d high" % (four_w, ROW), box)
         left, top = (box[0], box[1]) if box else ((W - four_w) // 2, H - gap - ROW)
         drag((left - 3, top - 3), 0, -(TOOL + 4))
-        settle(lambda: bottom() == floor - HANDLE - 2 * TOOL - gap)
-        two = HANDLE + 2 * TOOL
+        two = 2 * TOOL                   # two rows of icons, the grip's room at their left
+        settle(lambda: bottom() == floor - two - gap)
         ok(bottom() == floor - two - gap, "resized from its top left corner to two rows, it keeps a strip as thick: %d px and the gap" % two, (floor - bottom(), area()))
         move(W // 2, 300)
         time.sleep(0.8)
         img = capture("two-rows")
         box = pad_box(img)
-        two_w = 2 * TOOL + 1 + CTL
+        two_w = LEAD + 2 * TOOL + 1 + CTL
         ok(box and abs(box[2] - two_w) <= 1 and box[3] == two, "the four in two rows of two, %d by %d px" % (two_w, two), box)
         said = places()[-1] if places() else []
         ok(len(said) == 8 and said[3:5] == ["bottom", "center"] and int(said[7]) >= two,
@@ -755,21 +837,21 @@ def round_in(palette, binary, evidence):
 
         # 11. shrunk from its left side until the foots fold into one icon, the app with the most windows first
         left, top = (box[0], box[1]) if box else ((W - two_w) // 2, H - gap - two)
-        cells = top + HANDLE
+        cell_x = left + LEAD             # the cells: past the grip's room, from the pad's top
         no_badge = img   # the four as they are, no group among them: a foot's cell without a badge
-        plain = (left, cells)
-        drag((left - 3, cells + TOOL), TOOL - 6, 0)
+        plain = (cell_x, top)
+        drag((left - 3, top + TOOL), TOOL - 6, 0)
         move(W // 2, 300)
         time.sleep(0.8)
         img = capture("group")
         box = pad_box(img)
-        one_w = TOOL + 1 + CTL
+        one_w = LEAD + TOOL + 1 + CTL
         ok(box and abs(box[2] - one_w) <= 1 and box[3] == two, "shrunk to one column of two cells, %d by %d px" % (one_w, two), box)
         ok(all(on_pad(c.pid) for c in group), "every window still waits on the pad")
         left, top = (box[0], box[1]) if box else ((W - one_w) // 2, H - gap - two)
-        cells = top + HANDLE
+        cell_x = left + LEAD
 
-        def badge_at(img, x, y, ground=None):
+        def badge_at(img, x, y, bare=None):
             """The accent a badge draws at a cell's top right: the pixels at the accent there (its glyph is filled
             with it; an icon's letter stroke drawn soft beside it is not), from past the cell's middle to past its
             right side and from over its top to its middle. Where a picture of the same cell
@@ -778,15 +860,15 @@ def round_in(palette, binary, evidence):
             for py in range(y - 6, y + TOOL // 2 + 4):
                 for px in range(x + TOOL // 2 + 1, x + TOOL + 6):
                     here = pixel(img, px, py)
-                    if near(here, accent, 24) and (ground is None or far(here, pixel(ground[0], ground[1] + px - x, ground[2] + py - y)) > 24):
+                    if near(here, accent, 24) and (bare is None or far(here, pixel(bare[0], bare[1] + px - x, bare[2] + py - y)) > 24):
                         got.add((px, py))
             if not got:
                 return set()
             lx, ly = min(px for px, _ in got), min(py for _, py in got)
             return {(px - lx, py - ly) for px, py in got}
 
-        three = badge_at(img, left, cells, (no_badge, plain[0], plain[1]))
-        other = badge_at(img, left, cells + TOOL, (no_badge, plain[0], plain[1]))
+        three = badge_at(img, cell_x, top, (no_badge, plain[0], plain[1]))
+        other = badge_at(img, cell_x, top + TOOL, (no_badge, plain[0], plain[1]))
         # none: a few accent pixels at most, the fringes a font's smoothing puts on an icon's letter (Ubuntu's tile N)
         ok(len(three) >= 20 and len(other) < min(8, len(three) // 4), "the group of three foots wears a badge in the accent at its icon's top right, the other app none (%d px)" % len(three),
            (len(three), len(other)))
@@ -794,8 +876,8 @@ def round_in(palette, binary, evidence):
         references = {}
         if monaspace:
             # the glyphs as foot draws them in the pad's font at the badge's size (a quarter over the text's), in the
-            # accent on the pad's surface; [colors] is foot's section before 1.25 and [colors-dark] since, so both
-            hexes = {"background": given["WINPAD_SURFACE"].lstrip("#"), "foreground": given["WINPAD_ACCENT"].lstrip("#")}
+            # accent on the pad's ground; [colors] is foot's section before 1.25 and [colors-dark] since, so both
+            hexes = {"background": given["WINPAD_GROUND"].lstrip("#"), "foreground": given["WINPAD_ACCENT"].lstrip("#")}
             colors = [arg for section in ("colors", "colors-dark") for k, v in hexes.items() for arg in ("-o", "%s.%s=%s" % (section, k, v))]
             ref = subprocess.Popen(["foot", "--app-id", "badges", "--font", "Monaspace Neon:pixelsize=%d" % round(text_px(given["WINPAD_FONT"]) * 1.25), *colors,
                                     "sh", "-c", "printf '\\033[2J\\033[H\\033[?25l%s'; exec sleep 3600" % "  ".join(BADGES)],
@@ -830,37 +912,38 @@ def round_in(palette, binary, evidence):
             print("  skip Monaspace Neon is not here: the badge is read by its color, not by its glyph", flush=True)
 
         # 12. made big enough again, the group opens back into its icons
-        drag((left - 3, cells + TOOL), -(TOOL + 6), 0)
+        drag((left - 3, top + TOOL), -(TOOL + 6), 0)
         move(W // 2, 300)
         time.sleep(0.8)
         img = capture("ungrouped")
         box = pad_box(img)
-        ok(box and abs(box[2] - two_w) <= 1 and box[3] == two and not badge_at(img, box[0], box[1] + HANDLE, (no_badge, plain[0], plain[1])),
+        ok(box and abs(box[2] - two_w) <= 1 and box[3] == two and not badge_at(img, box[0] + LEAD, box[1], (no_badge, plain[0], plain[1])),
            "widened again to two columns, the group opens back into its four icons, no badge", box)
         left, top = (box[0], box[1]) if box else ((W - two_w) // 2, H - gap - two)
-        drag((left - 3, top + HANDLE + TOOL), TOOL - 6, 0)
+        drag((left - 3, top + TOOL), TOOL - 6, 0)
         move(W // 2, 300)
         time.sleep(0.8)
         box = pad_box(capture("group-again"))
         left, top = (box[0], box[1]) if box else ((W - one_w) // 2, H - gap - two)
-        cells = top + HANDLE
+        cell_x = left + LEAD
 
-        # 13. a click on the group opens its list over it, a row a window, the oldest first; a click on a row brings it back
-        click(left + TOOL // 2, cells + TOOL // 2)
+        # 13. a click on the group opens its list over it, at its cell, a row a window, the oldest first; a click on a
+        #     row brings it back
+        click(cell_x + TOOL // 2, top + TOOL // 2)
         time.sleep(0.6)
         img = capture("list")
         rows = 3
         list_top = top - 6 - rows * m["tip"]
-        column = [r for r in runs_column(img, left + 3, (surface, lit), 6, top - 200, top) if r[1] >= rows * m["tip"]]
+        column = [r for r in runs_column(img, cell_x + 3, (surface, lit), 6, top - 200, top) if r[1] >= rows * m["tip"]]
         ok(column and abs(column[-1][0] - list_top) <= 2 and column[-1][0] + column[-1][1] <= top - 4,
-           "the group's list stands over it, %d rows of %d px" % (rows, m["tip"]), runs_column(img, left + 3, (surface, lit), 6, top - 200, top)[-3:])
+           "the group's list stands over it, %d rows of %d px" % (rows, m["tip"]), runs_column(img, cell_x + 3, (surface, lit), 6, top - 200, top)[-3:])
         list_top = column[-1][0] + 1 if column else list_top
-        across = [r for r in runs(img, list_top + 2, (surface, lit), 6) if r[0] <= left + 3 < r[0] + r[1]]
+        across = [r for r in runs(img, list_top + 2, (surface, lit), 6) if r[0] <= cell_x + 3 < r[0] + r[1]]
         list_w = across[0][1] - 2 if across else 160
-        said = [words_in(img, (left + 4, list_top + i * m["tip"] + 1, list_w - 8, m["tip"] - 2), surface if i < rows - 1 else lit, fg) for i in range(rows)]
+        said = [words_in(img, (cell_x + 4, list_top + i * m["tip"] + 1, list_w - 8, m["tip"] - 2), surface if i < rows - 1 else lit, fg) for i in range(rows)]
         ok(all(p is not None and p[0]["text"] >= 4 and p[1]["width"] > p[0]["width"] for p in said),
            "each row says a window's words, the app's name and its title", said)
-        click(left + 60, list_top + m["tip"] // 2)
+        click(cell_x + 60, list_top + m["tip"] // 2)
         wait_for(lambda: not on_pad(g1.pid), "the first foot back from the list")
         ok(all(on_pad(c.pid) for c in (notes, g2, g3)), "a click on the list's first row brings the oldest foot back, and that one alone")
         time.sleep(0.6)
@@ -869,8 +952,8 @@ def round_in(palette, binary, evidence):
         img = capture("group-of-two")
         box = pad_box(img)
         # notes first now: the group of the two foots left stands where the older of them does, the second cell
-        two_left = badge_at(img, box[0], box[1] + HANDLE + TOOL, (no_badge, plain[0], plain[1])) if box else set()
-        ok(box and len(two_left) >= 20 and len(badge_at(img, box[0], box[1] + HANDLE, (no_badge, plain[0], plain[1]))) < min(8, len(two_left) // 4),
+        two_left = badge_at(img, box[0] + LEAD, box[1] + TOOL, (no_badge, plain[0], plain[1])) if box else set()
+        ok(box and len(two_left) >= 20 and len(badge_at(img, box[0] + LEAD, box[1], (no_badge, plain[0], plain[1]))) < min(8, len(two_left) // 4),
            "the two foots left still fold, in the second cell, their badge there", (box, len(two_left)))
         if monaspace:
             read = reads(two_left)
@@ -898,8 +981,9 @@ def round_in(palette, binary, evidence):
         wait_for(pad_empty, "the pad with no window", seconds=10)
         ok(True, "the last one back, the pad's surfaces go")
 
-        # 15. the band on, and the bar at the bottom (a new bar, before the pad): the pad over the bar, the handle and
-        #     the band's color over the row, a strip of all three inside the bar's zone, and the bar where it was
+        # 15. the band on, and the bar at the bottom (a new bar, before the pad): the pad over the bar, the band's
+        #     color across the row's top and the grip's room under it, a strip of both inside the bar's zone, and
+        #     the bar where it was
         shell("desktop", "pad", "place", "bottom center", "0", "36", "0")
         if bar:
             config.write_text(config.read_text().replace("position top", "position bottom"))
@@ -913,67 +997,78 @@ def round_in(palette, binary, evidence):
             subprocess.run(["swaymsg", "[pid=%d] focus" % child], env=env, capture_output=True)
             shell("desktop", "window", "down")
         wait_for(pad_pid, "spark-winpad started with its band")
-        band_floor = edge - gap - HANDLE - BAND - TOOL - GAP
+        band_floor = edge - gap - BAND - TOOL - GAP
         settle(lambda: bottom() == band_floor)
-        ok(bottom() == band_floor, "with the band on (%s) the strip is the handle, the band and the row, %d px, and the gap%s"
-           % (said, HANDLE + BAND + TOOL, ", over the bar" if bar else ""), (edge, area()))
+        ok(bottom() == band_floor, "with the band on (%s) the strip is the band and the row, %d px, and the gap%s"
+           % (said, BAND + TOOL, ", over the bar" if bar else ""), (edge, area()))
         move(W // 2, 200)
         time.sleep(0.6)
         img = capture("band")
-        band_y = edge - gap - TOOL - BAND - HANDLE
-        top_runs = [r for r in runs(img, band_y + 2, (band,), 6) if r[0] <= W // 2 < r[0] + r[1]]
-        x0 = top_runs[0][0] if top_runs else W // 2 - TOOL
-        ok(top_runs and all(near(pixel(img, x0 + 3, band_y + i), band, 6) for i in range(HANDLE + BAND)) and near(pixel(img, x0 + 2, band_y + HANDLE + BAND + 2), surface, 6),
-           "the handle and the band's color stand where the pad is, %d px over its row" % (HANDLE + BAND), (top_runs, pixel(img, W // 2, band_y)))
+        band_y = edge - gap - TOOL - BAND   # the pad's top: the band, the row under it
+        # the band's own color on its first row inside the edge, over its word: from the pad's left to its right
+        top_runs = [r for r in runs(img, band_y + 1, (band,), 6) if r[0] <= W // 2 < r[0] + r[1]]
+        left = top_runs[0][0] - 1 if top_runs else (W - want_w) // 2
+        down = runs_column(img, left + 3, (band,), 6, band_y, band_y + BAND + TOOL)
+        off = edge_off(img, (left, band_y, want_w, BAND + TOOL), lit)
+        ok(top_runs and abs(top_runs[0][1] + 2 - want_w) <= 1 and down == [(band_y + 1, BAND - 1)] and not off
+           and near(pixel(img, left + 3, band_y + BAND + 2), ground, 6),
+           "the band's color stands across the pad's top inside its edge, %d px over its row" % BAND, (top_runs, down, off[:4], pixel(img, W // 2, band_y)))
+        held, line = grip_line(img, (left, band_y + BAND, LEAD, TOOL), dim)
+        ok(held, "the grip's room is under the band, at the row's left: its line stands in the middle of it", line)
         if bar:
             # had the strip taken the screen's edge, the bar would stand over the pad and the pad's colors under it
             under = [(x, y) for x in range(W // 2 - 40, W // 2 + 40, 4) for y in range(edge, H, 2)
-                     if any(near(pixel(img, x, y), c, 6) for c in (band, surface, lit))]
+                     if any(near(pixel(img, x, y), c, 6) for c in (band, ground, lit))]
             ok(not under and pixel(img, W // 2, edge + 1) == pixel(before_bar, W // 2, edge + 1),
                "the bar stays where it was, under the pad", (under[:4], pixel(img, W // 2, edge + 1), pixel(before_bar, W // 2, edge + 1)))
-        click(x0 + TOOL // 2, edge - gap - TOOL // 2)
+        click(left + LEAD + TOOL // 2, edge - gap - TOOL // 2)
         wait_for(lambda: not on_pad(a), "the first window back from the banded pad")
         ok(True, "a click on its icon brings it back")
 
-        # 16. the titled view: a slot a window, its words as the dialog's, the handle line across it
+        # 16. the titled view: a slot a window, its words as the dialog's, the edge and the grip as on the icons
         shell("desktop", "pad", "band", "off")
         said = shell("desktop", "pad", "view", "titles")
         wait_for(lambda: handed_env().get("WINPAD_VIEW") == "titles" and pad_pid(), "the pad again in the titled view (%s)" % said)
         subprocess.run(["swaymsg", "[pid=%d] focus" % a], env=env, capture_output=True)
         shell("desktop", "window", "down")
         wait_for(lambda: on_pad(a), "the first window on the titled pad")
-        titled = HANDLE + CELL
+        titled = CELL                    # a titled row: as high as a slot, the grip's room at its left
         settle(lambda: bottom() == edge - gap - titled - GAP)
-        ok(bottom() == edge - gap - titled - GAP, "titles (%s): a strip of the handle and a titled row, %d px, and the gap" % (said, titled), (edge, area()))
+        ok(bottom() == edge - gap - titled - GAP, "titles (%s): a strip of a titled row, %d px, and the gap" % (said, titled), (edge, area()))
         move(W // 2, 200)
         time.sleep(0.8)
         img = capture("titles")
         top = edge - gap - titled
-        row = [r for r in runs(img, top + HANDLE + 3, (surface, lit), 6) if r[1] >= 2 * SLOT]
-        ok(len(row) == 1 and abs(row[0][1] - (2 * SLOT + 1 + CTL)) <= 1, "two titled slots of %d px and hide's" % SLOT, runs(img, top + HANDLE + 3, (surface, lit), 6)[:6])
-        left = row[0][0] if row else (W - 2 * SLOT) // 2
-        ok(all(near(pixel(img, left + 40, top + i), band, 6) for i in range(HANDLE)) and near(pixel(img, left + 2, top + HANDLE), surface, 6),
-           "the handle runs across the titled slots too", [pixel(img, left + 40, top + i) for i in (0, HANDLE - 1, HANDLE)])
-        # the order on the pad: b went first, then a
-        parts = words_in(img, (left + text_dx, top + HANDLE, text_w, CELL), surface, fg, muted)
+        titled_w = LEAD + 2 * SLOT + 1 + CTL
+        row = [r for r in runs(img, top + 3, body, 6) if r[1] >= 2 * SLOT]
+        ok(len(row) == 1 and abs(row[0][1] - titled_w) <= 1, "the grip's room, two titled slots of %d px and hide's, %d px wide" % (SLOT, titled_w),
+           runs(img, top + 3, body, 6)[:6])
+        left = row[0][0] if row else (W - titled_w) // 2
+        cell_x = left + LEAD
+        off = edge_off(img, (left, top, titled_w, titled), lit)
+        held, line = grip_line(img, (left, top, LEAD, titled), dim)
+        ok(not off and held and near(pixel(img, left + 1, top + 1), ground, 6),
+           "the titled pad has the edge all around and the grip in its room too", (off[:4], line, pixel(img, left + 1, top + 1)))
+        # the order on the pad: b went first, then a; the slot's words between the pad's edges
+        parts = words_in(img, (cell_x + text_dx, top + 1, text_w, CELL - 2), ground, fg, muted)
         # a palette whose muted color reads at 4.5 to 1 only as the text color (solarized-light) has the two alike
         apart = far(fg, muted) > 24
         ok(parts is not None and parts[0]["text"] >= 4 and parts[1]["muted"] >= 4 and (parts[1]["text"] == 0 or not apart),
            "a slot reads its app's name in the text color, then its title, muted%s" % ("" if apart else " (the palette's muted is its text color)"), parts)
         ok(parts is not None and lowercase(*parts), "the title lowercase, as the dialog writes it (OCEAN as ocean: %s px tall to foot's %s)"
            % ((parts[1]["height"], parts[0]["height"]) if parts else ("?", "?")), parts)
-        click(left + SLOT // 2, top + HANDLE + CELL // 2)
+        click(cell_x + SLOT // 2, top + CELL // 2)
         wait_for(lambda: not on_pad(b), "the window back from the titled pad")
         move(W // 2, 200)
         time.sleep(0.8)
-        row = [r for r in runs(grab(0, top + HANDLE + 3, W, 1), 0, (surface, lit), 6) if r[1] >= SLOT]
-        left = row[0][0] if row else (W - SLOT) // 2
-        click(left + SLOT // 2, top + HANDLE + CELL // 2)
+        row = [r for r in runs(grab(0, top + 3, W, 1), 0, body, 6) if r[1] >= SLOT]
+        left = row[0][0] if row else (W - LEAD - SLOT - 1 - CTL) // 2
+        click(left + LEAD + SLOT // 2, top + CELL // 2)
         ok(wait_for(lambda: pad_empty() and bottom() == edge - GAP, "the pad with no window", seconds=10), "a click on its slot brings it back, and the pad's surfaces go")
 
         # 17. the dialog on the pad (v0.134.3): a foot whose app id is spark-dialog, as the dialog's window, wears
         #     spark's own mark, the diamond in the chevron of the assets beside spark-shell (v0.148), in one ink:
-        #     the light one (#e9e7dc) on a dark surface, the dark one (#080a0f) on a light one, never recolored.
+        #     the light one (#e9e7dc) on a dark ground, the dark one (#080a0f) on a light one, never recolored.
         #     Its words are spark, then its title: the same pixels as a window whose app is named spark with that
         #     title, whose icon, the letter tile, holds none of that ink: the mark is the dialog's alone
         dialog = open_foot("HOME", app="spark-dialog")
@@ -986,10 +1081,11 @@ def round_in(palette, binary, evidence):
         time.sleep(0.8)
         img = capture("dialog-titles")
         top = edge - gap - titled
-        row = [r for r in runs(img, top + HANDLE + 3, (surface, lit), 6) if r[1] >= 2 * SLOT]
-        left = row[0][0] if row else (W - 2 * SLOT) // 2
-        ground = pixel(img, left + SLOT // 2, top + HANDLE + 2)
-        dark = (ground[0] * 299 + ground[1] * 587 + ground[2] * 114) // 1000 < 128
+        row = [r for r in runs(img, top + 3, body, 6) if r[1] >= 2 * SLOT]
+        left = row[0][0] if row else (W - titled_w) // 2
+        cell_x = left + LEAD
+        stands_on = pixel(img, cell_x + SLOT // 2, top + 2)   # the ground the mark stands on, as the screen shows it
+        dark = (stands_on[0] * 299 + stands_on[1] * 587 + stands_on[2] * 114) // 1000 < 128
         ink = rgb("e9e7dc" if dark else "080a0f")
         icon = m["icon"]
 
@@ -1007,13 +1103,13 @@ def round_in(palette, binary, evidence):
         def reads_mark(found):
             return found >= 24
 
-        titled_icon = icon_box(left + inset, top + HANDLE + (CELL - icon) // 2)
-        twin_icon = icon_box(left + SLOT + inset, top + HANDLE + (CELL - icon) // 2)
+        titled_icon = icon_box(cell_x + inset, top + (CELL - icon) // 2)
+        twin_icon = icon_box(cell_x + SLOT + inset, top + (CELL - icon) // 2)
         found, twin_found = the_mark(titled_icon), the_mark(twin_icon)
         ok(reads_mark(found), "the dialog's icon is spark's mark for a %s ground, in its own ink #%02x%02x%02x: %d pixels of it"
            % (("dark" if dark else "light",) + ink + (found,)), found)
         ok(twin_found == 0, "the window named spark beside it holds none of that ink: the mark is the dialog's", twin_found)
-        words = [mask(img, (left + i * SLOT + text_dx, top + HANDLE + 2, text_w, CELL - 4), fg, 60) for i in (0, 1)]
+        words = [mask(img, (cell_x + i * SLOT + text_dx, top + 2, text_w, CELL - 4), fg, 60) for i in (0, 1)]
         ink_w = [max((x for x, _ in w_), default=-1) + 1 for w_ in words]
         ok(words[0] and likeness(words[0], words[1]) >= 0.9 and abs(ink_w[0] - ink_w[1]) <= 1,
            "its words read as a window named spark with its title: spark, then home (%d px of ink, the same as %d)" % tuple(ink_w),
@@ -1025,9 +1121,9 @@ def round_in(palette, binary, evidence):
         time.sleep(0.8)
         img = capture("dialog-icons")
         top = edge - gap - ROW
-        row = [r for r in runs(img, top + HANDLE + 2, (surface, lit), 6) if r[1] >= 2 * TOOL]
-        left = row[0][0] if row else (W - 2 * TOOL) // 2
-        cell_icon = icon_box(left + (TOOL - icon) // 2, top + HANDLE + (TOOL - icon) // 2)
+        row = [r for r in runs(img, top + 2, body, 6) if r[1] >= 2 * TOOL]
+        left = row[0][0] if row else (W - want_w) // 2
+        cell_icon = icon_box(left + LEAD + (TOOL - icon) // 2, top + (TOOL - icon) // 2)
         found = the_mark(cell_icon)
         ok(reads_mark(found), "and in the icons view, the default, its cell is the same mark: %d pixels of its ink" % found, found)
         # the keeper (v0.143): a winpad that ends by itself is started again; one stopped on purpose stays stopped
