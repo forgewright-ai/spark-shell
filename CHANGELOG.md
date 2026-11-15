@@ -8,6 +8,9 @@
   and one of them brings the group back where it was. Before, the
   window was on no pad and could not be brought back. One already lost
   this way is on the pad after the update.
+- A wallpaper or theme change leaves no process behind. Since v0.139
+  each change on a running desktop left one wallpaper process, about
+  9 MB, until logout.
 
 ## v0.149
 

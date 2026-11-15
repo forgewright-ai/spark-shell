@@ -174,6 +174,13 @@ for pal in tokyonight-night solarized-light; do
     sleep 1
     shot "notifications-$pal"
 done
+echo "== the wallpaper: one process draws it after two themes changed it (v0.149.1)"
+# each change draws the new picture under a cover of its own, which goes once sway's own has drawn: a cover that stays
+# is one more process on the session at every change
+walls() { for _e in /proc/[0-9]*/environ; do _p=${_e#/proc/}; _p=${_p%/environ}; [ "$(cat "/proc/$_p/comm" 2>/dev/null)" = swaybg ] || continue; { tr '\0' '\n' < "$_e" | grep -qx "SWAYSOCK=$SWAYSOCK"; } 2>/dev/null && echo "$_p"; done | wc -l | tr -d ' '; }
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ "$(walls)" = 1 ] && break; sleep 0.5; done
+[ "$(walls)" = 1 ] || { echo "FAIL: $(walls) wallpaper processes draw on this sway, not 1: a cover stayed"; exit 1; }
+echo "ok: one wallpaper process"
 sh "$REPO/spark-shell" desktop notifications do-not-disturb on
 makoctl mode | grep -qx do-not-disturb || { echo "FAIL: do not disturb is not mako's mode"; exit 1; }
 grep -qx 'DO_NOT_DISTURB=yes' "$HOME/.config/spark-shell/config" || { echo "FAIL: do not disturb is not in the config"; exit 1; }
