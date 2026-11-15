@@ -18,30 +18,34 @@ container's first process reaps none, and a dead process nobody reaped still ans
 sway's own lines for the bar are read from the template: exec spark-shell bar start, the key bound to spark-shell
 bar keys, and the resize mode. So the bar under proof is the one spark-shell starts, under its keeper, reading the
 real spark-shell bar status. What is measured is what the bar promises: its cells, the colors it was handed, its
-own geometry, by its state file and a few pixels a claim; never a font's outline. The five gates of the bar's
-review, each check named by its gate:
+own geometry, by its state file and a few pixels a claim; never a font's outline, and never a time: how long a
+thing takes, what is drawn while a number flows or before the shell answers, how often the bar wakes are the
+unit tests', which hand the clock in (component/bar/src/bar.rs). The five gates of the bar's review, each check
+named by its gate:
 
 1 identity       the logo is the asset's own pixels at 24 px, one ink, the dark ground's or the light one's; the
-                 workspaces are ten places in the glyph family's pair, stone, star and banner, star's one
-                 unbroken line; the plate says where you are in two digits; a gauge is the same pair; the signs
-                 are a font's; a family, a palette, a preview and a theme are drawn by the same process
+                 workspaces are ten places of three cells in the glyph family's pair, stone, star and banner,
+                 star's one unbroken line; the plate, in its place, says where you are in two digits; a gauge
+                 is the same pair; the signs are a font's; a family, a palette, a preview and a theme are drawn
+                 by the same process
 2 behavior       by the pointer and by the keys, through the real status loop and the stand-in sound tool: the
-                 sign mutes, the gauge sets the level at the click, the wheel, the arrows, Home and End turn it,
-                 each drawn at once, before the shell answers; a burst never steps back, a change that fails
-                 comes back; the digits flow, and not with motion no; a place shows its workspace; the number
-                 and the other modules open their section, the logo home; pin, unpin, hide and show
+                 sign mutes, a click on the gauge sets the level where it was, the wheel and Up and Down step
+                 it, Home and End set its ends, Left and Right move past it; a change that fails comes back; a
+                 place shows its workspace; the number and the other modules open their section, the logo
+                 home; pin, unpin, hide and show; a button on a window, or the pointer's travel, gives the keys back
 3 states         muted, off, the wire down, a microphone that records, a reminder and a window that ask, no
                  sound device, the status shell killed while its jobs hold its pipe and back with none of them
                  left, the bar ended with ABRT and started again by its keeper, stopped on purpose, loading
                  before the first line, and a binding mode
 4 accessibility  the tones on the screen are the look's, the accent on the plate and the keys' line alone; the
-                 text reads at 4.5 to 1 on the ground and on a chip; under the pointer each part alone is a chip,
-                 every sign's the same size; the keys go through every target once, left to right, a line at the
-                 plate's foot under the one they are on; every control has a name; nothing moves or wakes at rest
-5 geometry       the spec's numbers at 16 px, by the state file and by the screen: the run of 130 px, the plate
-                 of 30 by 28, gaps of one, three and five cells, the hairline before the time; no cell moves
-                 with a value or a state; what a bar short of width gives up, in order; the bottom edge; two
-                 screens, each with its own plate
+                 text reads at 4.5 to 1 on the ground and on a chip; under the pointer each part alone stands on
+                 a chip of the lit tone, in its own color, a dim one raised, every sign's chip the same size;
+                 the keys go through every target once, left to right, a line at the plate's foot under the one
+                 they are on; every control has a name; nothing moves at rest
+5 geometry       the spec's numbers at 16 px, by the state file and by the screen: the run of 300 px, the plate
+                 of 30 by 28 in its place, gaps of one, three and five cells, the hairline before the time; no
+                 cell moves with a value, a state or the workspace shown; what a bar short of width gives up, in
+                 order; the bottom edge; two screens, each with its own plate
 
 BAR_PROOF_FONT names a face for the proof's config and hides the Monaspace faces from the proof's home: this
 machine as one of the rows that have DejaVu Sans Mono alone. BAR_PROOF_TIMES says how long each gate took.
@@ -106,7 +110,6 @@ case ${1:-} in
         printf 'Volume: %d.%02d%s\n' "$((l / 100))" "$((l % 100))" "$m" ;;
     set-mute|set-volume) : > "$d/busy.$$"; trap 'rm -f "$d/busy.$$"' EXIT   # busy: a change on its way, until it is made
         echo "$*" >> "$d/log"
-        [ ! -s "$d/lag" ] || sleep "$(cat "$d/lag")"   # lag: a change takes so long, and the shell's answer to it comes late
         [ ! -e "$d/fail" ] || exit 1
         k=$(side "$*")
         if [ "$1" = set-mute ]; then
@@ -723,24 +726,12 @@ def environ_of(pid):
 
 def stat_of(pid, fields=(0, 1)):
     """A process's state letter and its parent's pid, or other fields of its stat after its name: 2 its process
-    group, 11 and 12 its ticks of processor, 19 its start time; None each when it is gone."""
+    group, 19 its start time; None each when it is gone."""
     try:
         after = proc(pid, "stat").decode("utf-8", "replace").rsplit(")", 1)[1].split()
         return tuple(after[i] if i in (0, 19) else int(after[i]) for i in fields)
     except (OSError, IndexError, ValueError):
         return (None,) * len(fields)
-
-
-def wakes(pid):
-    """How often a process's threads gave the processor up and took it again, all told: its wake-ups; 0 where the
-    kernel does not say."""
-    total = 0
-    try:
-        for task in Path("/proc/%d/task" % pid).iterdir():
-            total += sum(int(line.split()[1]) for line in (task / "status").read_text().splitlines() if line.startswith(("voluntary_ctxt", "nonvoluntary_ctxt")))
-    except (OSError, ValueError, IndexError):
-        return 0
-    return total
 
 
 def alive(pid):
@@ -1163,17 +1154,6 @@ class Desk:
             except OSError:
                 pass
 
-    def quiet(self, seconds=10):
-        """The status loop asleep between two lines, none on its way and none asked for: the same sleeper under it,
-        seen twice. A line on its way would say what was before the hand's next step."""
-        loop, last = self.loop_pid(), [None]
-
-        def asleep():
-            now = next((int(e.name) for e in Path("/proc").iterdir() if e.name.isdigit() and stat_of(int(e.name))[1] == loop and cmdline(int(e.name))[:1] == ["sleep"]), None)
-            same, last[0] = now is not None and now == last[0], now
-            return same
-        return settle(asleep, seconds)
-
     def told(self, test, what, seconds=20):
         """The state file once a line of the status says `test`: a line is asked for, and asked for again each
         second and a half, for a line that comes while the hand's steps are not all answered may be taken for an
@@ -1295,7 +1275,7 @@ class Desk:
         """The bar as a gate finds it: running as the config first had it, in the dark palette, one screen 1920
         wide, at the top, the first workspace shown, the machine as it first was, the sound at 40 and 50, the
         pointer and the keys off it."""
-        for name in ("down", "fail", "slow", "lag", "bt-off", "bt-alone", "dnd", "notes", "pw-dump"):
+        for name in ("down", "fail", "slow", "bt-off", "bt-alone", "dnd", "notes", "pw-dump"):
             self.flag(name, False)
         for name, text in MACHINE:
             if (self.work / "sys" / name).read_text() != text:
@@ -1361,17 +1341,22 @@ def place(strip, t):
     return strip.part(t.x, 0, t.w, strip.h)
 
 
+def first_cell(d, strip, t):
+    """The first of a target's cells on a bar's capture, the bar's whole height."""
+    return strip.part(t.x, 0, d.cell, strip.h)
+
+
 def pair_of(d, strip, s):
-    """The family's pair as the workspaces wear it now: a place with a workspace, a place with none."""
+    """The family's pair as the workspaces wear it now: a cell of a place with a workspace, a cell of a place with none."""
     full = next(t for t in s.spaces() if not t.flags & {"visible", "empty", "urgent", "hover"})
     light = next(t for t in s.spaces() if t.flags == {"empty"})
-    return place(strip, full), place(strip, light)
+    return first_cell(d, strip, full), first_cell(d, strip, light)
 
 
 def run_reads(d, strip, s, output=OUT):
     """The workspaces' run on a capture against the state file: a place with a workspace in the text's tone, one
-    with none in the dim one, one that asks in the attention's; the full ones the same pixels, the light ones the
-    same pixels, and the two apart. -> (whether it is so, what was off)"""
+    with none in the dim one, one that asks in the attention's, its three cells the same pixels; the full ones the
+    same pixels, the light ones the same pixels, and the two apart. -> (whether it is so, what was off)"""
     off, fulls, lights = [], set(), set()
     for t in s.spaces(output):
         if t.flags & {"visible", "hover"}:
@@ -1380,6 +1365,8 @@ def run_reads(d, strip, s, output=OUT):
         want = "attention" if "urgent" in t.flags else "dim" if "empty" in t.flags else "text"
         if img.tone(d.ground, d.tones) != [want]:
             off.append((t.id, want, img.tone(d.ground, d.tones)))
+        elif t.w != 3 * d.cell or len({img.part(i * d.cell, 0, d.cell, img.h).data for i in range(3)}) != 1:
+            off.append((t.id, "three cells, the same pixels each", t.w))
         elif want != "attention":
             (lights if want == "dim" else fulls).add(img.data)
     if len(lights) > 1 or len(fulls) > 1 or fulls & lights:
@@ -1417,20 +1404,26 @@ def gauge_of(level):
     return "F" * full_cells(level) + "L" * (5 - full_cells(level))
 
 
-def chip_reads(d, strip, t, color):
-    """A part under the pointer on a capture: its chip measured (x, y, w, h), in the part's own tone, and whether
-    all that stands on it in the part's cells is drawn in the ground's color."""
+def chip_reads(d, strip, t, lit, color):
+    """A part under the pointer on a capture: its chip measured (x, y, w, h), in the lit tone, and whether all
+    that stands on it in the part's cells is drawn in a color: the part's own."""
     inset = round(strip.h / 9.0)
-    box = strip.box(t.x - 1, inset, color)
-    lies, most = strip.part(t.x, inset, t.w, strip.h - 2 * inset).reach(color, d.ground)
+    box = strip.box(t.x + 1, inset, lit)
+    lies, most = strip.part(t.x, inset, t.w, strip.h - 2 * inset).reach(lit, color)
     return box, lies and most >= 0.5
+
+
+def raised(d):
+    """The dim tone on a chip: halfway to the text's color, a channel at a time."""
+    return tuple((a + b) / 2.0 for a, b in zip(d.tones["dim"], d.tones["text"]))
 
 
 def line_reads(d, strip, t, plate):
     """The keys' line on a capture, a fifth of a cell thick. Under a part: whether the accent fills the last rows of
-    the plate's box, the part's width and half a cell at each side, and nothing of it stands above those rows, under
-    them or past its ends (the plate itself aside). On the plate, where the accent could not be seen: whether the
-    ground's color fills the plate's width one thickness above its foot, a strip of the accent left under it."""
+    the plate's box, the part's width and half a cell at each side (a place's own three cells), and nothing of it
+    stands above those rows, under them or past its ends (the plate itself aside). On the plate, where the accent
+    could not be seen: whether the ground's color fills the plate's width one thickness above its foot, a strip of
+    the accent left under it."""
     accent, ground, inset, half, thick = d.tones["accent"], d.ground, round(strip.h / 9.0), d.cell // 2, max((d.cell + 2) // 5, 1)
     foot = strip.h - inset
     if plate is not None and t.id == plate.id:
@@ -1440,7 +1433,8 @@ def line_reads(d, strip, t, plate):
         above = all(near(strip.px(x, foot - 2 * thick - 1), accent) for x in (t.x, t.x + 1, t.x + t.w - 2, t.x + t.w - 1))
         beside = all(near(strip.px(x, y), ground) for x in (t.x - 1, t.x + t.w) for y in range(foot - 2 * thick, foot + 1))
         return line and strip_ and above and beside, ("on the plate", line, strip_, above, beside)
-    x0, x1 = t.x - half, t.x + t.w + half
+    pad = 0 if t.kind == "workspace" else half
+    x0, x1 = t.x - pad, t.x + t.w + pad
     on_plate = lambda x: plate is not None and plate.x <= x < plate.x + plate.w   # noqa: E731
     filled = all(near(strip.px(x, y), accent) for x in range(x0, x1) for y in range(foot - thick, foot))
     above = [x for x in range(x0, x1) if not on_plate(x) and near(strip.px(x, foot - thick - 1), accent)]
@@ -1521,9 +1515,9 @@ def identity(d):
        "it is drawn as the file is, in the file's one ink (#%s) thinned by the ground and in no tone of the look" % r["ink"], r)
     d.shot("identity-logo")
     spaces = s.spaces()
-    ok([t.id for t in spaces] == ["workspace:%d" % n for n in range(1, 11)] and [t.w for t in spaces] == [3 * cell] + [cell] * 9
+    ok([t.id for t in spaces] == ["workspace:%d" % n for n in range(1, 11)] and [t.w for t in spaces] == [3 * cell] * 10
        and [t.id for t in spaces if "empty" not in t.flags] == ["workspace:1", "workspace:2"],
-       "the workspaces are ten places, always: the two that exist and eight with none, one cell each, and the one this screen shows three cells", s.brief())
+       "the workspaces are ten places, always: the two that exist and eight with none, three cells each, the one this screen shows too", s.brief())
     refs, last = {}, None
     for name, full_glyph, light_glyph in FAMILIES:
         if name != "stone":
@@ -1536,19 +1530,19 @@ def identity(d):
             full, light = pair_of(d, strip, s)
             good, off = run_reads(d, strip, s)
             got.update(full=full, light=light, gauge=gauge_reads(strip, gauge, full, light),
-                       line=len({x for x, _ in strip.part(spaces[1].x, 0, 9 * cell, high).ink(ground, 40)}),
+                       line=len({x for x, _ in strip.part(spaces[1].x, 0, 27 * cell, high).ink(ground, 40)}),
                        level=len({x for x, _ in place(strip, gauge).ink(ground, 40)}))
             return good and light.data != last, off
         good, saw = seen(family, 10)
         look = d.line()[0]
         ok(good and d.bar_pid() == pid and (look.get("full"), look.get("light")) == (full_glyph, light_glyph),
-           "%s: the line's look says its pair (U+%04X, U+%04X), and the run is drawn in it: the full glyph in the text's color where a workspace is, the light one in the dim color where none is, each kind the same pixels in every place; by the same process"
+           "%s: the line's look says its pair (U+%04X, U+%04X), and the run is drawn in it: three cells of the full glyph in the text's color where a workspace is, of the light one in the dim color where none is, each kind the same pixels in every cell; by the same process"
            % (name, ord(full_glyph), ord(light_glyph)), (saw, look, pid, d.bar_pid()))
         ok(got.get("gauge") == gauge_of(40),
-           "%s: out's gauge at 40 is the same pair, two cells the pixels of a place with a workspace and three those of a place with none" % name, got.get("gauge"))
+           "%s: out's gauge at 40 is the same pair, two cells the pixels of a cell of a place with a workspace and three those of one with none" % name, got.get("gauge"))
         if name == "star":
-            ok(got.get("line") == 9 * cell and got.get("level") == 5 * cell,
-               "star: the nine places after the plate are one unbroken line, ink in each of their %d columns, and the gauge's five cells another" % (9 * cell), (got.get("line"), got.get("level")))
+            ok(got.get("line") == 27 * cell and got.get("level") == 5 * cell,
+               "star: the nine places after the plate are one unbroken line, ink in each of their %d columns, and the gauge's five cells another" % (27 * cell), (got.get("line"), got.get("level")))
         refs[name], last = (got["full"].data, got["light"].data), got["light"].data
         d.shot("identity-" + name)
     ok(len({pair for pair in refs.values()}) == 3 and len({p[0] for p in refs.values()}) == 3 and len({p[1] for p in refs.values()}) == 3,
@@ -1568,14 +1562,14 @@ def identity(d):
         return seen(read)
     good, saw = plate(one, first)
     ok(good and one.name == "workspace 1" and one.flags == {"selected", "visible"},
-       "the plate: the workspace this screen shows is a box of the accent, three cells by the bar less a ninth at each end, its label of two characters in the ground's color, each in its cell", saw)
+       "the plate: the workspace this screen shows is a box of the accent over its place, three cells by the bar less a ninth at each end, its label of two characters in the ground's color, in the middle two cells", saw)
     d.sway("workspace", "number", "10")
     s10 = d.until(lambda s: "visible" in s.find("workspace:10").flags, "workspace 10 shown")
     ten, tenth = s10.find("workspace:10"), {}
     good, saw = plate(ten, tenth)
-    ok(good and ten.name == "workspace 10" and tenth.get("data") != first.get("data") and ten.x + ten.w + cell // 2 == spaces[-1].x + spaces[-1].w
-       and [t.w for t in s10.spaces()] == [cell] * 9 + [3 * cell] and "empty" not in s10.find("workspace:1").flags,
-       "the plate on workspace 10: the same box at the run's other end, two digits again and other ones; the run ends where it ended", (saw, s10.brief()))
+    ok(good and ten.name == "workspace 10" and tenth.get("data") != first.get("data") and [t.rect for t in s10.spaces()] == [t.rect for t in spaces]
+       and "empty" not in s10.find("workspace:1").flags,
+       "the plate on workspace 10: the same box over the run's last place, two digits again and other ones; no place has moved", (saw, s10.brief()))
     d.shot("identity-plate-10")
     d.sway("workspace", "number", "1")
     d.until(lambda s: "visible" in s.find("workspace:1").flags and "empty" in s.find("workspace:10").flags, "workspace 1 shown again, and no workspace 10")
@@ -1584,7 +1578,7 @@ def identity(d):
 def behavior(d):
     enter("behavior", "the pointer and the keys, through the real status loop and the stand-in sound tool")
     s = d.rest()
-    pid, cell, high, ground = d.bar_pid(), d.cell, d.high, d.ground
+    pid, cell, ground = d.bar_pid(), d.cell, d.ground
     sign, gauge, mic = s.find("out.name"), s.find("out.gauge"), s.find("mic.name")
     base = s.rects()
     want = {"mark": "mark", "workspace:1": "workspace", "workspace:7": "workspace", "lan.name": "open", "bt.name": "open", "wifi.name": "open", "out.name": "toggle", "out.gauge": "level",
@@ -1603,91 +1597,38 @@ def behavior(d):
     d.click(sign.mid)
     d.until(lambda s: s.find("out.name").state == "ok" and s.named("out.name") == "output 40%", "out unmuted by a second click")
     ok(not d.muted("out"), "pointer: a second click unmutes")
-    # at once: the sound tool gives no answer, so the shell says no line, and the bar draws the hand's change all the same
+    # the gauge sets the level where the click was
     into = gauge.w * 8 // 10
     want = level_at(into, gauge.w)
-    d.flag("slow", True)
     n = len(d.log())
     d.click(gauge.x + into)
     d.away()
-    held = d.until(lambda s: s.levels.get("out") == want, "the level drawn at the click, the sound tool held", 5)
+    d.told(lambda s: s.named("out.name") == "output %d%%" % want and s.levels.get("out") == want, "the click on the gauge to set %d" % want)
     good, saw = seen(lambda: (lambda g: (g == gauge_of(want), g))(gauge_reads(d.strip(), gauge, full, light)))
-    ok(good and len(d.log()) == n and d.level("out") == 40 and held.named("out.name") == "output 40%" and want == 80,
-       "at once: a click %d px into the gauge's %d draws %d%%, on the screen four full cells, while the sound tool has not answered: its level is still 40 and the shell's last line says so"
-       % (into, gauge.w, want), (saw, d.log()[n:], d.level("out"), held.brief()))
-    d.shot("behavior-at-once")
-    d.flag("slow", False)
-    d.until(lambda s: s.named("out.name") == "output %d%%" % want and s.levels.get("out") == want, "the shell's line for the click")
-    ok(d.level("out") == want and d.log()[n:] == ["set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ %d%%" % want],
-       "pointer: the click on out's gauge set the level where the click was, to 5: the sound tool was told %d%%" % want, (d.level("out"), d.log()[n:]))
-    d.flag("slow", True)
+    ok(good and d.level("out") == want == 80 and d.log()[n:] == ["set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ %d%%" % want],
+       "pointer: a click %d px into the gauge's %d sets the level where the click was, to 5: the sound tool was told %d%%, and on the screen the gauge has four full cells" % (into, gauge.w, want),
+       (saw, d.level("out"), d.log()[n:]))
+    d.shot("behavior-gauge")
+    # the wheel, on each of out's parts: a notch at a time, each one answered before the next
     n, level, went = len(d.log()), want, []
     for ident, notch in (("out.name", -1), ("out.gauge", -1), ("out.pct", -1), ("out.gauge", 1)):
         d.over(s.find(ident))
         d.wheel(notch)
         level -= 5 * notch
-        went.append(d.until(lambda s, level=level: s.levels.get("out") == level, "the wheel on %s to draw %d" % (ident, level), 5).levels["out"])
-    ok(went == [want + 5, want + 10, want + 15, want + 10] and len(d.log()) == n and d.level("out") == want,
-       "at once: the wheel on the sign, on the gauge and on the number takes 5 a notch, up and down, drawn before the sound tool answers", (went, d.log()[n:], d.level("out")))
-    d.flag("slow", False)
-    d.told(lambda s: s.named("out.name") == "output %d%%" % level and s.levels.get("out") == level, "the shell's line for the wheel")
-    ok(d.level("out") == level and d.log()[n:] == ["set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%" + way for way in "+++-"],
-       "pointer: the sound tool was told each notch in turn, and is where the bar is, at %d" % level, (d.level("out"), d.log()[n:]))
-    # a burst: the sound tool takes a tenth of a second a change, so the shell's lines come while the hand is ahead of
-    # them, each the answer to an earlier notch, and none of those is drawn
-    d.says(40)
-    d.over(gauge)
-    d.quiet()
-    d.flag("lag", True, "0.1")
-    n, level, trace = len(d.log()), 40, []
-    for _ in range(4):
-        d.wheel(-1)
-        level += 5
-        time.sleep(0.03)
-    last = time.time()
-    while time.time() < last + 20:
-        now = d.state()
-        if not trace or trace[-1][1:] != (now.levels.get("out"), now.named("out.name")):
-            trace.append((round(time.time() - last, 2), now.levels.get("out"), now.named("out.name")))
-        if now.named("out.name") == "output %d%%" % level and now.levels.get("out") == level and d.level("out") == level:
-            break
-        time.sleep(0.005)
-    d.flag("lag", False)
-    backs = [(t, l) for (_, was, _), (t, l, _) in zip(trace, trace[1:]) if l is None or was is None or l < was]
-    soon = [b for b in backs if b[0] < 0.95]   # past the bar's second after the last notch no answer is waited for: a line is news then
-    between = sorted({name for _, _, name in trace} - {"output 40%", "output %d%%" % level})
-    ok(not soon and trace[-1][1] == level == 60 and d.level("out") == level and d.log()[n:] == ["set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"] * 4,
-       "a burst of four notches, the sound tool slow: the number goes up to %d at once and never steps back, though %s; the sound tool took all four"
-       % (level, "the shell's lines said %s meanwhile, the answers to the notches before" % ", ".join(between) if between else "the shell answered"), (backs, trace, d.level("out"), d.log()[n:]))
-    if backs and not soon:
-        note("the shell's answers to that burst came more than a second after it, when no answer is waited for and a line is news again: %s" % backs)
-    if not between:
-        note("no line of the shell's came between that burst's notches and its last answer: there was no old answer to leave undrawn")
-
-    def drawn(test, seconds=6):
-        """The state file once it says `test`, with no line asked for: what the bar makes of the lines that come by themselves."""
-        return settle(lambda: (lambda s: s if s and test(s) else None)(d.state()), seconds)
-    # another program's change right after the hand's: the hand's steps are answered, so the line is news, though it
-    # says a level the hand has just passed through
-    d.wheel(-1)
-    d.wheel(-1)
-    level += 10
-    answered = drawn(lambda s: s.named("out.name") == "output %d%%" % level and s.levels.get("out") == level)
-    d.sound(level - 5, False, 50, False)
-    d.nudge()
-    news = drawn(lambda s: s.named("out.name") == "output %d%%" % (level - 5) and s.levels.get("out") == level - 5)
-    ok(answered and news, "two notches more, answered; then another program sets the level the hand just passed through, %d: its line is news and is drawn at once, not taken for an old answer" % (level - 5),
-       (bool(answered), d.state().brief(), d.level("out")))
-    level -= 5
-    # a change that fails comes back at once: the click's own line says a level no step set
+        d.told(lambda s, level=level: s.named("out.name") == "output %d%%" % level and s.levels.get("out") == level, "the wheel on %s to make it %d" % (ident, level))
+        went.append(d.level("out"))
+    ok(went == [want + 5, want + 10, want + 15, want + 10] and d.log()[n:] == ["set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%" + way for way in "+++-"],
+       "pointer: the wheel on the sign, on the gauge and on the number takes 5 a notch, up and down: the sound tool was told each notch in turn, and is where the bar is, at %d" % level,
+       (went, d.log()[n:]))
+    # a change that fails comes back: the sound tool refuses it, and the next line says a level the hand did not set
     d.flag("fail", True)
     d.wheel(-1)
     d.away()
-    wrong = drawn(lambda s: s.find("out.name").state == "wrong" and s.levels.get("out") == level and not s.hovered()) or d.state()
+    wrong = d.told(lambda s: s.find("out.name").state == "wrong" and s.levels.get("out") == level and not s.hovered(), "out to say wrong, its level back at %d" % level)
     seen_red = seen(lambda: (lambda t: (t == ["alert"], t))(place(d.strip(), sign).tone(ground, d.tones)))
-    ok(wrong.find("out.name").state == "wrong" and wrong.levels.get("out") == level and wrong.named("out.name") == "output could not be changed" and d.level("out") == level
+    ok(wrong.named("out.name") == "output could not be changed" and d.level("out") == level
        and d.log()[-1:] == ["set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"] and not stays(base, wrong.rects()) and seen_red[0] and all(t.state == "ok" for t in wrong.targets() if t.module != "out"),
-       "a change that fails: the notch was drawn, the sound tool refused it, and the next line is the truth: the level is back at %d, out says wrong, could not be changed, its sign red on the screen, in the same cells; nothing else is touched" % level,
+       "a change that fails: the sound tool refused the notch, and the line is the truth: the level is back at %d, out says wrong, could not be changed, its sign red on the screen, in the same cells; nothing else is touched" % level,
        (wrong.brief(), d.level("out"), d.log()[-1:], stays(base, wrong.rects()), seen_red))
     d.shot("behavior-failed")
     d.flag("fail", False)
@@ -1696,45 +1637,16 @@ def behavior(d):
     level += 5
     d.told(lambda s: s.find("out.name").state == "ok" and s.named("out.name") == "output %d%%" % level and s.levels.get("out") == level, "the next change, one that works, to clear it")
     ok(d.level("out") == level, "the next change that works clears it: out is at %d, and says so" % level, d.level("out"))
-    # the digits flow: a capture taken while the number changes has a digit outside the rows it rests in
-    slot = (gauge.x + gauge.w + cell, high // 9, 3 * cell, high - 2 * (high // 9))
-
-    def resting():
-        one = d.grab(*slot)
-        time.sleep(0.15)   # longer than a flow, 120 ms
-        return one.data == d.grab(*slot).data and {y for _, y in one.ink(ground)}
-    still = wait_for(resting, "the number at rest")
-    low, top = min(still) - 1, max(still) + 1
-
-    def flows(tries):
-        """Notches, one down and one up in turn, and three captures after each: (the first capture with a digit on
-        its way as (notch, capture), how many different pictures the captures were)."""
-        caught, pictures = None, set()
-        for i in range(tries):
-            d.wheel(-1 if i % 2 else 1)
-            for j in range(3):
-                img = d.grab(*slot)
-                pictures.add(img.data)
-                inked = {y for _, y in img.ink(ground)}
-                if inked and (min(inked) < low or max(inked) > top) and caught is None:
-                    caught = (i + 1, j + 1)
-            if caught:
-                break
-        return caught, len(pictures)
-    n = len(d.log())
-    caught, pictures = flows(30)
-    ok(caught, "the digits flow: in a capture taken while the number changes a digit stands outside the rows it rests in (%d to %d), on its way, cut at the plate's box: notch %s, capture %s"
-       % ((low + 1 + slot[1], top - 1 + slot[1]) + (caught or ("none", "none"))), (caught, pictures, sorted(still)))
-    settle(lambda: len(d.log()) >= n + (caught or (30,))[0], 20)
+    # motion is the look's to say: the config's BAR_MOTION=no travels in the next line, to the same process
     d.configure("BAR_MOTION=no\nBAR_HIDE=lan\n")   # the wire off the bar too: the line that hides it is the config's new one, and moves nothing else
     d.told(lambda s: not s.find("lan.name"), "the line of the config with no motion")
+    look = d.line()[0]
     d.over(gauge)
-    n = len(d.log())
-    caught, pictures = flows(6)
-    took = settle(lambda: len(d.log()) >= n + 6, 20)
-    ok(caught is None and pictures >= 2 and took and d.bar_pid() == pid,
-       "with BAR_MOTION=no, said by the next line to the same process: the number changes in place, %d pictures in the captures of six notches and no digit on its way in any" % pictures,
-       (caught, pictures, d.log()[n:]))
+    d.wheel(1)
+    level -= 5
+    d.told(lambda s: s.named("out.name") == "output %d%%" % level and s.levels.get("out") == level, "a notch with no motion")
+    ok(look.get("motion") == "no" and d.level("out") == level and d.bar_pid() == pid,
+       "with BAR_MOTION=no in the config the next line's look says motion no, to the same process, and a notch still sets the level", (look, d.level("out"), pid, d.bar_pid()))
     d.configure()
     d.told(lambda s: s.find("lan.name"), "the line of the config as it was")
     d.says(40)
@@ -1742,33 +1654,16 @@ def behavior(d):
     n = len(d.log())
     d.over(mic)
     d.wheel(-1)
-    at_once = d.until(lambda s: s.levels.get("mic") == 55, "the wheel on the mic's sign to draw 55", 5)
-    d.told(lambda s: s.named("mic.name") == "microphone 55%", "the shell's line for the mic")
-    ok(d.level("mic") == 55 and d.level("out") == 40 and d.log()[n:] == ["set-volume -l 1.0 @DEFAULT_AUDIO_SOURCE@ 5%+"] and not at_once.find("mic.gauge"),
+    shown = d.told(lambda s: s.named("mic.name") == "microphone 55%" and s.levels.get("mic") == 55, "the wheel on the mic's sign to make it 55")
+    ok(d.level("mic") == 55 and d.level("out") == 40 and d.log()[n:] == ["set-volume -l 1.0 @DEFAULT_AUDIO_SOURCE@ 5%+"] and not shown.find("mic.gauge"),
        "pointer: the wheel on the mic's sign, which has no gauge on the bar, sets the mic's level, 55, and out's stays", (d.level("mic"), d.level("out"), d.log()[n:]))
-    # frames are asked for only while a number on the bar flows; the sound tool is held, so no line comes in between
-    d.flag("slow", True)
-    n, spent = len(d.log()), {}
-    for ident in ("mic.name", "out.gauge"):
-        d.over(s.find(ident))
-        woke = wakes(pid)
-        for i in range(5):
-            d.wheel(1 if i % 2 else -1)
-            time.sleep(0.15)   # a flow and a little: each notch's number flows alone
-        spent[ident] = wakes(pid) - woke
-    d.flag("slow", False)
-    ok(spent["mic.name"] <= 40 and spent["out.gauge"] >= spent["mic.name"] + 10,
-       "frames only while a number on the bar flows: five notches on the mic, whose number is not on the bar, woke the bar %d times; five on out's gauge, whose digits flow, %d times"
-       % (spent["mic.name"], spent["out.gauge"]), spent)
-    settle(lambda: len(d.log()) >= n + 10, 20)
     d.says(40)
     # a place shows its workspace, an empty one too
-    end_of_run = max(t.x + t.w for t in s.spaces())
     d.click(s.find("workspace:2").mid)
     two = d.until(lambda s: "selected" in s.find("workspace:2").flags, "workspace 2 shown by a click on its place")
     ok(d.focused_space() == 2 and two.find("workspace:1").flags <= {"hover"} and {"selected", "visible"} <= two.find("workspace:2").flags
-       and max(t.x + t.w for t in two.spaces()) + cell // 2 * (two.spaces()[-1].w != cell) == end_of_run,
-       "pointer: a click on a place shows its workspace: sway has the focus on 2, the plate is there, and the run is as long", (d.focused_space(), two.brief()))
+       and [t.rect for t in two.spaces()] == [t.rect for t in s.spaces()],
+       "pointer: a click on a place shows its workspace: sway has the focus on 2, the plate is there, and no place has moved", (d.focused_space(), two.brief()))
     d.click(two.find("workspace:5").mid)
     five = d.until(lambda s: "selected" in s.find("workspace:5").flags, "workspace 5 shown by a click on its empty place")
     ok(d.focused_space() == 5 and "empty" in two.find("workspace:5").flags and "empty" not in five.find("workspace:5").flags and five.find("workspace:5").name == "workspace 5",
@@ -1867,22 +1762,32 @@ def behavior(d):
     ok(not d.muted("out") and s.focused() == "out.name", "keys: Space unmutes, the keys still there", (d.muted("out"), s.focused()))
     d.key("Tab")
     d.until(lambda s: s.focused() == "out.gauge", "Tab to the gauge")
-    d.flag("slow", True)
-    n = len(d.log())
-    d.key("End")
-    s = d.until(lambda s: s.levels.get("out") == 100, "End on the gauge to draw 100, the sound tool held", 5)
-    ok(len(d.log()) == n and d.level("out") == 40 and s.find("out.pct").w == 4 * cell and s.focused() == "out.gauge",
-       "at once: End on the gauge draws 100, the number four cells wide now, before the sound tool answers", (d.log()[n:], d.level("out"), s.brief()))
-    d.flag("slow", False)
-    d.told(lambda s: s.named("out.name") == "output 100%", "the shell's line for End")
-    levels = [d.level("out")]
-    for name, level in (("Home", 0), ("Right", 5), ("Right", 10), ("Left", 5)):
+    n, levels = len(d.log()), []
+    for name, level in (("End", 100), ("Home", 0), ("Up", 5), ("Up", 10), ("Down", 5)):
         d.key(name)
         s = d.told(lambda s, level=level: s.named("out.name") == "output %d%%" % level and s.levels.get("out") == level, "%s on the gauge to make it %d%%" % (name, level))
         levels.append(d.level("out"))
     tail = ["set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ " + v for v in ("100%", "0%", "5%+", "5%+", "5%-")]
     ok(levels == [100, 0, 5, 10, 5] and d.log()[n:] == tail and s.focused() == "out.gauge",
-       "keys: on the gauge End sets 100 and Home 0, Right and Left take 5, and the keys stay on it", (levels, d.log()[n:], s.focused()))
+       "keys: on the gauge End sets 100 and Home 0, Up and Down take 5, and the keys stay on it", (levels, d.log()[n:], s.focused()))
+    # Left and Right move past the gauge as past any part; Up on the sign is the wheel there too, and nothing where no level is
+    n, way = len(d.log()), []
+    for name, ident in (("Right", "out.pct"), ("Left", "out.gauge"), ("Left", "out.name")):
+        d.key(name)
+        way.append(d.until(lambda s, ident=ident: s.focused() == ident, "%s to move the keys to %s" % (name, ident), 5).levels.get("out"))
+    moved_none = d.log()[n:]
+    d.key("Up")
+    s = d.told(lambda s: s.named("out.name") == "output 10%" and s.levels.get("out") == 10, "Up on out's sign to make it 10%")
+    on_sign = (d.level("out"), s.focused(), d.log()[n:])
+    d.focus("lan.name")
+    d.key("Up")
+    d.key("Down")
+    d.key("Right")
+    s = d.until(lambda s: s.focused() == "bt.name", "Right to move the keys on from the wire's sign, after Up and Down there", 5)
+    ok(way == [5, 5, 5] and not moved_none and on_sign == (10, "out.name", ["set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"]) and d.log()[n:] == on_sign[2] and d.level("out") == 10,
+       "keys: Left and Right move past the gauge as past any part, and set no level; Up on out's sign is the wheel there too, and the keys stay; on the wire's sign, which has no level, Up and Down do nothing",
+       (way, moved_none, on_sign, d.log()[n:], s.focused()))
+    d.focus("out.gauge")
     d.key("Tab")
     d.until(lambda s: s.focused() == "out.pct", "Tab to the number")
     n = len(d.opened())
@@ -1922,6 +1827,46 @@ def behavior(d):
     d.key("Escape")
     s = d.until(lambda s: not s.focused(), "Escape to give the keyboard back")
     ok(d.focused_space() == 2 and len(d.opened()) == n, "keys: Escape gives the keyboard back and does nothing else", (d.focused_space(), d.opened()[n:]))
+    # the pointer gives the keys back too: a button on a window
+    d.away()
+    x, y = d.space[0] // 4, H // 2
+    win = d.node(d.windows[1].pid)["rect"]
+    on_window = win["x"] <= x < win["x"] + win["width"] - 8 * cell and win["y"] <= y < win["y"] + win["height"]
+    d.keys_on()
+    d.until(lambda s: s.focused() == "mark", "Super+%s, the pointer on a window" % d.keys_key)
+    n, changes = len(d.opened()), len(d.log())
+    d.button(True)
+    d.button(False)
+    if not settle(lambda: not d.state().focused(), 3):
+        # a sway that hands the pointer to a surface only once it moves: one cell, travel that keeps the keys
+        note("this sway gave a button pressed with no move before it to the window: the bar is handed the pointer off itself at its first move")
+        x += cell
+        d.move(x, y)
+        d.button(True)
+        d.button(False)
+    s = d.until(lambda s: not s.focused(), "a button on a window to give the keyboard back", 5)
+    ok(on_window and d.focused_space() == 2 and len(d.opened()) == n and len(d.log()) == changes,
+       "pointer: while the bar has the keys a button pressed on a window gives the keyboard back, as Escape does, and does nothing else", (on_window, win, d.focused_space(), d.opened()[n:]))
+    # and its travel: a cell keeps the keys, more than three cells gives them back
+    d.keys_on()
+    d.until(lambda s: s.focused() == "mark", "Super+%s again, the pointer on a window" % d.keys_key)
+    d.move(x + cell, y)
+    d.key("Right")
+    kept = d.until(lambda s: s.focused() == "workspace:1", "Right to move the keys, after the pointer moved a cell", 5)
+    d.move(x + 7 * cell, y)
+    s = d.until(lambda s: not s.focused(), "the pointer's travel to give the keyboard back", 5)
+    ok(kept and d.focused_space() == 2, "pointer: the pointer moved a cell off the bar, the keys stay, and Right still moves them; moved %d px more, past three cells, it gives the keyboard back" % (6 * cell), s.brief())
+    # a click on the bar itself still reaches the bar, and a toggle keeps the keys
+    d.keys_on()
+    d.until(lambda s: s.focused() == "mark", "Super+%s once again" % d.keys_key)
+    d.click(sign.mid)
+    s = d.until(lambda s: s.named("out.name") == "output muted", "a click on out's sign, the bar having the keys")
+    ok(d.muted("out") and s.focused() == "mark", "pointer: while the bar has the keys a click on the bar still reaches it: out's sign mutes, and the keys stay where they were", (d.muted("out"), s.focused()))
+    d.click(sign.mid)
+    d.until(lambda s: s.named("out.name") == "output 10%", "out unmuted")
+    d.key("Escape")
+    d.until(lambda s: not s.focused(), "Escape to give the keyboard back")
+    d.away()
 
 
 def states(d):
@@ -1929,6 +1874,7 @@ def states(d):
     s = d.rest()
     base, high, cell, ground, tones = s.rects(), d.high, d.cell, d.ground, d.tones
     frame = collections.OrderedDict((k, v) for k, v in base.items() if k == "mark" or k.startswith("workspace:"))
+    run_end = frame["workspace:10"][0] + frame["workspace:10"][2]
     gauge, pct, plate = s.find("out.gauge"), s.find("out.pct"), s.plate()
     box = (plate.x, high // 9, plate.w, high - 2 * (high // 9))
     strip = d.strip()
@@ -1970,12 +1916,12 @@ def states(d):
         red = inside(only["alert"], [(hard.find(i).x - cell // 2 - x0, 0, hard.find(i).w + cell, high) for i in ("lan.name", "mic.name", "bat.text")])
         blue = inside(only["accent"], [(box[0] - x0, box[1], box[2], box[3])])
         saw = {"tones": got, "gauge": (dims, shape, rest_), "number": blank, "not hollow": solid, "red": red[:4], "accent": blue[:4], "attention": only["attention"][:4], "stray": stray[:4]}
-        tones_ok = got == dict({i: ["text"] for i in got}, **{"pad.name": ["dim"], "pad.text": ["dim"], "bt.name": ["dim"], "wifi.name": ["dim"],
+        tones_ok = got == dict({i: ["text"] for i in got}, **{"pad.name": ["dim"], "pad.text": ["dim"], "bt.name": ["dim"], "wifi.name": ["dim"], "out.name": ["dim"],
                                                                "lan.name": ["alert"], "mic.name": ["alert"], "bat.text": ["alert"]})
         return tones_ok and dims == [["dim"]] * 2 and all(shape) and all(rest_) and blank and not solid and not red and not blue and not only["attention"] and not stray, saw
     _, saw = seen(hard_look)
-    ok(saw["tones"]["out.name"] == ["text"] and "out.name" not in saw["not hollow"] and saw["gauge"] == ([["dim"]] * 2, [True] * 2, [True] * 3) and saw["number"],
-       "muted, on the screen: the sign is the hollow one in the text's color, the gauge keeps its level with every cell dim, two the full glyph's shape and three the light one, and the number's cells are empty", saw)
+    ok(saw["tones"]["out.name"] == ["dim"] and "out.name" not in saw["not hollow"] and saw["gauge"] == ([["dim"]] * 2, [True] * 2, [True] * 3) and saw["number"],
+       "muted, on the screen: the sign is the hollow one, dim as its gauge is; the gauge keeps its level with every cell dim, two the full glyph's shape and three the light one, and the number's cells are empty", saw)
     ok(all(saw["tones"][i] == ["dim"] for i in ("bt.name", "wifi.name", "pad.name", "pad.text")) and "bt.name" not in saw["not hollow"],
        "off, on the screen: bluetooth's hollow sign, wifi's sign, and the hidden pad's sign and its count are dim", saw)
     ok(all(saw["tones"][i] == ["alert"] for i in ("lan.name", "mic.name", "bat.text")) and "mic.name" not in saw["not hollow"] and not saw["red"] and not saw["attention"] and not saw["accent"]
@@ -1999,7 +1945,7 @@ def states(d):
     def asking():
         strip = d.strip()
         got = place(strip, due).tone(ground, tones), place(strip, two).tone(ground, tones), place(strip, alone).tone(ground, tones), place(strip, quiet).tone(ground, tones)
-        shape = (alike(place(strip, two).cover(ground, tones["attention"]), full.cover(ground, tones["text"])),
+        shape = (alike(first_cell(d, strip, two).cover(ground, tones["attention"]), full.cover(ground, tones["text"])),
                  alike(place(strip, alone).cover(ground, tones["dim"]), calm["bt.name"].cover(ground, tones["text"])),
                  place(strip, quiet).data != calm["notifications.name"].data)
         only, stray = census(strip.part(x0, 0, strip.w - x0, high), ground, tones)
@@ -2008,7 +1954,7 @@ def states(d):
     _, saw = seen(asking)
     ok(saw[0][:2] == (["attention"], ["attention"]) and saw[1][0] and not saw[2] and not saw[3] and not saw[4] and due.name.startswith("reminder due: the proof") and due.kind == "open"
        and asks.named("workspace:2") == "workspace 2",
-       "what asks: a reminder due is its sign alone in the attention color, and a workspace with a window that asks is its full glyph in that color; the attention color is nowhere else, and no red", (saw, asks.brief()))
+       "what asks: a reminder due is its sign alone in the attention color, and a workspace with a window that asks is its three cells of the full glyph in that color; the attention color is nowhere else, and no red", (saw, asks.brief()))
     ok(alone.name == "bluetooth on" and saw[0][2] == ["dim"] and saw[1][1],
        "bluetooth on with nothing connected says missing: the same solid sign as with a device, dim", (saw, asks.brief()))
     ok(quiet.state == "ok" and quiet.rect == (base["notifications.name"][0], 0, cell, high) and saw[0][3] == ["text"] and saw[1][2],
@@ -2051,7 +1997,7 @@ def states(d):
         def read():
             strip = d.strip()
             at = strip.part(W - 4 * cell, 0, 2 * cell, high).tone(ground, tones)
-            rest_ = strip.part(frame["workspace:10"][0] + cell, 0, W - 4 * cell - frame["workspace:10"][0] - cell, high).colors() == {ground}
+            rest_ = strip.part(run_end, 0, W - 4 * cell - run_end, high).colors() == {ground}
             return at == [tone] and rest_ and strip.part(W - 2 * cell, 0, 2 * cell, high).colors() == {ground}, (at, rest_)
         return seen(read)
     good, saw = notice()
@@ -2061,7 +2007,7 @@ def states(d):
     d.shot("states-status-ended")
     s = d.until(lambda s: s.status == "ok" and s.find("clock.text"), "the status started again", 15)
     ok(d.loop_pid() not in (None, loop) and d.bar_pid() == bar and s.rects() == base and not [p for p in crew if alive(p)],
-       "it is started again within seconds: another spark-shell bar status, the same bar, every cell where it was; of the old one no process is left",
+       "it is started again: another spark-shell bar status, the same bar, every cell where it was; of the old one no process is left",
        (loop, d.loop_pid(), bar, d.bar_pid(), moved(base, s.rects()), [(p, " ".join(cmdline(p))[:60]) for p in crew if alive(p)]))
     # the bar itself ends: ABRT, a crash
     old = wait_for(d.loop_pid, "the status loop's pid")
@@ -2112,7 +2058,7 @@ def states(d):
     ok(s.rects() == base, "the first line fills the cells kept for it", moved(base, s.rects()))
     # a binding mode other than default: the template's resize, on Super+r
     s = d.rest()
-    after = frame["workspace:10"][0] + cell
+    after = run_end
     d.chord("logo", "r")
     s = d.until(lambda s: s.mode == "resize", "the binding mode in the state file")
 
@@ -2160,10 +2106,11 @@ def tones_at_rest(d, s):
 
 
 def contrasts(d):
-    """The proof's palette in use: the text on the ground and on a chip, the label on the plate, and the tones that
-    are signs and lines."""
+    """The proof's palette in use: the text on the ground and on a chip, the label on the plate, the tones that
+    are signs and lines, and a dim part on a chip, raised."""
     pal, ground, tones = d.pal, d.ground, d.tones
-    text = collections.OrderedDict((("the text on the ground", (tones["text"], ground)), ("the ground's color on a chip of the text's", (ground, tones["text"])),
+    lit = rgb(d.line()[0].get("lit", "000000"))
+    text = collections.OrderedDict((("the text on the ground", (tones["text"], ground)), ("the text on a chip, the lit tone", (tones["text"], lit)),
                                     ("the plate's label, the ground's color on the accent", (ground, tones["accent"]))))
     marks = collections.OrderedDict((("the dim tone", (tones["dim"], ground)), ("the accent's line", (tones["accent"], ground)),
                                      ("the red", (tones["alert"], ground)), ("the attention color", (tones["attention"], ground))))
@@ -2171,6 +2118,9 @@ def contrasts(d):
     ok(all(ratios[k] >= 4.5 for k in text) and all(ratios[k] >= 3 for k in marks),
        "the %s palette is the proof's own, never a theme of the machine's: its text reads at 4.5 to 1 or more on the ground, on a chip and on the plate (%s), and its signs' and lines' tones at 3 or more on the ground (%s)"
        % (pal["name"], ", ".join("%.1f" % ratios[k] for k in text), ", ".join("%.1f" % ratios[k] for k in marks)), ratios)
+    at_rest, on_chip = contrast(tones["dim"], ground), contrast(raised(d), lit)
+    ok(on_chip >= at_rest, "a dim part on a chip is raised halfway to the text's color: it reads at %.1f to 1 on the lit tone, no worse than the dim tone on the ground, %.1f" % (on_chip, at_rest),
+       (on_chip, at_rest, lit))
 
 
 def accessibility(d):
@@ -2190,27 +2140,28 @@ def accessibility(d):
     others = [s.find(i) for i in ("out.gauge", "out.pct", "kb.text", "bat.text", "clock.text", "workspace:2", "workspace:3")]
     sizes, off = {}, []
     for t in signs + others:
-        color = tones["dim"] if "empty" in t.flags else tones["text"]
+        own = raised(d) if "empty" in t.flags else tones["text"]   # at rest every part is well; a place with no workspace is dim
+        pad = 0 if t.kind == "workspace" else half
         d.over(t)
 
-        def chip(t=t, color=color):
+        def chip(t=t, own=own, pad=pad):
             strip = d.strip()
-            box, inked = chip_reads(d, strip, t, color)
-            alone = sorted(strip.runs(inset, ground)) == sorted([plate_run, (t.x - half, t.w + 2 * half, color)])
-            if t.id == "out.gauge":   # its light cells stay dim on the chip: the full ones are what turns to the ground's color
-                full_, dim = strip.part(t.x, inset, 2 * cell, high - 2 * inset).reach(color, ground), strip.part(t.x + 2 * cell, inset, 3 * cell, high - 2 * inset).reach(color, tones["dim"])
+            box, inked = chip_reads(d, strip, t, lit, own)
+            alone = sorted(strip.runs(inset, ground)) == sorted([plate_run, (t.x - pad, t.w + 2 * pad, lit)])
+            if t.id == "out.gauge":   # its cells keep their tones on the chip: the full ones the text's, the light ones dim
+                full_, dim = strip.part(t.x, inset, 2 * cell, high - 2 * inset).reach(lit, tones["text"]), strip.part(t.x + 2 * cell, inset, 3 * cell, high - 2 * inset).reach(lit, tones["dim"])
                 inked = full_[0] and full_[1] >= 0.5 and dim[0] and dim[1] >= 0.5
-            return box == (t.x - half, inset, t.w + 2 * half, high - 2 * inset) and inked and alone, (box, inked, alone)
+            return box == (t.x - pad, inset, t.w + 2 * pad, high - 2 * inset) and inked and alone, (box, inked, alone)
         good, saw = seen(chip)
         sizes[t.id] = saw[0][2:]
         if not good:
             off.append((t.id, saw))
     ok(not [o for o in off if o[0].endswith(".name")] and {sizes[t.id] for t in signs} == {(2 * cell, high - 2 * inset)} and len(signs) >= 7,
-       "under the pointer every sign becomes a chip of the same size, %d by %d: its cell and half a cell at each side, the plate's height, filled with the sign's own color, the sign on it in the ground's color"
+       "under the pointer every sign stands on a chip of the same size, %d by %d: its cell and half a cell at each side, the plate's height, filled with the look's lit tone, the sign on it still in its own color"
        % (2 * cell, high - 2 * inset), (off, {t.id: sizes[t.id] for t in signs}))
     ok(not [o for o in off if not o[0].endswith(".name")] and sizes["out.gauge"] == (6 * cell, high - 2 * inset) and sizes["out.pct"] == (4 * cell, high - 2 * inset) and sizes["clock.text"] == (6 * cell, high - 2 * inset)
-       and sizes["workspace:3"] == (2 * cell, high - 2 * inset),
-       "a gauge, a number, a text and a place too, each as wide as it is drawn and half a cell at each side, an empty place's chip dim, a gauge's light cells still dim on it; and each part lights alone: with the pointer on one, only its chip and the plate stand on the box's first row",
+       and sizes["workspace:2"] == sizes["workspace:3"] == (3 * cell, high - 2 * inset),
+       "a gauge, a number and a text too, each as wide as it is drawn and half a cell at each side, in its own color, a gauge's light cells still dim; a place's chip is its own three cells and no wider, an empty place's glyphs raised halfway to the text's color; and each part lights alone: with the pointer on one, only its chip and the plate stand on the box's first row",
        (off, sizes))
     d.shot("accessibility-chip")
     d.over(plate)
@@ -2219,7 +2170,7 @@ def accessibility(d):
     ok(good, "the plate does not change under the pointer: the logo and the run are the pixels they are at rest, and nothing is lit", saw)
     d.over(mark)
     good, saw = seen(lambda: (lambda strip: (strip.box(mark.x - 1, inset, lit) == (mark.x - half, inset, mark.w + 2 * half, high - 2 * inset), strip.box(mark.x - 1, inset, lit)))(d.strip()))
-    ok(good, "the logo, a picture with no color to take, stands on a chip of the look's lit shade, the same shape", saw)
+    ok(good, "the logo, a picture, stands on a chip of the lit tone too, its square and half a cell at each side", saw)
     d.away()
     # the keys' order, and their line
     d.shell("bar", "keys")
@@ -2237,7 +2188,7 @@ def accessibility(d):
     ok(order == visual and went == visual[1:] + visual[:1] and len(set(went)) == len(visual),
        "the keys: Tab goes through all %d targets, each once, left to right as they stand, and comes round to the logo" % len(visual), (went, visual))
     ok(len(lines) == 6 and all(good for good, _ in lines.values()),
-       "the keys' line: under the part that has the keys, 2 px of the accent in the last rows of the plate's box, the part's width and half a cell at each side; on the plate, 2 px of the ground's color across it, 2 px above its foot; read under the logo, a place, a sign, a gauge and the time, and on the plate",
+       "the keys' line: under the part that has the keys, 2 px of the accent in the last rows of the plate's box, the part's width and half a cell at each side, a place's own three cells; on the plate, 2 px of the ground's color across it, 2 px above its foot; read under the logo, a place, a sign, a gauge and the time, and on the plate",
        {k: v for k, v in lines.items() if not v[0]} or lines)
     only, _ = census(d.strip(), ground, tones)
     thick = max((cell + 2) // 5, 1)
@@ -2248,19 +2199,17 @@ def accessibility(d):
     d.key("Escape")
     d.until(lambda s: not s.focused(), "Escape to give the keyboard back")
     ok(True, "the keys: Shift+Tab goes back, round to the last one")
-    # no motion, and no waking
+    # no motion
     d.away()
-    pid = d.bar_pid()
 
     def still():
-        if time.localtime().tm_sec > 53:   # the clock's own change of minute is not motion
+        if time.localtime().tm_sec > 55:   # the clock's own change of minute is not motion
             time.sleep(61 - time.localtime().tm_sec)
-        one, ticks, woke = d.strip().data, sum(stat_of(pid, (11, 12))), wakes(pid)
-        time.sleep(3)
-        ticks, woke = sum(stat_of(pid, (11, 12))) - ticks, wakes(pid) - woke
-        return one == d.strip().data and ticks <= 3 and woke <= 30, (ticks, woke)
-    good, saw = seen(still, 8)
-    ok(good, "no motion at rest: two frames of the bar 3 s apart, with nothing touched, are the same pixels, and the bar did not wake for a frame in between: %s ticks of processor, %s wake-ups" % (saw or ("?", "?")), saw)
+        one = d.strip().data
+        time.sleep(1)
+        return one == d.strip().data, None
+    good, _ = seen(still, 8)
+    ok(good, "no motion at rest: two captures of the bar a second apart, with nothing touched, are the same pixels")
 
 
 def names(d):
@@ -2289,12 +2238,8 @@ def names(d):
     if shutil.which("fc-list"):
         fonts = lambda *ask: subprocess.run(["fc-list", *ask, "family"], env=d.env, stdin=subprocess.DEVNULL, capture_output=True, timeout=20).stdout.strip()   # noqa: E731
         lacking = ["U+%04X" % ord(c) for c in sorted(d.signs) if not fonts(":charset=%x" % ord(c))]
-        # three signs are in the curated face alone, the one spark-shell on installs: where a machine has not that face
-        # (six of CI's rows) they are boxes, and that is said, not failed
-        theirs = [] if fonts("Monaspace Neon") else [c for c in lacking if c in ("U+2317", "U+29D7", "U+23FE")]
-        ok(lacking == theirs and len(d.signs) >= 20,
-           "real glyphs: a font here holds every sign the bar drew, the hollow ones and the three families' pairs too (%d of them), so none is a missing-glyph box%s"
-           % (len(d.signs), "; but %s, which Monaspace Neon holds, the face spark-shell on installs and this machine has not" % " and ".join(theirs) if theirs else ""), lacking)
+        ok(not lacking and len(d.signs) >= 20,
+           "real glyphs: a font here holds every sign the bar drew, the hollow ones and the three families' pairs too (%d of them), so none is a missing-glyph box" % len(d.signs), lacking)
     else:
         print("  skip identity: no fc-list here: which font holds each sign is not asked", flush=True)
 
@@ -2304,16 +2249,16 @@ def geometry(d):
     s = d.rest()
     base, strip_, env = s.rects(), s.bar(), d.bar_env()
     cell, high, ground, tones = d.cell, d.high, d.ground, d.tones
-    inset, half = high // 9, cell // 2
+    inset = high // 9
     mark, plate, spaces, parts = s.find("mark"), s.plate(), s.spaces(), s.parts()
     run_end = spaces[-1].x + spaces[-1].w
     ok((strip_.height, strip_.scale, strip_.edge, mark.rect, cell, inset) == (BAR, 1, "top", (CELL, 0, MARK, BAR), CELL, 4) and env.get("BAR_FONT", "").endswith(" 12")
        and round(TEXT * 2.25) == BAR and round(TEXT * 1.5) == MARK,
        "the state file, at 16 px text (12 points): the bar is %d px high, a cell, the font's 0, is %d px, the logo %d px one cell from the edge" % (BAR, CELL, MARK),
        (strip_.height, mark.rect, env.get("BAR_FONT"), cell))
-    ok(spaces[0].x - half == mark.x + mark.w + cell == 44 and plate.rect == (49, 0, 30, BAR) and [t.x for t in spaces[1:]] == [84 + 10 * i for i in range(9)] and run_end == 174
-       and run_end - (mark.x + mark.w + cell) == 130,
-       "the run: from 44 px, the plate 30 px wide with 5 px of room at each side, nine places of 10 px with none between, 130 px in all", [t.rect for t in spaces])
+    ok(spaces[0].x == mark.x + mark.w + cell == 44 and [t.rect for t in spaces] == [(44 + 30 * i, 0, 30, BAR) for i in range(10)] and plate.rect == (44, 0, 30, BAR) and run_end == 344
+       and run_end - (mark.x + mark.w + cell) == 300,
+       "the run: from 44 px, ten places of 30 px with none between, the plate one of them, 300 px in all", [t.rect for t in spaces])
     area = next(w["rect"] for w in d.ask("get_workspaces") if w["num"] == 1)
     win = d.node(d.windows[0].pid)["rect"]
 
@@ -2321,11 +2266,11 @@ def geometry(d):
         shot = d.grab(0, 0, W, BAR + 12)
         column = shot.fall((run_end + parts[0].x) // 2, 0, ground)
         box, _, cols = plate_reads(d, shot.part(0, 0, W, BAR), plate)
-        room = [shot.part(x, 0, half, BAR).colors() == {ground} for x in (plate.x - half, plate.x + plate.w)]
-        return column == (0, BAR) and box == (49, 4, 30, 28) and all(room), (column, box, room)
+        room = shot.part(plate.x - cell, 0, cell, BAR).colors() == {ground}
+        return column == (0, BAR) and box == (44, 4, 30, 28) and room, (column, box, room)
     good, saw = seen(rows)
     ok(good and (area["x"], area["y"], area["width"], area["height"]) == (0, BAR, W, H - BAR) and win["y"] == BAR,
-       "the screen: the bar's ground is %d rows at the top, and the windows' area begins under it; the plate is 30 by 28 px, 4 px from the bar's top and bottom, with 5 px of bare ground at each side" % BAR, (saw, area, win))
+       "the screen: the bar's ground is %d rows at the top, and the windows' area begins under it; the plate is 30 by 28 px, 4 px from the bar's top and bottom, over its place's three cells, a cell of bare ground before the run" % BAR, (saw, area, win))
     line = d.line()
     want, gone, hair = plan(line, s.levels, W, run_end, OVERFLOW.split(), cell)
     ok([(t.id, t.x, t.w) for t in parts] == want and not gone and not strip_.dropped,
@@ -2383,9 +2328,9 @@ def geometry(d):
     far_ = d.until(lambda s: s.find("workspace:23") and "visible" in s.find("workspace:23").flags, "workspace 23 shown")
     extra = far_.find("workspace:23")
     good, saw = seen(lambda: (lambda r: (r[0] == (extra.x, inset, 3 * cell, high - 2 * inset) and r[1] and label_stands(r[2], cell), r[:2]))(plate_reads(d, d.strip(), extra)))
-    ok(good and [t.id for t in far_.spaces()] == [t.id for t in spaces] + ["workspace:23"] and extra.x == run_end - 3 * cell + half and extra.name == "workspace 23"
-       and [t.w for t in far_.spaces()] == [cell] * 10 + [3 * cell] and not stays(base, far_.rects(), [t.id for t in spaces]),
-       "a workspace outside 1 to 10 gets a place after the tenth: 23 is the eleventh, the plate while it is shown, and the status has not moved", (saw, far_.brief()))
+    ok(good and [t.id for t in far_.spaces()] == [t.id for t in spaces] + ["workspace:23"] and extra.rect == (run_end, 0, 3 * cell, high) and extra.name == "workspace 23"
+       and not stays(base, far_.rects()),
+       "a workspace outside 1 to 10 gets a place after the tenth: 23 is the eleventh, three cells, the plate while it is shown; no place has moved, and the status has not", (saw, far_.brief()))
     d.sway("workspace", "number", "1")
     d.until(lambda s: not s.find("workspace:23") and "visible" in s.find("workspace:1").flags, "workspace 1 shown again, and no place for 23")
     # a bar short of width: the config pins three levels, so there are numbers and gauges to give up
@@ -2465,8 +2410,8 @@ def geometry(d):
     ok(set(outs) == set(s.outputs) and all(s.bar(n).width == outs[n]["rect"]["width"] and s.bar(n).height == BAR and s.bar(n).edge == "top" for n in outs)
        and [t.id for t in s.spaces(other)] == [t.id for t in s.spaces()] == REST[1:11] and [t.id for t in s.parts(other)] == [t.id for t in s.parts()] == REST[11:]
        and s.rects() == base and here.id == "workspace:1" and here.flags == {"selected", "visible"} and there.id == "workspace:%d" % theirs and there.flags == {"visible"}
-       and "empty" not in s.find(there.id).flags and s.find(there.id).w == cell and [t.id for t in s.spaces(other) if "empty" not in t.flags] == [t.id for t in s.spaces() if "empty" not in t.flags],
-       "two screens (swaymsg create_output): a bar on each, %d px, the logo, the ten places and the same status on both; each has its own plate, on the workspace it shows, and the other screen's workspace is a full place; the first screen's bar has not moved" % BAR,
+       and "empty" not in s.find(there.id).flags and [t.rect for t in s.spaces(other)] == [t.rect for t in s.spaces()] and [t.id for t in s.spaces(other) if "empty" not in t.flags] == [t.id for t in s.spaces() if "empty" not in t.flags],
+       "two screens (swaymsg create_output): a bar on each, %d px, the logo, the ten places in the same cells and the same status on both; each has its own plate, on the workspace it shows, and the other screen's workspace is a full place; the first screen's bar has not moved" % BAR,
        s.brief())
 
     def second():
@@ -2481,7 +2426,7 @@ def geometry(d):
     d.sway("mode", "resize")
     s = d.until(lambda s: s.mode == "resize", "the binding mode in the state file")
     good, saw = seen(lambda: (lambda found: (found == [["attention"]] * 2, found))(
-        [d.grab(outs[n]["rect"]["x"] + max(t.x + t.w for t in s.spaces(n)) + (2 if n == OUT else 1) * cell + half * (n != OUT), outs[n]["rect"]["y"], 6 * cell, high).tone(ground, tones) for n in (OUT, other)]))
+        [d.grab(outs[n]["rect"]["x"] + max(t.x + t.w for t in s.spaces(n)) + cell, outs[n]["rect"]["y"], 6 * cell, high).tone(ground, tones) for n in (OUT, other)]))
     ok(good, "a binding mode stands after the workspaces on both screens' bars", saw)
     d.shot("geometry-second-screen", other)
     d.sway("mode", "default")
@@ -2546,7 +2491,7 @@ def relook(d):
     enter("identity", "a theme previewed and applied through spark-shell, the bar running")
     said = d.shell("bar", "panel", "theme", "preview", "tokyonight-night")   # the dialog's own step, by its verb
     good, saw = seen(wears(*gallery("tokyonight-night")), 20)
-    ok(said.returncode == 0 and good and d.bar_pid() == bar, "a palette looked at (spark-shell bar panel theme preview tokyonight-night): the bar wears it at once, the same process",
+    ok(said.returncode == 0 and good and d.bar_pid() == bar, "a palette looked at (spark-shell bar panel theme preview tokyonight-night): the bar wears it, the same process",
        (said.said[-160:], saw, bar, d.bar_pid()))
     said = d.shell("bar", "panel", "theme", "preview", "off")
     good, saw = seen(wears(*mine), 20)

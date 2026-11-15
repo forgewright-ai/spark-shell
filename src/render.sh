@@ -85,7 +85,7 @@ render_expr() {   # -> the sed script that renders a template, one s command a l
     if sparkbar_draws; then e="$e${NL}s|^@BAR_OWN@||${NL}/^@BAR_SWAY@/d"; [ "$BAR_TRAY" != yes ] || _rbh='s|^@BAR_HOST@||'
     else e="$e${NL}/^@BAR_OWN@/d${NL}s|^@BAR_SWAY@||"; fi
     e="$e${NL}$_rbh${NL}s|@WM_TRAY@|$WM_TRAY|g"
-    e="$e${NL}s|@FOOT_COLORS@|$(term_colors_section)|g${NL}s|@TERM_APPS@|$(esc "$TERM_APP_RE")|g"
+    e="$e${NL}s|@FOOT_COLORS@|$(term_colors_section)|g${NL}s|@FOOT_FILL@|$(term_fill)|g${NL}s|@TERM_APPS@|$(esc "$TERM_APP_RE")|g"
     if desktop_wanted; then e="$e${NL}s|@LAYOUT_SLOTS@|yes|g"; else e="$e${NL}s|@LAYOUT_SLOTS@|no|g"; fi   # sgr.sh: the five slots in foot only where the desktop's foot.ini sets them
     e="$e${NL}s|@SCREENS_CONF@|$(esc "$SCREENS_CONF")|g${NL}s|@IDLE_EXEC@|$(esc "$(idle_exec)")|g${NL}s|@KB_LAYOUT@|$(esc "$(kb_line layout)")|g${NL}s|@KB_VARIANT@|$(esc "$(kb_line variant)")|g"
     for k in POINTER_TAP POINTER_SCROLL POINTER_SPEED KEY_REPEAT_DELAY KEY_REPEAT_RATE; do

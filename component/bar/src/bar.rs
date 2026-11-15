@@ -1,8 +1,9 @@
 //! The bar, pure: the modules a status line says, each with its facts, and the look it says; the levels as
 //! they are drawn, the hand's change at once and the number's flow; where everything stands, the
 //! workspaces' ten places and their plate among them; what a bar short of width gives up; what the pointer
-//! and the keys reach and what they send back; what a frame shows, each thing in its tone; and the text of
-//! the state file. No Wayland, no sway, no file, no environment, no clock: the time is handed in.
+//! and the keys reach and what they send back, and when the pointer off the bar gives the keys back; what
+//! a frame shows, each thing in its tone; and the text of the state file. No Wayland, no sway, no file, no
+//! environment, no clock: the time is handed in.
 
 use serde_json::Value;
 
@@ -25,8 +26,8 @@ const NOTE_CELLS: i32 = 2;
 const CELLS_MOST: usize = 400;
 /// The places the workspaces always have: one for each of 1 to 10.
 pub const PLACES: i32 = 10;
-/// The plate's cells: two digits, and half a cell of padding at each side.
-const PLATE_CELLS: i32 = 3;
+/// A place's cells, the plate's too: its two digits stand in the middle two.
+const PLACE_CELLS: i32 = 3;
 /// A gauge's cells.
 pub const GAUGE_CELLS: i32 = 5;
 /// A number's digit cells; the percent sign's cell follows them.
@@ -37,8 +38,12 @@ const MODULE_GAP: i32 = 3;
 const GROUP_GAP: i32 = 5;
 /// The cells of room at the bar's right edge.
 const EDGE_CELLS: i32 = 2;
-/// What a wheel step or an arrow changes a level by, and what a click on a gauge is rounded to.
+/// What a wheel step, or Up or Down, changes a level by, and what a click on a gauge is rounded to.
 pub const STEP: i32 = 5;
+/// How far the pointer may travel off the bar, in cells, before a bar that has the keys gives them back.
+pub const TRAVEL_CELLS: i32 = 3;
+/// How far a dim part on a chip is raised from the dim color toward the text's: halfway.
+pub const RAISE: f64 = 0.5;
 /// How long a digit takes to flow, in milliseconds.
 pub const FLOW_MS: u64 = 120;
 /// How long a step of the hand waits for the status's answer, in milliseconds: within that time a line
@@ -134,12 +139,12 @@ impl State {
         }
     }
 
-    /// The sign's tone: the text's color while all is well, and muted too (the sign itself is hollow then);
-    /// dim when off or missing; red for what is wrong or records; the attention color for what asks.
+    /// The sign's tone: the text's color while all is well; dim when muted, as its gauge is, off or missing;
+    /// red for what is wrong or records; the attention color for what asks.
     pub fn sign(self) -> Tone {
         match self {
-            State::Ok | State::Muted => Tone::Text,
-            State::Off | State::Missing => Tone::Dim,
+            State::Ok => Tone::Text,
+            State::Muted | State::Off | State::Missing => Tone::Dim,
             State::Wrong | State::Records => Tone::Alert,
             State::Asks => Tone::Attention,
         }
@@ -762,7 +767,7 @@ pub enum Kind {
     Workspace,
     /// The sign or the text of a module that says toggle: a click changes something in place, and the keys stay.
     Toggle,
-    /// The gauge of a level that can be set: the arrows turn it.
+    /// The gauge of a level that can be set: a click sets it to the place clicked, Home and End to its ends.
     Level,
     Open,
 }
@@ -792,10 +797,13 @@ pub enum Tone {
     Attention,
     /// The plate and the keys' line, and nothing else.
     Accent,
-    /// The ground's color: the glyphs on the plate and on a chip.
+    /// The ground's color: the plate's digits, and the keys' line on it.
     Ground,
-    /// The chip behind spark's mark under the pointer: the mark is a picture and has no color to take.
+    /// The chip under the pointer.
     Lit,
+    /// A dim part on a chip: the dim color raised toward the text's by RAISE, so the pointer never lowers
+    /// its contrast.
+    Raised,
 }
 
 /// Where a target's click goes: to spark-shell as a click on a part, or to sway as a command.
@@ -810,9 +818,10 @@ enum To {
 pub enum What {
     /// Spark's mark, in its square.
     Mark(Rect),
-    /// A workspace's place: the pair's full glyph where a workspace exists, its light one where none does.
+    /// A workspace's place: three cells of the pair's full glyph where a workspace exists, of its light one
+    /// where none does.
     Place { full: bool },
-    /// The workspace this output shows: the plate, and its two characters.
+    /// The workspace this output shows: its place as the plate, and its two characters.
     Plate(String),
     /// A sign, a text or the three dots: glyphs, a cell each.
     Text { glyphs: Vec<String>, bold: bool },
@@ -839,7 +848,7 @@ pub struct Target {
     pub visible: bool,
     /// A workspace's place with no workspace.
     pub empty: bool,
-    /// The part's own tone: what it is drawn in, and what its chip is filled with under the pointer.
+    /// The part's own tone: what it is drawn in, at rest and on its chip.
     pub tone: Tone,
     pub what: What,
     to: To,
@@ -974,10 +983,10 @@ fn drop_order(pieces: &[Piece], overflow: &[String]) -> Vec<String> {
 
 /// The bar laid out, in cells of the bar's font.
 ///
-/// From the left: one cell, the mark, one cell, then the workspaces' run: a place of one cell for each of
-/// 1 to 10 and for every other workspace after them, none between. The place this output shows is the
-/// plate, three cells with half a cell of room at each side, so the run of ten is thirteen cells wherever
-/// the plate is (a pixel less where a cell is an odd number of pixels: the room is the same at both sides).
+/// From the left: one cell, the mark, one cell, then the workspaces' run: a place of three cells for each
+/// of 1 to 10 and for every other workspace after them, none between, so the run of ten is thirty cells.
+/// The place this output shows is the plate, in its own three cells: no place moves when another
+/// workspace is shown.
 ///
 /// From the right: two cells of room (after the tray's), then the status in the line's order: one cell
 /// between a module's parts, three between the modules of a group, five between groups. A module's parts
@@ -994,7 +1003,6 @@ fn drop_order(pieces: &[Piece], overflow: &[String]) -> Vec<String> {
 /// status, and is no target.
 pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
     let (cell, h) = (m.cell.max(1), m.height);
-    let half = cell / 2;
     let mut lay = Layout {
         width: scene.width,
         height: h,
@@ -1021,12 +1029,8 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
     // the workspaces' run
     let mut x = cell + m.mark + cell;
     for p in places(scene.workspaces, scene.output) {
-        let rect = if p.plate {
-            Rect::new(x + half, 0, PLATE_CELLS * cell, h)
-        } else {
-            Rect::new(x, 0, cell, h)
-        };
-        x += if p.plate { PLATE_CELLS * cell + 2 * half } else { cell };
+        let rect = Rect::new(x, 0, PLACE_CELLS * cell, h);
+        x += PLACE_CELLS * cell;
         if rect.right() > scene.width {
             continue;
         }
@@ -1293,6 +1297,8 @@ pub enum Key {
     BackTab,
     Left,
     Right,
+    Up,
+    Down,
     Home,
     End,
     /// Enter or Space.
@@ -1306,6 +1312,8 @@ impl Key {
         Some(match sym {
             0xff51 => Key::Left,
             0xff53 => Key::Right,
+            0xff52 => Key::Up,
+            0xff54 => Key::Down,
             0xff50 => Key::Home,
             0xff57 => Key::End,
             0xff0d | 0xff8d | 0x20 => Key::Activate,
@@ -1322,6 +1330,8 @@ impl Key {
         Some(match code {
             105 => Key::Left,
             106 => Key::Right,
+            103 => Key::Up,
+            108 => Key::Down,
             102 => Key::Home,
             107 => Key::End,
             28 | 96 | 57 => Key::Activate,
@@ -1379,10 +1389,11 @@ impl Layout {
         Rect::new(slot.x, self.inset, slot.w, self.height - 2 * self.inset)
     }
 
-    /// The chip a part becomes under the pointer: the part's width and half a cell at each side, the plate's height.
-    pub fn chip(&self, part: Rect) -> Rect {
-        let half = self.cell / 2;
-        self.boxed(Rect::new(part.x - half, 0, part.w + 2 * half, self.height))
+    /// The chip under a part the pointer is on, the plate's height: a place's own three cells, and no wider;
+    /// any other part's width and half a cell at each side.
+    pub fn chip(&self, t: &Target) -> Rect {
+        let half = if matches!(t.what, What::Place { .. }) { 0 } else { self.cell / 2 };
+        self.boxed(Rect::new(t.rect.x - half, 0, t.rect.w + 2 * half, self.height))
     }
 
     /// How thick the keys' line is: a fifth of a cell, 2 px of 10.
@@ -1391,8 +1402,8 @@ impl Layout {
     }
 
     /// The line under the part the keys are on: the last pixels inside the plate's box, as wide as the chip.
-    pub fn line(&self, part: Rect) -> Rect {
-        let (chip, stroke) = (self.chip(part), self.stroke());
+    pub fn line(&self, t: &Target) -> Rect {
+        let (chip, stroke) = (self.chip(t), self.stroke());
         Rect::new(chip.x, chip.y + chip.h - stroke, chip.w, stroke)
     }
 
@@ -1445,11 +1456,11 @@ impl Layout {
         self.act(i, button, x.floor() as i32 - r.x, y.floor() as i32 - r.y, levels)
     }
 
-    /// A key with the focus on a target. Tab and Shift+Tab go round the targets, left to right; Left and
-    /// Right do too, except on the gauge of a level that can be set, which they turn down and up as the
-    /// wheel does; Home and End set it to its ends; Enter or Space is the left button at the part's
-    /// center, and nothing on such a gauge. After it the keyboard goes back, except on a toggle, to be
-    /// switched again.
+    /// A key with the focus on a target. Tab and Shift+Tab go round the targets, left to right, and Left
+    /// and Right do too, on every part. Up and Down are the wheel's step up and down on any part of a
+    /// module whose level can be set, and the keys stay; elsewhere they do nothing. Home and End set a
+    /// level to its ends on its gauge; Enter or Space is the left button at the part's center, and nothing
+    /// on such a gauge. After it the keyboard goes back, except on a toggle, to be switched again.
     pub fn key(&self, focus: usize, k: Key, levels: &Levels) -> KeyAct {
         let n = self.targets.len();
         if n == 0 {
@@ -1462,12 +1473,11 @@ impl Layout {
         let stay = |press| KeyAct::Do { press, leave: false };
         match k {
             Key::Escape => KeyAct::Leave,
-            Key::Tab => KeyAct::Focus((focus + 1) % n),
-            Key::BackTab => KeyAct::Focus((focus + n - 1) % n),
-            Key::Right if !level => KeyAct::Focus((focus + 1) % n),
-            Key::Left if !level => KeyAct::Focus((focus + n - 1) % n),
-            Key::Right => stay(self.act(focus, 4, cx, cy, levels)),
-            Key::Left => stay(self.act(focus, 5, cx, cy, levels)),
+            Key::Tab | Key::Right => KeyAct::Focus((focus + 1) % n),
+            Key::BackTab | Key::Left => KeyAct::Focus((focus + n - 1) % n),
+            Key::Up if t.sets.is_some() => stay(self.act(focus, 4, cx, cy, levels)),
+            Key::Down if t.sets.is_some() => stay(self.act(focus, 5, cx, cy, levels)),
+            Key::Up | Key::Down => KeyAct::Nothing,
             Key::Home if level => stay(self.act(focus, 1, 0, cy, levels)),
             Key::End if level => stay(self.act(focus, 1, t.rect.w, cy, levels)),
             Key::Home | Key::End => KeyAct::Nothing,
@@ -1479,11 +1489,11 @@ impl Layout {
         }
     }
 
-    /// What a target shows, in its own tone; on its chip, in the ground's color, a gauge's light cells
-    /// still dim.
+    /// What a target shows, in its own tone, on its chip too; but a dim part on its chip is raised
+    /// halfway to the text's color. A gauge's cells keep their tones there.
     fn show(&self, t: &Target, chip: bool, v: &View, out: &mut Vec<Draw>) {
         let (cell, h) = (self.cell, self.height);
-        let tone = if chip { Tone::Ground } else { t.tone };
+        let tone = if chip && t.tone == Tone::Dim { Tone::Raised } else { t.tone };
         let glyph = |rect: Rect, text: &str, tone: Tone, bold: bool, fit: bool, shift: f64| Draw::Glyph {
             rect,
             text: text.to_string(),
@@ -1495,7 +1505,11 @@ impl Layout {
         let slot = |i: i32| Rect::new(t.rect.x + i * cell, 0, cell, h);
         match &t.what {
             What::Mark(square) => out.push(Draw::Mark { rect: *square }),
-            What::Place { full } => out.push(glyph(t.rect, if *full { v.full } else { v.light }, tone, false, true, 0.0)),
+            What::Place { full } => {
+                for i in 0..PLACE_CELLS {
+                    out.push(glyph(slot(i), if *full { v.full } else { v.light }, tone, false, true, 0.0));
+                }
+            }
             What::Plate(label) => {
                 out.push(Draw::Fill {
                     rect: self.boxed(t.rect),
@@ -1510,7 +1524,7 @@ impl Layout {
             }
             What::Gauge { full } => {
                 for i in 0..GAUGE_CELLS {
-                    let (pair, tone) = if i < *full { (v.full, tone) } else { (v.light, Tone::Dim) };
+                    let (pair, tone) = if i < *full { (v.full, t.tone) } else { (v.light, Tone::Dim) };
                     out.push(glyph(slot(i), pair, tone, false, true, 0.0));
                 }
             }
@@ -1530,9 +1544,9 @@ impl Layout {
     }
 
     /// A frame: everything the bar draws over its ground, in order. What stands whatever happens, then
-    /// each target in its tone; the part under the pointer last, as a chip filled with its own tone (the
-    /// plate does not change); and over all, the line under the part the keys are on, in the accent, or
-    /// on the plate in the ground's color and its own thickness higher.
+    /// each target in its tone; the part under the pointer last, on a chip of the lit tone (the plate does
+    /// not change); and over all, the line under the part the keys are on, in the accent, or on the plate
+    /// in the ground's color and its own thickness higher.
     pub fn frame(&self, v: &View) -> Vec<Draw> {
         let mut out = self.fixed.clone();
         let hover = v.hover.filter(|i| self.targets.get(*i).is_some_and(|t| !matches!(t.what, What::Plate(_))));
@@ -1543,8 +1557,8 @@ impl Layout {
         }
         if let Some(t) = hover.map(|i| &self.targets[i]) {
             out.push(Draw::Fill {
-                rect: self.chip(t.rect),
-                tone: t.tone,
+                rect: self.chip(t),
+                tone: Tone::Lit,
             });
             self.show(t, true, v, &mut out);
         }
@@ -1555,7 +1569,7 @@ impl Layout {
                     tone: Tone::Ground,
                 },
                 _ => Draw::Fill {
-                    rect: self.line(t.rect),
+                    rect: self.line(t),
                     tone: Tone::Accent,
                 },
             });
@@ -1573,6 +1587,47 @@ impl Layout {
                 What::Number { module, level, .. } => v.levels.flow(module, v.at).is_some_and(|f| f.to == *level),
                 _ => false,
             })
+    }
+}
+
+/// What the pointer does off the bar while a bar has the keys.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Off {
+    /// It came off the bar at a point, or the keys were taken with it there.
+    Came(f64, f64),
+    /// It moved to a point.
+    Moved(f64, f64),
+    /// A button went down.
+    Pressed,
+    /// It left: onto the bar, or onto another screen.
+    Left,
+}
+
+/// The pointer off the bar while a bar has the keys: where its travel is counted from.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Astray {
+    from: Option<(f64, f64)>,
+}
+
+impl Astray {
+    /// Whether the keys go back, as on Escape: at a button, or once the pointer is more than TRAVEL_CELLS
+    /// cells from where it came off the bar. A hand that rests on the mouse moves it less, and keeps them.
+    pub fn back(&mut self, what: Off, cell: i32) -> bool {
+        match what {
+            Off::Pressed => true,
+            Off::Came(x, y) => {
+                self.from = Some((x, y));
+                false
+            }
+            Off::Left => {
+                self.from = None;
+                false
+            }
+            Off::Moved(x, y) => {
+                let (fx, fy) = *self.from.get_or_insert((x, y));
+                (x - fx).hypot(y - fy) > (TRAVEL_CELLS * cell.max(1)) as f64
+            }
+        }
     }
 }
 
@@ -2007,7 +2062,7 @@ mod tests {
             ("mark", Rect::new(10, 0, 24, 36), Kind::Mark, "spark")
         );
         assert_eq!(mark.what, What::Mark(Rect::new(10, 6, 24, 24)));
-        assert_eq!(rect_of(&l, "workspace:1"), Rect::new(44, 0, 10, 36));
+        assert_eq!(rect_of(&l, "workspace:1"), Rect::new(44, 0, 30, 36));
         // the mark is never dropped and never made smaller
         for width in [0, 1, 30, 60, 200, 513, 4000] {
             assert_eq!(sheet(width).targets[0], *mark, "at {width}");
@@ -2015,30 +2070,17 @@ mod tests {
     }
 
     #[test]
-    fn the_run_is_ten_places_one_cell_each_whether_a_workspace_is_there_or_not() {
+    fn the_run_is_ten_places_three_cells_each_whether_a_workspace_is_there_or_not() {
         let l = sheet(1200);
         let run: Vec<&Target> = l.targets.iter().filter(|t| t.kind == Kind::Workspace).collect();
         let want: Vec<String> = (1..=10).map(|n| format!("workspace:{n}")).collect();
         assert_eq!(run.iter().map(|t| t.id.clone()).collect::<Vec<_>>(), want);
-        // 1 at 44; the plate (2) from 59 to 89, five pixels of room at each side; 3 to 10 from 94 to 174
+        // three cells each from 44, none between, the plate (2) as wide as any: the run ends at 344
         let xs: Vec<(i32, i32)> = run.iter().map(|t| (t.rect.x, t.rect.w)).collect();
-        assert_eq!(
-            xs,
-            [
-                (44, 10),
-                (59, 30),
-                (94, 10),
-                (104, 10),
-                (114, 10),
-                (124, 10),
-                (134, 10),
-                (144, 10),
-                (154, 10),
-                (164, 10)
-            ]
-        );
+        let want: Vec<(i32, i32)> = (0..10).map(|i| (44 + i * 30, 30)).collect();
+        assert_eq!(xs, want);
         assert!(run.iter().all(|t| (t.rect.y, t.rect.h) == (0, 36)));
-        assert_eq!(run.last().unwrap().rect.right() - run[0].rect.x, 130, "thirteen cells");
+        assert_eq!(run.last().unwrap().rect.right() - run[0].rect.x, 300, "thirty cells");
         // full where a workspace exists, on any output (4 is on B); light and dim where none does
         let full: Vec<bool> = run.iter().map(|t| !t.empty).collect();
         assert_eq!(full, [true, true, true, true, false, false, true, false, false, false]);
@@ -2054,11 +2096,12 @@ mod tests {
         let none = lay(1200, &mods(SHEET), &[]);
         let run: Vec<&Target> = none.targets.iter().filter(|t| t.kind == Kind::Workspace).collect();
         assert_eq!(run.len(), 10);
-        assert!(run.iter().all(|t| t.empty && t.what == What::Place { full: false } && t.rect.w == 10));
+        assert!(run.iter().all(|t| t.empty && t.what == What::Place { full: false } && t.rect.w == 30));
     }
 
     #[test]
-    fn the_plate_is_30_by_28_with_5_px_of_room_and_the_run_is_130_px_wherever_it_is() {
+    fn the_plate_is_its_place_30_by_28_and_no_place_moves_with_the_workspace_shown() {
+        let places: Vec<Rect> = (0..10).map(|i| Rect::new(44 + i * 30, 0, 30, 36)).collect();
         for n in 1..=10 {
             let here = [ws(n, &n.to_string(), "A", true, true, false)];
             let l = lay_on("A", 1200, Edge::Top, Status::Ok, &[], &Levels::default(), &here, Some("r"), &Prefs::default());
@@ -2066,19 +2109,21 @@ mod tests {
             assert_eq!(run.len(), 10);
             let plate = run[n as usize - 1];
             assert_eq!(plate.what, What::Plate(format!("{n:02}")), "two digits");
-            assert_eq!(plate.rect, Rect::new(44 + (n - 1) * 10 + 5, 0, 30, 36), "{n}");
             assert_eq!(l.boxed(plate.rect), Rect::new(plate.rect.x, 4, 30, 28), "{n}");
             assert!(plate.visible && plate.selected && !plate.empty);
-            // five pixels of room at each side, and no room between the other places
-            for pair in run.windows(2) {
-                let room = pair[1].rect.x - pair[0].rect.right();
-                let by_the_plate = pair[0].id == plate.id || pair[1].id == plate.id;
-                assert_eq!(room, if by_the_plate { 5 } else { 0 }, "{n}: {} {}", pair[0].id, pair[1].id);
-            }
-            assert_eq!(run[0].rect.x, if n == 1 { 49 } else { 44 });
-            // the run ends at 174 wherever the plate is: the mode stands one cell after it
+            // every place where it always is, the plate's too, and no room beside it
+            assert_eq!(run.iter().map(|t| t.rect).collect::<Vec<_>>(), places, "{n}");
+            // the run ends at 344 wherever the plate is: the mode stands one cell after it
             let Draw::Glyph { rect, .. } = &l.fixed[0] else { panic!() };
-            assert_eq!(rect.x, 184, "{n}");
+            assert_eq!(rect.x, 354, "{n}");
+        }
+        // nor with which workspaces exist, or ask
+        let mut all = five();
+        all[4].urgent = true;
+        for workspaces in [vec![], five(), all] {
+            let l = lay(1200, &[], &workspaces);
+            let run: Vec<Rect> = l.targets.iter().filter(|t| t.kind == Kind::Workspace).map(|t| t.rect).collect();
+            assert_eq!(run, places);
         }
     }
 
@@ -2094,25 +2139,19 @@ mod tests {
         let four = target(&b, "workspace:4");
         assert_eq!(
             (four.rect, four.what.clone(), four.visible, four.selected),
-            (Rect::new(79, 0, 30, 36), What::Plate("04".into()), true, false)
+            (Rect::new(134, 0, 30, 36), What::Plate("04".into()), true, false)
         );
         // the other output's plate is a full place here, and no plate
         let there = target(&b, "workspace:2");
         assert_eq!(
             (there.rect, there.what.clone(), there.visible, there.selected),
-            (Rect::new(54, 0, 10, 36), What::Place { full: true }, false, false)
+            (Rect::new(74, 0, 30, 36), What::Place { full: true }, false, false)
         );
         assert_eq!(target(&a, "workspace:4").what, What::Place { full: true });
-        // the sheet's narrow screen: 1 to 3 from 44, the plate from 79 to 109, 5 to 10 from 114 to 174
-        assert_eq!(
-            (
-                rect_of(&b, "workspace:1").x,
-                rect_of(&b, "workspace:3").right(),
-                rect_of(&b, "workspace:5").x,
-                rect_of(&b, "workspace:10").right()
-            ),
-            (44, 74, 114, 174)
-        );
+        // every place stands in the same cells on both
+        for (here, there) in a.targets.iter().zip(&b.targets) {
+            assert_eq!(here.rect, there.rect, "{}", here.id);
+        }
     }
 
     #[test]
@@ -2128,7 +2167,11 @@ mod tests {
         let levels = Levels::default();
         assert_eq!(
             shows(&l, "workspace:7", false, &view(&levels)),
-            [pair(Rect::new(134, 0, 10, 36), FULL, Tone::Attention)]
+            [
+                pair(Rect::new(224, 0, 10, 36), FULL, Tone::Attention),
+                pair(Rect::new(234, 0, 10, 36), FULL, Tone::Attention),
+                pair(Rect::new(244, 0, 10, 36), FULL, Tone::Attention)
+            ]
         );
         // the plate stays the plate when the workspace shown is urgent
         all[1].urgent = true;
@@ -2141,14 +2184,17 @@ mod tests {
         let l = sheet(1200);
         let levels = Levels::default();
         let v = view(&levels);
-        assert_eq!(shows(&l, "workspace:1", false, &v), [pair(Rect::new(44, 0, 10, 36), FULL, Tone::Text)]);
-        assert_eq!(shows(&l, "workspace:5", false, &v), [pair(Rect::new(114, 0, 10, 36), LIGHT, Tone::Dim)]);
+        // a place is three cells of the pair, each as wide as its cell, so the line is unbroken from place to place
+        let three = |x: i32, text: &str, tone: Tone| [0, 1, 2].map(|i| pair(Rect::new(x + i * 10, 0, 10, 36), text, tone));
+        assert_eq!(shows(&l, "workspace:1", false, &v), three(44, FULL, Tone::Text));
+        assert_eq!(shows(&l, "workspace:5", false, &v), three(164, LIGHT, Tone::Dim));
+        // the plate is its place: the accent's box, and its two bold digits in the middle of the three cells
         assert_eq!(
             shows(&l, "workspace:2", false, &v),
             [
-                fill(Rect::new(59, 4, 30, 28), Tone::Accent),
+                fill(Rect::new(74, 4, 30, 28), Tone::Accent),
                 Draw::Glyph {
-                    rect: Rect::new(59, 0, 30, 36),
+                    rect: Rect::new(74, 0, 30, 36),
                     text: "02".into(),
                     tone: Tone::Ground,
                     bold: true,
@@ -2163,10 +2209,7 @@ mod tests {
             light: "\u{25b1}",
             ..view(&levels)
         };
-        assert_eq!(
-            shows(&l, "workspace:5", false, &stone),
-            [pair(Rect::new(114, 0, 10, 36), "\u{25b1}", Tone::Dim)]
-        );
+        assert_eq!(shows(&l, "workspace:5", false, &stone), three(164, "\u{25b1}", Tone::Dim));
     }
 
     #[test]
@@ -2180,19 +2223,20 @@ mod tests {
         ];
         let a = lay(1200, &[], &all);
         assert_eq!(ids(&a)[11..], ["workspace:11", "workspace:123", "workspace:mail", "workspace:x"]);
-        // one cell each from 174, full, none between
-        assert_eq!(rect_of(&a, "workspace:11"), Rect::new(174, 0, 10, 36));
-        assert_eq!(rect_of(&a, "workspace:x"), Rect::new(204, 0, 10, 36));
+        // three cells each from 344, full, none between
+        assert_eq!(rect_of(&a, "workspace:11"), Rect::new(344, 0, 30, 36));
+        assert_eq!(rect_of(&a, "workspace:x"), Rect::new(434, 0, 30, 36));
         assert_eq!(
             (target(&a, "workspace:11").what.clone(), target(&a, "workspace:mail").tone),
             (What::Place { full: true }, Tone::Attention)
         );
-        // on a plate: the number's last two digits, or the name's first two characters
+        // on a plate: the number's last two digits, or the name's first two characters; in the same place
         let b = lay_on("B", 1200, Edge::Top, Status::Ok, &[], &Levels::default(), &all, None, &Prefs::default());
         assert_eq!(
             (rect_of(&b, "workspace:11").x, rect_of(&b, "workspace:123"), rect_of(&b, "workspace:mail").x),
-            (144, Rect::new(159, 0, 30, 36), 194)
+            (344, Rect::new(374, 0, 30, 36), 404)
         );
+        assert_eq!(rect_of(&a, "workspace:123"), rect_of(&b, "workspace:123"));
         assert_eq!(target(&b, "workspace:123").what, What::Plate("23".into()));
         assert_eq!(
             (ws(-1, "mail", "A", true, true, false).plate(), ws(-1, "x", "A", true, true, false).plate()),
@@ -2218,17 +2262,17 @@ mod tests {
         let levels = Levels::default();
         let press = |x: f64, button: u32| l.press(x, 10.0, button, &levels);
         assert_eq!(press(50.0, 1).act, Act::Sway("workspace number 1".into()));
-        assert_eq!(press(120.0, 1).act, Act::Sway("workspace number 5".into()), "no workspace 5 yet: as Super+5");
-        assert_eq!(press(70.0, 1).act, Act::Sway("workspace number 2".into()), "the plate");
-        assert_eq!(press(180.0, 1).act, Act::Sway("workspace number 11".into()));
-        assert_eq!(press(190.0, 1).act, Act::Sway("workspace \"mail box\"".into()));
+        assert_eq!(press(170.0, 1).act, Act::Sway("workspace number 5".into()), "no workspace 5 yet: as Super+5");
+        assert_eq!(press(80.0, 1).act, Act::Sway("workspace number 2".into()), "the plate");
+        assert_eq!(press(350.0, 1).act, Act::Sway("workspace number 11".into()));
+        assert_eq!(press(380.0, 1).act, Act::Sway("workspace \"mail box\"".into()));
         // the left button alone, and no level is set by it
         for button in [2, 3, 4, 5] {
             assert_eq!(press(50.0, button), Press::default());
         }
         assert_eq!(press(50.0, 1).set, None);
-        // the room beside the plate is no place
-        assert_eq!((l.hit(56.0, 10.0), l.hit(91.0, 10.0)), (None, None));
+        // no room beside the plate: the pixel before it is the first place's, and the one after it the third's
+        assert_eq!((l.hit(73.9, 10.0), l.hit(74.0, 10.0), l.hit(104.0, 10.0)), (Some(1), Some(2), Some(3)));
         assert_eq!(target(&l, "workspace:mail \"box\"").name, "workspace mail \"box\"");
     }
 
@@ -2459,10 +2503,10 @@ mod tests {
         // with nothing left of the time there is no line; with the three dots there is
         let alone = mods(r#"[{"name":"clock","group":"time","text":"13:29","cells":5,"bold":true},{"name":"notifications","group":"time","sign":"\u2691"}]"#);
         assert_eq!(lay(1200, &alone, &five()).fixed, []);
-        let l = sheet(400);
+        let l = sheet(570);
         assert_eq!(status_ids(&l), ["more", "clock.text", "notifications.name"]);
-        assert_eq!((rect_of(&l, MORE), rect_of(&l, "clock.text").x), (Rect::new(230, 0, 10, 36), 290));
-        assert_eq!(l.fixed, [fill(Rect::new(265, 9, 1, 18), Tone::Dim)]);
+        assert_eq!((rect_of(&l, MORE), rect_of(&l, "clock.text").x), (Rect::new(400, 0, 10, 36), 460));
+        assert_eq!(l.fixed, [fill(Rect::new(435, 9, 1, 18), Tone::Dim)]);
         // a group named time anywhere on the line has its line before its first module, once
         let m = mods(
             r#"[{"name":"a","group":"g","sign":"a"},{"name":"t","group":"time","sign":"t"},{"name":"u","group":"time","sign":"u"},{"name":"b","group":"h","sign":"b"}]"#,
@@ -2485,7 +2529,7 @@ mod tests {
         // the sign, a gauge's full cells (its light ones are always dim), the number, the text
         let want = [
             ("ok", Text, Some(Text), Some(Text), Text),
-            ("muted", Text, Some(Dim), None, Text),
+            ("muted", Dim, Some(Dim), None, Text),
             ("off", Dim, Some(Dim), Some(Dim), Dim),
             ("missing", Dim, None, None, Dim),
             ("wrong", Alert, Some(Text), Some(Text), Text),
@@ -2539,7 +2583,7 @@ mod tests {
         // the battery is its number as text and no sign: low, it must not read as well
         for (state, tone) in [
             ("ok", Text),
-            ("muted", Text),
+            ("muted", Dim),
             ("off", Dim),
             ("missing", Dim),
             ("wrong", Alert),
@@ -2558,12 +2602,22 @@ mod tests {
                 [glyph(Rect::new(1140, 0, 10, 36), "9", tone), glyph(Rect::new(1150, 0, 10, 36), "%", tone)],
                 "{state}"
             );
-            // and its chip under the pointer is that tone
+            // and on its chip under the pointer it keeps that tone, the dim one raised
             let v = View {
                 hover: l.find("bat.text"),
                 ..view(&levels)
             };
-            assert!(l.frame(&v).contains(&fill(Rect::new(1135, 4, 30, 28), tone)), "{state}");
+            let on_chip = if tone == Dim { Tone::Raised } else { tone };
+            let f = l.frame(&v);
+            assert_eq!(
+                f[f.len() - 3..],
+                [
+                    fill(Rect::new(1135, 4, 30, 28), Tone::Lit),
+                    glyph(Rect::new(1140, 0, 10, 36), "9", on_chip),
+                    glyph(Rect::new(1150, 0, 10, 36), "%", on_chip)
+                ],
+                "{state}"
+            );
         }
         // beside a sign the text keeps the text's color: the sign says the state
         for (state, sign) in [("wrong", Alert), ("asks", Attention), ("records", Alert)] {
@@ -2609,14 +2663,14 @@ mod tests {
             (l.targets[0].rect, l.targets[0].what.clone()),
             (Rect::new(8, 0, 18, 27), What::Mark(Rect::new(8, 4, 18, 18)))
         );
-        // the run from 34: a place of 8, the plate of 24 with 4 of room at each side, thirteen cells in all
+        // the run from 34: places of 24, the plate one of them, thirty cells in all
         assert_eq!(
             (rect_of(&l, "workspace:1"), plate_of(&l), rect_of(&l, "workspace:3")),
-            (Rect::new(34, 0, 8, 27), Rect::new(46, 0, 24, 27), Rect::new(74, 0, 8, 27))
+            (Rect::new(34, 0, 24, 27), Rect::new(58, 0, 24, 27), Rect::new(82, 0, 24, 27))
         );
-        assert_eq!((rect_of(&l, "workspace:10").right(), rect_of(&l, "workspace:10").right() - 34), (138, 13 * 8));
+        assert_eq!((rect_of(&l, "workspace:10").right(), rect_of(&l, "workspace:10").right() - 34), (274, 30 * 8));
         // the plate's box: a ninth of the height in from the top and the bottom
-        assert_eq!(l.boxed(plate_of(&l)), Rect::new(46, 3, 24, 21));
+        assert_eq!(l.boxed(plate_of(&l)), Rect::new(58, 3, 24, 21));
         // the status two cells from the edge, in gaps of 1, 3 and 5 cells
         let at = |id: &str| rect_of(&l, id);
         assert_eq!(
@@ -2637,46 +2691,45 @@ mod tests {
         assert_eq!(l.fixed.last(), Some(&hairline));
         assert_eq!((7, 27 - 7 - 13), (7, 7));
         // the mode one cell after the run, a glyph a cell
-        assert_eq!(l.fixed[0], glyph(Rect::new(146, 0, 8, 27), "r", Tone::Attention));
+        assert_eq!(l.fixed[0], glyph(Rect::new(282, 0, 8, 27), "r", Tone::Attention));
         // a chip: half a cell at each side, the plate's height; the keys' line the last two pixels inside it
-        let bt = at("bt.name");
+        let bt = target(&l, "bt.name");
         assert_eq!((l.chip(bt), l.line(bt)), (Rect::new(556, 3, 16, 21), Rect::new(556, 22, 16, 2)));
         assert_eq!(
-            (l.chip(at("out.gauge")), l.chip(at("mark"))),
+            (l.chip(target(&l, "out.gauge")), l.chip(target(&l, "mark"))),
             (Rect::new(652, 3, 48, 21), Rect::new(4, 3, 26, 21))
         );
-        assert_eq!(l.plate_line(plate_of(&l)), Rect::new(46, 20, 24, 2), "two pixels of the accent under it");
+        // a place's chip is its own three cells, and its line as wide
+        let three = target(&l, "workspace:3");
+        assert_eq!((l.chip(three), l.line(three)), (Rect::new(82, 3, 24, 21), Rect::new(82, 22, 24, 2)));
+        assert_eq!(l.plate_line(plate_of(&l)), Rect::new(58, 20, 24, 2), "two pixels of the accent under it");
         // a digit's cell is as tall as the plate
         let levels = levels_of(&mods(SHEET));
         assert_eq!(shows(&l, "out.pct", false, &view(&levels))[0], glyph(Rect::new(712, 3, 8, 21), "5", Tone::Text));
-        // the run 138, five cells, the status's 57 and the edge's two: 650 fits whole, and 649 gives up the number
-        assert!(sized(&M8, 650, &five(), None).dropped.is_empty());
-        assert_eq!(sized(&M8, 649, &five(), None).dropped, ["out.pct"]);
+        // the run 274, five cells, the status's 57 and the edge's two: 786 fits whole, and 785 gives up the number
+        assert!(sized(&M8, 786, &five(), None).dropped.is_empty());
+        assert_eq!(sized(&M8, 785, &five(), None).dropped, ["out.pct"]);
     }
 
     #[test]
-    fn at_a_cell_of_an_odd_number_of_pixels_the_room_is_the_same_at_both_sides() {
+    fn at_a_cell_of_an_odd_number_of_pixels_the_places_are_whole_cells_too() {
         assert_eq!((Metrics::for_text(24.0, 14.4), M15.inset()), (M15, 6));
         let l = sized(&M15, 2000, &five(), None);
-        // the plate of 45 with 7 of room at each side, where half a cell is 7 and a pixel is left over
+        // places of 45, the plate one of them
         assert_eq!(
             (rect_of(&l, "workspace:1"), plate_of(&l), rect_of(&l, "workspace:3")),
-            (Rect::new(66, 0, 15, 54), Rect::new(88, 0, 45, 54), Rect::new(140, 0, 15, 54))
+            (Rect::new(66, 0, 45, 54), Rect::new(111, 0, 45, 54), Rect::new(156, 0, 45, 54))
         );
-        assert_eq!(l.boxed(plate_of(&l)), Rect::new(88, 6, 45, 42));
-        // so the run is a pixel short of thirteen cells, and as wide wherever the plate is
+        assert_eq!(l.boxed(plate_of(&l)), Rect::new(111, 6, 45, 42));
+        // the run is thirty cells, to the pixel, wherever the plate is
         for n in 1..=10 {
             let here = [ws(n, &n.to_string(), "A", true, true, false)];
             let l = sized(&M15, 2000, &here, Some("r"));
-            let plate = plate_of(&l);
             let run: Vec<Rect> = l.targets.iter().filter(|t| t.kind == Kind::Workspace).map(|t| t.rect).collect();
-            for pair in run.windows(2) {
-                let by_the_plate = pair[0] == plate || pair[1] == plate;
-                assert_eq!(pair[1].x - pair[0].right(), if by_the_plate { 7 } else { 0 }, "{n}");
-            }
-            assert_eq!(run[0].x, if n == 1 { 73 } else { 66 }, "{n}");
+            let want: Vec<Rect> = (0..10).map(|i| Rect::new(66 + i * 45, 0, 45, 54)).collect();
+            assert_eq!(run, want, "{n}");
             let Draw::Glyph { rect, .. } = &l.fixed[0] else { panic!() };
-            assert_eq!(rect.x, 66 + 13 * 15 - 1 + 15, "{n}: the mode one cell after the run");
+            assert_eq!(rect.x, 66 + 30 * 15 + 15, "{n}: the mode one cell after the run");
         }
         // the status: whole cells from two cells before the edge
         let at = |id: &str| rect_of(&l, id);
@@ -2687,15 +2740,18 @@ mod tests {
         // the hairline: a tenth of a cell wide, in the middle of the 75 before the time, 14 from the top and from the bottom
         assert_eq!(l.fixed, [fill(Rect::new(1797, 14, 2, 26), Tone::Dim)]);
         assert_eq!((1797 - (1835 - 75), 1835 - 1799), (37, 36));
-        // a chip: 7 at each side; the keys' line a fifth of a cell thick, the last pixels inside the plate's box
-        let flag = at("notifications.name");
+        // a chip: 7 at each side, where half a cell is 7 and a pixel is left over; the keys' line a fifth of a
+        // cell thick, the last pixels inside the plate's box
+        let flag = target(&l, "notifications.name");
         assert_eq!((l.chip(flag), l.line(flag)), (Rect::new(1948, 6, 29, 42), Rect::new(1948, 45, 29, 3)));
-        assert_eq!(l.plate_line(plate_of(&l)), Rect::new(88, 42, 45, 3), "three pixels of the accent under it");
-        // the chips of two parts a cell apart do not meet, at any size
+        assert_eq!(l.plate_line(plate_of(&l)), Rect::new(111, 42, 45, 3), "three pixels of the accent under it");
+        // the chips of two parts a cell apart do not meet, at any size, and a place's chip ends with its cells
         for (m, width) in [(&M8, 1000), (&M, 1200), (&M15, 2000)] {
             let l = sized(m, width, &five(), None);
-            let (sign, gauge) = (l.chip(rect_of(&l, "out.name")), l.chip(rect_of(&l, "out.gauge")));
+            let (sign, gauge) = (l.chip(target(&l, "out.name")), l.chip(target(&l, "out.gauge")));
             assert!(sign.right() <= gauge.x, "{sign:?} {gauge:?}");
+            let place = target(&l, "workspace:3");
+            assert_eq!(l.chip(place), l.boxed(place.rect));
         }
     }
 
@@ -2733,20 +2789,20 @@ mod tests {
                     assert!(!over(&pair[0], &pair[1]), "{:?} over {:?} at {px} px, {width}", pair[0], pair[1]);
                 }
             }
-            // on a bar wide enough for all of it: the plate's room, its box, the hairline and the line, by the same rules
+            // on a bar wide enough for all of it: the plate in its place, its box, the hairline and the line, by the same rules
             let l = sized(&m, cell * 120, &five(), None);
             assert!(l.dropped.is_empty(), "{px} px");
             let plate = plate_of(&l);
             assert_eq!(
-                (plate.x - rect_of(&l, "workspace:1").right(), rect_of(&l, "workspace:3").x - plate.right()),
-                (half, half),
+                (
+                    plate.x - rect_of(&l, "workspace:1").right(),
+                    rect_of(&l, "workspace:3").x - plate.right(),
+                    plate.w
+                ),
+                (0, 0, 3 * cell),
                 "{px} px"
             );
-            assert_eq!(
-                rect_of(&l, "workspace:10").right() - rect_of(&l, "workspace:1").x,
-                12 * cell + 2 * half,
-                "{px} px"
-            );
+            assert_eq!(rect_of(&l, "workspace:10").right() - rect_of(&l, "workspace:1").x, 30 * cell, "{px} px");
             let boxed = l.boxed(plate);
             assert_eq!(
                 (boxed.y, boxed.y + boxed.h),
@@ -2768,11 +2824,11 @@ mod tests {
                 (line.y * 4 - h).abs() <= 2 && line.w >= 1 && (line.w * 10 - cell).abs() <= 5,
                 "{px} px: {line:?}"
             );
-            let part = rect_of(&l, "bt.name");
+            let part = target(&l, "bt.name");
             let (chip, under) = (l.chip(part), l.line(part));
             assert_eq!(
                 (chip.x, chip.right(), chip.y, chip.h),
-                (part.x - half, part.right() + half, boxed.y, boxed.h),
+                (part.rect.x - half, part.rect.right() + half, boxed.y, boxed.h),
                 "{px} px"
             );
             assert_eq!((under.x, under.w, under.y + under.h), (chip.x, chip.w, chip.y + chip.h), "{px} px");
@@ -2788,7 +2844,8 @@ mod tests {
     }
 
     #[test]
-    fn under_the_pointer_a_part_becomes_a_chip_in_its_own_tone() {
+    fn under_the_pointer_a_part_stands_on_a_lit_chip_in_its_own_tone() {
+        use Tone::{Alert, Attention, Dim, Lit, Raised, Text};
         let l = sheet(1200);
         let levels = levels_of(&mods(SHEET));
         let rest = l.frame(&view(&levels));
@@ -2800,62 +2857,62 @@ mod tests {
             l.frame(&v)
         };
         // the chip: the part's width and half a cell at each side, the plate's height
-        assert_eq!(l.chip(Rect::new(650, 0, 10, 36)), Rect::new(645, 4, 20, 28));
-        // a sign: filled with the text's color, the glyph in the ground's; drawn last, over what is beside it
+        assert_eq!(l.chip(target(&l, "bt.name")), Rect::new(645, 4, 20, 28));
+        // a sign: the chip in the lit tone and the glyph in its own, as at rest; drawn last, over what is beside it
         let f = over("bt.name");
         assert_eq!(
             f[f.len() - 2..],
-            [
-                fill(Rect::new(645, 4, 20, 28), Tone::Text),
-                glyph(Rect::new(650, 0, 10, 36), "\u{2726}", Tone::Ground)
-            ]
+            [fill(Rect::new(645, 4, 20, 28), Lit), glyph(Rect::new(650, 0, 10, 36), "\u{2726}", Text)]
         );
         assert_eq!(f.len(), rest.len() + 1, "one chip, and each part lights alone");
-        // a gauge: its full cells in the ground's color, its light ones still dim
+        // a gauge: its cells keep their tones, the full ones the text's and the light ones dim
         let f = over("out.gauge");
-        assert_eq!(f[f.len() - 6], fill(Rect::new(765, 4, 60, 28), Tone::Text));
-        assert_eq!(tones(&f[f.len() - 5..]), [Tone::Ground, Tone::Ground, Tone::Ground, Tone::Dim, Tone::Dim]);
+        assert_eq!(f[f.len() - 6], fill(Rect::new(765, 4, 60, 28), Lit));
+        assert_eq!(f[f.len() - 5..], shows(&l, "out.gauge", false, &view(&levels))[..]);
+        assert_eq!(tones(&f[f.len() - 5..]), [Text, Text, Text, Dim, Dim]);
         // a number: as wide as the digits drawn and the percent sign
         let f = over("out.pct");
-        assert_eq!(f[f.len() - 4], fill(Rect::new(835, 4, 40, 28), Tone::Text));
-        assert_eq!(tones(&f[f.len() - 3..]), [Tone::Ground; 3]);
+        assert_eq!(f[f.len() - 4], fill(Rect::new(835, 4, 40, 28), Lit));
+        assert_eq!(tones(&f[f.len() - 3..]), [Text; 3]);
         // a text: the time stays bold on its chip
         let f = over("clock.text");
-        assert_eq!(f[f.len() - 6], fill(Rect::new(1085, 4, 60, 28), Tone::Text));
-        assert!(f[f.len() - 5..].iter().all(|d| matches!(
-            d,
-            Draw::Glyph {
-                tone: Tone::Ground,
-                bold: true,
-                ..
-            }
-        )));
-        // a place: a workspace's in the text's color, an empty one's dim
+        assert_eq!(f[f.len() - 6], fill(Rect::new(1085, 4, 60, 28), Lit));
+        assert!(f[f.len() - 5..].iter().all(|d| matches!(d, Draw::Glyph { tone: Text, bold: true, .. })));
+        // a place: its chip is its own three cells in the plate's box, and no wider; a workspace's glyphs as at rest
         let f = over("workspace:7");
-        assert_eq!(
-            f[f.len() - 2..],
-            [fill(Rect::new(129, 4, 20, 28), Tone::Text), pair(Rect::new(134, 0, 10, 36), FULL, Tone::Ground)]
-        );
+        assert_eq!(f[f.len() - 4], fill(Rect::new(224, 4, 30, 28), Lit));
+        assert_eq!(f[f.len() - 3..], shows(&l, "workspace:7", false, &view(&levels))[..]);
+        assert_eq!(tones(&f[f.len() - 3..]), [Text; 3]);
+        // an empty place is dim: on its chip the dim tone is raised halfway to the text's
         let f = over("workspace:5");
-        assert_eq!(
-            f[f.len() - 2..],
-            [fill(Rect::new(109, 4, 20, 28), Tone::Dim), pair(Rect::new(114, 0, 10, 36), LIGHT, Tone::Ground)]
-        );
+        assert_eq!(f[f.len() - 4], fill(Rect::new(164, 4, 30, 28), Lit));
+        assert_eq!(f[f.len() - 3..], [0, 1, 2].map(|i| pair(Rect::new(164 + i * 10, 0, 10, 36), LIGHT, Raised)));
+        // the chips of the places beside the plate end where its box begins and begin where it ends
+        assert_eq!((l.chip(target(&l, "workspace:1")).right(), l.chip(target(&l, "workspace:3")).x), (74, 104));
         // the plate does not change
         assert_eq!(over("workspace:2"), rest);
-        // the mark is a picture: a chip in the lit color behind it
+        // the mark is a picture: a chip in the lit tone behind it
         let f = over("mark");
         assert_eq!(
             f[f.len() - 2..],
             [
-                fill(Rect::new(5, 4, 34, 28), Tone::Lit),
+                fill(Rect::new(5, 4, 34, 28), Lit),
                 Draw::Mark {
                     rect: Rect::new(10, 6, 24, 24)
                 }
             ]
         );
-        // a chip takes the part's tone whatever it is: red for what is wrong, dim for what is off, the attention color for what asks
-        for (state, tone) in [("wrong", Tone::Alert), ("off", Tone::Dim), ("asks", Tone::Attention), ("muted", Tone::Text)] {
+        // a sign keeps its tone on its chip whatever it is: red for what is wrong, the attention color for what asks;
+        // a dim one, muted, off or missing, is raised
+        for (state, tone) in [
+            ("ok", Text),
+            ("wrong", Alert),
+            ("records", Alert),
+            ("asks", Attention),
+            ("muted", Raised),
+            ("off", Raised),
+            ("missing", Raised),
+        ] {
             let (l, levels) = in_state(state);
             let v = View {
                 hover: l.find("out.name"),
@@ -2864,14 +2921,23 @@ mod tests {
             let f = l.frame(&v);
             assert_eq!(
                 f[f.len() - 2..],
-                [
-                    fill(Rect::new(1025, 4, 20, 28), tone),
-                    glyph(Rect::new(1030, 0, 10, 36), "\u{25c0}", Tone::Ground)
-                ],
+                [fill(Rect::new(1025, 4, 20, 28), Lit), glyph(Rect::new(1030, 0, 10, 36), "\u{25c0}", tone)],
                 "{state}"
             );
         }
-        // an urgent workspace's chip is the attention color, and the three dots' is dim
+        // off: the number and the text are dim, and raised on their chips; the gauge's cells keep the dim tone
+        let (off, off_levels) = in_state("off");
+        let on = |id: &str| {
+            let v = View {
+                hover: off.find(id),
+                ..view(&off_levels)
+            };
+            tones(&off.frame(&v))
+        };
+        assert_eq!(on("out.pct")[on("out.pct").len() - 4..], [Lit, Raised, Raised, Raised]);
+        assert_eq!(on("out.text")[on("out.text").len() - 3..], [Lit, Raised, Raised]);
+        assert_eq!(on("out.gauge")[on("out.gauge").len() - 6..], [Lit, Dim, Dim, Dim, Dim, Dim]);
+        // an urgent workspace keeps the attention color on its chip, and the three dots, dim, are raised
         let mut all = five();
         all[4].urgent = true;
         let l = lay(1200, &[], &all);
@@ -2879,8 +2945,9 @@ mod tests {
             hover: l.find("workspace:7"),
             ..view(&levels)
         };
-        assert!(l.frame(&v).contains(&fill(Rect::new(129, 4, 20, 28), Tone::Attention)));
-        let l = sheet(400);
+        let f = l.frame(&v);
+        assert_eq!(tones(&f[f.len() - 4..]), [Lit, Attention, Attention, Attention]);
+        let l = sheet(570);
         let v = View {
             hover: l.find(MORE),
             ..view(&levels)
@@ -2888,11 +2955,21 @@ mod tests {
         let f = l.frame(&v);
         assert_eq!(
             f[f.len() - 2..],
-            [
-                fill(Rect::new(225, 4, 20, 28), Tone::Dim),
-                glyph(Rect::new(230, 0, 10, 36), ELLIPSIS, Tone::Ground)
-            ]
+            [fill(Rect::new(395, 4, 20, 28), Lit), glyph(Rect::new(400, 0, 10, 36), ELLIPSIS, Raised)]
         );
+        // nothing is drawn in the ground's color on a chip, and the lit and the raised tones are a chip's alone
+        let l = sheet(1200);
+        assert!(!tones(&rest).iter().any(|t| matches!(t, Lit | Raised)));
+        for i in 0..l.targets.len() {
+            let v = View {
+                hover: Some(i),
+                ..view(&levels)
+            };
+            let f = l.frame(&v);
+            let plate = matches!(l.targets[i].what, What::Plate(_));
+            assert_eq!(tones(&f).iter().filter(|t| **t == Lit).count(), usize::from(!plate), "{}", l.targets[i].id);
+            assert_eq!(tones(&f).iter().filter(|t| **t == Tone::Ground).count(), 1, "the plate's digits alone");
+        }
         // no pointer, or one past the last target: no chip
         let v = View {
             hover: Some(999),
@@ -2905,8 +2982,9 @@ mod tests {
     fn the_keys_line_is_two_pixels_of_accent_at_the_plates_foot() {
         let l = sheet(1200);
         let levels = levels_of(&mods(SHEET));
-        // the last two pixels inside the plate's box, as wide as the part and half a cell at each side
-        assert_eq!(l.line(Rect::new(650, 0, 10, 36)), Rect::new(645, 30, 20, 2));
+        // the last two pixels inside the plate's box, as wide as the chip: the part and half a cell at each side,
+        // a place's own three cells
+        assert_eq!(l.line(target(&l, "bt.name")), Rect::new(645, 30, 20, 2));
         let rest = l.frame(&view(&levels));
         for (id, line) in [
             ("bt.name", Rect::new(645, 30, 20, 2)),
@@ -2914,8 +2992,8 @@ mod tests {
             ("out.gauge", Rect::new(765, 30, 60, 2)),
             ("out.pct", Rect::new(835, 30, 40, 2)),
             ("clock.text", Rect::new(1085, 30, 60, 2)),
-            ("workspace:7", Rect::new(129, 30, 20, 2)),
-            ("workspace:5", Rect::new(109, 30, 20, 2)),
+            ("workspace:7", Rect::new(224, 30, 30, 2)),
+            ("workspace:5", Rect::new(164, 30, 30, 2)),
             ("mark", Rect::new(5, 30, 34, 2)),
         ] {
             let v = View {
@@ -2934,12 +3012,12 @@ mod tests {
         };
         let f = l.frame(&v);
         assert_eq!(f.last(), Some(&fill(Rect::new(765, 30, 60, 2), Tone::Accent)));
-        assert!(f.contains(&fill(Rect::new(835, 4, 40, 28), Tone::Text)));
+        assert!(f.contains(&fill(Rect::new(835, 4, 40, 28), Tone::Lit)));
         // the accent is on the plate and the line and nowhere else
         let accents: Vec<&Draw> = f.iter().filter(|d| tones(std::slice::from_ref(d)) == [Tone::Accent]).collect();
         assert_eq!(
             accents,
-            [&fill(Rect::new(59, 4, 30, 28), Tone::Accent), &fill(Rect::new(765, 30, 60, 2), Tone::Accent)]
+            [&fill(Rect::new(74, 4, 30, 28), Tone::Accent), &fill(Rect::new(765, 30, 60, 2), Tone::Accent)]
         );
     }
 
@@ -2950,23 +3028,23 @@ mod tests {
         let rest = l.frame(&view(&levels));
         // the accent on the accent could not be seen: two pixels as wide as the plate, in the ground's color, raised
         // by their own thickness so that two pixels of the accent show under them
-        let line = l.plate_line(Rect::new(59, 0, 30, 36));
-        assert_eq!(line, Rect::new(59, 28, 30, 2));
+        let line = l.plate_line(Rect::new(74, 0, 30, 36));
+        assert_eq!(line, Rect::new(74, 28, 30, 2));
         assert_eq!(
-            (line.y + line.h, l.boxed(Rect::new(59, 0, 30, 36)).y + 28),
+            (line.y + line.h, l.boxed(Rect::new(74, 0, 30, 36)).y + 28),
             (30, 32),
             "the plate's foot is two pixels lower"
         );
         // every other part's line stays at the plate's foot, two pixels lower
-        assert_eq!(l.line(Rect::new(94, 0, 10, 36)).y, 30);
+        assert_eq!(l.line(target(&l, "workspace:3")).y, 30);
         let v = View {
             focus: l.find("workspace:2"),
             ..view(&levels)
         };
         let f = l.frame(&v);
-        assert_eq!((f.last(), &f[..f.len() - 1]), (Some(&fill(Rect::new(59, 28, 30, 2), Tone::Ground)), &rest[..]));
+        assert_eq!((f.last(), &f[..f.len() - 1]), (Some(&fill(Rect::new(74, 28, 30, 2), Tone::Ground)), &rest[..]));
         // it lies inside the plate's fill, which is drawn before it, and the plate's own accent is the only one
-        let plate = fill(Rect::new(59, 4, 30, 28), Tone::Accent);
+        let plate = fill(Rect::new(74, 4, 30, 28), Tone::Accent);
         assert!(f.iter().position(|d| *d == plate).unwrap() < f.len() - 1);
         assert_eq!(f.iter().filter(|d| tones(std::slice::from_ref(*d)) == [Tone::Accent]).count(), 1);
         // the plate wherever it is, and on a workspace past the tenth
@@ -2976,7 +3054,7 @@ mod tests {
             focus: l.find("workspace:123"),
             ..view(&levels)
         };
-        assert_eq!(l.frame(&v).last(), Some(&fill(Rect::new(149, 28, 30, 2), Tone::Ground)));
+        assert_eq!(l.frame(&v).last(), Some(&fill(Rect::new(344, 28, 30, 2), Tone::Ground)));
         // every other target keeps the accent: no other line is the ground's color
         let l = sheet(1200);
         for i in (0..l.targets.len()).filter(|i| l.targets[*i].id != "workspace:2") {
@@ -2990,78 +3068,78 @@ mod tests {
 
     #[test]
     fn short_of_width_the_numbers_go_then_the_gauges_then_whole_modules() {
-        // the run ends at 174, five cells of room, the status's 570 and the edge's 20: 814 fits whole
-        assert!(sheet(814).dropped.is_empty());
+        // the run ends at 344, five cells of room, the status's 570 and the edge's 20: 984 fits whole
+        assert!(sheet(984).dropped.is_empty());
         // one pixel less: every pinned control gives up its number, and nothing else
-        let l = sheet(813);
+        let l = sheet(983);
         assert_eq!(l.dropped, ["out.pct"]);
         assert_eq!((l.find("out.pct"), l.find(MORE)), (None, None));
         assert_eq!(
             (rect_of(&l, "out.gauge").right(), rect_of(&l, "mic.name").x),
-            (483, 513),
+            (653, 683),
             "three cells to the next module"
         );
-        assert_eq!(sheet(764).dropped, ["out.pct"]);
+        assert_eq!(sheet(934).dropped, ["out.pct"]);
         // then its gauge: the sign alone stays
-        let l = sheet(763);
+        let l = sheet(933);
         assert_eq!(l.dropped, ["out.pct", "out.gauge"]);
         assert_eq!(
             (l.find("out.gauge"), rect_of(&l, "out.name").right(), rect_of(&l, "mic.name").x),
-            (None, 433, 463)
+            (None, 603, 633)
         );
-        assert_eq!(sheet(704).dropped, ["out.pct", "out.gauge"]);
+        assert_eq!(sheet(874).dropped, ["out.pct", "out.gauge"]);
         // then modules, from the left: the dots' cell and its gap take the room of the first, so the second goes with it
-        let l = sheet(703);
+        let l = sheet(873);
         assert_eq!(l.dropped, ["out.pct", "out.gauge", "lan", "bt"]);
         assert_eq!(status_ids(&l)[..2], ["more", "wifi.name"]);
-        assert_eq!(sheet(684).dropped.len(), 4);
-        assert_eq!(sheet(683).dropped[4..], ["wifi"]);
-        assert_eq!(sheet(623).dropped[4..], ["wifi", "out"]);
-        assert_eq!(sheet(583).dropped[4..], ["wifi", "out", "mic"]);
-        assert_eq!(sheet(523).dropped[4..], ["wifi", "out", "mic", "light"]);
+        assert_eq!(sheet(854).dropped.len(), 4);
+        assert_eq!(sheet(853).dropped[4..], ["wifi"]);
+        assert_eq!(sheet(793).dropped[4..], ["wifi", "out"]);
+        assert_eq!(sheet(753).dropped[4..], ["wifi", "out", "mic"]);
+        assert_eq!(sheet(693).dropped[4..], ["wifi", "out", "mic", "light"]);
         // the time's group stays, and the run: nothing of either is ever named
-        let l = sheet(483);
+        let l = sheet(653);
         assert_eq!(l.dropped, ["out.pct", "out.gauge", "lan", "bt", "wifi", "out", "mic", "light", "kb"]);
         assert_eq!(status_ids(&l), ["more", "clock.text", "notifications.name"]);
-        assert_eq!(sheet(394).targets, {
+        assert_eq!(sheet(564).targets, {
             let mut same = l.targets.clone();
             for t in same.iter_mut().filter(|t| t.kind == Kind::Open) {
-                t.rect.x -= 483 - 394;
+                t.rect.x -= 653 - 564;
             }
             same
         });
         // a bar with no room even for the time shows the mark and the run alone
-        let l = sheet(393);
+        let l = sheet(563);
         assert_eq!(status_ids(&l), Vec::<&str>::new());
         assert_eq!(l.targets.len(), 11);
         assert!(l.fixed.is_empty());
         // every pinned control gives up its number at once, in the line's order, and then every gauge
         let two = mods(&SHEET.replace(r#""level":40,"set":true,"pinned":false"#, r#""level":40,"set":true,"pinned":true"#));
-        // the microphone's gauge and number are 11 cells more: 924 fits whole
-        assert!(lay(924, &two, &five()).dropped.is_empty());
-        assert_eq!(lay(923, &two, &five()).dropped, ["out.pct", "mic.pct"]);
-        assert_eq!(lay(823, &two, &five()).dropped, ["out.pct", "mic.pct", "out.gauge", "mic.gauge"]);
+        // the microphone's gauge and number are 11 cells more: 1094 fits whole
+        assert!(lay(1094, &two, &five()).dropped.is_empty());
+        assert_eq!(lay(1093, &two, &five()).dropped, ["out.pct", "mic.pct"]);
+        assert_eq!(lay(993, &two, &five()).dropped, ["out.pct", "mic.pct", "out.gauge", "mic.gauge"]);
     }
 
     #[test]
     fn three_dots_stand_for_the_modules_left_out_and_open_home() {
-        let l = sheet(703);
-        // the status is 44 cells from 243: the dots' cell, five cells, then wifi
+        let l = sheet(873);
+        // the status is 44 cells from 413: the dots' cell, five cells, then wifi
         let more = target(&l, MORE);
         assert_eq!(
             (more.rect, more.kind, more.name.as_str(), more.tone),
-            (Rect::new(243, 0, 10, 36), Kind::Open, "more", Tone::Dim)
+            (Rect::new(413, 0, 10, 36), Kind::Open, "more", Tone::Dim)
         );
-        assert_eq!(rect_of(&l, "wifi.name").x, 303);
+        assert_eq!(rect_of(&l, "wifi.name").x, 473);
         let levels = Levels::default();
-        assert_eq!(shows(&l, MORE, false, &view(&levels)), [glyph(Rect::new(243, 0, 10, 36), ELLIPSIS, Tone::Dim)]);
+        assert_eq!(shows(&l, MORE, false, &view(&levels)), [glyph(Rect::new(413, 0, 10, 36), ELLIPSIS, Tone::Dim)]);
         // a click on them is a click on logo, as one on the mark is
-        let c = send(l.press(245.0, 5.0, 1, &levels).act);
+        let c = send(l.press(415.0, 5.0, 1, &levels).act);
         assert_eq!((c.name.as_str(), c.instance.as_str(), c.relative_x, c.width), ("logo", "", 2, 10));
         let c = send(l.press(20.0, 10.0, 1, &levels).act);
         assert_eq!((c.name.as_str(), c.instance.as_str(), c.button, c.relative_x, c.width), ("logo", "", 1, 10, 24));
         // a number or a gauge given up is no module left out: no dots
-        assert_eq!(sheet(763).find(MORE), None);
+        assert_eq!(sheet(933).find(MORE), None);
     }
 
     #[test]
@@ -3069,13 +3147,13 @@ mod tests {
         let prefs = Prefs::new("kb  out clock", 0, "");
         let at = |width: i32| lay_with(width, Status::Ok, &mods(SHEET), &five(), &prefs).dropped;
         // lan, bt, wifi, mic and light are not named: they leave first, from the left
-        assert_eq!(at(623)[2..], ["lan", "bt", "wifi", "mic"]);
-        assert_eq!(at(583)[2..], ["lan", "bt", "wifi", "mic", "light"]);
+        assert_eq!(at(793)[2..], ["lan", "bt", "wifi", "mic"]);
+        assert_eq!(at(753)[2..], ["lan", "bt", "wifi", "mic", "light"]);
         // then the named ones in BAR_OVERFLOW's order; the time's group stays though it is named
-        assert_eq!(at(543)[2..], ["lan", "bt", "wifi", "mic", "light", "kb"]);
-        assert_eq!(at(453)[2..], ["lan", "bt", "wifi", "mic", "light", "kb", "out"]);
-        assert_eq!(at(394).len(), 9);
-        let l = lay_with(394, Status::Ok, &mods(SHEET), &five(), &prefs);
+        assert_eq!(at(713)[2..], ["lan", "bt", "wifi", "mic", "light", "kb"]);
+        assert_eq!(at(623)[2..], ["lan", "bt", "wifi", "mic", "light", "kb", "out"]);
+        assert_eq!(at(564).len(), 9);
+        let l = lay_with(564, Status::Ok, &mods(SHEET), &five(), &prefs);
         assert_eq!(status_ids(&l), ["more", "clock.text", "notifications.name"]);
         assert_eq!(Prefs::new("", 0, "").overflow, Vec::<String>::new());
     }
@@ -3090,11 +3168,11 @@ mod tests {
         assert_eq!((Prefs::new("", 96, "A").tray_on("A"), Prefs::new("", 96, "B").tray_on("A")), (96, 0));
         let other = lay_with(1200, Status::Ok, &mods(SHEET), &five(), &Prefs::new("", 96, "B"));
         assert_eq!(rect_of(&other, "notifications.name").right(), 1180);
-        // the room counts against the width: what fits at 814 does not with 96 px less
-        assert_eq!(lay_with(814, Status::Ok, &mods(SHEET), &five(), &prefs).dropped, ["out.pct", "out.gauge"]);
+        // the room counts against the width: what fits at 984 does not with 96 px less
+        assert_eq!(lay_with(984, Status::Ok, &mods(SHEET), &five(), &prefs).dropped, ["out.pct", "out.gauge"]);
         assert_eq!(Prefs::new("", -5, "").tray_width, 0);
         // a tray wider than the bar leaves the mark and the run
-        let l = lay_with(300, Status::Ok, &mods(SHEET), &five(), &Prefs::new("", 5000, ""));
+        let l = lay_with(400, Status::Ok, &mods(SHEET), &five(), &Prefs::new("", 5000, ""));
         assert_eq!(l.targets.len(), 11);
     }
 
@@ -3117,7 +3195,7 @@ mod tests {
         assert_eq!((top.edge, bottom.edge), (Edge::Top, Edge::Bottom));
         assert_eq!((&top.targets, &top.fixed, &top.dropped), (&bottom.targets, &bottom.fixed, &bottom.dropped));
         // the chip and the keys' line stand in the plate's box at either edge
-        let part = Rect::new(84, 0, 40, 36);
+        let part = target(&top, "clock.text");
         assert_eq!((top.chip(part), top.line(part)), (bottom.chip(part), bottom.line(part)));
         assert_eq!(Edge::parse(Some("bottom")), Edge::Bottom);
         assert_eq!(Edge::parse(Some(" top ")), Edge::Top);
@@ -3134,9 +3212,9 @@ mod tests {
         assert_eq!(id(33.9, 35.9), Some("mark"));
         assert_eq!(id(34.0, 10.0), None, "the cell after the mark");
         assert_eq!(id(44.0, 10.0), Some("workspace:1"));
-        assert_eq!(id(94.0, 0.0), Some("workspace:3"), "the bar's first row of pixels");
-        assert_eq!(id(104.0, 10.0), Some("workspace:4"), "places touch");
-        assert_eq!(id(174.0, 10.0), None, "the free room");
+        assert_eq!(id(104.0, 0.0), Some("workspace:3"), "the bar's first row of pixels");
+        assert_eq!((id(133.9, 10.0), id(134.0, 10.0)), (Some("workspace:3"), Some("workspace:4")), "places touch");
+        assert_eq!(id(344.0, 10.0), None, "the free room");
         assert_eq!(id(760.0, 10.0), None, "the cell between a module's parts");
         assert_eq!(id(770.0, 10.0), Some("out.gauge"));
         assert_eq!(id(830.0, 10.0), None, "the number's empty hundreds cell");
@@ -3398,6 +3476,10 @@ mod tests {
         let l = laid(&m, &levels);
         assert!(moves(&l, &levels, 1000) && moves(&l, &levels, 1119));
         assert!(!moves(&l, &levels, 1120) && !moves(&l, &levels, 999_999));
+        // and at rest a frame is the same frame whatever the time: nothing on the bar moves by itself
+        let at = |at: u64| l.frame(&View { at, ..view(&levels) });
+        assert_eq!((at(1120), at(4120)), (at(999_999), at(999_999)));
+        assert_ne!(at(1060), at(1120));
         assert_eq!(levels.flow("mic", 1060), None, "the other levels stand still");
         // a clock that went back does not break it
         assert_eq!(levels.flow("out", 900), Some(Flow { from: 55, to: 60, part: 0.0 }));
@@ -3436,7 +3518,7 @@ mod tests {
         let l = laid(&m, &levels);
         assert!(moves(&l, &levels, 1010) && shifted(&l, &levels, 1010) == 4);
         // on a bar that gave up the number for width the same change moves nothing: each output by what it shows
-        let narrow = lay_on("A", 813, Edge::Top, Status::Ok, &m, &levels, &five(), None, &Prefs::default());
+        let narrow = lay_on("A", 983, Edge::Top, Status::Ok, &m, &levels, &five(), None, &Prefs::default());
         assert_eq!((narrow.find("out.pct"), narrow.find("out.gauge").is_some()), (None, true));
         assert!(!moves(&narrow, &levels, 1010) && shifted(&narrow, &levels, 1010) == 0);
         // nor where the number is not drawn: muted, or with no device; off draws it, dim, and it moves
@@ -3499,16 +3581,14 @@ mod tests {
             ),
             (4, 0, 0)
         );
-        // on its chip the digits flow in the ground's color, cut at the same cells
+        // on its chip the digits flow as they do at rest, in their own tone, cut at the same cells
         let v = View {
             hover: l.find("out.pct"),
             ..at(1060, true)
         };
         let f = l.frame(&v);
-        assert_eq!(
-            tones(&f[f.len() - 6..]),
-            [Tone::Text, Tone::Ground, Tone::Ground, Tone::Ground, Tone::Ground, Tone::Ground]
-        );
+        assert_eq!(f[f.len() - 6], fill(Rect::new(835, 4, 40, 28), Tone::Lit));
+        assert_eq!(f[f.len() - 5..], shows(&l, "out.pct", false, &at(1060, true))[..]);
         // a fall goes the other way
         levels.set("out", 55, 2000);
         let l = lay_on("A", 1200, Edge::Top, Status::Ok, &m, &levels, &five(), None, &Prefs::default());
@@ -3537,13 +3617,16 @@ mod tests {
         // the order is the one on the screen
         let xs: Vec<i32> = l.targets.iter().map(|t| t.rect.x).collect();
         assert!(xs.windows(2).all(|p| p[0] < p[1]), "{xs:?}");
-        // Tab leaves a level too, where the arrows do not
+        // Left and Right always move, on the gauge of a level that can be set too: every target is the same to them
+        for focus in 0..=last {
+            assert_eq!(key(focus, Key::Right), key(focus, Key::Tab), "{}", l.targets[focus].id);
+            assert_eq!(key(focus, Key::Left), key(focus, Key::BackTab), "{}", l.targets[focus].id);
+        }
         let gauge = l.find("out.gauge").unwrap();
-        assert_eq!(key(gauge, Key::Tab), KeyAct::Focus(gauge + 1));
-        assert_eq!(key(gauge, Key::BackTab), KeyAct::Focus(gauge - 1));
-        // on the sign and the number of a level the arrows move on: the gauge is where it is turned
-        assert_eq!(key(gauge - 1, Key::Right), KeyAct::Focus(gauge));
-        assert_eq!(key(gauge + 1, Key::Left), KeyAct::Focus(gauge));
+        assert_eq!(
+            (key(gauge, Key::Right), key(gauge, Key::Left)),
+            (KeyAct::Focus(gauge + 1), KeyAct::Focus(gauge - 1))
+        );
         // a focus past the last target is the last; a bar with no target at all
         assert_eq!(key(999, Key::Tab), KeyAct::Focus(0));
         let none = Layout::default();
@@ -3554,7 +3637,78 @@ mod tests {
     }
 
     #[test]
-    fn on_a_gauge_the_arrows_turn_the_level_and_home_and_end_set_its_ends() {
+    fn up_and_down_are_the_wheel_on_any_part_of_a_level_that_can_be_set_and_the_keys_stay() {
+        let l = sheet(1200);
+        let levels = levels_of(&mods(SHEET));
+        let does = |id: &str, k: Key| match l.key(l.find(id).unwrap(), k, &levels) {
+            KeyAct::Do { press, leave: false } => (send(press.act), press.set),
+            other => panic!("{id}: {other:?}"),
+        };
+        // the speaker at 55, on its sign, its gauge and its number: Up is the wheel up and Down the wheel down, at
+        // the part's center, five a step, at once
+        for (part, x, width) in [("name", 755, 10), ("gauge", 795, 50), ("pct", 855, 30)] {
+            let id = format!("out.{part}");
+            let (c, set) = does(&id, Key::Up);
+            assert_eq!((c.name.as_str(), c.instance.as_str(), c.button, c.x, c.width), ("out", part, 4, x, width));
+            assert_eq!(set, Some(("out".into(), 60)), "{part}");
+            let (c, set) = does(&id, Key::Down);
+            assert_eq!((c.instance.as_str(), c.button, set), (part, 5, Some(("out".into(), 50))), "{part}");
+            // and it is the wheel's own step there
+            let wheel = l.press(x as f64, 18.0, 4, &levels);
+            assert_eq!((send(wheel.act), wheel.set), does(&id, Key::Up), "{part}");
+        }
+        // a level that is not pinned is set on its sign: the microphone at 40, the brightness at 80
+        assert_eq!(does("mic.name", Key::Up).1, Some(("mic".into(), 45)));
+        assert_eq!(does("light.name", Key::Down).1, Some(("light".into(), 75)));
+        // the step is from the level drawn, and the ends hold
+        let mut drawn = levels.clone();
+        drawn.set("out", 100, 0);
+        let gauge = l.find("out.gauge").unwrap();
+        assert!(matches!(
+            l.key(gauge, Key::Up, &drawn),
+            KeyAct::Do {
+                press: Press { set: Some((_, 100)), .. },
+                leave: false
+            }
+        ));
+        assert!(matches!(
+            l.key(gauge, Key::Down, &drawn),
+            KeyAct::Do {
+                press: Press { set: Some((_, 95)), .. },
+                leave: false
+            }
+        ));
+        // elsewhere they do nothing: the mark, a place, the plate, a reading (wifi), a module with no level
+        for id in [
+            "mark",
+            "workspace:1",
+            "workspace:2",
+            "lan.name",
+            "wifi.name",
+            "kb.name",
+            "kb.text",
+            "clock.text",
+            "notifications.name",
+        ] {
+            let focus = l.find(id).unwrap();
+            assert_eq!(
+                (l.key(focus, Key::Up, &levels), l.key(focus, Key::Down, &levels)),
+                (KeyAct::Nothing, KeyAct::Nothing),
+                "{id}"
+            );
+        }
+        // a reading's gauge is no level to set, pinned or not
+        let m = mods(r#"[{"name":"wifi","group":"connections","sign":"\u25e0","level":70,"set":false,"pinned":true}]"#);
+        let reading = lay(1200, &m, &[]);
+        let gauge = reading.find("wifi.gauge").unwrap();
+        assert_eq!(reading.key(gauge, Key::Up, &levels_of(&m)), KeyAct::Nothing);
+        assert_eq!(reading.key(gauge, Key::Right, &levels_of(&m)), KeyAct::Focus(gauge + 1));
+        // and on a bar with no target at all
+        assert_eq!(Layout::default().key(0, Key::Up, &levels), KeyAct::Nothing);
+    }
+
+    #[test]
+    fn on_a_gauge_home_and_end_set_the_level_to_its_ends() {
         let l = sheet(1200);
         let levels = levels_of(&mods(SHEET));
         let gauge = l.find("out.gauge").unwrap();
@@ -3562,26 +3716,15 @@ mod tests {
             KeyAct::Do { press, leave: false } => (send(press.act), press.set),
             other => panic!("{other:?}"),
         };
-        // Left is the wheel down, Right the wheel up, at the center: five a step, at once
-        let (c, set) = does(Key::Left);
-        assert_eq!((c.instance.as_str(), c.button, c.relative_x, c.x, c.width), ("gauge", 5, 25, 795, 50));
-        assert_eq!(set, Some(("out".into(), 50)));
-        let (c, set) = does(Key::Right);
-        assert_eq!((c.button, set), (4, Some(("out".into(), 60))));
         // Home: the left button at the gauge's start, 0; End: at its width, 100
         let (c, set) = does(Key::Home);
         assert_eq!((c.button, c.relative_x, c.x, c.relative_y, set), (1, 0, 770, 18, Some(("out".into(), 0))));
         let (c, set) = does(Key::End);
         assert_eq!((c.button, c.relative_x, c.x, c.width, set), (1, 50, 820, 50, Some(("out".into(), 100))));
         assert_eq!(l.key(gauge, Key::Activate, &levels), KeyAct::Nothing);
-        // Home and End are a level's alone
+        // Home and End are a level's gauge's alone
         assert_eq!(l.key(l.find("out.name").unwrap(), Key::Home, &levels), KeyAct::Nothing);
         assert_eq!(l.key(0, Key::End, &levels), KeyAct::Nothing);
-        // a reading's gauge is no level: the arrows pass it by
-        let m = mods(r#"[{"name":"wifi","group":"connections","sign":"\u25e0","level":70,"set":false,"pinned":true}]"#);
-        let l = lay(1200, &m, &[]);
-        let gauge = l.find("wifi.gauge").unwrap();
-        assert_eq!(l.key(gauge, Key::Right, &levels_of(&m)), KeyAct::Focus(gauge + 1));
     }
 
     #[test]
@@ -3896,9 +4039,75 @@ mod tests {
         assert_eq!(Key::of_sym(0xff1b, false), Some(Key::Escape));
         assert_eq!(Key::of_sym(0x61, false), None);
         assert_eq!((Key::of_evdev(15, false), Key::of_evdev(15, true)), (Some(Key::Tab), Some(Key::BackTab)));
+        assert_eq!((Key::of_sym(0xff51, false), Key::of_sym(0xff53, false)), (Some(Key::Left), Some(Key::Right)));
+        assert_eq!((Key::of_sym(0xff52, false), Key::of_sym(0xff54, true)), (Some(Key::Up), Some(Key::Down)));
         assert_eq!((Key::of_evdev(105, false), Key::of_evdev(106, false)), (Some(Key::Left), Some(Key::Right)));
+        assert_eq!((Key::of_evdev(103, false), Key::of_evdev(108, false)), (Some(Key::Up), Some(Key::Down)));
         assert_eq!((Key::of_evdev(102, false), Key::of_evdev(107, false)), (Some(Key::Home), Some(Key::End)));
         assert_eq!((Key::of_evdev(57, false), Key::of_evdev(1, false)), (Some(Key::Activate), Some(Key::Escape)));
+    }
+
+    #[test]
+    fn a_button_off_the_bar_gives_the_keys_back_and_so_does_travel_past_three_cells() {
+        assert_eq!(TRAVEL_CELLS, 3);
+        // a button anywhere off the bar, wherever the pointer was seen or not seen before
+        assert!(Astray::default().back(Off::Pressed, 10));
+        let mut seen = Astray::default();
+        assert!(!seen.back(Off::Came(400.0, 300.0), 10));
+        assert!(seen.back(Off::Pressed, 10));
+        // travel is counted from where the pointer came off the bar, as the crow flies: three cells of 10 px keep
+        // the keys, a little more gives them back, in any direction
+        for (dx, dy, back) in [
+            (0.0, 0.0, false),
+            (30.0, 0.0, false),
+            (30.5, 0.0, true),
+            (-30.0, 0.0, false),
+            (-31.0, 0.0, true),
+            (0.0, 30.0, false),
+            (0.0, -30.01, true),
+            (18.0, 24.0, false),
+            (18.0, 24.1, true),
+            (21.3, 21.3, true),
+            (-21.0, 21.0, false),
+            (900.0, 500.0, true),
+        ] {
+            let mut p = Astray::default();
+            assert!(!p.back(Off::Came(400.0, 300.0), 10), "coming off the bar is no travel");
+            assert_eq!(p.back(Off::Moved(400.0 + dx, 300.0 + dy), 10), back, "{dx} {dy}");
+        }
+        // a hand resting on the mouse: many small moves around one place never add up
+        let mut p = Astray::default();
+        p.back(Off::Came(400.0, 300.0), 10);
+        for i in 0..1000 {
+            let (dx, dy) = ([0.0, 9.0, -9.0, 4.0][i % 4], [5.0, -7.0, 0.0, 8.0][i % 4]);
+            assert!(!p.back(Off::Moved(400.0 + dx, 300.0 + dy), 10), "{i}");
+        }
+        // and a slow move away does, once it is far enough from where it began
+        let far: Vec<bool> = (1..=8).map(|i| p.back(Off::Moved(400.0 + 5.0 * i as f64, 300.0), 10)).collect();
+        assert_eq!(far, [false, false, false, false, false, false, true, true]);
+        // three cells of the bar's own text: at a cell of 8, 24 px; of 15, 45
+        for (cell, keeps, gives) in [(8, 24.0, 24.5), (15, 45.0, 45.5), (1, 3.0, 3.5)] {
+            let mut p = Astray::default();
+            p.back(Off::Came(0.0, 0.0), cell);
+            assert!(!p.back(Off::Moved(keeps, 0.0), cell) && p.back(Off::Moved(gives, 0.0), cell), "{cell}");
+        }
+        // back on the bar and off it again, travel is counted anew from where it came off
+        let mut p = Astray::default();
+        p.back(Off::Came(400.0, 300.0), 10);
+        assert!(!p.back(Off::Moved(425.0, 300.0), 10));
+        assert!(!p.back(Off::Left, 10));
+        assert!(!p.back(Off::Came(425.0, 40.0), 10));
+        assert!(!p.back(Off::Moved(440.0, 60.0), 10), "25 px from where it came off this time");
+        assert!(p.back(Off::Moved(425.0, 71.0), 10));
+        // a move with no coming before it starts the count where it is
+        let mut p = Astray::default();
+        assert!(!p.back(Off::Moved(900.0, 900.0), 10));
+        assert!(!p.back(Off::Moved(930.0, 900.0), 10) && p.back(Off::Moved(931.0, 900.0), 10));
+        // a cell of no size is a cell of one pixel, and nothing here panics
+        let mut p = Astray::default();
+        p.back(Off::Came(0.0, 0.0), 0);
+        assert!(!p.back(Off::Moved(3.0, 0.0), 0) && p.back(Off::Moved(3.1, 0.0), -7));
+        assert!(!p.back(Off::Moved(f64::NAN, 0.0), 10));
     }
 
     #[test]
@@ -3977,8 +4186,8 @@ mod tests {
             );
             assert!(l.dropped.is_empty());
             // no room for it after the run: none
-            assert_eq!(lay_with(264, status, &mods(SHEET), &five(), &Prefs::default()).fixed.len(), 1);
-            assert_eq!(lay_with(263, status, &mods(SHEET), &five(), &Prefs::default()).fixed, []);
+            assert_eq!(lay_with(434, status, &mods(SHEET), &five(), &Prefs::default()).fixed.len(), 1);
+            assert_eq!(lay_with(433, status, &mods(SHEET), &five(), &Prefs::default()).fixed, []);
         }
         assert!(ELLIPSIS == "\u{2026}" && WARNING.starts_with('\u{26a0}'));
     }
@@ -3989,7 +4198,7 @@ mod tests {
         let mut all = five();
         all[4].urgent = true;
         let levels = levels_of(&m);
-        let l = lay_on("A", 600, Edge::Top, Status::Ok, &m, &levels, &all, None, &Prefs::default());
+        let l = lay_on("A", 770, Edge::Top, Status::Ok, &m, &levels, &all, None, &Prefs::default());
         let bars = [Shown {
             output: "A",
             scale: 2,
@@ -4000,26 +4209,26 @@ mod tests {
         let want = "bar\t1\n\
             status\tok\n\
             level\tout\t55\n\
-            output\tA\t600\t36\ttop\t2\n\
+            output\tA\t770\t36\ttop\t2\n\
             target\tA\tmark\t10\t0\t24\t36\tmark\tok\t-\tspark\n\
-            target\tA\tworkspace:1\t44\t0\t10\t36\tworkspace\tok\t-\tworkspace 1\n\
-            target\tA\tworkspace:2\t59\t0\t30\t36\tworkspace\tok\tfocused,selected,visible\tworkspace 2\n\
-            target\tA\tworkspace:3\t94\t0\t10\t36\tworkspace\tok\t-\tworkspace 3\n\
-            target\tA\tworkspace:4\t104\t0\t10\t36\tworkspace\tok\t-\tworkspace 4\n\
-            target\tA\tworkspace:5\t114\t0\t10\t36\tworkspace\tok\tempty\tworkspace 5\n\
-            target\tA\tworkspace:6\t124\t0\t10\t36\tworkspace\tok\tempty\tworkspace 6\n\
-            target\tA\tworkspace:7\t134\t0\t10\t36\tworkspace\tok\turgent\tworkspace 7\n\
-            target\tA\tworkspace:8\t144\t0\t10\t36\tworkspace\tok\tempty\tworkspace 8\n\
-            target\tA\tworkspace:9\t154\t0\t10\t36\tworkspace\tok\tempty\tworkspace 9\n\
-            target\tA\tworkspace:10\t164\t0\t10\t36\tworkspace\tok\tempty\tworkspace 10\n\
-            target\tA\tout.name\t320\t0\t10\t36\topen\tok\t-\toutput 55%\n\
-            target\tA\tout.gauge\t340\t0\t50\t36\tlevel\tok\thover\toutput 55%\n\
-            target\tA\tout.pct\t410\t0\t30\t36\topen\tok\t-\toutput 55%\n\
-            target\tA\tclock.text\t490\t0\t50\t36\topen\tok\t-\t13:29\n\
-            target\tA\tnotifications.name\t570\t0\t10\t36\topen\tasks\t-\t2 notifications\n";
+            target\tA\tworkspace:1\t44\t0\t30\t36\tworkspace\tok\t-\tworkspace 1\n\
+            target\tA\tworkspace:2\t74\t0\t30\t36\tworkspace\tok\tfocused,selected,visible\tworkspace 2\n\
+            target\tA\tworkspace:3\t104\t0\t30\t36\tworkspace\tok\t-\tworkspace 3\n\
+            target\tA\tworkspace:4\t134\t0\t30\t36\tworkspace\tok\t-\tworkspace 4\n\
+            target\tA\tworkspace:5\t164\t0\t30\t36\tworkspace\tok\tempty\tworkspace 5\n\
+            target\tA\tworkspace:6\t194\t0\t30\t36\tworkspace\tok\tempty\tworkspace 6\n\
+            target\tA\tworkspace:7\t224\t0\t30\t36\tworkspace\tok\turgent\tworkspace 7\n\
+            target\tA\tworkspace:8\t254\t0\t30\t36\tworkspace\tok\tempty\tworkspace 8\n\
+            target\tA\tworkspace:9\t284\t0\t30\t36\tworkspace\tok\tempty\tworkspace 9\n\
+            target\tA\tworkspace:10\t314\t0\t30\t36\tworkspace\tok\tempty\tworkspace 10\n\
+            target\tA\tout.name\t490\t0\t10\t36\topen\tok\t-\toutput 55%\n\
+            target\tA\tout.gauge\t510\t0\t50\t36\tlevel\tok\thover\toutput 55%\n\
+            target\tA\tout.pct\t580\t0\t30\t36\topen\tok\t-\toutput 55%\n\
+            target\tA\tclock.text\t660\t0\t50\t36\topen\tok\t-\t13:29\n\
+            target\tA\tnotifications.name\t740\t0\t10\t36\topen\tasks\t-\t2 notifications\n";
         assert_eq!(state_text(Status::Ok, None, &levels, &bars), want);
         // what a bar short of width gave up, in the order it went
-        let l = lay_on("A", 503, Edge::Bottom, Status::Ok, &m, &levels, &all, None, &Prefs::default());
+        let l = lay_on("A", 673, Edge::Bottom, Status::Ok, &m, &levels, &all, None, &Prefs::default());
         let bars = [Shown {
             output: "A",
             scale: 1,
@@ -4029,11 +4238,11 @@ mod tests {
         }];
         let text = state_text(Status::Ok, None, &levels, &bars);
         assert!(
-            text.contains("output\tA\t503\t36\tbottom\t1\n") && text.ends_with("\t2 notifications\ndropped\tA\tout.pct\n"),
+            text.contains("output\tA\t673\t36\tbottom\t1\n") && text.ends_with("\t2 notifications\ndropped\tA\tout.pct\n"),
             "{text}"
         );
         assert!(!text.contains("out.pct\t"));
-        let l = sheet(483);
+        let l = sheet(653);
         let bars = [Shown {
             output: "A",
             scale: 1,
@@ -4042,7 +4251,7 @@ mod tests {
             hover: None,
         }];
         let text = state_text(Status::Ok, None, &levels_of(&mods(SHEET)), &bars);
-        assert!(text.contains("target\tA\tmore\t313\t0\t10\t36\topen\tok\t-\tmore\n"), "{text}");
+        assert!(text.contains("target\tA\tmore\t483\t0\t10\t36\topen\tok\t-\tmore\n"), "{text}");
         assert!(text.ends_with("dropped\tA\tout.pct\ndropped\tA\tout.gauge\ndropped\tA\tlan\ndropped\tA\tbt\ndropped\tA\twifi\ndropped\tA\tout\ndropped\tA\tmic\ndropped\tA\tlight\ndropped\tA\tkb\n"));
         // every level drawn, pinned or not, in the line's order; the hand's change at once
         let mut levels = levels_of(&mods(SHEET));
@@ -4188,7 +4397,18 @@ mod tests {
                         ..view(&levels)
                     };
                     let _ = l.frame(&v);
-                    for k in [Key::Tab, Key::BackTab, Key::Left, Key::Right, Key::Home, Key::End, Key::Activate, Key::Escape] {
+                    for k in [
+                        Key::Tab,
+                        Key::BackTab,
+                        Key::Left,
+                        Key::Right,
+                        Key::Up,
+                        Key::Down,
+                        Key::Home,
+                        Key::End,
+                        Key::Activate,
+                        Key::Escape,
+                    ] {
                         let _ = l.key(i, k, &levels);
                     }
                 }
@@ -4342,7 +4562,7 @@ mod tests {
             1,
         );
         assert_eq!(mods(&line), mods(SHEET));
-        for width in [0, 394, 703, 814, 1200] {
+        for width in [0, 564, 873, 984, 1200] {
             let l = lay(width, &mods(&line), &five());
             assert_eq!(l, sheet(width), "at {width}");
             assert!(!l.targets.iter().any(|t| t.id.starts_with(LOOK)) && !l.dropped.iter().any(|d| d.starts_with(LOOK)));
@@ -4467,27 +4687,27 @@ mod tests {
     #[test]
     fn a_binding_mode_stands_one_cell_after_the_run_in_the_attention_color_and_is_no_target() {
         let (with, without) = (in_mode(1200, Status::Ok, "resize", &five()), sheet(1200));
-        // the run ends at 174: plain text from 184, a glyph a cell, no fill behind it
-        assert_eq!(mode_said(&with), Some((184, "resize".into())));
-        assert_eq!(with.fixed[0], glyph(Rect::new(184, 0, 10, 36), "r", Tone::Attention));
+        // the run ends at 344: plain text from 354, a glyph a cell, no fill behind it
+        assert_eq!(mode_said(&with), Some((354, "resize".into())));
+        assert_eq!(with.fixed[0], glyph(Rect::new(354, 0, 10, 36), "r", Tone::Attention));
         assert_eq!(with.fixed.len(), 7, "six glyphs and the hairline");
         assert_eq!(mode_said(&without), None);
         // no target: every target is where it was, the pointer reaches nothing there and the keys pass it by
         assert_eq!((&with.targets, &with.dropped), (&without.targets, &without.dropped));
         let levels = Levels::default();
-        assert_eq!((with.hit(200.0, 10.0), with.press(200.0, 10.0, 1, &levels)), (None, Press::default()));
+        assert_eq!((with.hit(370.0, 10.0), with.press(370.0, 10.0, 1, &levels)), (None, Press::default()));
         assert_eq!(with.key(10, Key::Tab, &levels), KeyAct::Focus(11));
         assert_eq!(with.targets[11].id, "lan.name");
         // a name with markup in it is plain text
-        assert_eq!(mode_said(&in_mode(1200, Status::Ok, "<b>r</b>", &five())), Some((184, "<b>r</b>".into())));
+        assert_eq!(mode_said(&in_mode(1200, Status::Ok, "<b>r</b>", &five())), Some((354, "<b>r</b>".into())));
         // before the first line and after a break it stands too
         for status in [Status::Loading, Status::Error] {
-            assert_eq!(mode_said(&in_mode(1200, status, "resize", &five())), Some((184, "resize".into())));
+            assert_eq!(mode_said(&in_mode(1200, status, "resize", &five())), Some((354, "resize".into())));
         }
         // after the last place when a workspace stands past the tenth
         let mut all = five();
         all.push(ws(11, "11", "A", false, false, false));
-        assert_eq!(mode_said(&in_mode(1200, Status::Ok, "resize", &all)), Some((194, "resize".into())));
+        assert_eq!(mode_said(&in_mode(1200, Status::Ok, "resize", &all)), Some((384, "resize".into())));
     }
 
     #[test]
@@ -4496,14 +4716,14 @@ mod tests {
         let long = "a mode with a long name to stand in the bar here";
         let l = in_mode(1200, Status::Ok, long, &five());
         let (x, said) = mode_said(&l).unwrap();
-        assert_eq!((x, said.as_str()), (184, &long[..37]));
+        assert_eq!((x, said.as_str()), (354, &long[..20]));
         assert_eq!(l.targets, sheet(1200).targets);
-        // the status is fitted as if there were no mode: at 814 it fits whole and leaves the mode no room
-        let l = in_mode(814, Status::Ok, "resize", &five());
+        // the status is fitted as if there were no mode: at 984 it fits whole and leaves the mode no room
+        let l = in_mode(984, Status::Ok, "resize", &five());
         assert_eq!((mode_said(&l), l.dropped.len()), (None, 0));
-        // six more cells of room and the mode stands whole; one pixel less and its last glyph is cut
-        assert_eq!(mode_said(&in_mode(884, Status::Ok, "resize", &five())), Some((184, "resize".into())));
-        assert_eq!(mode_said(&in_mode(883, Status::Ok, "resize", &five())), Some((184, "resiz".into())));
+        // seven more cells of room and the mode stands whole; one pixel less and its last glyph is cut
+        assert_eq!(mode_said(&in_mode(1054, Status::Ok, "resize", &five())), Some((354, "resize".into())));
+        assert_eq!(mode_said(&in_mode(1053, Status::Ok, "resize", &five())), Some((354, "resiz".into())));
         // at any width the status with a mode is the status without one
         for width in 0..=1300 {
             for status in [Status::Ok, Status::Loading, Status::Error] {

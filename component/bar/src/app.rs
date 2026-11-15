@@ -2,9 +2,10 @@
 //! docks, drawn with cairo and pango. It draws the frame the pure half says and hands the pointer and
 //! the keys back to it: no value, no place and no tone is decided here. One thing moves by itself: a
 //! level's number flows to its new digits. While one does, the bar draws on the surface's frame
-//! callbacks; at rest it asks for none and does not wake.
+//! callbacks; at rest it asks for none and does not wake. While a bar has the keys, a transparent surface
+//! over the rest of each output takes the pointer there: what it does off the bar gives the keys back.
 
-use crate::bar::{self, Act, Draw, Edge, KeyAct, Layout, Levels, Metrics, Module, Prefs, Press, Scene, Shown, Status, Tone, View, Workspace};
+use crate::bar::{self, Act, Astray, Draw, Edge, KeyAct, Layout, Levels, Metrics, Module, Off, Prefs, Press, Scene, Shown, Status, Tone, View, Workspace};
 use crate::keys::Keyboard;
 use crate::paint::{Canvas, Font, Lib, Picture, Rgb, Ruler};
 use crate::status::{Feed, Said};
@@ -16,6 +17,8 @@ use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Fra
 use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::{Shape as Cursor, WpCursorShapeDeviceV1};
+use smithay_client_toolkit::reexports::protocols::wp::viewporter::client::wp_viewport::{self, WpViewport};
+use smithay_client_toolkit::reexports::protocols::wp::viewporter::client::wp_viewporter::{self, WpViewporter};
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
 use smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager;
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind, PointerHandler};
@@ -93,6 +96,7 @@ impl Look {
             Tone::Accent => self.accent,
             Tone::Ground => self.ground,
             Tone::Lit => self.lit,
+            Tone::Raised => self.muted.toward(self.fg, bar::RAISE),
         }
     }
 
@@ -116,6 +120,21 @@ pub struct Config {
     pub state_file: PathBuf,
 }
 
+/// The surface over an output, all but its bar, while a bar has the keys: transparent, on the top layer,
+/// with no keyboard. One pixel, stretched over the output by its viewport.
+struct Catcher {
+    layer: LayerSurface,
+    viewport: WpViewport,
+    /// It was handed its size and is on the screen.
+    shown: bool,
+}
+
+impl Drop for Catcher {
+    fn drop(&mut self) {
+        self.viewport.destroy();
+    }
+}
+
 /// An output and its bar.
 struct Out {
     output: WlOutput,
@@ -124,6 +143,8 @@ struct Out {
     layer: Option<LayerSurface>,
     /// The surface that holds the keyboard while this bar has the keys.
     keyer: Option<LayerSurface>,
+    /// The surface that takes the pointer off the bar while a bar has the keys.
+    catcher: Option<Catcher>,
     /// The bar's width as the compositor last told it; 0 before.
     width: i32,
     /// What the screen shows, for the pointer and the keys.
@@ -153,6 +174,8 @@ pub struct App {
     shm: Shm,
     pool: SlotPool,
     cursors: Option<CursorShapeManager>,
+    /// The compositor's viewporter; without one there is no catcher, and Escape alone gives the keys back.
+    viewporter: Option<WpViewporter>,
     qh: QueueHandle<App>,
     handle: LoopHandle<'static, App>,
     lib: Lib,
@@ -181,6 +204,8 @@ pub struct App {
     failures: u32,
     /// The output whose bar has the keyboard.
     keys: Option<String>,
+    /// The pointer off the bar since then.
+    astray: Astray,
     pointer: Option<Ptr>,
     keyboard: Option<WlKeyboard>,
     /// The keymap the compositor sent, read with libxkbcommon.
@@ -219,6 +244,7 @@ impl App {
             outputs: OutputState::new(globals, qh),
             seats: SeatState::new(globals, qh),
             cursors: CursorShapeManager::bind(globals, qh).ok(),
+            viewporter: globals.bind(qh, 1..=1, Viewed).ok(),
             compositor,
             layer_shell,
             shm,
@@ -244,6 +270,7 @@ impl App {
             gen: 0,
             failures: 0,
             keys: None,
+            astray: Astray::default(),
             pointer: None,
             keyboard: None,
             kb: Keyboard::new(),
@@ -444,8 +471,13 @@ impl App {
 
     /// While a bar has the keys, its output holds a surface of one transparent pixel on the top layer
     /// that takes the keyboard: sway gives the keyboard only to the top layers, and the bar stays on the
-    /// bottom one. It takes no pointer and shows nothing.
+    /// bottom one. It takes no pointer and shows nothing. It comes once every catcher is on the screen:
+    /// sway hands the pointer to a surface that just came only when the pointer next moves, or when
+    /// another layer comes after it, and so a button with no move before it reaches the catcher too.
     fn apply_keyers(&mut self) {
+        if self.keys.is_some() && self.outs.iter().any(|o| o.catcher.as_ref().is_some_and(|c| !c.shown)) {
+            return;
+        }
         for oi in 0..self.outs.len() {
             let want = self.keys.as_deref() == Some(self.outs[oi].name.as_str());
             if !want {
@@ -484,6 +516,95 @@ impl App {
         }
     }
 
+    /// While a bar has the keys, every output holds a catcher: a button on it, or the pointer's travel over
+    /// it, gives the keys back as Escape does. It takes no pointer until its size is known.
+    fn apply_catchers(&mut self) {
+        let Some(viewporter) = self.viewporter.clone() else { return };
+        for oi in 0..self.outs.len() {
+            if self.keys.is_none() {
+                self.outs[oi].catcher = None;
+                continue;
+            }
+            if self.outs[oi].catcher.is_some() {
+                continue;
+            }
+            let surface = self.compositor.create_surface(&self.qh);
+            let viewport = viewporter.get_viewport(&surface, &self.qh, Viewed);
+            let layer = self
+                .layer_shell
+                .create_layer_surface(&self.qh, surface, Layer::Top, Some(NAMESPACE), Some(&self.outs[oi].output));
+            layer.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
+            layer.set_size(0, 0);
+            layer.set_exclusive_zone(-1);
+            layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+            if let Ok(region) = Region::new(&self.compositor) {
+                layer.wl_surface().set_input_region(Some(region.wl_region()));
+            }
+            layer.commit();
+            self.outs[oi].catcher = Some(Catcher { layer, viewport, shown: false });
+        }
+    }
+
+    /// A catcher handed its size, the output's: shown, and the keyboard taken once every one is. One that
+    /// cannot be shown is none, and the keys do not wait for it.
+    fn draw_catcher(&mut self, oi: usize, (w, h): (u32, u32)) {
+        if !self.show_catcher(oi, w as i32, h as i32) {
+            self.outs[oi].catcher = None;
+        }
+        self.apply_keyers();
+    }
+
+    /// A catcher on the screen at a size: it takes the pointer everywhere but on the bar, so a click on the
+    /// bar still reaches the bar. False when it could not be shown.
+    fn show_catcher(&mut self, oi: usize, w: i32, h: i32) -> bool {
+        let Some(c) = self.outs[oi].catcher.as_mut() else { return true };
+        if w <= 0 || h <= 0 {
+            return false;
+        }
+        let Ok((buffer, data)) = self.pool.create_buffer(1, 1, 4, wl_shm::Format::Argb8888) else {
+            return false;
+        };
+        data[..4].fill(0);
+        let surface = c.layer.wl_surface();
+        c.viewport.set_destination(w, h);
+        if let Ok(region) = Region::new(&self.compositor) {
+            let bar = match self.cfg.edge {
+                Edge::Top => 0,
+                Edge::Bottom => h - self.m.height,
+            };
+            region.add(0, 0, w, h);
+            region.subtract(0, bar, w, self.m.height);
+            surface.set_input_region(Some(region.wl_region()));
+        }
+        if buffer.attach_to(surface).is_err() {
+            return false;
+        }
+        surface.damage_buffer(0, 0, 1, 1);
+        c.layer.commit();
+        c.shown = true;
+        true
+    }
+
+    /// The pointer on a catcher: off the bar while a bar has the keys.
+    fn off_bar(&mut self, ev: &PointerEvent) {
+        let (x, y) = ev.position;
+        let what = match ev.kind {
+            PointerEventKind::Enter { serial } => {
+                if let Some(d) = self.pointer.as_ref().and_then(|p| p.device.as_ref()) {
+                    d.set_shape(serial, Cursor::Default);
+                }
+                Off::Came(x, y)
+            }
+            PointerEventKind::Motion { .. } => Off::Moved(x, y),
+            PointerEventKind::Press { .. } => Off::Pressed,
+            PointerEventKind::Leave { .. } => Off::Left,
+            _ => return,
+        };
+        if self.astray.back(what, self.m.cell) {
+            self.keys_off();
+        }
+    }
+
     /// SIGUSR1: the keyboard on the bar of the output sway has the focus on, the first target picked.
     pub fn keys_on(&mut self) {
         let Some(name) = self
@@ -498,12 +619,15 @@ impl App {
             o.focus = (o.name == name).then(|| o.layout.targets.first().map(|t| t.id.clone())).flatten();
         }
         self.keys = Some(name);
+        self.astray = Astray::default();
+        self.apply_catchers();
         self.apply_keyers();
         self.dirty = true;
         self.write_state();
     }
 
-    /// Escape, or the keyboard taken away: the keys go back and no target is picked.
+    /// Escape, a button or the pointer's travel off the bar, or the keyboard taken away: the keys go back
+    /// and no target is picked.
     fn keys_off(&mut self) {
         if self.keys.take().is_none() {
             return;
@@ -512,6 +636,7 @@ impl App {
             o.focus = None;
         }
         self.apply_keyers();
+        self.apply_catchers();
         self.dirty = true;
         self.write_state();
     }
@@ -671,6 +796,11 @@ impl App {
         self.outs.iter().position(|o| o.layer.as_ref().is_some_and(|l| l.wl_surface() == surface))
     }
 
+    /// Whether a surface is a catcher.
+    fn catches(&self, surface: &WlSurface) -> bool {
+        self.outs.iter().any(|o| o.catcher.as_ref().is_some_and(|c| c.layer.wl_surface() == surface))
+    }
+
     fn scale_of(&self, output: &WlOutput) -> i32 {
         self.outputs.info(output).map_or(1, |i| i.scale_factor.max(1))
     }
@@ -683,6 +813,7 @@ impl App {
         for o in &mut self.outs {
             o.layer = None;
             o.keyer = None;
+            o.catcher = None;
         }
         self.drop_marks();
         self.ruler.free(&self.lib);
@@ -701,12 +832,20 @@ impl LayerShellHandler for App {
             if o.keyer.as_ref() == Some(layer) {
                 o.keyer = None;
             }
+            if o.catcher.as_ref().is_some_and(|c| c.layer == *layer) {
+                o.catcher = None;
+            }
         }
+        self.apply_keyers();
     }
 
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface, configure: LayerSurfaceConfigure, _: u32) {
         if let Some(oi) = self.outs.iter().position(|o| o.keyer.as_ref() == Some(layer)) {
             self.draw_keyer(oi);
+            return;
+        }
+        if let Some(oi) = self.outs.iter().position(|o| o.catcher.as_ref().is_some_and(|c| c.layer == *layer)) {
+            self.draw_catcher(oi, configure.new_size);
             return;
         }
         let Some(o) = self.outs.iter_mut().find(|o| o.layer.as_ref() == Some(layer)) else {
@@ -758,6 +897,7 @@ impl OutputHandler for App {
             scale,
             layer: None,
             keyer: None,
+            catcher: None,
             width: 0,
             layout: Layout::default(),
             focus: None,
@@ -765,6 +905,7 @@ impl OutputHandler for App {
             waiting: false,
         });
         self.add_bar(self.outs.len() - 1);
+        self.apply_catchers();
     }
 
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: WlOutput) {
@@ -786,6 +927,7 @@ impl OutputHandler for App {
         if self.keys.as_ref().is_some_and(|k| !self.outs.iter().any(|o| o.name == *k)) {
             self.keys_off();
         }
+        self.apply_keyers();
         self.relayout();
     }
 }
@@ -837,6 +979,10 @@ impl SeatHandler for App {
 impl PointerHandler for App {
     fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlPointer, events: &[PointerEvent]) {
         for ev in events {
+            if self.catches(&ev.surface) {
+                self.off_bar(ev);
+                continue;
+            }
             let Some(oi) = self.out_of(&ev.surface) else { continue };
             match ev.kind {
                 PointerEventKind::Enter { serial } => {
@@ -892,6 +1038,17 @@ impl ShmHandler for App {
     fn shm_state(&mut self) -> &mut Shm {
         &mut self.shm
     }
+}
+
+/// The viewporter and a catcher's viewport: neither says anything.
+struct Viewed;
+
+impl Dispatch2<WpViewporter, App> for Viewed {
+    fn event(&self, _: &mut App, _: &WpViewporter, _: wp_viewporter::Event, _: &Connection, _: &QueueHandle<App>) {}
+}
+
+impl Dispatch2<WpViewport, App> for Viewed {
+    fn event(&self, _: &mut App, _: &WpViewport, _: wp_viewport::Event, _: &Connection, _: &QueueHandle<App>) {}
 }
 
 /// The keyboard's events while a bar has the keys: evdev codes, read as the layout names them.

@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.148.1
+
+- The workspaces stay still: every place is as wide as the plate, so
+  nothing moves when you go to another workspace.
+- Under the pointer a thing keeps its color and the ground behind it
+  lifts one step, on the bar, on the logo and on a window's controls
+  alike. Close alone turns red.
+- The mic on a window's band wears the title's color, as the other
+  controls do.
+- A muted level dims its sign with its gauge.
+- With the keyboard on the bar, Left and Right always move, and Up and
+  Down set a level. A click, or the pointer leaving the bar, gives the
+  keys back, as Escape does.
+- Where Monaspace Neon is not installed, the bar's keyboard, reminder
+  and do not disturb signs are ones DejaVu Sans Mono has, not a box.
+  Fedora installs DejaVu Sans and Serif for the signs the mono face
+  lacks.
+- A terminal fills its window: the wallpaper no longer shows between
+  its band, its border and its text.
+- Firefox draws no title bar and no round corners of its own under the
+  band.
+
 ## v0.148
 
 The bar gets a look of its own, and spark-shell its new logo.

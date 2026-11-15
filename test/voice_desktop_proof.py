@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Voice on a real sway, headless: a stand-in engine that speaks the ear's contract, its words typed into
-the window that has the focus, the mic on every title band in its own color, and the meter at the band's
+the window that has the focus, the mic on every title band in the title's color, and the meter at the band's
 right end while it listens, in cells kept for it, so nothing on the band moves and the meter follows the
 window. The voice is a window's capability, like its buttons: what the words mean is the window's own affair.
+The pointer on a button or on the mic draws its chip, the glyph and half a cell at each side: close's in its
+own color, the others' in the band's lit tone, and nothing on the band moves for it.
 
 python3 test/voice_desktop_proof.py [EVIDENCE_DIRECTORY]. A throwaway HOME and a sway of its own.
 SPARK_SHELL_WINPAD names the pad's build, which draws the mic. Needs sway, swaymsg, foot, grim, wtype, python3."""
@@ -18,6 +20,8 @@ import tempfile
 import time
 
 REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "test"))
+from home_desktop_proof import Pointer  # noqa: E402  the repo's virtual pointer: motion, button, frame
 LONG = "a window whose name is far longer than any band here holds, with words enough to run off its right end"
 failed = 0
 
@@ -65,6 +69,54 @@ def glyphs(env, box):
                 out.append((at, len(run), len(flat), tuple(sum(c[i] for c in flat) // len(flat) for i in range(3))))
                 run = []
     return out
+
+
+def chip(env, box, color, ink=None):
+    """The chip of one color in a box of the screen: its left, its width, its top and its height in the box,
+    whether each of its rows is as wide (a clean rectangle), and how many of its pixels are a glyph's in
+    `ink`, two fifths of the way from the chip's color to it or more. None where the color fills no row."""
+    w, h = box[2], box[3]
+    raw = subprocess.run(["grim", "-t", "ppm", "-g", "%d,%d %dx%d" % box, "-"], env=env, capture_output=True, check=True).stdout
+    data = raw.split(b"\n", 3)[3]
+    pixel = lambda cx, cy: tuple(data[3 * (cy * w + cx):3 * (cy * w + cx) + 3])   # noqa: E731
+    rows = {}
+    for cy in range(h):
+        xs = [cx for cx in range(w) if max(abs(a - b) for a, b in zip(pixel(cx, cy), color)) <= 3]
+        if len(xs) >= 4:
+            rows[cy] = (xs[0], xs[-1] + 1)
+    if not rows:
+        return None
+    left, right, top, bottom = min(a for a, _ in rows.values()), max(b for _, b in rows.values()), min(rows), max(rows) + 1
+    clean = len(rows) == bottom - top and set(rows.values()) == {(left, right)}
+    inked = 0
+    if ink:
+        span = [b - a for a, b in zip(color, ink)]
+        size = sum(d * d for d in span) or 1
+        for cy in range(top, bottom):
+            for cx in range(left, right):
+                off = [q - a for q, a in zip(pixel(cx, cy), color)]
+                along = sum(o * d for o, d in zip(off, span)) / size
+                if along >= 0.4 and max(abs(o - along * d) for o, d in zip(off, span)) <= 30:
+                    inked += 1
+    return left, right - left, top, bottom - top, clean, inked
+
+
+def settle(read, seconds=5):
+    """What `read` says once it says yes, or at the end of the wait: for a check that reports what it saw."""
+    end = time.time() + seconds
+    value = read()
+    while not value and time.time() < end:
+        time.sleep(0.1)
+        value = read()
+    return value
+
+
+def rgb(hexa):
+    return tuple(int(hexa.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def apart(p, q):
+    return sum(abs(a - b) for a, b in zip(p, q))
 
 
 def band_glyphs(all_ink):
@@ -121,12 +173,15 @@ def main():
     spark("on", "--yes")
     render = (root / ".config/sway/config").read_text()
     titles = [line for line in render.splitlines() if "title_format" in line]
-    ok(len(titles) == 2 and all("&#x25A1; " in line and "&#x25CB;</span>" in line for line in titles),
-       "the render: every title starts with the three buttons and the mic, a ring in its own color", titles)
+    ok(len(titles) == 2 and all(0 <= line.find("&#x25A1;") < line.find("&#x25CB;") for line in titles),
+       "the render: every title starts with the three buttons and the mic, a ring", titles)
+    ok(titles and not any("foreground=" in line for line in titles),
+       "the render: the ring wears the title's color from the first, as the buttons do", titles)
     ok("bindsym --no-repeat Mod4+space exec %s/spark-shell desktop voice press" % REPO in render
        and "bindsym --release Mod4+space exec %s/spark-shell desktop voice release" % REPO in render,
        "the render: Super+Space pressed and released are the voice's", [line for line in render.splitlines() if "voice" in line])
     children = [subprocess.Popen(["sway", "-c", str(root / ".config/sway/config")], env=env, cwd=root, stdout=subprocess.DEVNULL, stderr=open(root / "sway.log", "w"))]
+    pointer = None
     try:
         sock = wait_for(lambda: next(iter(runtime.glob("sway-ipc.*.sock")), None), "sway's socket")
         display = wait_for(lambda: next((p.name for p in runtime.glob("wayland-*") if not p.name.endswith(".lock")), None), "the display")
@@ -165,6 +220,36 @@ def main():
             log = runtime / "spark-shell-voice/log"
             return (log.read_text().replace("\n", " | ")[-300:] if log.exists() else "(no log)")
 
+        def handed():   # what spark-shell handed the pad, read from the pad itself
+            pid = (runtime / "spark-shell-winpad.pid").read_text().split()[0]
+            items = Path("/proc/%s/environ" % pid).read_bytes().decode(errors="replace").split("\0")
+            return dict(item.split("=", 1) for item in items if item.startswith("WINPAD_") and "=" in item)
+
+        def move(x, y):
+            pointer.send(5, 1, int(time.monotonic() * 1000) & 0xffffffff, int(x), int(y), 1920, 1080)   # motion_absolute, in the screen's own pixels
+            pointer.send(5, 4)
+            pointer.sync()
+
+        def chip_on(name, mark, color, ink=None):
+            """A button's chip in a color, a cell wide or more, read in the button's own three cells; none without."""
+            x, y, w, h = band(name)
+            found = chip(env, (round(x + mark[0] + mark[1] / 2 - 1.5 * cell), y, round(3 * cell), h), color, ink)
+            return found if found and found[1] >= cell else None
+
+        def hover(name, mark, color, ink=None, off=0):
+            """The pointer on a button of a band, `off` cells from its glyph's middle, and the button's chip once it
+            wears the color; none if it never does."""
+            x, y, w, h = band(name)
+            move(x + mark[0] + mark[1] / 2 + off * cell, y + h // 2)
+            return settle(lambda: chip_on(name, mark, color, ink))
+
+        def two_cells(width):   # half a cell either way: a glyph from another face has a width of its own
+            return 1.5 * cell <= width <= 2.5 * cell
+
+        def others(name, mark, all_ink):   # where the ink of a band starts, a button's own three cells left out
+            lo, hi = mark[0] + mark[1] / 2 - 1.5 * cell, mark[0] + mark[1] / 2 + 1.5 * cell
+            return sorted(c[0] for c in all_ink if not lo <= c[0] <= hi)
+
         sway("output", "*", "resolution", "1920x1080")
         time.sleep(1.5)
         sway("exec", "foot --app-id foot --title '%s' -e sleep 1000" % LONG)
@@ -176,6 +261,8 @@ def main():
         wait_for(lambda: (runtime / "spark-shell-winpad.pid").exists(), "the pad")
         time.sleep(1.5)
         shot("1-at-rest")
+        look = handed()
+        close, ground = rgb(look["WINPAD_CLOSE"]), rgb(look["WINPAD_GROUND"])   # the ground's color is the title's on the band with the focus
         marks, after = band_glyphs(glyphs(env, band("shell")))
         ok(len(marks) == 4, "the focused terminal's band: the three buttons and the mic, four single glyphs", [(c[0], c[1]) for c in marks])
         if len(marks) == 4:
@@ -184,8 +271,8 @@ def main():
             ok(gap < 40, "the title follows the mic, with no room left empty between them", (mic_end, gap))
             buttons = [c[3] for c in marks[:3]]
             mic = marks[3][3]
-            apart = min(sum(abs(a - b) for a, b in zip(mic, c)) for c in buttons)
-            ok(apart > 40, "the mic is drawn in its own color, not the title's, as the buttons are with the focus", (buttons, mic, apart))
+            ok(min(apart(mic, c) for c in buttons) < apart(mic, close),
+               "the mic wears the title's color, as the buttons do with the focus, not close's red", (buttons, mic, close))
             cell = (marks[1][0] - marks[0][0]) / 3.0   # one character of a title, from the glyphs the pad places three cells apart
         rest_end = glyphs(env, band("shell", "right"))
         ok(not rest_end, "at rest the band's right end is empty: the meter's cells are kept for it, not drawn",
@@ -195,6 +282,49 @@ def main():
         ok(all(abs(a[0] - b[0]) <= 2 for a, b in zip(busy[:4], marks[:4])) and len(busy) >= 4,
            "a window running something of its own carries the mic as well: the capability is the window's",
            ([(c[0], c[1]) for c in busy[:4]], [(c[0], c[1]) for c in marks[:4]]))
+        if len(marks) == 4 and len(busy) >= 4 and busy_after:
+            own = [rgb(look[k]) for k in ("WINPAD_CLOSE", "WINPAD_MIN", "WINPAD_FILL")]
+            ok(all(apart(busy[i][3], own[i]) < apart(busy[3][3], own[i]) for i in range(3))
+               and apart(busy[3][3], busy_after[0][3]) < min(apart(busy[3][3], c) for c in own),
+               "without the focus the three buttons keep their own colors and the mic wears that band's title color",
+               ([c[3] for c in busy[:4]], busy_after[0][3], own))
+            # the pointer on a button: its chip, the glyph and half a cell at each side, and nothing on the band moves
+            ok(look.get("WINPAD_HALF") and look.get("WINPAD_BAND_LIT"),
+               "spark-shell hands the pad the half space and the lit tone of the band with the focus",
+               {k: look.get(k) for k in ("WINPAD_HALF", "WINPAD_BAND_LIT", "WINPAD_LIT", "WINPAD_FONT")})
+            lit_tone = rgb(look["WINPAD_LIT"])
+            band_tone = rgb(look.get("WINPAD_BAND_LIT") or look["WINPAD_LIT"])
+            at_rest = marks + after
+            tall = band("shell")[3] - 4   # the title's line: the band less sway's padding over and under it
+            pointer = Pointer(env)
+            for i, what, tone in ((0, "close", close), (1, "minimize", band_tone), (2, "fill", band_tone), (3, "the mic", band_tone)):
+                found = hover("shell", marks[i], tone, ground)
+                ok(found and found[5] >= 4, "the pointer on %s, with the focus: a chip in %s, the glyph in the title's color"
+                   % (what, "close's color" if i == 0 else "the band's lit tone"), (found, tone, ground))
+                if not found:
+                    continue
+                ok(two_cells(found[1]) and abs(found[0] + found[1] / 2 - 1.5 * cell) <= cell / 3,
+                   "its chip is the glyph and half a cell at each side, two cells of the button's three", (found, cell))
+                ok(found[4] and found[3] >= tall - 1, "a clean rectangle as tall as the title's line", (found, tall))
+                now = others("shell", marks[i], glyphs(env, band("shell")))
+                ok(now == others("shell", marks[i], at_rest), "and nothing else on the band moves", (now, others("shell", marks[i], at_rest)))
+            red = chip_on("shell", marks[3], close)
+            ok(not red, "the mic's chip is never close's red", red)
+            shot("1-the-mic-under-the-pointer")
+            beside = hover("shell", marks[2], band_tone, off=1.2) and not chip_on("shell", marks[3], band_tone)
+            ok(beside and hover("shell", marks[3], band_tone, off=-1.2) and not chip_on("shell", marks[2], band_tone),
+               "a button takes the pointer across its three cells: beside fill's chip it is fill's, a cell on the mic's", beside)
+            for i, what, ink in ((1, "minimize", own[1]), (0, "close", ground), (3, "the mic", None)):
+                found = hover(LONG, busy[i], close if i == 0 else lit_tone, ink)
+                ok(found and (ink is None or found[5] >= 4) and two_cells(found[1]),
+                   "the pointer on %s, without the focus: a chip in %s, %s"
+                   % (what, "close's color" if i == 0 else "the lit tone", "the glyph in the ground's" if i == 0 else "the glyph as it was"), (found, ink, cell))
+            ok(terminal("shell")["focused"], "the pointer on another window's buttons leaves the focus where it was")
+            r = terminal("shell")["rect"]
+            move(r["x"] + r["width"] // 2, r["y"] + r["height"] // 2)
+            ok(settle(lambda: not chip_on(LONG, busy[3], lit_tone) and sorted(c[0] for c in glyphs(env, band("shell"))) == sorted(c[0] for c in at_rest)),
+               "the pointer gone, the chips go and the band stands as it stood", (sorted(c[0] for c in glyphs(env, band("shell"))), sorted(c[0] for c in at_rest)))
+            shot("1-pointer-gone")
         spill = glyphs(env, band(LONG, "right"))
         ok(sum(c[1] for c in spill) <= 4,
            "a name longer than its band is cut: it stops at the meter's cells and is not drawn under them",
@@ -224,11 +354,11 @@ def main():
         ok(meter and meter[-1][0] + meter[-1][1] >= box[2] - 2 * cell and meter[-1][0] + meter[-1][1] - meter[0][0] >= box[2] / 2,
            "the meter runs in the cells kept for it at the band's right end, where nothing was drawn at rest",
            ([(c[0], c[1]) for c in meter], box[2], cell, [(c[0], c[1]) for c in rest_end], why()))
-        if meter:
+        if meter and len(lit) == 4:
             text = [c[3] for c in lit_after] or [c[3] for c in lit[:3]]
-            apart = lambda c: sum(abs(a - b) for a, b in zip(meter[-1][3], c))   # noqa: E731
-            ok(min(apart(c) for c in text) < apart(lit[3][3]),
-               "the meter wears the band's own text color while the mic stays red", (meter[-1][3], text, lit[3][3]))
+            bars, red = chip(env, box, ground), chip(env, box, close)
+            ok(bars and not red and min(apart(lit[3][3], c) for c in text) < apart(lit[3][3], close),
+               "the meter and the mic's dot wear the band's own text color, not close's red", (bars, red, lit[3][3], text, close))
         # the band is the window's own frame: a narrower screen carries the meter to the band's new right end
         sway("output", "*", "resolution", "1440x900")
         time.sleep(2)
@@ -258,6 +388,8 @@ def main():
     except AssertionError as e:
         ok(False, str(e))
     finally:
+        if pointer:
+            pointer.close()
         for c in children:
             c.terminate()
         time.sleep(1)

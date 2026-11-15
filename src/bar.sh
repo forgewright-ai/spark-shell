@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # ---------------------------------------------------------------- the bar
-# sets: BAR_BT BAR_BT_OFF BAR_DEV BAR_DND BAR_DUE BAR_FULL BAR_GAP BAR_GROUP_GAP BAR_KB BAR_LAN BAR_LIGHT BAR_MIC BAR_MIC_OFF BAR_NOTE BAR_OUT BAR_OUT_OFF BAR_PAD BAR_PALETTE BAR_PID BAR_PROC BAR_SHADE BAR_STEPS BAR_SYS BAR_WIFI BAR_WS_ORDER
+# sets: BAR_BT BAR_BT_OFF BAR_DEV BAR_DND BAR_DND_PLAIN BAR_DUE BAR_DUE_PLAIN BAR_FULL BAR_GAP BAR_GROUP_GAP BAR_KB BAR_KB_PLAIN BAR_LAN BAR_LIGHT BAR_MIC BAR_MIC_OFF BAR_NOTE BAR_OUT BAR_OUT_OFF BAR_PAD BAR_PALETTE BAR_PID BAR_PROC BAR_SHADE BAR_STEPS BAR_SYS BAR_WIFI BAR_WS_ORDER
 # reads: BAR_ASOUNDRC BAR_LEVELS BAR_MODULES CONFIG GLYPH_FAMILIES LAYOUT_ON NOTIFY_MODE OS PANEL_DOT PANEL_PROMPT PANEL_SEP PANEL_WARN REPO STATE_DIR TAB THEME_KEYS TMP
 # spark's bar, or sway's own where it cannot run, reads `spark-shell bar status`:
 # i3bar JSON every 15 s and on SIGUSR1 to the pid in STATE_DIR/bar.pid
@@ -26,6 +26,11 @@ BAR_DUE=$(printf '\342\247\227')      # U+29D7 black hourglass
 BAR_DND=$(printf '\342\217\276')      # U+23FE power sleep symbol
 BAR_NOTE=$(printf '\342\232\221')     # U+2691 black flag
 BAR_PAD=$(printf '\342\212\237')      # U+229F squared minus
+# the three signs above that only the Monaspace faces draw (keyboard, reminder, do not disturb), as every family's DejaVu Sans Mono has them
+BAR_KB_PLAIN=$(printf '\342\214\250')    # U+2328 keyboard
+BAR_DUE_PLAIN=$(printf '\342\227\267')   # U+25F7 white circle with upper right quadrant
+BAR_DND_PLAIN=$(printf '\342\230\276')   # U+263E last quarter moon
+bar_signs() { case $(font_spec) in 'Monaspace '*) ;; *) BAR_KB=$BAR_KB_PLAIN; BAR_DUE=$BAR_DUE_PLAIN; BAR_DND=$BAR_DND_PLAIN ;; esac; }   # a bar whose face is no Monaspace takes them; a line runs in a subshell, so the next one starts from Monaspace's again
 # a test holds every glyph to one cell
 family_set() {   # family_set FAMILY -- sets FAM_NOW and the FAM_ glyphs
     case $1 in star|banner) ;; *) set -- stone ;; esac
@@ -579,6 +584,7 @@ bar_facts() {   # -> the line for spark's bar: the look, then a fact a module, i
     # read each line: a change in Settings, a pin or a hide shows at the next
     _bw=''; [ "$(bar_style BAR_GLYPHS signs)" != words ] || _bw=1
     family_set "$(bar_style GLYPH_FAMILY stone)"
+    bar_signs
     bar_shown
     line=$(bar_look)
     bar_fact_pad; bar_fact_lan; bar_fact_bt; bar_fact_wifi; bar_fact_audio out; bar_fact_audio mic; bar_fact_due
@@ -594,6 +600,7 @@ bar_line() {   # -> a refresh's JSON array: the facts for spark's bar, the block
     # read each line: a Settings change shows at once
     _bw=''; [ "$(bar_style BAR_GLYPHS signs)" != words ] || _bw=1
     family_set "$(bar_style GLYPH_FAMILY stone)"
+    bar_signs
     if [ -n "$_bw" ]; then
         k_lan=lan k_bt=bt k_bt_off='bt off' k_wifi=wifi k_out=out k_out_off=out k_mic=mic k_mic_off=mic k_light=light k_kb=kb k_due=due k_dnd='do not disturb' k_note=new k_pad=pad
     else

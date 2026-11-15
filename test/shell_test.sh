@@ -907,6 +907,10 @@ else
     printf '#!/bin/sh\n[ "$1" = --version ] && echo "foot version: 1.21.0 (Debian)"\n' > "$HOME/.local/bin/foot"
     sh "$SH" on --yes >/dev/null
     grep -q '^\[colors\]$' "$foot" && ! grep -q '^\[colors-dark\]$' "$foot" && ok "foot.ini: foot 1.21 gets [colors] alone" || bad "foot 1.21 section" "$(grep -n '^\[' "$foot")"
+    grep -qx 'resize-by-cells=no' "$foot" && ok "foot.ini: a floating terminal fills its window, not cut to whole cells with the wallpaper showing in the rest (foot 1.17 and later, v0.148.1)" || bad "foot fill" "$(grep -n 'resize\|FOOT' "$foot")"
+    printf '#!/bin/sh\n[ "$1" = --version ] && echo "foot version: 1.16.2 (Ubuntu)"\n' > "$HOME/.local/bin/foot"
+    sh "$SH" on --yes >/dev/null
+    ! grep -q 'resize-by-cells\|@FOOT' "$foot" && ok "foot.ini: foot 1.16 does not know the key and is not handed it" || bad "foot 1.16 fill" "$(grep -n 'resize\|FOOT' "$foot")"
     printf '#!/bin/sh\n[ "$1" = --version ] && echo "foot version: 1.28.0 (Arch)"\n' > "$HOME/.local/bin/foot"
     sh "$SH" on --yes >/dev/null
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: foot 1.28 gets [colors-dark] alone" || bad "foot 1.28 section" "$(grep -n '^\[' "$foot")"
@@ -916,16 +920,18 @@ else
         && ok "sway: with no winpad on the machine the titles are plain: no button is drawn that does not click (v0.143)" || bad "band plain" "$(grep -n title_format "$sway")"
     printf '#!/bin/sh\n' > "$HOME/winpad-here"; chmod +x "$HOME/winpad-here"
     SPARK_SHELL_WINPAD=$HOME/winpad-here sh "$SH" on --yes >/dev/null
-    _bg=' &#x2715;  &#x25BD;  &#x25A1; '
+    # a control's room is a cell each side, as two half spaces: the chip under the pointer takes one half of each, so nothing shifts (v0.148.1)
+    _hs=$(sed -n 's/^font pango:.* \([0-9.]*\)$/\1/p' "$sway" | head -1); _h="<span size='$(awk -v n="$_hs" 'BEGIN { printf "%d", n * 512 }')'>  </span>"
+    _bg="$_h&#x2715;$_h$_h&#x25BD;$_h$_h&#x25A1;$_h"
     grep -qxF "for_window [shell=\".*\"] title_format \"$_bg  %title\"" "$sway" && grep -qxF "for_window [app_id=\"^(foot|spark-shell-.*)\$\"] title_format \"$_bg  terminal   %title\"" "$sway" \
         && grep -qF 'pub const GLYPH_REFS: [&str; 3] = ["&#x2715;", "&#x25BD;", "&#x25A1;"];' "$REPO/component/winpad/src/buttons.rs" \
         && ok "sway: with a winpad, the close, minimize and fill buttons are the start of every title, sway's own pixels, so they move with the window (v0.142), written as character references so the render stays ASCII; the component's are the same three" || bad "band glyphs" "$(grep -n title_format "$sway")"
     printf 'VOICE_ENGINE=/bin/true\n' >> "$HOME/.config/spark-shell/config"
     printf '#!/bin/sh\nexit 0\n' > "$HOME/.local/bin/wtype"; chmod +x "$HOME/.local/bin/wtype"   # a desktop has it; without it no mic is drawn
     SPARK_SHELL_WINPAD=$HOME/winpad-here sh "$SH" on --yes >/dev/null
-    _mic=" <span foreground='#aa0000'>&#x25CB;</span> "
+    _mic="$_h&#x25CB;$_h"
     grep -qxF "for_window [app_id=\"^(foot|spark-shell-.*)\$\"] title_format \"$_bg$_mic  terminal   %title\"" "$sway" && grep -qxF "for_window [shell=\".*\"] title_format \"$_bg$_mic  %title\"" "$sway" \
-        && ok "sway: with a voice, every title carries the mic after the buttons, a red ring (the palette's red): the voice is a window's, like its buttons (v0.145)" || bad "band mic" "$(grep -n title_format "$sway")"
+        && [ -n "$_hs" ] && ok "sway: with a voice, every title carries the mic after the buttons, a ring in the title's color as they are (v0.148.1): the voice is a window's, like its buttons (v0.145)" || bad "band mic" "$(grep -n title_format "$sway")"
     sed -i.bak '/^VOICE_ENGINE=/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak" "$HOME/.local/bin/wtype"
     sh "$SH" on --yes >/dev/null; rm -f "$HOME/winpad-here"
     grep -qxF "bindsym --no-repeat Mod4+space exec $REPO/spark-shell desktop voice press" "$sway" \
@@ -3077,7 +3083,7 @@ old_gone && ok "v0.41 upgrade: off hands it back" || bad "upgrade off" "$(cat "$
 fresh
 console_stubs Linux
 desktop_stubs
-printf '#!/bin/sh\necho "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR" >&2\n' > "$H/.local/bin/sway"
+printf '#!/bin/sh\necho "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR" >&2\necho "MOZ_GTK_TITLEBAR_DECORATION=$MOZ_GTK_TITLEBAR_DECORATION" >&2\n' > "$H/.local/bin/sway"
 mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 L on --yes >/dev/null </dev/null
 slog=$HOME/.local/state/spark-shell/sway.log
@@ -3088,6 +3094,9 @@ rc=0; out=$(TEST_TTY=/dev/pts/3 XDG_VTNR=1 env -u WAYLAND_DISPLAY PATH="$H/lx:$P
 rc=0; out=$(TEST_TTY=/dev/tty2 env -u XDG_VTNR -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR TMPDIR="$H/tmp/" PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
 rd=$H/tmp/$(id -u)-runtime-dir
 [ "$rc" = 0 ] && grep -qx "XDG_RUNTIME_DIR=$rd" "$slog" && ok "desktop: by hand on tty2 with no XDG_VTNR, sway starts" || bad "desktop tty2" "rc=$rc $out $(cat "$slog" 2>&1)"
+grep -qx 'MOZ_GTK_TITLEBAR_DECORATION=none' "$slog" && ok "desktop: the session tells Firefox its window is decorated, so it draws no title bar and no round corners of its own (v0.148.1)" || bad "desktop firefox decoration" "$(cat "$slog" 2>&1)"
+TEST_TTY=/dev/tty2 MOZ_GTK_TITLEBAR_DECORATION=client env -u XDG_VTNR -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR TMPDIR="$H/tmp/" PATH="$H/lx:$PATH" sh "$SH" desktop >/dev/null 2>&1 || :
+grep -qx 'MOZ_GTK_TITLEBAR_DECORATION=client' "$slog" && ok "desktop: a person's own value for it stays" || bad "desktop firefox decoration, own value" "$(cat "$slog" 2>&1)"
 [ -d "$rd" ] && [ ! -L "$rd" ] && [ "$(ls -ld "$rd" | cut -c1-10)" = drwx------ ] && [ "$(ls -ldn "$rd" | awk '{print $3}')" = "$(id -u)" ] \
     && ok "desktop: no XDG_RUNTIME_DIR, a private one made under TMPDIR (0700, yours) and handed to sway" || bad "runtime dir" "$(ls -ld "$rd" 2>&1)"
 chmod 0755 "$rd"
@@ -4085,15 +4094,20 @@ rc=0; out=$(SPARK_SHELL_SYS=$H/sysb PATH="$H/lx:$PATH" sh "$SH" desktop display 
 [ "$rc" = 0 ] && [ "$out" = 'brightness at 52%' ] && grep -qx -- '-q -c backlight set 52%' "$HOME/bctl.log" && ok "desktop display brightness up: the backlight 5 up, through brightnessctl" || bad "brightness backlight" "rc=$rc $out $(cat "$HOME/bctl.log" 2>&1)"
 line=$(SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null)
 pip=$(printf '\342\226\260'); pipoff=$(printf '\342\226\261'); g=$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "gauge") | .full_text'); k=$(printf '%s' "$line" | jq -r '.[] | select(.name == "kb") | .full_text')
-[ "$(printf '%s' "$g" | LC_ALL=C grep -o "$pip" | wc -l | tr -d ' ')" = 2 ] && [ "$(printf '%s' "$g" | LC_ALL=C grep -o "$pipoff" | wc -l | tr -d ' ')" = 3 ] && [ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "name") | .full_text')" = "<span foreground='#ff5555'>$(printf '\342\230\274')</span>" ] && [ "$k" = "<span foreground='#555555'>$(printf '\342\214\227')</span> us+intl" ] \
+[ "$(printf '%s' "$g" | LC_ALL=C grep -o "$pip" | wc -l | tr -d ' ')" = 2 ] && [ "$(printf '%s' "$g" | LC_ALL=C grep -o "$pipoff" | wc -l | tr -d ' ')" = 3 ] && [ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "name") | .full_text')" = "<span foreground='#ff5555'>$(printf '\342\230\274')</span>" ] && [ "$k" = "<span foreground='#555555'>$(printf '\342\214\250')</span> us+intl" ] \
     && ok "bar: light, a sun in the accent with its gauge (47: two of five cells), and kb, a key grid muted with the layout in use (sway's second, us+intl)" || bad "bar light kb" "$line"
 _ff() { jq -r --arg n "$1" '.[1:][] | select(.name == $n) | [.name, .group, .sign, .text, .cells, .bold, .state, (.level // "-"), .set, .pinned, .label, .toggle] | map(tostring) | join("|")' || echo unread; }   # _ff NAME -> that module of spark's bar's line on stdin, its fields with a bar between
 line=$(SPARK_BAR=1 SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null)
 cp "$HOME/.config/spark-shell/config" "$H/config.keep"; printf 'BAR_PINS=out light\n' >> "$HOME/.config/spark-shell/config"
 _fl=$(SPARK_BAR=1 SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null | _ff light); mv "$H/config.keep" "$HOME/.config/spark-shell/config"
-[ "$(printf '%s' "$line" | _ff light)" = "light|seat|$(printf '\342\230\274')||0|false|ok|47|true|false|brightness 47%|false" ] && [ "$(printf '%s' "$line" | _ff kb)" = "kb|seat|$(printf '\342\214\227')|us+intl|7|false|ok|-|false|false|keyboard us+intl|true" ] \
+[ "$(printf '%s' "$line" | _ff light)" = "light|seat|$(printf '\342\230\274')||0|false|ok|47|true|false|brightness 47%|false" ] && [ "$(printf '%s' "$line" | _ff kb)" = "kb|seat|$(printf '\342\214\250')|us+intl|7|false|ok|-|false|false|keyboard us+intl|true" ] \
     && [ "$_fl" = "light|seat|$(printf '\342\230\274')||0|false|ok|47|true|true|brightness 47%|false" ] \
     && ok "spark's bar, the seat (v0.148): light is its sun and a level of 47 the bar can set, pinned once BAR_PINS names it; kb its sign and the layout in use as its text, in the widest layout's cells, a click its toggle" || bad "facts light kb" "$line | $_fl"
+# the signs only a Monaspace face draws (v0.148.1): the suite's FONT is DejaVu Sans Mono, so the lines above carry the ones it has; a Monaspace face in the home gets its own
+_nd=${XDG_DATA_HOME:-$HOME/.local/share}/fonts/monaspace-neon; _nk=1; [ -d "$_nd" ] || { _nk=''; mkdir -p "$_nd"; for _s in Regular Bold Italic BoldItalic; do : > "$_nd/MonaspaceNeon-$_s.otf"; done; }
+_fk=$(FONT='Monaspace Neon:size=12' SPARK_BAR=1 SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null | _ff kb); [ -n "$_nk" ] || rm -rf "$_nd"
+[ "$_fk" = "kb|seat|$(printf '\342\214\227')|us+intl|7|false|ok|-|false|false|keyboard us+intl|true" ] \
+    && ok "spark's bar, the signs by its face (v0.148.1): the keyboard, the reminder and do not disturb are Monaspace's own where the face is one, and the ones DejaVu Sans Mono has where it is not" || bad "facts signs by face" "$_fk"
 # the workspaces' names (#248): a workspace named by its number, or a layout's "3 writing", takes its label in the glyph
 # family, stone's number in angle brackets by default; one the user named is left, and so is one past the end of nothing
 WSO=${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/spark-shell}; WSO=${WSO:-$HOME/.local/state/spark-shell}/ws-order   # the order the bar drew before the families, in the runtime dir when a login has one
@@ -4203,10 +4217,10 @@ printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:spark-shell-test-1@box\r\nDTSTART
 printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:khal-1\r\nDTSTART:%s\r\nSUMMARY:a long title from another calendar\\, folded\r\n  across two lines\; done\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:khal-old\r\nDTSTART:20200101T080000Z\r\nSUMMARY:an old meeting\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:khal-weekly\r\nDTSTART:%s\r\nRRULE:FREQ=WEEKLY\r\nSUMMARY:a weekly one\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' "$(ago_utc 30)" "$(ago 10)" > "$HOME/calendar/other.ics"
 printf '#!/bin/sh\necho "$*" >> "$HOME/chime.log"\n' > "$H/lx/pw-play"; chmod +x "$H/lx/pw-play"; rm -f "$HOME/chime.log"
 line=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null); SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once >/dev/null 2>&1; sleep 1
-[ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "due") | .full_text')" = "<span foreground='#ff5555'>$(printf '\342\247\227')</span> a long title from another ca" ] && [ "$(grep -c . "$HOME/chime.log" 2>/dev/null)" = 1 ] \
+[ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "due") | .full_text')" = "<span foreground='#ff5555'>$(printf '\342\227\267')</span> a long title from another ca" ] && [ "$(grep -c . "$HOME/chime.log" 2>/dev/null)" = 1 ] \
     && ok "bar: the latest reminder due (another tool's, in UTC, its folded title joined), cut at 28 characters, and one chime for the two due, not at every line" || bad "due block" "$(printf '%s' "$line" | jq -c '.[] | select(.name == "due")') chimes=$(cat "$HOME/chime.log" 2>&1)"
 line=$(REM_LOOK=1 SPARK_BAR=1 SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null)
-[ "$(printf '%s' "$line" | _ff due)" = "due|tasks|$(printf '\342\247\227')||0|false|asks|-|false|false|reminder due: a long title from another ca|false" ] && ! printf '%s' "$line" | jq -r '.[1:][] | .sign + .text' | grep -q 'a long title' \
+[ "$(printf '%s' "$line" | _ff due)" = "due|tasks|$(printf '\342\227\267')||0|false|asks|-|false|false|reminder due: a long title from another ca|false" ] && ! printf '%s' "$line" | jq -r '.[1:][] | .sign + .text' | grep -q 'a long title' \
     && ok "spark's bar, a reminder due (v0.148): its sign alone, in state asks; the title is in the label, never on the bar" || bad "facts due" "$line"
 rows=$(NL reminders --list)
 printf '%s\n' "$rows" | grep -q "a long title from another calendar, folded across two lines; done	reminders show" && ! printf '%s\n' "$rows" | grep -q 'an old meeting\|a weekly one' \
@@ -8385,13 +8399,13 @@ STUB
         && [ -e "$HOME/mako.dnd" ] && grep -qx 'DO_NOT_DISTURB=yes' "$HOME/.config/spark-shell/config" \
         && ok "notifications do-not-disturb on: mako's mode and the config, undo puts it off; asked again, a receipt with nothing to undo (#71)" || bad "dnd on" "$(cat "$H/mcp.out")"
     [ "$(rows notifications | jq -r '.state + " | " + .rows[0].text + " | " + .rows[0].sign')" = 'do not disturb | turn off do not disturb | dot' ] && ok "notifications: with do not disturb on, the row in use turns it off" || bad "dnd row" "$(rows notifications | head -c 300)"
-    REM_LOOK=1 sh "$SH" bar status --once 2>/dev/null | jq -e 'any(.[]; .name == "notifications" and (.full_text | test("\u23fe")))' >/dev/null && ok "bar: do not disturb is said while it is on, a click opens its section" || bad "bar dnd" "$(REM_LOOK=1 sh "$SH" bar status --once 2>&1 | head -c 400)"
+    REM_LOOK=1 sh "$SH" bar status --once 2>/dev/null | jq -e 'any(.[]; .name == "notifications" and (.full_text | test("\u263e")))' >/dev/null && ok "bar: do not disturb is said while it is on, a click opens its section" || bad "bar dnd" "$(REM_LOOK=1 sh "$SH" bar status --once 2>&1 | head -c 400)"
     # the bar's count: mako's notifications, on the screen (9) and gone (12), that nobody looked at; bar seen ID (mako's click) and bare (the block's click, dismiss) count them looked at
     nb() { REM_LOOK=1 XDG_RUNTIME_DIR=$H/run sh "$SH" bar status --once 2>/dev/null | jq -r '[.[] | select(.name == "notifications") | .instance + "=" + (.full_text | gsub("<[^>]*>"; ""))] | join(" ")'; }
     mkdir -p "$H/run"; rm -f "$H/run/spark-shell/notify-seen"
     nf() { REM_LOOK=1 SPARK_BAR=1 XDG_RUNTIME_DIR=$H/run sh "$SH" bar status --once 2>/dev/null | jq -r '. as $l | [.[1:][] | select(.name == "notifications") | [.name, .group, .sign, .text, .cells, .bold, .state, (.level // "-"), .set, .pinned, .label, .toggle] | map(tostring) | join("|")] | join(" ") + (if $l[-1].name == "notifications" then "" else " not last" end)' || echo unread; }   # -> the notifications module of spark's bar's line, its fields with a bar between; said when it is not the line's last
     _n1=$(nb); _nf1=$(nf); XDG_RUNTIME_DIR=$H/run sh "$SH" bar seen 12 >/dev/null 2>&1; _n2=$(nb); XDG_RUNTIME_DIR=$H/run sh "$SH" bar seen 9 77 >/dev/null 2>&1; _n3=$(nb); _nf3=$(nf)
-    _dnd=$(printf '\342\217\276'); _note=$(printf '\342\232\221')
+    _dnd=$(printf '\342\230\276'); _note=$(printf '\342\232\221')
     [ "$_n1" = "dnd=$_dnd count=$_note 2" ] && [ "$_n2" = "dnd=$_dnd count=$_note 1" ] && [ "$_n3" = "dnd=$_dnd" ] && [ "$(cat "$H/run/spark-shell/notify-seen")" = "$(printf '9\n12')" ] \
         && ok "bar: the notifications nobody looked at, the flag and how many beside do not disturb; one looked at by its id, then the other: do not disturb alone, an id mako does not hold not kept (#71)" || bad "bar count" "$_n1 | $_n2 | $_n3 | $(cat "$H/run/spark-shell/notify-seen" 2>&1)"
     printf 'Notification 14: Ping\n  App name: chat\n' > "$HOME/mako.list"; _n4=$(nb)

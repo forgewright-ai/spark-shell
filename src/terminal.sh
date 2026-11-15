@@ -30,5 +30,10 @@ term_colors_section() {   # the name of its color section: [colors] before 1.26,
     set -- ${_v:-1 26}
     if [ "$1" -gt 1 ] || [ "$2" -ge 26 ]; then echo colors-dark; else echo colors; fi
 }
+term_fill() {   # the line that has a floating window fill what the compositor gives: from 1.17 on it is cut to whole cells, and what is left shows the wallpaper; an older one refuses the key
+    _v=$(PATH=$HOME/.local/bin:$PATH foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')
+    set -- ${_v:-1 17}
+    if [ "$1" -gt 1 ] || [ "$2" -ge 17 ]; then echo 'resize-by-cells=no'; fi
+}
 term_version() { foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9.]*\).*/\1/p'; }
 term_osc_bg() { printf '[%s]#%s' "$(awk -v a="$1" 'BEGIN { printf "%d", a * 100 + 0.5 }')" "$2"; }   # term_osc_bg ALPHA HEX -> its OSC 11 form: opacity in percent, then the color

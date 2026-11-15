@@ -190,6 +190,12 @@ impl Rgb {
     pub fn of([r, g, b]: bar::Color) -> Rgb {
         Rgb(r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0)
     }
+
+    /// This color a part of the way to another, 0 to 1, a channel at a time.
+    pub fn toward(self, to: Rgb, part: f64) -> Rgb {
+        let mix = |a: f64, b: f64| a + (b - a) * part.clamp(0.0, 1.0);
+        Rgb(mix(self.0, to.0), mix(self.1, to.1), mix(self.2, to.2))
+    }
 }
 
 /// The bar's font, as spark-shell names it (BAR_FONT), and its bold: the time's and the plate's.
@@ -405,5 +411,9 @@ mod tests {
         assert_eq!(Rgb::hex("#000000"), Some(Rgb(0.0, 0.0, 0.0)));
         assert_eq!(Rgb::hex("fff"), None);
         assert_eq!(Rgb::hex("gg0000"), None);
+        // a part of the way from one to another
+        let (dim, text) = (Rgb(0.25, 0.5, 1.0), Rgb(0.75, 0.0, 1.0));
+        assert_eq!(dim.toward(text, 0.5), Rgb(0.5, 0.25, 1.0));
+        assert_eq!((dim.toward(text, 0.0), dim.toward(text, 1.0), dim.toward(text, 7.0)), (dim, text, text));
     }
 }

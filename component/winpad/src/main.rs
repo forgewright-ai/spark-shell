@@ -29,7 +29,10 @@ desktop window back, Super+Tab) focuses the window before.
 spark-shell sets the look and the place in the environment: WINPAD_FG,
 WINPAD_ACCENT, WINPAD_MUTED, WINPAD_SURFACE, WINPAD_LIT, WINPAD_BAND_HEX (rrggbb),
 WINPAD_CLOSE, WINPAD_MIN, WINPAD_FILL and WINPAD_GROUND (the buttons' colors and the
-ground's), WINPAD_TERM (the terminal's app), WINPAD_TITLE and WINPAD_TERM_TITLE
+ground's), WINPAD_BAND_LIT (the chip under the pointer on the focused window's
+band, rrggbb; WINPAD_LIT's on the others), WINPAD_HALF (half the title's size
+in 1024ths of a point, for half a space at a button's sides; none: whole
+spaces), WINPAD_TERM (the terminal's app), WINPAD_TITLE and WINPAD_TERM_TITLE
 (the title format after the buttons),
 WINPAD_ALPHA, WINPAD_FONT, WINPAD_VIEW (icons, the default, or titles: a slot a
 window with its title), WINPAD_BAND (on: the band under the handle; off, the
@@ -100,6 +103,7 @@ fn run(_: bool) -> Result<(), String> {
 #[cfg(target_os = "linux")]
 fn config() -> spark_winpad::app::Config {
     use spark_winpad::app::{Config, Look, Titles};
+    use spark_winpad::buttons::{half_size, Style};
     use spark_winpad::pad::{Place, View};
     use spark_winpad::paint::Rgb;
     let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
@@ -117,6 +121,7 @@ fn config() -> spark_winpad::app::Config {
             .filter(|n| (0..=100_000).contains(n))
             .unwrap_or(d)
     };
+    let lit = hex("WINPAD_LIT", "dcdcdd");
     Config {
         look: Look {
             fg: color("WINPAD_FG", "383a42"),
@@ -132,8 +137,13 @@ fn config() -> spark_winpad::app::Config {
             font: env("WINPAD_FONT").unwrap_or_else(|| "Monaspace Neon 12".into()),
         },
         titles: Titles {
-            colors: [hex("WINPAD_CLOSE", "e45649"), hex("WINPAD_MIN", "c18401"), hex("WINPAD_FILL", "50a14f")],
-            ground: hex("WINPAD_GROUND", "fafafa"),
+            style: Style {
+                colors: [hex("WINPAD_CLOSE", "e45649"), hex("WINPAD_MIN", "c18401"), hex("WINPAD_FILL", "50a14f")],
+                ground: hex("WINPAD_GROUND", "fafafa"),
+                band_lit: hex("WINPAD_BAND_LIT", &lit),
+                lit,
+                half: half_size(env("WINPAD_HALF").as_deref()),
+            },
             term: env("WINPAD_TERM").unwrap_or_default(),
             term_also: env("WINPAD_TERM_ALSO").unwrap_or_default(),
             title: env("WINPAD_TITLE").unwrap_or_else(|| "%title".into()),

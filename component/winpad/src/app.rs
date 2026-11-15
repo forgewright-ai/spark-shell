@@ -61,12 +61,10 @@ pub struct Look {
 }
 
 /// What spark-shell says, read once at the start.
-/// What the buttons on a title band need: their colors and the ground's as rrggbb, the terminal's app, and
-/// the title format that follows the buttons, the terminal's and every other window's.
+/// What the buttons on a title band need: what they wear, the terminal's app, and the title format that
+/// follows the buttons, the terminal's and every other window's.
 pub struct Titles {
-    /// Close, minimize, fill.
-    pub colors: [String; 3],
-    pub ground: String,
+    pub style: crate::buttons::Style,
     pub term: String,
     /// What an app of the menu opens its window under, as a start: spark-shell-tmux is a terminal too.
     pub term_also: String,

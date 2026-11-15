@@ -362,7 +362,7 @@ bindsym XF86MonBrightnessUp exec @REPO@/spark-shell bar light up
 # action: desktop.bar-light-down
 bindsym XF86MonBrightnessDown exec @REPO@/spark-shell bar light down
 
-# key: Super+equal puts the keyboard on the bar: the arrows move, Enter acts.
+# key: Super+equal puts the keyboard on the bar: arrows move and set, Enter acts.
 # action: desktop.bar-keys
 bindsym $mod+equal exec @REPO@/spark-shell bar keys
 

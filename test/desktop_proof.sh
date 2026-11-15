@@ -72,6 +72,7 @@ DBUS_SESSION_BUS_ADDRESS=$(sed -n 1p "$HOME/bus.out"); buspid=$(sed -n 2p "$HOME
 echo "ok: a session bus at $DBUS_SESSION_BUS_ADDRESS"
 sway -c "$HOME/.config/sway/config" > "$HOME/sway.log" 2>&1 &
 swaypid=$!
+trap 'kill "$swaypid" "$buspid" 2>/dev/null || :' EXIT   # a step that fails leaves no sway and no bus behind
 sock=''
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
     sock=$(ls "$XDG_RUNTIME_DIR"/sway-ipc.*.sock 2>/dev/null | head -1)
@@ -95,6 +96,61 @@ done
 swaymsg -t get_tree | jq -e '.. | objects | select(.app_id? == "proof-window")' >/dev/null || { echo "FAIL: no foot window in sway's tree"; tail -40 "$HOME/sway.log"; exit 1; }
 echo "ok: a foot window is open in the headless sway ($(swaymsg -t get_tree | jq -r '[.. | objects | select(.app_id? != null) | .app_id] | unique | join(", ")'))"
 for b in $(swaymsg -t get_bar_config | jq -r '.[]'); do swaymsg -t get_bar_config "$b" | jq -r '"bar " + .id + ": mode " + .mode + ", at the " + .position'; done
+
+echo "== a terminal the keys place: its frame on every side, none of the ground inside it, the same window at each press (v0.148.1)"
+# foot cuts a floating window to whole cells from 1.17 on unless foot.ini says not to. The window then differed with each
+# press: Super+Ctrl+Up shrank it to the terminal's size, and Up again put it back at its place with the ground
+# showing in what the terminal left, or its frame covered. An older foot has no such line to take.
+fv=$(foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9]*\)\.\([0-9]*\).*/\1 \2/p'); set -- ${fv:-0 0}
+if [ "$1" -gt 1 ] || [ "$2" -ge 17 ]; then
+    frame=$(sed -n 's/^client\.focused  *#[0-9a-f]* #[0-9a-f]* #[0-9a-f]* #[0-9a-f]* #\([0-9a-f]\{6\}\)$/\1/p' "$HOME/.config/sway/config")
+    oh=$(swaymsg -t get_outputs | jq -r '.[0].rect.height')
+    was=$(swaymsg -t get_workspaces | jq -r '.[] | select(.focused) | .name')
+    swaymsg 'workspace 9' >/dev/null   # a workspace of its own for the new terminal
+    swaymsg 'output * bg #00ff00 solid_color' >/dev/null
+    plain=''
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+        [ "$(grim -t ppm -g "0,$((oh - 1)) 1x1" - 2>/dev/null | tail -c 3 | od -An -tx1 | tr -d ' \n')" != 00ff00 ] || { plain=1; break; }
+        sleep 1
+    done
+    [ -n "$plain" ] || { echo "FAIL: the plain ground this check reads did not come up"; exit 1; }
+    swaymsg exec 'foot --app-id proof-new' >/dev/null
+    bleed=''
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do swaymsg -t get_tree | jq -e '.. | objects | select(.app_id? == "proof-new")' >/dev/null 2>&1 && break; sleep 1; done
+    sizes=''
+    for place in up up left left; do
+        sh "$REPO/spark-shell" desktop window "$place" > "$HOME/window.out" 2>&1 || { cat "$HOME/window.out"; echo "FAIL: desktop window $place"; exit 1; }
+        box=''
+        for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+            sleep 1
+            now=$(swaymsg -t get_tree | jq -r '.. | objects | select(.app_id? == "proof-new") | "\(.rect.x),\(.rect.y - .deco_rect.height) \(.rect.width)x\(.rect.height + .deco_rect.height) \(.deco_rect.height) \(.type)"')
+            case $now in *' floating_con') [ "$now" != "$box" ] || break ;; esac
+            box=$now
+        done
+        case $box in *' floating_con') box=${box% *} ;; *) echo "FAIL: after $place the new terminal is not a placed window: $box"; exit 1 ;; esac
+        grim -t ppm -g "${box% *}" "$HOME/window.ppm" || { echo "FAIL: grim took no picture of the window"; exit 1; }
+        python3 -I -c '
+import sys
+data, band, frame, place = open(sys.argv[1], "rb").read(), int(sys.argv[2]), bytes.fromhex(sys.argv[3]), sys.argv[4]
+_, size, _, px = data.split(b"\n", 3)
+w, h = (int(n) for n in size.split())
+at = lambda x, y: px[(y * w + x) * 3:(y * w + x) * 3 + 3]
+sides = {"left": [at(0, y) for y in range(band, h)], "right": [at(w - 1, y) for y in range(band, h)], "bottom": [at(x, h - 1) for x in range(w)]}
+bare = sorted(name for name, line in sides.items() if any(p != frame for p in line))
+ground = sum(1 for y in range(band, h - 1) for x in range(1, w - 1) if at(x, y) == b"\x00\xff\x00")
+print("%s: the window %dx%d, the frame whole on %s, %d pixels of the ground inside it" % (place, w, h, "every side" if not bare else "every side but the " + ", ".join(bare), ground))
+sys.exit(1 if bare or ground else 0)' "$HOME/window.ppm" "${box##* }" "$frame" "$place" || bleed=1
+        sizes="$sizes ${box#* }"
+    done
+    [ -z "$bleed" ] || { echo "FAIL: the terminal does not fill its window, or covers its frame"; exit 1; }
+    # shellcheck disable=SC2086   # four sizes and their bands, split on purpose
+    set -- $sizes
+    [ "$1" = "$3" ] && [ "$5" = "$7" ] || { echo "FAIL: a key pressed again gives another window:$sizes"; exit 1; }
+    echo "ok: Up and Up again give one window ($1), Left and Left again one ($5); the terminal fills it and its frame shows on every side"
+    swaymsg "[app_id=\"proof-new\"] kill" >/dev/null; swaymsg "workspace $was" >/dev/null
+else
+    echo "note: foot ${fv:-of no version} has no line in foot.ini for this: not checked here"
+fi
 
 echo "== the notifications: mako started by the sway config, three drawn, in two palettes, then do not disturb (#71)"
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do makoctl mode >/dev/null 2>&1 && break; sleep 1; done

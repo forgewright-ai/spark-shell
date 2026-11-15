@@ -19,7 +19,9 @@ wm_env_name() { printf 'SWAYSOCK'; }             # the session's variable, for a
 wm_config_file() { printf '%s\n' "$HOME/$WM_CONFIG_REL"; }
 wm_config_template() { printf '%s\n' "$REPO/template/$WM_CONFIG_REL"; }
 wm_portals_conf() { printf '%s\n' "$HOME/.config/xdg-desktop-portal/sway-portals.conf"; }
-wm_start() { XDG_CURRENT_DESKTOP=sway PATH=$HOME/.local/bin:$PATH env "$@" sway; }   # wm_start ENV-WORDS...; the log is the caller's
+# Firefox under a band draws a title bar of its own and round corners the wallpaper shows through, unless it is told the
+# window has its decoration; a person's own value stays
+wm_start() { XDG_CURRENT_DESKTOP=sway MOZ_GTK_TITLEBAR_DECORATION=${MOZ_GTK_TITLEBAR_DECORATION:-none} PATH=$HOME/.local/bin:$PATH env "$@" sway; }   # wm_start ENV-WORDS...; the log is the caller's
 
 # the queries: JSON, as the IPC gives it
 wm_tree() { swaymsg -t get_tree 2>/dev/null; }
