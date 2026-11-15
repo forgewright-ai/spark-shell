@@ -836,8 +836,9 @@ class Desk:
         cursors = self.home / ".local/share/icons/proof-blank/cursors"
         cursors.mkdir(parents=True)
         (cursors.parent / "index.theme").write_text("[Icon Theme]\nName=proof-blank\n")
-        for name in ("default", "left_ptr", "text", "xterm"):
-            (cursors / name).write_bytes(NO_IMAGE)
+        for name in ("default", "left_ptr", "text", "xterm", "pointer", "hand2", "grab", "grabbing", "move", "fleur", "all-scroll",
+                     "n-resize", "s-resize", "e-resize", "w-resize", "ne-resize", "nw-resize", "se-resize", "sw-resize"):
+            (cursors / name).write_bytes(NO_IMAGE)   # every shape the bar and the pad ask for: a hand on a target has no image either
         # 12 points is the spec's size; ALPHA 1 so the bar's ground is the palette's own color on the screen; two layouts,
         # so the keyboard's module is on the line
         face = self.face = os.environ.get("BAR_PROOF_FONT", "").strip()
@@ -2662,7 +2663,10 @@ def geometry(d):
     d.until(lambda s: s.focused() == "mark", "the keys on the first screen's bar")
     for step in (0, 7 * cell):
         d.move(at_["x"] + at_["width"] // 4 + step, at_["y"] + at_["height"] // 2)
+    on = lambda ident: (lambda s: bool(s) and s.focused() == ident)(d.state())   # noqa: E731  the keys on that target now
     d.key("Right")
+    if not settle(lambda: on("workspace:1"), 3) and on("mark"):
+        d.key("Right")   # a key lost on the way, as focus() allows for: the keys are still on the bar, on the logo
     held = d.until(lambda s: s.focused() == "workspace:1", "Right to move the keys, after the pointer travelled on the screen at rest", 5)
     d.key("Escape")
     d.until(lambda s: not s.focused(), "Escape to give the keyboard back")

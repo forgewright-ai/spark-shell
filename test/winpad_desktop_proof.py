@@ -49,6 +49,7 @@ from pathlib import Path
 import shlex
 import shutil
 import signal
+import struct
 import subprocess
 import sys
 import tempfile
@@ -85,6 +86,14 @@ def nodes(node):
     for key in ("nodes", "floating_nodes"):
         for child in node.get(key, []):
             yield from nodes(child)
+
+
+# an Xcursor file of one transparent pixel, under every name the seat and the pad ask for: the proof's pointer has no
+# image, so no capture has one in it, on the families whose sway puts the pointer in a capture too
+NO_IMAGE = (b"Xcur" + struct.pack("<3I", 16, 0x10000, 1) + struct.pack("<3I", 0xfffd0002, 24, 28)
+            + struct.pack("<9I", 36, 0xfffd0002, 24, 1, 1, 1, 0, 0, 0) + struct.pack("<I", 0))
+POINTERS = ("default", "left_ptr", "text", "xterm", "pointer", "hand2", "grab", "grabbing", "move", "fleur", "all-scroll",
+            "n-resize", "s-resize", "e-resize", "w-resize", "ne-resize", "nw-resize", "se-resize", "sw-resize")
 
 
 def ppm(path):
@@ -358,7 +367,13 @@ def round_in(palette, binary, evidence):
     runtime.mkdir(mode=0o700)
     settings = root / ".config/spark-shell"
     settings.mkdir(parents=True)
-    (settings / "config").write_text("DESKTOP=sway\nTHEME=%s\nALPHA=1\n" % palette)
+    (settings / "config").write_text("DESKTOP=sway\nTHEME=%s\nALPHA=1\nPOINTER=proof-blank 24\n" % palette)
+    # the pointer: a theme of the proof's with no image, named in the config so a look spark-shell applies keeps it
+    cursors = root / ".local/share/icons/proof-blank/cursors"
+    cursors.mkdir(parents=True)
+    (cursors.parent / "index.theme").write_text("[Icon Theme]\nName=proof-blank\n")
+    for name in POINTERS:
+        (cursors / name).write_bytes(NO_IMAGE)
     spark = root / ".config/spark"   # the palette in use is spark's theme.env, as the other proofs set it
     spark.mkdir(parents=True)
     shutil.copyfile(REPO / "gallery/theme" / (palette + ".env"), spark / "theme.env")
@@ -366,7 +381,8 @@ def round_in(palette, binary, evidence):
     env = {**os.environ, "HOME": str(root), "SPARK_SHELL_ROOT": str(root / "sysroot"), "XDG_CONFIG_HOME": str(root / ".config"),
            "XDG_STATE_HOME": str(root / ".local/state"), "XDG_DATA_HOME": str(root / ".local/share"),
            "XDG_RUNTIME_DIR": str(runtime), "WLR_BACKENDS": "headless", "WLR_RENDERER": "pixman",
-           "WLR_LIBINPUT_NO_DEVICES": "1", "SPARK_SHELL_NO_APPLY": "1", "SPARK_SHELL_WINPAD": str(pad)}
+           "WLR_LIBINPUT_NO_DEVICES": "1", "SPARK_SHELL_NO_APPLY": "1", "SPARK_SHELL_WINPAD": str(pad),
+           "XCURSOR_PATH": str(root / ".local/share/icons"), "XCURSOR_THEME": "proof-blank", "XCURSOR_SIZE": "24"}
     # SPARK_SHELL_BAR too: this is the pad with sway's own bar, where a pad whose place is the bar (the default)
     # stands at the bottom's middle; a spark-bar named here would have spark-shell take the bar for spark's
     for name in ("SWAYSOCK", "I3SOCK", "WAYLAND_DISPLAY", "DISPLAY", "WINPAD_BAND", "WINPAD_GAP", "WINPAD_VIEW", "WINPAD_HEIGHT",
@@ -375,7 +391,8 @@ def round_in(palette, binary, evidence):
     # a real swaybar on top, its line spark-shell's own, so the bar's block is the one people see
     config = root / "sway.conf"
     bar = ("bar {\n position top\n status_command sh %s bar status\n}\n" % (REPO / "spark-shell")) if shutil.which("swaybar") else ""
-    config.write_text("output HEADLESS-1 mode %dx%d\nxwayland disable\ndefault_border pixel 2\ngaps outer %d\n%s" % (W, H, GAP, bar))
+    config.write_text("output HEADLESS-1 mode %dx%d\nxwayland disable\ndefault_border pixel 2\ngaps outer %d\nseat * xcursor_theme proof-blank 24\n%s"
+                      % (W, H, GAP, bar))
     children = [subprocess.Popen(["sway", "-c", str(config)], env=env, cwd=root,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]
     pointer = None
@@ -530,6 +547,14 @@ def round_in(palette, binary, evidence):
             the start: a bar in a fallback font grows a pixel or two once its line is drawn."""
             x, y, w, h = area()
             return y + h == floor if edge == "bottom" else x == GAP
+
+        # 0. the proof's pointer has no image: a piece of the screen is the same pixels with the pointer on it and off it
+        move(W // 2, 300)
+        time.sleep(0.4)
+        under = grab(W // 2 - 24, 300 - 24, 48, 48)
+        move(W // 4, 600)
+        time.sleep(0.4)
+        ok(under == grab(W // 2 - 24, 300 - 24, 48, 48), "the proof's pointer has no image: the screen under it is the screen without it, so no capture measures a cursor")
 
         # 1. a tiled foot, Down twice: it goes to the pad, marked tiled, and the pad keeps its strip
         a = open_foot("MANOR").pid
