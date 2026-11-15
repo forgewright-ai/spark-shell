@@ -5523,7 +5523,7 @@ STUB
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"; sh "$SH" on --yes >/dev/null 2>&1
     grep -q '^bar {$' "$sway" && grep -q "^    status_command $REPO/spark-shell bar status\$" "$sway" && ! grep -q 'bar start' "$sway" && ! grep -q 'spark-tray' "$sway" && ! grep -q '@BAR' "$sway" \
         && grep -q "^bindsym Mod4+equal exec $REPO/spark-shell bar keys\$" "$sway" && grep -qxF 'bindsym $mod+equal exec @REPO@/spark-shell bar keys' "$REPO/template/.config/sway/config" \
-        && sh "$SH" desktop keys | grep -qx 'Super+equal desktop.bar-keys.' && sh "$SH" -h | grep -qx '  spark-shell bar keys              the keyboard on the bar (Super+equal)' && grep -qx '    Super+equal puts the keyboard on the bar: arrows move and set, Enter acts.' "$REPO/README.md" \
+        && sh "$SH" desktop keys | grep -qx 'Super+equal desktop.bar-keys.' && sh "$SH" -h | grep -qx '  spark-shell bar keys              the keyboard on the bar (Super+equal)' && _kl=$(sed -n 's/^# key: \(Super+equal .*\)$/\1/p' "$REPO/template/.config/sway/config") && [ -n "$_kl" ] && grep -qxF "    $_kl" "$REPO/README.md" \
         && ok "sway's config with no spark-bar here: sway's bar draws the line as before, nothing starts spark-bar; Super+equal is bound, beside the pad's Super+minus, and the keys, the help and the README say so" || bad "render no spark-bar" "$(grep -n 'bar' "$sway" | head -20)"
     mkdir -p "$H/barbin" "$H/run"
     cat > "$H/barbin/spark-bar" <<'SPARKBAR_STUB'

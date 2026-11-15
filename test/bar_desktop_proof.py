@@ -1615,7 +1615,10 @@ def behavior(d):
         d.over(s.find(ident))
         d.wheel(notch)
         level -= 5 * notch
-        d.told(lambda s, level=level: s.named("out.name") == "output %d%%" % level and s.levels.get("out") == level, "the wheel on %s to make it %d" % (ident, level))
+        try:
+            d.told(lambda s, level=level: s.named("out.name") == "output %d%%" % level and s.levels.get("out") == level, "the wheel on %s to make it %d" % (ident, level))
+        except AssertionError as late:   # what the sound tool heard says whether the notch was lost before the shell or after it
+            raise AssertionError("%s; the sound tool heard %s and is at %s" % (late, d.log()[n:], d.level("out"))) from None
         went.append(d.level("out"))
     ok(went == [want + 5, want + 10, want + 15, want + 10] and d.log()[n:] == ["set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%" + way for way in "+++-"],
        "pointer: the wheel on the sign, on the gauge and on the number takes 5 a notch, up and down: the sound tool was told each notch in turn, and is where the bar is, at %d" % level,

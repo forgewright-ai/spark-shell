@@ -247,7 +247,8 @@ def main():
             return 2.5 * cell <= width <= 3.5 * cell
 
         def others(name, mark, all_ink):   # where the ink of a band starts, a button's own three cells left out
-            lo, hi = mark[0] + mark[1] / 2 - 1.5 * cell, mark[0] + mark[1] / 2 + 1.5 * cell
+            # and two pixels more: where a cell is not whole pixels the chip's edge falls just outside them
+            lo, hi = mark[0] + mark[1] / 2 - 1.5 * cell - 2, mark[0] + mark[1] / 2 + 1.5 * cell + 2
             return sorted(c[0] for c in all_ink if not lo <= c[0] <= hi)
 
         sway("output", "*", "resolution", "1920x1080")
