@@ -2572,6 +2572,12 @@ def geometry(d):
         d.move(bare, start + (8 if end > start else -8))
         d.move(bare, end)
         d.button(False)
+    def moves():
+        """The spark-shell runs that move the bar, by their words: a drop's, or a helper one left."""
+        return [" ".join(cmdline(p)[-2:]) for p in d.ours() if cmdline(p)[-2:] in (["bar", "top"], ["bar", "bottom"])]
+    # the two moves above each leave a helper under the move's own words for two seconds (the refits a moved bar asks
+    # for): gone before the drag, so a run found after it is one the drop asked for
+    settle(lambda: not moves(), 10)
     pid, was = d.bar_pid(), d.conf("BAR_POSITION")
     drag(high // 2, H // 2 - 2 * high)
     # two clicks after it, each answered: the shell has read by now whatever the drop sent
@@ -2579,7 +2585,7 @@ def geometry(d):
     d.until(lambda s: s.named("out.name") == "output muted", "out muted by a click after the drop")
     d.click(sign.mid)
     s = d.until(lambda s: s.named("out.name") == "output 40%", "out unmuted")
-    moving = [" ".join(cmdline(p)[-2:]) for p in d.ours() if cmdline(p)[-2:] in (["bar", "top"], ["bar", "bottom"])]
+    moving = moves()
     ok(not any(t.x <= bare < t.x + t.w for t in s.targets()) and d.bar_pid() == pid and s.bar().edge == "top" and d.conf("BAR_POSITION") == was and not moving
        and s.rects() == base,
        "the bar pressed on its own ground, where no target is, dragged down and let go in the screen's upper half stays: the same process at the top, the config's BAR_POSITION as it was, and spark-shell was asked nothing",
