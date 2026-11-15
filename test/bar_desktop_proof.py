@@ -104,7 +104,8 @@ case ${1:-} in
     status) printf 'Audio\n |- Sinks:\n |  *   50. Proof Speakers [vol: 0.40]\n |\n |- Sources:\n |  *   52. Proof Microphone [vol: 0.50]\n |\n' ;;
     get-volume) k=$(side "$2"); l=$(cat "$d/$k.level" 2>/dev/null || echo 40); m=''; [ ! -e "$d/$k.muted" ] || m=' [MUTED]'
         printf 'Volume: %d.%02d%s\n' "$((l / 100))" "$((l % 100))" "$m" ;;
-    set-mute|set-volume) echo "$*" >> "$d/log"
+    set-mute|set-volume) : > "$d/busy.$$"; trap 'rm -f "$d/busy.$$"' EXIT   # busy: a change on its way, until it is made
+        echo "$*" >> "$d/log"
         [ ! -s "$d/lag" ] || sleep "$(cat "$d/lag")"   # lag: a change takes so long, and the shell's answer to it comes late
         [ ! -e "$d/fail" ] || exit 1
         k=$(side "$*")
@@ -1119,7 +1120,9 @@ class Desk:
 
     # --- what it sends
     def sound(self, out, muted, mic, mic_muted):
-        """The sound tool's state, set from outside the bar, as another program's change is."""
+        """The sound tool's state, set from outside the bar, as another program's change is: once no change of the
+        bar's own is on its way, for one that lands after this would undo it."""
+        settle(lambda: not list(self.snd.glob("busy.*")), 10)
         for side, level, off in (("out", out, muted), ("mic", mic, mic_muted)):
             (self.snd / (side + ".level")).write_text("%d\n" % level)
             if off:
