@@ -40,7 +40,8 @@ order the windows were focused in, and the tick spark-winpad.back (spark-shell
 desktop window back, Super+Tab) focuses the window before.
 
 spark-shell sets the look and the place in the environment: WINPAD_FG,
-WINPAD_ACCENT, WINPAD_MUTED, WINPAD_SURFACE, WINPAD_LIT, WINPAD_BAND_HEX (rrggbb),
+WINPAD_ACCENT, WINPAD_MUTED, WINPAD_DIM (the grip's line, the bar's dim tone;
+none: WINPAD_MUTED's), WINPAD_SURFACE, WINPAD_LIT, WINPAD_BAND_HEX (rrggbb),
 WINPAD_CLOSE, WINPAD_MIN, WINPAD_FILL and WINPAD_GROUND (the buttons' colors and the
 ground's), WINPAD_CLOSE_INK (the glyph on close's chip, rrggbb; none: the
 ground's), WINPAD_BAND_LIT and WINPAD_URGENT_LIT (the chip under the pointer on
@@ -137,6 +138,7 @@ fn config() -> spark_winpad::app::Config {
             fg: color("WINPAD_FG", "383a42"),
             accent: color("WINPAD_ACCENT", "4078f2"),
             muted: color("WINPAD_MUTED", "696c77"),
+            dim: env("WINPAD_DIM").and_then(|v| Rgb::hex(&v)).unwrap_or_else(|| color("WINPAD_MUTED", "696c77")),
             ground: color("WINPAD_GROUND", "fafafa"),
             surface: color("WINPAD_SURFACE", "ebebec"),
             lit: color("WINPAD_LIT", "dcdcdd"),

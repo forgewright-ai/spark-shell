@@ -53,6 +53,8 @@ pub struct Look {
     pub fg: Rgb,
     pub accent: Rgb,
     pub muted: Rgb,
+    /// The dim tone, the bar's own: the grip's line, as the bar's hairline.
+    pub dim: Rgb,
     /// The ground's color, the bar's: the pad's own body.
     pub ground: Rgb,
     /// What stands beside the pad: a label, a group's list.
@@ -1274,7 +1276,7 @@ impl App {
             // the grip: a line in the middle of its room, half as long as the room is across, as the bar's hairline
             // is; on the bar, where the pad has no edge, it is the accent while the pad has the keys
             let lr = lay.lead_rect(&m);
-            let grip = if keys_here && lay.bar { look.accent } else { look.muted };
+            let grip = if keys_here && lay.bar { look.accent } else { look.dim };
             if lay.column {
                 let len = (lr.w / 2) as f64;
                 c.fill(ox + (lr.w as f64 - len) / 2.0, oy + (lr.y + lr.h / 2) as f64, len, 1.0, grip, 1.0);
