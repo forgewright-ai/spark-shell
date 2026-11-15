@@ -490,46 +490,53 @@ bar_look() {
     printf '{"name":"look","fg":"%s","accent":"%s","muted":"%s","ground":"%s","lit":"%s","attention":"%s","alert":"%s","alpha":"%s","full":"%s","light":"%s","motion":"%s","ink":"%s"}' \
         "$HEX_FG" "$HEX_ACCENT" "$HEX_MUTED" "$HEX_BG" "$PANEL_HI" "${PANEL_ATTENTION:-$HEX_ANSI_3}" "$HEX_ANSI_1" "$ALPHA" "$FAM_ON" "$FAM_OFF" "$_blm" "${PANEL_INK:-$HEX_BG}"
 }
-bar_sign() { _bg=$1; [ -z "$_bw" ] || _bg=$2; }   # bar_sign GLYPH WORD -> _bg, a module's sign: its glyph, or its word where the bar is in words
-# a fact, one module's object: SIGN, then TEXT in the CELLS kept for it, its widest; STATE is ok, muted, off, missing,
-# wrong, asks or records; LEVEL, 0 to 100, where the module has one, and SET, true where the bar can set it; LABEL is
+# bar_sign GLYPH WORD [ICON] -> _bg, a module's sign: its glyph, or its word where the bar is in words; and _bi, its
+# icon's name, which spark's bar draws in the glyph's place (component/bar/icons.py has the drawings); none in words
+bar_sign() { _bg=$1; _bi=${3:-}; [ -z "$_bw" ] || { _bg=$2; _bi=''; }; }
+# a fact, one module's object: SIGN and the icon bar_sign named last, then TEXT in the CELLS kept for it, its widest;
+# STATE is ok, muted, off, missing, wrong, asks or records; LEVEL, 0 to 100, where the module has one, and SET, true where the bar can set it; LABEL is
 # the module and its state in words. Pinned is the config's word: the level's gauge and number are on the bar. Toggle
 # is true where a click on the sign or the text changes the module in place and opens nothing (bar_click): out's
 # mute, the keyboard's next layout, the pad shown or hidden
 bar_fact() {   # bar_fact NAME GROUP SIGN TEXT CELLS STATE LABEL [LEVEL [SET]] -- added to the line, unless the module is hidden
+    _bfi=${_bi:-}; _bi=''   # the icon is this fact's alone: the next one names its own, or has none
     case " $_hidden " in *" $1 "*) return 0 ;; esac
     _bfl=''; [ -z "${8:-}" ] || { _bfl=$8; [ "$_bfl" -le 100 ] || _bfl=100; _bfl=",\"level\":$_bfl"; }
     _bfb=false; [ "$1" != clock ] || _bfb=true   # the time alone is bold
     _bfp=false; case " $_pinned " in *" $1 "*) _bfp=true ;; esac
     _bfg=false; case $1 in out|kb|pad) _bfg=true ;; esac
     bar_str "$3"; _bfs=$_bs; bar_str "$4"; _bft=$_bs; bar_str "$7"
-    line="$line,{\"name\":\"$1\",\"group\":\"$2\",\"sign\":\"$_bfs\",\"text\":\"$_bft\",\"cells\":$5,\"bold\":$_bfb,\"state\":\"$6\"$_bfl,\"set\":${9:-false},\"pinned\":$_bfp,\"label\":\"$_bs\",\"toggle\":$_bfg}"
+    line="$line,{\"name\":\"$1\",\"group\":\"$2\",\"sign\":\"$_bfs\",\"icon\":\"$_bfi\",\"text\":\"$_bft\",\"cells\":$5,\"bold\":$_bfb,\"state\":\"$6\"$_bfl,\"set\":${9:-false},\"pinned\":$_bfp,\"label\":\"$_bs\",\"toggle\":$_bfg}"
 }
 bar_fact_pad() {   # the windows that wait on the pad, and how many; off while the pad is hidden
     _pdn=$(winpad_count); [ "${_pdn:-0}" -gt 0 ] 2>/dev/null || return 0
-    bar_sign "$BAR_PAD" pad; _pdw=2; [ "${#_pdn}" -le 2 ] || _pdw=${#_pdn}
+    bar_sign "$BAR_PAD" pad pad; _pdw=2; [ "${#_pdn}" -le 2 ] || _pdw=${#_pdn}
     if winpad_hidden; then bar_fact pad windows "$_bg" "$_pdn" "$_pdw" off "pad hidden, $_pdn windows"
     else bar_fact pad windows "$_bg" "$_pdn" "$_pdw" ok "pad, $_pdn windows"; fi
 }
 bar_fact_lan() {   # the wire: wrong when it is down
-    bar_sign "$BAR_LAN" lan
+    bar_sign "$BAR_LAN" lan lan
     case $(bar_lan) in
         up*) bar_fact lan connections "$_bg" '' 0 ok 'lan connected' ;;
         down) bar_fact lan connections "$_bg" '' 0 wrong 'lan not connected' ;;
     esac
 }
-bar_fact_bt() {   # bluetooth: ok with a device connected; on with none, the same sign, missing; off, the hollow star
+# bluetooth: ok with a device connected, its icon with a dot at each side; on with none, the same sign and the icon with
+# no dots, missing; off, the hollow star and the icon drawn thin
+bar_fact_bt() {
     bt=$(bar_bt)
     case $bt in
-        name*) bar_sign "$BAR_BT" bt; bar_fact bt connections "$_bg" '' 0 ok "bluetooth ${bt#name } connected" ;;
-        on) bar_sign "$BAR_BT" bt; bar_fact bt connections "$_bg" '' 0 missing 'bluetooth on' ;;
-        off) bar_sign "$BAR_BT_OFF" bt; bar_fact bt connections "$_bg" '' 0 off 'bluetooth off' ;;
+        name*) bar_sign "$BAR_BT" bt bt; bar_fact bt connections "$_bg" '' 0 ok "bluetooth ${bt#name } connected" ;;
+        on) bar_sign "$BAR_BT" bt bt-idle; bar_fact bt connections "$_bg" '' 0 missing 'bluetooth on' ;;
+        off) bar_sign "$BAR_BT_OFF" bt bt-off; bar_fact bt connections "$_bg" '' 0 off 'bluetooth off' ;;
     esac
 }
-bar_fact_wifi() {   # wifi: its signal a level the bar reads and cannot set; off, with no level, while it is not connected
-    wifi=$(bar_wifi_pct); bar_sign "$BAR_WIFI" wifi
-    if [ -n "$wifi" ]; then bar_fact wifi connections "$_bg" '' 0 ok "wifi ${wifi%% *}%" "${wifi%% *}"
-    elif [ -n "$(bar_wireless)" ]; then bar_fact wifi connections "$_bg" '' 0 off 'wifi not connected'; fi
+bar_fact_wifi() {   # wifi: its signal a level the bar reads and cannot set, and its icon's bands lit by it; off, with no level, while it is not connected
+    wifi=$(bar_wifi_pct)
+    if [ -n "$wifi" ]; then
+        _wfi=wifi; [ "${wifi%% *}" -ge 67 ] 2>/dev/null || _wfi=wifi-fair; [ "${wifi%% *}" -ge 34 ] 2>/dev/null || _wfi=wifi-weak
+        bar_sign "$BAR_WIFI" wifi "$_wfi"; bar_fact wifi connections "$_bg" '' 0 ok "wifi ${wifi%% *}%" "${wifi%% *}"
+    elif [ -n "$(bar_wireless)" ]; then bar_sign "$BAR_WIFI" wifi wifi-off; bar_fact wifi connections "$_bg" '' 0 off 'wifi not connected'; fi
 }
 # sound's two are always on the line, with a level, 0 where none is read, so a pinned control keeps its cells: the hollow
 # sign while muted, and in words, where no word is hollow, off, so the tone says it; missing with no device or no level
@@ -537,46 +544,52 @@ bar_fact_wifi() {   # wifi: its signal a level the bar reads and cannot set; off
 bar_fact_audio() {   # bar_fact_audio out|mic
     bar_audio_read "$1"
     if [ "$1" = out ]; then _aug=$BAR_OUT; _auo=$BAR_OUT_OFF; else _aug=$BAR_MIC; _auo=$BAR_MIC_OFF; fi
-    _aus=ok; _auc=true
-    [ "$m" != 1 ] || { _aus=muted; _aug=$_auo; [ -z "$_bw" ] || _aus=off; }
-    [ -z "$_auy" ] || { _aus=missing; _aug=$_auo; _auc=false; }
-    [ "$live" != 1 ] || { _aus=records; _aug=$PANEL_DOT; }
+    _aus=ok; _auc=true; _aui=$1
+    [ "$m" != 1 ] || { _aus=muted; _aug=$_auo; _aui=$1-muted; [ -z "$_bw" ] || _aus=off; }
+    [ -z "$_auy" ] || { _aus=missing; _aug=$_auo; _aui=$1-muted; _auc=false; }
+    [ "$live" != 1 ] || { _aus=records; _aug=$PANEL_DOT; _aui=$1; }   # the icon stays the microphone, in red
     [ ! -e "$(bar_failed "$1")" ] || { _aus=wrong; _aut="$_aun could not be changed"; }
-    bar_sign "$_aug" "$1"
+    bar_sign "$_aug" "$1" "$_aui"
     bar_fact "$1" sound "$_bg" '' 0 "$_aus" "$_aut" "${_aul:-0}" "$_auc"
 }
 bar_fact_due() {   # a reminder due: its sign alone, asking
     due=$(rem_due 2>/dev/null || :); [ -n "$due" ] || return 0
-    bar_sign "$BAR_DUE" due
+    bar_sign "$BAR_DUE" due due
     bar_fact due tasks "$_bg" '' 0 asks "reminder due: $(printf '%s' "${due#*"$TAB"}" | cut_chars 28)"
 }
 bar_fact_light() {   # the screen's brightness, a level the bar sets
     lt=$(light_get); case $lt in ''|*[!0-9]*) return 0 ;; esac
-    bar_sign "$BAR_LIGHT" light
+    bar_sign "$BAR_LIGHT" light light
     bar_fact light seat "$_bg" '' 0 ok "brightness $lt%" "$lt" true
 }
 bar_fact_kb() {   # the keyboard's layout in use, where there is more than one
     kb=$(kb_active); [ -n "$kb" ] || return 0
-    bar_sign "$BAR_KB" kb; _kbw=0; for _kbl in $KEYBOARD; do [ "${#_kbl}" -le "$_kbw" ] || _kbw=${#_kbl}; done   # the widest layout's name
+    bar_sign "$BAR_KB" kb kb; _kbw=0; for _kbl in $KEYBOARD; do [ "${#_kbl}" -le "$_kbw" ] || _kbw=${#_kbl}; done   # the widest layout's name
     bar_fact kb seat "$_bg" "$kb" "$_kbw" ok "keyboard $kb"
 }
-bar_fact_bat() {   # the battery: its number, a plus while it charges; wrong when low. No sign but its word
+# the battery: its icon, full from 75, low under 15, a bolt while it charges, and its number; wrong when low. In words
+# no icon says it charges: a plus after the number does
+bar_fact_bat() {
     bat=$(bar_power); [ -n "$bat" ] || return 0
-    cap=${bat%% *}; stt=${bat#* }; _bts=ok; _btt="$cap%"; _btl="battery $cap%"
-    [ "$stt" != Charging ] || { _btt="$_btt+"; _btl="$_btl charging"; }
-    [ "$cap" -ge 15 ] || [ "$stt" = Charging ] || { _bts=wrong; _btl="$_btl low"; }
-    bar_sign '' bat
-    bar_fact bat seat "$_bg" "$_btt" 5 "$_bts" "$_btl"
+    cap=${bat%% *}; stt=${bat#* }; _bts=ok; _btt="$cap%"; _btl="battery $cap%"; _btc=4; _bti=battery-half
+    [ "$cap" -lt 75 ] || _bti=battery-full
+    [ "$stt" != Charging ] || { _bti=battery-charging; _btl="$_btl charging"; }
+    [ "$cap" -ge 15 ] || [ "$stt" = Charging ] || { _bts=wrong; _bti=battery-low; _btl="$_btl low"; }
+    [ -z "$_bw" ] || { _btc=5; [ "$stt" != Charging ] || _btt="$_btt+"; }
+    bar_sign '' bat "$_bti"
+    bar_fact bat seat "$_bg" "$_btt" "$_btc" "$_bts" "$_btl"
 }
 bar_fact_clock() {   # the time alone: 21:41 in five cells, 12:41 PM in eight
     _ct=$(clock_text); bar_cells "$_ct"; [ "$_bc" -ge 5 ] || _bc=5; [ "$_bc" -le 5 ] || [ "$_bc" -ge 8 ] || _bc=8
     bar_fact clock time '' "$_ct" "$_bc" ok "time $_ct"
 }
-bar_fact_notifications() {   # always there where mako is: the flag, or the moon in do not disturb, and how many nobody looked at
+# always there where mako is: the flag, solid while some wait and hollow with none, or the sign of do not disturb, and
+# how many nobody looked at
+bar_fact_notifications() {
     command -v makoctl >/dev/null 2>&1 && _nm=$(makoctl mode 2>/dev/null) || return 0
     _nu=$(notify_unseen); [ "${_nu:-0}" -le 9 ] || _nu='9+'; [ "${_nu:-0}" != 0 ] || _nu=''
-    if printf '%s\n' "$_nm" | grep -qx "$NOTIFY_MODE"; then bar_sign "$BAR_DND" quiet; _nl='do not disturb'
-    else bar_sign "$BAR_NOTE" notes; _nl=notifications; fi
+    if printf '%s\n' "$_nm" | grep -qx "$NOTIFY_MODE"; then bar_sign "$BAR_DND" quiet quiet; _nl='do not disturb'
+    else _nfi=flag-none; [ -z "$_nu" ] || _nfi=flag; bar_sign "$BAR_NOTE" notes "$_nfi"; _nl=notifications; fi
     bar_fact notifications time "$_bg" "$_nu" 2 ok "$_nl${_nu:+, $_nu not seen}"
 }
 bar_facts() {   # -> the line for spark's bar: the look, then a fact a module, in the bar's order

@@ -30,6 +30,8 @@ pub const PLACES: i32 = 10;
 const PLACE_CELLS: i32 = 3;
 /// A gauge's cells.
 pub const GAUGE_CELLS: i32 = 5;
+/// An icon's cells: it stands in the middle of them, the text's size.
+pub const ICON_CELLS: i32 = 2;
 /// A number's digit cells; the percent sign's cell follows them.
 pub const DIGIT_CELLS: i32 = 3;
 /// The cells between a module's parts, between the modules of a group, and between groups.
@@ -223,6 +225,8 @@ pub struct Module {
     pub group: String,
     /// Its glyph, or its word; empty when it has none.
     pub sign: String,
+    /// Its icon's name: drawn where the sign would stand when the bar has that drawing; empty when it has none.
+    pub icon: String,
     /// The plain text after the sign; empty when none.
     pub text: String,
     /// The cells kept for the text, its widest: a text that changes moves nothing.
@@ -257,6 +261,7 @@ impl Module {
             name,
             group: said("group"),
             sign: said("sign"),
+            icon: said("icon"),
             cells: cells.map_or(glyphs(&text).len(), |n| (n as usize).min(CELLS_MOST)) as i32,
             text,
             bold: flag("bold"),
@@ -774,6 +779,11 @@ impl Metrics {
     pub fn inset(&self) -> i32 {
         (self.height as f64 / 9.0).round() as i32
     }
+
+    /// An icon's side: the text's size, four ninths of the height, 16 px of 36.
+    pub fn icon(&self) -> i32 {
+        (self.height as f64 * 4.0 / 9.0).round() as i32
+    }
 }
 
 /// What a target is, in the state file's words.
@@ -843,6 +853,8 @@ pub enum What {
     Plate(String),
     /// A sign, a text or the three dots: glyphs, a cell each.
     Text { glyphs: Vec<String>, bold: bool },
+    /// An icon, by its drawing's name: a sign drawn, in the middle of its two cells.
+    Icon(String),
     /// A gauge: so many of its five cells full.
     Gauge { full: i32 },
     /// A level's number: its module, the level, and where the four cells kept for it begin.
@@ -912,6 +924,8 @@ pub enum Draw {
         fit: bool,
         shift: f64,
     },
+    /// An icon in its square, by its drawing's name.
+    Icon { rect: Rect, name: String, tone: Tone },
 }
 
 /// What a bar shows: an output's width and workspaces, and the status every output repeats.
@@ -940,6 +954,7 @@ pub struct Layout {
     pub edge: Edge,
     cell: i32,
     inset: i32,
+    icon: i32,
     pub targets: Vec<Target>,
     pub fixed: Vec<Draw>,
     pub dropped: Vec<String>,
@@ -949,6 +964,8 @@ pub struct Layout {
 /// its number, then its gauge.
 struct Piece<'a> {
     m: &'a Module,
+    /// Its sign is an icon the bar has a drawing of: it stands for the sign's glyphs.
+    icon: bool,
     sign: Vec<String>,
     level: i32,
     gauge: bool,
@@ -959,7 +976,7 @@ impl Piece<'_> {
     /// The cells its parts take, each part's own and one between two.
     fn cells(&self) -> i32 {
         let parts = [
-            self.sign.len() as i32,
+            if self.icon { ICON_CELLS } else { self.sign.len() as i32 },
             if self.gauge { GAUGE_CELLS } else { 0 },
             if self.number { DIGIT_CELLS + 1 } else { 0 },
             self.m.cells,
@@ -1010,7 +1027,7 @@ fn drop_order(pieces: &[Piece], overflow: &[String]) -> Vec<String> {
 ///
 /// From the right: two cells of room (after the tray's), then the status in the line's order: one cell
 /// between a module's parts, three between the modules of a group, five between groups. A module's parts
-/// are its sign; pinned and with a level, its gauge of five cells and its number in four (three digits
+/// are its sign, a cell a glyph, or its icon in two; pinned and with a level, its gauge of five cells and its number in four (three digits
 /// at the right and the percent sign); then the cells kept for its text. A hairline stands in the middle
 /// of the gap before the time's group, when something stands left of it.
 ///
@@ -1029,6 +1046,7 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
         edge: scene.edge,
         cell,
         inset: m.inset(),
+        icon: m.icon(),
         ..Layout::default()
     };
     let home = || To::Shell {
@@ -1076,9 +1094,11 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
         for module in scene.modules.iter().filter(|module| module.name != LOGO) {
             let level = scene.levels.level(&module.name).or(module.level);
             let control = module.pinned && level.is_some();
+            let icon = crate::icons::shapes(&module.icon).is_some();
             let piece = Piece {
                 m: module,
-                sign: glyphs(&module.sign),
+                icon,
+                sign: if icon { vec![] } else { glyphs(&module.sign) },
                 level: level.unwrap_or(0),
                 gauge: control,
                 number: control,
@@ -1206,8 +1226,13 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
         // the sign and the text of a module that says toggle switch something in place; any other open something
         let switch = if p.m.toggle { Kind::Toggle } else { Kind::Open };
         // a module with no sign says its state on its text: red for what is wrong, the attention color for what asks
-        let worded = if p.sign.is_empty() { state.sign() } else { state.text() };
-        if !p.sign.is_empty() {
+        let worded = if p.sign.is_empty() && !p.icon { state.sign() } else { state.text() };
+        if p.icon {
+            let w = ICON_CELLS * cell;
+            let icon = What::Icon(p.m.icon.clone());
+            lay.targets.push(part("name", Rect::new(x, 0, w, h), switch, state.sign(), icon));
+            x += w + PART_GAP * cell;
+        } else if !p.sign.is_empty() {
             let w = p.sign.len() as i32 * cell;
             let sign = What::Text {
                 glyphs: p.sign.clone(),
@@ -1555,6 +1580,11 @@ impl Layout {
                     out.push(glyph(slot(i as i32), g, tone, *bold, false, 0.0));
                 }
             }
+            What::Icon(name) => out.push(Draw::Icon {
+                rect: Rect::new(t.rect.x + (t.rect.w - self.icon) / 2, (h - self.icon) / 2, self.icon, self.icon),
+                name: name.clone(),
+                tone,
+            }),
             What::Gauge { full } => {
                 for i in 0..GAUGE_CELLS {
                     let (pair, tone) = if i < *full { (v.full, t.tone) } else { (v.light, Tone::Dim) };
@@ -1971,7 +2001,7 @@ mod tests {
         draws
             .iter()
             .filter_map(|d| match d {
-                Draw::Glyph { tone, .. } | Draw::Fill { tone, .. } => Some(*tone),
+                Draw::Glyph { tone, .. } | Draw::Fill { tone, .. } | Draw::Icon { tone, .. } => Some(*tone),
                 Draw::Mark { .. } => None,
             })
             .collect()
@@ -2533,6 +2563,42 @@ mod tests {
     }
 
     #[test]
+    fn a_module_with_an_icon_draws_it_in_two_cells() {
+        // the flag as an icon, with more than nine not seen: the icon's two cells, a cell, the text's two
+        let m = mods(r#"[{"name":"notifications","group":"time","sign":"\u2691","icon":"flag","text":"9+","cells":2}]"#);
+        assert_eq!(m[0].icon, "flag");
+        let l = lay(1200, &m, &[]);
+        assert_eq!(
+            (rect_of(&l, "notifications.name"), rect_of(&l, "notifications.text")),
+            (Rect::new(1130, 0, 20, 36), Rect::new(1160, 0, 20, 36))
+        );
+        // drawn the text's size, 16 px of 36, in the middle of its cells and in the sign's tone
+        let levels = Levels::default();
+        let v = view(&levels);
+        let icon = |x: i32, tone: Tone| Draw::Icon {
+            rect: Rect::new(x, 10, 16, 16),
+            name: "flag".into(),
+            tone,
+        };
+        assert_eq!(shows(&l, "notifications.name", false, &v), vec![icon(1132, Tone::Text)]);
+        // dim when off, and raised on its chip as a dim glyph is
+        let m = mods(r#"[{"name":"notifications","group":"time","sign":"\u2691","icon":"flag","state":"off"}]"#);
+        let l = lay(1200, &m, &[]);
+        assert_eq!(shows(&l, "notifications.name", false, &v), vec![icon(1162, Tone::Dim)]);
+        assert_eq!(shows(&l, "notifications.name", true, &v), vec![icon(1162, Tone::Raised)]);
+        // an icon the bar has no drawing of: the sign's glyph stands, in its one cell
+        let m = mods(r#"[{"name":"notifications","group":"time","sign":"\u2691","icon":"no such drawing","text":"9+","cells":2}]"#);
+        let l = lay(1200, &m, &[]);
+        assert_eq!(rect_of(&l, "notifications.name"), Rect::new(1140, 0, 10, 36));
+        // an icon with no sign said is a sign all the same: it says the state, and the text beside it stays the text's
+        let m = mods(r#"[{"name":"bat","group":"seat","icon":"battery-low","text":"9%","cells":4,"state":"wrong"}]"#);
+        let l = lay(1200, &m, &[]);
+        assert_eq!((target(&l, "bat.name").tone, target(&l, "bat.text").tone), (Tone::Alert, Tone::Text));
+        assert_eq!(rect_of(&l, "bat.name").w, ICON_CELLS * 10);
+        // the icon's side follows the text's size: 12 px on a bar 27 high
+        assert_eq!((M.icon(), Metrics { cell: 8, height: 27, mark: 18 }.icon()), (16, 12));
+    }
+    #[test]
     fn a_hairline_stands_in_the_middle_of_the_five_cells_before_the_time() {
         // the sheet: the keyboard's text ends at 1040, the time starts at 1090, the line at 1065 from 9 to 27
         let l = sheet(1200);
@@ -2818,7 +2884,7 @@ mod tests {
                 let l = sized(&m, width, &five(), Some("resize"));
                 let mut rects: Vec<Rect> = l.targets.iter().map(|t| t.rect).collect();
                 rects.extend(l.fixed.iter().map(|d| match d {
-                    Draw::Fill { rect, .. } | Draw::Mark { rect } | Draw::Glyph { rect, .. } => *rect,
+                    Draw::Fill { rect, .. } | Draw::Mark { rect } | Draw::Glyph { rect, .. } | Draw::Icon { rect, .. } => *rect,
                 }));
                 rects.sort_by_key(|r| r.x);
                 for r in &rects {
@@ -4517,7 +4583,7 @@ mod tests {
                         let l = lay_on("A", width, Edge::Top, status, &m, &levels, &many, mode, p);
                         let mut rects: Vec<Rect> = l.targets.iter().map(|t| t.rect).collect();
                         rects.extend(l.fixed.iter().map(|d| match d {
-                            Draw::Fill { rect, .. } | Draw::Mark { rect } | Draw::Glyph { rect, .. } => *rect,
+                            Draw::Fill { rect, .. } | Draw::Mark { rect } | Draw::Glyph { rect, .. } | Draw::Icon { rect, .. } => *rect,
                         }));
                         rects.sort_by_key(|r| r.x);
                         for r in &rects {

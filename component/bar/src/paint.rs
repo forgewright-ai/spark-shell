@@ -3,6 +3,7 @@
 //! cairo.h, pango-font.h, pango-layout.h and pangocairo.h. The bar's text is plain: no markup is read.
 
 use crate::bar;
+use crate::icons::{self, Ink, Seg};
 use libloading::Library;
 use std::ffi::{c_char, c_int, c_void, CString};
 
@@ -24,10 +25,15 @@ struct PangoLayout {
 }
 
 const CAIRO_FORMAT_ARGB32: c_int = 0;
+const CAIRO_OPERATOR_CLEAR: c_int = 0;
 const CAIRO_OPERATOR_SOURCE: c_int = 1;
 const CAIRO_OPERATOR_OVER: c_int = 2;
 const CAIRO_FILTER_GOOD: c_int = 1;
 const CAIRO_ANTIALIAS_GRAY: c_int = 2;
+const CAIRO_LINE_CAP_BUTT: c_int = 0;
+const CAIRO_LINE_JOIN_MITER: c_int = 0;
+/// How strong an icon's faint ink is: near the dim tone on the ground.
+const FAINT: f64 = 0.4;
 const PANGO_SCALE: c_int = 1024;
 const PANGO_WEIGHT_BOLD: c_int = 700;
 
@@ -58,6 +64,17 @@ pub struct Lib {
     fill: unsafe extern "C" fn(*mut Cairo),
     clip: unsafe extern "C" fn(*mut Cairo),
     move_to: unsafe extern "C" fn(*mut Cairo, f64, f64),
+    line_to: unsafe extern "C" fn(*mut Cairo, f64, f64),
+    curve_to: unsafe extern "C" fn(*mut Cairo, f64, f64, f64, f64, f64, f64),
+    close_path: unsafe extern "C" fn(*mut Cairo),
+    new_path: unsafe extern "C" fn(*mut Cairo),
+    stroke: unsafe extern "C" fn(*mut Cairo),
+    set_line_width: unsafe extern "C" fn(*mut Cairo, f64),
+    set_line_cap: unsafe extern "C" fn(*mut Cairo, c_int),
+    set_line_join: unsafe extern "C" fn(*mut Cairo, c_int),
+    set_miter_limit: unsafe extern "C" fn(*mut Cairo, f64),
+    push_group: unsafe extern "C" fn(*mut Cairo),
+    pop_group_to_source: unsafe extern "C" fn(*mut Cairo),
     font_options_create: unsafe extern "C" fn() -> *mut c_void,
     font_options_set_antialias: unsafe extern "C" fn(*mut c_void, c_int),
     font_options_destroy: unsafe extern "C" fn(*mut c_void),
@@ -127,6 +144,17 @@ impl Lib {
             fill: sym!(cairo, c, "cairo_fill"),
             clip: sym!(cairo, c, "cairo_clip"),
             move_to: sym!(cairo, c, "cairo_move_to"),
+            line_to: sym!(cairo, c, "cairo_line_to"),
+            curve_to: sym!(cairo, c, "cairo_curve_to"),
+            close_path: sym!(cairo, c, "cairo_close_path"),
+            new_path: sym!(cairo, c, "cairo_new_path"),
+            stroke: sym!(cairo, c, "cairo_stroke"),
+            set_line_width: sym!(cairo, c, "cairo_set_line_width"),
+            set_line_cap: sym!(cairo, c, "cairo_set_line_cap"),
+            set_line_join: sym!(cairo, c, "cairo_set_line_join"),
+            set_miter_limit: sym!(cairo, c, "cairo_set_miter_limit"),
+            push_group: sym!(cairo, c, "cairo_push_group"),
+            pop_group_to_source: sym!(cairo, c, "cairo_pop_group_to_source"),
             font_options_create: sym!(cairo, c, "cairo_font_options_create"),
             font_options_set_antialias: sym!(cairo, c, "cairo_font_options_set_antialias"),
             font_options_destroy: sym!(cairo, c, "cairo_font_options_destroy"),
@@ -370,6 +398,46 @@ impl<'a> Canvas<'a> {
             (self.lib.cairo_show_layout)(self.cr, l);
             (self.lib.restore)(self.cr);
             (self.lib.object_unref)(l as *mut c_void);
+        }
+    }
+
+    /// An icon's drawing in a square of `side` at x, y, in one color. It is drawn apart and then laid on
+    /// the bar, so a shape with no ink cuts a hole in the icon and the ground or the chip shows through.
+    pub fn icon(&self, shapes: &[icons::Shape], x: f64, y: f64, side: f64, c: Rgb) {
+        let cr = self.cr;
+        unsafe {
+            (self.lib.push_group)(cr);
+            (self.lib.translate)(cr, x, y);
+            (self.lib.scale)(cr, side / icons::BOX, side / icons::BOX);
+            (self.lib.set_line_cap)(cr, CAIRO_LINE_CAP_BUTT);
+            (self.lib.set_line_join)(cr, CAIRO_LINE_JOIN_MITER);
+            (self.lib.set_miter_limit)(cr, icons::MITER);
+            for shape in shapes {
+                (self.lib.new_path)(cr);
+                for seg in shape.path {
+                    match *seg {
+                        Seg::M(x, y) => (self.lib.move_to)(cr, x, y),
+                        Seg::L(x, y) => (self.lib.line_to)(cr, x, y),
+                        Seg::C(x1, y1, x2, y2, x, y) => (self.lib.curve_to)(cr, x1, y1, x2, y2, x, y),
+                        Seg::Z => (self.lib.close_path)(cr),
+                    }
+                }
+                let (operator, alpha) = match shape.ink {
+                    Ink::On => (CAIRO_OPERATOR_OVER, 1.0),
+                    Ink::Faint => (CAIRO_OPERATOR_OVER, FAINT),
+                    Ink::Off => (CAIRO_OPERATOR_CLEAR, 1.0),
+                };
+                (self.lib.set_operator)(cr, operator);
+                (self.lib.set_source_rgba)(cr, c.0, c.1, c.2, alpha);
+                if shape.stroke > 0.0 {
+                    (self.lib.set_line_width)(cr, shape.stroke);
+                    (self.lib.stroke)(cr);
+                } else {
+                    (self.lib.fill)(cr);
+                }
+            }
+            (self.lib.pop_group_to_source)(cr);
+            (self.lib.paint)(cr);
         }
     }
 

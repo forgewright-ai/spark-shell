@@ -824,6 +824,11 @@ impl App {
                         fit,
                         shift,
                     } => c.glyph(r.x as f64, r.y as f64, r.w as f64, r.h as f64, &text, look.color(tone), bold, fit, shift),
+                    Draw::Icon { rect: r, name, tone } => {
+                        if let Some(shapes) = crate::icons::shapes(&name) {
+                            c.icon(shapes, r.x as f64, r.y as f64, r.w as f64, look.color(tone));
+                        }
+                    }
                 }
             }
         }

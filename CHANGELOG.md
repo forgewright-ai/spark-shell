@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.149
+
+- The bar's signs are icons: the wire, bluetooth, wifi, sound, the
+  microphone, brightness, the keyboard, the battery, a reminder,
+  notifications and do not disturb. The bar draws each one at the
+  text's size and colors it by its state; a muted or silent one is
+  hollow. The gauges and the workspaces keep the glyph family's signs.
+- Wifi's icon lights its bands by the signal. The battery has an icon:
+  full, half, low, and a bolt while it charges.
+- The icons need no font: a machine without Monaspace Neon draws the
+  same ones.
+
 ## v0.148.2
 
 - The idle screen is the clock alone again: the bar and the pad leave a

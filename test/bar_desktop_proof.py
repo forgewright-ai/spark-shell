@@ -26,7 +26,7 @@ named by its gate:
 1 identity       the logo is the asset's own pixels at 24 px, one ink, the dark ground's or the light one's; the
                  workspaces are ten places of three cells in the glyph family's pair, stone, star and banner,
                  star's one unbroken line; the plate, in its place, says where you are in two digits; a gauge
-                 is the same pair; the signs are a font's; a family, a palette, a preview and a theme are drawn
+                 is the same pair; the signs are icons, the bar's own drawings; a family, a palette, a preview and a theme are drawn
                  by the same process
 2 behavior       by the pointer and by the keys, through the real status loop and the stand-in sound tool: the
                  sign mutes, a click on the gauge sets the level where it was, the wheel and Up and Down step
@@ -85,13 +85,14 @@ GROUPS = dict(pad="windows", lan="connections", bt="connections", wifi="connecti
 LOOK = ("fg", "accent", "muted", "ground", "lit", "attention", "alert", "alpha", "full", "light", "motion", "ink")   # the look's slots, as BAR_FG and the rest
 SLOTS = ("BAR_FG", "BAR_ACCENT", "BAR_MUTED", "BAR_GROUND", "BAR_LIT", "BAR_ATTENTION", "BAR_ALERT", "BAR_ALPHA", "BAR_GAUGE_FULL", "BAR_GAUGE_LIGHT", "BAR_MOTION", "BAR_INK")
 RESTS = "idle"                               # the rest name spark-shell hands the bar (BAR_REST): the idle screen's workspaces
-FACT = {"name", "group", "sign", "text", "cells", "bold", "state", "set", "pinned", "label", "toggle"}   # a module's fields; level where it has one
+FACT = {"name", "group", "sign", "icon", "text", "cells", "bold", "state", "set", "pinned", "label", "toggle"}   # a module's fields; level where it has one
+ICONS = set(re.findall(r'^    "([a-z-]+)",$', (REPO / "component" / "bar" / "src" / "icons.rs").read_text(), re.M))   # the drawings the bar has, by name
 KINDS = ("mark", "workspace", "level", "open", "toggle")
 STATES = ("ok", "muted", "off", "missing", "wrong", "asks", "records")
 FLAGS = {"focused", "hover", "selected", "visible", "urgent", "empty"}
 FAMILIES = (("stone", "\u25b0", "\u25b1"), ("star", "\u2501", "\u2500"), ("banner", "\u25ae", "\u25af"))   # each family's gauge pair, full and light
 REST = (["mark"] + ["workspace:%d" % n for n in range(1, 11)]
-        + ["lan.name", "bt.name", "wifi.name", "out.name", "out.gauge", "out.pct", "mic.name", "kb.name", "kb.text", "bat.text", "clock.text", "notifications.name"])
+        + ["lan.name", "bt.name", "wifi.name", "out.name", "out.gauge", "out.pct", "mic.name", "kb.name", "kb.text", "bat.name", "bat.text", "clock.text", "notifications.name"])
 # the proof's own palettes, a dark ground and a light one: BG, FG, ACCENT, MUTED and the sixteen slots. The tones the
 # bar draws in (the text, the muted, the accent, slot 1 the red, slot 3 the attention) are hues apart on each
 PALETTES = {
@@ -520,7 +521,8 @@ def level_at(into, width):
 def plan(line, levels, width, run_end, overflow, cell):
     """The status as the spec lays it on a bar of that width, from the facts of a line and the levels drawn: from
     the right edge leftward with two cells of room, one cell between a module's parts, three between the modules of
-    a group, five between groups; a pinned level's gauge of five cells and its number in four, the digits at the
+    a group, five between groups; a sign a cell a glyph, or two where it is an icon the bar draws; a pinned level's
+    gauge of five cells and its number in four, the digits at the
     right; a text as wide as it is drawn in the cells kept for it. Short of width, with five cells kept after the
     workspaces: every number goes, then every gauge, then whole modules, the ones the overflow order does not
     name first, from the left, then in its order, never the time's group; three dots stand for them at the left
@@ -544,7 +546,7 @@ def plan(line, levels, width, run_end, overflow, cell):
         if m.get("name") in ("look", "logo"):
             continue
         level = levels.get(m["name"], m.get("level"))
-        p = {"m": m, "sign": len(glyphs(m.get("sign", ""))), "level": level or 0}
+        p = {"m": m, "sign": 2 if m.get("icon") in ICONS else len(glyphs(m.get("sign", ""))), "level": level or 0}
         p["gauge"] = p["number"] = bool(m.get("pinned")) and level is not None
         if size(p) > 0:
             pieces.append(p)
@@ -1069,13 +1071,15 @@ class Desk:
 
     def line(self, **more):
         """The status line as spark's bar is handed it now: the objects of spark-shell bar status --once, the look
-        first. Its signs are kept, for the fonts to be asked for each."""
+        first. The glyphs the bar draws from a font are kept, for the fonts to be asked for each: the look's pair, and a
+        sign that has no icon."""
         try:
             line = json.loads(self.shell("bar", "status", "--once", SPARK_BAR="1", **more).stdout or "[]")
         except ValueError:
             return []
         for block in line:
-            self.signs |= {c for k in ("sign", "full", "light") for c in block.get(k, "") if ord(c) > 126}
+            keys = ("full", "light") if block.get("icon") in ICONS else ("sign", "full", "light")
+            self.signs |= {c for k in keys for c in block.get(k, "") if ord(c) > 126}
         return line
 
     def grab(self, x, y, w, h):
@@ -1497,7 +1501,7 @@ def lifecycle(d):
        "the line carries the look for spark's bar: its first object, named look, the seven colors, the alpha, the gauge pair, the motion and the ink, each a string, as the bar was started with; it is no module and no target", (look, line[:1]))
     order = [m.get("name") for m in mods]
     ok(order == [n for n in MODULES if n in order] and len(order) >= 9
-       and all(set(m) - {"level"} == FACT and m["state"] in STATES and m["group"] == GROUPS.get(m["name"]) and "<" not in m["sign"] + m["text"] and isinstance(m["cells"], int) for m in mods)
+       and all(set(m) - {"level"} == FACT and m["state"] in STATES and m["group"] == GROUPS.get(m["name"]) and "<" not in m["sign"] + m["text"] and m["icon"] in ICONS | {""} and isinstance(m["cells"], int) for m in mods)
        and [m["name"] for m in mods if m["bold"]] == ["clock"] and [m["name"] for m in mods if m["pinned"]] == ["out"] and [m["name"] for m in mods if m["toggle"]] == ["out", "kb"]
        and {m["name"]: (m["level"], m["set"]) for m in mods if "level" in m} == {"wifi": (70, False), "out": (40, True), "mic": (50, True)},
        "then the modules in the bar's order, each a fact and no markup: its group, its sign, its text and the cells kept for it, its state, its label; the time alone bold, out alone pinned, out and the keyboard switched in place, three levels of which the wifi's cannot be set",
@@ -1576,6 +1580,20 @@ def identity(d):
     back = d.shell("theme", "family", "stone")
     good, saw = seen(lambda: (pair_of(d, d.strip(), s)[1].data == refs["stone"][1], None), 10)
     ok(back.returncode == 0 and good and d.bar_pid() == pid, "back to stone, the default family, the same pixels as before", (back.said, pid, d.bar_pid()))
+    # the signs are icons: each drawn the text's size, in the middle of its two cells
+    signs = [t for t in s.targets() if t.id.endswith(".name")]
+
+    def icons():
+        strip, off, left, top = d.strip(), [], (2 * cell - TEXT) // 2, (high - TEXT) // 2
+        for t in signs:
+            ink = place(strip, t).ink(ground, 40)
+            xs, ys = sorted(x for x, _ in ink), sorted(y for _, y in ink)
+            if t.w != 2 * cell or not ink or xs[0] < left - 1 or xs[-1] > left + TEXT or ys[0] < top - 1 or ys[-1] > top + TEXT or xs[-1] - xs[0] < cell:
+                off.append((t.id, t.w, (xs[0], xs[-1], ys[0], ys[-1]) if ink else None))
+        return not off, off
+    good, saw = seen(icons)
+    ok(good and len(signs) >= 7 and all(m["icon"] in ICONS for m in d.line()[1:] if m["name"] + ".name" in s.ids()),
+       "the signs are icons, the bar's own drawings: each of the %d is drawn in a square of the text's %d px in the middle of its two cells, wider than a cell, and the line names a drawing the bar has for each" % (len(signs), TEXT), saw)
     # the plate
     first = {}
 
@@ -1740,7 +1758,7 @@ def behavior(d):
     both = d.until(lambda s: s.find("mic.gauge") and s.find("mic.pct"), "the mic's gauge and number on the bar")
     ok(said.returncode == 0 and said.said.startswith("pinned mic") and d.conf("BAR_PINS") == "out mic" and d.bar_pid() == pid
        and all(both.rects()[k][0] == base[k][0] - 11 * cell for k in left) and not stays(base, both.rects(), left)
-       and (both.find("mic.gauge").x, both.find("mic.gauge").w, both.find("mic.pct").x + both.find("mic.pct").w) == (base["mic.name"][0] - 9 * cell, 5 * cell, base["mic.name"][0] + cell),
+       and (both.find("mic.gauge").x, both.find("mic.gauge").w, both.find("mic.pct").x + both.find("mic.pct").w) == (base["mic.name"][0] - 8 * cell, 5 * cell, base["mic.name"][0] + 2 * cell),
        "spark-shell bar pin mic: its gauge and its number come beside its sign, eleven cells; its sign and what stands left of it move that far, and what stands right stays; the same process",
        (said.said, d.conf("BAR_PINS"), pid, d.bar_pid(), both.brief()))
     said = d.shell("bar", "unpin", "out")
@@ -1757,8 +1775,8 @@ def behavior(d):
     said = d.shell("bar", "hide", "bat")
     gone = d.until(lambda s: not s.find("bat.text"), "the battery off the bar")
     ok(said.returncode == 0 and said.said.startswith("hidden bat") and shown.replace(" bat,", "") in said.said and d.conf("BAR_HIDE") == "bat" and d.bar_pid() == pid
-       and gone.find("kb.text").x - base["kb.text"][0] == 8 * cell and not stays(base, gone.rects(), [k for k in base if base[k][0] < base["bat.text"][0]]),
-       "spark-shell bar hide bat: the battery is off the bar and what stood left of it closes up to the time, eight cells; the same process", (said.said, d.conf("BAR_HIDE"), gone.brief()))
+       and gone.find("kb.text").x - base["kb.text"][0] == 10 * cell and not stays(base, gone.rects(), [k for k in base if base[k][0] < base["bat.text"][0]]),
+       "spark-shell bar hide bat: the battery is off the bar and what stood left of it closes up to the time, ten cells; the same process", (said.said, d.conf("BAR_HIDE"), gone.brief()))
     said = d.shell("bar", "show", "bat")
     again = d.until(lambda s: s.rects() == base, "the battery back, every target where it was")
     ok(said.returncode == 0 and said.said.startswith("shown bat") and shown in said.said and d.conf("BAR_HIDE") == "" and d.bar_pid() == pid and len(d.log()) == changes,
@@ -1921,7 +1939,7 @@ def states(d):
     d.flag("pw-dump", True, RECORDING)
     d.notes(2)
     want = {"pad.name": "off", "pad.text": "off", "lan.name": "wrong", "bt.name": "off", "wifi.name": "off", "out.name": "muted", "out.gauge": "muted", "mic.name": "records",
-            "kb.name": "ok", "kb.text": "ok", "bat.text": "wrong", "clock.text": "ok", "notifications.name": "ok", "notifications.text": "ok"}
+            "kb.name": "ok", "kb.text": "ok", "bat.name": "wrong", "bat.text": "wrong", "clock.text": "ok", "notifications.name": "ok", "notifications.text": "ok"}
     hard = d.told(lambda s: {t.id: t.state for t in s.parts()} == want, "the bar to say what is not well")
     words = {i: hard.named(i) for i in ("pad.name", "lan.name", "bt.name", "wifi.name", "out.name", "mic.name", "bat.text", "notifications.name")}
     ok(words == {"pad.name": "pad hidden, 1 windows", "lan.name": "lan not connected", "bt.name": "bluetooth off", "wifi.name": "wifi not connected", "out.name": "output muted",
@@ -1942,20 +1960,20 @@ def states(d):
         blank = strip.part(gauge.x + gauge.w + cell, 0, 4 * cell, high).colors() == {ground}
         solid = [i for i in ("out.name", "bt.name", "mic.name") if place(strip, hard.find(i)).data == calm[i].data]
         only, stray = census(strip.part(x0, 0, strip.w - x0, high), ground, tones)
-        red = inside(only["alert"], [(hard.find(i).x - cell // 2 - x0, 0, hard.find(i).w + cell, high) for i in ("lan.name", "mic.name", "bat.text")])
+        red = inside(only["alert"], [(hard.find(i).x - cell // 2 - x0, 0, hard.find(i).w + cell, high) for i in ("lan.name", "mic.name", "bat.name")])
         blue = inside(only["accent"], [(box[0] - x0, box[1], box[2], box[3])])
         saw = {"tones": got, "gauge": (dims, shape, rest_), "number": blank, "not hollow": solid, "red": red[:4], "accent": blue[:4], "attention": only["attention"][:4], "stray": stray[:4]}
         tones_ok = got == dict({i: ["text"] for i in got}, **{"pad.name": ["dim"], "pad.text": ["dim"], "bt.name": ["dim"], "wifi.name": ["dim"], "out.name": ["dim"],
-                                                               "lan.name": ["alert"], "mic.name": ["alert"], "bat.text": ["alert"]})
+                                                               "lan.name": ["alert"], "mic.name": ["alert"], "bat.name": ["alert"]})
         return tones_ok and dims == [["dim"]] * 2 and all(shape) and all(rest_) and blank and not solid and not red and not blue and not only["attention"] and not stray, saw
     _, saw = seen(hard_look)
     ok(saw["tones"]["out.name"] == ["dim"] and "out.name" not in saw["not hollow"] and saw["gauge"] == ([["dim"]] * 2, [True] * 2, [True] * 3) and saw["number"],
-       "muted, on the screen: the sign is the hollow one, dim as its gauge is; the gauge keeps its level with every cell dim, two the full glyph's shape and three the light one, and the number's cells are empty", saw)
+       "muted, on the screen: the icon is the hollow one, dim as its gauge is; the gauge keeps its level with every cell dim, two the full glyph's shape and three the light one, and the number's cells are empty", saw)
     ok(all(saw["tones"][i] == ["dim"] for i in ("bt.name", "wifi.name", "pad.name", "pad.text")) and "bt.name" not in saw["not hollow"],
-       "off, on the screen: bluetooth's hollow sign, wifi's sign, and the hidden pad's sign and its count are dim", saw)
-    ok(all(saw["tones"][i] == ["alert"] for i in ("lan.name", "mic.name", "bat.text")) and "mic.name" not in saw["not hollow"] and not saw["red"] and not saw["attention"] and not saw["accent"]
-       and not saw["stray"] and all(saw["tones"][i] == ["text"] for i in ("kb.name", "kb.text", "clock.text", "notifications.name", "notifications.text")),
-       "wrong and recording, on the screen: the wire's sign and the mic's dot are red, and the low battery's number, which has no sign, is red itself; red is nowhere else on the bar; no attention color; the accent on the plate alone; the count and the rest in the text's color",
+       "off, on the screen: bluetooth's icon, another than with a device, wifi's, and the hidden pad's and its count are dim", saw)
+    ok(all(saw["tones"][i] == ["alert"] for i in ("lan.name", "mic.name", "bat.name")) and "mic.name" not in saw["not hollow"] and not saw["red"] and not saw["attention"] and not saw["accent"]
+       and not saw["stray"] and all(saw["tones"][i] == ["text"] for i in ("kb.name", "kb.text", "bat.text", "clock.text", "notifications.name", "notifications.text")),
+       "wrong and recording, on the screen: the wire's icon, the mic's and the low battery's are red, and the battery's number stays the text's color beside it; red is nowhere else on the bar; no attention color; the accent on the plate alone; the count and the rest in the text's color",
        saw)
     d.shot("states-not-well")
     waits.terminate()
@@ -1975,7 +1993,7 @@ def states(d):
         strip = d.strip()
         got = place(strip, due).tone(ground, tones), place(strip, two).tone(ground, tones), place(strip, alone).tone(ground, tones), place(strip, quiet).tone(ground, tones)
         shape = (alike(first_cell(d, strip, two).cover(ground, tones["attention"]), full.cover(ground, tones["text"])),
-                 alike(place(strip, alone).cover(ground, tones["dim"]), calm["bt.name"].cover(ground, tones["text"])),
+                 place(strip, alone).data != calm["bt.name"].data,
                  place(strip, quiet).data != calm["notifications.name"].data)
         only, stray = census(strip.part(x0, 0, strip.w - x0, high), ground, tones)
         there = inside(only["attention"], [(due.x - cell // 2 - x0, 0, due.w + cell, high), (two.x - x0, 0, two.w, high)])   # a face with no such sign draws its number, wider than a cell
@@ -1985,12 +2003,12 @@ def states(d):
        and asks.named("workspace:2") == "workspace 2",
        "what asks: a reminder due is its sign alone in the attention color, and a workspace with a window that asks is its three cells of the full glyph in that color; the attention color is nowhere else, and no red", (saw, asks.brief()))
     ok(alone.name == "bluetooth on" and saw[0][2] == ["dim"] and saw[1][1],
-       "bluetooth on with nothing connected says missing: the same solid sign as with a device, dim", (saw, asks.brief()))
-    ok(quiet.state == "ok" and quiet.rect == (base["notifications.name"][0], 0, cell, high) and saw[0][3] == ["text"] and saw[1][2],
-       "do not disturb: the notifications' sign is another one, in the text's color, in the flag's cell", (saw, asks.brief()))
-    ok(due.x == asks.find("mic.name").x + cell + 5 * cell and asks.find("kb.name").x == due.x + cell + 5 * cell and asks.find("mic.name").x == base["mic.name"][0] - 6 * cell
+       "bluetooth on with nothing connected says missing: its icon is not the one with a device, and dim", (saw, asks.brief()))
+    ok(quiet.state == "ok" and quiet.rect == (base["notifications.name"][0], 0, 2 * cell, high) and saw[0][3] == ["text"] and saw[1][2],
+       "do not disturb: the notifications' icon is another one, in the text's color, in the flag's cells", (saw, asks.brief()))
+    ok(due.x == asks.find("mic.name").x + 2 * cell + 5 * cell and asks.find("kb.name").x == due.x + 2 * cell + 5 * cell and asks.find("mic.name").x == base["mic.name"][0] - 7 * cell
        and not stays(base, asks.rects(), [k for k in base if "." in k and base[k][0] <= base["mic.name"][0]]),
-       "the reminder is a group of its own, five cells from the sound and five from the seat: what stands left of it made room, six cells, and what stands right stays", asks.brief())
+       "the reminder is a group of its own, five cells from the sound and five from the seat: what stands left of it made room, seven cells, and what stands right stays", asks.brief())
     d.shot("states-asking")
     d.sway("[pid=%d]" % d.windows[1].pid, "urgent", "disable")
     # no sound device
@@ -2010,7 +2028,7 @@ def states(d):
         same = [i for i in ("out.name", "mic.name") if place(strip, lost.find(i)).data == calm[i].data]
         return got == [["dim"], ["dim"]] and blank and not same, (got, blank, same)
     good, saw = seen(hollow)
-    ok(good, "on the screen the two signs are the hollow ones, dim, and the cells of out's gauge and number are empty", saw)
+    ok(good, "on the screen the two icons are the hollow ones, dim, and the cells of out's gauge and number are empty", saw)
     d.shot("states-missing")
     d.flag("down", False)
     d.told(lambda s: s.rects() == base and all(t.state == "ok" for t in s.targets()), "out and the mic back")
@@ -2228,9 +2246,9 @@ def accessibility(d):
         sizes[t.id] = saw[0][2:]
         if not good:
             off.append((t.id, saw))
-    ok(not [o for o in off if o[0].endswith(".name")] and {sizes[t.id] for t in signs} == {(2 * cell, high - 2 * inset)} and len(signs) >= 7,
-       "under the pointer every sign stands on a chip of the same size, %d by %d: its cell and half a cell at each side, the plate's height, filled with the look's lit tone, the sign on it still in its own color"
-       % (2 * cell, high - 2 * inset), (off, {t.id: sizes[t.id] for t in signs}))
+    ok(not [o for o in off if o[0].endswith(".name")] and {sizes[t.id] for t in signs} == {(3 * cell, high - 2 * inset)} and len(signs) >= 7,
+       "under the pointer every sign stands on a chip of the same size, %d by %d: its icon's two cells and half a cell at each side, the plate's height, filled with the look's lit tone, the icon on it still in its own color"
+       % (3 * cell, high - 2 * inset), (off, {t.id: sizes[t.id] for t in signs}))
     ok(not [o for o in off if not o[0].endswith(".name")] and sizes["out.gauge"] == (6 * cell, high - 2 * inset) and sizes["out.pct"] == (4 * cell, high - 2 * inset) and sizes["clock.text"] == (6 * cell, high - 2 * inset)
        and sizes["workspace:2"] == sizes["workspace:3"] == (3 * cell, high - 2 * inset),
        "a gauge, a number and a text too, each as wide as it is drawn and half a cell at each side, in its own color, a gauge's light cells still dim; a place's chip is its own three cells and no wider, an empty place's glyphs raised halfway to the text's color; and each part lights alone: with the pointer on one, only its chip and the plate stand on the box's first row",
@@ -2285,7 +2303,7 @@ def accessibility(d):
 
 
 def names(d):
-    """Every control in every state the proof saw: a name, an id, a kind and a state of the bar's own; a sign one cell."""
+    """Every control in every state the proof saw: a name, an id, a kind and a state of the bar's own; a sign its icon's two cells."""
     global gate
     gate = "accessibility"
     lines, bad, wide, signs = 0, [], [], 0
@@ -2300,18 +2318,18 @@ def names(d):
                     bad.append((t.id, t.kind, t.state, sorted(t.flags), t.name))
                 if t.id.endswith(".name"):
                     signs += 1
-                    if t.w != d.cell:
+                    if t.w != 2 * d.cell:
                         wide.append((t.id, t.state, t.w))
     ok(lines and not bad, "names: in the %d states the bar wrote here, each of its %d target lines has an id, a name that is not empty, a kind, a state and flags of the bar's own, and the bar's whole height"
        % (len(d.seen), lines), bad[:6])
     gate = "geometry"
-    ok(signs and not wide, "in each of those states a sign is one cell, whatever its module's state: %d sign lines" % signs, wide[:6])
+    ok(signs and not wide, "in each of those states a sign is an icon in two cells, whatever its module's state: %d sign lines" % signs, wide[:6])
     gate = "identity"
     if shutil.which("fc-list"):
         fonts = lambda *ask: subprocess.run(["fc-list", *ask, "family"], env=d.env, stdin=subprocess.DEVNULL, capture_output=True, timeout=20).stdout.strip()   # noqa: E731
         lacking = ["U+%04X" % ord(c) for c in sorted(d.signs) if not fonts(":charset=%x" % ord(c))]
-        ok(not lacking and len(d.signs) >= 20,
-           "real glyphs: a font here holds every sign the bar drew, the hollow ones and the three families' pairs too (%d of them), so none is a missing-glyph box" % len(d.signs), lacking)
+        ok(not lacking and len(d.signs) >= 8,
+           "real glyphs: a font here holds every glyph the bar drew, the three families' pairs, the dots and the warning (%d of them), so none is a missing-glyph box; the signs are icons, and need no font" % len(d.signs), lacking)
     else:
         print("  skip identity: no fc-list here: which font holds each sign is not asked", flush=True)
 
@@ -2348,17 +2366,20 @@ def geometry(d):
     ok([(t.id, t.x, t.w) for t in parts] == want and not gone and not strip_.dropped,
        "the status stands as the spec lays it from the line's facts: every part in its cells, counted from the right edge", (moved(dict((i, (x, w)) for i, x, w in want), dict((t.id, (t.x, t.w)) for t in parts)), gone))
     at = {t.id: t for t in parts}
-    gaps = {"out's sign to its gauge": at["out.gauge"].x - at["out.name"].x - cell, "its gauge to its number's cells": at["out.pct"].x + at["out.pct"].w - 4 * cell - at["out.gauge"].x - 5 * cell,
-            "the keyboard's sign to its layout": at["kb.text"].x - at["kb.name"].x - cell, "the wire to bluetooth": at["bt.name"].x - at["lan.name"].x - cell,
-            "bluetooth to wifi": at["wifi.name"].x - at["bt.name"].x - cell, "out to the mic": at["mic.name"].x - at["out.pct"].x - at["out.pct"].w,
-            "the keyboard to the battery": at["bat.text"].x - at["kb.text"].x - 2 * cell, "wifi to out": at["out.name"].x - at["wifi.name"].x - cell,
-            "the mic to the keyboard": at["kb.name"].x - at["mic.name"].x - cell, "the battery to the time": at["clock.text"].x - at["bat.text"].x - 5 * cell,
-            "the time to the flag": at["notifications.name"].x - at["clock.text"].x - 5 * cell, "the flag's cells to the edge": W - at["notifications.name"].x - cell - cell - 2 * cell}
-    ok(gaps == {"out's sign to its gauge": cell, "its gauge to its number's cells": cell, "the keyboard's sign to its layout": cell, "the wire to bluetooth": 3 * cell, "bluetooth to wifi": 3 * cell,
+    icon = 2 * cell   # a sign is an icon, in two cells
+    gaps = {"out's sign to its gauge": at["out.gauge"].x - at["out.name"].x - icon, "its gauge to its number's cells": at["out.pct"].x + at["out.pct"].w - 4 * cell - at["out.gauge"].x - 5 * cell,
+            "the keyboard's sign to its layout": at["kb.text"].x - at["kb.name"].x - icon, "the battery's sign to its number": at["bat.text"].x - at["bat.name"].x - icon,
+            "the wire to bluetooth": at["bt.name"].x - at["lan.name"].x - icon,
+            "bluetooth to wifi": at["wifi.name"].x - at["bt.name"].x - icon, "out to the mic": at["mic.name"].x - at["out.pct"].x - at["out.pct"].w,
+            "the keyboard to the battery": at["bat.name"].x - at["kb.text"].x - 2 * cell, "wifi to out": at["out.name"].x - at["wifi.name"].x - icon,
+            "the mic to the keyboard": at["kb.name"].x - at["mic.name"].x - icon, "the battery to the time": at["clock.text"].x - at["bat.text"].x - 4 * cell,
+            "the time to the flag": at["notifications.name"].x - at["clock.text"].x - 5 * cell, "the flag's cells to the edge": W - at["notifications.name"].x - icon - cell - 2 * cell}
+    ok(gaps == {"out's sign to its gauge": cell, "its gauge to its number's cells": cell, "the keyboard's sign to its layout": cell, "the battery's sign to its number": cell,
+                "the wire to bluetooth": 3 * cell, "bluetooth to wifi": 3 * cell,
                 "out to the mic": 3 * cell, "the keyboard to the battery": 3 * cell, "wifi to out": 5 * cell, "the mic to the keyboard": 5 * cell, "the battery to the time": 5 * cell,
                 "the time to the flag": 3 * cell, "the flag's cells to the edge": 2 * cell}
-       and at["out.gauge"].w == 5 * cell and at["out.pct"].w == 3 * cell and at["clock.text"].w == 5 * cell,
-       "the gaps: one cell between a module's parts, three between the modules of a group, five between groups; the time and the flag three cells apart; two cells of room at the edge; a gauge five cells, a number its digits and the percent sign",
+       and at["out.gauge"].w == 5 * cell and at["out.pct"].w == 3 * cell and at["clock.text"].w == 5 * cell and {at[i].w for i in at if i.endswith(".name")} == {icon},
+       "the gaps: one cell between a module's parts, three between the modules of a group, five between groups; the time and the flag three cells apart; two cells of room at the edge; a sign's icon two cells, a gauge five, a number its digits and the percent sign",
        gaps)
     x = at["clock.text"].x - 5 * cell + 5 * cell // 2
 
@@ -2368,7 +2389,7 @@ def geometry(d):
         sides = [shot.part(x + dx, 0, 1, high).colors() == {ground} for dx in (-1, 1)]
         return line_ == (high // 4, high * 3 // 4 - high // 4) and all(sides) and shot.run(x, high // 2, tones["dim"]) == (x, 1), (line_, sides)
     good, saw = seen(hairline)
-    ok(good and hair == x and x == at["bat.text"].x + 5 * cell + 5 * cell // 2,
+    ok(good and hair == x and x == at["bat.text"].x + 4 * cell + 5 * cell // 2,
        "the hairline before the time: 1 px wide, the dim color, from a quarter to three quarters of the bar's height, in the middle of the five cells before it", (saw, hair, x))
     # no shift
     kept, shots = collections.OrderedDict(), {}

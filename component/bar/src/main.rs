@@ -21,9 +21,10 @@ workspace gets a place after the tenth. A click on a place shows its
 workspace.
 
 From the right edge leftward: the status, module by module. A module's
-parts are its sign; when it has a level and is pinned, a gauge of five
-cells and its number; then its text in the cells kept for it, so a text
-that changes moves nothing. One cell stands between a module's parts, three
+parts are its sign, a cell a glyph, or its icon, drawn the text's size in
+two cells; when it has a level and is pinned, a gauge of five cells and
+its number; then its text in the cells kept for it, so a text that changes
+moves nothing. One cell stands between a module's parts, three
 between the modules of a group, five between groups, and a hairline before
 the group time. Under the pointer a part stands on a chip of the lit tone
 and keeps its own color, a dim part's raised halfway to the text's; a
@@ -48,8 +49,9 @@ accent, muted (the dim tone), ground, lit, attention, alert (red) and ink
 there; without one, the ground's color) as rrggbb, alpha as 0 to 1, full
 and light (the family's gauge pair, a glyph each), motion (yes or no).
 Every other object with a name is a module, in the bar's order: name,
-group, sign (its glyph or its word), text and cells (the cells kept for the
-text), bold, state (ok, muted, off, missing, wrong, asks or records), level
+group, sign (its glyph or its word), icon (a drawing's name, lan or
+out-muted: it stands for the sign where the bar has that drawing, in the
+sign's tone), text and cells (the cells kept for the text), bold, state (ok, muted, off, missing, wrong, asks or records), level
 (0 to 100, when it has one), set (the level can be set from the bar),
 pinned (its gauge and number are on the bar), toggle (a click on its sign
 or its text changes something in place and opens nothing) and label (its
