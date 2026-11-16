@@ -34,16 +34,22 @@ pub const GAUGE_CELLS: i32 = 5;
 pub const ICON_CELLS: i32 = 2;
 /// A number's digit cells; the percent sign's cell follows them.
 pub const DIGIT_CELLS: i32 = 3;
-/// The cells between a module's parts, between the modules of a group, and between groups.
+/// The cells between a module's parts, between the modules of a group, and between groups: an icon and the
+/// next one of its group are four cells apart, a finger's width on a touch screen.
 const PART_GAP: i32 = 1;
-const MODULE_GAP: i32 = 3;
-const GROUP_GAP: i32 = 5;
-/// The cells of room at the bar's right edge.
-const EDGE_CELLS: i32 = 2;
+const MODULE_GAP: i32 = 2;
+const GROUP_GAP: i32 = 4;
+/// How far a part's target reaches into the room beside it, in cells: a click that far from a part is on it, so
+/// two parts of a group leave no dead room between them.
+const REACH_CELLS: i32 = 1;
+/// The cell of room at the bar's right edge, as the mark has one at the left.
+const EDGE_CELLS: i32 = 1;
 /// What a wheel step, or Up or Down, changes a level by, and what a click on a gauge is rounded to.
 pub const STEP: i32 = 5;
 /// How far the pointer goes with the button held on the bar's own ground before the press is a drag of the bar.
 pub const DRAG_START: f64 = 6.0;
+/// How thick the line is that shows, at the screen's other edge, where a dragged bar would land.
+pub const GUIDE: i32 = 3;
 /// The name a drop of the bar is sent under, its instance the edge: spark-shell stands the bar there.
 pub const BAR: &str = "bar";
 /// How far the pointer may travel off the bar, in cells, before a bar that has the keys gives them back.
@@ -805,6 +811,13 @@ pub fn dropped(edge: Edge, y: f64, height: i32, screen: i32) -> Edge {
     }
 }
 
+/// The edge a dragged bar's guide line shows at: where a drop now would stand the bar, when that is not where it
+/// stands; none while it would stay. The same reading of the pointer as `dropped`.
+pub fn guide_at(edge: Edge, y: f64, height: i32, screen: i32) -> Option<Edge> {
+    let to = dropped(edge, y, height, screen);
+    (to != edge).then_some(to)
+}
+
 /// The click that asks spark-shell to stand the bar at an edge: what a drop at the other edge sends.
 pub fn stand_at(edge: Edge) -> Click {
     Click {
@@ -1022,7 +1035,7 @@ impl Piece<'_> {
     }
 }
 
-/// The cells between two modules next to each other: three inside a group, five between groups.
+/// The cells between two modules next to each other: two inside a group, four between groups.
 fn gap(a: &Module, b: &Module) -> i32 {
     if a.group == b.group {
         MODULE_GAP
@@ -1061,21 +1074,22 @@ fn drop_order(pieces: &[Piece], overflow: &[String]) -> Vec<String> {
 /// The place this output shows is the plate, in its own three cells: no place moves when another
 /// workspace is shown.
 ///
-/// From the right: two cells of room (after the tray's), then the status in the line's order: one cell
-/// between a module's parts, three between the modules of a group, five between groups. A module's parts
+/// From the right: one cell of room (after the tray's), as the mark has at the left, then the status in the
+/// line's order: one cell between a module's parts, two between the modules of a group, four between groups.
+/// A part's target reaches one cell into the room beside it. A module's parts
 /// are its sign, a cell a glyph, or its icon in two; pinned and with a level, its gauge of five cells and its number in four (three digits
 /// at the right and the percent sign); then the cells kept for its text. A hairline stands in the middle
 /// of the gap before the time's group, when something stands left of it.
 ///
-/// Short of width, with five cells kept between the run and the status: every number goes, then every
+/// Short of width, with four cells kept between the run and the status: every number goes, then every
 /// gauge, then whole modules in the overflow order, three dots standing for them at the status's left
 /// end. The run and the time's group stay; a bar with no room even for those shows no status.
 ///
-/// sway's binding mode stands in the room the status leaves, its name's end five cells before the status:
+/// sway's binding mode stands in the room the status leaves, its name's end four cells before the status:
 /// the status is fitted as if there were no mode, so a mode moves no module and drops none. A name longer
 /// than the room from one cell after the run is cut at its end. It is no target.
 ///
-/// The room for the pad's windows (Apps) begins one cell after the run and ends five cells before the
+/// The room for the pad's windows (Apps) begins one cell after the run and ends four cells before the
 /// status, or one cell before the mode's name: the pad stands there when it is on the bar, and the bar
 /// draws nothing in it.
 pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
@@ -1183,7 +1197,7 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
     }
     let start = right - cells * cell;
 
-    // the binding mode, in the room between the run and the status: its end five cells before the status
+    // the binding mode, in the room between the run and the status: its end four cells before the status
     let limit = if cells > 0 { start - GROUP_GAP * cell } else { right };
     let mut room_end = limit;
     if let Some(name) = scene.mode {
@@ -1238,7 +1252,7 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
         if let Some(b) = before {
             x += gap(b, p.m) * cell;
         }
-        // the hairline: in the middle of the five cells before the time's group, a tenth of a cell wide, a quarter
+        // the hairline: in the middle of the four cells before the time's group, a tenth of a cell wide, a quarter
         // of the bar's height from its top and as far from its bottom
         if p.m.group == TIME && before.map_or(more, |b| b.group != TIME) {
             let (room, wide, top) = (GROUP_GAP * cell, ((cell + 5) / 10).max(1), (h + 2) / 4);
@@ -1476,9 +1490,24 @@ impl View<'_> {
 }
 
 impl Layout {
-    /// The target under a point; none in a gap, at an edge or outside.
+    /// The target under a point, or the part of the status the point is beside: a sign, a number or a text reaches
+    /// one cell into the room at its sides, the nearer one's where two reach (the left one's where they are as
+    /// near), counted in whole pixels. A gauge reaches no farther than it stands: a click sets its level by where
+    /// it falls. None farther from a part, on the bar's own ground, or outside.
     pub fn hit(&self, x: f64, y: f64) -> Option<usize> {
-        self.targets.iter().position(|t| t.rect.contains(x, y))
+        if let Some(i) = self.targets.iter().position(|t| t.rect.contains(x, y)) {
+            return Some(i);
+        }
+        let (px, reach) = (x.floor() as i32, REACH_CELLS * self.cell);
+        let beside = |t: &Target| if px < t.rect.x { t.rect.x - px } else { px - t.rect.right() + 1 };
+        self.targets
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| matches!(t.kind, Kind::Toggle | Kind::Open) && y >= t.rect.y as f64 && y < (t.rect.y + t.rect.h) as f64)
+            .map(|(i, t)| (i, beside(t)))
+            .filter(|(_, d)| *d <= reach)
+            .min_by_key(|(_, d)| *d)
+            .map(|(i, _)| i)
     }
 
     /// The target with that id.
@@ -1851,7 +1880,7 @@ mod tests {
     const LIGHT: &str = "\u{2500}";
 
     /// The sheet's line: the wire, bluetooth and wifi; the speaker pinned at 55 and the microphone; the
-    /// brightness and the keyboard's layout; the time, bold, and the flag. 57 cells.
+    /// brightness and the keyboard's layout; the time, bold, and the flag. 49 cells.
     const SHEET: &str = r#"[{"name":"look","fg":"ebdbb2","accent":"fe8019","muted":"928374","ground":"282828","lit":"3c3836","attention":"fabd2f","alert":"fb4934","alpha":"0.95","full":"\u2501","light":"\u2500","motion":"yes"},
         {"name":"lan","group":"connections","sign":"\u21c5","text":"","cells":0,"bold":false,"state":"ok","set":false,"pinned":false,"label":"wired network"},
         {"name":"bt","group":"connections","sign":"\u2726","text":"","cells":0,"bold":false,"state":"ok","set":false,"pinned":false,"label":"bluetooth on"},
@@ -1863,7 +1892,7 @@ mod tests {
         {"name":"clock","group":"time","sign":"","text":"13:29","cells":5,"bold":true,"state":"ok","set":false,"pinned":false,"label":"13:29"},
         {"name":"notifications","group":"time","sign":"\u2691","text":"","cells":0,"bold":false,"state":"ok","set":false,"pinned":false,"label":"no notifications"}],"#;
 
-    /// The speaker pinned at 55, the time and the flag: 26 cells.
+    /// The speaker pinned at 55, the time and the flag: 24 cells.
     const SHORT: &str = r#"[{"name":"out","group":"sound","sign":"\u25c0","state":"ok","level":55,"set":true,"pinned":true,"label":"output 55%"},
         {"name":"clock","group":"time","text":"13:29","cells":5,"bold":true,"label":"13:29"},
         {"name":"notifications","group":"time","sign":"\u2691","state":"asks","label":"2 notifications"}]"#;
@@ -2391,7 +2420,7 @@ mod tests {
     }
 
     #[test]
-    fn the_status_stands_two_cells_from_the_right_edge_in_gaps_of_1_3_and_5_cells() {
+    fn the_status_stands_one_cell_from_the_right_edge_in_gaps_of_1_2_and_4_cells() {
         let l = sheet(1200);
         assert_eq!(
             status_ids(&l),
@@ -2411,25 +2440,25 @@ mod tests {
             ]
         );
         let at = |id: &str| (rect_of(&l, id).x, rect_of(&l, id).right());
-        // the sheet's 1200 bar: the flag two cells from the edge, the time three cells before it
-        assert_eq!(at("notifications.name"), (1170, 1180));
-        assert_eq!(at("clock.text"), (1090, 1140));
-        // five cells between groups; one cell between the keyboard's sign and its text
-        assert_eq!((at("kb.name"), at("kb.text")), ((1000, 1010), (1020, 1040)));
-        // three cells between the modules of a group
-        assert_eq!(at("light.name"), (960, 970));
-        assert_eq!(at("mic.name"), (900, 910));
+        // the sheet's 1200 bar: the flag one cell from the edge, the time two cells before it
+        assert_eq!(at("notifications.name"), (1180, 1190));
+        assert_eq!(at("clock.text"), (1110, 1160));
+        // four cells between groups; one cell between the keyboard's sign and its text
+        assert_eq!((at("kb.name"), at("kb.text")), ((1030, 1040), (1050, 1070)));
+        // two cells between the modules of a group
+        assert_eq!(at("light.name"), (1000, 1010));
+        assert_eq!(at("mic.name"), (950, 960));
         // the speaker: its sign, a cell, five cells of gauge, a cell, and four cells of number, the 55% at their right
-        assert_eq!((at("out.name"), at("out.gauge"), at("out.pct")), ((750, 760), (770, 820), (840, 870)));
+        assert_eq!((at("out.name"), at("out.gauge"), at("out.pct")), ((810, 820), (830, 880), (900, 930)));
         assert_eq!(
             target(&l, "out.pct").what,
             What::Number {
                 module: "out".into(),
                 level: 55,
-                x: 830
+                x: 890
             }
         );
-        assert_eq!((at("lan.name"), at("bt.name"), at("wifi.name")), ((610, 620), (650, 660), (690, 700)));
+        assert_eq!((at("lan.name"), at("bt.name"), at("wifi.name")), ((700, 710), (730, 740), (760, 770)));
         assert!(l.targets.iter().all(|t| (t.rect.y, t.rect.h) == (0, 36)));
         assert!(l.dropped.is_empty());
         // the wide bar keeps the same places from its own right edge
@@ -2440,7 +2469,7 @@ mod tests {
                 rect_of(&wide, "clock.text").x,
                 rect_of(&wide, "lan.name").x
             ),
-            (1890, 1810, 1330)
+            (1900, 1830, 1420)
         );
     }
 
@@ -2473,7 +2502,7 @@ mod tests {
         // drawn in the pair: the full cells in the text's color, the light ones dim, each as wide as its cell
         let l = sheet(1200);
         let levels = levels_of(&mods(SHEET));
-        let cell = |i: i32| Rect::new(770 + i * 10, 0, 10, 36);
+        let cell = |i: i32| Rect::new(830 + i * 10, 0, 10, 36);
         assert_eq!(
             shows(&l, "out.gauge", false, &view(&levels)),
             [
@@ -2494,8 +2523,8 @@ mod tests {
         assert_eq!(digits(0), [None, None, Some('0')]);
         let l = sheet(1200);
         let levels = levels_of(&mods(SHEET));
-        // each digit in its own cell, as tall as the plate; the four cells start at 830
-        let cell = |i: i32| Rect::new(830 + i * 10, 4, 10, 28);
+        // each digit in its own cell, as tall as the plate; the four cells start at 890
+        let cell = |i: i32| Rect::new(890 + i * 10, 4, 10, 28);
         assert_eq!(
             shows(&l, "out.pct", false, &view(&levels)),
             [
@@ -2506,10 +2535,10 @@ mod tests {
         );
         // the target is as wide as what is drawn: 100% takes the four cells, 5% two
         for (level, rect) in [
-            (100, Rect::new(830, 0, 40, 36)),
-            (55, Rect::new(840, 0, 30, 36)),
-            (5, Rect::new(850, 0, 20, 36)),
-            (0, Rect::new(850, 0, 20, 36)),
+            (100, Rect::new(890, 0, 40, 36)),
+            (55, Rect::new(900, 0, 30, 36)),
+            (5, Rect::new(910, 0, 20, 36)),
+            (0, Rect::new(910, 0, 20, 36)),
         ] {
             let m = mods(&SHEET.replace(r#""level":55"#, &format!(r#""level":{level}"#)));
             let l = lay(1200, &m, &five());
@@ -2529,18 +2558,18 @@ mod tests {
         assert_eq!(
             shows(&l, "kb.text", false, &v),
             [
-                glyph(Rect::new(1020, 0, 10, 36), "u", Tone::Text),
-                glyph(Rect::new(1030, 0, 10, 36), "s", Tone::Text)
+                glyph(Rect::new(1050, 0, 10, 36), "u", Tone::Text),
+                glyph(Rect::new(1060, 0, 10, 36), "s", Tone::Text)
             ]
         );
-        assert_eq!(shows(&l, "kb.name", false, &v), [glyph(Rect::new(1000, 0, 10, 36), "\u{2317}", Tone::Text)]);
+        assert_eq!(shows(&l, "kb.name", false, &v), [glyph(Rect::new(1030, 0, 10, 36), "\u{2317}", Tone::Text)]);
         let time = shows(&l, "clock.text", false, &v);
         assert_eq!(time.len(), 5);
         for (i, d) in time.iter().enumerate() {
             let Draw::Glyph { rect, text, bold, tone, .. } = d else { panic!() };
             assert_eq!(
                 (*rect, text.as_str(), *bold, *tone),
-                (Rect::new(1090 + i as i32 * 10, 0, 10, 36), &"13:29"[i..=i], true, Tone::Text)
+                (Rect::new(1110 + i as i32 * 10, 0, 10, 36), &"13:29"[i..=i], true, Tone::Text)
             );
         }
         // nothing else on the bar is bold but the plate's number
@@ -2549,7 +2578,7 @@ mod tests {
         // a sign that is a word keeps a cell a letter
         let m = mods(r#"[{"name":"out","group":"sound","sign":"vol","level":55,"set":true,"pinned":true}]"#);
         let l = lay(1200, &m, &[]);
-        assert_eq!((rect_of(&l, "out.name"), rect_of(&l, "out.gauge").x), (Rect::new(1040, 0, 30, 36), 1080));
+        assert_eq!((rect_of(&l, "out.name"), rect_of(&l, "out.gauge").x), (Rect::new(1050, 0, 30, 36), 1090));
     }
 
     #[test]
@@ -2558,7 +2587,7 @@ mod tests {
         let before = sheet(1200);
         // a shorter text is drawn from the left of its cells, and moves nothing else
         let after = lay(1200, &line("9:05"), &five());
-        assert_eq!(rect_of(&after, "clock.text"), Rect::new(1090, 0, 40, 36));
+        assert_eq!(rect_of(&after, "clock.text"), Rect::new(1110, 0, 40, 36));
         for t in before.targets.iter().filter(|t| t.id != "clock.text") {
             assert_eq!(rect_of(&after, &t.id), t.rect, "{}", t.id);
         }
@@ -2566,7 +2595,7 @@ mod tests {
         let long = lay(1200, &line("13:29:59"), &five());
         assert_eq!(
             (rect_of(&long, "clock.text"), rect_of(&long, "notifications.name")),
-            (Rect::new(1090, 0, 50, 36), Rect::new(1170, 0, 10, 36))
+            (Rect::new(1110, 0, 50, 36), Rect::new(1180, 0, 10, 36))
         );
         // no text, or blanks: its cells stay and nothing is there to reach
         for text in ["", "     "] {
@@ -2579,13 +2608,13 @@ mod tests {
         let l = lay(1200, &m, &[]);
         assert_eq!(
             (status_ids(&l), rect_of(&l, "notifications.name")),
-            (vec!["notifications.name"], Rect::new(1140, 0, 10, 36))
+            (vec!["notifications.name"], Rect::new(1150, 0, 10, 36))
         );
         let m = mods(r#"[{"name":"notifications","group":"time","sign":"\u2691","text":"9+","cells":2}]"#);
         let l = lay(1200, &m, &[]);
         assert_eq!(
             (rect_of(&l, "notifications.name"), rect_of(&l, "notifications.text")),
-            (Rect::new(1140, 0, 10, 36), Rect::new(1160, 0, 20, 36))
+            (Rect::new(1150, 0, 10, 36), Rect::new(1170, 0, 20, 36))
         );
     }
 
@@ -2601,7 +2630,7 @@ mod tests {
         // a module appearing at the left moves nothing at its right
         let line = SHEET.replacen(r#"{"name":"lan""#, r#"{"name":"pad","group":"windows","sign":"\u229f"},{"name":"lan""#, 1);
         let with = lay(1200, &mods(&line), &five());
-        assert_eq!(rect_of(&with, "pad.name"), Rect::new(550, 0, 10, 36), "five cells before the connections");
+        assert_eq!(rect_of(&with, "pad.name"), Rect::new(650, 0, 10, 36), "four cells before the connections");
         for t in &without.targets {
             assert_eq!(rect_of(&with, &t.id), t.rect, "{}", t.id);
         }
@@ -2615,7 +2644,7 @@ mod tests {
         let l = lay(1200, &m, &[]);
         assert_eq!(
             (rect_of(&l, "notifications.name"), rect_of(&l, "notifications.text")),
-            (Rect::new(1130, 0, 20, 36), Rect::new(1160, 0, 20, 36))
+            (Rect::new(1140, 0, 20, 36), Rect::new(1170, 0, 20, 36))
         );
         // drawn the text's size, 16 px of 36, in the middle of its cells and in the sign's tone
         let levels = Levels::default();
@@ -2625,16 +2654,16 @@ mod tests {
             name: "flag".into(),
             tone,
         };
-        assert_eq!(shows(&l, "notifications.name", false, &v), vec![icon(1132, Tone::Text)]);
+        assert_eq!(shows(&l, "notifications.name", false, &v), vec![icon(1142, Tone::Text)]);
         // dim when off, and raised on its chip as a dim glyph is
         let m = mods(r#"[{"name":"notifications","group":"time","sign":"\u2691","icon":"flag","state":"off"}]"#);
         let l = lay(1200, &m, &[]);
-        assert_eq!(shows(&l, "notifications.name", false, &v), vec![icon(1162, Tone::Dim)]);
-        assert_eq!(shows(&l, "notifications.name", true, &v), vec![icon(1162, Tone::Raised)]);
+        assert_eq!(shows(&l, "notifications.name", false, &v), vec![icon(1172, Tone::Dim)]);
+        assert_eq!(shows(&l, "notifications.name", true, &v), vec![icon(1172, Tone::Raised)]);
         // an icon the bar has no drawing of: the sign's glyph stands, in its one cell
         let m = mods(r#"[{"name":"notifications","group":"time","sign":"\u2691","icon":"no such drawing","text":"9+","cells":2}]"#);
         let l = lay(1200, &m, &[]);
-        assert_eq!(rect_of(&l, "notifications.name"), Rect::new(1140, 0, 10, 36));
+        assert_eq!(rect_of(&l, "notifications.name"), Rect::new(1150, 0, 10, 36));
         // an icon with no sign said is a sign all the same: it says the state, and the text beside it stays the text's
         let m = mods(r#"[{"name":"bat","group":"seat","icon":"battery-low","text":"9%","cells":4,"state":"wrong"}]"#);
         let l = lay(1200, &m, &[]);
@@ -2644,25 +2673,25 @@ mod tests {
         assert_eq!((M.icon(), Metrics { cell: 8, height: 27, mark: 18 }.icon()), (16, 12));
     }
     #[test]
-    fn a_hairline_stands_in_the_middle_of_the_five_cells_before_the_time() {
-        // the sheet: the keyboard's text ends at 1040, the time starts at 1090, the line at 1065 from 9 to 27
+    fn a_hairline_stands_in_the_middle_of_the_four_cells_before_the_time() {
+        // the sheet: the keyboard's text ends at 1070, the time starts at 1110, the line at 1090 from 9 to 27
         let l = sheet(1200);
-        assert_eq!(l.fixed, [fill(Rect::new(1065, 9, 1, 18), Tone::Dim)]);
+        assert_eq!(l.fixed, [fill(Rect::new(1090, 9, 1, 18), Tone::Dim)]);
         // it follows the time, not the width
-        assert_eq!(sheet(1920).fixed, [fill(Rect::new(1785, 9, 1, 18), Tone::Dim)]);
+        assert_eq!(sheet(1920).fixed, [fill(Rect::new(1810, 9, 1, 18), Tone::Dim)]);
         // with nothing left of the time there is no line; with the three dots there is
         let alone = mods(r#"[{"name":"clock","group":"time","text":"13:29","cells":5,"bold":true},{"name":"notifications","group":"time","sign":"\u2691"}]"#);
         assert_eq!(lay(1200, &alone, &five()).fixed, []);
         let l = sheet(570);
         assert_eq!(status_ids(&l), ["more", "clock.text", "notifications.name"]);
-        assert_eq!((rect_of(&l, MORE), rect_of(&l, "clock.text").x), (Rect::new(400, 0, 10, 36), 460));
-        assert_eq!(l.fixed, [fill(Rect::new(435, 9, 1, 18), Tone::Dim)]);
+        assert_eq!((rect_of(&l, MORE), rect_of(&l, "clock.text").x), (Rect::new(430, 0, 10, 36), 480));
+        assert_eq!(l.fixed, [fill(Rect::new(460, 9, 1, 18), Tone::Dim)]);
         // a group named time anywhere on the line has its line before its first module, once
         let m = mods(
             r#"[{"name":"a","group":"g","sign":"a"},{"name":"t","group":"time","sign":"t"},{"name":"u","group":"time","sign":"u"},{"name":"b","group":"h","sign":"b"}]"#,
         );
         let l = lay(1200, &m, &[]);
-        assert_eq!(l.fixed, [fill(Rect::new(rect_of(&l, "t.name").x - 25, 9, 1, 18), Tone::Dim)]);
+        assert_eq!(l.fixed, [fill(Rect::new(rect_of(&l, "t.name").x - 20, 9, 1, 18), Tone::Dim)]);
     }
 
     /// The speaker pinned at 55 with a text, in a state.
@@ -2711,7 +2740,7 @@ mod tests {
             // its cells stay whatever is drawn in them: nothing moves between states
             assert_eq!(
                 (rect_of(&l, "out.name"), rect_of(&l, "out.text")),
-                (Rect::new(1030, 0, 10, 36), Rect::new(1160, 0, 20, 36)),
+                (Rect::new(1040, 0, 10, 36), Rect::new(1170, 0, 20, 36)),
                 "{state}"
             );
             // every part says the module's state
@@ -2749,7 +2778,7 @@ mod tests {
             assert_eq!(target(&l, "bat.text").tone, tone, "{state}");
             assert_eq!(
                 shows(&l, "bat.text", false, &view(&levels)),
-                [glyph(Rect::new(1140, 0, 10, 36), "9", tone), glyph(Rect::new(1150, 0, 10, 36), "%", tone)],
+                [glyph(Rect::new(1150, 0, 10, 36), "9", tone), glyph(Rect::new(1160, 0, 10, 36), "%", tone)],
                 "{state}"
             );
             // and on its chip under the pointer it keeps that tone, the dim one raised
@@ -2762,9 +2791,9 @@ mod tests {
             assert_eq!(
                 f[f.len() - 3..],
                 [
-                    fill(Rect::new(1135, 4, 30, 28), Tone::Lit),
-                    glyph(Rect::new(1140, 0, 10, 36), "9", on_chip),
-                    glyph(Rect::new(1150, 0, 10, 36), "%", on_chip)
+                    fill(Rect::new(1145, 4, 30, 28), Tone::Lit),
+                    glyph(Rect::new(1150, 0, 10, 36), "9", on_chip),
+                    glyph(Rect::new(1160, 0, 10, 36), "%", on_chip)
                 ],
                 "{state}"
             );
@@ -2821,33 +2850,33 @@ mod tests {
         assert_eq!((rect_of(&l, "workspace:10").right(), rect_of(&l, "workspace:10").right() - 34), (274, 30 * 8));
         // the plate's box: a ninth of the height in from the top and the bottom
         assert_eq!(l.boxed(plate_of(&l)), Rect::new(58, 3, 24, 21));
-        // the status two cells from the edge, in gaps of 1, 3 and 5 cells
+        // the status one cell from the edge, in gaps of 1, 2 and 4 cells
         let at = |id: &str| rect_of(&l, id);
         assert_eq!(
             (at("notifications.name"), at("clock.text")),
-            (Rect::new(976, 0, 8, 27), Rect::new(912, 0, 40, 27))
+            (Rect::new(984, 0, 8, 27), Rect::new(928, 0, 40, 27))
         );
         assert_eq!(
             (at("kb.text"), at("kb.name"), at("light.name").x, at("mic.name").x),
-            (Rect::new(856, 0, 16, 27), Rect::new(840, 0, 8, 27), 808, 760)
+            (Rect::new(880, 0, 16, 27), Rect::new(864, 0, 8, 27), 840, 800)
         );
         assert_eq!(
             (at("out.pct"), at("out.gauge"), at("out.name")),
-            (Rect::new(712, 0, 24, 27), Rect::new(656, 0, 40, 27), Rect::new(640, 0, 8, 27))
+            (Rect::new(760, 0, 24, 27), Rect::new(704, 0, 40, 27), Rect::new(688, 0, 8, 27))
         );
-        assert_eq!((at("wifi.name").x, at("bt.name").x, at("lan.name").x), (592, 560, 528));
-        // the hairline: 20 px into the 40 before the time, one pixel wide, as far from the top as from the bottom
-        let hairline = fill(Rect::new(892, 7, 1, 13), Tone::Dim);
+        assert_eq!((at("wifi.name").x, at("bt.name").x, at("lan.name").x), (648, 624, 600));
+        // the hairline: 16 px into the 32 before the time, one pixel wide, as far from the top as from the bottom
+        let hairline = fill(Rect::new(912, 7, 1, 13), Tone::Dim);
         assert_eq!(l.fixed.last(), Some(&hairline));
         assert_eq!((7, 27 - 7 - 13), (7, 7));
-        // the mode's end five cells before the status, a glyph a cell
-        assert_eq!(l.fixed[0], glyph(Rect::new(440, 0, 8, 27), "r", Tone::Attention));
+        // the mode's end four cells before the status, a glyph a cell
+        assert_eq!(l.fixed[0], glyph(Rect::new(520, 0, 8, 27), "r", Tone::Attention));
         // a chip: half a cell at each side, the plate's height; the keys' line the last two pixels inside it
         let bt = target(&l, "bt.name");
-        assert_eq!((l.chip(bt), l.line(bt)), (Rect::new(556, 3, 16, 21), Rect::new(556, 22, 16, 2)));
+        assert_eq!((l.chip(bt), l.line(bt)), (Rect::new(620, 3, 16, 21), Rect::new(620, 22, 16, 2)));
         assert_eq!(
             (l.chip(target(&l, "out.gauge")), l.chip(target(&l, "mark"))),
-            (Rect::new(652, 3, 48, 21), Rect::new(4, 3, 26, 21))
+            (Rect::new(700, 3, 48, 21), Rect::new(4, 3, 26, 21))
         );
         // a place's chip is its own three cells, and its line as wide
         let three = target(&l, "workspace:3");
@@ -2855,10 +2884,10 @@ mod tests {
         assert_eq!(l.plate_line(plate_of(&l)), Rect::new(58, 20, 24, 2), "two pixels of the accent under it");
         // a digit's cell is as tall as the plate
         let levels = levels_of(&mods(SHEET));
-        assert_eq!(shows(&l, "out.pct", false, &view(&levels))[0], glyph(Rect::new(712, 3, 8, 21), "5", Tone::Text));
-        // the run 274, five cells, the status's 57 and the edge's two: 786 fits whole, and 785 gives up the number
-        assert!(sized(&M8, 786, &five(), None).dropped.is_empty());
-        assert_eq!(sized(&M8, 785, &five(), None).dropped, ["out.pct"]);
+        assert_eq!(shows(&l, "out.pct", false, &view(&levels))[0], glyph(Rect::new(760, 3, 8, 21), "5", Tone::Text));
+        // the run 274, four cells, the status's 49 and the edge's one: 706 fits whole, and 705 gives up the number
+        assert!(sized(&M8, 706, &five(), None).dropped.is_empty());
+        assert_eq!(sized(&M8, 705, &five(), None).dropped, ["out.pct"]);
     }
 
     #[test]
@@ -2880,19 +2909,19 @@ mod tests {
             assert_eq!(run, want, "{n}");
             assert_eq!(l.apps.x, 66 + 30 * 15 + 15, "{n}: the pad's room one cell after the run");
         }
-        // the status: whole cells from two cells before the edge
+        // the status: whole cells from one cell before the edge
         let at = |id: &str| rect_of(&l, id);
         assert_eq!(
             (at("notifications.name"), at("clock.text"), at("lan.name").x),
-            (Rect::new(1955, 0, 15, 54), Rect::new(1835, 0, 75, 54), 1115)
+            (Rect::new(1970, 0, 15, 54), Rect::new(1865, 0, 75, 54), 1250)
         );
-        // the hairline: a tenth of a cell wide, in the middle of the 75 before the time, 14 from the top and from the bottom
-        assert_eq!(l.fixed, [fill(Rect::new(1797, 14, 2, 26), Tone::Dim)]);
-        assert_eq!((1797 - (1835 - 75), 1835 - 1799), (37, 36));
+        // the hairline: a tenth of a cell wide, in the middle of the 60 before the time, 14 from the top and from the bottom
+        assert_eq!(l.fixed, [fill(Rect::new(1834, 14, 2, 26), Tone::Dim)]);
+        assert_eq!((1834 - (1865 - 60), 1865 - 1836), (29, 29));
         // a chip: 7 at each side, where half a cell is 7 and a pixel is left over; the keys' line a fifth of a
         // cell thick, the last pixels inside the plate's box
         let flag = target(&l, "notifications.name");
-        assert_eq!((l.chip(flag), l.line(flag)), (Rect::new(1948, 6, 29, 42), Rect::new(1948, 45, 29, 3)));
+        assert_eq!((l.chip(flag), l.line(flag)), (Rect::new(1963, 6, 29, 42), Rect::new(1963, 45, 29, 3)));
         assert_eq!(l.plate_line(plate_of(&l)), Rect::new(111, 42, 45, 3), "three pixels of the accent under it");
         // the chips of two parts a cell apart do not meet, at any size, and a place's chip ends with its cells
         for (m, width) in [(&M8, 1000), (&M, 1200), (&M15, 2000)] {
@@ -2964,7 +2993,7 @@ mod tests {
             };
             let (before, after) = (line.x - rect_of(&l, "kb.text").right(), rect_of(&l, "clock.text").x - line.right());
             assert!(
-                before + line.w + after == 5 * cell && (before - after).abs() <= 1,
+                before + line.w + after == 4 * cell && (before - after).abs() <= 1,
                 "{px} px: {before} {} {after}",
                 line.w
             );
@@ -3006,26 +3035,26 @@ mod tests {
             l.frame(&v)
         };
         // the chip: the part's width and half a cell at each side, the plate's height
-        assert_eq!(l.chip(target(&l, "bt.name")), Rect::new(645, 4, 20, 28));
+        assert_eq!(l.chip(target(&l, "bt.name")), Rect::new(725, 4, 20, 28));
         // a sign: the chip in the lit tone and the glyph in its own, as at rest; drawn last, over what is beside it
         let f = over("bt.name");
         assert_eq!(
             f[f.len() - 2..],
-            [fill(Rect::new(645, 4, 20, 28), Lit), glyph(Rect::new(650, 0, 10, 36), "\u{2726}", Text)]
+            [fill(Rect::new(725, 4, 20, 28), Lit), glyph(Rect::new(730, 0, 10, 36), "\u{2726}", Text)]
         );
         assert_eq!(f.len(), rest.len() + 1, "one chip, and each part lights alone");
         // a gauge: its cells keep their tones, the full ones the text's and the light ones dim
         let f = over("out.gauge");
-        assert_eq!(f[f.len() - 6], fill(Rect::new(765, 4, 60, 28), Lit));
+        assert_eq!(f[f.len() - 6], fill(Rect::new(825, 4, 60, 28), Lit));
         assert_eq!(f[f.len() - 5..], shows(&l, "out.gauge", false, &view(&levels))[..]);
         assert_eq!(tones(&f[f.len() - 5..]), [Text, Text, Text, Dim, Dim]);
         // a number: as wide as the digits drawn and the percent sign
         let f = over("out.pct");
-        assert_eq!(f[f.len() - 4], fill(Rect::new(835, 4, 40, 28), Lit));
+        assert_eq!(f[f.len() - 4], fill(Rect::new(895, 4, 40, 28), Lit));
         assert_eq!(tones(&f[f.len() - 3..]), [Text; 3]);
         // a text: the time stays bold on its chip
         let f = over("clock.text");
-        assert_eq!(f[f.len() - 6], fill(Rect::new(1085, 4, 60, 28), Lit));
+        assert_eq!(f[f.len() - 6], fill(Rect::new(1105, 4, 60, 28), Lit));
         assert!(f[f.len() - 5..].iter().all(|d| matches!(d, Draw::Glyph { tone: Text, bold: true, .. })));
         // a place: its chip is its own three cells in the plate's box, and no wider; a workspace's glyphs as at rest
         let f = over("workspace:7");
@@ -3070,7 +3099,7 @@ mod tests {
             let f = l.frame(&v);
             assert_eq!(
                 f[f.len() - 2..],
-                [fill(Rect::new(1025, 4, 20, 28), Lit), glyph(Rect::new(1030, 0, 10, 36), "\u{25c0}", tone)],
+                [fill(Rect::new(1035, 4, 20, 28), Lit), glyph(Rect::new(1040, 0, 10, 36), "\u{25c0}", tone)],
                 "{state}"
             );
         }
@@ -3104,7 +3133,7 @@ mod tests {
         let f = l.frame(&v);
         assert_eq!(
             f[f.len() - 2..],
-            [fill(Rect::new(395, 4, 20, 28), Lit), glyph(Rect::new(400, 0, 10, 36), ELLIPSIS, Raised)]
+            [fill(Rect::new(425, 4, 20, 28), Lit), glyph(Rect::new(430, 0, 10, 36), ELLIPSIS, Raised)]
         );
         // nothing is drawn in the ground's color on a chip, and the lit and the raised tones are a chip's alone
         let l = sheet(1200);
@@ -3133,14 +3162,14 @@ mod tests {
         let levels = levels_of(&mods(SHEET));
         // the last two pixels inside the plate's box, as wide as the chip: the part and half a cell at each side,
         // a place's own three cells
-        assert_eq!(l.line(target(&l, "bt.name")), Rect::new(645, 30, 20, 2));
+        assert_eq!(l.line(target(&l, "bt.name")), Rect::new(725, 30, 20, 2));
         let rest = l.frame(&view(&levels));
         for (id, line) in [
-            ("bt.name", Rect::new(645, 30, 20, 2)),
-            ("out.name", Rect::new(745, 30, 20, 2)),
-            ("out.gauge", Rect::new(765, 30, 60, 2)),
-            ("out.pct", Rect::new(835, 30, 40, 2)),
-            ("clock.text", Rect::new(1085, 30, 60, 2)),
+            ("bt.name", Rect::new(725, 30, 20, 2)),
+            ("out.name", Rect::new(805, 30, 20, 2)),
+            ("out.gauge", Rect::new(825, 30, 60, 2)),
+            ("out.pct", Rect::new(895, 30, 40, 2)),
+            ("clock.text", Rect::new(1105, 30, 60, 2)),
             ("workspace:7", Rect::new(224, 30, 30, 2)),
             ("workspace:5", Rect::new(164, 30, 30, 2)),
             ("mark", Rect::new(5, 30, 34, 2)),
@@ -3160,13 +3189,13 @@ mod tests {
             ..view(&levels)
         };
         let f = l.frame(&v);
-        assert_eq!(f.last(), Some(&fill(Rect::new(765, 30, 60, 2), Tone::Accent)));
-        assert!(f.contains(&fill(Rect::new(835, 4, 40, 28), Tone::Lit)));
+        assert_eq!(f.last(), Some(&fill(Rect::new(825, 30, 60, 2), Tone::Accent)));
+        assert!(f.contains(&fill(Rect::new(895, 4, 40, 28), Tone::Lit)));
         // the accent is on the plate and the line and nowhere else
         let accents: Vec<&Draw> = f.iter().filter(|d| tones(std::slice::from_ref(d)) == [Tone::Accent]).collect();
         assert_eq!(
             accents,
-            [&fill(Rect::new(74, 4, 30, 28), Tone::Accent), &fill(Rect::new(765, 30, 60, 2), Tone::Accent)]
+            [&fill(Rect::new(74, 4, 30, 28), Tone::Accent), &fill(Rect::new(825, 30, 60, 2), Tone::Accent)]
         );
     }
 
@@ -3259,78 +3288,78 @@ mod tests {
 
     #[test]
     fn short_of_width_the_numbers_go_then_the_gauges_then_whole_modules() {
-        // the run ends at 344, five cells of room, the status's 570 and the edge's 20: 984 fits whole
-        assert!(sheet(984).dropped.is_empty());
+        // the run ends at 344, four cells of room, the status's 490 and the edge's 10: 884 fits whole
+        assert!(sheet(884).dropped.is_empty());
         // one pixel less: every pinned control gives up its number, and nothing else
-        let l = sheet(983);
+        let l = sheet(883);
         assert_eq!(l.dropped, ["out.pct"]);
         assert_eq!((l.find("out.pct"), l.find(MORE)), (None, None));
         assert_eq!(
             (rect_of(&l, "out.gauge").right(), rect_of(&l, "mic.name").x),
-            (653, 683),
-            "three cells to the next module"
+            (613, 633),
+            "two cells to the next module"
         );
-        assert_eq!(sheet(934).dropped, ["out.pct"]);
+        assert_eq!(sheet(834).dropped, ["out.pct"]);
         // then its gauge: the sign alone stays
-        let l = sheet(933);
+        let l = sheet(833);
         assert_eq!(l.dropped, ["out.pct", "out.gauge"]);
         assert_eq!(
             (l.find("out.gauge"), rect_of(&l, "out.name").right(), rect_of(&l, "mic.name").x),
-            (None, 603, 633)
+            (None, 563, 583)
         );
-        assert_eq!(sheet(874).dropped, ["out.pct", "out.gauge"]);
+        assert_eq!(sheet(774).dropped, ["out.pct", "out.gauge"]);
         // then modules, from the left: the dots' cell and its gap take the room of the first, so the second goes with it
-        let l = sheet(873);
+        let l = sheet(773);
         assert_eq!(l.dropped, ["out.pct", "out.gauge", "lan", "bt"]);
         assert_eq!(status_ids(&l)[..2], ["more", "wifi.name"]);
-        assert_eq!(sheet(854).dropped.len(), 4);
-        assert_eq!(sheet(853).dropped[4..], ["wifi"]);
-        assert_eq!(sheet(793).dropped[4..], ["wifi", "out"]);
-        assert_eq!(sheet(753).dropped[4..], ["wifi", "out", "mic"]);
-        assert_eq!(sheet(693).dropped[4..], ["wifi", "out", "mic", "light"]);
+        assert_eq!(sheet(764).dropped.len(), 4);
+        assert_eq!(sheet(763).dropped[4..], ["wifi"]);
+        assert_eq!(sheet(713).dropped[4..], ["wifi", "out"]);
+        assert_eq!(sheet(683).dropped[4..], ["wifi", "out", "mic"]);
+        assert_eq!(sheet(633).dropped[4..], ["wifi", "out", "mic", "light"]);
         // the time's group stays, and the run: nothing of either is ever named
-        let l = sheet(653);
+        let l = sheet(603);
         assert_eq!(l.dropped, ["out.pct", "out.gauge", "lan", "bt", "wifi", "out", "mic", "light", "kb"]);
         assert_eq!(status_ids(&l), ["more", "clock.text", "notifications.name"]);
-        assert_eq!(sheet(564).targets, {
+        assert_eq!(sheet(524).targets, {
             let mut same = l.targets.clone();
             for t in same.iter_mut().filter(|t| t.kind == Kind::Open) {
-                t.rect.x -= 653 - 564;
+                t.rect.x -= 603 - 524;
             }
             same
         });
         // a bar with no room even for the time shows the mark and the run alone
-        let l = sheet(563);
+        let l = sheet(523);
         assert_eq!(status_ids(&l), Vec::<&str>::new());
         assert_eq!(l.targets.len(), 11);
         assert!(l.fixed.is_empty());
         // every pinned control gives up its number at once, in the line's order, and then every gauge
         let two = mods(&SHEET.replace(r#""level":40,"set":true,"pinned":false"#, r#""level":40,"set":true,"pinned":true"#));
-        // the microphone's gauge and number are 11 cells more: 1094 fits whole
-        assert!(lay(1094, &two, &five()).dropped.is_empty());
-        assert_eq!(lay(1093, &two, &five()).dropped, ["out.pct", "mic.pct"]);
-        assert_eq!(lay(993, &two, &five()).dropped, ["out.pct", "mic.pct", "out.gauge", "mic.gauge"]);
+        // the microphone's gauge and number are 11 cells more: 994 fits whole
+        assert!(lay(994, &two, &five()).dropped.is_empty());
+        assert_eq!(lay(993, &two, &five()).dropped, ["out.pct", "mic.pct"]);
+        assert_eq!(lay(893, &two, &five()).dropped, ["out.pct", "mic.pct", "out.gauge", "mic.gauge"]);
     }
 
     #[test]
     fn three_dots_stand_for_the_modules_left_out_and_open_home() {
-        let l = sheet(873);
-        // the status is 44 cells from 413: the dots' cell, five cells, then wifi
+        let l = sheet(773);
+        // the status is 37 cells from 393: the dots' cell, four cells, then wifi
         let more = target(&l, MORE);
         assert_eq!(
             (more.rect, more.kind, more.name.as_str(), more.tone),
-            (Rect::new(413, 0, 10, 36), Kind::Open, "more", Tone::Dim)
+            (Rect::new(393, 0, 10, 36), Kind::Open, "more", Tone::Dim)
         );
-        assert_eq!(rect_of(&l, "wifi.name").x, 473);
+        assert_eq!(rect_of(&l, "wifi.name").x, 443);
         let levels = Levels::default();
-        assert_eq!(shows(&l, MORE, false, &view(&levels)), [glyph(Rect::new(413, 0, 10, 36), ELLIPSIS, Tone::Dim)]);
+        assert_eq!(shows(&l, MORE, false, &view(&levels)), [glyph(Rect::new(393, 0, 10, 36), ELLIPSIS, Tone::Dim)]);
         // a click on them is a click on logo, as one on the mark is
-        let c = send(l.press(415.0, 5.0, 1, &levels).act);
+        let c = send(l.press(395.0, 5.0, 1, &levels).act);
         assert_eq!((c.name.as_str(), c.instance.as_str(), c.relative_x, c.width), ("logo", "", 2, 10));
         let c = send(l.press(20.0, 10.0, 1, &levels).act);
         assert_eq!((c.name.as_str(), c.instance.as_str(), c.button, c.relative_x, c.width), ("logo", "", 1, 10, 24));
         // a number or a gauge given up is no module left out: no dots
-        assert_eq!(sheet(933).find(MORE), None);
+        assert_eq!(sheet(833).find(MORE), None);
     }
 
     #[test]
@@ -3338,13 +3367,13 @@ mod tests {
         let prefs = Prefs::new("kb  out clock", 0, "");
         let at = |width: i32| lay_with(width, Status::Ok, &mods(SHEET), &five(), &prefs).dropped;
         // lan, bt, wifi, mic and light are not named: they leave first, from the left
-        assert_eq!(at(793)[2..], ["lan", "bt", "wifi", "mic"]);
-        assert_eq!(at(753)[2..], ["lan", "bt", "wifi", "mic", "light"]);
+        assert_eq!(at(713)[2..], ["lan", "bt", "wifi", "mic"]);
+        assert_eq!(at(683)[2..], ["lan", "bt", "wifi", "mic", "light"]);
         // then the named ones in BAR_OVERFLOW's order; the time's group stays though it is named
-        assert_eq!(at(713)[2..], ["lan", "bt", "wifi", "mic", "light", "kb"]);
-        assert_eq!(at(623)[2..], ["lan", "bt", "wifi", "mic", "light", "kb", "out"]);
-        assert_eq!(at(564).len(), 9);
-        let l = lay_with(564, Status::Ok, &mods(SHEET), &five(), &prefs);
+        assert_eq!(at(653)[2..], ["lan", "bt", "wifi", "mic", "light", "kb"]);
+        assert_eq!(at(573)[2..], ["lan", "bt", "wifi", "mic", "light", "kb", "out"]);
+        assert_eq!(at(524).len(), 9);
+        let l = lay_with(524, Status::Ok, &mods(SHEET), &five(), &prefs);
         assert_eq!(status_ids(&l), ["more", "clock.text", "notifications.name"]);
         assert_eq!(Prefs::new("", 0, "").overflow, Vec::<String>::new());
     }
@@ -3353,14 +3382,14 @@ mod tests {
     fn the_trays_room_is_kept_clear_at_the_right_end() {
         let prefs = Prefs::new("", 96, "");
         let l = lay_with(1200, Status::Ok, &mods(SHEET), &five(), &prefs);
-        assert_eq!(rect_of(&l, "notifications.name").right(), 1084);
+        assert_eq!(rect_of(&l, "notifications.name").right(), 1094);
         assert_eq!(rect_of(&l, "mark").x, 10);
         // on the named output alone
         assert_eq!((Prefs::new("", 96, "A").tray_on("A"), Prefs::new("", 96, "B").tray_on("A")), (96, 0));
         let other = lay_with(1200, Status::Ok, &mods(SHEET), &five(), &Prefs::new("", 96, "B"));
-        assert_eq!(rect_of(&other, "notifications.name").right(), 1180);
-        // the room counts against the width: what fits at 984 does not with 96 px less
-        assert_eq!(lay_with(984, Status::Ok, &mods(SHEET), &five(), &prefs).dropped, ["out.pct", "out.gauge"]);
+        assert_eq!(rect_of(&other, "notifications.name").right(), 1190);
+        // the room counts against the width: what fits at 884 does not with 96 px less
+        assert_eq!(lay_with(884, Status::Ok, &mods(SHEET), &five(), &prefs).dropped, ["out.pct", "out.gauge"]);
         assert_eq!(Prefs::new("", -5, "").tray_width, 0);
         // a tray wider than the bar leaves the mark and the run
         let l = lay_with(400, Status::Ok, &mods(SHEET), &five(), &Prefs::new("", 5000, ""));
@@ -3372,7 +3401,7 @@ mod tests {
         let on = |edge: Edge| {
             lay_on(
                 "A",
-                900,
+                800,
                 edge,
                 Status::Ok,
                 &mods(SHEET),
@@ -3395,7 +3424,7 @@ mod tests {
     }
 
     #[test]
-    fn the_pointer_hits_parts_and_misses_gaps_and_edges() {
+    fn the_pointer_hits_parts_and_the_cell_beside_a_modules_part_and_misses_the_rest() {
         let l = sheet(1200);
         let id = |x: f64, y: f64| l.hit(x, y).map(|i| l.targets[i].id.as_str());
         assert_eq!(id(9.9, 10.0), None, "the left edge");
@@ -3406,42 +3435,130 @@ mod tests {
         assert_eq!(id(104.0, 0.0), Some("workspace:3"), "the bar's first row of pixels");
         assert_eq!((id(133.9, 10.0), id(134.0, 10.0)), (Some("workspace:3"), Some("workspace:4")), "places touch");
         assert_eq!(id(344.0, 10.0), None, "the free room");
-        assert_eq!(id(760.0, 10.0), None, "the cell between a module's parts");
-        assert_eq!(id(770.0, 10.0), Some("out.gauge"));
-        assert_eq!(id(830.0, 10.0), None, "the number's empty hundreds cell");
-        assert_eq!(id(840.0, 10.0), Some("out.pct"));
-        assert_eq!(id(870.0, 10.0), None, "the cells between modules");
-        assert_eq!(id(1179.9, 10.0), Some("notifications.name"));
-        assert_eq!(id(1180.0, 10.0), None, "the right edge");
-        assert_eq!(id(800.0, 36.0), None, "under the bar");
-        assert_eq!(id(800.0, -0.1), None, "over the bar");
+        assert_eq!(id(500.0, 10.0), None, "the bar's own ground, far from any part");
+        assert_eq!(
+            (id(689.0, 10.0), id(690.0, 10.0)),
+            (None, Some("lan.name")),
+            "one cell before the status's first part"
+        );
+        assert_eq!(
+            (id(820.0, 10.0), id(829.0, 10.0)),
+            (Some("out.name"), Some("out.name")),
+            "the cell between a sign and its gauge is the sign's: a gauge reaches no farther than it stands"
+        );
+        assert_eq!(id(830.0, 10.0), Some("out.gauge"));
+        assert_eq!(
+            (id(889.0, 10.0), id(890.0, 10.0)),
+            (None, Some("out.pct")),
+            "the cell after the gauge is no part's, and the number's empty hundreds cell is the number's"
+        );
+        assert_eq!(id(900.0, 10.0), Some("out.pct"));
+        assert_eq!(
+            (id(930.0, 10.0), id(949.0, 10.0)),
+            (Some("out.pct"), Some("mic.name")),
+            "the two cells between modules"
+        );
+        assert_eq!(id(790.0, 10.0), None, "the middle of the four cells between groups");
+        assert_eq!(id(1189.9, 10.0), Some("notifications.name"));
+        assert_eq!(id(1190.0, 10.0), Some("notifications.name"), "the right edge's one cell");
+        // the tray's room past that cell is no part's
+        let tray = lay_with(1200, Status::Ok, &mods(SHEET), &five(), &Prefs::new("", 96, ""));
+        assert_eq!(
+            (tray.hit(1103.0, 10.0), tray.hit(1104.0, 10.0)),
+            (tray.find("notifications.name"), None),
+            "the right end"
+        );
+        assert_eq!(id(850.0, 36.0), None, "under the bar");
+        assert_eq!(id(850.0, -0.1), None, "over the bar");
+    }
+
+    #[test]
+    fn a_part_reaches_one_cell_into_the_room_beside_it_and_the_nearer_part_has_the_pointer() {
+        assert_eq!(REACH_CELLS, 1);
+        let l = sheet(1200);
+        let levels = levels_of(&mods(SHEET));
+        let id = |x: i32, y: f64| l.hit(x as f64, y).map(|i| l.targets[i].id.as_str());
+        // two modules of a group stand two cells apart, the speaker's number to 930 and the microphone from 950:
+        // every pixel between them is the nearer part's, a cell each, and none is no part's
+        for x in 930..950 {
+            assert_eq!(id(x, 10.0), Some(if x < 940 { "out.pct" } else { "mic.name" }), "at {x}");
+        }
+        // the one cell between a module's parts, the speaker's sign to 820 and its gauge from 830: the sign's, whole,
+        // for a gauge reaches no farther than it stands; after the gauge, to 880, the number's digits stand from 900:
+        // the cell beside them is theirs, and the one beside the gauge is no part's
+        for x in 820..830 {
+            assert_eq!(id(x, 10.0), Some("out.name"), "at {x}");
+        }
+        for x in 880..900 {
+            assert_eq!(id(x, 10.0), if x < 890 { None } else { Some("out.pct") }, "at {x}");
+        }
+        // between two pixels as on them
+        assert_eq!(
+            (l.hit(939.5, 10.0), l.hit(939.99, 10.0), l.hit(1199.5, 10.0)),
+            (l.find("out.pct"), l.find("out.pct"), l.find("notifications.name"))
+        );
+        // four cells between groups, wifi to 770 and the speaker from 810: the cell beside each is its own, and the two
+        // in the middle, more than a cell from both, are no part's
+        for x in 770..810 {
+            let want = if x < 780 {
+                Some("wifi.name")
+            } else if x < 800 {
+                None
+            } else {
+                Some("out.name")
+            };
+            assert_eq!(id(x, 10.0), want, "at {x}");
+        }
+        // the status's ends: one cell before its first part and no more, and the edge's cell after its last
+        assert_eq!((id(689, 10.0), id(690, 10.0), id(699, 10.0)), (None, Some("lan.name"), Some("lan.name")));
+        assert_eq!((id(1190, 10.0), id(1199, 10.0)), (Some("notifications.name"), Some("notifications.name")));
+        // along the bar alone: over it and under it nothing is hit
+        assert_eq!((id(825, -1.0), id(825, 36.0), id(935, 36.0)), (None, None, None));
+        // the mark and a place reach no farther than they stand
+        assert_eq!((id(9, 10.0), id(34, 10.0), id(43, 10.0), id(344, 10.0)), (None, None, None, None));
+        // what is hit there is the part: the wheel beside the speaker's sign is its step, and a click beside its
+        // number goes out under the number's word
+        assert_eq!(l.press(822.0, 20.0, 4, &levels).set, Some(("out".into(), 60)));
+        let c = send(l.press(935.0, 20.0, 1, &levels).act);
+        assert_eq!((c.name.as_str(), c.instance.as_str(), c.width), ("out", "pct", 30));
+        // at a cell of 15 px the sign ends at 1430 and the gauge starts at 1445: the cell between them is the sign's
+        let odd = sized(&M15, 2000, &five(), None);
+        assert_eq!((rect_of(&odd, "out.name").right(), rect_of(&odd, "out.gauge").x), (1430, 1445));
+        for x in 1430..1445 {
+            assert_eq!(odd.hit(x as f64, 20.0), odd.find("out.name"), "at {x}");
+        }
+        // and two cells apart there, the number to 1595 and the microphone from 1625: fifteen pixels each
+        for x in 1595..1625 {
+            let want = if x < 1610 { "out.pct" } else { "mic.name" };
+            assert_eq!(odd.hit(x as f64, 20.0), odd.find(want), "at {x}");
+        }
     }
 
     #[test]
     fn a_click_is_sent_as_swaybar_writes_it_with_the_module_and_the_part() {
         let l = sheet(1200);
         let levels = levels_of(&mods(SHEET));
-        let c = send(l.press(792.6, 9.2, 1, &levels).act);
+        let c = send(l.press(852.6, 9.2, 1, &levels).act);
         assert_eq!(
             c.json(),
-            r#"{"name":"out","instance":"gauge","button":1,"x":792,"y":9,"relative_x":22,"relative_y":9,"width":50,"height":36}"#
+            r#"{"name":"out","instance":"gauge","button":1,"x":852,"y":9,"relative_x":22,"relative_y":9,"width":50,"height":36}"#
         );
         // each part under its word: the sign is name, then gauge, pct and text
         let part = |x: f64| {
             let c = send(l.press(x, 20.0, 1, &levels).act);
             (c.name, c.instance, c.relative_x, c.width)
         };
-        assert_eq!(part(755.0), ("out".into(), "name".into(), 5, 10));
-        assert_eq!(part(845.0), ("out".into(), "pct".into(), 5, 30));
-        assert_eq!(part(1025.0), ("kb".into(), "text".into(), 5, 20));
-        assert_eq!(part(1005.0), ("kb".into(), "name".into(), 5, 10));
-        assert_eq!(part(1100.0), ("clock".into(), "text".into(), 10, 50));
-        assert_eq!(part(1175.0), ("notifications".into(), "name".into(), 5, 10));
+        assert_eq!(part(815.0), ("out".into(), "name".into(), 5, 10));
+        assert_eq!(part(905.0), ("out".into(), "pct".into(), 5, 30));
+        assert_eq!(part(1055.0), ("kb".into(), "text".into(), 5, 20));
+        assert_eq!(part(1035.0), ("kb".into(), "name".into(), 5, 10));
+        assert_eq!(part(1120.0), ("clock".into(), "text".into(), 10, 50));
+        assert_eq!(part(1185.0), ("notifications".into(), "name".into(), 5, 10));
         // every button goes to spark-shell, the wheel too
         for button in [2, 3, 4, 5] {
-            assert_eq!(send(l.press(1100.0, 20.0, button, &levels).act).button, button);
+            assert_eq!(send(l.press(1120.0, 20.0, button, &levels).act).button, button);
         }
-        assert_eq!(l.press(880.0, 20.0, 1, &levels), Press::default(), "a gap");
+        assert_eq!(l.press(790.0, 20.0, 1, &levels), Press::default(), "the middle of a gap between groups");
         // the stream: the bracket before the first click, a comma before the others
         assert_eq!(click_line(&c, true), format!("[\n{}\n", c.json()));
         assert_eq!(click_line(&c, false), format!(",{}\n", c.json()));
@@ -3456,7 +3573,7 @@ mod tests {
         let levels = levels_of(&mods(SHEET));
         let wheel = |x: f64, button: u32| l.press(x, 20.0, button, &levels);
         // the speaker at 55: five a step on its sign, its gauge and its number, and the click still goes out
-        for (x, part) in [(755.0, "name"), (790.0, "gauge"), (850.0, "pct")] {
+        for (x, part) in [(815.0, "name"), (850.0, "gauge"), (910.0, "pct")] {
             let up = wheel(x, 4);
             assert_eq!(up.set, Some(("out".into(), 60)), "{part}");
             let c = send(up.act);
@@ -3464,26 +3581,26 @@ mod tests {
             assert_eq!(wheel(x, 5).set, Some(("out".into(), 50)), "{part}");
         }
         // a level that is not pinned is set by its sign: the microphone at 40
-        assert_eq!(wheel(905.0, 4).set, Some(("mic".into(), 45)));
-        assert_eq!(wheel(965.0, 5).set, Some(("light".into(), 75)));
+        assert_eq!(wheel(955.0, 4).set, Some(("mic".into(), 45)));
+        assert_eq!(wheel(1005.0, 5).set, Some(("light".into(), 75)));
         // a reading (wifi) and a module with no level are sent the wheel and nothing is set
-        for x in [695.0, 1005.0, 1100.0, 20.0] {
+        for x in [765.0, 1035.0, 1120.0, 20.0] {
             assert_eq!((wheel(x, 4).set, wheel(x, 5).set), (None, None), "at {x}");
             assert_eq!(send(wheel(x, 4).act).button, 4);
         }
         // no other button sets a level from a sign or a number
         for button in [1, 2, 3] {
-            assert_eq!((wheel(755.0, button).set, wheel(850.0, button).set), (None, None));
+            assert_eq!((wheel(815.0, button).set, wheel(910.0, button).set), (None, None));
         }
         // the ends hold
         let mut full = levels.clone();
         full.set("out", 100, 0);
-        assert_eq!(l.press(755.0, 20.0, 4, &full).set, Some(("out".into(), 100)));
+        assert_eq!(l.press(815.0, 20.0, 4, &full).set, Some(("out".into(), 100)));
         full.set("out", 2, 0);
-        assert_eq!(l.press(755.0, 20.0, 5, &full).set, Some(("out".into(), 0)));
+        assert_eq!(l.press(815.0, 20.0, 5, &full).set, Some(("out".into(), 0)));
         // the step is from the level drawn, not the one the line said
         full.set("out", 70, 0);
-        assert_eq!(l.press(755.0, 20.0, 4, &full).set, Some(("out".into(), 75)));
+        assert_eq!(l.press(815.0, 20.0, 4, &full).set, Some(("out".into(), 75)));
     }
 
     #[test]
@@ -3523,15 +3640,15 @@ mod tests {
         assert_eq!((level_at(3, 0), level_at(3, -5)), (None, None));
         let l = sheet(1200);
         let levels = levels_of(&mods(SHEET));
-        // the gauge stands from 770 to 820
-        let p = l.press(795.5, 20.0, 1, &levels);
+        // the gauge stands from 830 to 880
+        let p = l.press(855.5, 20.0, 1, &levels);
         assert_eq!(p.set, Some(("out".into(), 50)));
         let c = send(p.act);
         assert_eq!((c.instance.as_str(), c.button, c.relative_x, c.width), ("gauge", 1, 25, 50));
-        assert_eq!(l.press(770.0, 20.0, 1, &levels).set, Some(("out".into(), 0)));
-        assert_eq!(l.press(819.0, 20.0, 1, &levels).set, Some(("out".into(), 100)));
+        assert_eq!(l.press(830.0, 20.0, 1, &levels).set, Some(("out".into(), 0)));
+        assert_eq!(l.press(879.0, 20.0, 1, &levels).set, Some(("out".into(), 100)));
         // the other buttons on it set nothing but the wheel's step
-        assert_eq!((l.press(795.0, 20.0, 2, &levels).set, l.press(795.0, 20.0, 3, &levels).set), (None, None));
+        assert_eq!((l.press(855.0, 20.0, 2, &levels).set, l.press(855.0, 20.0, 3, &levels).set), (None, None));
         // a reading's gauge is sent the click and sets nothing
         let m = mods(r#"[{"name":"wifi","group":"connections","sign":"\u25e0","level":70,"set":false,"pinned":true}]"#);
         let l = lay(1200, &m, &[]);
@@ -3546,7 +3663,7 @@ mod tests {
         let l = lay_on("A", 1200, Edge::Top, Status::Ok, &m, &levels, &five(), None, &Prefs::default());
         assert_eq!((levels.level("out"), levels.level("mic"), levels.level("kb")), (Some(55), Some(40), None));
         // a wheel step: the level drawn changes before the status says a word
-        let (name, level) = l.press(790.0, 20.0, 4, &levels).set.unwrap();
+        let (name, level) = l.press(850.0, 20.0, 4, &levels).set.unwrap();
         assert!(levels.set(&name, level, 1000));
         assert_eq!(levels.level("out"), Some(60));
         let l = lay_on("A", 1200, Edge::Top, Status::Ok, &m, &levels, &five(), None, &Prefs::default());
@@ -3555,7 +3672,7 @@ mod tests {
             What::Number {
                 module: "out".into(),
                 level: 60,
-                x: 830
+                x: 890
             },
             "the line still says 55"
         );
@@ -3565,7 +3682,7 @@ mod tests {
         let l = lay_on("A", 1200, Edge::Top, Status::Ok, &m, &levels, &five(), None, &Prefs::default());
         assert_eq!(
             (target(&l, "out.gauge").what.clone(), rect_of(&l, "out.pct")),
-            (What::Gauge { full: 5 }, Rect::new(830, 0, 40, 36))
+            (What::Gauge { full: 5 }, Rect::new(890, 0, 40, 36))
         );
         // the same level again changes nothing and starts no flow; past its ends it is kept within them
         assert!(!levels.set("out", 100, 3000));
@@ -3709,7 +3826,7 @@ mod tests {
         let l = laid(&m, &levels);
         assert!(moves(&l, &levels, 1010) && shifted(&l, &levels, 1010) == 4);
         // on a bar that gave up the number for width the same change moves nothing: each output by what it shows
-        let narrow = lay_on("A", 983, Edge::Top, Status::Ok, &m, &levels, &five(), None, &Prefs::default());
+        let narrow = lay_on("A", 883, Edge::Top, Status::Ok, &m, &levels, &five(), None, &Prefs::default());
         assert_eq!((narrow.find("out.pct"), narrow.find("out.gauge").is_some()), (None, true));
         assert!(!moves(&narrow, &levels, 1010) && shifted(&narrow, &levels, 1010) == 0);
         // nor where the number is not drawn: muted, or with no device; off draws it, dim, and it moves
@@ -3738,7 +3855,7 @@ mod tests {
         let mut levels = levels_of(&m);
         levels.set("out", 60, 1000);
         let l = lay_on("A", 1200, Edge::Top, Status::Ok, &m, &levels, &five(), None, &Prefs::default());
-        let cell = |i: i32| Rect::new(830 + i * 10, 4, 10, 28);
+        let cell = |i: i32| Rect::new(890 + i * 10, 4, 10, 28);
         let moving = |rect: Rect, text: &str, shift: f64| Draw::Glyph {
             rect,
             text: text.into(),
@@ -3778,7 +3895,7 @@ mod tests {
             ..at(1060, true)
         };
         let f = l.frame(&v);
-        assert_eq!(f[f.len() - 6], fill(Rect::new(835, 4, 40, 28), Tone::Lit));
+        assert_eq!(f[f.len() - 6], fill(Rect::new(895, 4, 40, 28), Tone::Lit));
         assert_eq!(f[f.len() - 5..], shows(&l, "out.pct", false, &at(1060, true))[..]);
         // a fall goes the other way
         levels.set("out", 55, 2000);
@@ -3837,7 +3954,7 @@ mod tests {
         };
         // the speaker at 55, on its sign, its gauge and its number: Up is the wheel up and Down the wheel down, at
         // the part's center, five a step, at once
-        for (part, x, width) in [("name", 755, 10), ("gauge", 795, 50), ("pct", 855, 30)] {
+        for (part, x, width) in [("name", 815, 10), ("gauge", 855, 50), ("pct", 915, 30)] {
             let id = format!("out.{part}");
             let (c, set) = does(&id, Key::Up);
             assert_eq!((c.name.as_str(), c.instance.as_str(), c.button, c.x, c.width), ("out", part, 4, x, width));
@@ -3909,9 +4026,9 @@ mod tests {
         };
         // Home: the left button at the gauge's start, 0; End: at its width, 100
         let (c, set) = does(Key::Home);
-        assert_eq!((c.button, c.relative_x, c.x, c.relative_y, set), (1, 0, 770, 18, Some(("out".into(), 0))));
+        assert_eq!((c.button, c.relative_x, c.x, c.relative_y, set), (1, 0, 830, 18, Some(("out".into(), 0))));
         let (c, set) = does(Key::End);
-        assert_eq!((c.button, c.relative_x, c.x, c.width, set), (1, 50, 820, 50, Some(("out".into(), 100))));
+        assert_eq!((c.button, c.relative_x, c.x, c.width, set), (1, 50, 880, 50, Some(("out".into(), 100))));
         assert_eq!(l.key(gauge, Key::Activate, &levels), KeyAct::Nothing);
         // Home and End are a level's gauge's alone
         assert_eq!(l.key(l.find("out.name").unwrap(), Key::Home, &levels), KeyAct::Nothing);
@@ -3940,7 +4057,7 @@ mod tests {
                 c.width,
                 c.height
             ),
-            ("out", "name", 1, 755, 18, 5, 18, 10, 36)
+            ("out", "name", 1, 815, 18, 5, 18, 10, 36)
         );
         assert_eq!((press.set, leave), (None, true));
         let (press, leave) = does("clock.text");
@@ -4009,7 +4126,7 @@ mod tests {
         for (t, was) in l.targets.iter().zip(&plain.targets) {
             assert_eq!((&t.id, t.rect, t.tone, &t.what, t.state), (&was.id, was.rect, was.tone, &was.what, was.state));
         }
-        assert_eq!(l.press(755.0, 20.0, 1, &levels), plain.press(755.0, 20.0, 1, &levels));
+        assert_eq!(l.press(815.0, 20.0, 1, &levels), plain.press(815.0, 20.0, 1, &levels));
         // the state file says which targets are toggles
         let bars = [Shown {
             output: "A",
@@ -4019,8 +4136,8 @@ mod tests {
             hover: None,
         }];
         let text = state_text(Status::Ok, None, &levels, &[], &bars);
-        assert!(text.contains("target\tA\tout.name\t750\t0\t10\t36\ttoggle\tok\t-\toutput 55%\n"), "{text}");
-        assert!(text.contains("target\tA\tkb.text\t1020\t0\t20\t36\ttoggle\tok\t-\tkeyboard us\n"));
+        assert!(text.contains("target\tA\tout.name\t810\t0\t10\t36\ttoggle\tok\t-\toutput 55%\n"), "{text}");
+        assert!(text.contains("target\tA\tkb.text\t1050\t0\t20\t36\ttoggle\tok\t-\tkeyboard us\n"));
         assert_eq!(text.matches("\ttoggle\t").count(), 3);
     }
 
@@ -4054,7 +4171,7 @@ mod tests {
             What::Number {
                 module: "out".into(),
                 level: 55,
-                x: 830
+                x: 890
             }
         );
         // the burst is answered: a value it passed through, said after that and within the second, is news
@@ -4443,13 +4560,13 @@ mod tests {
             assert_eq!(l.targets, sheet(1200).targets[..11]);
             assert_eq!(
                 l.fixed,
-                [glyph(Rect::new(1160, 0, 20, 36), sign, Tone::Dim)],
-                "two cells, two cells from the edge"
+                [glyph(Rect::new(1170, 0, 20, 36), sign, Tone::Dim)],
+                "two cells, one cell from the edge"
             );
             assert!(l.dropped.is_empty());
             // no room for it after the run: none
-            assert_eq!(lay_with(434, status, &mods(SHEET), &five(), &Prefs::default()).fixed.len(), 1);
-            assert_eq!(lay_with(433, status, &mods(SHEET), &five(), &Prefs::default()).fixed, []);
+            assert_eq!(lay_with(414, status, &mods(SHEET), &five(), &Prefs::default()).fixed.len(), 1);
+            assert_eq!(lay_with(413, status, &mods(SHEET), &five(), &Prefs::default()).fixed, []);
         }
         assert!(ELLIPSIS == "\u{2026}" && WARNING.starts_with('\u{26a0}'));
     }
@@ -4472,7 +4589,7 @@ mod tests {
             status\tok\n\
             level\tout\t55\n\
             output\tA\t770\t36\ttop\t2\n\
-            apps\tA\t354\t86\n\
+            apps\tA\t354\t126\n\
             target\tA\tmark\t10\t0\t24\t36\tmark\tok\t-\tspark\n\
             target\tA\tworkspace:1\t44\t0\t30\t36\tworkspace\tok\t-\tworkspace 1\n\
             target\tA\tworkspace:2\t74\t0\t30\t36\tworkspace\tok\tfocused,selected,visible\tworkspace 2\n\
@@ -4484,14 +4601,14 @@ mod tests {
             target\tA\tworkspace:8\t254\t0\t30\t36\tworkspace\tok\tempty\tworkspace 8\n\
             target\tA\tworkspace:9\t284\t0\t30\t36\tworkspace\tok\tempty\tworkspace 9\n\
             target\tA\tworkspace:10\t314\t0\t30\t36\tworkspace\tok\tempty\tworkspace 10\n\
-            target\tA\tout.name\t490\t0\t10\t36\topen\tok\t-\toutput 55%\n\
-            target\tA\tout.gauge\t510\t0\t50\t36\tlevel\tok\thover\toutput 55%\n\
-            target\tA\tout.pct\t580\t0\t30\t36\topen\tok\t-\toutput 55%\n\
-            target\tA\tclock.text\t660\t0\t50\t36\topen\tok\t-\t13:29\n\
-            target\tA\tnotifications.name\t740\t0\t10\t36\topen\tasks\t-\t2 notifications\n";
+            target\tA\tout.name\t520\t0\t10\t36\topen\tok\t-\toutput 55%\n\
+            target\tA\tout.gauge\t540\t0\t50\t36\tlevel\tok\thover\toutput 55%\n\
+            target\tA\tout.pct\t610\t0\t30\t36\topen\tok\t-\toutput 55%\n\
+            target\tA\tclock.text\t680\t0\t50\t36\topen\tok\t-\t13:29\n\
+            target\tA\tnotifications.name\t750\t0\t10\t36\topen\tasks\t-\t2 notifications\n";
         assert_eq!(state_text(Status::Ok, None, &levels, &[], &bars), want);
         // what a bar short of width gave up, in the order it went
-        let l = lay_on("A", 673, Edge::Bottom, Status::Ok, &m, &levels, &all, None, &Prefs::default());
+        let l = lay_on("A", 633, Edge::Bottom, Status::Ok, &m, &levels, &all, None, &Prefs::default());
         let bars = [Shown {
             output: "A",
             scale: 1,
@@ -4501,11 +4618,11 @@ mod tests {
         }];
         let text = state_text(Status::Ok, None, &levels, &[], &bars);
         assert!(
-            text.contains("output\tA\t673\t36\tbottom\t1\n") && text.ends_with("\t2 notifications\ndropped\tA\tout.pct\n"),
+            text.contains("output\tA\t633\t36\tbottom\t1\n") && text.ends_with("\t2 notifications\ndropped\tA\tout.pct\n"),
             "{text}"
         );
         assert!(!text.contains("out.pct\t"));
-        let l = sheet(653);
+        let l = sheet(603);
         let bars = [Shown {
             output: "A",
             scale: 1,
@@ -4514,7 +4631,7 @@ mod tests {
             hover: None,
         }];
         let text = state_text(Status::Ok, None, &levels_of(&mods(SHEET)), &[], &bars);
-        assert!(text.contains("target\tA\tmore\t483\t0\t10\t36\topen\tok\t-\tmore\n"), "{text}");
+        assert!(text.contains("target\tA\tmore\t463\t0\t10\t36\topen\tok\t-\tmore\n"), "{text}");
         assert!(text.ends_with("dropped\tA\tout.pct\ndropped\tA\tout.gauge\ndropped\tA\tlan\ndropped\tA\tbt\ndropped\tA\twifi\ndropped\tA\tout\ndropped\tA\tmic\ndropped\tA\tlight\ndropped\tA\tkb\n"));
         // every level drawn, pinned or not, in the line's order; the hand's change at once
         let mut levels = levels_of(&mods(SHEET));
@@ -4535,7 +4652,7 @@ mod tests {
                 hover: None,
             }];
             assert!(
-                state_text(Status::Ok, None, &levels, &[], &bars).contains(&format!("target\tA\tout.name\t1030\t0\t10\t36\topen\t{state}\t-\tout\n")),
+                state_text(Status::Ok, None, &levels, &[], &bars).contains(&format!("target\tA\tout.name\t1040\t0\t10\t36\topen\t{state}\t-\tout\n")),
                 "{state}"
             );
         }
@@ -4643,7 +4760,7 @@ mod tests {
                             assert!(t.rect.right() <= width, "{} past {width}", t.id);
                         }
                         for t in l.targets.iter().filter(|t| !matches!(t.kind, Kind::Mark | Kind::Workspace)) {
-                            assert!(t.rect.right() <= width - p.tray_on("A") - 20, "{} at {width}", t.id);
+                            assert!(t.rect.right() <= width - p.tray_on("A") - 10, "{} at {width}", t.id);
                         }
                         // a frame draws at any width, the pointer and the keys on any target
                         let v = View {
@@ -4854,7 +4971,7 @@ mod tests {
             1,
         );
         assert_eq!(mods(&line), mods(SHEET));
-        for width in [0, 564, 873, 984, 1200] {
+        for width in [0, 524, 773, 884, 1200] {
             let l = lay(width, &mods(&line), &five());
             assert_eq!(l, sheet(width), "at {width}");
             assert!(!l.targets.iter().any(|t| t.id.starts_with(LOOK)) && !l.dropped.iter().any(|d| d.starts_with(LOOK)));
@@ -4983,29 +5100,29 @@ mod tests {
     }
 
     #[test]
-    fn a_binding_mode_stands_five_cells_before_the_status_in_the_attention_color_and_is_no_target() {
+    fn a_binding_mode_stands_four_cells_before_the_status_in_the_attention_color_and_is_no_target() {
         let (with, without) = (in_mode(1200, Status::Ok, "resize", &five()), sheet(1200));
-        // the status starts at 610: plain text that ends at 560, a glyph a cell, no fill behind it
-        assert_eq!(mode_said(&with), Some((500, "resize".into())));
-        assert_eq!(with.fixed[0], glyph(Rect::new(500, 0, 10, 36), "r", Tone::Attention));
+        // the status starts at 700: plain text that ends at 660, a glyph a cell, no fill behind it
+        assert_eq!(mode_said(&with), Some((600, "resize".into())));
+        assert_eq!(with.fixed[0], glyph(Rect::new(600, 0, 10, 36), "r", Tone::Attention));
         assert_eq!(with.fixed.len(), 7, "six glyphs and the hairline");
         assert_eq!(mode_said(&without), None);
         // no target: every target is where it was, the pointer reaches nothing there and the keys pass it by
         assert_eq!((&with.targets, &with.dropped), (&without.targets, &without.dropped));
         let levels = Levels::default();
-        assert_eq!((with.hit(510.0, 10.0), with.press(510.0, 10.0, 1, &levels)), (None, Press::default()));
+        assert_eq!((with.hit(610.0, 10.0), with.press(610.0, 10.0, 1, &levels)), (None, Press::default()));
         assert_eq!(with.key(10, Key::Tab, &levels), KeyAct::Focus(11));
         assert_eq!(with.targets[11].id, "lan.name");
         // a name with markup in it is plain text
-        assert_eq!(mode_said(&in_mode(1200, Status::Ok, "<b>r</b>", &five())), Some((480, "<b>r</b>".into())));
-        // before the first line and after a break it stands too, five cells before the note
+        assert_eq!(mode_said(&in_mode(1200, Status::Ok, "<b>r</b>", &five())), Some((580, "<b>r</b>".into())));
+        // before the first line and after a break it stands too, four cells before the note
         for status in [Status::Loading, Status::Error] {
-            assert_eq!(mode_said(&in_mode(1200, status, "resize", &five())), Some((1050, "resize".into())));
+            assert_eq!(mode_said(&in_mode(1200, status, "resize", &five())), Some((1070, "resize".into())));
         }
         // a workspace past the tenth makes the run longer and moves no mode
         let mut all = five();
         all.push(ws(11, "11", "A", false, false, false));
-        assert_eq!(mode_said(&in_mode(1200, Status::Ok, "resize", &all)), Some((500, "resize".into())));
+        assert_eq!(mode_said(&in_mode(1200, Status::Ok, "resize", &all)), Some((600, "resize".into())));
     }
 
     #[test]
@@ -5032,17 +5149,41 @@ mod tests {
     }
 
     #[test]
+    fn a_dragged_bars_guide_is_at_the_other_edge_while_a_drop_would_stand_it_there() {
+        // a bar at the top: no line with the pointer in the upper half, one at the bottom from the middle down
+        assert_eq!(guide_at(Edge::Top, 20.0, 36, 1080), None);
+        assert_eq!(guide_at(Edge::Top, 539.0, 36, 1080), None);
+        assert_eq!(guide_at(Edge::Top, 540.0, 36, 1080), Some(Edge::Bottom));
+        assert_eq!(guide_at(Edge::Top, 1079.0, 36, 1080), Some(Edge::Bottom));
+        // a bar at the bottom: none in the lower half, one at the top above the middle
+        assert_eq!(guide_at(Edge::Bottom, 10.0, 36, 1080), None);
+        assert_eq!(guide_at(Edge::Bottom, -504.0, 36, 1080), None);
+        assert_eq!(guide_at(Edge::Bottom, -505.0, 36, 1080), Some(Edge::Top));
+        assert_eq!(guide_at(Edge::Bottom, -1044.0, 36, 1080), Some(Edge::Top));
+        // never at the bar's own edge; and the line's edge, or with no line the bar's own, is where a drop stands the
+        // bar: at every row, from either edge
+        for edge in [Edge::Top, Edge::Bottom] {
+            for row in -1100..1100 {
+                let line = guide_at(edge, row as f64, 36, 1080);
+                assert_ne!(line, Some(edge), "{edge:?} {row}");
+                assert_eq!(line.unwrap_or(edge), dropped(edge, row as f64, 36, 1080), "{edge:?} {row}");
+            }
+        }
+        assert_eq!(GUIDE, 3);
+    }
+
+    #[test]
     fn the_room_for_the_pads_windows_is_after_the_run() {
-        // the run ends at 344 and the status starts at 610: from one cell after the run to five before the status
-        assert_eq!(sheet(1200).apps, Rect::new(354, 0, 206, 36));
+        // the run ends at 344 and the status starts at 700: from one cell after the run to four before the status
+        assert_eq!(sheet(1200).apps, Rect::new(354, 0, 306, 36));
         // a mode's name takes the room's end, and a cell before it
-        assert_eq!(in_mode(1200, Status::Ok, "resize", &five()).apps, Rect::new(354, 0, 136, 36));
+        assert_eq!(in_mode(1200, Status::Ok, "resize", &five()).apps, Rect::new(354, 0, 236, 36));
         // a longer run leaves less, a status that fits whole none, and with no status the room goes to the edge's
         let mut all = five();
         all.push(ws(11, "11", "A", false, false, false));
-        assert_eq!(lay(1200, &mods(SHEET), &all).apps, Rect::new(384, 0, 176, 36));
-        assert_eq!(sheet(984).apps, Rect::new(354, 0, 0, 36));
-        assert_eq!(lay(1200, &[], &five()).apps, Rect::new(354, 0, 826, 36));
+        assert_eq!(lay(1200, &mods(SHEET), &all).apps, Rect::new(384, 0, 276, 36));
+        assert_eq!(sheet(884).apps, Rect::new(354, 0, 0, 36));
+        assert_eq!(lay(1200, &[], &five()).apps, Rect::new(354, 0, 836, 36));
         // the state file says it for each bar, after its output
         let l = sheet(1200);
         let bars = [Shown {
@@ -5053,23 +5194,23 @@ mod tests {
             hover: None,
         }];
         let text = state_text(Status::Ok, None, &Levels::default(), &[], &bars);
-        assert!(text.contains("output\tA\t1200\t36\ttop\t1\napps\tA\t354\t206\ntarget\tA\tmark\t"), "{text}");
+        assert!(text.contains("output\tA\t1200\t36\ttop\t1\napps\tA\t354\t306\ntarget\tA\tmark\t"), "{text}");
     }
 
     #[test]
     fn a_mode_is_cut_at_its_end_and_takes_nothing_from_the_status() {
-        // the status starts at 610 on the 1200 bar: a long name has the room from 354 to 560, whole glyphs only
+        // the status starts at 700 on the 1200 bar: a long name has the room from 354 to 660, whole glyphs only
         let long = "a mode with a long name to stand in the bar here";
         let l = in_mode(1200, Status::Ok, long, &five());
         let (x, said) = mode_said(&l).unwrap();
-        assert_eq!((x, said.as_str()), (360, &long[..20]));
+        assert_eq!((x, said.as_str()), (360, &long[..30]));
         assert_eq!(l.targets, sheet(1200).targets);
-        // the status is fitted as if there were no mode: at 984 it fits whole and leaves the mode no room
-        let l = in_mode(984, Status::Ok, "resize", &five());
+        // the status is fitted as if there were no mode: at 884 it fits whole and leaves the mode no room
+        let l = in_mode(884, Status::Ok, "resize", &five());
         assert_eq!((mode_said(&l), l.dropped.len()), (None, 0));
         // seven more cells of room and the mode stands whole; one pixel less and its last glyph is cut
-        assert_eq!(mode_said(&in_mode(1054, Status::Ok, "resize", &five())), Some((354, "resize".into())));
-        assert_eq!(mode_said(&in_mode(1053, Status::Ok, "resize", &five())), Some((363, "resiz".into())));
+        assert_eq!(mode_said(&in_mode(954, Status::Ok, "resize", &five())), Some((354, "resize".into())));
+        assert_eq!(mode_said(&in_mode(953, Status::Ok, "resize", &five())), Some((363, "resiz".into())));
         // at any width the status with a mode is the status without one
         for width in 0..=1300 {
             for status in [Status::Ok, Status::Loading, Status::Error] {

@@ -4,6 +4,7 @@
 //! level's number flows to its new digits. While one does, the bar draws on the surface's frame
 //! callbacks; at rest it asks for none and does not wake. While a bar has the keys, a transparent surface
 //! over the rest of each output takes the pointer there: what it does off the bar gives the keys back.
+//! While a bar is dragged, a line at the screen's other edge shows where it would land.
 
 use crate::bar::{self, Act, Astray, Draw, Edge, KeyAct, Layout, Levels, Metrics, Module, Off, Prefs, Press, Scene, Shown, Status, Tone, View, Workspace};
 use crate::keys::Keyboard;
@@ -42,6 +43,8 @@ use wayland_client::{Connection, QueueHandle, WEnum};
 
 /// The layer shell namespace: what sway's rules and tools call the surface.
 const NAMESPACE: &str = "spark-bar";
+/// The namespace of the line that shows where a dragged bar would land.
+const GUIDE_NAMESPACE: &str = "spark-bar-guide";
 const BTN_LEFT: u32 = 0x110;
 const BTN_RIGHT: u32 = 0x111;
 const BTN_MIDDLE: u32 = 0x112;
@@ -185,6 +188,17 @@ struct Held {
     out: usize,
     at: (f64, f64),
     drag: bool,
+    /// The line at the screen's other edge, while a drop now would stand the bar there. It is the press's own, so
+    /// it goes with it however the press ends.
+    guide: Option<LayerSurface>,
+}
+
+/// The layer shell's anchor for an edge of the screen.
+fn anchor(edge: Edge) -> Anchor {
+    match edge {
+        Edge::Top => Anchor::TOP,
+        Edge::Bottom => Anchor::BOTTOM,
+    }
 }
 
 pub struct App {
@@ -425,6 +439,8 @@ impl App {
             o.waiting = false;
             if let Some(p) = self.pointer.as_mut().filter(|p| p.out == Some(oi)) {
                 p.out = None;
+                // a press held on this bar's ground is over with the bar: no guide stays on a screen at rest
+                p.held = None;
             }
         }
         self.apply_catchers();
@@ -514,11 +530,7 @@ impl App {
         let layer = self
             .layer_shell
             .create_layer_surface(&self.qh, surface, Layer::Bottom, Some(NAMESPACE), Some(&self.outs[oi].output));
-        let edge = match self.cfg.edge {
-            Edge::Top => Anchor::TOP,
-            Edge::Bottom => Anchor::BOTTOM,
-        };
-        layer.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
+        layer.set_anchor(anchor(self.cfg.edge) | Anchor::LEFT | Anchor::RIGHT);
         layer.set_size(0, self.m.height as u32);
         layer.set_exclusive_zone(self.m.height);
         layer.set_keyboard_interactivity(KeyboardInteractivity::None);
@@ -783,6 +795,68 @@ impl App {
         }
     }
 
+    /// While a bar is dragged, a line says where it would land: at the screen's other edge while a drop with the
+    /// pointer at `y`, in the bar's own frame, would stand the bar there, and none while the bar would stay. The
+    /// line is a surface of its own on the overlay layer, the screen's outermost rows from side to side: it is
+    /// over whatever is docked at that edge, moves no window and takes no pointer.
+    fn guide(&mut self, y: f64) {
+        let Some(held) = self.pointer.as_ref().and_then(|p| p.held.as_ref()) else {
+            return;
+        };
+        let (oi, shown) = (held.out, held.guide.is_some());
+        let screen = self.outs.get(oi).and_then(|o| self.outputs.info(&o.output)).and_then(|i| i.logical_size);
+        let to = screen.and_then(|screen| bar::guide_at(self.cfg.edge, y, self.m.height, screen.1));
+        if to.is_some() == shown {
+            return;
+        }
+        let guide = to.map(|to| {
+            let surface = self.compositor.create_surface(&self.qh);
+            let layer = self
+                .layer_shell
+                .create_layer_surface(&self.qh, surface, Layer::Overlay, Some(GUIDE_NAMESPACE), Some(&self.outs[oi].output));
+            layer.set_anchor(anchor(to) | Anchor::LEFT | Anchor::RIGHT);
+            layer.set_size(0, bar::GUIDE as u32);
+            layer.set_exclusive_zone(-1);
+            layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+            if let Ok(region) = Region::new(&self.compositor) {
+                layer.wl_surface().set_input_region(Some(region.wl_region()));
+            }
+            layer.commit();
+            layer
+        });
+        if let Some(held) = self.pointer.as_mut().and_then(|p| p.held.as_mut()) {
+            held.guide = guide;
+        }
+    }
+
+    /// The guide handed its width, the screen's: the accent, whole, at its output's scale.
+    fn draw_guide(&mut self, w: i32) {
+        let Some(held) = self.pointer.as_ref().and_then(|p| p.held.as_ref()) else {
+            return;
+        };
+        let Some(layer) = held.guide.as_ref() else { return };
+        if w <= 0 {
+            return;
+        }
+        let scale = self.outs.get(held.out).map_or(1, |o| o.scale.max(1));
+        let (bw, bh) = (w * scale, bar::GUIDE * scale);
+        let Ok((buffer, data)) = self.pool.create_buffer(bw, bh, bw * 4, wl_shm::Format::Argb8888) else {
+            return;
+        };
+        {
+            let Some(c) = Canvas::new(&self.lib, &self.font, data, bw, bh, bw * 4, scale as f64) else {
+                return;
+            };
+            c.fill(0.0, 0.0, w as f64, bar::GUIDE as f64, self.look.accent, 1.0);
+        }
+        let surface = layer.wl_surface();
+        surface.set_buffer_scale(scale);
+        if buffer.attach_to(surface).is_ok() {
+            surface.damage_buffer(0, 0, bw, bh);
+            layer.commit();
+        }
+    }
+
     /// The pointer at a point of an output's bar, or off every bar: the target under it is lit.
     fn hover(&mut self, at: Option<(usize, (f64, f64))>) {
         let mut changed = false;
@@ -916,6 +990,9 @@ impl App {
             o.keyer = None;
             o.catcher = None;
         }
+        if let Some(p) = self.pointer.as_mut() {
+            p.held = None;
+        }
         self.drop_marks();
         self.ruler.free(&self.lib);
         self.font.free(&self.lib);
@@ -924,6 +1001,13 @@ impl App {
 
 impl LayerShellHandler for App {
     fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface) {
+        // the bar closed under a press on its ground, or the press's guide: the press is over, and no guide stays
+        if let Some(p) = self.pointer.as_mut() {
+            let bar = |h: &Held| self.outs.get(h.out).is_some_and(|o| o.layer.as_ref() == Some(layer));
+            if p.held.as_ref().is_some_and(|h| h.guide.as_ref() == Some(layer) || bar(h)) {
+                p.held = None;
+            }
+        }
         for o in &mut self.outs {
             if o.layer.as_ref() == Some(layer) {
                 o.layer = None;
@@ -941,6 +1025,10 @@ impl LayerShellHandler for App {
     }
 
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface, configure: LayerSurfaceConfigure, _: u32) {
+        if self.pointer.as_ref().and_then(|p| p.held.as_ref()).and_then(|h| h.guide.as_ref()) == Some(layer) {
+            self.draw_guide(configure.new_size.0 as i32);
+            return;
+        }
         if let Some(oi) = self.outs.iter().position(|o| o.keyer.as_ref() == Some(layer)) {
             self.draw_keyer(oi);
             return;
@@ -1028,9 +1116,10 @@ impl OutputHandler for App {
 
     fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, output: WlOutput) {
         self.outs.retain(|o| o.output != output);
-        // the indexes moved: the pointer is on no bar until it moves again
+        // the indexes moved: the pointer is on no bar until it moves again, and a press held on a bar's ground is
+        // over, its guide with it
         if let Some(p) = self.pointer.as_mut() {
-            p.out = None;
+            (p.out, p.held) = (None, None);
         }
         if self.keys.as_ref().is_some_and(|k| !self.outs.iter().any(|o| o.name == *k)) {
             self.keys_off();
@@ -1117,12 +1206,14 @@ impl PointerHandler for App {
                     p.out = Some(oi);
                     p.pos = ev.position;
                     // a press on the bar's own ground is a drag of the bar once the pointer has gone far enough: the
-                    // hand closes, and nothing is lit until it is let go
+                    // pointer is the four arrows, as the pad's is while it is dragged, a line shows where the bar
+                    // would land, and nothing is lit until it is let go
                     if let Some(held) = p.held.as_mut() {
                         let (dx, dy) = (ev.position.0 - held.at.0, ev.position.1 - held.at.1);
                         held.drag |= dx.hypot(dy) >= bar::DRAG_START;
                         if held.drag {
-                            self.shape(Cursor::Grabbing);
+                            self.shape(Cursor::Move);
+                            self.guide(ev.position.1);
                             continue;
                         }
                     }
@@ -1142,6 +1233,7 @@ impl PointerHandler for App {
                                 out: oi,
                                 at: ev.position,
                                 drag: false,
+                                guide: None,
                             });
                         }
                     }

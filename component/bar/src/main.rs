@@ -71,8 +71,12 @@ right, 4 wheel up, 5 wheel down): name is the module and instance its part,
 name (the sign), gauge, pct (the number) or text; the mark and the three
 dots send logo. A bar dragged by its own ground, where no target is, and
 let go in its screen's other half sends bar with the edge, top or bottom,
-as its instance: spark-shell stands the bar there. The pointer is a hand
-on a target, the arrow on the ground, and a closed hand through a drag. On a level that can be set, the wheel on any of its parts
+as its instance: spark-shell stands the bar there. Through the drag an
+accent line across the screen's other edge says the bar will land there,
+once the pointer is in that half. The pointer is a hand on a target, the
+arrow on the ground, and the four arrows through a drag. A sign, a number
+or a text takes a click one cell past its sides too; a gauge takes it on
+its own cells. On a level that can be set, the wheel on any of its parts
 (5 a step) and a click on its gauge (the place clicked, rounded to 5)
 change the level drawn at once. The status's lines are the truth, all but
 the old answers: in a burst the status answers each step in turn, and a
