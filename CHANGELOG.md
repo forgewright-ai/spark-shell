@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.150
+
+- The bar's status is narrower. The icons of a group stand two cells
+  apart and the groups four, where they were three and five, and the
+  right edge keeps one cell, as the left does. On a screen 1200 pixels
+  wide the status is 90 pixels shorter, and the pad's windows get those
+  pixels.
+- A click or a tap beside an icon is on it: an icon's target reaches a
+  cell past each of its sides, so the icons of a group leave no dead
+  space between them, 40 pixels each on a touch screen. A gauge keeps
+  its own cells: a click sets its level by where it falls.
+- A dragged bar shows where it will land: an accent line across the
+  screen's other edge once the pointer is in that half. The pointer is
+  the four arrows, as on the pad.
+- A pad dragged onto the bar shows on the bar, where it will stand,
+  with the line at the screen's edge over it.
+- A bar that moves takes the pad with it in one step. Before, the pad
+  showed for a moment, went and came back, and the bar flashed its
+  count meanwhile.
+- After the bar moves, the windows the keys placed stand at their places
+  on the new area, whole. Before, they were left 44 pixels short.
+- The focused window's frame is one shade on every side, the accent at
+  a quarter. Before, a tiled window alone on its workspace had a bright
+  line at its left and foot and a dim one at its right.
+
 ## v0.149.1
 
 - A window minimized from inside a floating group is on the pad. A

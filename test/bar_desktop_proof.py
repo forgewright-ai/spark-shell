@@ -36,7 +36,7 @@ named by its gate:
 3 states         muted, off, the wire down, a microphone that records, a reminder and a window that ask, no
                  sound device, the status shell killed while its jobs hold its pipe and back with none of them
                  left, the bar ended with ABRT and started again by its keeper, stopped on purpose, loading
-                 before the first line, a binding mode, its name's end five cells before the status or the
+                 before the first line, a binding mode, its name's end four cells before the status or the
                  dots, and a screen at rest: no bar and no room kept while it shows the rest workspace
 4 accessibility  the tones on the screen are the look's, the accent on the plate and the keys' line alone; the
                  text reads at 4.5 to 1 on the ground and on a chip, and the plate's digits are the look's ink;
@@ -45,16 +45,19 @@ named by its gate:
                  a line at the plate's foot under the one they are on; every control has a name; nothing moves
                  at rest
 5 geometry       the spec's numbers at 16 px, by the state file and by the screen: the run of 300 px, the plate
-                 of 30 by 28 in its place, the room kept for the pad's windows, gaps of one, three and five
+                 of 30 by 28 in its place, the room kept for the pad's windows, gaps of one, two and four
                  cells, the hairline before the time; no cell moves with a value, a state or the workspace
                  shown; what a bar short of width gives up, in order; the bottom edge, by the verb and by the
-                 bar dragged by its own ground; two screens, each with its own plate, one at rest alone
+                 bar dragged by its own ground, an accent line across the edge it would land at while it is
+                 held there; a placed window at its half of the area after each move; two screens, each with
+                 its own plate, one at rest alone
 
 And a part of its own, pad, where SPARK_SHELL_WINPAD names spark-winpad's build (a note says so where it names
 none): a window minimized through spark-shell starts the pad, which stands on the bar in the room the bar keeps
 for it, on a surface of its own: its grip and a cell a window, a chip under the pointer, no strip kept, no module
 named pad on the line while it is in sight there; hidden and shown; dragged by its grip off the bar, back onto
-it, and to the bar's edge, where it docks in a strip of its own, the bar's line saying the module while the pad
+it, shown on the bar while it is held there with the line at the screen's edge over it, and to the bar's edge,
+where it docks in a strip of its own, the bar's line saying the module while the pad
 is off the bar and not while it is on it, by the same status loop; a click on a cell brings the window back.
 
 BAR_PROOF_FONT names a face for the proof's config and hides the Monaspace faces from the proof's home: this
@@ -528,10 +531,10 @@ def level_at(into, width):
 
 def plan(line, levels, width, run_end, overflow, cell):
     """The status as the spec lays it on a bar of that width, from the facts of a line and the levels drawn: from
-    the right edge leftward with two cells of room, one cell between a module's parts, three between the modules of
-    a group, five between groups; a sign a cell a glyph, or two where it is an icon the bar draws; a pinned level's
+    the right edge leftward with one cell of room, one cell between a module's parts, two between the modules of
+    a group, four between groups; a sign a cell a glyph, or two where it is an icon the bar draws; a pinned level's
     gauge of five cells and its number in four, the digits at the
-    right; a text as wide as it is drawn in the cells kept for it. Short of width, with five cells kept after the
+    right; a text as wide as it is drawn in the cells kept for it. Short of width, with four cells kept after the
     workspaces: every number goes, then every gauge, then whole modules, the ones the overflow order does not
     name first, from the left, then in its order, never the time's group; three dots stand for them at the left
     end. -> (the targets as (id, x, w), what was left out in the order it went, the hairline's x or None)"""
@@ -542,14 +545,14 @@ def plan(line, levels, width, run_end, overflow, cell):
         return sum(parts) + max(sum(1 for n in parts if n > 0) - 1, 0)
 
     def gap(a, b):
-        return 3 if a["m"]["group"] == b["m"]["group"] else 5
+        return 2 if a["m"]["group"] == b["m"]["group"] else 4
 
     def cells():
         n = sum(size(p) for p in pieces) + sum(gap(a, b) for a, b in zip(pieces, pieces[1:]))
-        return n + ((1 + (5 if pieces else 0)) if more else 0)
+        return n + ((1 + (4 if pieces else 0)) if more else 0)
 
     def fits():
-        return cells() == 0 or run_end + (5 + cells()) * cell <= width - 2 * cell
+        return cells() == 0 or run_end + (4 + cells()) * cell <= width - cell
     for m in line:
         if m.get("name") in ("look", "logo"):
             continue
@@ -574,16 +577,16 @@ def plan(line, levels, width, run_end, overflow, cell):
         more = True
     if not fits():
         pieces, more = [], False
-    x, out, hair, before = width - 2 * cell - cells() * cell, [], None, None
+    x, out, hair, before = width - cell - cells() * cell, [], None, None
     if more:
         out.append(("more", x, cell))
-        x += 6 * cell
+        x += 5 * cell
     for p in pieces:
         m = p["m"]
         if before:
             x += gap(before, p) * cell
         if m["group"] == "time" and (before["m"]["group"] != "time" if before else more):
-            hair = x - 5 * cell + 5 * cell // 2
+            hair = x - 4 * cell + 4 * cell // 2
         before, end, state = p, x + size(p) * cell, m.get("state", "ok")
         if p["sign"]:
             out.append((m["name"] + ".name", x, p["sign"] * cell))
@@ -1826,8 +1829,8 @@ def behavior(d):
     said = d.shell("bar", "hide", "bat")
     gone = d.until(lambda s: not s.find("bat.text"), "the battery off the bar")
     ok(said.returncode == 0 and said.said.startswith("hidden bat") and shown.replace(" bat,", "") in said.said and d.conf("BAR_HIDE") == "bat" and d.bar_pid() == pid
-       and gone.find("kb.text").x - base["kb.text"][0] == 10 * cell and not stays(base, gone.rects(), [k for k in base if base[k][0] < base["bat.text"][0]]),
-       "spark-shell bar hide bat: the battery is off the bar and what stood left of it closes up to the time, ten cells; the same process", (said.said, d.conf("BAR_HIDE"), gone.brief()))
+       and gone.find("kb.text").x - base["kb.text"][0] == 9 * cell and not stays(base, gone.rects(), [k for k in base if base[k][0] < base["bat.text"][0]]),
+       "spark-shell bar hide bat: the battery is off the bar and what stood left of it closes up to the time, nine cells; the same process", (said.said, d.conf("BAR_HIDE"), gone.brief()))
     said = d.shell("bar", "show", "bat")
     again = d.until(lambda s: s.rects() == base, "the battery back, every target where it was")
     ok(said.returncode == 0 and said.said.startswith("shown bat") and shown in said.said and d.conf("BAR_HIDE") == "" and d.bar_pid() == pid and len(d.log()) == changes,
@@ -1981,15 +1984,15 @@ def states(d):
     status, letters = min(t.x for t in s.parts()), len(glyphs("resize"))   # where the status begins at rest; the cells of the mode's name
 
     def mode(there, before):
-        """The binding mode's name on the screen: its cells end five cells before `before`, where the status or its
+        """The binding mode's name on the screen: its cells end four cells before `before`, where the status or its
         note begins, and nothing else stands between the workspaces and there; or, with there False, no name does."""
-        end = before - 5 * cell
+        end = before - 4 * cell
 
         def read():
             strip = d.strip()
             name = strip.part(end - letters * cell, 0, letters * cell, high)
             cols = sorted({x // cell for x, _ in name.ink(ground, 40)})
-            room = strip.part(run_end, 0, end - letters * cell - run_end, high).colors() == {ground} and strip.part(end, 0, 5 * cell, high).colors() == {ground}
+            room = strip.part(run_end, 0, end - letters * cell - run_end, high).colors() == {ground} and strip.part(end, 0, 4 * cell, high).colors() == {ground}
             return (name.tone(ground, tones) == ["attention"] and cols == list(range(letters)) and room) if there else (name.colors() == {ground} and room), (name.tone(ground, tones), cols, room)
         return seen(read)
     # what is not well, all at once: out muted, the wire down, bluetooth and wifi off, the battery low, the mic
@@ -2071,9 +2074,9 @@ def states(d):
        "bluetooth on with nothing connected says missing: its icon is not the one with a device, and dim", (saw, asks.brief()))
     ok(quiet.state == "ok" and quiet.rect == (base["notifications.name"][0], 0, 2 * cell, high) and saw[0][3] == ["text"] and saw[1][2],
        "do not disturb: the notifications' icon is another one, in the text's color, in the flag's cells", (saw, asks.brief()))
-    ok(due.x == asks.find("mic.name").x + 2 * cell + 5 * cell and asks.find("kb.name").x == due.x + 2 * cell + 5 * cell and asks.find("mic.name").x == base["mic.name"][0] - 7 * cell
+    ok(due.x == asks.find("mic.name").x + 2 * cell + 4 * cell and asks.find("kb.name").x == due.x + 2 * cell + 4 * cell and asks.find("mic.name").x == base["mic.name"][0] - 6 * cell
        and not stays(base, asks.rects(), [k for k in base if "." in k and base[k][0] <= base["mic.name"][0]]),
-       "the reminder is a group of its own, five cells from the sound and five from the seat: what stands left of it made room, seven cells, and what stands right stays", asks.brief())
+       "the reminder is a group of its own, four cells from the sound and four from the seat: what stands left of it made room, six cells, and what stands right stays", asks.brief())
     d.shot("states-asking")
     d.sway("[pid=%d]" % d.windows[1].pid, "urgent", "disable")
     # no sound device
@@ -2108,13 +2111,13 @@ def states(d):
     def notice(tone="dim"):
         def read():
             strip = d.strip()
-            at = strip.part(W - 4 * cell, 0, 2 * cell, high).tone(ground, tones)
-            rest_ = strip.part(run_end, 0, W - 4 * cell - run_end, high).colors() == {ground}
-            return at == [tone] and rest_ and strip.part(W - 2 * cell, 0, 2 * cell, high).colors() == {ground}, (at, rest_)
+            at = strip.part(W - 3 * cell, 0, 2 * cell, high).tone(ground, tones)
+            rest_ = strip.part(run_end, 0, W - 3 * cell - run_end, high).colors() == {ground}
+            return at == [tone] and rest_ and strip.part(W - cell, 0, cell, high).colors() == {ground}, (at, rest_)
         return seen(read)
     good, saw = notice()
     ok(s.rects() == frame and d.bar_pid() == bar and good,
-       "the status shell killed while its jobs hold the pipe: the bar hears its end, the state file says error, the frame stays, the logo and the ten places where they were, and a dim sign stands where the status ended, two cells from the edge",
+       "the status shell killed while its jobs hold the pipe: the bar hears its end, the state file says error, the frame stays, the logo and the ten places where they were, and a dim sign stands where the status ended, one cell from the edge",
        (s.brief(), d.bar_pid(), bar, saw))
     d.shot("states-status-ended")
     s = d.until(lambda s: s.status == "ok" and s.find("clock.text"), "the status started again", 15)
@@ -2165,12 +2168,12 @@ def states(d):
     ok(started.returncode == 0 and s.rects() == frame and not s.levels and good,
        "loading: spark-shell bar start, and before the first line the frame is there, the logo and the ten places where they stay, and three dim dots where the status will end; nothing else", (started.said, s.brief(), saw))
     d.shot("states-loading")
-    # a binding mode before the first line: its name ends five cells before the dots
+    # a binding mode before the first line: its name ends four cells before the dots
     d.sway("mode", "resize")
     s = d.until(lambda s: s.mode == "resize" and s.status == "loading", "the binding mode in the state file, the status loading", 10)
-    good, saw = mode(True, W - 4 * cell)
-    ok(good and s.rects() == frame and s.apps() == (run_end + cell, W - 4 * cell - (5 + letters + 1) * cell - run_end - cell),
-       "a binding mode while the status loads: its name ends five cells before the dots, and the pad's room one cell before the name", (s.brief(), s.apps(), saw))
+    good, saw = mode(True, W - 3 * cell)
+    ok(good and s.rects() == frame and s.apps() == (run_end + cell, W - 3 * cell - (4 + letters + 1) * cell - run_end - cell),
+       "a binding mode while the status loads: its name ends four cells before the dots, and the pad's room one cell before the name", (s.brief(), s.apps(), saw))
     d.sway("mode", "default")
     d.until(lambda s: not s.mode, "the default mode again, the status loading", 10)
     d.flag("slow", False)
@@ -2181,15 +2184,15 @@ def states(d):
     d.chord("logo", "r")
     s = d.until(lambda s: s.mode == "resize", "the binding mode in the state file")
     good, saw = mode(True, status)
-    ok(good and s.rects() == base and not any(t.module == "mode" for t in s.targets()) and s.apps() == (run_end + cell, status - (5 + letters + 1) * cell - run_end - cell),
-       "a binding mode (Super+r, the template's resize): the state file says mode resize and its name stands in the room the status leaves, its end five cells before the status, a glyph a cell, in the attention color, as plain text; it is no target, every target is where it was, and the room kept for the pad's windows ends one cell before the name",
+    ok(good and s.rects() == base and not any(t.module == "mode" for t in s.targets()) and s.apps() == (run_end + cell, status - (4 + letters + 1) * cell - run_end - cell),
+       "a binding mode (Super+r, the template's resize): the state file says mode resize and its name stands in the room the status leaves, its end four cells before the status, a glyph a cell, in the attention color, as plain text; it is no target, every target is where it was, and the room kept for the pad's windows ends one cell before the name",
        (s.brief(), s.apps(), saw))
     d.shot("states-mode")
     d.key("Escape")
     s = d.until(lambda s: not s.mode, "the default mode again")
     good, saw = mode(False, status)
-    ok(good and s.rects() == base and s.apps() == (run_end + cell, status - 5 * cell - run_end - cell),
-       "back in the default mode the name is gone, and the pad's room runs up to five cells before the status again", (s.brief(), s.apps(), saw))
+    ok(good and s.rects() == base and s.apps() == (run_end + cell, status - 4 * cell - run_end - cell),
+       "back in the default mode the name is gone, and the pad's room runs up to four cells before the status again", (s.brief(), s.apps(), saw))
     # a screen at rest: the workspace it shows has the rest name, as the idle screen's has; a name that only begins
     # with it is a workspace as any other
     pid, inset, near_ = d.bar_pid(), high // 9, RESTS + "r"
@@ -2413,9 +2416,9 @@ def geometry(d):
     ok(spaces[0].x == mark.x + mark.w + cell == 44 and [t.rect for t in spaces] == [(44 + 30 * i, 0, 30, BAR) for i in range(10)] and plate.rect == (44, 0, 30, BAR) and run_end == 344
        and run_end - (mark.x + mark.w + cell) == 300,
        "the run: from 44 px, ten places of 30 px with none between, the plate one of them, 300 px in all", [t.rect for t in spaces])
-    room = (run_end + cell, parts[0].x - 5 * cell - run_end - cell)
+    room = (run_end + cell, parts[0].x - 4 * cell - run_end - cell)
     ok(s.apps() == room and "\noutput\t%s\t%d\t%d\ttop\t1\napps\t%s\t%d\t%d\ntarget\t" % ((OUT, W, BAR, OUT) + room) in s.text,
-       "the room for the pad's windows: the apps line, the one after the output's, names it from one cell after the run, %d px, up to five cells before the status, %d px wide" % room,
+       "the room for the pad's windows: the apps line, the one after the output's, names it from one cell after the run, %d px, up to four cells before the status, %d px wide" % room,
        (s.apps(), room, s.text[:160]))
     area = next(w["rect"] for w in d.ask("get_workspaces") if w["num"] == 1)
     win = d.node(d.windows[0].pid)["rect"]
@@ -2443,13 +2446,13 @@ def geometry(d):
             "the mic to the keyboard": at["kb.name"].x - at["mic.name"].x - icon, "the battery to the time": at["clock.text"].x - at["bat.text"].x - 4 * cell,
             "the time to the flag": at["notifications.name"].x - at["clock.text"].x - 5 * cell, "the flag's cells to the edge": W - at["notifications.name"].x - icon - cell - 2 * cell}
     ok(gaps == {"out's sign to its gauge": cell, "its gauge to its number's cells": cell, "the keyboard's sign to its layout": cell, "the battery's sign to its number": cell,
-                "the wire to bluetooth": 3 * cell, "bluetooth to wifi": 3 * cell,
-                "out to the mic": 3 * cell, "the keyboard to the battery": 3 * cell, "wifi to out": 5 * cell, "the mic to the keyboard": 5 * cell, "the battery to the time": 5 * cell,
-                "the time to the flag": 3 * cell, "the flag's cells to the edge": 2 * cell}
+                "the wire to bluetooth": 2 * cell, "bluetooth to wifi": 2 * cell,
+                "out to the mic": 2 * cell, "the keyboard to the battery": 2 * cell, "wifi to out": 4 * cell, "the mic to the keyboard": 4 * cell, "the battery to the time": 4 * cell,
+                "the time to the flag": 2 * cell, "the flag's cells to the edge": cell}
        and at["out.gauge"].w == 5 * cell and at["out.pct"].w == 3 * cell and at["clock.text"].w == 5 * cell and {at[i].w for i in at if i.endswith(".name")} == {icon},
-       "the gaps: one cell between a module's parts, three between the modules of a group, five between groups; the time and the flag three cells apart; two cells of room at the edge; a sign's icon two cells, a gauge five, a number its digits and the percent sign",
+       "the gaps: one cell between a module's parts, two between the modules of a group, four between groups; the time and the flag two cells apart; one cell of room at the edge; a sign's icon two cells, a gauge five, a number its digits and the percent sign",
        gaps)
-    x = at["clock.text"].x - 5 * cell + 5 * cell // 2
+    x = at["clock.text"].x - 4 * cell + 4 * cell // 2
 
     def hairline():
         shot = d.strip()
@@ -2457,8 +2460,8 @@ def geometry(d):
         sides = [shot.part(x + dx, 0, 1, high).colors() == {ground} for dx in (-1, 1)]
         return line_ == (high // 4, high * 3 // 4 - high // 4) and all(sides) and shot.run(x, high // 2, tones["dim"]) == (x, 1), (line_, sides)
     good, saw = seen(hairline)
-    ok(good and hair == x and x == at["bat.text"].x + 4 * cell + 5 * cell // 2,
-       "the hairline before the time: 1 px wide, the dim color, from a quarter to three quarters of the bar's height, in the middle of the five cells before it", (saw, hair, x))
+    ok(good and hair == x and x == at["bat.text"].x + 4 * cell + 4 * cell // 2,
+       "the hairline before the time: 1 px wide, the dim color, from a quarter to three quarters of the bar's height, in the middle of the four cells before it", (saw, hair, x))
     # no shift
     kept, shots = collections.OrderedDict(), {}
     slot = (at["out.gauge"].x + 6 * cell, 0, 4 * cell, high)
@@ -2517,7 +2520,7 @@ def geometry(d):
         now = settle(lambda: (lambda s: s and s.bar() and s.bar().width == width and s.bar().dropped == gone and s)(d.state()), 8) or d.state()
         orders.append(gone)
         ok(width and now.bar().width == width and now.bar().dropped == gone and [(t.id, t.x, t.w) for t in now.parts()] == want and now.rects().get("mark") == base["mark"]
-           and [t.rect for t in now.spaces()] == [t.rect for t in spaces] and (not want or min(x for _, x, _ in want) >= run_end + 5 * cell),
+           and [t.rect for t in now.spaces()] == [t.rect for t in spaces] and (not want or min(x for _, x, _ in want) >= run_end + 4 * cell),
            "a bar %s px wide: %s (%s)" % (width, words, " ".join(gone)), (gone, now.brief()))
     ok(all(steps[i][1] and steps[i][1] > steps[i + 1][1] for i in range(3)) and orders[0] == ["wifi.pct", "out.pct", "mic.pct"] and orders[1] == orders[0] + ["wifi.gauge", "out.gauge", "mic.gauge"]
        and orders[2] == orders[1] + ["lan", "bt", "kb"] and orders[3] == orders[1] + ["lan", "bt", "kb", "wifi", "mic", "out", "bat"],
@@ -2527,19 +2530,37 @@ def geometry(d):
 
     def dots():
         shot = d.strip(width=now.bar().width)
-        return bool(more) and place(shot, more).tone(ground, tones) == ["dim"] and shot.fall(clock.x - 5 * cell + 5 * cell // 2, high // 2, tones["dim"])[1] == high * 3 // 4 - high // 4, None
+        return bool(more) and place(shot, more).tone(ground, tones) == ["dim"] and shot.fall(clock.x - 4 * cell + 4 * cell // 2, high // 2, tones["dim"])[1] == high * 3 // 4 - high // 4, None
     good, _ = seen(dots)
     if more:
         d.click(more.mid)
         d.away()
-    ok(more and (more.kind, more.name, more.w, more.state) == ("open", "more", cell, "ok") and clock.x - more.x == 6 * cell and good and (settle(lambda: d.opened()[n:], 8) or [""])[-1].endswith(" dialog"),
-       "the three dots: one dim cell at the status's left end, five cells before the time with the hairline between, named more; a click on it opens home, where the modules are", (more and more.rect, d.opened()[n:]))
+    ok(more and (more.kind, more.name, more.w, more.state) == ("open", "more", cell, "ok") and clock.x - more.x == 5 * cell and good and (settle(lambda: d.opened()[n:], 8) or [""])[-1].endswith(" dialog"),
+       "the three dots: one dim cell at the status's left end, four cells before the time with the hairline between, named more; a click on it opens home, where the modules are", (more and more.rect, d.opened()[n:]))
     d.shot("geometry-narrow")
     d.sway("output", OUT, "mode", "%dx%d" % (W, H))
     d.layout()
     d.configure()
     s = d.told(lambda s: s.bar().width == W and not s.bar().dropped and s.rects() == base, "the bar %d px wide again, out alone pinned" % W)
     ok(d.bar_pid() == pid, "the screen wide again and the pins as they were: the whole line is back, every target where it was; the same process through it all", (pid, d.bar_pid()))
+    # a window the keys placed, at the left half: after each move of the bar it stands at that half of the area the bar
+    # leaves, whole (v0.150: before, no refit followed a move but the one the pad's strip of a moment asked for)
+    kept = d.terminal("HALF")
+    d.shell("desktop", "window", "left", str(d.node(kept.pid)["id"]))
+
+    def half(seconds=8):
+        """Whether the placed window stands at the left half of the first workspace's area: its box, its band with it,
+        inside that half and less than a cell smaller each way (a terminal keeps whole cells: the shell's
+        LAYOUT_PLACE_ROUND, 16 px). With what was read."""
+        def read():
+            n, a = d.node(kept.pid), next(w["rect"] for w in d.ask("get_workspaces") if w["num"] == 1)
+            r, band = n["rect"], n.get("deco_rect", {}).get("height", 0)
+            (x, y, w, h), (px, py, pw, ph) = (r["x"], r["y"] - band, r["width"], r["height"] + band), (a["x"], a["y"], a["width"] // 2, a["height"])
+            good = px <= x and py <= y and x + w <= px + pw and y + h <= py + ph and pw - w < 16 and ph - h < 16
+            return good, ((x, y, w, h), (px, py, pw, ph))
+        return settle(lambda: (lambda b: b[0] and b)(read()), seconds) or read()
+    good, saw = half()
+    ok(good, "a window placed at the left half stands there, the area's whole height but a terminal's rounding to its cells", saw)
     # the bottom edge, by the verb
     said = d.shell("bar", "bottom")
     s = d.until(lambda s: s.bar().edge == "bottom" and s.status == "ok" and s.find("clock.text"), "the bar at the bottom", 30)
@@ -2555,23 +2576,44 @@ def geometry(d):
     good, box = seen(lambda: (lambda b: (b == (plate.x, inset, plate.w, high - 2 * inset), b))(plate_reads(d, d.strip((0, H - BAR)), plate)[0]))
     ok(low and up and good, "on the screen the logo stands in the bottom %d rows, and no longer at the top; the plate is in its box there too" % BAR, (saw, box))
     d.shot("geometry-bottom")
+    good, saw = half()
+    ok(good, "the bar at the bottom: the placed window stands at the left half of the area the bar leaves it, whole", saw)
     said = d.shell("bar", "top")
     s = d.until(lambda s: s.bar().edge == "top" and s.status == "ok" and s.find("clock.text"), "the bar at the top again", 30)
     area = settle(lambda: next((w["rect"] for w in d.ask("get_workspaces") if w["num"] == 1 and w["rect"]["y"] - w["rect"]["x"] == BAR), None), 5) \
         or next(w["rect"] for w in d.ask("get_workspaces") if w["num"] == 1)
     ok(said.returncode == 0 and s.rects() == base and area["y"] - area["x"] == BAR and H - (area["y"] + area["height"]) == area["x"],
        "spark-shell bar top: back at the top, the windows' area %d px under the screen's edge again" % BAR, (said.said[-200:], moved(base, s.rects()), area))
-    # the bar dragged by its own ground, where no target is: let go in the screen's other half, it stands at that edge
+    good, saw = half()
+    ok(good, "and the placed window is at its half of that area again, whole", saw)
+    kept.terminate()
+    wait_for(lambda: not d.node(kept.pid), "the placed window gone")
+    # the bar dragged by its own ground, where no target is: let go in the screen's other half, it stands at that edge;
+    # while it is held with the pointer in that half, a line at that edge says so
     bare = (run_end + parts[0].x) // 2   # the middle of the room between the workspaces and the status
     sign = s.find("out.name")
 
-    def drag(start, end):
-        """A press of the left button at row `start` of the bare column, the pointer moved 8 px and on to row `end`, let go there."""
+    def drag(start, end, held=None):
+        """A press of the left button at row `start` of the bare column, the pointer moved 8 px and on to row `end`, let go
+        there. What `held` reads of the screen first, the button still down, is given back."""
         d.move(bare, start)
         d.button(True)
-        d.move(bare, start + (8 if end > start else -8))
-        d.move(bare, end)
-        d.button(False)
+        try:
+            d.move(bare, start + (8 if end > start else -8))
+            d.move(bare, end)
+            return held and held()
+        finally:
+            d.button(False)
+    def guide(edge):
+        """The line that says where a dragged bar would land, as the screen has it at an edge: (whether the three outermost
+        rows are the accent from side to side and the row beside them has none of it, whether none of the four has any)."""
+        rows = d.grab(0, 0 if edge == "top" else H - 4, W, 4)
+        line, beside = (rows.part(0, 0, W, 3), rows.part(0, 3, W, 1)) if edge == "top" else (rows.part(0, 1, W, 3), rows.part(0, 0, W, 1))
+        lit = [{near(c, tones["accent"]) for c in piece.colors()} for piece in (line, beside)]
+        return lit == [{True}, {False}], lit == [{False}, {False}]
+    def lined(edge, there=True, seconds=5):
+        """Whether the screen comes to show the line at an edge, or with `there` false none of it: the line follows the pointer by a moment."""
+        return seen(lambda: (guide(edge)[not there], None), seconds)[0]
     def moves():
         """The spark-shell runs that move the bar, by their words: a drop's, or a helper one left."""
         return [" ".join(cmdline(p)[-2:]) for p in d.ours() if cmdline(p)[-2:] in (["bar", "top"], ["bar", "bottom"])]
@@ -2579,7 +2621,8 @@ def geometry(d):
     # for): gone before the drag, so a run found after it is one the drop asked for
     settle(lambda: not moves(), 10)
     pid, was = d.bar_pid(), d.conf("BAR_POSITION")
-    drag(high // 2, H // 2 - 2 * high)
+    # held a second before it is let go, the accent looked for at the other edge all the while
+    lit = drag(high // 2, H // 2 - 2 * high, lambda: seen(lambda: (not guide("bottom")[1], None), 1)[0])
     # two clicks after it, each answered: the shell has read by now whatever the drop sent
     d.click(sign.mid)
     d.until(lambda s: s.named("out.name") == "output muted", "out muted by a click after the drop")
@@ -2590,20 +2633,37 @@ def geometry(d):
        and s.rects() == base,
        "the bar pressed on its own ground, where no target is, dragged down and let go in the screen's upper half stays: the same process at the top, the config's BAR_POSITION as it was, and spark-shell was asked nothing",
        (pid, d.bar_pid(), s.bar().edge, was, d.conf("BAR_POSITION"), moving))
+    ok(not lit, "held there for a second before it was let go, the pointer in the bar's own half of the screen, no line showed: none of the screen's last four rows had the accent in it")
     d.away()
-    drag(high // 2, H * 3 // 4)
+
+    def there_and_back():
+        """Held in the lower half, back in the upper one, and down again: whether the line showed, went, and showed again."""
+        down = lined("bottom")
+        d.shot("geometry-guide")
+        d.move(bare, H // 2 - 2 * high)
+        gone = lined("bottom", False)
+        d.move(bare, H * 3 // 4)
+        return down, gone, lined("bottom")
+    lines = drag(high // 2, H * 3 // 4, there_and_back)
+    ok(lines == (True, True, True),
+       "dragged the same way and held with the pointer in the screen's lower half, a line says where the bar would land: the screen's last three rows are the accent from side to side, and the row over them has none of it; "
+       "the pointer back in the upper half, the button still down, the line goes; down again, it is back", lines)
     s = d.until(lambda s: s.bar().edge == "bottom" and s.status == "ok" and s.find("clock.text"), "the bar at the bottom, dragged there", 30)
     low, saw = mark_seen(d, mark.x, H - BAR + (BAR - MARK) // 2)
     lower = d.bar_pid()
     ok(d.conf("BAR_POSITION") == "bottom" and lower not in (None, pid) and d.bar_env().get("BAR_POSITION") == "bottom" and s.rects() == base and low,
        "dragged the same way and let go in the screen's lower half, the bar stands at the bottom: its click named bar reached spark-shell, which keeps BAR_POSITION=bottom in the config and started the bar again there; the state file says bottom, and the logo is drawn in the bottom %d rows" % BAR,
        (d.conf("BAR_POSITION"), pid, lower, s.bar().edge, moved(base, s.rects()), saw))
+    left = lined("bottom", False, 1), lined("top", False, 1)
+    ok(all(left), "let go there, the line is gone: none of the screen's last four rows, the bar's now, has the accent in it, and none of the first four, where no bar is", left)
     d.shot("geometry-dragged")
-    drag(H - high // 2, H // 4)
+    above = drag(H - high // 2, H // 4, lambda: lined("top"))
     s = d.until(lambda s: s.bar().edge == "top" and s.status == "ok" and s.find("clock.text"), "the bar at the top again, dragged there", 30)
     up, saw = mark_seen(d, mark.x, (BAR - MARK) // 2)
     ok(d.conf("BAR_POSITION") == "top" and d.bar_pid() not in (None, lower) and s.rects() == base and up,
        "and from the bottom, dragged up and let go in the upper half, it stands at the top again: BAR_POSITION=top, another process, the logo in the top rows", (d.conf("BAR_POSITION"), lower, d.bar_pid(), moved(base, s.rects()), saw))
+    left = lined("top", False, 1), lined("bottom", False, 1)
+    ok(above and all(left), "while it was held there the line was at the top: the screen's first three rows the accent from side to side, the row under them with none of it; let go, no line is left at either edge", (above, left))
     d.away()
     # two screens
     d.sway("create_output")
@@ -2632,8 +2692,8 @@ def geometry(d):
     s = d.until(lambda s: s.mode == "resize", "the binding mode in the state file")
     letters = len(glyphs(s.mode))
     good, saw = seen(lambda: (lambda found: (found == [["attention"]] * 2, found))(
-        [d.grab(outs[n]["rect"]["x"] + min(t.x for t in s.parts(n)) - (5 + letters) * cell, outs[n]["rect"]["y"], letters * cell, high).tone(ground, tones) for n in (OUT, other)]))
-    ok(good, "a binding mode stands on both screens' bars, its name's end five cells before the status", saw)
+        [d.grab(outs[n]["rect"]["x"] + min(t.x for t in s.parts(n)) - (4 + letters) * cell, outs[n]["rect"]["y"], letters * cell, high).tone(ground, tones) for n in (OUT, other)]))
+    ok(good, "a binding mode stands on both screens' bars, its name's end four cells before the status", saw)
     d.shot("geometry-second-screen", other)
     d.sway("mode", "default")
     d.until(lambda s: not s.mode, "the default mode again")
@@ -2767,12 +2827,41 @@ def pad(d):
         return seen(read, 10)
 
     def lands(w):
-        """A dragged pad that would land at the bar's edge of the windows' area: the accent's line there, 3 px, from
-        the room's start and w wide: the pad's cells on the bar, or the row it is docked."""
+        """A dragged pad that would dock at the bar's edge of the windows' area: the accent's line there, 3 px, from
+        the room's start and w wide: the row it is docked."""
         def read():
             run = d.grab(0, high, W, 3).run(x0 + 1, 1, accent)
             return run == (x0, w), run
         return read
+
+    def below():
+        """The screen just under the bar, where a pad the bar held was once shown: around the room's start, a docked
+        row wide and a cell high."""
+        return d.grab(x0 - 2, high, row + 4, tool + 4)
+
+    def held(before=None):
+        """A dragged pad the bar holds, the pointer on the bar: it is shown on the bar itself, where it lands. On the
+        screen's first 3 rows the accent's line, from the room's start and as wide as the pad, and no row more; under
+        the line the pad as it stands there, its grip and its cell and nothing else (read with the line's rows the
+        bar's ground); and under the bar the screen as `before` had it, to the pixel: nothing of the pad. With no
+        `before`, a pad dragged from the strip it keeps under the bar: that strip is one color, empty."""
+        def read():
+            strip, under = d.strip(), below()
+            line = [strip.run(x0 + 1, r, accent) for r in range(4)]
+            data = bytearray(strip.data)
+            for r in range(3):
+                data[(r * strip.w + x0) * 3:(r * strip.w + x0 + lead + tool) * 3] = bytes(ground) * (lead + tool)
+            good, saw = pad_reads(d, Img(strip.w, strip.h, bytes(data)), x0, 1, lit, sizes)
+            if before is None:
+                differ = len(under.colors()) - 1
+            else:
+                differ = sum(1 for p, q in zip(under.pixels(), before.pixels()) if p != q)
+            return line == [(x0, lead + tool)] * 3 + [(x0 + 1, 0)] and good and not differ, (line, saw, "under the bar %d differ" % differ)
+        return read
+
+    def saved():
+        """The pad's own save of its place after a drop is over: none of its spark-shell desktop pad place runs."""
+        return settle(lambda: not any("desktop pad place" in " ".join(cmdline(p)) for p in d.ours()), 10)
 
     def floats(x, y):
         """The pad off the bar with its corner at x, y of the screen: a row with a fine edge of the lit tone, its
@@ -2850,18 +2939,25 @@ def pad(d):
         names_ = [module.get("name") for module in d.line()[1:]]
         ok(said.said == "the pad is back in sight" and d.pad_says() == (False, 1) and good and "pad" not in names_ and d.pad_pid() == pid,
            "a second toggle shows it again: the cells are back in their room, and the module is gone from the line", (said.said, d.pad_says(), saw, names_, back.brief()))
-        # dragged off the bar by its grip: let go in the windows' area, far from every edge, it stays there
+        # dragged by its grip, the pointer still on the bar: the pad is shown on the bar, where it lands
+        before = below()
         press(gx, mid)
-        began, saw = hold(gx, mid + 8, lands(lead + tool))
+        began, saw = hold(gx, mid + 8, held(before))
+        ok(began, "dragged by its grip, a press there and the pointer moved 8 px down, still on the bar: the pad is shown on the bar itself, where it lands, its grip and its cell in their room as they stand; a line of the accent, 3 px, at the screen's edge over it, from %d px and %d px wide, marks the place; and under the bar, where it was once shown, the screen is as it was: nothing of the pad"
+           % (x0, lead + tool), saw)
+        d.shot("pad-held-on-the-bar")
+        # moved on, off the bar: let go in the windows' area, far from every edge, it stays there
         px, py = gx + 120, high + 240
         at = (px - lead // 2, py - tool // 2)   # its corner there: the grip's middle under the pointer
         there, saw2 = hold(px, py, floats(*at))
+        left, saw5 = bare()
+        ok(there and left, "moved on into the windows' area, the button still held, the pad follows the pointer again, its grip under it, and it has left the bar: its room there is the bar's ground, the line gone from the screen's edge", (there, saw2, left, saw5))
         d.button(False)
         kept = placed(lambda p: p.startswith("free ")) or ""
         still, saw3 = seen(floats(*at))
         gone, saw4 = bare()
         ok(began and there and kept == "free %d %d" % (at[0], at[1] - high) and min(px, W - px, py - high, H - py) > 96 and still and gone and d.pad_pid() == pid,
-           "dragged by its grip: a press there and the pointer moved down, the pad would land where it stood, a line of the accent at the bar's edge; moved on into the windows' area and let go more than 96 px from every edge, the pad is left there, its grip under the pointer, and off the bar: spark-shell desktop pad place wrote WINPAD_PLACE=%s" % kept,
+           "dragged by its grip: a press there and the pointer moved down, the pad would land where it stood, on the bar, a line of the accent at the screen's edge over it; moved on into the windows' area and let go more than 96 px from every edge, the pad is left there, its grip under the pointer, and off the bar: spark-shell desktop pad place wrote WINPAD_PLACE=%s" % kept,
            (began, saw, there, saw2, kept, still, saw3, gone, saw4))
         line = follows(module_on)
         ok(module_on(line) and line.find("pad.name").kind == "toggle" and not stays(base, line.rects()) and (d.bar_pid(), d.loop_pid()) == running,
@@ -2869,22 +2965,24 @@ def pad(d):
            (line.brief(), stays(base, line.rects()), running, d.bar_pid(), d.loop_pid()))
         d.shot("pad-free")
         # pressed on its grip again, at the left of the floating pad, and let go with the pointer on the bar: it lands there
+        before = below()
         press(at[0] + lead // 2, at[1] + tool // 2)
-        over, saw = hold(gx, mid, lands(lead + tool))
+        over, saw = hold(gx, mid, held(before))
         d.button(False)
         kept = placed(lambda p: p == "bar")
         d.away()
         good, saw2 = shown()
         ok(over and kept == "bar" and good and d.area() == free and d.pad_pid() == pid,
-           "pressed on its grip again and moved up until the pointer is on the bar, the line of the accent says where it lands; let go there, the pad is on the bar again: WINPAD_PLACE=bar, its grip and its cell back in their room, no strip kept",
+           "pressed on its grip again and moved up until the pointer is on the bar, the pad is shown on the bar, where it lands, the line of the accent at the screen's edge over it and nothing of it under the bar; let go there, the pad is on the bar again: WINPAD_PLACE=bar, its grip and its cell back in their room, no strip kept",
            (over, saw, kept, saw2, d.area()))
         line = follows(lambda s: not s.find("pad.name") and s.rects() == base)
         ok(not line.find("pad.name") and line.rects() == base and (d.bar_pid(), d.loop_pid()) == running,
            "on the bar again the pad says itself there: its module is gone from the bar's line, by the same status loop, and every target is where it was", (line.brief(), running, d.bar_pid(), d.loop_pid()))
         # let go near the bar's edge and not on the bar: it docks at that edge, in a strip of its own
         gap = int(env.get("WINPAD_GAP") or 8)   # the pad's margin off an edge: the desktop's outer gap, 8 px when none is set
+        before = below()
         press(gx, mid)
-        began, saw = hold(gx, mid + 8, lands(lead + tool))
+        began, saw = hold(gx, mid + 8, held(before))
         near_, saw2 = hold(gx, high + 30, lands(row))   # 30 px under the bar: within the 48 that take an edge, and not on the bar
         d.button(False)
         kept = placed(lambda p: p.startswith("top ")) or ""
@@ -2899,6 +2997,17 @@ def pad(d):
         ok(module_on(line) and not stays(base, line.rects()) and (d.bar_pid(), d.loop_pid()) == running,
            "docked at the edge, off the bar, it is on the bar's line again: the module named pad, ok: pad, 1 windows, by the same status loop", (line.brief(), stays(base, line.rects()), running, d.bar_pid(), d.loop_pid()))
         d.shot("pad-docked")
+        # from its strip under the bar, held on the bar: the strip stays through the drag, and the pad is shown on the bar
+        # all the same; moved back under the bar and let go, it is docked where it was
+        press(x0 + lead // 2, high + gap + tool // 2)
+        up, saw = hold(gx, mid, held())
+        down, saw2 = hold(gx, high + 30, lands(row))
+        d.button(False)
+        redocked, saw3 = seen(floats(x0, high + gap))
+        done = saved()   # the pad's save of the same place: over before the verb below writes another
+        ok(up and down and redocked and done and d.conf("WINPAD_PLACE") == kept and d.area() == strip_ and d.pad_pid() == pid,
+           "pressed on the docked pad's grip and moved up until the pointer is on the bar, the pad is shown on the bar, where it would land, the line of the accent at the screen's edge over it, and the strip it keeps under the bar is empty; moved back %d px under the bar and let go, it is docked where it was: WINPAD_PLACE=%s, the same strip"
+           % (30, kept), (up, saw, down, saw2, redocked, saw3, done, d.conf("WINPAD_PLACE"), d.area(), strip_))
         # back on the bar by the verb, which starts the pad again there; its widths and its height as the config has them by default
         said = d.shell("desktop", "pad", "place", "bar", "0", "36", "0")
         again = settle(lambda: (lambda p: p if p not in (None, pid) else None)(d.pad_pid()), 10)
