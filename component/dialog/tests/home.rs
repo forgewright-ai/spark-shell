@@ -283,9 +283,25 @@ fn the_model_has_no_control_in_the_head_in_both_views() {
             assert!(drawn.chips.iter().all(|c| c.2 == line), "both on the line at {width}");
             let words: String = (0..width).map(|x| buffer[(x, line)].symbol()).collect();
             assert!(!words.contains("fixture-model") && !words.contains("model"), "{:?}", words);
+            // where it is named: on the conversation's band, after the place, and nowhere on home's
+            let band: String = (0..width).map(|x| buffer[(x, 0)].symbol()).collect();
+            let named = band.contains("conversation \u{b7} fixture-model");
+            match (&app.view, width) {
+                (View::Conversation, 60 | 61 | 120) => assert!(named, "the conversation's band names the model at {width}: {:?}", band),
+                (View::Home, _) => assert!(!band.contains("fixture-model"), "home's band names no model: {:?}", band),
+                _ => {}
+            }
         }
     }
     assert_eq!(app.chips(), [0, 3], "Tab moves through attach and talk");
+    // asking off: no model answers, so the conversation's band says the place alone
+    app.view = View::Conversation;
+    app.model_on = false;
+    app.size = (60, 40);
+    let mut buffer = Buffer::empty(Rect::new(0, 0, 60, 40));
+    spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
+    let band: String = (0..60).map(|x| buffer[(x, 0)].symbol()).collect();
+    assert!(band.contains("conversation") && !band.contains("fixture-model"), "{:?}", band);
 }
 
 #[test]
