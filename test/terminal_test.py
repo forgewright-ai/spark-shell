@@ -30,7 +30,7 @@ def ok(cond, what):
 
 def helper(*args, **env_extra):
     env = {"PATH": "/usr/bin:/bin", "HOME": TMP, "XDG_CONFIG_HOME": os.path.join(TMP, "config"),
-           "SPARK_SHELL_NO_APPLY": "1"}
+           "SPARK_SHELL_NO_APPLY": "1", "SPARK_SHELL_ROOT": os.path.join(TMP, "sysroot")}   # a root of its own: never this machine's
     env.update(env_extra)
     p = subprocess.run([sys.executable, HELPER] + list(args), stdout=subprocess.PIPE,
                        stderr=subprocess.PIPE, universal_newlines=True, env=env, timeout=60)

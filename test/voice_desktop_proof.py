@@ -153,7 +153,8 @@ def main():
     stub = root / "ear-stub"
     stub.write_text(STUB % said)
     stub.chmod(0o755)
-    env = {**os.environ, "HOME": str(root), "XDG_CONFIG_HOME": str(root / ".config"), "XDG_STATE_HOME": str(root / ".local/state"),
+    # a root of its own too: with none, on writes this machine's own system files where sudo asks no password
+    env = {**os.environ, "HOME": str(root), "SPARK_SHELL_ROOT": str(root / "sysroot"), "XDG_CONFIG_HOME": str(root / ".config"), "XDG_STATE_HOME": str(root / ".local/state"),
            "XDG_DATA_HOME": str(root / ".local/share"), "XDG_RUNTIME_DIR": str(runtime), "WLR_BACKENDS": "headless",
            "WLR_RENDERER": "pixman", "WLR_LIBINPUT_NO_DEVICES": "1", "SPARK_SHELL_DIALOG_URL": "none", "SPARK_SHELL_FONT_URL": "none",
            "SPARK_SHELL_SEMANTIC_URL": "none", "SPARK_SHELL_WINPAD": pad}

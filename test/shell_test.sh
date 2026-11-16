@@ -9036,6 +9036,15 @@ wide=$(awk 'length > 80 {print FNR ": " length}' "$voice/help" | head -3 | paste
 [ -z "$wide" ] && ok "voice: every help line is 80 columns or fewer" || bad "voice: a help line is wider than 80 (line: width)" "$wide"
 wide=$(awk 'length > 80 {print FNR ": " length}' "$REPO/README.md" | head -3 | paste -sd, -)
 [ -z "$wide" ] && ok "voice: every README line is 80 columns or fewer" || bad "voice: a README line is wider than 80 (line: width)" "$wide"
+# no test acts on this machine's own system files: each proof, and each test that runs spark-shell with a home of its
+# own, names a root of its own too. With none, a step that needs root goes to sudo, and where sudo asks no password it
+# writes the machine's own files: a proof turned a login screen off that way (v0.150)
+_tr=''
+for _tf in layout_desktop_proof.py window_desktop_proof.py winpad_desktop_proof.py voice_desktop_proof.py bar_desktop_proof.py home_desktop_proof.py \
+    glyph_families_desktop_proof.py desktop_proof.sh bar_proof.sh terminal_test.py dialog_pty.py; do
+    grep -q 'SPARK_SHELL_ROOT' "$REPO/test/$_tf" 2>/dev/null || _tr="$_tr $_tf"
+done
+[ -z "$_tr" ] && ok "tests: the desktop proofs and the tests with a home of their own each have a root of their own (SPARK_SHELL_ROOT)" || bad "tests with no root of their own" "$_tr"
 rm -rf "$voice"
 
 fi
