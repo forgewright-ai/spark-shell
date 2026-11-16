@@ -214,14 +214,9 @@ fn the_frame_is_the_dialogs_own_column_in_the_middle() {
         let (ta, _) = d.title.expect("the title's cells");
         assert!(ta > left + 2 && head.contains("apps"), "the title centered at {}x{}: {:?}", w, h, head);
         assert_eq!(b[(w - 3, 0)].symbol(), "\u{d7}", "the x at the window's right at {}x{}", w, h);
-        assert_eq!(
-            b[(2, spark_dialog::ui::TOP_RULE_Y)].symbol(),
-            "\u{2500}",
-            "the rule from the window's edge at {}x{}",
-            w,
-            h
-        );
-        assert_eq!(b[(left + 2, spark_dialog::ui::PROMPT_Y)].symbol(), "\u{276f}");
+        // the frame's one rule, above the key bar, is the window's too
+        assert_eq!(b[(2, h - 4)].symbol(), "\u{2500}", "the rule from the window's edge at {}x{}", w, h);
+        assert_eq!(b[(left + 2, spark_dialog::ui::head(&a).prompt)].symbol(), "\u{276f}");
         let y = d.picks.iter().find(|(_, n)| *n == a.sel).unwrap().0;
         assert_eq!(
             b[(left + 4, y)].symbol(),
@@ -500,8 +495,8 @@ fn every_line_of_long_technical_metadata_is_reachable_by_paging() {
     for _ in 0..80 {
         let mut b = Buffer::empty(Rect::new(0, 0, 36, 20));
         spark_dialog::ui::draw(&a, &pal, "", &mut b);
-        // the content's rows at 20 rows: from CONTENT_Y to the status row
-        for y in 8..15 {
+        // the content's rows at 20 rows: from the list's first row to the status row, by the head's measure
+        for y in spark_dialog::ui::head(&a).content..spark_dialog::ui::status_y(20) {
             for x in 0..36 {
                 observed.push_str(b[(x, y)].symbol());
             }
@@ -818,8 +813,8 @@ fn details_values_reflow_and_the_footer_keeps_its_room() {
     for (w, h) in [(60, 40), (140, 50), (68, 49), (36, 20), (60, 40)] {
         let (_, d, _) = draw(&mut a, w, h);
         assert!(
-            d.chips.iter().all(|c| c.2 == spark_dialog::ui::TOOLS_Y),
-            "the prompt's tools on their row: {:?}",
+            d.chips.iter().all(|c| c.2 == spark_dialog::ui::head(&a).prompt),
+            "what else the line takes, on the line: {:?}",
             d.chips
         );
         assert!(
@@ -828,7 +823,7 @@ fn details_values_reflow_and_the_footer_keeps_its_room() {
         );
         for &(y, n) in &d.picks {
             assert!(matches!(&a.picks()[n], Item::Apps(l) if l.action.is_some()));
-            assert!(y >= spark_dialog::ui::CONTENT_Y);
+            assert!(y >= spark_dialog::ui::head(&a).content);
         }
     }
     let ls = a.apps.lines(36, "", None);

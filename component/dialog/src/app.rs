@@ -64,6 +64,8 @@ pub const INPUT_MAX: usize = 2000;
 /// What the prompt is for, in the two words the market settled on for a box that both filters a list and takes a
 /// question (the dialog design notes): typing searches at once, and asking is a row among the results.
 pub const PLACEHOLDER: &str = "search or ask";
+/// What it says where no model answers (none set, or asking turned off): it searches, and offers no more.
+pub const PLACEHOLDER_SEARCH: &str = "search";
 
 impl App {
     /// What the empty prompt says it takes: a form of apps names the one thing to type (the dialog design notes).
@@ -92,7 +94,16 @@ impl App {
         if let Some(p) = self.files_placeholder() {
             return p;
         }
-        PLACEHOLDER
+        if self.answers() {
+            PLACEHOLDER
+        } else {
+            PLACEHOLDER_SEARCH
+        }
+    }
+
+    /// Whether a model answers here: asking is part of this dialog, turned on, and a model is named.
+    pub fn answers(&self) -> bool {
+        self.cfg.model && self.model_on && self.model_name.is_some()
     }
 }
 /// Steps this machine counts as risky whatever their provider says (the hint is the provider's word,
@@ -4610,7 +4621,7 @@ impl App {
                 }
             }
             Item::ModelOpt(on) => {
-                // the choice applies at once and is kept; back to where the model control was clicked
+                // the choice applies at once and is kept; back to where the page was opened from
                 self.model_on = on;
                 model_keep(on);
                 self.reply = None;
@@ -4832,11 +4843,6 @@ impl App {
                 self.attaching = Some((self.view.clone(), self.came_from.len()));
                 self.open_children(f, &root);
             }
-            1 if self.cfg.model => {
-                if self.view != View::Models {
-                    self.go(View::Models);
-                }
-            }
             3 if self.cfg.talk && self.voice_on && self.talk == Talk::Click => {
                 if self.mode == Mode::Listening {
                     // a click on the mic again: stop, nothing kept (spark ends a recording at a pause)
@@ -4902,9 +4908,6 @@ impl App {
         }
         if self.attachment.is_some() {
             v.push(4);
-        }
-        if self.cfg.model {
-            v.push(1);
         }
         if self.cfg.talk && self.voice_on && self.talk == Talk::Click {
             v.push(3);

@@ -49,3 +49,53 @@ impl App {
         !matches!(self.view, View::Apps | View::Folder(..)) && self.mode == Mode::Normal
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::app::{App, Config, Mode, View, CALENDAR_DEST};
+
+    fn pairing() -> Mode {
+        Mode::Pair {
+            prov: 0,
+            id: serde_json::json!(1),
+            message: "the code".into(),
+            kind: "pin".into(),
+        }
+    }
+
+    /// The guard itself, whatever doors the frame has: what is typed as an answer is not saved when the view is
+    /// left, so it cannot come back as words; and a draft kept for a view does not land on an answer being typed.
+    #[test]
+    fn an_answer_is_never_saved_as_a_draft_and_a_draft_never_replaces_an_answer() {
+        let place = View::Dest(CALENDAR_DEST);
+        // at rest a draft is kept for its view and comes back: without this the two checks below prove nothing
+        let mut app = App::new(Config::default(), &[]);
+        app.view = place.clone();
+        app.set_draft("dentist");
+        app.prompt_depart();
+        app.set_draft("");
+        app.prompt_arrive();
+        assert_eq!(app.input, "dentist", "a draft typed at rest is kept for its view");
+
+        // a pairing code typed as an answer: leaving the view saves nothing of it
+        let mut app = App::new(Config::default(), &[]);
+        app.view = place.clone();
+        app.mode = pairing();
+        app.set_draft("123456");
+        app.prompt_depart();
+        app.mode = Mode::Normal;
+        app.set_draft("");
+        app.prompt_arrive();
+        assert!(app.input.is_empty(), "the code came back as words: {}", app.input);
+
+        // a draft kept for the view never takes the place of an answer being typed there
+        let mut app = App::new(Config::default(), &[]);
+        app.view = place;
+        app.set_draft("dentist");
+        app.prompt_depart();
+        app.mode = pairing();
+        app.set_draft("12");
+        app.prompt_arrive();
+        assert_eq!(app.input, "12", "the answer being typed is left alone");
+    }
+}

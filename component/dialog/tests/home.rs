@@ -162,7 +162,7 @@ fn a_configured_ask_key_asks_and_has_no_chip() {
 
 #[test]
 fn the_frame_is_one_shape_at_the_top_and_the_bottom_in_both_views() {
-    use spark_dialog::ui::{keys_y, TOOLS_Y, TOP_RULE_Y};
+    use spark_dialog::ui::{head, keys_y};
     let mut app = App::new(
         Config {
             plus: true,
@@ -195,25 +195,27 @@ fn the_frame_is_one_shape_at_the_top_and_the_bottom_in_both_views() {
                 .keys
                 .iter()
                 .all(|(start, end, y, _)| start < end && *end <= size.0 - 2 && (*y == keys_y(size.1) || *y == size.1 - 1)));
-            // the prompt's tools under the prompt, the diamond's rule under them, full since a model answers
-            for chip in [0, 1, 3] {
-                assert!(
-                    drawn.chips.iter().any(|(_, _, y, id)| *id == chip && *y == TOOLS_Y),
-                    "control {chip} on the tools row"
+            // what else the line takes stands on the line: attach and talk, and no control for the model
+            let line = head(&app).prompt;
+            for chip in [0, 3] {
+                assert!(drawn.chips.iter().any(|(_, _, y, id)| *id == chip && *y == line), "control {chip} on the line");
+            }
+            assert!(drawn.chips.iter().all(|(_, _, _, id)| *id != 1), "the model has no control in the head");
+            assert!(row(line).contains(" attach ") && row(line).contains(" talk "), "{:?}", row(line));
+            assert!(!row(line).contains("fixture-model"), "the model is named where it answers: {:?}", row(line));
+            // the line is the whole head: air under it, then the list, and no rule with a sign above the list
+            assert!(row(line + 1).trim().is_empty(), "a row of air between the line and the list");
+            assert_eq!(head(&app).content, line + 2);
+            for y in 0..head(&app).content {
+                assert_eq!(
+                    row(y).matches(['\u{2500}', '\u{25c7}', '\u{25c6}']).count(),
+                    0,
+                    "no rule above the list: {:?}",
+                    row(y)
                 );
             }
-            assert_eq!(row(TOP_RULE_Y).matches('\u{25c6}').count(), 1, "{:?}", row(TOP_RULE_Y));
             assert_eq!(row(size.1 - 4).matches(['\u{25c7}', '\u{25c6}']).count(), 0, "the bottom rule is plain");
             assert!(row(size.1 - 3).trim().is_empty(), "one full blank row above the keys");
-            if size.0 == 60 {
-                // the model's name alone: no place word for the default, no separator over the diamond, no glyph
-                assert!(
-                    row(TOOLS_Y).contains(" fixture-model ") && !row(TOOLS_Y).contains("local"),
-                    "{:?}",
-                    row(TOOLS_Y)
-                );
-                assert!(row(TOOLS_Y + 1).trim().is_empty(), "a row of air between the tools and the diamond's rule");
-            }
         }
     }
     app.view = View::Home;
@@ -265,34 +267,32 @@ fn a_new_try_at_talk_clears_the_last_refusal() {
 }
 
 #[test]
-fn model_selector_centers_above_the_diamond_in_both_views() {
+fn the_model_has_no_control_in_the_head_in_both_views() {
+    // the model is named where it answers (the ask row, the conversation's band), so the head offers attach and
+    // talk alone at every width; the model's own place is reached from settings
     let palette = common::palette("tokyonight-night");
     let mut app = footer_app();
     for view in [View::Home, View::Conversation] {
         app.view = view;
-        for width in [60, 61, 120] {
+        for width in [36, 60, 61, 120] {
             app.size = (width, 40);
             let mut buffer = Buffer::empty(Rect::new(0, 0, width, 40));
             let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
-            let &(start, end, y, _) = drawn.chips.iter().find(|(_, _, _, id)| *id == 1).unwrap();
-            assert!((start + end - 1).abs_diff(2 * (width / 2)) <= 1, "selector centered within one cell");
-            assert_eq!(y, spark_dialog::ui::TOOLS_Y, "the model on the tools row");
-            assert_eq!(
-                buffer[(width / 2, spark_dialog::ui::TOP_RULE_Y)].symbol(),
-                "\u{25c6}",
-                "the full diamond under it"
-            );
-            let label: String = (start..end).map(|x| buffer[(x, y)].symbol()).collect();
-            assert_eq!(label, " fixture-model ");
+            let line = spark_dialog::ui::head(&app).prompt;
+            assert_eq!(drawn.chips.iter().map(|c| c.3).collect::<Vec<_>>(), [0, 3], "attach, then talk, at {width}");
+            assert!(drawn.chips.iter().all(|c| c.2 == line), "both on the line at {width}");
+            let words: String = (0..width).map(|x| buffer[(x, line)].symbol()).collect();
+            assert!(!words.contains("fixture-model") && !words.contains("model"), "{:?}", words);
         }
     }
+    assert_eq!(app.chips(), [0, 3], "Tab moves through attach and talk");
 }
 
 #[test]
-fn narrow_footer_reserves_controls_and_keeps_hit_areas_on_their_labels() {
+fn the_line_keeps_its_controls_whole_and_the_draft_its_room_at_every_width() {
+    use spark_dialog::ui::{head, DRAFT_MIN};
     let palette = common::palette("tokyonight-night");
     let mut app = footer_app();
-    app.model_name = Some("a-model-name-too-long-to-fit-in-the-footer".into());
     let wide = "\u{754c}".repeat(30);
     for file in ["a-very-long-attachment-name.md", wide.as_str()] {
         app.attachment = Some(format!("/data/{}", file));
@@ -302,17 +302,20 @@ fn narrow_footer_reserves_controls_and_keeps_hit_areas_on_their_labels() {
                 app.size = (width, 40);
                 let mut buffer = Buffer::empty(Rect::new(0, 0, width, 40));
                 let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
+                let line = head(&app).prompt;
                 let mut chips = drawn.chips.clone();
                 chips.sort_by_key(|c| c.0);
-                assert_eq!(chips.iter().map(|c| c.3).collect::<Vec<_>>(), [0, 4, 1, 3]);
-                assert!(chips.windows(2).all(|cs| cs[0].1 < cs[1].0), "one cell between hit areas at {width}");
+                assert_eq!(chips.iter().map(|c| c.3).collect::<Vec<_>>(), [0, 4, 3], "the file, remove, talk at {width}");
+                // each control's pad is its own, so two may touch: a click lands on one and one only
+                assert!(chips.windows(2).all(|cs| cs[0].1 <= cs[1].0), "no hit area over another at {width}");
+                // a long name never takes the draft's room: the prompt's words start at column 4
+                assert!(chips[0].0 >= 4 + 1 + DRAFT_MIN, "the draft keeps {DRAFT_MIN} cells at {width}: {:?}", chips);
                 for &(start, end, y, id) in &chips {
-                    assert!(start >= 3 && start < end && end < width && y == spark_dialog::ui::TOOLS_Y);
+                    assert!(start < end && end < width && y == line, "{:?} at {width}", (start, end, y, id));
                     let label: String = (start..end).map(|x| buffer[(x, y)].symbol()).collect();
                     match id {
-                        0 => assert!(!label.trim().is_empty(), "an attachment remains visible"),
+                        0 => assert!(!label.trim().is_empty(), "an attachment remains visible at {width}"),
                         4 => assert_eq!(label, " remove "),
-                        1 if width == 36 => assert_eq!(label, " model "),
                         3 => assert_eq!(label, if app.mode == Mode::Listening { " cancel " } else { " talk " }),
                         _ => {}
                     }
@@ -423,23 +426,36 @@ fn footer_reservation_keeps_the_last_destination_visible_and_clickable_after_res
 /// coming back keeps nothing of it.
 #[test]
 fn an_answer_to_a_question_is_never_kept_as_a_draft() {
-    let mut app = app();
-    let here = View::Dest(spark_dialog::app::CALENDAR_DEST);
-    app.view = here.clone();
-    app.mode = Mode::Pair {
-        prov: 0,
-        id: json!(1),
-        message: "the code".into(),
-        kind: "pin".into(),
-    };
-    app.set_draft("123456");
-    app.chip(1);
-    assert_eq!(app.view, View::Models);
-    app.escape();
-    assert_eq!(app.mode, Mode::Normal);
-    app.escape();
-    assert_eq!(app.view, here);
-    assert!(app.input.is_empty(), "the code came back as words: {}", app.input);
+    // while a code is being typed nothing in the frame leaves the page: the line's controls and the conversation
+    // key wait for the answer, so the code stays in the open question alone, and Esc leaves the prompt empty.
+    // (The guard on saved drafts is pinned in interaction.rs, whatever doors the frame has.)
+    type Door = (&'static str, fn(&mut App));
+    let doors: [Door; 5] = [
+        ("attach", |a| a.chip(0)),
+        ("the model's old control", |a| a.chip(1)),
+        ("talk", |a| a.chip(3)),
+        ("the conversation key", |a| a.hint_key(HintKey::Conversation)),
+        ("the actions key", |a| a.hint_key(HintKey::Actions)),
+    ];
+    for (name, door) in doors {
+        let mut app = footer_app();
+        let here = View::Dest(spark_dialog::app::CALENDAR_DEST);
+        app.view = here.clone();
+        app.mode = Mode::Pair {
+            prov: 0,
+            id: json!(1),
+            message: "the code".into(),
+            kind: "pin".into(),
+        };
+        app.set_draft("123456");
+        door(&mut app);
+        assert_eq!(app.view, here, "{name} leaves the page while a code is being typed");
+        assert!(matches!(app.mode, Mode::Pair { .. }), "{name} ended the question");
+        assert_eq!(app.input, "123456", "{name} took the answer being typed");
+        app.escape();
+        assert_eq!((app.mode.clone(), app.view.clone()), (Mode::Normal, here), "Esc ends the question, on its page");
+        assert!(app.input.is_empty(), "the code came back as words after {name}: {}", app.input);
+    }
 }
 
 /// open_preview clears the prompt so the preview's keys work (#163): the

@@ -10,7 +10,7 @@ use spark_dialog::app::{App, Config, HintKey, Item, Mode, Provider, Step, Target
 use spark_dialog::model;
 use spark_dialog::palette::Palette;
 use spark_dialog::reply::{Mark, Reply};
-use spark_dialog::ui::{self, keys_y, Drawn, CONTENT_Y, PROMPT_Y, TOOLS_Y, TOP_RULE_Y};
+use spark_dialog::ui::{self, keys_y, Drawn};
 
 fn provider(label: &str, title: &str, rows: serde_json::Value, tools: serde_json::Value) -> Provider {
     let mut p = Provider::new(label);
@@ -310,38 +310,44 @@ fn the_frame_is_one_shape_top_and_bottom_and_the_reply_is_the_last_row_above_the
         "the view's keys at the bottom: {:?}",
         text(&buf, keys_y(40))
     );
-    // the top has the same shape: the prompt, its tools, the rule with the diamond, a row of air, the list
-    assert_eq!(
-        CONTENT_Y,
-        TOOLS_Y + 4,
-        "the tools, a row of air, the rule, a row of air, then the list, at every width"
-    );
-    assert_eq!(TOP_RULE_Y, TOOLS_Y + 2);
+    // the top is the line alone (the head): the prompt with what else it takes at its end, a row of air, the list.
+    // No tools row, no rule and no sign above the list: the model is named where it answers
+    let hd = ui::head(&app);
+    assert_eq!(hd.content, hd.prompt + 2, "the line, a row of air, then the list, at every width");
+    let line = text(&buf, hd.prompt);
     assert!(
-        text(&buf, TOOLS_Y + 1).trim().is_empty(),
-        "a row of air between the tools and the rule (v0.124.3)"
+        line.contains('\u{276f}') && line.contains(" talk "),
+        "what else the line takes, at its end: {:?}",
+        line
     );
-    let tools = text(&buf, TOOLS_Y);
-    assert!(tools.contains("gemma4") && tools.contains("talk"), "the prompt's tools under it: {:?}", tools);
-    assert!(text(&buf, TOP_RULE_Y).contains("\u{2500}"), "the rule under the tools");
-    assert!(
-        text(&buf, TOP_RULE_Y).contains('\u{25c6}'),
-        "the diamond full: a model answers: {:?}",
-        text(&buf, TOP_RULE_Y)
-    );
-    assert!(text(&buf, TOP_RULE_Y + 1).trim().is_empty(), "a row of air under the rule");
-    assert_eq!(drawn.picks[0].0, CONTENT_Y, "the list starts under the prompt's block");
+    assert!(!line.contains("gemma4"), "the model has no place on the line: {:?}", line);
+    assert!(line.contains("search or ask"), "a model answers, so the line takes a question too: {:?}", line);
+    assert!(text(&buf, hd.prompt + 1).trim().is_empty(), "a row of air between the line and the list");
+    for y in 0..hd.content {
+        let row = text(&buf, y);
+        assert!(
+            !row.contains(['\u{2500}', '\u{25c6}', '\u{25c7}']),
+            "no rule and no sign above the list: {:?}",
+            row
+        );
+    }
+    assert_eq!(drawn.picks[0].0, hd.content, "the list starts under the line");
     let (buf, drawn, _) = draw(&mut app, 36, 20);
-    assert_eq!(drawn.picks[0].0, CONTENT_Y, "narrow, the list stays where it is");
-    assert!(text(&buf, TOP_RULE_Y + 1).trim().is_empty(), "{:?}", text(&buf, TOP_RULE_Y + 1));
+    assert_eq!(drawn.picks[0].0, ui::head(&app).content, "narrow, the list stays where it is");
+    assert!(text(&buf, hd.prompt + 1).trim().is_empty(), "{:?}", text(&buf, hd.prompt + 1));
     assert!(text(&buf, keys_y(20)).contains("Esc"), "{:?}", text(&buf, keys_y(20)));
+    // no model answers: the line says so by what it takes, search alone; the family's hollow sign is drawn nowhere
     app.model_name = None;
     let (buf, _, _) = draw(&mut app, 60, 40);
-    assert!(
-        text(&buf, TOP_RULE_Y).contains('\u{25c7}') && !text(&buf, TOP_RULE_Y).contains('\u{25c6}'),
-        "the diamond hollow: no model answers: {:?}",
-        text(&buf, TOP_RULE_Y)
-    );
+    let line = text(&buf, hd.prompt);
+    assert!(line.contains("search") && !line.contains("search or ask"), "no model answers: {:?}", line);
+    for y in 0..40 {
+        assert!(
+            !text(&buf, y).contains(['\u{25c7}', '\u{25c6}']),
+            "no model sign in the frame at rest: {:?}",
+            text(&buf, y)
+        );
+    }
 
     // the row the words are for is a note on the status row, never in the footer
     let mut app = home();
@@ -393,7 +399,8 @@ fn one_frame_width_per_view_in_the_middle_of_the_window() {
                     end
                 );
             }
-            assert_eq!(buf[(left + 2, PROMPT_Y)].symbol(), "\u{276f}", "{:?} at {}x{}: the prompt", view, w, h);
+            let hd = ui::head(&app);
+            assert_eq!(buf[(left + 2, hd.prompt)].symbol(), "\u{276f}", "{:?} at {}x{}: the prompt", view, w, h);
             assert_eq!(
                 buf[(2, keys_y(h))].symbol().to_lowercase(),
                 buf[(2, keys_y(h))].symbol(),
@@ -410,14 +417,14 @@ fn one_frame_width_per_view_in_the_middle_of_the_window() {
                 w,
                 h
             );
-            assert_eq!(buf[(left + 2, TOP_RULE_Y)].symbol(), "\u{2500}", "{:?} at {}x{}: the top rule", view, w, h);
-            assert_eq!(
-                buf[(left + width - 3, TOP_RULE_Y)].symbol(),
-                "\u{2500}",
-                "{:?} at {}x{}: the top rule ends with the column",
+            // the head is the line alone: a row of air under it in every view, no rule between it and the list
+            assert!(
+                text(&buf, hd.prompt + 1).trim().is_empty(),
+                "{:?} at {}x{}: air under the line: {:?}",
                 view,
                 w,
-                h
+                h,
+                text(&buf, hd.prompt + 1)
             );
             assert_eq!(buf[(left + 2, h - 4)].symbol(), "\u{2500}", "{:?} at {}x{}: the rule", view, w, h);
             assert_eq!(
@@ -429,9 +436,9 @@ fn one_frame_width_per_view_in_the_middle_of_the_window() {
                 h
             );
             assert_eq!(
-                buf[(left + width - 3, TOOLS_Y)].symbol(),
+                buf[(left + width - 3, hd.prompt)].symbol(),
                 "k",
-                "{:?} at {}x{}: talk ends at the column's inset, on the tools row",
+                "{:?} at {}x{}: talk ends at the column's inset, on the line",
                 view,
                 w,
                 h
@@ -683,8 +690,9 @@ fn a_places_second_column_is_its_state_from_what_the_dialog_already_holds() {
     // the about page opens on the versions, the dialog's own aligned under the installed release (the dialog design notes, v0.127)
     app.view = View::About;
     let (buf, _, _) = draw(&mut app, 60, 40);
-    assert!(text(&buf, CONTENT_Y).contains("spark-shell  v0.124"), "{:?}", text(&buf, CONTENT_Y));
-    assert!(text(&buf, CONTENT_Y + 1).contains("spark-dialog v"), "{:?}", text(&buf, CONTENT_Y + 1));
+    let top = ui::head(&app).content;
+    assert!(text(&buf, top).contains("spark-shell  v0.124"), "{:?}", text(&buf, top));
+    assert!(text(&buf, top + 1).contains("spark-dialog v"), "{:?}", text(&buf, top + 1));
 }
 
 #[test]
@@ -803,7 +811,8 @@ fn back_has_more_doors_than_its_chip() {
     app.backspace();
     assert_eq!(app.view, View::Apps, "with words typed the keys edit them");
     let (buf, _, _) = draw(&mut app, 60, 40);
-    assert!(text(&buf, PROMPT_Y).contains("fie"), "{:?}", text(&buf, PROMPT_Y));
+    let line = ui::head(&app).prompt;
+    assert!(text(&buf, line).contains("fie"), "{:?}", text(&buf, line));
     app.set_draft("");
     assert!(app.can_go_back());
     let (buf, drawn, _) = draw(&mut app, 60, 40);
@@ -813,22 +822,35 @@ fn back_has_more_doors_than_its_chip() {
 
 #[test]
 fn asking_off_turns_the_model_off_everywhere_and_is_the_model_pages_first_choice() {
-    // the dialog design notes (v0.124.3): off, nothing is asked: no ask row, the diamond hollow, Ctrl+Enter refused with
-    // the reason, the control reading model off; the choice is a row of the model page and applies at once
+    // the dialog design notes (v0.124.3): off, nothing is asked: no ask row, Ctrl+Enter refused with the reason, and
+    // the line takes a search alone; the choice is a row of the model's page and applies at once. The head holds
+    // no control and no sign for the model: its page opens from settings, by the model's row in connections
     let mut app = home();
     assert!(app.model_on, "on unless turned off");
+    let line_of = |app: &mut App| {
+        let (buf, _, _) = draw(app, 60, 40);
+        text(&buf, ui::head(app).prompt)
+    };
+    assert!(
+        line_of(&mut app).contains("search or ask"),
+        "on, the line takes a question: {:?}",
+        line_of(&mut app)
+    );
     app.model_on = false;
+    let line = line_of(&mut app);
+    assert!(line.contains("search") && !line.contains("search or ask"), "off, a search alone: {:?}", line);
     for c in "zebra".chars() {
         app.typed(c);
     }
     assert!(!app.items().iter().any(|it| matches!(it, Item::Ask)), "no ask row with the model off");
     let (buf, _, _) = draw(&mut app, 60, 40);
-    assert!(
-        text(&buf, TOP_RULE_Y).contains('\u{25c7}') && !text(&buf, TOP_RULE_Y).contains('\u{25c6}'),
-        "the diamond hollow: {:?}",
-        text(&buf, TOP_RULE_Y)
-    );
-    assert!(text(&buf, TOOLS_Y).contains("model off"), "{:?}", text(&buf, TOOLS_Y));
+    for y in 0..40 {
+        assert!(
+            !text(&buf, y).contains(['\u{25c7}', '\u{25c6}']),
+            "no model sign in the frame: {:?}",
+            text(&buf, y)
+        );
+    }
     app.ask();
     assert!(
         app.reply.as_ref().is_some_and(|r| r.text.contains("the model is off")),
@@ -837,7 +859,24 @@ fn asking_off_turns_the_model_off_everywhere_and_is_the_model_pages_first_choice
     );
     app.set_draft("");
     app.reply = None;
-    app.chip(1);
+    // the way to the model's page: settings, connections, the model's row
+    let open = |app: &mut App, words: &str| {
+        let (buf, drawn, _) = draw(app, 60, 40);
+        let rows: Vec<String> = drawn.picks.iter().map(|(y, _)| text(&buf, *y).trim().to_string()).collect();
+        let n = drawn
+            .picks
+            .iter()
+            .find(|(y, _)| text(&buf, *y).trim_start().starts_with(words))
+            .map(|(_, n)| *n)
+            .unwrap_or_else(|| panic!("no row {:?} in {:?}: {:?}", words, app.view, rows));
+        app.light(n);
+        app.enter();
+    };
+    app.view = View::Dest(SETTINGS_DEST);
+    open(&mut app, "connections");
+    assert_eq!(app.view, View::Connections);
+    // the row under the model heading names the model and where it runs
+    open(&mut app, "gemma4-26b-a4b");
     assert_eq!(app.view, View::Models);
     let items = app.items();
     assert!(matches!(&items[0], Item::Heading(h) if h == "asking"), "{:?}", items.first());
@@ -858,15 +897,10 @@ fn asking_off_turns_the_model_off_everywhere_and_is_the_model_pages_first_choice
     app.light(on_n);
     app.enter();
     assert!(app.model_on, "the choice applies at once");
-    assert_eq!(app.view, View::Home, "and the page gives way to where the control was clicked");
-    let (buf, _, _) = draw(&mut app, 60, 40);
-    let tools = text(&buf, TOOLS_Y);
-    assert!(
-        tools.contains(" gemma4-26b-a4b ") && !tools.contains("local") && !tools.contains('\u{2304}') && !tools.contains('\u{b7}'),
-        "the model's name alone on the control: {:?}",
-        tools
-    );
-    assert!(text(&buf, TOP_RULE_Y).contains('\u{25c6}'), "the diamond full again");
+    assert_eq!(app.view, View::Connections, "and the page gives way to where it was opened from");
+    let line = line_of(&mut app);
+    assert!(line.contains("search or ask"), "on again, the line takes a question: {:?}", line);
+    assert!(!line.contains("gemma4"), "and still names no model: {:?}", line);
 }
 
 #[test]
@@ -900,11 +934,14 @@ fn the_header_is_back_the_centered_title_and_the_x_and_the_chrome_takes_a_wide_w
     // a wide window: the chrome at its width, the column in the middle
     let (buf, drawn, pal) = draw(&mut app, 100, 40);
     let left = (100 - 60) / 2;
-    assert_eq!(buf[(left + 2, PROMPT_Y)].symbol(), "\u{276f}", "the prompt sign at the column's edge");
-    assert_eq!(buf[(2, TOP_RULE_Y)].symbol(), "\u{2500}", "the rule from the window's edge");
-    assert_eq!(buf[(97, TOP_RULE_Y)].symbol(), "\u{2500}", "to the window's edge");
-    assert_eq!(buf[(50, TOP_RULE_Y)].symbol(), "\u{25c6}", "the diamond in the middle");
-    assert_eq!(buf[(2, 36)].symbol(), "\u{2500}", "the plain rule too");
+    assert_eq!(
+        buf[(left + 2, ui::head(&app).prompt)].symbol(),
+        "\u{276f}",
+        "the prompt sign at the column's edge"
+    );
+    // the frame's one rule, above the key bar, runs the window's width
+    assert_eq!(buf[(2, 36)].symbol(), "\u{2500}", "the rule from the window's edge");
+    assert_eq!(buf[(97, 36)].symbol(), "\u{2500}", "to the window's edge");
     assert_eq!(buf[(97, 0)].symbol(), "\u{d7}", "the x at the window's right");
     assert_eq!(drawn.back.map(|(a, _)| a), Some(2), "back at the window's left");
     assert_eq!(drawn.keys.iter().map(|k| k.0).min(), Some(2), "the key bar at the window's left");
@@ -1013,7 +1050,7 @@ fn the_header_is_a_band_across_the_window_and_its_words_are_in_the_text_color() 
     assert!(pal.band != pal.lit && pal.band != pal.surface && pal.band != pal.accent, "a slot of its own");
     assert!((0..60).all(|x| buf[(x, 0)].bg == pal.band), "the band spans the window: {:?}", text(&buf, 0));
     assert!((0..60).all(|x| buf[(x, 1)].bg != pal.band), "the band is one row");
-    assert!((0..60).all(|x| buf[(x, CONTENT_Y)].bg != pal.band), "a list row never wears it");
+    assert!((0..60).all(|x| buf[(x, ui::head(&app).content)].bg != pal.band), "a list row never wears it");
     let (a, _) = drawn.title.unwrap();
     assert_eq!(buf[(a, 0)].fg, pal.fg, "the title in the text color");
     assert!(buf[(a, 0)].modifier.contains(Modifier::BOLD), "and bold");
@@ -1184,7 +1221,10 @@ fn a_question_is_a_page_of_choices_and_the_typed_yes_is_gone() {
         "the verb in the header: {:?}",
         text(&buf, 0)
     );
-    let rows: Vec<String> = (CONTENT_Y..35).map(|y| text(&buf, y).trim().to_string()).filter(|s| !s.is_empty()).collect();
+    let rows: Vec<String> = (ui::head(&app).content..35)
+        .map(|y| text(&buf, y).trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
     assert_eq!(
         rows,
         vec!["close the window terminal", "close the window terminal", "keep working"],

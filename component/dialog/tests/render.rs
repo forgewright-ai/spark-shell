@@ -205,7 +205,8 @@ fn symbols(app: &App) -> Vec<Vec<String>> {
 }
 
 /// The glyph families (#248): Star and Banner draw the model picker as Stone does, sign for sign, and nothing
-/// else moves. The model's sign on the rule, a choice's on and off, each the family's own; a switch too.
+/// else moves. A choice's on and off, each the family's own; a switch too. The model's own sign is on neither
+/// page: it stands before an answer, and the head holds none.
 #[test]
 fn every_family_draws_the_same_page_with_its_own_signs() {
     use spark_dialog::glyphs::{BANNER, STAR, STONE};
@@ -223,7 +224,9 @@ fn every_family_draws_the_same_page_with_its_own_signs() {
     details.apps_activate(spark_dialog::apps::Action::Details("org.mozilla.firefox.desktop".into()));
     details.apps.pending = None;
     details.light(2); // the switch
-    for (name, mut app) in [("models", models), ("apps-details", details)] {
+                      // what each page shows of the family, at least: the model picker its two choices of asking, an app's details
+                      // its one switch
+    for (name, least, mut app) in [("models", 2, models), ("apps-details", 1, details)] {
         let stone = symbols(&app);
         for g in [STAR, BANNER] {
             app.glyphs = g;
@@ -235,12 +238,7 @@ fn every_family_draws_the_same_page_with_its_own_signs() {
                         continue;
                     }
                     changed += 1;
-                    let pair = [
-                        (STONE.model_on, g.model_on),
-                        (STONE.model_off, g.model_off),
-                        (STONE.dot, g.dot),
-                        (STONE.ring, g.ring),
-                    ];
+                    let pair = [(STONE.dot, g.dot), (STONE.ring, g.ring)];
                     assert!(
                         pair.contains(&(sa.as_str(), sb.as_str())),
                         "{} in {}: ({}, {}) is {:?} for {:?}",
@@ -253,7 +251,7 @@ fn every_family_draws_the_same_page_with_its_own_signs() {
                     );
                 }
             }
-            assert!(changed >= 2, "{} in {}: the signs changed ({})", name, g.name, changed);
+            assert!(changed >= least, "{} in {}: the signs changed ({}, {} at least)", name, g.name, changed, least);
         }
     }
     let mut star = full();
@@ -435,7 +433,7 @@ fn a_list_of_a_thousand_pages_and_jumps_by_its_keys() {
     app.view = View::Section(3);
     app.came_from = vec![View::Home];
     app.in_list = true;
-    let step = app.size.1.saturating_sub(spark_dialog::ui::CONTENT_Y + spark_dialog::ui::BOTTOM + 1).max(4) as usize;
+    let step = app.list_room().saturating_sub(1).max(4) as usize;
     app.page(1);
     assert_eq!(app.sel, step, "Page Down: the lit row a screen down");
     app.line_end();
@@ -976,25 +974,40 @@ fn the_calendar_shows_the_time_in_large_figures() {
     let app = calendar_app(true);
     let (b, p, rows) = drawn(&app);
     let block = "\u{2588}";
-    assert!(rows[8..13].iter().all(|r| r.contains(block)), "five rows of figures under the hint");
-    assert!(!rows[7].contains(block) && !rows[13].contains(block), "a row of air above and below them");
-    assert_eq!(b[(2, 8)].fg, p.accent, "in the accent");
+    // the figures are the page's first five rows, from the list's first row by the head's measure
+    let top = spark_dialog::ui::head(&app).content as usize;
+    assert!(
+        rows[top..top + 5].iter().all(|r| r.contains(block)),
+        "five rows of figures at the top of the page"
+    );
+    assert!(
+        !rows[top - 1].contains(block) && !rows[top + 5].contains(block),
+        "a row of air above and below them"
+    );
+    assert_eq!(b[(2, top as u16)].fg, p.accent, "in the accent");
     let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
     spark_dialog::ui::draw(&app, &p, "Sun 18 Oct \u{b7} 9:05 PM", &mut b);
     let row = |y: u16| (0..WIDTH).map(|x| b[(x, y)].symbol().to_string()).collect::<String>();
+    let (first, last) = (top as u16, top as u16 + 4);
     assert!(
-        row(12).trim_end().ends_with("PM"),
-        "a twelve-hour clock says PM beside the figures: {}",
-        row(12)
+        row(last).trim_end().ends_with("PM"),
+        "a twelve-hour clock says PM beside the figures, on their last row: {}",
+        row(last)
     );
-    assert_eq!((8..13).filter_map(|y| at(&row(y), block)).min(), Some(2), "a 9 starts at the months' left edge");
+    assert_eq!(
+        (first..=last).filter_map(|y| at(&row(y), block)).min(),
+        Some(2),
+        "a 9 starts at the months' left edge"
+    );
 }
 
 #[test]
 fn the_calendar_draws_this_month_and_the_next_side_by_side() {
-    let (_, _, rows) = drawn(&calendar_app(true));
+    let app = calendar_app(true);
+    let (_, _, rows) = drawn(&app);
     let y = rows.iter().position(|r| r.starts_with("  October 2026")).expect("this month");
-    assert_eq!(y, 14, "under the prompt's block, the hint and the time's five rows of figures");
+    let top = spark_dialog::ui::head(&app).content as usize;
+    assert_eq!(y, top + 5 + 1, "under the head: the time's five rows of figures, a row of air, then the months");
     assert_eq!(at(&rows[y], "November 2026"), Some(32), "the next month on the same row");
     assert_eq!(at(&rows[y + 1], "Su"), Some(2));
     assert_eq!(rows[y + 1].matches("Su").count(), 2, "a weekday line under each month");

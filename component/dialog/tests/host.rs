@@ -1572,6 +1572,24 @@ fn talk_puts_what_was_heard_in_the_draft_and_esc_keeps_the_draft() {
     assert!(!app.chips().contains(&3));
 }
 
+/// The model's page as a person opens it: settings, then connections, then the row under the model heading. The
+/// head holds no control for the model (it is named where it answers).
+fn open_models(app: &mut App) {
+    app.view = View::Dest(SETTINGS_DEST);
+    typed(app, "connections");
+    app.enter();
+    assert_eq!(app.view, View::Connections, "settings, then connections");
+    let k = app
+        .picks()
+        .iter()
+        .position(|i| matches!(i, Item::OpenModels))
+        .unwrap_or_else(|| panic!("no model row in connections: {:?}", app.picks()));
+    app.in_list = true;
+    app.sel = k;
+    app.enter();
+    assert_eq!(app.view, View::Models);
+}
+
 #[test]
 fn a_model_picked_is_reviewed_first_and_the_draft_waits() {
     let (mut app, _rx, _c, _r) = started();
@@ -1581,9 +1599,12 @@ fn a_model_picked_is_reviewed_first_and_the_draft_waits() {
         Ok("gemma\trepo\t1\t1\tx\tline\t-\tserving\nqwen\trepo\t1\t1\tx\tline\t-\tdownloaded\nbig\trepo\t1\t1\tx\tline\t-\t-\n".into()),
     );
     assert_eq!(app.model_name.as_deref(), Some("gemma"));
-    typed(&mut app, "half a thought");
+    // the head holds no control for the model: its page opens from settings, by the model's row in connections
     app.chip(1);
-    assert_eq!(app.view, View::Models);
+    assert_eq!(app.view, View::Home, "the head's old control for the model is gone");
+    open_models(&mut app);
+    // the model's page takes the request's words, as home does: a thought begun here waits through the review
+    typed(&mut app, "half a thought");
     let models: Vec<Item> = app.picks().into_iter().filter(|i| matches!(i, Item::Model(_))).collect();
     assert_eq!(models, vec![Item::Model(0), Item::Model(1)], "a model not downloaded is shown, not offered");
     let k = app.picks().iter().position(|i| *i == Item::Model(1)).unwrap();
@@ -1974,15 +1995,26 @@ fn a_glyph_family_step_changes_the_dialogs_signs_at_once() {
     assert!(pump(&mut app, &rx, |a| a.glyphs == spark_dialog::glyphs::STAR), "star from the step's palette");
     app.right();
     assert!(pump(&mut app, &rx, |a| a.glyphs == spark_dialog::glyphs::BANNER), "then banner");
-    let rule: String = {
+    // the family's model sign stands where the model answers: an answer drawn now wears banner's, not stone's
+    app.exchange.push(spark_dialog::app::Line {
+        sign: spark_dialog::app::Sign::Says,
+        text: "An answer.".into(),
+    });
+    app.view = View::Conversation;
+    let signs: Vec<String> = {
         let mut b = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, app.size.0, app.size.1));
         spark_dialog::ui::draw(&app, &palette("tokyonight-night"), "", &mut b);
-        (0..app.size.0).map(|x| b[(x, spark_dialog::ui::TOP_RULE_Y)].symbol().to_string()).collect()
+        let top = spark_dialog::ui::head(&app).content;
+        (top..spark_dialog::ui::status_y(app.size.1))
+            .map(|y| b[(4, y)].symbol().to_string())
+            .filter(|c| !c.trim().is_empty())
+            .collect()
     };
-    assert!(
-        rule.contains(spark_dialog::glyphs::BANNER.model_off),
-        "the rule wears banner's model sign: {:?}",
-        rule
+    assert_eq!(
+        signs,
+        [spark_dialog::glyphs::BANNER.model_on],
+        "the answer wears banner's model sign, and stone's is gone: {:?}",
+        signs
     );
 }
 
@@ -2174,11 +2206,12 @@ fn the_march_is_sparks_alone() {
         "the march is the header's: {:?}",
         header
     );
-    let keys: String = (0..60).map(|x| buffer[(x, 4)].symbol()).collect();
+    // the line holds the controls' labels (attach, talk) at its end: the march never stands among them
+    let line: String = (0..60).map(|x| buffer[(x, spark_dialog::ui::head(&app).prompt)].symbol()).collect();
     assert!(
-        !keys.contains(&progress::bar(Work::Think, &spark_dialog::glyphs::STONE, 3)),
+        !line.contains(&progress::bar(Work::Think, &spark_dialog::glyphs::STONE, 3)),
         "and never a label's: {:?}",
-        keys
+        line
     );
     app.helper(spark_dialog::app::Helper::Want(app.want_serial), Err("no answer".into()));
     assert!(!app.busy(), "the answer, or the lack of one, ends it");
@@ -2192,7 +2225,7 @@ fn a_model_that_loads_is_a_swell_and_a_recording_waits_like_a_thought() {
         spark_dialog::app::Helper::Models,
         Ok("gemma\trepo\t1\t1\tx\tline\t-\tserving\nqwen\trepo\t1\t1\tx\tline\t-\tdownloaded\n".into()),
     );
-    app.chip(1);
+    open_models(&mut app);
     let k = app.picks().iter().position(|i| *i == Item::Model(1)).unwrap();
     app.in_list = true;
     app.sel = k;
@@ -2853,10 +2886,15 @@ fn frame(app: &App) -> (Vec<String>, Option<u16>) {
 /// The status row at 60 by 40: the last row above the divider, the one place a message is written.
 const STATUS: usize = 35;
 
-/// The list's rows, 7 to 34, but for the lit row (a switch's own control), with a check read as a blank: a pick
-/// moves its check from the row kept before, and nothing else.
-fn list_but(rows: &[String], y: Option<u16>) -> Vec<String> {
-    (7..STATUS).filter(|r| Some(*r as u16) != y).map(|r| rows[r].replace('\u{2713}', " ")).collect()
+/// The list's rows, from the row of air above its first (the head's measure) to the status row, but for the lit
+/// row (a switch's own control), with a check read as a blank: a pick moves its check from the row kept before,
+/// and nothing else.
+fn list_but(app: &App, rows: &[String], y: Option<u16>) -> Vec<String> {
+    let air = spark_dialog::ui::head(app).content as usize - 1;
+    (air..STATUS)
+        .filter(|r| Some(*r as u16) != y)
+        .map(|r| rows[r].replace('\u{2713}', " "))
+        .collect()
 }
 
 #[test]
@@ -2875,14 +2913,14 @@ fn a_pick_of_any_kind_keeps_every_other_row_still_and_a_refusal_lands_under_the_
         }
         let (during, y1) = frame(&app);
         assert_eq!(y, y1, "{}: the lit row keeps its place while the call runs", id);
-        assert_eq!(list_but(&before, y), list_but(&during, y), "{}: no other row moves", id);
+        assert_eq!(list_but(&app, &before, y), list_but(&app, &during, y), "{}: no other row moves", id);
         assert_eq!(before[STATUS], during[STATUS], "{}: nothing said at the click", id);
         assert!(pump(&mut app, &rx, |a| a.reply.is_some() || !a.under_way()));
         std::thread::sleep(Duration::from_millis(50));
         pump_for(&mut app, &rx, QUIET, |_| false);
         let (after, y2) = frame(&app);
         assert_eq!(y, y2, "{}: and after it", id);
-        assert_eq!(list_but(&before, y), list_but(&after, y), "{}: no other row moved", id);
+        assert_eq!(list_but(&app, &before, y), list_but(&app, &after, y), "{}: no other row moved", id);
         if refused {
             assert!(
                 after[STATUS].contains('\u{2717}') && after[STATUS].contains("the bar stays in signs"),
@@ -2955,13 +2993,16 @@ fn space_on_a_row_with_no_page_types_nothing_and_a_switch_found_by_words_flips()
 
 #[test]
 fn typed_words_get_one_reply_row_and_the_frame_holds_still() {
-    // #196: the prompt is two rows, the keys rows 4 and 5, the list from row 7, the status row above the divider,
-    // whatever is typed, said or refused; a typed command's receipt and a refusal change the status row alone
+    // #196: the prompt is two rows, the list starts under them and the status row stands above the divider,
+    // whatever is typed, said or refused; a typed command's receipt and a refusal change the status row alone.
+    // The rows are read by the head's own measure, never by number
     let (mut app, rx, _calls) = theme_app("theme_glyphs");
     at_row(&mut app, View::Section(0), 0);
     app.in_list = false;
     let (before, _) = frame(&app);
-    let still = |a: &[String], b: &[String], skip: &str| (7..STATUS).filter(|r| !a[*r].contains(skip)).all(|r| a[r] == b[r]);
+    // the list's rows by the head's own measure, from the row of air above its first
+    let air = spark_dialog::ui::head(&app).content as usize - 1;
+    let still = |a: &[String], b: &[String], skip: &str| (air..STATUS).filter(|r| !a[*r].contains(skip)).all(|r| a[r] == b[r]);
     // a typed command: its receipt on the status row, the list as it was but for the value it changed
     typed(&mut app, "theme text 11");
     app.enter();
@@ -2989,8 +3030,10 @@ fn typed_words_get_one_reply_row_and_the_frame_holds_still() {
     // a receipt of several lines is one row, cut to the window
     app.reply = Some(Reply::new(Mark::Done, &"a long receipt that runs on\n".repeat(6)));
     let (long, _) = frame(&app);
+    // the rows by the head's own measure: the line, its second row, the list's first
+    let (line, top) = (spark_dialog::ui::head(&app).prompt as usize, spark_dialog::ui::head(&app).content as usize);
     assert!(
-        still(&refused, &long, "\u{0}") && long[7] == refused[7],
+        still(&refused, &long, "\u{0}") && long[top - 1] == refused[top - 1],
         "a long receipt is the status row alone"
     );
     // a draft of five lines: the prompt stays two rows and scrolls inside them
@@ -3002,23 +3045,26 @@ fn typed_words_get_one_reply_row_and_the_frame_holds_still() {
         typed(&mut app, l);
     }
     let (draft, _) = frame(&app);
+    assert_eq!(top, line + 2, "the prompt's two rows, then the list");
     assert!(
-        draft[3].contains("five") && draft[2].contains("four") && !draft[4].contains("three"),
+        draft[line + 1].contains("five") && draft[line].contains("four") && !draft[top].contains("three"),
         "{:?}",
-        &draft[2..5]
+        &draft[line..=top]
     );
+    // the head is the line alone: no Ask chip in it, and no rule between it and the list
     assert!(
-        !draft[4].contains("Ctrl+Enter") && draft[5].trim().is_empty() && draft[6].contains('\u{2500}'),
-        "no Ask chip under the input, a row of air, then the prompt's rule under its tools: {:?}",
-        &draft[4..7]
+        draft[..top].iter().all(|r| !r.contains("Ctrl+Enter") && !r.contains('\u{2500}')),
+        "no Ask chip and no rule above the list: {:?}",
+        &draft[..top]
     );
-    // a search: rows go, none comes above the list, and the first is at row 8 (CONTENT_Y)
+    // a search: rows go, none comes above the list, and the first is on the list's first row
     app.set_draft("");
     typed(&mut app, "text");
     let (search, y) = frame(&app);
-    assert!(!search[7].contains("Ask spark") && !search[8].contains("Ask spark"), "no Ask row");
-    assert!(search[8].contains("text") || search[8].contains("Text"), "{:?}", &search[7..10]);
-    assert!(y.is_some_and(|y| y >= 8));
+    assert!(search[..=top].iter().all(|r| !r.contains("Ask spark")), "no Ask row");
+    assert!(search[top - 1].trim().is_empty(), "air between the line and the list: {:?}", search[top - 1]);
+    assert!(search[top].contains("text") || search[top].contains("Text"), "{:?}", &search[line..top + 2]);
+    assert!(y.is_some_and(|y| y as usize >= top));
 }
 
 #[test]

@@ -1,7 +1,7 @@
 //! The glyph families (#248): a theme's signs, one set of three, every glyph Monaspace Neon's own and one
 //! cell wide (test/glyph_check.py holds the build to that). Stone is today's look and the default; Star
 //! is thin and clear, stars and fine lines; Banner is banners and the scribe's marks. A family styles the
-//! model's sign on the top rule, a choice's on and off, a row that opens, the list bullet, and the header's
+//! model's sign before its answer, a choice's on and off, a row that opens, the list bullet, and the header's
 //! three animations: thinking (its sign moving on dots), a layout opening (its gauge pair filling) and a
 //! model loading (its gauge pair growing from the middle). The bar draws the same family's gauge pair and
 //! workspaces (spark-shell's family_set).
@@ -15,8 +15,9 @@
 pub struct Glyphs {
     /// Its name as the config and a saved theme write it.
     pub name: &'static str,
-    /// The model's sign on the top rule: a model answers, or none does.
+    /// The model's sign, before its words in the conversation.
     pub model_on: &'static str,
+    /// Its hollow pair, for no model answering. Drawn nowhere since the head lost its rule; the family keeps it.
     pub model_off: &'static str,
     /// A choice: the one in use, and the others.
     pub dot: &'static str,

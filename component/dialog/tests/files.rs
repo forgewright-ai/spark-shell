@@ -1963,7 +1963,7 @@ fn a_rows_words_end_two_cells_before_the_edge() {
         let p = palette("tokyonight-night");
         let mut b = Buffer::empty(Rect::new(0, 0, w, hh));
         let d = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
-        for y in spark_dialog::ui::CONTENT_Y..spark_dialog::ui::status_y(hh) {
+        for y in spark_dialog::ui::head(&app).content..spark_dialog::ui::status_y(hh) {
             let row = &screen[y as usize];
             let tail: String = row.chars().skip(w as usize - 2).collect();
             assert_eq!(tail, "  ", "{}x{} row {}: the last two cells empty: {:?}", w, hh, y, row);
@@ -3472,7 +3472,8 @@ fn the_name_a_rename_offers_is_drawn_on_the_selections_background() {
         let p = palette("tokyonight-night");
         let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
         spark_dialog::ui::draw(app, &p, CLOCK, &mut b);
-        (b[(x, 2)].symbol().to_string(), b[(x, 2)].bg == p.lit)
+        let line = spark_dialog::ui::head(app).prompt;
+        (b[(x, line)].symbol().to_string(), b[(x, line)].bg == p.lit)
     };
     let mut app = files_app();
     app.size = (WIDTH, HEIGHT);

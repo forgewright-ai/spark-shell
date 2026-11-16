@@ -36,28 +36,19 @@ pub const DIVIDE: &str = "\u{2502}";
 /// A color's sample: two full blocks, about a square in a terminal cell's shape.
 pub const SAMPLE: &str = "\u{2588}\u{2588}";
 pub const SEP: &str = " \u{b7} ";
-/// The rows, fixed whatever is typed, attached or lit (#196): the prompt's two, the prompt's tools (attach, the
-/// model, talk), the rule with the diamond, a row of air, where the list starts. Top and bottom have one shape:
-/// a strip, a rule, a row of air, then content (the dialog design notes).
-pub const PROMPT_Y: u16 = 2;
-pub const TOOLS_Y: u16 = 4;
-pub const TOP_RULE_Y: u16 = 6;
-pub const CONTENT_Y: u16 = 8;
-/// The head's rows in this dialog: the prompt's first, its tools, the rule, the list's first. One source for
-/// the frame and for the room a list counts.
+/// The head's rows, fixed whatever is typed, attached or lit (#196): the line, which is the whole head, and
+/// where the list starts. The line holds the prompt and, at its end, what else it takes (attach, talk); a draft
+/// too long for it runs onto the row under it, which is air else. A band of the dialog's own takes the first row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Head {
     pub prompt: u16,
-    pub tools: u16,
-    pub rule: u16,
     pub content: u16,
 }
-pub fn head(_app: &App) -> Head {
+pub fn head(app: &App) -> Head {
+    let top = u16::from(app.cfg.band);
     Head {
-        prompt: PROMPT_Y,
-        tools: TOOLS_Y,
-        rule: TOP_RULE_Y,
-        content: CONTENT_Y,
+        prompt: top + 1,
+        content: top + 3,
     }
 }
 /// The bottom: air, the status row, the plain rule, a blank row, the key bar, its second line.
@@ -491,7 +482,7 @@ fn draw_layout(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
             g: app.glyphs,
         };
         header(app, &mut pen, &mut drawn);
-        rules(app, &mut pen);
+        rules(&mut pen);
         contextual_keys(app, &mut pen, &mut drawn);
     }
     drawn
@@ -562,22 +553,13 @@ fn minimize_fits(app: &App, w: u16) -> bool {
     cells(&app.title()) as u16 <= end.saturating_sub(left)
 }
 
-/// The frame's two rules (the dialog design notes): under the prompt's block with the diamond in its middle, full when
-/// a model answers and hollow when none does or asking is off; above the key bar, plain. In a window wider than
-/// the column they take the window's width.
-fn rules(app: &App, pen: &mut Pen) {
+/// The frame's rule (the dialog design notes): above the key bar, plain. In a window wider than the column it
+/// takes the window's width.
+fn rules(pen: &mut Pen) {
     let (w, h) = (pen.w, pen.h);
-    let pal = pen.pal.clone();
-    let rule = head(app).rule;
+    let lit = pen.pal.lit;
     for x in 2..w - 2 {
-        pen.put(x, rule, RULE, pal.lit, false, false);
-        pen.put(x, h - 4, RULE, pal.lit, false, false);
-    }
-    // the model's sign, the family's (#248): full in the accent when a model answers, hollow and muted else
-    if app.cfg.model && app.model_on && app.model_name.is_some() {
-        pen.put(w / 2 - 1, rule, &format!(" {} ", app.glyphs.model_on), pal.accent, false, false);
-    } else {
-        pen.put(w / 2 - 1, rule, &format!(" {} ", app.glyphs.model_off), pal.muted, false, false);
+        pen.put(x, h - 4, RULE, lit, false, false);
     }
 }
 
@@ -611,8 +593,10 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: 
     }
 
     // the prompt: two rows always; a longer draft scrolls inside them (#196)
+    // what else the line takes stands at its end; the draft has the cells before it, a cell of air between
     let tx = 4;
-    let tw = (w - tx - 3) as usize;
+    let tools_x = tools(app, &mut pen, hd.prompt, &mut drawn);
+    let tw = tools_x.saturating_sub(tx + 1) as usize;
     pen.put(2, hd.prompt, PROMPT, pal.fg, true, false);
     let masked = matches!(&app.mode, Mode::Ask { masked: true, .. }) || matches!(&app.mode, Mode::Pair { kind, .. } if kind == "pin" || kind == "passkey");
     let shown: String = if masked {
@@ -638,19 +622,16 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: 
             }
         }
         if top > 0 {
-            pen.put(w - 2, hd.prompt, ABOVE, pal.muted, false, false);
+            pen.put(tx + tw as u16, hd.prompt, ABOVE, pal.muted, false, false);
         }
         if top + n < rows.len() {
-            pen.put(w - 2, hd.prompt + n as u16 - 1, BELOW, pal.muted, false, false);
+            pen.put(tx + tw as u16, hd.prompt + n as u16 - 1, BELOW, pal.muted, false, false);
         }
     }
     drawn.cursor = (tx + cc as u16, hd.prompt + (cr - top) as u16);
 
-    // the prompt's tools under it, then the rule that closes the prompt's block, the diamond in its middle: full
-    // when a model answers, hollow when none does. The one mark in the frame, and it carries that one fact
-    tools(app, &mut pen, hd.tools, &mut drawn);
     if chrome {
-        rules(app, &mut pen);
+        rules(&mut pen);
     }
 
     // the content first: a preview's text decides the pages its key row offers
@@ -819,9 +800,12 @@ fn key_of(k: &str) -> Option<HintKey> {
     })
 }
 
-/// The prompt's tools, the row under it: attach (the file's name once one is attached, with remove), the model
-/// in the middle, talk at the right. Controls, not keys: Tab cycles them. The row is muted, the prompt's own.
-fn tools(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
+/// The cells the draft keeps on the line whatever stands at its end.
+pub const DRAFT_MIN: u16 = 8;
+/// What else the line takes, at its end: attach (the file's name once one is attached, with remove), then talk.
+/// Controls, not keys: Tab cycles them. The model has no control here: it is named where it answers. Returns
+/// the cell the first control starts at, the end of the draft's room.
+fn tools(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) -> u16 {
     let w = pen.w;
     let chips = app.chips();
     let mic = if app.mode == Mode::Listening { "cancel" } else { "talk" };
@@ -829,48 +813,29 @@ fn tools(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     let mic_on = app.cfg.talk && app.talk == Talk::Click;
     let mic_w = if mic_on { cells(mic) as u16 + 2 } else { 0 };
     let mic_x = w - 1 - mic_w;
-    let right = if mic_on { mic_x - 1 } else { w - 1 };
-    let short_model = if app.model_on { "model" } else { "model off" };
-    let model_w = if app.cfg.model { cells(short_model) as u16 + 3 } else { 0 };
-    let remove_w = if chips.contains(&4) { 9 } else { 0 };
-    // the words start under the prompt's, at column 4
-    let mut x = 3;
+    // attach's controls end where talk starts
+    let end = if mic_on { mic_x } else { w - 1 };
+    let remove_w: u16 = if chips.contains(&4) { 8 } else { 0 };
+    let mut start = end;
     if chips.contains(&0) {
-        // Reserve the other controls, their padding and gaps before shortening
-        // an attachment. A long file name must never steal Remove or Cancel.
-        let room = right.saturating_sub(x + remove_w + model_w + 2).min(w / 4);
-        let name = app.attachment.as_deref().map(|a| cut_middle(a.rsplit('/').next().unwrap_or(""), room as usize));
-        let e = pen.control(x, y, name.as_deref().unwrap_or("attach"), app.chip_focus == Some(0), name.is_some(), false);
-        drawn.chips.push((x, e, y, 0));
-        x = e + 1;
+        // a long file name never takes remove, talk or the draft's room: a quarter of the line at most, and less
+        // where the line is short, so the draft keeps DRAFT_MIN cells at every width the dialog draws at
+        let left = end.saturating_sub(remove_w).saturating_sub(4 + 1 + DRAFT_MIN + 2);
+        let room = (w / 4).min(left) as usize;
+        let name = app.attachment.as_deref().map(|a| cut_middle(a.rsplit('/').next().unwrap_or(""), room));
+        let words = name.as_deref().unwrap_or("attach");
+        if !words.is_empty() {
+            let x = end.saturating_sub(remove_w + cells(words) as u16 + 2);
+            let e = pen.control(x, y, words, app.chip_focus == Some(0), name.is_some(), false);
+            drawn.chips.push((x, e, y, 0));
+            start = x;
+        }
     }
     if chips.contains(&4) {
+        let x = end - remove_w;
         let e = pen.control(x, y, "remove", app.chip_focus == Some(4), false, false);
         drawn.chips.push((x, e, y, 4));
-        x = e + 1;
-    }
-    if app.cfg.model {
-        // the model's name alone: here is the default and says nothing, a server says remote; off when the person
-        // turned asking off. No separator, which sat over the diamond, and no glyph (the dialog design notes)
-        let full = if !app.model_on {
-            "model off".to_string()
-        } else {
-            app.model_name.as_ref().map_or_else(
-                || "no model".into(),
-                |name| if app.server.is_some() { format!("{}, remote", name) } else { name.clone() },
-            )
-        };
-        let name: &str = if cells(&full) + 2 <= right.saturating_sub(x) as usize {
-            &full
-        } else {
-            short_model
-        };
-        let width = cells(name) as u16 + 2;
-        // Center beneath the diamond when the side controls leave that space;
-        // otherwise move only as far as necessary within the reserved gap.
-        let mx = (w / 2 - width / 2).clamp(x, right - width);
-        let e = pen.control(mx, y, name, app.chip_focus == Some(1), false, false);
-        drawn.chips.push((mx, e, y, 1));
+        start = start.min(x);
     }
     if mic_on {
         let live = chips.contains(&3);
@@ -878,7 +843,9 @@ fn tools(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
         if live {
             drawn.chips.push((mic_x, e, y, 3));
         }
+        start = start.min(mic_x);
     }
+    start
 }
 
 /// The status row, the last above the divider (#196): a check or a cross, the words, Undo at the right where
@@ -955,11 +922,13 @@ fn reply_row(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
 /// of it under it, after its sign (#53).
 fn said_line(pen: &mut Pen, s: &Sign, text: &str, first: bool, y: u16, lit: bool) {
     let pal = pen.pal.clone();
+    // the model's sign, the family's (#248), stands where the model answers: before its words
+    let model = pen.g.model_on;
     let (ind, sg, sc, tc) = match s {
         Sign::You => (2, PROMPT, pal.muted, pal.muted),
         Sign::Done => (4, CHECK, pal.accent, pal.fg),
         Sign::Refused => (4, CROSS, pal.alarm, pal.fg),
-        Sign::Says => (4, "*", pal.accent, pal.fg),
+        Sign::Says => (4, model, pal.accent, pal.fg),
     };
     if first {
         pen.put(ind, y, sg, sc, false, lit);
