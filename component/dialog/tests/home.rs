@@ -202,7 +202,7 @@ fn the_frame_is_one_shape_at_the_top_and_the_bottom_in_both_views() {
             }
             assert!(drawn.chips.iter().all(|(_, _, _, id)| *id != 1), "the model has no control in the head");
             assert!(row(line).contains(" attach ") && row(line).contains(" talk "), "{:?}", row(line));
-            assert!(!row(line).contains("fixture-model"), "the model is named where it answers: {:?}", row(line));
+            assert!(!row(line).contains("fixture-model"), "home names no model: {:?}", row(line));
             // the line is the whole head: air under it, then the list, and no rule with a sign above the list
             assert!(row(line + 1).trim().is_empty(), "a row of air between the line and the list");
             assert_eq!(head(&app).content, line + 2);
@@ -268,8 +268,8 @@ fn a_new_try_at_talk_clears_the_last_refusal() {
 
 #[test]
 fn the_model_has_no_control_in_the_head_in_both_views() {
-    // the model is named where it answers (the ask row, the conversation's band), so the head offers attach and
-    // talk alone at every width; the model's own place is reached from settings
+    // home names no model and holds no control for one: the head offers attach and talk alone at every width,
+    // and the model's name and its choice are settings'
     let palette = common::palette("tokyonight-night");
     let mut app = footer_app();
     for view in [View::Home, View::Conversation] {
@@ -283,25 +283,16 @@ fn the_model_has_no_control_in_the_head_in_both_views() {
             assert!(drawn.chips.iter().all(|c| c.2 == line), "both on the line at {width}");
             let words: String = (0..width).map(|x| buffer[(x, line)].symbol()).collect();
             assert!(!words.contains("fixture-model") && !words.contains("model"), "{:?}", words);
-            // where it is named: on the conversation's band, after the place, and nowhere on home's
+            // the model is named nowhere on home: not on the band either, in the conversation or out of it. Its
+            // name and its choice are settings' (the owner, 2026-11-16)
             let band: String = (0..width).map(|x| buffer[(x, 0)].symbol()).collect();
-            let named = band.contains("conversation \u{b7} fixture-model");
-            match (&app.view, width) {
-                (View::Conversation, 60 | 61 | 120) => assert!(named, "the conversation's band names the model at {width}: {:?}", band),
-                (View::Home, _) => assert!(!band.contains("fixture-model"), "home's band names no model: {:?}", band),
-                _ => {}
+            assert!(!band.contains("fixture-model"), "the band names no model at {width}: {:?}", band);
+            if app.view == View::Conversation {
+                assert!(band.contains("conversation") && !band.contains('\u{b7}'), "the place alone: {:?}", band);
             }
         }
     }
     assert_eq!(app.chips(), [0, 3], "Tab moves through attach and talk");
-    // asking off: no model answers, so the conversation's band says the place alone
-    app.view = View::Conversation;
-    app.model_on = false;
-    app.size = (60, 40);
-    let mut buffer = Buffer::empty(Rect::new(0, 0, 60, 40));
-    spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
-    let band: String = (0..60).map(|x| buffer[(x, 0)].symbol()).collect();
-    assert!(band.contains("conversation") && !band.contains("fixture-model"), "{:?}", band);
 }
 
 #[test]

@@ -812,7 +812,7 @@ fn key_of(k: &str) -> Option<HintKey> {
 /// The cells the draft keeps on the line whatever stands at its end.
 pub const DRAFT_MIN: u16 = 8;
 /// What else the line takes, at its end: attach (the file's name once one is attached, with remove), then talk.
-/// Controls, not keys: Tab cycles them. The model has no control here: it is named where it answers. Returns
+/// Controls, not keys: Tab cycles them. The model has no control here: its name and its choice are settings'. Returns
 /// the cell the first control starts at, the end of the draft's room.
 fn tools(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) -> u16 {
     let w = pen.w;

@@ -6409,8 +6409,6 @@ impl App {
             View::Steps(_) => self.steps_row.as_ref().map(|r| r.text.clone()).unwrap_or_default(),
             View::Preview => self.preview.as_ref().map(|pv| pv.place.clone()).unwrap_or_default(),
             View::Found(_, words) => words.clone(),
-            // the model is named where it answers: the conversation's band says which one
-            View::Conversation if self.answers() => self.model_name.clone().unwrap_or_default(),
             _ => String::new(),
         }
     }

@@ -1573,7 +1573,7 @@ fn talk_puts_what_was_heard_in_the_draft_and_esc_keeps_the_draft() {
 }
 
 /// The model's page as a person opens it: settings, then connections, then the row under the model heading. The
-/// head holds no control for the model (it is named where it answers).
+/// head holds no control for the model, and home does not name it.
 fn open_models(app: &mut App) {
     app.view = View::Dest(SETTINGS_DEST);
     typed(app, "connections");

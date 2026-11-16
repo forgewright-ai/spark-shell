@@ -311,7 +311,7 @@ fn the_frame_is_one_shape_top_and_bottom_and_the_reply_is_the_last_row_above_the
         text(&buf, keys_y(40))
     );
     // the top is the line alone (the head): the prompt with what else it takes at its end, a row of air, the list.
-    // No tools row, no rule and no sign above the list: the model is named where it answers
+    // No tools row, no rule and no sign above the list: the model's name and its choice are settings'
     let hd = ui::head(&app);
     assert_eq!(hd.content, hd.prompt + 2, "the line, a row of air, then the list, at every width");
     let line = text(&buf, hd.prompt);
@@ -1329,13 +1329,8 @@ fn the_windows_title_says_the_place_and_holds_nothing_that_could_retitle_or_redr
         "home  workspace \u{b7} side by side",
         "the name, then the place and its state"
     );
+    // the model is named nowhere on home: its name and its choice are settings'
     app.view = View::Conversation;
-    assert_eq!(
-        app.window_title(),
-        "home  conversation \u{b7} gemma4-26b-a4b",
-        "the model named where it answers"
-    );
-    app.model_on = false;
     assert_eq!(app.window_title(), "home  conversation");
     // a provider's words: an escape, a bell, a C1 string terminator, a bidi override, a line break, a tab
     app.view = View::Section(0);
