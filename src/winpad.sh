@@ -55,7 +55,13 @@ winpad_pid_in() {   # winpad_pid_in LOCK -> the pid in LOCK when it runs; false 
     printf '%s\n' "$_pdp"
 }
 winpad_pid() { winpad_pid_in "$(winpad_lock)" || winpad_pid_in "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-pad.pid"; }   # -> the running winpad's pid; the second lock is spark-pad's, its name through v0.141
-winpad_hidden() { winpad_pid >/dev/null || return 0; grep -qx 'hidden 1' "$(winpad_state)" 2>/dev/null; }   # 0 when the pad is hidden, or none runs
+winpad_between_file() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-winpad.again"; }   # written while a pad is started again: the second it began
+winpad_between() {   # 0 while a pad is being started again, five seconds at most: none runs for that moment, and the bar's line does not say so
+    _pdb=$(cat "$(winpad_between_file)" 2>/dev/null) || return 1
+    case $_pdb in ''|*[!0-9]*) return 1 ;; esac
+    [ $(( $(date +%s) - _pdb )) -lt 5 ]
+}
+winpad_hidden() { winpad_pid >/dev/null || { ! winpad_between; return; }; grep -qx 'hidden 1' "$(winpad_state)" 2>/dev/null; }   # 0 when the pad is hidden, or none runs and none is on its way
 winpad_list() {   # winpad_list TREEFILE -> the windows on the pad, oldest first: ID<tab>APP<tab>TITLE
     jq -r '.. | objects | select(.type == "workspace" and .name == "__i3_scratch") | .floating_nodes[]? | .. | objects
         | select((.marks? | type) == "array" and any(.marks[]; startswith("_spark-shell.min.")))
@@ -87,12 +93,24 @@ winpad_run() {   # winpad_run [--keys] -- spark-winpad started in its own sessio
 }
 winpad_wake() { winpad_pid >/dev/null || winpad_run 2>/dev/null || :; }   # the pad up when it is not; never waited for
 winpad_look() { winpad_pid >/dev/null 2>&1 || return 0; wm_tick spark-winpad.look >/dev/null 2>&1 || :; }   # the pad reads the tree now: a window a command moved, which sway tells no one
+winpad_end() {   # winpad_end PID -- that pad ended, waited for two seconds at most; the between file says another is on its way
+    date +%s > "$(winpad_between_file)" 2>/dev/null || :
+    kill "$1" 2>/dev/null || :
+    _pdi=0; while [ "$_pdi" -lt 20 ] && kill -0 "$1" 2>/dev/null; do sleep 0.1; _pdi=$((_pdi + 1)); done
+}
+winpad_pause() {   # a running pad ended before the bar moves, for winpad_again to start once the bar stands: it never lands on a bar that is going
+    [ -z "${_winpad_again:-}" ] || return 0
+    _pdo=$(winpad_pid) || return 0
+    winpad_end "$_pdo"; _winpad_paused=1
+}
 winpad_again() {   # a running pad restarted, so it takes a new look or bar place; once a run
     [ -z "${_winpad_again:-}" ] || return 0; _winpad_again=1
-    _pdo=$(winpad_pid) || return 0
-    kill "$_pdo" 2>/dev/null || :
-    _pdi=0; while [ "$_pdi" -lt 20 ] && kill -0 "$_pdo" 2>/dev/null; do sleep 0.1; _pdi=$((_pdi + 1)); done
-    if winpad_run 2>/dev/null; then _winpad_started=1; fi   # winpad_session asks for no second one before this one takes its lock
+    if [ -z "${_winpad_paused:-}" ]; then _pdo=$(winpad_pid) || return 0; winpad_end "$_pdo"; fi
+    if winpad_run 2>/dev/null; then
+        _winpad_started=1   # winpad_session asks for no second one before this one takes its lock
+        _pdi=0; while [ "$_pdi" -lt 30 ] && ! winpad_pid >/dev/null; do sleep 0.1; _pdi=$((_pdi + 1)); done   # its lock, within a moment
+    fi
+    rm -f "$(winpad_between_file)"
 }
 winpad_place_words() {   # winpad_place_words PLACE -> where it sits, in words
     case $1 in

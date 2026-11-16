@@ -140,11 +140,12 @@ enum Shape {
         w: i32,
         h: i32,
     },
-    /// `back`: an edge and how far the surface reaches back over what stands there, so it covers that too: the
-    /// strip kept through a drag, or, with `bar`, the bar a pad stands on while its list is open.
+    /// `back` and `bar`: an edge each and how far the surface reaches back over what stands there, so it covers
+    /// that too: the strip kept through a drag; and the bar, which is not the windows' area, under a list open on
+    /// a pad that stands on it and under a move, which shows the pad on the bar while the pointer is there.
     Full {
         back: Option<(Edge, i32)>,
-        bar: bool,
+        bar: Option<(Edge, i32)>,
     },
 }
 
@@ -262,6 +263,10 @@ struct Tip {
     gen: u64,
     quiet_gen: u64,
 }
+
+/// How long a pad whose place is the bar waits for the bar's state, in ticks of a tenth of a second: a bar that
+/// starts again says where it stands well within it; with none after that, the pad stands at the bottom's middle.
+const BAR_WAIT: u32 = 30;
 
 pub struct App {
     registry: RegistryState,
@@ -381,7 +386,7 @@ impl App {
             resting: vec![],
             bars: vec![],
             bar_text: String::new(),
-            bar_gone: 0,
+            bar_gone: 1,
             icon_paths: HashMap::new(),
             pictures: HashMap::new(),
             hidden: false,
@@ -438,9 +443,17 @@ impl App {
         !self.wins.is_empty() && (!self.hidden || self.keys.is_some())
     }
 
-    /// The pad on a screen: in sight, and the screen not at rest.
+    /// The pad on a screen: in sight, the screen not at rest, and a pad whose place is the bar not waiting for it.
     fn visible_on(&self, oi: usize) -> bool {
-        self.visible() && self.outs.get(oi).is_some_and(|o| !self.resting.contains(&o.name))
+        self.visible() && !self.awaits_bar() && self.outs.get(oi).is_some_and(|o| !self.resting.contains(&o.name))
+    }
+
+    /// A pad whose place is the bar, while the bar's state is not there: at its start, and while a bar that moves
+    /// or takes another look starts again. The pad goes with the bar and comes back with it, for BAR_WAIT ticks
+    /// at most: it never stands at the bar's old edge or at the bottom's middle for the moment between. Not
+    /// while it is dragged.
+    fn awaits_bar(&self) -> bool {
+        self.cfg.place == Place::Bar && self.cfg.bar_state.is_some() && self.drag.is_none() && self.bar_gone > 0 && self.bar_gone < BAR_WAIT
     }
 
     /// The windows' apps by name, oldest first: what a group folds by.
@@ -543,15 +556,16 @@ impl App {
     fn shape_for(&self, oi: usize) -> Shape {
         let place = self.place_on(oi);
         if self.drag.as_ref().is_some_and(|d| d.out == oi) || self.list.as_ref().is_some_and(|l| l.out == oi) {
-            // a list open on a pad that stands on the bar: the surface reaches back over the bar, where the pad stays
-            if let (Place::Bar, None, Some(bar)) = (place, &self.drag, self.bar_on(oi)) {
-                return Shape::Full {
-                    back: Some((bar.edge, bar.height)),
-                    bar: true,
-                };
-            }
+            // the surface reaches back over the bar under a list open on a pad that stands on the bar, where the pad
+            // stays, and under a move from its start, never resized on the way: the pad is shown on the bar itself
+            // while the pointer is there
+            let over = match &self.drag {
+                Some(d) => d.kind == Grab::Move,
+                None => place == Place::Bar,
+            };
+            let bar = self.bar_on(oi).filter(|_| over).map(|b| (b.edge, b.height));
             let back = self.outs[oi].strip.as_ref().filter(|k| k.mapped).map(|k| (k.edge, k.thick + self.m.gap));
-            return Shape::Full { back, bar: false };
+            return Shape::Full { back, bar };
         }
         let m = &self.m;
         let lay = self.layout_on(oi, self.form_on(oi));
@@ -676,28 +690,39 @@ impl App {
     pub fn bar_tick(&mut self) {
         let Some(file) = &self.cfg.bar_state else { return };
         let text = match std::fs::read_to_string(file) {
-            Ok(text) if text.starts_with("bar\t") => text,
-            _ => {
-                self.bar_gone = self.bar_gone.saturating_add(1);
-                if self.bar_gone < 30 || self.bar_text.is_empty() {
+            Ok(text) if text.starts_with("bar\t") => {
+                let back = self.bar_gone > 0;
+                self.bar_gone = 0;
+                if text == self.bar_text {
+                    if back {
+                        self.show_again(); // the same bar, back: the pad with it
+                    }
                     return;
                 }
-                String::new()
+                text
+            }
+            _ => {
+                self.bar_gone = self.bar_gone.saturating_add(1);
+                if self.bar_gone == 1 {
+                    self.show_again(); // the bar went: the pad on it goes with it, and waits
+                }
+                if self.bar_gone != BAR_WAIT {
+                    return;
+                }
+                String::new() // none came: the pad stands where it stood before the bar took it
             }
         };
-        self.bar_gone = 0;
-        if text == self.bar_text {
-            return;
-        }
-        let bars = pad::bars(&text);
+        self.bars = pad::bars(&text);
         self.bar_text = text;
-        if bars != self.bars {
-            self.bars = bars;
-            if self.drag.is_none() {
-                self.apply();
-            } else {
-                self.dirty = true;
-            }
+        self.show_again();
+    }
+
+    /// The pad laid out anew after the bar changed; a pad that is dragged is drawn again and laid out at its drop.
+    fn show_again(&mut self) {
+        if self.drag.is_none() {
+            self.apply();
+        } else {
+            self.dirty = true;
         }
     }
 
@@ -876,12 +901,17 @@ impl App {
                 l.set_margin(y, 0, 0, x);
                 l.set_exclusive_zone(0);
             }
-            Shape::Full { back, .. } => {
-                // the area as it is without the strip kept through it: the drag's frame; or with the bar, under a list
-                let back = back.map_or((0, 0, 0, 0), |(edge, far)| frame(edge, 0, -far).2);
+            Shape::Full { back, bar } => {
+                // the area as it is without the strip kept through it: the drag's frame; and with the bar, under a
+                // list and under a move. A strip at the bar's edge stands inside the bar's zone: the two add up
+                let mut far = (0, 0, 0, 0);
+                for (edge, by) in back.into_iter().chain(bar) {
+                    let add = frame(edge, 0, -by).2;
+                    far = (far.0 + add.0, far.1 + add.1, far.2 + add.2, far.3 + add.3);
+                }
                 l.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
                 l.set_size(0, 0);
-                l.set_margin(back.0, back.1, back.2, back.3);
+                l.set_margin(far.0, far.1, far.2, far.3);
                 l.set_exclusive_zone(0);
             }
         }
@@ -1190,17 +1220,25 @@ impl App {
         let (items, lay) = self.items_on(oi, form);
         let (aw, ah) = self.outs[oi].area;
         let bar = self.bar_on(oi).filter(|_| form == Form::Bar);
+        // where the windows' area begins on a surface that reaches over the bar: under a bar at the top; a bar at
+        // the bottom comes after the area's rows
+        let lift = match shape {
+            Shape::Full {
+                bar: Some((Edge::Top, far)), ..
+            } => far,
+            _ => 0,
+        };
         // where the pad stands on this surface
         let pad_at = match (shape, bar) {
-            // dragged: where the drag has it; under a list: where it stands
-            (Shape::Full { bar: false, .. }, _) => self
-                .drag
-                .as_ref()
-                .and_then(|d| d.pad)
-                .unwrap_or_else(|| pad::position(place, lay.w, lay.h, aw, ah, &m)),
-            // on the bar, the surface over it: in the bar's room, on the bar's own rows
-            (Shape::Full { .. } | Shape::Strip { .. }, Some(b)) => (b.x, if b.edge == Edge::Bottom { size.1 - lay.h } else { 0 }),
-            (Shape::Full { .. }, None) => pad::position(place, lay.w, lay.h, aw, ah, &m),
+            // on the bar, the surface over it: in the bar's room, on the bar's own rows; a move that holds the bar
+            // shows the pad there too, as it will stand
+            (Shape::Full { bar: Some(_), .. } | Shape::Strip { .. }, Some(b)) => (b.x, if b.edge == Edge::Bottom { size.1 - lay.h } else { 0 }),
+            // dragged: where the drag has it, in the windows' area; under a list: where it stands
+            (Shape::Full { .. }, _) => {
+                let at = self.drag.as_ref().and_then(|d| d.pad);
+                let (x, y) = at.unwrap_or_else(|| pad::position(place, lay.w, lay.h, aw, ah, &m));
+                (x, y + lift)
+            }
             (Shape::Strip { edge: Edge::Bottom, .. }, None) => (pad::position(place, lay.w, lay.h, size.0, ah, &m).0, size.1 - lay.h),
             (Shape::Strip { edge: Edge::Top, .. }, None) => (pad::position(place, lay.w, lay.h, size.0, ah, &m).0, 0),
             (Shape::Strip { edge: Edge::Left, .. }, None) => (0, pad::position(place, lay.w, lay.h, aw, size.1, &m).1),
@@ -1401,7 +1439,9 @@ impl App {
                 list_at = Some((lr, lines.len()));
             }
             if let Some(e) = near {
-                let along = pad::snap_along(e, pad_r, aw, ah, &m);
+                // the edge's line, counted in the windows' area as the pad's place along the edge is
+                let in_area = Rect::new(pad_at.0, pad_at.1 - lift, lay.w, lay.h);
+                let along = pad::snap_along(e, in_area, aw, ah, &m);
                 let (dx, dy) = pad::position(Place::Dock(e, along), lay.w, lay.h, aw, ah, &m);
                 let (lx, ly, lw, lh) = match e {
                     Edge::Bottom => (dx, ah - 3, lay.w, 3),
@@ -1409,11 +1449,12 @@ impl App {
                     Edge::Left => (0, dy, 3, lay.h),
                     Edge::Right => (aw - 3, dy, 3, lay.h),
                 };
-                c.fill(lx as f64, ly as f64, lw as f64, lh as f64, look.accent, 1.0);
+                c.fill(lx as f64, (ly + lift) as f64, lw as f64, lh as f64, look.accent, 1.0);
             }
             if let Some(b) = lands {
-                // a drag that holds the bar: the line at the bar's edge, where the pad lands
-                let ly = if b.edge == Edge::Bottom { ah - 3 } else { 0 };
+                // a drag that holds the bar: the pad is shown on the bar, where it lands, and the line marks it at
+                // the screen's edge, as at any edge: the surface's own edge there, which reaches over the bar
+                let ly = if b.edge == Edge::Bottom { size.1 - 3 } else { 0 };
                 c.fill(pad_at.0 as f64, ly as f64, lay.w as f64, 3.0, look.accent, 1.0);
             }
         }
@@ -1555,7 +1596,9 @@ impl App {
                 (d.near, d.on_bar) = (near, on_bar);
                 let lay = self.layout_on(oi, form);
                 let at = match bar.filter(|_| on_bar) {
-                    // where it lands, shown at the bar's edge of the windows' area: the bar itself is not this surface's
+                    // on the bar the pad is shown where it lands, in the bar's own room, by a surface that reaches over
+                    // the bar; one that does not (the bar came after the drag began) shows it here, at the bar's edge
+                    // of the windows' area
                     Some(b) => (b.x.min((aw - lay.w).max(0)), if b.edge == Edge::Bottom { (ah - lay.h).max(0) } else { 0 }),
                     None => {
                         // the pointer keeps its place on the pad; on a pad that took another form, the grip is under it
@@ -1863,9 +1906,9 @@ impl LayerShellHandler for App {
                 }
             }
             Shape::Free { w: fw, h: fh, .. } => (if w > 0 { w } else { fw }, if h > 0 { h } else { fh }),
-            Shape::Full { back, bar } => {
-                // the bar under a list is not the windows' area
-                let far = back.filter(|_| bar).map_or(0, |(_, far)| far);
+            Shape::Full { bar, .. } => {
+                // the bar under the surface is not the windows' area
+                let far = bar.map_or(0, |(_, far)| far);
                 self.outs[oi].area = (w, h - far);
                 (w, h)
             }
@@ -1875,10 +1918,13 @@ impl LayerShellHandler for App {
         s.configured = true;
         // the whole area under a drag: the pad's corner there, where it stood
         if matches!(shape, Shape::Full { .. }) && self.drag.as_ref().is_some_and(|d| d.out == oi && d.pad.is_none()) {
+            // the drag's points are the windows' area's, whatever the surface covers beside it
+            let (w, h) = self.outs[oi].area;
             let was = self.drag.as_ref().map_or(Form::Row, |d| d.was);
             let lay = self.layout_on(oi, was);
             let at = match self.bar_on(oi).filter(|_| was == Form::Bar) {
-                // from the bar: where it lands again, at the bar's edge of the windows' area
+                // from the bar: the bar's edge of the windows' area; the pad itself is shown on the bar while the drag
+                // holds it
                 Some(b) => (b.x, if b.edge == Edge::Bottom { (h - lay.h).max(0) } else { 0 }),
                 None => pad::position(self.place_on(oi), lay.w, lay.h, w, h, &self.m),
             };

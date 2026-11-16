@@ -835,8 +835,9 @@ bar_desktop_here() { [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || refuse_in b
 bar_where() {   # bar_where top|bottom
     bar_desktop_here; _bwo=$(bar_place)
     config_set BAR_POSITION "$1"; BAR_POSITION=$1; config_set DESKTOP_BAR yes; DESKTOP_BAR=yes; export BAR_POSITION DESKTOP_BAR
-    [ "$_bwo" = "$1" ] || sparkbar_again   # spark's bar takes its place at its start; before the look, whose last step starts the pad: the pad after the bar
+    [ "$_bwo" = "$1" ] || { winpad_pause; sparkbar_again; }   # spark's bar takes its place at its start; the pad is ended before the bar goes and started by the look's last step, after the bar: it never stands on a bar that is going
     theme_load; EXPR=$(render_expr); desktop_look_apply
+    [ "$_bwo" = "$1" ] || layout_refit_soon   # the bar moved: the windows the keys placed take their places on the area it leaves them, once it stands
     echo "bar: shown $(bar_place_words "$1") (spark-shell bar off --desktop hides it)"
 }
 bar_text() {   # bar_text [auto|N|bigger|smaller]
