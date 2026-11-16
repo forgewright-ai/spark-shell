@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.150.2
+
+- After `spark-shell update` the bar runs the new code even when only
+  the modules in src/ changed. on started the bar again only when the
+  top spark-shell file was newer than the bar, and since v0.136 the
+  code is in src/, so an update such as v0.150.1 left the bar on the
+  code it read at login until a logout.
+
 ## v0.150.1
 
 - The sound and the mic lists come back when ALSA's default never

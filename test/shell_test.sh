@@ -1042,6 +1042,18 @@ else
     sleep 0 & dead=$!; wait "$dead" || :; printf '%s\n' "$dead" > "$bpid"; touch -t 200001010000 "$bpid"   # a bar gone: a process that ended by itself, no signal sent
     out=$(SWAYSOCK=/nonexistent sh "$SH" on --yes)
     ! printf '%s\n' "$out" | grep -q 'reloaded' && ok "on: a bar's file whose bar is gone asks no reload" || bad "dead bar no reload" "$out"
+    # since v0.136 the code is in src/: a bar older than a module, after an update that changed src/ alone (v0.150.1 did), is
+    # started again too. In a copy of the tree, so only the copy's files take the times; its first on renders sway's file for
+    # the copy, so the next runs have no other cause to reload
+    bt=$H/bartree; mkdir -p "$bt"; (cd "$REPO" && tar --exclude=.git --exclude=target --exclude=target2 -cf - .) | (cd "$bt" && tar --no-same-owner -xf -)
+    SWAYSOCK=/nonexistent sh "$bt/spark-shell" on --yes > /dev/null 2>&1 || :
+    find "$bt/spark-shell" "$bt/src" -exec touch -t 201001010000 {} +; printf '%s\n' "$fakebar" > "$bpid"; touch -t 202001010000 "$bpid"
+    out=$(SWAYSOCK=/nonexistent sh "$bt/spark-shell" on --yes 2>&1 || :)
+    ! printf '%s\n' "$out" | grep -q 'reloaded' && ok "on: a bar newer than spark-shell and every module is left as it is" || bad "modules fresh bar" "$out"
+    touch "$bt/src/bar.sh"; out=$(SWAYSOCK=/nonexistent sh "$bt/spark-shell" on --yes 2>&1 || :)
+    printf '%s\n' "$out" | grep -q '^ok     sway         reloaded (the bar starts again on this spark-shell)' \
+        && ok "on: a bar older than a module (an update that changed src/ alone) is started again by a reload" || bad "module stale bar" "$out"
+    SWAYSOCK=/nonexistent sh "$SH" on --yes > /dev/null 2>&1 || :; rm -rf "$bt"   # the tree's own files and links again
     rm -f "$bpid"; kill "$fakebar" 2>/dev/null; wait "$fakebar" 2>/dev/null || :
     # the pad runs for the session (v0.140), and sway starts it at login alone: on, in a session with no pad (one that
     # began before an update), has sway start it as login does; with a pad running, or a dry run, sway is not asked.
