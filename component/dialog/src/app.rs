@@ -743,6 +743,8 @@ pub struct Config {
     pub keys: crate::keys::Bindings,
     pub home: Option<String>,
     pub title: Option<String>,
+    /// Whether the dialog draws its own band, the first row. Off where the window wears one.
+    pub band: bool,
     pub close: bool,
     pub progress: bool,
     pub plus: bool,
@@ -763,6 +765,7 @@ impl Default for Config {
             keys: crate::keys::Bindings::default(),
             home: None,
             title: None,
+            band: true,
             close: true,
             progress: true,
             plus: false,
@@ -2173,7 +2176,7 @@ impl App {
         }
         if self.view == View::Apps {
             // the list's rows: with icons the apps breathe where the window holds it (#232)
-            let room = self.size.1.saturating_sub(crate::ui::CONTENT_Y + crate::ui::BOTTOM) as usize;
+            let room = self.list_room() as usize;
             // searched by the words typed, never by a step that waits in the box (#250)
             let mut list: Vec<Item> = self
                 .apps
@@ -2378,7 +2381,7 @@ impl App {
                     // menu breathes: a row of air between its rows when the window has the rows for it, two between
                     // its groups; the minimum window single spaces, a row of air between the groups, and scrolls
                     let dests = self.dests();
-                    let room = self.size.1.saturating_sub(crate::ui::CONTENT_Y + crate::ui::BOTTOM) as usize;
+                    let room = self.list_room() as usize;
                     let airy = room > dests.len() * 2;
                     for (k, d) in dests.iter().enumerate() {
                         let group = *d == SETTINGS_DEST || *d == DESTS.len() - 1;
@@ -2736,7 +2739,7 @@ impl App {
     /// Apps found, with a row of air between them where they wear their icons, DIALOG_SPACING is rows and the window
     /// holds it, as the list of apps breathes (#232); every other kind of row as found.
     fn found_rows(&self, k: Found, rows: Vec<Item>) -> Vec<Item> {
-        let room = self.size.1.saturating_sub(crate::ui::CONTENT_Y + crate::ui::BOTTOM) as usize;
+        let room = self.list_room() as usize;
         if k != Found::Apps || !self.apps.icons || self.apps.spacing != crate::preferences::Spacing::Rows || room < crate::apps::AIRY_ROOM {
             return rows;
         }
@@ -3871,6 +3874,10 @@ impl App {
     /// Whether there is a level above this one to go back to, with nothing in the way: a page of Apps under its
     /// list or the view this one came from; no words typed, no question open, no request pending, no commands
     /// staged, no form of Apps being filled (the dialog design notes).
+    /// The rows the list has: the window's less the head above it and the foot under it.
+    pub fn list_room(&self) -> u16 {
+        self.size.1.saturating_sub(crate::ui::head(self).content + crate::ui::BOTTOM)
+    }
     pub fn can_go_back(&self) -> bool {
         // a question's page keeps on every back door, the header's among them (the dialog design notes, v0.127)
         self.input.is_empty()
@@ -3948,7 +3955,7 @@ impl App {
     /// its height.
     pub fn page(&mut self, d: i32) {
         // a page is the content's rows less one, so a line is shared between pages
-        let step = self.size.1.saturating_sub(crate::ui::CONTENT_Y + crate::ui::BOTTOM + 1).max(4) as usize;
+        let step = self.list_room().saturating_sub(1).max(4) as usize;
         if self.view == View::Apps && matches!(self.apps.page, crate::apps::Page::Details(_) | crate::apps::Page::Technical(_)) {
             self.scroll = crate::ui::body_scroll(self);
             self.in_list = false;

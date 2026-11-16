@@ -43,6 +43,23 @@ pub const PROMPT_Y: u16 = 2;
 pub const TOOLS_Y: u16 = 4;
 pub const TOP_RULE_Y: u16 = 6;
 pub const CONTENT_Y: u16 = 8;
+/// The head's rows in this dialog: the prompt's first, its tools, the rule, the list's first. One source for
+/// the frame and for the room a list counts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Head {
+    pub prompt: u16,
+    pub tools: u16,
+    pub rule: u16,
+    pub content: u16,
+}
+pub fn head(_app: &App) -> Head {
+    Head {
+        prompt: PROMPT_Y,
+        tools: TOOLS_Y,
+        rule: TOP_RULE_Y,
+        content: CONTENT_Y,
+    }
+}
 /// The bottom: air, the status row, the plain rule, a blank row, the key bar, its second line.
 pub const BOTTOM: u16 = 6;
 /// The status row: the last row above the rule, the one place a message is written (the reply, a note, the
@@ -551,15 +568,16 @@ fn minimize_fits(app: &App, w: u16) -> bool {
 fn rules(app: &App, pen: &mut Pen) {
     let (w, h) = (pen.w, pen.h);
     let pal = pen.pal.clone();
+    let rule = head(app).rule;
     for x in 2..w - 2 {
-        pen.put(x, TOP_RULE_Y, RULE, pal.lit, false, false);
+        pen.put(x, rule, RULE, pal.lit, false, false);
         pen.put(x, h - 4, RULE, pal.lit, false, false);
     }
     // the model's sign, the family's (#248): full in the accent when a model answers, hollow and muted else
     if app.cfg.model && app.model_on && app.model_name.is_some() {
-        pen.put(w / 2 - 1, TOP_RULE_Y, &format!(" {} ", app.glyphs.model_on), pal.accent, false, false);
+        pen.put(w / 2 - 1, rule, &format!(" {} ", app.glyphs.model_on), pal.accent, false, false);
     } else {
-        pen.put(w / 2 - 1, TOP_RULE_Y, &format!(" {} ", app.glyphs.model_off), pal.muted, false, false);
+        pen.put(w / 2 - 1, rule, &format!(" {} ", app.glyphs.model_off), pal.muted, false, false);
     }
 }
 
@@ -568,6 +586,7 @@ fn rules(app: &App, pen: &mut Pen) {
 /// without, draw_layout draws them at the window's.
 fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: bool) -> Drawn {
     let mut drawn = Drawn::default();
+    let hd = head(app);
     let (w, h) = (buf.area.width, buf.area.height);
     drawn.columns = (0, w);
     let area = Rect::new(0, 0, w, h);
@@ -594,7 +613,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: 
     // the prompt: two rows always; a longer draft scrolls inside them (#196)
     let tx = 4;
     let tw = (w - tx - 3) as usize;
-    pen.put(2, PROMPT_Y, PROMPT, pal.fg, true, false);
+    pen.put(2, hd.prompt, PROMPT, pal.fg, true, false);
     let masked = matches!(&app.mode, Mode::Ask { masked: true, .. }) || matches!(&app.mode, Mode::Pair { kind, .. } if kind == "pin" || kind == "passkey");
     let shown: String = if masked {
         "\u{2022}".repeat(app.input.chars().count())
@@ -604,12 +623,12 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: 
     let (rows, (cr, cc)) = draft_rows(&shown, app.cursor, tw);
     let n = 2;
     let top = cr.saturating_sub(n - 1).min(rows.len().saturating_sub(n));
-    drawn.prompt = (PROMPT_Y, PROMPT_Y + n as u16 - 1);
+    drawn.prompt = (hd.prompt, hd.prompt + n as u16 - 1);
     if app.input.is_empty() && (app.mode == Mode::Normal || app.prompt_form()) {
-        pen.put(tx, PROMPT_Y, app.placeholder(), pal.muted, false, false);
+        pen.put(tx, hd.prompt, app.placeholder(), pal.muted, false, false);
     } else {
         for (k, r) in rows.iter().skip(top).take(n).enumerate() {
-            let y = PROMPT_Y + k as u16;
+            let y = hd.prompt + k as u16;
             pen.put(tx, y, r, pal.fg, false, false);
             // a rename's name, whole: the selection's own background, what the first letter typed replaces
             if app.name_is_lit() {
@@ -619,24 +638,24 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: 
             }
         }
         if top > 0 {
-            pen.put(w - 2, PROMPT_Y, ABOVE, pal.muted, false, false);
+            pen.put(w - 2, hd.prompt, ABOVE, pal.muted, false, false);
         }
         if top + n < rows.len() {
-            pen.put(w - 2, PROMPT_Y + n as u16 - 1, BELOW, pal.muted, false, false);
+            pen.put(w - 2, hd.prompt + n as u16 - 1, BELOW, pal.muted, false, false);
         }
     }
-    drawn.cursor = (tx + cc as u16, PROMPT_Y + (cr - top) as u16);
+    drawn.cursor = (tx + cc as u16, hd.prompt + (cr - top) as u16);
 
     // the prompt's tools under it, then the rule that closes the prompt's block, the diamond in its middle: full
     // when a model answers, hollow when none does. The one mark in the frame, and it carries that one fact
-    tools(app, &mut pen, TOOLS_Y, &mut drawn);
+    tools(app, &mut pen, hd.tools, &mut drawn);
     if chrome {
         rules(app, &mut pen);
     }
 
     // the content first: a preview's text decides the pages its key row offers
     let bottom = h - BOTTOM;
-    let content_y = CONTENT_Y;
+    let content_y = hd.content;
     if let Some((reel, since)) = app.motion {
         // a transition: the content area is its, in its middle (main.rs draws it)
         let (x, y, w, h) = (2, content_y, pen.w.saturating_sub(4), bottom.saturating_sub(content_y));
@@ -1562,7 +1581,7 @@ fn content_start(items: &[Item], selected: Option<usize>, scroll: usize, room: u
 /// with long metadata use this same layout when handing focus to text scrolling.
 pub fn body_scroll(app: &App) -> usize {
     let items = app.items();
-    let all = app.size.1.saturating_sub(BOTTOM + CONTENT_Y) as usize;
+    let all = app.list_room() as usize;
     let total = item_rows(&items).last().map(|r| r + 1).unwrap_or(0);
     let room = if total > all { all.saturating_sub(1) } else { all };
     let selected = app
