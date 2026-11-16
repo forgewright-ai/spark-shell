@@ -1254,3 +1254,103 @@ fn a_question_is_a_page_of_choices_and_the_typed_yes_is_gone() {
     assert!(matches!(app.mode, Mode::Normal) && app.jobs.is_empty());
     assert_eq!(app.input, "my draft");
 }
+
+/// The window wears the band (`--band off`, the home dialog's frame): the dialog draws no band row, so the sheet's
+/// grid stands: the line on row 1, the list from row 3, the rule and the keys where they were. Nothing on the
+/// first row takes a click: back is Esc or its chip in the key bar, and close and minimize are the window's.
+#[test]
+fn with_the_windows_band_the_dialog_draws_no_band_row() {
+    let mut app = home();
+    app.cfg.band = false;
+    let hd = ui::head(&app);
+    assert_eq!((hd.prompt, hd.content), (1, 3), "the line, a row of air, the list");
+    for (w, h) in [(60, 40), (100, 40), (36, 20)] {
+        let (buf, drawn, pal) = draw(&mut app, w, h);
+        assert!((0..w).all(|x| buf[(x, 0)].bg != pal.band), "no band on the first row at {w}x{h}");
+        assert!(text(&buf, 0).trim().is_empty(), "the first row is air at rest: {:?}", text(&buf, 0));
+        let left = (w - w.min(60)) / 2;
+        assert_eq!(buf[(left + 2, 1)].symbol(), "\u{276f}", "the prompt's sign on row 1 at {w}x{h}");
+        assert!(text(&buf, 2).trim().is_empty(), "air under the line");
+        assert_eq!(drawn.picks[0].0, 3, "the list from row 3 at {w}x{h}");
+        assert_eq!(
+            (drawn.close, drawn.minimize, drawn.back, drawn.title),
+            (None, None, None, None),
+            "nothing on the first row takes a click at {w}x{h}"
+        );
+        assert_eq!(buf[(2, h - 4)].symbol(), "\u{2500}", "the rule where it was");
+        assert!(text(&buf, keys_y(h)).contains("Esc"), "the keys where they were: {:?}", text(&buf, keys_y(h)));
+    }
+    // in a place: no back on the first row; back is Esc, and its chip in the key bar takes the click
+    app.view = View::Section(0);
+    app.came_from = vec![View::Home];
+    let (buf, drawn, _) = draw(&mut app, 60, 40);
+    assert!(app.can_go_back());
+    assert!(text(&buf, 0).trim().is_empty() && drawn.back.is_none(), "{:?}", text(&buf, 0));
+    let keys = text(&buf, keys_y(40));
+    assert!(keys.contains("back") && keys.contains("Esc"), "{:?}", keys);
+    assert!(
+        drawn.keys.iter().any(|k| k.3 == HintKey::Escape),
+        "the back chip takes a click: {:?}",
+        drawn.keys
+    );
+}
+
+/// The march, spark thinking, has no band to stand in: it keeps the first row's right end, in the accent, and
+/// never the line's row, where the controls' labels stand.
+#[test]
+fn with_the_windows_band_the_march_keeps_the_first_rows_right_end() {
+    let mut app = home();
+    app.cfg.band = false;
+    app.cfg.spark_shell = "/bin/spark-shell".into();
+    app.set_draft("is anything open");
+    app.ask();
+    assert!(app.thinking(), "spark is asked");
+    app.frame = 3;
+    let bar = spark_dialog::progress::bar(app.work(), &app.glyphs, 3);
+    let (buf, _, pal) = draw(&mut app, 60, 40);
+    let first = text(&buf, 0);
+    assert!(first.trim_end().ends_with(&bar), "the march at the first row's right end: {:?}", first);
+    let at = first.find(&bar).map(|i| first[..i].chars().count() as u16).unwrap();
+    assert_eq!(at + bar.chars().count() as u16, 58, "two cells before the edge, as the line's controls end");
+    assert_eq!(buf[(at, 0)].fg, pal.accent, "in the accent");
+    assert!(!text(&buf, 1).contains(&bar), "never on the line: {:?}", text(&buf, 1));
+}
+
+/// The window's title is the band's words: the dialog's name, then the place and what it holds. It goes to the
+/// terminal inside an escape sequence, and a place's words are its provider's, so nothing that could end the
+/// sequence or start another survives, and the whole has a limit.
+#[test]
+fn the_windows_title_says_the_place_and_holds_nothing_that_could_retitle_or_redraw() {
+    let mut app = home();
+    assert_eq!(app.window_title(), "home");
+    app.view = View::Section(0);
+    assert_eq!(
+        app.window_title(),
+        "home  workspace \u{b7} side by side",
+        "the name, then the place and its state"
+    );
+    app.view = View::Conversation;
+    assert_eq!(
+        app.window_title(),
+        "home  conversation \u{b7} gemma4-26b-a4b",
+        "the model named where it answers"
+    );
+    app.model_on = false;
+    assert_eq!(app.window_title(), "home  conversation");
+    // a provider's words: an escape, a bell, a C1 string terminator, a bidi override, a line break, a tab
+    app.view = View::Section(0);
+    app.providers[0].title = "a\u{1b}]2;evil\u{7}b\u{9c}c\u{202e}d\ne\tf".into();
+    let title = app.window_title();
+    assert_eq!(title, "home  workspace \u{b7} a]2;evilbcde f", "the controls gone, the letters left as letters");
+    assert!(
+        title.chars().all(|c| !c.is_control() && !('\u{202a}'..='\u{202e}').contains(&c)),
+        "no control character reaches the terminal: {:?}",
+        title
+    );
+    app.providers[0].title = "x".repeat(500);
+    assert_eq!(app.window_title().chars().count(), spark_dialog::app::WINDOW_TITLE_MAX, "cut to its limit");
+    // a caller's own title is the name
+    app.providers[0].title = "side by side".into();
+    app.cfg.title = Some("pick a file".into());
+    assert_eq!(app.window_title(), "pick a file  side by side");
+}

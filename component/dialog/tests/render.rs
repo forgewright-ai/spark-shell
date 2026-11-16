@@ -178,6 +178,39 @@ fn settings() {
     render(&app, "settings");
 }
 
+/// The home dialog's frame, the window wearing the band (`--band off`): the sheet's grid, the line on row 1 and
+/// the list from row 3.
+#[test]
+fn the_windows_band_frames() {
+    let mut app = full();
+    app.cfg.band = false;
+    render(&app, "window-home");
+    app.view = View::Dest(SETTINGS_DEST);
+    app.came_from = vec![View::Home];
+    app.in_list = true;
+    app.sel = 1;
+    render(&app, "window-settings");
+    let mut app = base();
+    app.cfg.band = false;
+    app.view = View::Section(0);
+    app.came_from = vec![View::Home];
+    render(&app, "window-section");
+    let mut app = full();
+    app.cfg.band = false;
+    app.view = View::Conversation;
+    app.exchange = vec![
+        Line {
+            sign: Sign::You,
+            text: "what is my address".into(),
+        },
+        Line {
+            sign: Sign::Says,
+            text: "192.0.2.10 on the wire and 192.0.2.20 on wifi; the gateway is 192.0.2.1, and the name server the same.".into(),
+        },
+    ];
+    render(&app, "window-answer");
+}
+
 #[test]
 fn the_model_picker_says_where_it_runs_and_for_whom() {
     let mut app = full();

@@ -497,6 +497,15 @@ fn draw_layout(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
 fn header(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
     let w = pen.w;
     let pal = pen.pal.clone();
+    if !app.cfg.band {
+        // the window wears the band: no row of the dialog's own, and nothing on the first row to click. The march
+        // keeps that row's right end, above the line and never on it, where the controls' labels stand
+        if app.cfg.progress && app.thinking() {
+            let bar = progress::bar(app.work(), &app.glyphs, app.frame);
+            pen.put(w.saturating_sub(2 + cells(&bar) as u16), 0, &bar, pal.accent, false, false);
+        }
+        return;
+    }
     pen.buf.set_style(Rect::new(0, 0, w, 1), Style::default().bg(pal.band));
     let mut right = if app.cfg.close { w - 3 } else { w - 1 };
     // the title's air before the controls: a cell before the x alone, two before minimize, so the pair stands apart

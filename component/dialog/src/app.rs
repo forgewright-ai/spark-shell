@@ -66,6 +66,8 @@ pub const INPUT_MAX: usize = 2000;
 pub const PLACEHOLDER: &str = "search or ask";
 /// What it says where no model answers (none set, or asking turned off): it searches, and offers no more.
 pub const PLACEHOLDER_SEARCH: &str = "search";
+/// The cells a window's title is cut to: a band holds fewer, and a provider's words have no other limit.
+pub const WINDOW_TITLE_MAX: usize = 120;
 
 impl App {
     /// What the empty prompt says it takes: a form of apps names the one thing to type (the dialog design notes).
@@ -6330,6 +6332,24 @@ impl App {
             View::Preview => "view".into(),
             View::Found(k, _) => k.name().into(),
         }
+    }
+
+    /// The window's title where the window wears the band: the dialog's name, then the place and what it holds
+    /// now, as the dialog's own band says them. It is written to the terminal as it is, and a place's words come
+    /// from its provider (a folder's path, a file's name), so the whole is scrubbed and cut.
+    pub fn window_title(&self) -> String {
+        let (name, place) = match (&self.cfg.title, &self.view) {
+            (Some(t), _) => (t.clone(), String::new()),
+            (None, View::Home) => ("home".to_string(), String::new()),
+            (None, _) => ("home".to_string(), self.title()),
+        };
+        let crumb: Vec<String> = [place, self.subtitle()].into_iter().filter(|s| !s.trim().is_empty()).collect();
+        let whole = if crumb.is_empty() {
+            name
+        } else {
+            format!("{}  {}", name, crumb.join(crate::ui::SEP))
+        };
+        crate::scrub::cut(&scrub(&whole), WINDOW_TITLE_MAX)
     }
 
     pub fn subtitle(&self) -> String {

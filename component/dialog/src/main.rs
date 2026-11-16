@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 const USAGE: &str = "spark-dialog -- the spark dialog, one window for every domain (run by spark-shell dialog)
 
   spark-dialog [--provider \"PATH WORDS\"]... [--home SECTION] [--title TEXT]
-               [--close on|off] [--progress on|off]
+               [--band on|off] [--close on|off] [--progress on|off]
                [--composer plus,model,talk] [--attach \"txt md\"]
                [--spark-shell PATH] [--spark PATH] [--transitions DIR]
                [--semantic SOCKET]
@@ -72,6 +72,8 @@ fn args() -> Result<Args, String> {
             }
             "--home" => cfg.home = Some(val("--home")?),
             "--title" => cfg.title = Some(val("--title")?),
+            // off where the window wears the band: no band row, and the title goes to the terminal
+            "--band" => cfg.band = onoff(&val("--band")?)?,
             "--close" => cfg.close = onoff(&val("--close")?)?,
             "--progress" => cfg.progress = onoff(&val("--progress")?)?,
             "--composer" => {
@@ -573,6 +575,8 @@ fn main() {
     // nothing comes before the animation, no cursor and no empty surface (#167)
     // under sway, always: a dialog run elsewhere finds no window of that app id unseen, and nothing changes
     let mut unseen = std::env::var_os("SWAYSOCK").is_some();
+    // the title last written to the terminal, where the window wears the band
+    let mut window_title = String::new();
     let (mut drag_drawn, mut drag_owed) = (Instant::now(), false);
     // how long the last picture of a drag took to make and write: the next waits as long (#148)
     let mut drag_cost = Duration::ZERO;
@@ -717,6 +721,15 @@ fn main() {
                 if want != pointer && drag.is_none() {
                     pointer = want;
                     let _ = write!(out, "\x1b]22;{}\x1b\\", want);
+                }
+            }
+            // the window wears the band: its words are the terminal's title, said again when they change, and
+            // before the window is shown
+            if !app.cfg.band {
+                let want = app.window_title();
+                if want != window_title {
+                    let _ = write!(out, "\x1b]2;{}\x1b\\", want);
+                    window_title = want;
                 }
             }
             let _ = out.flush();
