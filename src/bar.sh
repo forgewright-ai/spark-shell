@@ -214,7 +214,8 @@ al_with() { for c in $(al_cards | cut -f1); do ls -d "$BAR_PROC/asound/card$c/pc
 al_first() { al_with "$1" | sed -n 1p; }   # al_first p|c; sed, not head: no broken pipe
 al_running() { for c in $(al_with "$1"); do grep -qs 'state: RUNNING' "$BAR_PROC/asound/card$c/pcm"*"$1"/sub*/status && { echo "$c"; return 0; }; done; return 0; }   # al_running p|c -> the card in use
 al_default() {   # -> the card ALSA's default resolves to
-    d=$(amixer -D default info 2>/dev/null | sed -n "s/^Card default '\([^']*\)'.*/\1/p" | head -1)
+    # the default may be a sound server's plugin, which waits for good where no server answers: a limit, then the file and the first card
+    d=$(bar_timeout amixer -D default info 2>/dev/null | sed -n "s/^Card default '\([^']*\)'.*/\1/p" | head -1)
     [ -z "$d" ] || { al_cards | awk -F '\t' -v id="$d" '$2 == id {print $1; exit}'; return; }
     [ ! -f "$BAR_ASOUNDRC" ] || { d=$(sed -n 's/^defaults\.pcm\.!*card //p' "$BAR_ASOUNDRC" | head -1); [ -z "$d" ] || { al_cards | awk -F '\t' -v id="$d" '$2 == id || $1 == id {print $1; exit}'; return; }; }
     al_first p
@@ -277,8 +278,8 @@ al_bt_ctl() {   # al_bt_ctl p|c -> the routed device's mixer control
     _n=$(al_bt_name "$1" "$_d"); [ -n "$_n" ] || return 1
     if [ "$1" = p ]; then echo "$_n - A2DP"; else echo "$_n - SCO"; fi
 }
-al_bt_level() { if [ "$1" = p ]; then amixer -D bluealsa sget "$2" 2>/dev/null | sed -n 's/.*Playback [0-9]* \[\([0-9]*\)%\].*/\1/p' | head -1; else amixer -D bluealsa sget "$2" 2>/dev/null | sed -n 's/.*Capture [0-9]* \[\([0-9]*\)%\].*/\1/p' | head -1; fi; }   # al_bt_level p|c CONTROL
-al_bt_muted() { if [ "$1" = p ]; then _s=$(amixer -D bluealsa sget "$2" 2>/dev/null | grep 'Playback [0-9]' | grep -o '\[o[nf]*\]' | head -1); else _s=$(amixer -D bluealsa sget "$2" 2>/dev/null | sed -n 's/.*Capture [0-9]//p' | grep -o '\[o[nf]*\]' | head -1); fi; [ "$_s" = '[off]' ] && echo 1 || echo 0; }   # al_bt_muted p|c CONTROL -> 1 when off
+al_bt_level() { if [ "$1" = p ]; then bar_timeout amixer -D bluealsa sget "$2" 2>/dev/null | sed -n 's/.*Playback [0-9]* \[\([0-9]*\)%\].*/\1/p' | head -1; else bar_timeout amixer -D bluealsa sget "$2" 2>/dev/null | sed -n 's/.*Capture [0-9]* \[\([0-9]*\)%\].*/\1/p' | head -1; fi; }   # al_bt_level p|c CONTROL
+al_bt_muted() { if [ "$1" = p ]; then _s=$(bar_timeout amixer -D bluealsa sget "$2" 2>/dev/null | grep 'Playback [0-9]' | grep -o '\[o[nf]*\]' | head -1); else _s=$(bar_timeout amixer -D bluealsa sget "$2" 2>/dev/null | sed -n 's/.*Capture [0-9]//p' | grep -o '\[o[nf]*\]' | head -1); fi; [ "$_s" = '[off]' ] && echo 1 || echo 0; }   # al_bt_muted p|c CONTROL -> 1 when off
 al_mend_file() {   # our file's `defaults.pcm.card` takes the ! form
     [ -f "$BAR_ASOUNDRC" ] && grep -q 'rendered by spark-shell' "$BAR_ASOUNDRC" && grep -q '^defaults\.pcm\.card ' "$BAR_ASOUNDRC" || return 0
     t=$(sed -e 's/^defaults\.pcm\.card /defaults.pcm.!card /' -e 's/^defaults\.ctl\.card /defaults.ctl.!card /' "$BAR_ASOUNDRC") && printf '%s\n' "$t" > "$BAR_ASOUNDRC"

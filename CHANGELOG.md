@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.150.1
+
+- The sound and the mic lists come back when ALSA's default never
+  answers, as a sound server's plugin does where no server runs. Each
+  ask is given three seconds, then the first card stands. Before, the
+  list never came, and the program that asked stayed behind it for
+  good.
+
 ## v0.150
 
 - The bar's status is narrower. The icons of a group stand two cells

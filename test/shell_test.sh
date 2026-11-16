@@ -5323,6 +5323,18 @@ STUB
     out=$(sh "$SH" bar panel out --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "out        Jabra $SEP 40%" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT out        Jabra	out show" ] && printf '%s\n' "$out" | grep -q "^$RING out        HDMI	out use HDMI$" && printf '%s\n' "$out" | grep -q "^  out        mute	out mute$" && ! printf '%s\n' "$out" | grep -q " mic  " \
         && ok "panel out: the cards that play, the one in use named, and mute; the out section alone (#186)" || bad "panel out" "$out"
+    # ALSA's default that never answers (a sound server's plugin where no server runs): each ask is given the
+    # bar's 3 seconds, then the first card stands; before v0.150.1 the listing, and its provider, waited for good
+    if [ -n "$sys_timeout" ]; then
+        mkdir -p "$H/slowbin"
+        printf '#!/bin/sh\ncase "$*" in "-D default info") echo asked >> "%s/asked-default"; exec sleep 30 ;; esac\nexec "%s/.local/bin/amixer" "$@"\n' "$H" "$H" > "$H/slowbin/amixer"; chmod +x "$H/slowbin/amixer"
+        t0=$(date +%s); out=$(PATH="$H/slowbin:$PATH" sh "$SH" bar panel out --list); t1=$(date +%s)
+        [ -s "$H/asked-default" ] && [ "$((t1 - t0))" -lt 20 ] && [ "$(printf '%s\n' "$out" | sed -n 1p)" = "out        Jabra $SEP 40%" ] \
+            && ok "ALSA: a default that never answers is given 3 seconds, then the first card stands (v0.150.1)" || bad "alsa default hang" "$((t1 - t0))s, asked $(wc -l < "$H/asked-default" 2>/dev/null) | $out"
+        rm -rf "$H/slowbin" "$H/asked-default"
+    else
+        printf '  NOTICE: no timeout on this system -- the limit on a default that never answers is not exercised\n'
+    fi
     printf ' 0 [USB            ]: USB-Audio - Jabra SPEAK 410 USB\n                      Jabra SPEAK 410 USB at usb-0000:00:14.0-2, full speed\n 1 [HDMI           ]: HDA-Intel - HD-Audio Generic\n' > "$P/asound/cards"
     [ "$(sh "$SH" bar panel out --list | sed -n 1p)" = "out        Jabra SPEAK 410 USB $SEP 40%" ] && ok "ALSA: a card with the generic id USB is named by its long name, read past the driver's own hyphen (USB-Audio)" || bad "alsa usb name" "$(sh "$SH" bar panel out --list | sed -n 1p)"
     printf ' 0 [Jabra          ]: USB-Audio - Jabra SPEAK 410 USB\n                      Jabra SPEAK 410 USB at usb-0000:00:14.0-2, full speed\n 1 [HDMI           ]: HDA-Intel - HD-Audio Generic\n                      HD-Audio Generic at 0xdc5c8000 irq 104\n' > "$P/asound/cards"
