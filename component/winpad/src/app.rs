@@ -1536,8 +1536,10 @@ impl App {
                 from,
                 origin: (0, 0),
             });
+            // through a move the pointer stays the holding hand it is over the grip, the one sway shows on a window
+            // that is dragged (its name there is grab)
             self.set_cursor(match kind {
-                Grab::Move => Cursor::Move,
+                Grab::Move => Cursor::Grab,
                 Grab::Grip(s) => resize_cursor(s),
             });
             self.apply();

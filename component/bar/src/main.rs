@@ -74,7 +74,7 @@ let go in its screen's other half sends bar with the edge, top or bottom,
 as its instance: spark-shell stands the bar there. Through the drag an
 accent line across the screen's other edge says the bar will land there,
 once the pointer is in that half. The pointer is a hand on a target, the
-arrow on the ground, and the four arrows through a drag. A sign, a number
+arrow on the ground, and the holding hand through a drag. A sign, a number
 or a text takes a click one cell past its sides too; a gauge takes it on
 its own cells. On a level that can be set, the wheel on any of its parts
 (5 a step) and a click on its gauge (the place clicked, rounded to 5)

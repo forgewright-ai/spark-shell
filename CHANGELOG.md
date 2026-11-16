@@ -12,8 +12,9 @@
   space between them, 40 pixels each on a touch screen. A gauge keeps
   its own cells: a click sets its level by where it falls.
 - A dragged bar shows where it will land: an accent line across the
-  screen's other edge once the pointer is in that half. The pointer is
-  the four arrows, as on the pad.
+  screen's other edge once the pointer is in that half.
+- Through a drag the pointer is the holding hand, on the bar and on the
+  pad as on a window. Before, a dragged pad showed the four arrows.
 - A pad dragged onto the bar shows on the bar, where it will stand,
   with the line at the screen's edge over it.
 - A bar that moves takes the pad with it in one step. Before, the pad

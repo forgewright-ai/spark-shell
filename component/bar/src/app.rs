@@ -1206,13 +1206,14 @@ impl PointerHandler for App {
                     p.out = Some(oi);
                     p.pos = ev.position;
                     // a press on the bar's own ground is a drag of the bar once the pointer has gone far enough: the
-                    // pointer is the four arrows, as the pad's is while it is dragged, a line shows where the bar
-                    // would land, and nothing is lit until it is let go
+                    // pointer is the holding hand, the one sway shows on a window that is dragged (its name there is
+                    // grab) and the pad shows too, a line shows where the bar would land, and nothing is lit until it
+                    // is let go
                     if let Some(held) = p.held.as_mut() {
                         let (dx, dy) = (ev.position.0 - held.at.0, ev.position.1 - held.at.1);
                         held.drag |= dx.hypot(dy) >= bar::DRAG_START;
                         if held.drag {
-                            self.shape(Cursor::Move);
+                            self.shape(Cursor::Grab);
                             self.guide(ev.position.1);
                             continue;
                         }
