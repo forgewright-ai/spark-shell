@@ -914,7 +914,7 @@ else
     printf '#!/bin/sh\n[ "$1" = --version ] && echo "foot version: 1.28.0 (Arch)"\n' > "$HOME/.local/bin/foot"
     sh "$SH" on --yes >/dev/null
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: foot 1.28 gets [colors-dark] alone" || bad "foot 1.28 section" "$(grep -n '^\[' "$foot")"
-    grep -q '^client.focused *#ff5555 #ff5555 #000000 #802b2b80 #ff5555$' "$sway" && grep -q '^client.unfocused *#060606 #060606 #555555 #060606 #060606$' "$sway" && ! grep -q '^client\.unfocused.*#ff5555' "$sway" && grep -q '^default_border normal 1$' "$sway" && grep -q '^default_floating_border normal 1$' "$sway" && grep -q '^titlebar_border_thickness 1$' "$sway" && grep -q '^title_align left$' "$sway" && ! grep -q '^smart_borders' "$sway" \
+    grep -q '^client.focused *#ff5555 #ff5555 #000000 #ff5555 #ff5555$' "$sway" && grep -q '^client.unfocused *#060606 #060606 #555555 #060606 #060606$' "$sway" && ! grep -q '^client\.unfocused.*#ff5555' "$sway" && grep -q '^default_border normal 1$' "$sway" && grep -q '^default_floating_border normal 1$' "$sway" && grep -q '^titlebar_border_thickness 1$' "$sway" && grep -q '^title_align left$' "$sway" && ! grep -q '^smart_borders' "$sway" \
         && ok "sway: the chrome (v0.140): a title band and a one-pixel frame in one shade, the surface shade on the focused window (#0f0f0f), four percent above the ground on the others (#060606) with muted text; the accent only as the focused indicator, the drop area of a moving window (#47), at a quarter: #ff5555 halved with alpha 80, as sway takes it (#49)" || bad "sway focused" "$(grep -n 'client\|border' "$sway")"
     grep -qxF 'for_window [shell=".*"] title_format "  %title"' "$sway" && grep -qxF 'for_window [app_id="^(foot|spark-shell-.*)$"] title_format "  terminal   %title"' "$sway" \
         && ok "sway: with no winpad on the machine the titles are plain: no button is drawn that does not click (v0.143)" || bad "band plain" "$(grep -n title_format "$sway")"
@@ -1094,7 +1094,7 @@ else
     SWAYSOCK=/nonexistent sh "$SH" on --yes >/dev/null
     grep -q "; seat \* xcursor_theme spark-white $((sz + 1)); seat \* xcursor_theme spark-white $sz; " "$cmds" && [ "$(cat "$seen" 2>&1)" = "$(cat "$pd/spark-white/version")" ] \
         && ok "on: a drawing sway has not loaded reaches it, the pointer one pixel up, then back, its version kept (#48)" || bad "pointer fresh" "sz=$sz $(cat "$cmds" "$seen" 2>&1)"
-    grep -q '^client.focused #[0-9a-f]* #[0-9a-f]* #[0-9a-f]* #802b2b80 #[0-9a-f]*; ' "$cmds" && ok "on: a running sway takes the drop area at a quarter of the accent too, with no reload (#49)" || bad "live drop area" "$(cut -c1-160 "$cmds")"
+    grep -q '^client.focused #ff5555 #ff5555 #[0-9a-f]* #ff5555 #ff5555; ' "$cmds" && ok "on: a running sway takes the focused frame and its indicator, the accent on every side, with no reload (#49, v0.150)" || bad "live drop area" "$(cut -c1-160 "$cmds")"
     grep -q '; gaps inner all set 8; gaps outer all set 8; \[tiling\] border normal 1$' "$cmds" && ok "on: a running sway takes the gaps of 8 and the title band on the open workspaces at once, with no reload (#265)" || bad "live gaps" "$(cut -c1-400 "$cmds")"
     : > "$cmds"; SWAYSOCK=/nonexistent sh "$SH" on --yes >/dev/null
     grep -q "; seat \* xcursor_theme spark-white $sz; " "$cmds" && ! grep -q "xcursor_theme spark-white $((sz + 1))" "$cmds" && ok "on: a drawing sway loaded goes once, the size alone after" || bad "pointer fresh again" "$(cat "$cmds")"
@@ -1290,7 +1290,7 @@ if [ "$(uname -s)" != Darwin ]; then
     printf '%s\n' "$out" | grep -q "^wallpaper default -- the ground, the palette's background a shade darker (#000000); it follows the palette\$" && ok "theme wallpaper (bare): the default is the forge" || bad "wallpaper bare default" "$out"
     [ ! -e "$REPO/gallery/wallpapers" ] && ok "wallpapers/: no picture ships with the repo; the ground is the default" || bad "wallpapers dir" "$(ls "$REPO/gallery/wallpapers")"
     sh "$SH" theme wallpaper none >/dev/null
-    grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^gaps outer 8$' "$sway" && grep -q '^alpha=0.95$' "$foot" && grep -q '^default_border normal 1$' "$sway" && grep -q '^client.focused *#ff5555 #ff5555 #000000 #[0-9a-f]\{6\}80 #ff5555$' "$sway" \
+    grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^gaps outer 8$' "$sway" && grep -q '^alpha=0.95$' "$foot" && grep -q '^default_border normal 1$' "$sway" && grep -q '^client.focused *#ff5555 #ff5555 #000000 #ff5555 #ff5555$' "$sway" \
         && ok "wallpaper none: the ground (#35), the windows apart and as transparent as ALPHA says, their band and frame (the indicator is the accent, #47)" || bad "wallpaper none render" "$(grep -n 'bg\|gaps\|border' "$sway"; grep -n alpha "$foot")"
     out=$(sh "$SH" theme wallpaper)
     printf '%s\n' "$out" | grep -q '^wallpaper default -- the ground' && ok "theme wallpaper (bare): none is said as the ground" || bad "wallpaper bare" "$out"

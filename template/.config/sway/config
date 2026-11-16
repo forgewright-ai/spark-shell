@@ -47,9 +47,10 @@ workspace_layout @WS_LAYOUT@
 # muted, and a one-pixel frame in the band's own shade. The focused window wears the accent with
 # the ground's color as text, as the bar's workspace block; the others four percent above the
 # ground with muted text, so the focus reads at a glance; urgent keeps the alarm. The
-# indicator is the accent at a quarter (#47, #49): the drop area of a moving window, and the side
-# of a window alone in a split where the next one opens. sway halves the four channels it is
-# given and draws them premultiplied, so the accent goes in with each channel halved and alpha 80.
+# indicator is the frame's own color, the accent: sway paints the side of a window alone in a
+# split, where the next one opens, in the indicator's color, and a paler line there read as a
+# thicker border than the frame's other sides (v0.150). The drop area of a moving window is
+# that color too, which sway draws at half its strength.
 # The close, minimize and fill buttons are the start of every title: sway's own pixels, so they move
 # with their window. The pad tells sway how each window's are drawn, by its focus and the pointer,
 # and takes their clicks.
@@ -69,7 +70,7 @@ for_window [app_id="@TERM_APPS@"] title_format "@BAND_GLYPHS@@BAND_MIC@@BAND_TER
 seat * xcursor_theme @POINTER_NAME@ @POINTER_SIZE@
 
 # border  background  text  indicator  child_border
-client.focused          #@HEX_ACCENT@ #@HEX_ACCENT@ #@PANEL_INK@ #@DROP_HEX@ #@HEX_ACCENT@
+client.focused          #@HEX_ACCENT@ #@HEX_ACCENT@ #@PANEL_INK@ #@HEX_ACCENT@ #@HEX_ACCENT@
 client.focused_inactive #@PANEL_LOW@ #@PANEL_LOW@ #@HEX_MUTED@ #@PANEL_LOW@ #@PANEL_LOW@
 client.unfocused        #@PANEL_LOW@ #@PANEL_LOW@ #@HEX_MUTED@ #@PANEL_LOW@ #@PANEL_LOW@
 client.urgent           #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@PANEL_INK_URGENT@ #@HEX_ANSI_1@ #@HEX_ANSI_1@

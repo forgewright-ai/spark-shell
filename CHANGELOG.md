@@ -21,9 +21,10 @@
   count meanwhile.
 - After the bar moves, the windows the keys placed stand at their places
   on the new area, whole. Before, they were left 44 pixels short.
-- The focused window's frame is one shade on every side, the accent at
-  a quarter. Before, a tiled window alone on its workspace had a bright
-  line at its left and foot and a dim one at its right.
+- The focused window's frame is the accent on every side. Before, a
+  tiled window alone on its workspace had a pale line at its right,
+  which read as a thicker border than the left one. The drop area of a
+  dragged window is tinted in the accent at half its strength.
 
 ## v0.149.1
 
