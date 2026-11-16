@@ -2382,6 +2382,7 @@ case \$1 in
 esac
 EOF
 chmod +x "$H/lx/tmux"
+printf '#!/bin/sh\n' > "$H/lx/ps"; chmod +x "$H/lx/ps"   # no process table: this machine's own pts/0 must not name the kind of these files
 want=$H/osc.want; : > "$want"
 i=0
 for c in 282828 cc241d 98971a d79921 458588 b16286 689d6a a89984 928374 fb4934 b8bb26 fabd2f 83a598 d3869b 8ec07c ebdbb2; do
