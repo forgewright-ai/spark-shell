@@ -74,6 +74,9 @@ jobs:
           set -eu
           mkdir -p out
           sh test/dialog_sbom.sh > out/spark-dialog.cdx.json
+          # installs through v0.151 ask for the dialog under its musl name before they move (release_up): a note
+          # under that name lets them move to this release, whose own code fetches the -gnu build
+          printf 'spark-dialog for x86_64 Linux is spark-dialog-x86_64-linux-gnu from v0.152 on.\n' > out/spark-dialog-x86_64-linux-musl
           awk -v t="## ${GITHUB_REF_NAME}" '$0 == t { on = 1; next } on && /^## / { exit } on' CHANGELOG.md > out/notes.md
           [ -s out/notes.md ] || { echo "CHANGELOG.md has no section for ${GITHUB_REF_NAME}"; exit 1; }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
@@ -280,4 +283,4 @@ jobs:
       - name: the release, the CHANGELOG section as its notes
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "spark-shell $GITHUB_REF_NAME" --notes-file out/notes.md out/spark-dialog-x86_64-linux-gnu out/spark-dialog-x86_64-linux-gnu.sha256 out/spark-dialog.cdx.json out/spark-wallpaper-x86_64-linux-gnu out/spark-wallpaper-x86_64-linux-gnu.sha256 out/spark-winpad-x86_64-linux-gnu out/spark-winpad-x86_64-linux-gnu.sha256 out/spark-ear-x86_64-linux-gnu out/spark-ear-x86_64-linux-gnu.sha256 out/spark-bar-x86_64-linux-gnu out/spark-bar-x86_64-linux-gnu.sha256
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "spark-shell $GITHUB_REF_NAME" --notes-file out/notes.md out/spark-dialog-x86_64-linux-gnu out/spark-dialog-x86_64-linux-gnu.sha256 out/spark-wallpaper-x86_64-linux-gnu out/spark-wallpaper-x86_64-linux-gnu.sha256 out/spark-winpad-x86_64-linux-gnu out/spark-winpad-x86_64-linux-gnu.sha256 out/spark-ear-x86_64-linux-gnu out/spark-ear-x86_64-linux-gnu.sha256 out/spark-bar-x86_64-linux-gnu out/spark-bar-x86_64-linux-gnu.sha256 out/spark-dialog-x86_64-linux-musl out/spark-dialog.cdx.json

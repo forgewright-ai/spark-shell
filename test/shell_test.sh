@@ -728,7 +728,7 @@ fi
 mv "$H/starship.aside" "$H/.local/bin/starship"
 out=$(sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q '^ok     prompt       starship 0.0-stub draws the prompt$' && ok "on: the prompt row names the starship it found" || bad "prompt ok" "$out"
-! grep -q 'STARSHIP_VERSION' "$SRC" && [ "$(grep -c 'curl -' "$SRC")" = 10 ] && grep -q '^    curl -fsIL --proto .=https,file. --proto-redir .=https. -o /dev/null "$DIALOG_URL/$1/spark-dialog-$_ut"' "$SRC" && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$_df" "$DIALOG_URL/$_rt/spark-dialog-$_dt"' "$SRC" \
+! grep -q 'STARSHIP_VERSION' "$SRC" && [ "$(grep -c 'curl -' "$SRC")" = 10 ] && grep -q '^    curl -fsIL --proto .=https,file. --proto-redir .=https. -o /dev/null "$DIALOG_URL/$1/spark-dialog.cdx.json"' "$SRC" && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$_df" "$DIALOG_URL/$_rt/spark-dialog-$_dt"' "$SRC" \
     && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$_plf" "$DIALOG_URL/$_plr/spark-wallpaper-$_plt"' "$SRC" \
     && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$_pdf" "$DIALOG_URL/$_pdr/spark-winpad-$_pdt"' "$SRC" \
     && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$_sbf" "$DIALOG_URL/$_sbr/spark-bar-$_sbt"' "$SRC" \
@@ -738,6 +738,12 @@ printf '%s\n' "$out" | grep -q '^ok     prompt       starship 0.0-stub draws the
     && grep -q 'curl --unix-socket "$SEMANTIC_SOCK" -sf -m 2 -o /dev/null http://localhost/health' "$SRC" \
     && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$4" --connect-timeout 30 --speed-limit 1024 --speed-time 60 "$2"' "$SRC" \
     && ok "spark-shell: four downloads, the release files of the dialog, of spark-wallpaper (#187), of spark-winpad (v0.133) and of spark-bar (v0.147), the font's (fetched by the faces row too, when the font row did not, #247) and the semantic search's model (v0.130), each checked against the sha256 pinned for it; one look that keeps nothing, whether a release is up; and one at the semantic search's own socket; no pinned version of anything else" || bad "a download survives" "$(grep -n 'STARSHIP_VERSION\|curl ' "$SH")"
+# the release keeps the two names an install asks for before it moves: the SBOM (from v0.152.1) and the dialog's musl name
+# (through v0.151); without either, an install on that side says "not published yet" for good (v0.152 did, to every one)
+_rl=$(grep -m1 'run: gh release create' "$REPO/.github/workflows/release.yml")
+case $_rl in *" out/spark-dialog-x86_64-linux-musl out/spark-dialog.cdx.json") _rok=1 ;; *) _rok=0 ;; esac
+[ "$_rok" = 1 ] && grep -q "> out/spark-dialog-x86_64-linux-musl$" "$REPO/.github/workflows/release.yml" \
+    && ok "release.yml: the dialog's old musl name for installs through v0.151, and the SBOM last, the name update reads" || bad "release names" "$_rl"
 
 fi
 
@@ -8251,6 +8257,10 @@ if command -v ssh-keygen >/dev/null 2>&1; then
         && [ "$(git -C "$U/c" rev-parse HEAD)" = "$(git -C "$U/c" rev-parse 'v9.6^{commit}')" ] \
         && ok "update: a tag whose release is not up moves nothing, and says so" || bad "update: release not up" "$rc $out"
     mkdir -p "$U/rel/v9.7"; : > "$U/rel/v9.7/spark-dialog-x86_64-linux-gnu"
+    out=$(PATH=$U/bin:$PATH SPARK_SHELL_DIALOG_URL="file://$U/rel" sh "$C" update 2>&1) && rc=0 || rc=$?
+    [ "$rc" -eq 1 ] && [ "$(git -C "$U/c" rev-parse HEAD)" = "$(git -C "$U/c" rev-parse 'v9.6^{commit}')" ] \
+        && ok "update: a build alone is no release yet; its SBOM, uploaded last, says the release is up" || bad "update: build alone" "$rc $out"
+    : > "$U/rel/v9.7/spark-dialog.cdx.json"   # a name no release changes (the dialog's build renamed itself in v0.152)
     out=$(PATH=$U/bin:$PATH SPARK_SHELL_DIALOG_URL="file://$U/rel" sh "$C" update 2>&1) && rc=0 || rc=$?
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "spark-shell update: v9.7, signed by spark-shell-release (was v9.6)" ] \
         && [ "$(git -C "$U/c" rev-parse HEAD)" = "$(git -C "$U/c" rev-parse 'v9.7^{commit}')" ] \

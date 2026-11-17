@@ -79,11 +79,13 @@ cmd_update() {   # the clone moves forward to the newest signed tag past its own
     rm -rf "$TMP"; trap - EXIT   # an exec runs no trap
     exec "$REPO/spark-shell" on --yes     # the new tree applies itself
 }
-release_up() {   # release_up TAG -> 0 when TAG's dialog can be fetched, or there is nothing to fetch here
-    _ut=$(dialog_target) || return 0
+release_up() {   # release_up TAG -> 0 when TAG's release is published, or there is nothing to fetch here
+    # its SBOM, uploaded last, a name no release changes: the dialog's build changed its own in v0.152, and a check by that
+    # name kept every older install from moving
+    dialog_target >/dev/null || return 0
     [ "$DIALOG_URL" != none ] || return 0
     command -v curl >/dev/null 2>&1 || return 0
-    curl -fsIL --proto '=https,file' --proto-redir '=https' -o /dev/null "$DIALOG_URL/$1/spark-dialog-$_ut" 2>/dev/null
+    curl -fsIL --proto '=https,file' --proto-redir '=https' -o /dev/null "$DIALOG_URL/$1/spark-dialog.cdx.json" 2>/dev/null
 }
 dialog_install() {   # the dialog's row of on: in place as pinned, or fetched for the signed tag and checked
     _dt=$(dialog_target) || { skip dialog "no build for $(uname -m) yet: the desktop keys open nothing"; return 0; }

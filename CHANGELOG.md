@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.152.1
+
+- `spark-shell update` moves a Linux install on v0.151 or before again.
+  Before it moves, update asks whether the new release's dialog can be
+  fetched, by the name of the build it knows, and v0.152 named its
+  build spark-dialog-x86_64-linux-gnu: every such install said "not
+  published yet" for good. The release now also carries a note under
+  the old name, spark-dialog-x86_64-linux-musl, so those installs move
+  to this one, whose own code fetches the new build.
+- update now asks for the release's SBOM, spark-dialog.cdx.json, the
+  last file a release uploads and a name no release changes, so a
+  renamed build cannot hold an install back again.
+
 ## v0.152
 
 - Home is a window of its own. spark-dialog opens it and draws it with
