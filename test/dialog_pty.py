@@ -55,8 +55,9 @@ def main(binary):
         return test()
 
     text = lambda: seen.decode("utf-8", "replace")
-    ok(read_until(lambda: "home" in text() and "settings" in text() and "search or ask" in text() and "\u2212" in text() and "\u00d7" in text(), 15),
+    ok(read_until(lambda: "home" in text() and "settings" in text() and "search" in text() and "\u2212" in text() and "\u00d7" in text(), 15),
        "the home draws: its title, Settings, the prompt, minimize and close as the minus and the x", text()[-400:])
+    ok("search or ask" not in text(), "with no model to ask the prompt says search alone")
     ok("\x1b]52" not in text(), "the dialog writes no clipboard sequence")
     os.write(fd, b"nord")
     ok(read_until(lambda: "nord" in text(), 5), "typing finds the palette among every row")
@@ -158,7 +159,7 @@ def resize(binary, env):
 
     try:
         fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
-        assert wait_for(["search or ask"]), "resize fixture did not open"
+        assert wait_for(["search"]), "resize fixture did not open"
         os.write(fd, b"resize draft")
         assert wait_for(["resize draft"]), "draft did not appear"
         cursor_queries.clear()
@@ -299,8 +300,10 @@ print(json.dumps({"answer": "", "steps": [{"name": "notes_pick", "arguments": {"
     try:
         assert wait_for(lambda: b"notes" in seen), "home did not draw"
         # Provider discovery and model discovery are independent. Wait for the visible connection state before
-        # typing, so a step found by meaning has a model to read its values
-        assert wait_for(lambda: b"fixture-model" in seen), "the fixture model did not become available"
+        # typing, so a step found by meaning has a model to read its values: the prompt offers to ask once a model
+        # answers, and home names no model
+        assert wait_for(lambda: b"or ask" in seen), "the fixture model did not become available"   # only the cells that change are sent: the words after search
+        assert b"fixture-model" not in seen, "home named its model"
         os.write(fd, b"use this")
         # the words rest, the stand-in server ranks the step that picks closest, and the list shows it
         assert wait_for(lambda: b"notes pick" in seen), "the step found by meaning did not draw"
@@ -365,7 +368,7 @@ def apps_meaning(binary, base_env, home):
         if not os.path.exists(path): return []
         with open(path) as f: return [json.loads(line) for line in f if line.endswith("\n")]
     try:
-        assert wait_for(lambda: b"notes" in seen and b"fixture-model" in seen), "home did not draw with its model"
+        assert wait_for(lambda: b"notes" in seen and b"or ask" in seen), "home did not draw with its model"
         os.write(fd, b"apps")
         time.sleep(0.5)
         os.write(fd, b"\r")
@@ -499,7 +502,7 @@ def files(binary, env, home):
     tight = lambda: re.sub(r"\s+", "", plain())   # the terminal's cursor moves split words: compared with no spaces
     shown = lambda: re.sub(r"\s+", "", screen.text())   # the screen as the terminal holds it, with no spaces
     try:
-        assert wait_for(lambda: "search or ask" in plain() and "browse your home" in plain()), "the home did not draw with the files ready"
+        assert wait_for(lambda: "search" in plain() and "browse your home" in plain()), "the home did not draw with the files ready"
         os.write(fd, b"\x1bOQ")        # F2 where no row can be renamed
         assert wait_for(lambda: "nothingtorenamehere" in shown()), "F2 at the home did not refuse: " + screen.text()[-900:]
         os.write(fd, b"\x03")          # Ctrl+C is copy path: at the home it refuses, and the dialog stays
@@ -531,12 +534,12 @@ def files(binary, env, home):
         assert wait_for(lambda: "thisfolder" in shown() and "view\u00b7" not in shown()), "Esc did not leave the view: " + screen.text()[-900:]
         ok(True, "F3 through the terminal views the lit file, and Esc comes back")
         os.write(fd, b"v")             # v on a lit row is a letter: a search starts and no view comes up
-        assert wait_for(lambda: "searchorask" not in shown()), "v did not reach the prompt: " + screen.text()[-900:]
+        assert wait_for(lambda: "\u276fsearch" not in shown()), "v did not reach the prompt: " + screen.text()[-900:]
         time.sleep(0.5)
         wait_for(lambda: False, 0.3)
         assert "view\u00b7" not in shown(), "v opened a view: " + screen.text()[-900:]
         os.write(fd, b"\x7f")
-        assert wait_for(lambda: "searchorask" in shown() and "hello.txt" in shown()), "Backspace did not clear the v: " + screen.text()[-900:]
+        assert wait_for(lambda: "\u276fsearch" in shown() and "hello.txt" in shown()), "Backspace did not clear the v: " + screen.text()[-900:]
         ok(True, "v on a lit row types a letter and opens nothing")
         os.write(fd, b"\x1b[B")       # typing took the keys to the prompt: Down, Down lights the file again
         time.sleep(0.3)
@@ -547,8 +550,9 @@ def files(binary, env, home):
         # protocol's and a legacy pty cannot send it, so the desktop proof alone presses it
         status = lambda: re.sub(r"\s+", "", "".join(screen.cells[35]))
         prompt = lambda: re.sub(r"\s+", "", "".join(screen.cells[2]))
+        CONTENT = 4   # the content's first row: the band, air, the prompt's one line, air
         twice = lambda word: any("".join(row).count(word) >= 2 for row in screen.cells)
-        line = lambda: any("\u2502" in "".join(row) for row in screen.cells[8:35])
+        line = lambda: any("\u2502" in "".join(row) for row in screen.cells[CONTENT:35])
         os.write(fd, b" ")             # Space: the lit file selected, the bar a row down
         assert wait_for(lambda: "1selected" in status()), "Space did not count the selection on the status row: " + screen.text()[-900:]
         ok(True, "Space selects the lit file: the status row reads 1 selected")
@@ -559,7 +563,7 @@ def files(binary, env, home):
         assert wait_for(lambda: "hello.txt" in status()), "the file's line is not back on the status row: " + screen.text()[-900:]
         ok(True, "Esc clears the selection first: hello.txt's line is back on the status row")
         os.write(fd, b"\x1b[C")        # Right: the second pane, the same folder, the bar on its first row
-        assert wait_for(lambda: line() and twice("hello.txt") and "".join(screen.cells[8]).count("~") >= 2 and "docs" in status()), "Right did not open the second pane: " + screen.text()[-900:]
+        assert wait_for(lambda: line() and twice("hello.txt") and "".join(screen.cells[CONTENT]).count("~") >= 2 and "docs" in status()), "Right did not open the second pane: " + screen.text()[-900:]
         assert wait_for(lambda: not re.search(r"\b(home|recent)\b", screen.text())), "two panes at home keep a heading: " + screen.text()[-900:]
         ok(True, "Right opens the second pane: the line between them, each pane's path on its first row, the bar on the second's first row, no home heading and no recent")
         wait_for(lambda: False, 0.3)
@@ -578,11 +582,11 @@ def files(binary, env, home):
         os.write(fd, b"\x1bOQ")        # F2: the form in the prompt, the name as it is, both panes on screen
         assert wait_for(lambda: "hello.txt" in prompt() and "cancelEsc" in shown() and "saveEnter" in shown() and line()), "F2 did not open the form: " + screen.text()[-900:]
         os.write(fd, b"\x1b")
-        assert wait_for(lambda: "searchorask" in prompt()), "Esc did not cancel the form: " + screen.text()[-900:]
+        assert wait_for(lambda: "\u276fsearch" in prompt()), "Esc did not cancel the form: " + screen.text()[-900:]
         os.write(fd, b"\x1b[18~")      # F7: the same form, its placeholder
         assert wait_for(lambda: "foldername" in prompt() and "cancelEsc" in shown() and line()), "F7 did not open the form: " + screen.text()[-900:]
         os.write(fd, b"\x1b")
-        assert wait_for(lambda: "searchorask" in prompt()), "Esc did not cancel the form: " + screen.text()[-900:]
+        assert wait_for(lambda: "\u276fsearch" in prompt()), "Esc did not cancel the form: " + screen.text()[-900:]
         ok(os.path.exists(os.path.join(home, "hello.txt")), "F2 opens the form with the name, F7 asks folder name, both panes stay, and Esc cancels")
         os.write(fd, b"\x1b[15~")      # F5 with both panes on one folder
         assert wait_for(lambda: "theotherpaneshowsthisfolder" in status()), "F5 did not refuse: " + screen.text()[-900:]
@@ -593,12 +597,12 @@ def files(binary, env, home):
         os.write(fd, b"\x1b[C")        # the right pane, on docs, its first row
         assert wait_for(lambda: "docs" in status()), "Right did not go to the right pane: " + screen.text()[-900:]
         os.write(fd, b"\r")
-        assert wait_for(lambda: "~/docs" in "".join(screen.cells[8])), "Enter did not open docs in the right pane: " + screen.text()[-900:]
+        assert wait_for(lambda: "~/docs" in "".join(screen.cells[CONTENT])), "Enter did not open docs in the right pane: " + screen.text()[-900:]
         os.write(fd, b"\x1b[D")
         assert wait_for(lambda: "hello.txt" in status()), "Left did not come back: " + screen.text()[-900:]
         os.write(fd, b"\x1b[15~")      # F5: at once, to the other pane's folder
         assert wait_for(lambda: "hello.txtcopiedto~/docs" in status() and "undo" in status()), "F5 did not copy: " + screen.text()[-900:]
-        ok(os.path.exists(os.path.join(home, "docs", "hello.txt")) and "searchorask" in prompt() and line(),
+        ok(os.path.exists(os.path.join(home, "docs", "hello.txt")) and "\u276fsearch" in prompt() and line(),
            "F5 refuses on one folder and copies to the other pane's at once, no words in the prompt, both panes on screen", screen.text()[-900:])
         os.write(fd, b"\x1b[21~")      # F10: the conversation, and back
         assert wait_for(lambda: "conversation" in "".join(screen.cells[0])), "F10 did not open the conversation: " + screen.text()[-900:]
@@ -606,11 +610,11 @@ def files(binary, env, home):
         assert wait_for(lambda: "conversation" not in "".join(screen.cells[0]) and line()), "F10 did not come back: " + screen.text()[-900:]
         ok(True, "F10 opens the conversation and comes back to the panes")
         os.write(fd, b"\x1b[20~")      # F9: the actions, inside the pane, close pane among them
-        assert wait_for(lambda: "closepane" in shown() and "~/docs" in "".join(screen.cells[8])), "the actions lack close pane or the other pane: " + screen.text()[-900:]
+        assert wait_for(lambda: "closepane" in shown() and "~/docs" in "".join(screen.cells[CONTENT])), "the actions lack close pane or the other pane: " + screen.text()[-900:]
         os.write(fd, b"close pane")    # typing narrows the menu, the best match lit
         assert wait_for(lambda: "newfolderF7" not in shown()), "typing did not narrow the actions: " + screen.text()[-900:]
         os.write(fd, b"\r")
-        assert wait_for(lambda: "hello.txt" in shown() and not line() and not twice("hello.txt") and "".join(screen.cells[8]).count("~") < 2), "close pane did not close the second pane: " + screen.text()[-900:]
+        assert wait_for(lambda: "hello.txt" in shown() and not line() and not twice("hello.txt") and "".join(screen.cells[CONTENT]).count("~") < 2), "close pane did not close the second pane: " + screen.text()[-900:]
         ok(True, "F9 draws the actions in the pane with the other on screen; close pane, typed, closes the second pane: the folder once again")
     except AssertionError as e:
         ok(False, "files terminal interaction", str(e))
@@ -636,7 +640,7 @@ def busy(binary, env, home):
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
     seen = bytearray()
     end = time.time() + 15
-    while time.time() < end and b"search or ask" not in seen:
+    while time.time() < end and b"search" not in seen:
         r, _, _ = select.select([fd], [], [], 0.1)
         if r:
             seen.extend(os.read(fd, 65536))
@@ -697,7 +701,7 @@ def tools_walk(binary, env, home):
     # every check reads the screen as drawn: the dialog sends only the cells that change, so the bytes alone miss a
     # word whose letters were on screen already (`oftware`)
     tail = scr.text
-    ok(wait_for(lambda: "search or ask" in tail() and "tools" in tail()), "the home draws with tools among its places", tail()[-400:])
+    ok(wait_for(lambda: "search" in tail() and "tools" in tail()), "the home draws with tools among its places", tail()[-400:])
     os.write(fd, b"tools")
     time.sleep(0.5)
     os.write(fd, b"\r")
@@ -1060,7 +1064,7 @@ def keys(binary, env):
     seen = bytearray()
     answered = False
     end = time.time() + 15
-    while time.time() < end and b"search or ask" not in seen:
+    while time.time() < end and b"search" not in seen:
         r, _, _ = select.select([fd], [], [], 0.1)
         if r:
             seen.extend(os.read(fd, 65536))
