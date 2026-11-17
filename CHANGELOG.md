@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.152
+
+- Home is a window of its own. spark-dialog opens it and draws it with
+  cairo and pango, as the bar and the pad draw theirs; foot no longer
+  holds it. It wears the band every window wears: its buttons, its
+  name, a drag by it.
+- Home's top is one line: the prompt, with attach and talk at its end.
+  The dialog's own band row is gone, and home names no model: the
+  model and its choice are in settings.
+- Pictures are painted as they are: a file's view, the apps' icons and
+  the opening keep all their tones and their soft edges. In foot they
+  were cut to 255.
+- Ctrl+V or Ctrl+Shift+V pastes the clipboard. Shift+Insert and the
+  middle button paste what the pointer last selected.
+- The text cursor is steady, a block while home has the keys and its
+  outline while it has not.
+- A click on a reminder's or a drive's notification opens home through
+  the same opener as Super+Space, so it never opens a second home.
+- Where the dialog cannot open a window of its own, home opens in foot
+  as before. The login screen stays in the terminal.
+- The dialog's release build is spark-dialog-x86_64-linux-gnu: it links
+  glibc, as the bar's does, to open Wayland, cairo and pango when it
+  runs.
+
 ## v0.151
 
 - A dragged bar comes with the pointer: a copy of the bar follows it
