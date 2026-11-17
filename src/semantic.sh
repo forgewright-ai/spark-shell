@@ -136,6 +136,9 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- home, its conversation, or
     fi
     _dwin=${SPARK_DIALOG_WINDOW:-}   # the window maps unseen; the dialog shows it once its opening is drawn
     unset SPARK_DIALOG_WINDOW   # read once: a terminal a step opens from here is no dialog's window
+    # own: a window the dialog draws itself, asked by home's opener; with no compositor to open it on, the opener hears so
+    # at once and falls back to the terminal's window
+    [ "$_dwin" != own ] || [ -n "${WAYLAND_DISPLAY:-}" ] || { echo "no Wayland compositor here: the dialog opens no window of its own"; return 1; }
     config_load
     [ "$OS" != Darwin ] || refuse_in dialog "the dialog is the Linux desktop's; in a terminal here, spark-shell panel"
     command -v jq >/dev/null 2>&1 || refuse_in dialog "jq is not installed (spark-shell on)"
@@ -161,7 +164,9 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- home, its conversation, or
     _dc=''; [ "$DIALOG_ATTACH" != yes ] || _dc=plus; [ "$DIALOG_MODEL" != yes ] || _dc="${_dc:+$_dc,}model"; [ "$DIALOG_TALK" != yes ] || _dc="${_dc:+$_dc,}talk"
     _sp=$(spark_bin); set -- "$@" --spark "$_sp"
     # its own window under sway wears the window's band (the template's rule): no band row of the dialog's, its words the window's title
-    [ "$_dwin" != 1 ] || [ -z "${SWAYSOCK:-}" ] || set -- "$@" --band off
+    [ "$_dwin" != 1 ] || ! wm_session || set -- "$@" --band off
+    # a window the dialog draws itself: the text's face in pango's words
+    [ "$_dwin" != own ] || set -- "$@" --window --font "$(bar_font "$(font_spec)")"
     _ta=$(dialog_transitions); [ -z "$_ta" ] || set -- "$@" --transitions "$_ta"
     # started aside, never waited for; only inside the desktop, whose end stops it (ssh would leave it running)
     if [ -z "$(semantic_why)" ]; then
@@ -169,7 +174,9 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- home, its conversation, or
         if wm_session || [ -n "${WAYLAND_DISPLAY:-}" ]; then ( semantic_start ) </dev/null >/dev/null 2>&1 & fi
         set -- "$@" --semantic "$SEMANTIC_SOCK"
     fi
-    FULL_ID=''; ! panel_own_window || panel_full_aside
+    FULL_ID=''
+    if [ "$_dwin" = own ]; then ! wm_session || ! wm_here || panel_full_aside focused
+    elif panel_own_window; then panel_full_aside; fi
     ! desktop_wanted || ! term_is_ours || { SPARK_DIALOG_SLOTS=1; export SPARK_DIALOG_SLOTS; }   # foot's five slots: a new look recolors the dialog in place
     st=0; "$_db" "$@" --composer "$_dc" --attach "$DIALOG_ATTACH_TYPES" --spark-shell "$REPO/spark-shell" || st=$?
     [ "$st" -eq 3 ] || panel_full_back   # 3: a step put a window on the screen, and the window is the receipt

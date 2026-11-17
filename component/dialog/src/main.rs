@@ -577,6 +577,11 @@ fn main() {
             std::process::exit(2);
         }
     };
+    // what the dialog starts (its providers, a video's player) is told the window is the dialog's own: a place in
+    // it is counted from its corner, with no terminal's padding. Said before any thread starts
+    if a.window {
+        std::env::set_var("SPARK_DIALOG_OWN_WINDOW", "1");
+    }
     // a terminal's slots recolor with the terminal; a window of the dialog's own has none, and wears the colors
     let slots = slots_here() && !a.window;
     // the palette as colors, slots or not: a picture tinted in it needs them (a spectrogram, #156)

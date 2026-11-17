@@ -81,10 +81,10 @@ format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANE
 # Storage, where it mounts
 [app-name=spark-shell category=x-spark-shell.reminder]
 format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">reminder &#x25B8; a click opens it</span>\n&#x29D7; <b>%s</b>\n%b
-on-button-left=exec makoctl dismiss -n "$id"; @REPO@/spark-shell bar seen "$id"; foot --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog reminders
+on-button-left=exec makoctl dismiss -n "$id"; @REPO@/spark-shell bar seen "$id"; @REPO@/spark-shell desktop home reminders
 [app-name=spark-shell category=device.added]
 format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">drive &#x25B8; a click opens Storage</span>\n&#x25AD; <b>%s</b>\n%b
-on-button-left=exec makoctl dismiss -n "$id"; @REPO@/spark-shell bar seen "$id"; foot --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog storage
+on-button-left=exec makoctl dismiss -n "$id"; @REPO@/spark-shell bar seen "$id"; @REPO@/spark-shell desktop home storage
 
 [urgency=critical]
 default-timeout=0

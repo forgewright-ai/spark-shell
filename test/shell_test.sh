@@ -1893,7 +1893,7 @@ EOF
     sway=$HOME/.config/sway/config
     grep -qF "bindsym --no-repeat Mod4+space exec $REPO/spark-shell desktop voice press" "$sway" && grep -qx 'initial-window-size-chars=60x40'  "$HOME/.config/foot/dialog.ini" && grep -qx 'background=0f0f0f' "$HOME/.config/foot/dialog.ini" \
         && ok "sway render: Super+space opens the dialog (the clone's spark-shell) in foot with dialog.ini: 60x40 with air and the surface a shade of black towards the text (no theme: 0f0f0f)" || bad "sway render bind" "$(grep -n 'mod+d' "$sway"; cat "$HOME/.config/foot/dialog.ini" 2>&1)"
-    grep -qF 'for_window [app_id="spark-dialog"] floating enable, border none, move position center, opacity 0' "$sway" && ok "sway render: the dialog floats in the middle, no frame, and maps unseen until its opening is drawn (#167)" || bad "sway render for_window" "$(grep -n spark-dialog "$sway")"
+    grep -qxF "for_window [app_id=\"spark-dialog\"] floating enable, border $(sed -n 's/^default_border //p' "$sway"), move position center, opacity 0" "$sway" && ok "sway render: the dialog floats in the middle, under the band every window wears, and maps unseen until its opening is drawn (#167)" || bad "sway render for_window" "$(grep -n spark-dialog "$sway")"
     l_p=$(grep -nF "exec $REPO/spark-shell desktop --pending" "$sway" | head -1 | cut -d: -f1); l_t=$(grep -n "^exec sh -c '" "$sway" | tail -1 | cut -d: -f1)
     [ -n "$l_p" ] && [ -n "$l_t" ] && [ "$l_p" -lt "$l_t" ] && ok "sway render: desktop --pending runs before the first terminal" || bad "sway render pending" "pending $l_p terminal $l_t"
     unset SWAYSOCK WAYLAND_DISPLAY
@@ -4592,8 +4592,8 @@ else
         && ok "sway: the bar's colors are the palette's, the background with the picture's alpha (f2 = 0.95)" || bad "bar colors" "$(grep -n 'background\|_workspace' "$sway")"
     grep -q "^bindsym XF86AudioRaiseVolume exec $REPO/spark-shell bar volume up\$" "$sway" && grep -q "^bindsym XF86AudioMicMute exec $REPO/spark-shell bar volume mic\$" "$sway" \
         && ok "sway: the volume keys and the mic mute key run spark-shell bar volume" || bad "volume keys" "$(grep -n XF86 "$sway")"
-    ! grep -q 'mod+p ' "$sway" && grep -q '^for_window \[app_id="spark-dialog"\] floating enable, border none, move position center, opacity 0$' "$sway" \
-        && ok "sway: no Super+p any more; the dialog's window floats in the middle, unseen until its opening is drawn (#167)" || bad "panel key" "$(grep -n 'spark-dialog\|mod+p' "$sway")"
+    ! grep -q 'mod+p ' "$sway" && grep -qxF "for_window [app_id=\"spark-dialog\"] floating enable, border $(sed -n 's/^default_border //p' "$sway"), move position center, opacity 0" "$sway" \
+        && ok "sway: no Super+p any more; the dialog's window floats in the middle, under the band every window wears, unseen until its opening is drawn (#167)" || bad "panel key" "$(grep -n 'spark-dialog\|mod+p' "$sway")"
     printf 'DESKTOP=sway\nFONT=Test Mono:pixelsize=14\nWALLPAPER=none\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" on --yes >/dev/null
     grep -q '^    font pango:Test Mono 14px$' "$sway" && grep -q '^        background #000000f2$' "$sway" && ok "sway: a pixelsize font is Npx in pango; none is the ground, the bar as translucent as over any wallpaper" || bad "bar font px" "$(grep -n 'font\|background' "$sway")"
@@ -6687,6 +6687,13 @@ printf '%s' "$_p2" | jq -e '.play.name == "files_play" and .stop.name == "files_
     && [ "$(printf '%s' "$_a4" | jq -r '.result.content[0].text')" = 'files: a video plays over its view: the dialog gives the box' ] \
     && ok "provide files: a video plays over its frame where sway is: mpv with no border laid at the window's corner, foot's padding and the frame's box, shown in the same command that places it (#157); no box says why (#125)" \
     || bad "preview video over" "$_p2 | $_a3 | $_a4 | $(cat "$F2/swaymsg.log" 2>&1) | $(grep spark-preview "$F2/mpv.log" 2>&1)"
+# a window the dialog draws itself has no terminal's padding: the player is laid from the window's corner and the frame's box alone
+rm -f "$F2/swaymsg.log"
+( SPARK_DIALOG_OWN_WINDOW=1; export SPARK_DIALOG_OWN_WINDOW; mcpw "$(call 6 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" )
+grep -qxF '[app_id="spark-preview"] floating enable, border none, resize set 640 360, move absolute position 120 250, opacity 1' "$F2/swaymsg.log" \
+    && ok "provide files: in a window the dialog draws itself the video is laid from the window's corner and the frame's box, with no terminal's padding" \
+    || bad "preview video own window" "$(cat "$F2/swaymsg.log" 2>&1)"
+rm -f "$F2/swaymsg.log"
 # #158: full screen, the dialog trades sway's full screen for a floating window on the same pixels while the video plays,
 # the bar out of sight, in one command; when the play ends it takes full screen back at its own size first, in one command
 rm -f "$F2/swaymsg.log"
@@ -8447,8 +8454,8 @@ STUB
         && [ "$(after 'category=transfer.complete')" = "format=$_a%a$(glyph 2713)" ] && [ "$(after 'category=transfer.error')" = "format=$_a%a$(glyph 2717)" ] && [ "$(after 'category=device.added')" = "format=$_a%a$(glyph 25AD)" ] \
         && [ "$(block 'urgency=critical')" = "$(printf '%s\n' 'default-timeout=0' 'layer=overlay' "format=$_a%a</span>\n<span foreground=\"#aa0000\">&#x26A0;</span> <b>%s</b>\n%b")" ] && ! grep -q '^border-color=' "$mk" \
         && ok "mako's config: the angle in the accent, the edge on the windows' content and 8 between, an app's own together with their count, 'and N more' under three, a low one muted through and gone in four seconds, a filled dot before what any card says, a low one's too (quiet is not off), three lines, a check or a cross and a hollow stick before what mail, a transfer and a drive say, a red warning sign before a critical one with no frame and over a full-screen window, a middle click dismisses all and a right click one, each looked at for the bar's count (#71)" || bad "mako look" "$(cat "$mk")"
-    grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; $REPO/spark-shell bar seen \"\$id\"; foot --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog reminders" "$mk" \
-        && grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; $REPO/spark-shell bar seen \"\$id\"; foot --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog storage" "$mk" \
+    grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; $REPO/spark-shell bar seen \"\$id\"; $REPO/spark-shell desktop home reminders" "$mk" \
+        && grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; $REPO/spark-shell bar seen \"\$id\"; $REPO/spark-shell desktop home storage" "$mk" \
         && [ "$(after 'app-name=spark-shell category=x-spark-shell.reminder')" = "format=${_a}reminder &#x25B8; a click opens it$(glyph 29D7)" ] \
         && [ "$(after 'app-name=spark-shell category=device.added')" = "format=${_a}drive &#x25B8; a click opens Storage$(glyph 25AD)" ] \
         && [ "$(sed -n '/^\[mode=do-not-disturb\]$/,$p' "$mk" | grep -c .)" = 4 ] && tail -1 "$mk" | grep -qx 'invisible=0' \

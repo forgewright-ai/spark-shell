@@ -70,10 +70,10 @@ else:
     with (p / "focus").open("a") as f: f.write("focused\\n")
     print('[{"success":true}]')
 ''',
-                "foot": '''import json, os, time
+                "shell": '''import json, os, sys, time
 from pathlib import Path
 p = Path(os.environ["HOME"])
-with (p / "launches").open("a") as f: f.write("started\\n")
+with (p / "launches").open("a") as f: f.write("started %s %s\\n" % (" ".join(sys.argv[1:]), os.environ.get("SPARK_DIALOG_WINDOW")))
 time.sleep(.15)
 (p / "draft").write_text("preserve this draft")
 (p / "next-tree").write_text(json.dumps({"nodes":[{"app_id":"spark-dialog","id":42}]}))
@@ -84,14 +84,63 @@ time.sleep(.2)
                 file = root / name
                 file.write_text("#!" + sys.executable + "\n" + body)
                 file.chmod(0o700)
-            argv = [sys.executable, str(REPO / "lib/home.py"), "open", str(REPO / "spark-shell")]
+            argv = [sys.executable, str(REPO / "lib/home.py"), "open", str(root / "shell")]
             children = [subprocess.Popen(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in range(4)]
             for child in children:
                 _, error = child.communicate(timeout=10)
                 self.assertEqual(child.returncode, 0, error.decode())
-            self.assertEqual((root / "launches").read_text().splitlines(), ["started"])
+            # one launch, the shell's dialog asked for a window of its own, no terminal started
+            self.assertEqual((root / "launches").read_text().splitlines(), ["started dialog own"])
             self.assertEqual((root / "draft").read_text(), "preserve this draft")
             self.assertGreaterEqual(len((root / "focus").read_text().splitlines()), 4)
+
+    def test_a_dialog_that_opens_no_window_of_its_own_falls_back_to_the_terminal(self):
+        # the dialog's own window first; where it cannot open one (the shell's dialog ends with a failure and no
+        # window), the terminal's window holds home, with the same section; a dialog that ended well is no failure
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = {**os.environ, "HOME": tmp, "XDG_RUNTIME_DIR": tmp, "PATH": tmp + os.pathsep + os.environ["PATH"]}
+            for name, body in {
+                "swaymsg": '''import os, sys
+from pathlib import Path
+p = Path(os.environ["HOME"])
+if "get_tree" in sys.argv:
+    print((p / "tree").read_text() if (p / "tree").exists() else '{"nodes":[]}')
+else:
+    print('[{"success":true}]')
+''',
+                "shell": '''import os, sys
+from pathlib import Path
+p = Path(os.environ["HOME"])
+with (p / "launches").open("a") as f: f.write("own: %s %s\\n" % (" ".join(sys.argv[1:]), os.environ.get("SPARK_DIALOG_WINDOW")))
+sys.exit(int((p / "own-exit").read_text()))
+''',
+                "foot": '''import json, os, sys, time
+from pathlib import Path
+p = Path(os.environ["HOME"])
+with (p / "launches").open("a") as f: f.write("terminal: %s %s\\n" % (" ".join(sys.argv[1:]), os.environ.get("SPARK_DIALOG_WINDOW")))
+(p / "tree").write_text(json.dumps({"nodes":[{"app_id":"spark-dialog","id":42}]}))
+time.sleep(.5)
+''',
+            }.items():
+                file = root / name
+                file.write_text("#!" + sys.executable + "\n" + body)
+                file.chmod(0o700)
+            shell = str(root / "shell")
+            argv = [sys.executable, str(REPO / "lib/home.py"), "open", shell]
+            (root / "own-exit").write_text("1")
+            done = subprocess.run(argv + ["clock"], env=env, capture_output=True, timeout=15)
+            self.assertEqual(done.returncode, 0, done.stderr.decode())
+            self.assertEqual((root / "launches").read_text().splitlines(),
+                             ["own: dialog clock own",
+                              "terminal: --config %s/.config/foot/dialog.ini --app-id spark-dialog -e %s dialog clock None" % (tmp, shell)])
+            # it ended well with no window seen (opened and closed at once): no terminal after it
+            (root / "launches").unlink()
+            (root / "tree").unlink()
+            (root / "own-exit").write_text("0")
+            done = subprocess.run(argv, env=env, capture_output=True, timeout=15)
+            self.assertEqual(done.returncode, 0, done.stderr.decode())
+            self.assertEqual((root / "launches").read_text().splitlines(), ["own: dialog own"])
 
     def test_home_back_from_the_pad_leaves_the_pad(self):
         tree = {"type": "root", "nodes": [{"type": "output", "nodes": [{"type": "workspace", "name": "__i3_scratch", "nodes": [], "floating_nodes": [
@@ -129,18 +178,18 @@ else:
     with (p / "focus").open("a") as f: f.write("focused\\n")
     print('[{"success":true}]')
 ''',
-                "foot": '''import json, os, sys, time
+                "shell": '''import json, os, sys, time
 from pathlib import Path
 p = Path(os.environ["HOME"])
 with (p / "launches").open("a") as f: f.write(" ".join(sys.argv[1:]) + "\\n")
 (p / "tree").write_text(json.dumps({"nodes":[{"app_id":"spark-dialog","id":42}]}))
-time.sleep(.5)   # a terminal runs while its window is up: home.py reads the window before the exit
+time.sleep(.5)   # the dialog runs while its window is up: home.py reads the window before the exit
 ''',
             }.items():
                 file = root / name
                 file.write_text("#!" + sys.executable + "\n" + body)
                 file.chmod(0o700)
-            argv = [sys.executable, str(REPO / "lib/home.py"), "open", str(REPO / "spark-shell")]
+            argv = [sys.executable, str(REPO / "lib/home.py"), "open", str(root / "shell")]
             goto = root / "spark-home.goto"
             done = subprocess.run(argv + ["notifications"], env=env, capture_output=True, timeout=10)
             self.assertEqual(done.returncode, 0, done.stderr.decode())

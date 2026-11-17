@@ -163,6 +163,19 @@ def ask_section(runtime, section):
     os.replace(temp, runtime / "spark-home.goto")
 
 
+def launch(shell, section, own):
+    """Home started: as a window of the dialog's own (spark-shell dialog asked for one), or in the terminal's."""
+    if own:
+        argv = [shell, "dialog"]
+        env = dict(os.environ, SPARK_DIALOG_WINDOW="own")
+    else:
+        argv = compositor.terminal_argv(compositor.terminal_config("dialog"), "spark-dialog", shell, "dialog")
+        env = None
+    if section:
+        argv.append(section)
+    return subprocess.Popen(argv, stdin=subprocess.DEVNULL, env=env, start_new_session=True)
+
+
 def open_home(shell, section=None):
     section = section or None   # an empty word is no section: Super+Space and the bar's sign ask for none
     if section is not None and not re.fullmatch(r"[a-z]{1,32}", section):
@@ -176,26 +189,32 @@ def open_home(shell, section=None):
             ask_section(runtime, section)   # home is open: it goes there, its draft and its way back kept
         if focus_existing():
             return
-        argv = compositor.terminal_argv(compositor.terminal_config("dialog"), "spark-dialog", shell, "dialog")
-        if section:
-            argv.append(section)
-        child = subprocess.Popen(argv, stdin=subprocess.DEVNULL, start_new_session=True)
-        # Hold the launch lock until the compositor owns the window. Concurrent
-        # invocations then focus it instead of racing a second terminal into view.
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            if focus_existing():
-                return
-            if child.poll() is not None:
-                raise ValueError("home did not open (terminal exit %s)" % child.returncode)
-            time.sleep(0.05)
-        child.terminate()
-        try:
-            child.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            child.kill()
-            child.wait(timeout=3)
-        raise ValueError("home did not map; the incomplete launch was stopped")
+        # the dialog's own window first; where it cannot open one (a library it draws with is missing), the terminal's
+        for own in (True, False):
+            child = launch(shell, section, own)
+            # Hold the launch lock until the compositor owns the window. Concurrent
+            # invocations then focus it instead of racing a second window into view.
+            deadline = time.monotonic() + 10
+            ended = None
+            while time.monotonic() < deadline:
+                if focus_existing():
+                    return
+                ended = child.poll()
+                if ended is not None:
+                    break
+                time.sleep(0.05)
+            if ended is None:
+                child.terminate()
+                try:
+                    child.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait(timeout=3)
+                raise ValueError("home did not map; the incomplete launch was stopped")
+            if ended == 0:
+                return   # opened and closed again before it was seen
+            if not own:
+                raise ValueError("home did not open (terminal exit %s)" % ended)
 
 
 def main(argv):

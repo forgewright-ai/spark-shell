@@ -14,7 +14,10 @@ TERM_HEX="242424 f62b5a 47b413 e3c401 24acd4 f2affd 13c299 e6e6e6 616161 ff4d51 
 term_here() { command -v foot >/dev/null 2>&1; }
 term_missing() { echo 'foot is not installed (spark-shell on desktop)'; }
 term_config_file() { printf '%s\n' "$HOME/$TERM_CONFIG_REL"; }
-term_dialog_pad() { sed -n 's/^pad=\([0-9]*\)x\([0-9]*\).*/\1 \2/p' "$HOME/$TERM_DIALOG_REL" 2>/dev/null | head -1; }   # -> "X Y", the dialog window's padding
+term_dialog_pad() {   # -> "X Y", the air between the dialog window's corner and its first cell: none in a window the dialog draws itself (it says so to what it starts), else the terminal's padding
+    case ${SPARK_DIALOG_OWN_WINDOW:-} in 1) echo '0 0'; return 0 ;; esac
+    sed -n 's/^pad=\([0-9]*\)x\([0-9]*\).*/\1 \2/p' "$HOME/$TERM_DIALOG_REL" 2>/dev/null | head -1
+}
 term_is_ours() { case ${TERM:-} in foot*) return 0 ;; *) return 1 ;; esac; }   # TERM says we run inside it
 term_own_process() { [ "${1##*/}" = foot ]; }                                 # term_own_process COMM
 term_runs() { [ "${1:-}" = foot ] && [ "${2:-}" = -e ]; }                      # term_runs WORD1 WORD2: a line that runs a command in a window

@@ -13,8 +13,12 @@ panel_tick_start() {   # panel_tick_start ROW -- the time drawn again at ROW as 
     TICK=$!
 }
 panel_tick_stop() { [ -z "${TICK:-}" ] || { kill "$TICK" 2>/dev/null || :; wait "$TICK" 2>/dev/null || :; TICK=''; }; }
-panel_full_aside() {   # a fullscreen window on the panel's workspace steps aside (sway draws nothing else over it); FULL_ID remembers it
+panel_full_aside() {   # panel_full_aside [focused] -- a fullscreen window on the panel's workspace steps aside (sway draws nothing else over it); FULL_ID remembers it. focused: the workspace in use, where the dialog's own window is about to open
+    if [ "${1:-}" = focused ]; then
+        FULL_ID=$(wm_tree | jq -r --arg me "$PANEL_APP" '[.. | objects | select(.type? == "workspace") | select([.. | objects | select(.focused? == true)] | length > 0) | .. | objects | select((.type? == "con" or .type? == "floating_con") and (.fullscreen_mode? // 0) > 0 and .app_id? != $me) | .id] | first // empty' 2>/dev/null)
+    else
     FULL_ID=$(wm_tree | jq -r --argjson p "$PPID" '[.. | objects | select(.type? == "workspace") | select([.. | objects | select(.pid? == $p)] | length > 0) | .. | objects | select((.type? == "con" or .type? == "floating_con") and (.fullscreen_mode? // 0) > 0 and .pid? != $p) | .id] | first // empty' 2>/dev/null)   # a window or a container, never the workspace (it says fullscreen too)
+    fi
     [ -n "$FULL_ID" ] || return 0
     wm_on "con_id=$FULL_ID" "fullscreen disable" >/dev/null 2>&1 || { FULL_ID=''; return 0; }
     wm_on "app_id=$PANEL_APP" "focus" >/dev/null 2>&1 || :
