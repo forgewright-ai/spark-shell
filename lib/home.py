@@ -123,12 +123,15 @@ def fit(tree, ident):
         width, height = int(rect["width"]), int(rect["height"])
         room_w, room_h = int(area["width"]), int(area["height"])
         x, y, ax, ay = int(rect["x"]), int(rect["y"]), int(area["x"]), int(area["y"])
+        # the band the window wears stands over its rect: it takes room of the area too
+        band = int((window.get("deco_rect") or {}).get("height") or 0)
     except (KeyError, TypeError, ValueError):
         return None
+    room_h -= band
     if min(room_w, room_h) <= 0:
         return None
     w, h = min(width, room_w), min(height, room_h)
-    if (w, h) == (width, height) and ax <= x and ay <= y and x + w <= ax + room_w and y + h <= ay + room_h:
+    if (w, h) == (width, height) and ax <= x and ay + band <= y and x + w <= ax + room_w and y + h <= ay + band + room_h:
         return None
     return "[con_id=%d] resize set width %d px height %d px, move position center" % (ident, w, h)
 

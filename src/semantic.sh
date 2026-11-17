@@ -160,6 +160,8 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- home, its conversation, or
     case $_first in '') ;; *) set -- "$@" --home "$_first" ;; esac
     _dc=''; [ "$DIALOG_ATTACH" != yes ] || _dc=plus; [ "$DIALOG_MODEL" != yes ] || _dc="${_dc:+$_dc,}model"; [ "$DIALOG_TALK" != yes ] || _dc="${_dc:+$_dc,}talk"
     _sp=$(spark_bin); set -- "$@" --spark "$_sp"
+    # its own window under sway wears the window's band (the template's rule): no band row of the dialog's, its words the window's title
+    [ "$_dwin" != 1 ] || [ -z "${SWAYSOCK:-}" ] || set -- "$@" --band off
     _ta=$(dialog_transitions); [ -z "$_ta" ] || set -- "$@" --transitions "$_ta"
     # started aside, never waited for; only inside the desktop, whose end stops it (ssh would leave it running)
     if [ -z "$(semantic_why)" ]; then

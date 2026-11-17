@@ -151,9 +151,10 @@ bindsym --release $mod+space exec @REPO@/spark-shell desktop voice release
 # action: voice.wrap
 bindsym --no-repeat $mod+period exec @REPO@/spark-shell desktop voice press wrap
 bindsym --release $mod+period exec @REPO@/spark-shell desktop voice release wrap
-# the dialog's window maps unseen and the dialog shows it once its opening
-# is drawn, so nothing comes before the animation (#167)
-for_window [app_id="spark-dialog"] floating enable, border none, move position center, opacity 0
+# the dialog's window wears the band every window wears: its buttons, its
+# name, a drag by it. It maps unseen, band and all, and the dialog shows it
+# once its opening is drawn, so nothing comes before the animation (#167)
+for_window [app_id="spark-dialog"] floating enable, border @BORDER@, move position center, opacity 0
 # a video a preview plays (#125): laid over its frame, never taking the keys from the dialog; it maps unseen and is
 # shown where it plays, in one command (#157)
 for_window [app_id="spark-preview"] floating enable, border none, opacity 0
