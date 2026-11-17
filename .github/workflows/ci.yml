@@ -429,14 +429,48 @@ jobs:
           python3 test/provider_acceptance.py
       - name: the Terminal.app helper, built and never applied
         run: SPARK_SHELL_NO_APPLY=1 /usr/bin/python3 test/terminal_test.py
+  dialog-build:
+    # the dialog's release build (component/dialog/), twice, and its sha256 against
+    # component/dialog/dialog.env, in the pinned Debian 12 image the bar job
+    # uses, so the build is reproducible and release.yml builds the same
+    # bytes; the binary kept as an artifact. The dialog opens Wayland, cairo
+    # and pango at run time for its own window, so it links glibc as the bar
+    # does. The first build of a new one prints the sha256 to pin.
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    container: rust:1.99.1-slim-bookworm@sha256:24707e70a4f1e23d9a7b25202ec43126d28a52294b96aad5c670df1fd1f1d400
+    steps:
+      - name: git, for the checkout
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the release build, twice, the same bytes
+        run: |
+          set -eu
+          one=$(sh test/dialog_build.sh | cut -d' ' -f1)
+          (cd component/dialog && cargo clean --release --target x86_64-unknown-linux-gnu)
+          two=$(sh test/dialog_build.sh | cut -d' ' -f1)
+          echo "built $one, from clean again $two"
+          if [ "$one" != "$two" ]; then echo "two builds of one tree differ: the build is not reproducible"; exit 1; fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        with:
+          name: spark-dialog-x86_64-linux-gnu
+          path: component/dialog/target/x86_64-unknown-linux-gnu/release/spark-dialog
+          retention-days: 14
+      - name: the sha256 component/dialog/dialog.env pins
+        run: |
+          set -eu
+          got=$(sha256sum component/dialog/target/x86_64-unknown-linux-gnu/release/spark-dialog | cut -d' ' -f1)
+          want=$(sed -n 's/^DIALOG_SHA256_X86_64_LINUX_GNU=//p' component/dialog/dialog.env)
+          if [ "$got" != "$want" ]; then echo "the build is not the binary component/dialog/dialog.env pins -- DIALOG_SHA256_X86_64_LINUX_GNU=$got"; exit 1; fi
   dialog:
     # the dialog (component/dialog/): the format, clippy, its tests (the golden
-    # renders in two palettes, the host against stub providers), the
-    # release build twice and its sha256 against component/dialog/dialog.env (the
-    # build is reproducible, so the tree pins the binary), the binary at a
-    # pty against spark-shell's own providers with no network, cargo-deny,
-    # and the binary kept as an artifact for a proof on a machine.
-    needs: lint
+    # renders in two palettes, the host against stub providers), the release
+    # binary dialog-build made at a pty against spark-shell's own providers
+    # with no network, and cargo-deny.
+    needs: [lint, dialog-build]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -453,27 +487,14 @@ jobs:
       - name: the tests
         working-directory: component/dialog
         run: cargo test --locked
-      - name: the release build, twice, the same bytes
-        run: |
-          set -eu
-          one=$(sh test/dialog_build.sh | cut -d' ' -f1)
-          (cd component/dialog && cargo clean --release --target x86_64-unknown-linux-musl)
-          two=$(sh test/dialog_build.sh | cut -d' ' -f1)
-          echo "built $one, from clean again $two"
-          if [ "$one" != "$two" ]; then echo "two builds of one tree differ: the build is not reproducible"; exit 1; fi
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333   # v8.0.2
         with:
-          name: spark-dialog-x86_64-linux-musl
-          path: component/dialog/target/x86_64-unknown-linux-musl/release/spark-dialog
-          retention-days: 14
-      - name: the sha256 component/dialog/dialog.env pins
-        run: |
-          set -eu
-          got=$(sha256sum component/dialog/target/x86_64-unknown-linux-musl/release/spark-dialog | cut -d' ' -f1)
-          want=$(sed -n 's/^DIALOG_SHA256_X86_64_LINUX_MUSL=//p' component/dialog/dialog.env)
-          if [ "$got" != "$want" ]; then echo "the build is not the binary component/dialog/dialog.env pins -- DIALOG_SHA256_X86_64_LINUX_MUSL=$got"; exit 1; fi
+          name: spark-dialog-x86_64-linux-gnu
+          path: dialog-build
       - name: the binary at a pty against spark-shell's providers, with no network
-        run: sudo unshare -n sudo -u "$(id -un)" env PATH="$PATH" python3 test/dialog_pty.py component/dialog/target/x86_64-unknown-linux-musl/release/spark-dialog
+        run: |
+          chmod 755 dialog-build/spark-dialog
+          sudo unshare -n sudo -u "$(id -un)" env PATH="$PATH" python3 test/dialog_pty.py dialog-build/spark-dialog
       - name: cargo-deny (advisories, licences, no network crate)
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
         with:
@@ -691,7 +712,7 @@ jobs:
     # and fails when any of them failed, was cancelled or was skipped. A
     # pull request from this repository's own branch is the one run whose
     # jobs are all skipped on purpose, and green skips with them.
-    needs: [lint, linux, debian, ubuntu, arch, void, fedora, opensuse, desktop, macos, dialog, wallpaper, wallpaper-deny, winpad, winpad-deny, ear, ear-deny, bar, bar-deny]
+    needs: [lint, linux, debian, ubuntu, arch, void, fedora, opensuse, desktop, macos, dialog-build, dialog, wallpaper, wallpaper-deny, winpad, winpad-deny, ear, ear-deny, bar, bar-deny]
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 2

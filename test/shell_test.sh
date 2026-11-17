@@ -6970,7 +6970,7 @@ desktop_stubs
 theme_fixture '#ff5555'
 grep -q '^spark-shell-release namespaces="git" ssh-ed25519 [A-Za-z0-9+/=]*$' "$REPO/allowed-signers" && [ "$(grep -c '' "$REPO/allowed-signers")" = 1 ] \
     && ok "allowed-signers: one key, the release's, its principal a role and no address" || bad "allowed-signers" "$(cut -c1-60 "$REPO/allowed-signers")"
-grep -q '^DIALOG_SHA256_X86_64_LINUX_MUSL=[0-9a-f]\{64\}$' "$REPO/component/dialog/dialog.env" && ok "dialog.env: the x86_64 build pinned by its sha256" || bad "dialog.env" "$(cat "$REPO/component/dialog/dialog.env")"
+grep -q '^DIALOG_SHA256_X86_64_LINUX_GNU=[0-9a-f]\{64\}$' "$REPO/component/dialog/dialog.env" && ok "dialog.env: the x86_64 build pinned by its sha256" || bad "dialog.env" "$(cat "$REPO/component/dialog/dialog.env")"
 # the about provider: the template's key sentences, each combo a column, the splash's groups
 printf '%s\n' "$(rq 1 resources/read '{"uri":"spark-shell://about/rows"}')" | sh "$SH" provide about | jq -r 'select(.id == 1) | .result.contents[0].text' > "$H/about.json"
 # the facts as this clone has them: the tag's day (none in a clone without tags), the path, the count of credited projects
@@ -7010,7 +7010,7 @@ else
     printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/dialog.argv"\nexit "${DIALOG_EXIT:-0}"\n' > "$H/stub-dialog"
     sum256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
     sha=$(sum256 "$H/stub-dialog")
-    sed "s/^DIALOG_SHA256_X86_64_LINUX_MUSL=.*/DIALOG_SHA256_X86_64_LINUX_MUSL=$sha/" "$REPO/component/dialog/dialog.env" > "$C/component/dialog/dialog.env"
+    sed "s/^DIALOG_SHA256_X86_64_LINUX_GNU=.*/DIALOG_SHA256_X86_64_LINUX_GNU=$sha/" "$REPO/component/dialog/dialog.env" > "$C/component/dialog/dialog.env"
     printf '#!/bin/sh\nexit 0\n' > "$H/stub-ear"; sha_ear=$(sum256 "$H/stub-ear")
     sed "s/^EAR_SHA256_X86_64_LINUX_GNU=.*/EAR_SHA256_X86_64_LINUX_GNU=$sha_ear/" "$REPO/component/ear/ear.env" > "$C/component/ear/ear.env"
     # the engine's two archives, each with its files under a folder of their own: the install takes them flat
@@ -7042,7 +7042,7 @@ with tarfile.open(h + "/assets/rewrite.tar.bz2", "w:bz2") as t:
     printf 'spark-shell-release namespaces="git" %s\n' "$(cut -d' ' -f1,2 "$H/key.pub")" > "$C/allowed-signers"
     g() { git -C "$C" -c user.name=test -c user.email=you@example.com -c gpg.format=ssh -c "user.signingkey=$H/key" "$@"; }   # spark:allow-secret (a scratch key, made here)
     g init -q && g add -A && g commit -q -m fixture && g tag -s v9.9 -m 'spark-shell v9.9'
-    mkdir -p "$H/assets/v9.9"; cp "$H/stub-dialog" "$H/assets/v9.9/spark-dialog-x86_64-linux-musl"
+    mkdir -p "$H/assets/v9.9"; cp "$H/stub-dialog" "$H/assets/v9.9/spark-dialog-x86_64-linux-gnu"
     cp "$H/stub-ear" "$H/assets/v9.9/spark-ear-x86_64-linux-gnu"
     mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     bin=$H/.local/share/spark-shell/spark-dialog
@@ -7063,11 +7063,11 @@ with tarfile.open(h + "/assets/rewrite.tar.bz2", "w:bz2") as t:
     out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --dry-run 2>&1 || :)
     printf '%s\n' "$out" | grep -q '^ok     dialog       ' && ok "on --dry-run: the dialog in place is ok" || bad "dialog ok" "$(printf '%s\n' "$out" | grep dialog)"
     # a file that is not the pinned one, a tag no key here signed, a tree past its release: nothing installed
-    rm -f "$bin"; printf 'x' >> "$H/assets/v9.9/spark-dialog-x86_64-linux-musl"
+    rm -f "$bin"; printf 'x' >> "$H/assets/v9.9/spark-dialog-x86_64-linux-gnu"
     out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes 2>&1 || :)
     printf '%s\n' "$out" | grep -q '^todo   dialog       the spark-dialog fetched for v9.9 is not the one the tree pins: not installed$' && [ ! -e "$bin" ] \
         && ok "on: a fetched file with another sha256 is refused, nothing installed" || bad "dialog tampered" "$(printf '%s\n' "$out" | grep dialog)"
-    cp "$H/stub-dialog" "$H/assets/v9.9/spark-dialog-x86_64-linux-musl"
+    cp "$H/stub-dialog" "$H/assets/v9.9/spark-dialog-x86_64-linux-gnu"
     ssh-keygen -q -t ed25519 -N '' -C '' -f "$H/other" >/dev/null
     printf 'spark-shell-release namespaces="git" %s\n' "$(cut -d' ' -f1,2 "$H/other.pub")" > "$C/allowed-signers"
     out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes 2>&1 || :)
@@ -7408,7 +7408,7 @@ else
         (cd "$REPO" && tar --exclude=.git --exclude=target --exclude=target2 -cf - .) | (cd "$C" && tar --no-same-owner -xf -)
         printf '#!/bin/sh\nexit 0\n' > "$H/stub-dialog"
         sha=$(if command -v sha256sum >/dev/null 2>&1; then sha256sum "$H/stub-dialog"; else shasum -a 256 "$H/stub-dialog"; fi | cut -d' ' -f1)
-        sed "s/^DIALOG_SHA256_X86_64_LINUX_MUSL=.*/DIALOG_SHA256_X86_64_LINUX_MUSL=$sha/" "$REPO/component/dialog/dialog.env" > "$C/component/dialog/dialog.env"
+        sed "s/^DIALOG_SHA256_X86_64_LINUX_GNU=.*/DIALOG_SHA256_X86_64_LINUX_GNU=$sha/" "$REPO/component/dialog/dialog.env" > "$C/component/dialog/dialog.env"
         ssh-keygen -q -t ed25519 -N '' -C '' -f "$H/key" >/dev/null
         printf 'spark-shell-release namespaces="git" %s\n' "$(cut -d' ' -f1,2 "$H/key.pub")" > "$C/allowed-signers"
         git -C "$C" -c user.name=test -c user.email=you@example.com -c gpg.format=ssh -c "user.signingkey=$H/key" init -q   # spark:allow-secret (a scratch key, made here)
@@ -8234,7 +8234,7 @@ if command -v ssh-keygen >/dev/null 2>&1; then
     [ "$rc" -eq 1 ] && [ "$out" = "spark-shell update: v9.7 is signed, but its release is not published yet -- nothing moved; try again in a few minutes" ] \
         && [ "$(git -C "$U/c" rev-parse HEAD)" = "$(git -C "$U/c" rev-parse 'v9.6^{commit}')" ] \
         && ok "update: a tag whose release is not up moves nothing, and says so" || bad "update: release not up" "$rc $out"
-    mkdir -p "$U/rel/v9.7"; : > "$U/rel/v9.7/spark-dialog-x86_64-linux-musl"
+    mkdir -p "$U/rel/v9.7"; : > "$U/rel/v9.7/spark-dialog-x86_64-linux-gnu"
     out=$(PATH=$U/bin:$PATH SPARK_SHELL_DIALOG_URL="file://$U/rel" sh "$C" update 2>&1) && rc=0 || rc=$?
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "spark-shell update: v9.7, signed by spark-shell-release (was v9.6)" ] \
         && [ "$(git -C "$U/c" rev-parse HEAD)" = "$(git -C "$U/c" rev-parse 'v9.7^{commit}')" ] \

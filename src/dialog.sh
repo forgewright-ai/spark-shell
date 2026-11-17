@@ -11,7 +11,7 @@ SEMANTIC_SIZE=309855456   # bytes, 310 MB
 SEMANTIC_MODEL=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/models/embeddinggemma-2-Q8_0.gguf
 SEMANTIC_LOG=$STATE_DIR/semantic.log
 semantic_where() { SEMANTIC_RUN=${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/spark-shell}; SEMANTIC_RUN=${SEMANTIC_RUN:-$STATE_DIR}; SEMANTIC_SOCK=$SEMANTIC_RUN/semantic.sock; SEMANTIC_PID=$SEMANTIC_RUN/semantic.pid; }   # read when asked: XDG_RUNTIME_DIR is set after this file is read
-dialog_target() { case $(uname -m) in x86_64|amd64) echo x86_64-linux-musl ;; *) return 1 ;; esac; }   # -> the release's build for this machine, or false
+dialog_target() { case $(uname -m) in x86_64|amd64) echo x86_64-linux-gnu ;; *) return 1 ;; esac; }   # -> the release's build for this machine, or false
 dialog_want_sha() {   # -> the sha256 the release tag's tree pins for this machine, or nothing
     _dk=DIALOG_SHA256_$(dialog_target | tr 'a-z-' 'A-Z_'); _rt=$(release_tag) || return 0
     git -C "$REPO" show "$_rt:component/dialog/dialog.env" 2>/dev/null | sed -n "s/^$_dk=\([0-9a-f]\{64\}\)$/\1/p"

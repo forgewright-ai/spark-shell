@@ -3,7 +3,7 @@
 # cargo metadata (the licences), for the release beside the binary.
 set -eu
 cd "$(dirname "$0")/../component/dialog"
-cargo metadata --locked --format-version 1 --filter-platform x86_64-unknown-linux-musl \
+cargo metadata --locked --format-version 1 --filter-platform x86_64-unknown-linux-gnu \
     | jq --arg v "$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)" '
         (.resolve.nodes | map(.id)) as $ids
         | {bomFormat: "CycloneDX", specVersion: "1.5", version: 1,

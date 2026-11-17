@@ -69,16 +69,10 @@ jobs:
       - name: the toolchain component/dialog/rust-toolchain.toml pins
         working-directory: component/dialog
         run: rustup show active-toolchain || rustup toolchain install
-      - name: the build, and the sha256 the tagged tree pins
+      - name: the dialog's crates and the release's notes
         run: |
           set -eu
-          got=$(sh test/dialog_build.sh | cut -d' ' -f1)
-          want=$(sed -n 's/^DIALOG_SHA256_X86_64_LINUX_MUSL=//p' component/dialog/dialog.env)
-          echo "built $got, pinned $want"
-          [ "$got" = "$want" ] || { echo "the binary is not the one the tree pins: nothing is published"; exit 1; }
           mkdir -p out
-          cp component/dialog/target/x86_64-unknown-linux-musl/release/spark-dialog out/spark-dialog-x86_64-linux-musl
-          (cd out && sha256sum spark-dialog-x86_64-linux-musl > spark-dialog-x86_64-linux-musl.sha256)
           sh test/dialog_sbom.sh > out/spark-dialog.cdx.json
           awk -v t="## ${GITHUB_REF_NAME}" '$0 == t { on = 1; next } on && /^## / { exit } on' CHANGELOG.md > out/notes.md
           [ -s out/notes.md ] || { echo "CHANGELOG.md has no section for ${GITHUB_REF_NAME}"; exit 1; }
@@ -180,6 +174,37 @@ jobs:
           name: ear
           path: out/
           retention-days: 7
+  dialog:
+    # the dialog at the tag, in the image CI's dialog-build job pins, and the sha256
+    # component/dialog/dialog.env pins in the tagged tree; the build job above checked
+    # the tag before this one publishes anything
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: rust:1.99.1-slim-bookworm@sha256:24707e70a4f1e23d9a7b25202ec43126d28a52294b96aad5c670df1fd1f1d400
+    permissions:
+      contents: read
+    steps:
+      - name: git, for the checkout
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the build, and the sha256 the tagged tree pins
+        run: |
+          set -eu
+          got=$(sh test/dialog_build.sh | cut -d' ' -f1)
+          want=$(sed -n 's/^DIALOG_SHA256_X86_64_LINUX_GNU=//p' component/dialog/dialog.env)
+          echo "built $got, pinned $want"
+          [ "$got" = "$want" ] || { echo "the dialog is not the one the tree pins: nothing is published"; exit 1; }
+          mkdir -p out
+          cp component/dialog/target/x86_64-unknown-linux-gnu/release/spark-dialog out/spark-dialog-x86_64-linux-gnu
+          (cd out && sha256sum spark-dialog-x86_64-linux-gnu > spark-dialog-x86_64-linux-gnu.sha256)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        with:
+          name: dialog
+          path: out/
+          retention-days: 7
   bar:
     # the bar at the tag, in the image CI's bar job pins, and the sha256
     # component/bar/bar.env pins in the tagged tree; the build job above checked the
@@ -212,7 +237,7 @@ jobs:
           path: out/
           retention-days: 7
   publish:
-    needs: [build, wallpaper, winpad, ear, bar]
+    needs: [build, dialog, wallpaper, winpad, ear, bar]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -223,6 +248,10 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333   # v8.0.2
         with:
           name: release
+          path: out
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333   # v8.0.2
+        with:
+          name: dialog
           path: out
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333   # v8.0.2
         with:
@@ -243,7 +272,7 @@ jobs:
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8   # v4.2.2
         with:
           subject-path: |
-            out/spark-dialog-x86_64-linux-musl
+            out/spark-dialog-x86_64-linux-gnu
             out/spark-wallpaper-x86_64-linux-gnu
             out/spark-winpad-x86_64-linux-gnu
             out/spark-ear-x86_64-linux-gnu
@@ -251,4 +280,4 @@ jobs:
       - name: the release, the CHANGELOG section as its notes
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "spark-shell $GITHUB_REF_NAME" --notes-file out/notes.md out/spark-dialog-x86_64-linux-musl out/spark-dialog-x86_64-linux-musl.sha256 out/spark-dialog.cdx.json out/spark-wallpaper-x86_64-linux-gnu out/spark-wallpaper-x86_64-linux-gnu.sha256 out/spark-winpad-x86_64-linux-gnu out/spark-winpad-x86_64-linux-gnu.sha256 out/spark-ear-x86_64-linux-gnu out/spark-ear-x86_64-linux-gnu.sha256 out/spark-bar-x86_64-linux-gnu out/spark-bar-x86_64-linux-gnu.sha256
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "spark-shell $GITHUB_REF_NAME" --notes-file out/notes.md out/spark-dialog-x86_64-linux-gnu out/spark-dialog-x86_64-linux-gnu.sha256 out/spark-dialog.cdx.json out/spark-wallpaper-x86_64-linux-gnu out/spark-wallpaper-x86_64-linux-gnu.sha256 out/spark-winpad-x86_64-linux-gnu out/spark-winpad-x86_64-linux-gnu.sha256 out/spark-ear-x86_64-linux-gnu out/spark-ear-x86_64-linux-gnu.sha256 out/spark-bar-x86_64-linux-gnu out/spark-bar-x86_64-linux-gnu.sha256
