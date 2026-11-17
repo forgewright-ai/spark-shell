@@ -23,12 +23,14 @@ pub enum Reel {
     Load,
 }
 
-/// A GIF as sixel frames, each with how long it stays, at the GIF's own size in pixels.
+/// A GIF as frames, each with how long it stays, at the GIF's own size in pixels: as sixel for a terminal, or,
+/// for a window that paints them itself, as pixels in `pics` beside frames whose sixel is empty.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Film {
     pub w: u32,
     pub h: u32,
     pub frames: Vec<(String, u32)>,
+    pub pics: Vec<std::sync::Arc<crate::draw::Pic>>,
 }
 
 impl Film {
@@ -75,6 +77,15 @@ impl Films {
 /// its ground transparent. None for bytes that are no GIF, a GIF over 1024 pixels a side or with no
 /// frame.
 pub fn film(gif_bytes: &[u8]) -> Option<Film> {
+    film_as(gif_bytes, false)
+}
+
+/// As `film`, its frames as pixels: what a window paints.
+pub fn film_pixels(gif_bytes: &[u8]) -> Option<Film> {
+    film_as(gif_bytes, true)
+}
+
+fn film_as(gif_bytes: &[u8], pixels: bool) -> Option<Film> {
     let mut opts = gif::DecodeOptions::new();
     opts.set_color_output(gif::ColorOutput::RGBA);
     let mut dec = opts.read_info(std::io::Cursor::new(gif_bytes)).ok()?;
@@ -83,7 +94,7 @@ pub fn film(gif_bytes: &[u8]) -> Option<Film> {
         return None;
     }
     let mut canvas = vec![[0u8; 4]; (w * h) as usize];
-    let mut frames = vec![];
+    let (mut frames, mut pics) = (vec![], vec![]);
     while let Some(f) = dec.read_next_frame().ok()? {
         let before = (f.dispose == gif::DisposalMethod::Previous).then(|| canvas.clone());
         let (fx, fy, fw, fh) = (f.left as u32, f.top as u32, f.width as u32, f.height as u32);
@@ -98,7 +109,12 @@ pub fn film(gif_bytes: &[u8]) -> Option<Film> {
         }
         let laid: Vec<u8> = canvas.iter().flat_map(|p| *p).collect();
         let img = Image::from_rgba(w, h, &laid)?;
-        let (s, _, _) = show(&img, w, h, &Viewport::FIT)?;
+        let s = if pixels {
+            pics.push(std::sync::Arc::new(crate::draw::Pic::of(&img)));
+            String::new()
+        } else {
+            show(&img, w, h, &Viewport::FIT)?.0
+        };
         frames.push((s, (f.delay as u32 * 10).max(FRAME_MIN_MS)));
         match f.dispose {
             gif::DisposalMethod::Background => {
@@ -119,7 +135,7 @@ pub fn film(gif_bytes: &[u8]) -> Option<Film> {
             break;
         }
     }
-    (!frames.is_empty()).then_some(Film { w, h, frames })
+    (!frames.is_empty()).then_some(Film { w, h, frames, pics })
 }
 
 #[cfg(test)]

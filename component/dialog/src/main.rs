@@ -11,6 +11,7 @@ use ratatui::crossterm::{execute, queue};
 use ratatui::Terminal;
 use spark_dialog::animation::{self, Reel};
 use spark_dialog::app::{App, Config, Helper, Job, View};
+use spark_dialog::draw::{Pic, Step};
 use spark_dialog::grid::{Buffer, Color, Modifier, Rect};
 use spark_dialog::mcp::{Incoming, Server};
 use spark_dialog::palette::{slots_here, Palette};
@@ -165,6 +166,9 @@ impl Window {
     fn frame(&self, _: Vec<spark_dialog::draw::Step>, _: spark_dialog::draw::Rgb) {}
     fn title(&self, _: &str) {}
     fn pointer(&self, _: &'static str) {}
+    fn scale(&self) -> u32 {
+        1
+    }
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -384,6 +388,16 @@ fn image<'a>(file: &str, cache: &'a mut Option<(String, std::time::SystemTime, I
     cache.as_ref().map(|(_, _, i)| i)
 }
 
+/// The window's preview picture as pixels, kept until its place, its file, its view or the screen's scale changes.
+struct WinPreview {
+    of: ui::Picture,
+    scale: u32,
+    pic: Arc<Pic>,
+    /// The size drawn, and the source's own, in pixels.
+    size: (u32, u32),
+    source: (u32, u32),
+}
+
 /// A transition drawn: its box, which one, its frame.
 type ShownFilm = ((u16, u16, u16, u16), Reel, usize);
 /// A piece beside a list drawn (#132): its box, its folder, the wait or the open, its frame.
@@ -393,16 +407,25 @@ type Tinted = (String, [[u8; 3]; 4], (u32, u32), Image);
 /// A piece's three films from its folder; @2x where a cell is twice the usual height. None where one is
 /// missing or no GIF. `draw:PIECE` draws the piece in the palette the window wears (pieces.rs): a palette
 /// with no GIFs of its own, a theme from a picture or from words.
-fn decode_films(dir: &str, palette: &std::collections::HashMap<String, String>) -> Option<animation::Films> {
-    let double = cell_px().is_some_and(|(_, ch)| ch >= 30);
+fn decode_films(dir: &str, palette: &std::collections::HashMap<String, String>, kind: FilmKind) -> Option<animation::Films> {
+    let FilmKind { double, pixels } = kind;
     if let Some(name) = dir.strip_prefix("draw:") {
         let roles = spark_dialog::pieces::Roles::from(|k| palette.get(k).cloned())?;
-        return spark_dialog::pieces::films(name, &roles, if double { 2 } else { 1 });
+        let scale = if double { 2 } else { 1 };
+        return if pixels {
+            spark_dialog::pieces::films_pixels(name, &roles, scale)
+        } else {
+            spark_dialog::pieces::films(name, &roles, scale)
+        };
     }
     let one = |reel: &str| {
         let f = format!("{}/{}{}.gif", dir, reel, if double { "@2x" } else { "" });
         let bytes = std::fs::read(&f).ok().filter(|b| b.len() <= 4 << 20)?;
-        animation::film(&bytes)
+        if pixels {
+            animation::film_pixels(&bytes)
+        } else {
+            animation::film(&bytes)
+        }
     };
     Some(animation::Films {
         open: one("open")?,
@@ -413,10 +436,18 @@ fn decode_films(dir: &str, palette: &std::collections::HashMap<String, String>) 
 
 /// The transitions' piece (#122), decoded aside so the window draws at once. Again when a theme step
 /// changes the look (#126).
-fn spawn_films(dir: String, palette: std::collections::HashMap<String, String>, tx: mpsc::Sender<Ev>) {
+fn spawn_films(dir: String, palette: std::collections::HashMap<String, String>, kind: FilmKind, tx: mpsc::Sender<Ev>) {
     std::thread::spawn(move || {
-        let _ = tx.send(Ev::Films(decode_films(&dir, &palette)));
+        let _ = tx.send(Ev::Films(decode_films(&dir, &palette, kind)));
     });
+}
+
+/// How a piece's films are read: at twice the size where a cell is twice the usual height, and as pixels for a
+/// window that paints them itself, as sixel for a terminal.
+#[derive(Clone, Copy, PartialEq)]
+struct FilmKind {
+    double: bool,
+    pixels: bool,
 }
 
 /// The palette's colors a drawn piece takes (pieces::Roles), as the environment gave them at the start.
@@ -534,7 +565,7 @@ fn main() {
     if std::env::args().nth(1).as_deref() == Some("login") {
         login_run::main();
     }
-    let mut a = match args() {
+    let a = match args() {
         Ok(a) => a,
         Err(e) => {
             if e.is_empty() {
@@ -550,10 +581,6 @@ fn main() {
     // the palette as colors, slots or not: a picture tinted in it needs them (a spectrogram, #156)
     let mut colors = Palette::from(|k| std::env::var(k).ok());
     let mut pal = if a.window { colors.clone() } else { Palette::from_env() };
-    if a.window {
-        // the window draws no pictures yet: no opening to wait for
-        a.cfg.transitions = None;
-    }
     let labels: Vec<String> = a.providers.iter().map(|(l, _)| l.clone()).collect();
     let mut app = App::new(a.cfg, &labels);
     app.glyphs = spark_dialog::glyphs::Glyphs::from_env();
@@ -649,10 +676,21 @@ fn main() {
         });
     }
     app.start();
+    // a cell's size in the screen's pixels: the window's font and its screen's scale say it, or the terminal
+    let cell_size = |window: &Option<Window>| match window {
+        Some(w) => Some(((w.cell.w * w.scale() as f64) as u32, (w.cell.h * w.scale() as f64) as u32)),
+        None => cell_px(),
+    };
+    let film_kind = |window: &Option<Window>| FilmKind {
+        double: cell_size(window).is_some_and(|(_, ch)| ch >= 30),
+        pixels: window.is_some(),
+    };
+    // the films as they were last asked for: asked again when the window's screen has another scale
+    let mut films_as = film_kind(&window);
     // the colors a drawn piece takes: the environment's, then each theme step's palette over them
     let mut piece_pal = piece_colors();
     if let Some(dir) = app.cfg.transitions.clone() {
-        spawn_films(dir, piece_pal.clone(), tx.clone());
+        spawn_films(dir, piece_pal.clone(), films_as, tx.clone());
         // the opening is pending from the first frame: the home's rows wait for it, never a flash of them before it (#138)
         if app.cfg.home.is_none() && app.view == View::Home {
             app.motion = Some((Reel::Open, Instant::now()));
@@ -690,13 +728,13 @@ fn main() {
         },
     };
     let listening = Arc::new(Mutex::new(None));
-    // pictures are sixel, a terminal's: the window draws none yet
+    // a terminal's pictures are sixel; a window of the dialog's own paints its pictures itself
     let sixel_ok = window.is_none() && sixel::terminal_draws_it(&std::env::var("TERM").unwrap_or_default());
-    // a cell's size in pixels: the window's font says it, or the terminal
-    let cell_size = |window: &Option<Window>| match window {
-        Some(w) => Some((w.cell.w as u32, w.cell.h as u32)),
-        None => cell_px(),
-    };
+    let pictures = sixel_ok || window.is_some();
+    // the window's pictures as pixels, each made once: the preview's for its place and view (with its size and its
+    // source's), an icon's for its file and box
+    let mut win_preview: Option<WinPreview> = None;
+    let mut win_icons: std::collections::HashMap<(String, u32, u32), Arc<Pic>> = Default::default();
     // the picture beside a list (a wallpaper's): where it is drawn now, when one was last tried, the last one made
     let mut shown_preview: Option<ui::Picture> = None;
     let mut preview_tried = Instant::now();
@@ -745,7 +783,7 @@ fn main() {
             let px = cell_size(&window)
                 .map(|(cw, chh)| chh.min(cw * spark_dialog::page::ICON_CELLS as u32))
                 .unwrap_or(0);
-            let icons = !prefs.icons_off && sixel_ok && px >= 8;
+            let icons = !prefs.icons_off && pictures && px >= 8;
             if prefs.spacing != app.apps.spacing {
                 app.apps.spacing = prefs.spacing;
                 dirty = true;
@@ -779,6 +817,8 @@ fn main() {
             dirty |= app.motion.is_some() || shown_film.is_some();
         }
         if dirty {
+            // the window's frame set a picture's size the layout reads: drawn once more
+            let mut window_again = false;
             // a sound's picture read once: its waveform and its spectrum, before it is drawn
             if let Some(pv) = app.preview.as_mut().filter(|pv| pv.heard.is_none()) {
                 if let Some((file, wave)) = pv.shown.as_ref().and_then(|pg| pg.sound.clone()) {
@@ -797,6 +837,121 @@ fn main() {
                     steps.extend(spark_dialog::draw::cursor(&b, w.cell, &tones, drawn.cursor, app.window_focused));
                 }
                 frame_buf = b;
+                // the pictures, each a step over the cells the grid left for it. A frame is drawn whole, so a picture
+                // that is gone is simply not drawn; each is made for the screen's pixels
+                let scale = w.scale();
+                let (cw, chh) = (((w.cell.w * scale as f64) as u32).max(1), ((w.cell.h * scale as f64) as u32).max(1));
+                let place = |x: u16, y: u16, pic: &Arc<Pic>| Step::Picture {
+                    x: x as f64 * w.cell.w,
+                    y: y as f64 * w.cell.h,
+                    scale: scale as f64,
+                    pic: pic.clone(),
+                };
+                // the picture beside a list, or the preview's: made again when its place, its file or its view changed
+                match drawn.preview.clone() {
+                    Some(p) => {
+                        let (bw, bh) = (p.w as u32 * cw, p.h as u32 * chh);
+                        if win_preview.as_ref().is_none_or(|kept| kept.of != p || kept.scale != scale) {
+                            win_preview = None;
+                            let img = if p.spectrogram {
+                                let ramp = colors.ramp().unwrap_or([[0x1f; 3], [0x7f; 3], [0x55, 0x55, 0xff], [0xaa; 3]]);
+                                let heard = app.preview.as_ref().and_then(|pv| pv.heard.as_ref());
+                                if let Some(h) = heard.filter(|_| !tinted.as_ref().is_some_and(|(f, r, b, _)| *f == p.file && *r == ramp && *b == (bw, bh))) {
+                                    tinted = Some((p.file.clone(), ramp, (bw, bh), h.spectrogram.tinted(&ramp).resized(bw, bh)));
+                                }
+                                tinted.as_ref().filter(|(f, _, _, _)| *f == p.file).map(|(_, _, _, i)| i)
+                            } else {
+                                image(&p.file, &mut images)
+                            };
+                            if let Some((img, fitted)) = img.and_then(|img| sixel::fit(img, bw, bh, &p.view).map(|f| (img, f))) {
+                                win_preview = Some(WinPreview {
+                                    of: p.clone(),
+                                    scale,
+                                    pic: Arc::new(Pic::of(&fitted)),
+                                    size: (fitted.w, fitted.h),
+                                    source: (img.w, img.h),
+                                });
+                            }
+                            preview_tried = Instant::now();
+                        }
+                        if let Some(kept) = &win_preview {
+                            let (pw, ph) = kept.size;
+                            // in the middle of its box by whole cells
+                            let (dx, dy) = ((bw.saturating_sub(pw) / 2 / cw) as u16, (bh.saturating_sub(ph) / 2 / chh) as u16);
+                            // the preview's picture: its box and its pixels, for the zoom and the move (#120), and where it
+                            // is, in pixels: a video plays over it (#125)
+                            if let Some(pv) = app.preview.as_mut().filter(|_| app.view == View::Preview && !p.spectrogram) {
+                                if pv.px != (bw, bh) || pv.src != kept.source {
+                                    (pv.px, pv.src) = ((bw, bh), kept.source);
+                                    window_again = true;
+                                }
+                                pv.frame = Some(((p.x + dx) as u32 * cw, (p.y + dy) as u32 * chh, pw, ph));
+                            }
+                            steps.push(place(p.x + dx, p.y + dy, &kept.pic));
+                        }
+                        shown_preview = win_preview.as_ref().map(|_| p);
+                    }
+                    None => {
+                        win_preview = None;
+                        shown_preview = None;
+                    }
+                }
+                // the apps' icons (#230): a lit row's ground under its icon first, since the grid leaves an icon's cells
+                // on the window's ground
+                for icon in &drawn.icons {
+                    let cells = spark_dialog::page::ICON_CELLS;
+                    let (bw, bh) = (cells as u32 * cw, chh);
+                    let key = (icon.file.clone(), bw, bh);
+                    if !win_icons.contains_key(&key) {
+                        let made = icon_image(&icon.file, &mut icon_images).and_then(|img| sixel::icon_box(img, bw, bh, None));
+                        if let Some(made) = made {
+                            win_icons.insert(key.clone(), Arc::new(Pic::of(&made)));
+                        }
+                    }
+                    if let Some(pic) = win_icons.get(&key) {
+                        if let (true, Some(lit)) = (icon.lit, rgb_of(pal.lit)) {
+                            steps.push(Step::Fill {
+                                x: icon.x as f64 * w.cell.w,
+                                y: icon.y as f64 * w.cell.h,
+                                w: cells as f64 * w.cell.w,
+                                h: w.cell.h,
+                                color: lit,
+                            });
+                        }
+                        steps.push(place(icon.x, icon.y, pic));
+                    }
+                }
+                // a transition: its frame now, in the middle of its box by whole cells, at the GIF's own pace (#122)
+                film_due = None;
+                match (drawn.film, &films) {
+                    (Some((x, y, fw, fh, reel, since)), Some(f)) => {
+                        // a page being read plays the open from its start, then the wait looped while it is still on its way (#142)
+                        let ms = Instant::now().saturating_duration_since(since).as_millis();
+                        let (film, k, left, shown) = if reel == Reel::Load && ms >= f.open.length() {
+                            let (k, left) = f.wait.at(ms - f.open.length(), true);
+                            (&f.wait, k, left, k + f.open.frames.len())
+                        } else {
+                            let film = f.of(reel);
+                            let (k, left) = film.at(ms, reel == Reel::Wait);
+                            (film, k, left, k)
+                        };
+                        let (dx, dy) = (
+                            ((fw as u32 * cw).saturating_sub(film.w) / 2 / cw) as u16,
+                            ((fh as u32 * chh).saturating_sub(film.h) / 2 / chh) as u16,
+                        );
+                        if let Some(pic) = film.pics.get(k) {
+                            steps.push(place(x + dx, y + dy, pic));
+                        }
+                        shown_film = Some(((x, y, fw, fh), reel, shown));
+                        // the opening's first frame is on the window: it is shown (#167)
+                        if unseen {
+                            reveal();
+                            unseen = false;
+                        }
+                        film_due = Some(Duration::from_millis(left.clamp(1, 1000) as u64));
+                    }
+                    _ => shown_film = None,
+                }
                 w.frame(steps, tones.ground);
                 true
             } else if let Some(term) = term.as_mut() {
@@ -867,8 +1022,8 @@ fn main() {
             // the picture beside a list: drawn when it changed, its cells blanked first (the buffer skips them);
             // a picture gone is the buffer's again, which writes its cells over it
             let want = drawn.preview.clone();
-            let mut again = false;
-            if want != shown_preview {
+            let mut again = window_again;
+            if window.is_none() && want != shown_preview {
                 shown_preview = None;
                 if let (Some(p), Some((cw, chh)), true) = (&want, cell_size(&window), sixel_ok) {
                     let drawing = Instant::now();
@@ -956,7 +1111,9 @@ fn main() {
             }
             // a transition: its frame now, at the top left of its box, where the rows land and give way to it (#132), at
             // the GIF's own pace (#122)
-            film_due = None;
+            if window.is_none() {
+                film_due = None;
+            }
             match (drawn.film, &films, cell_size(&window)) {
                 (Some((x, y, w, h, reel, since)), Some(f), Some((cw, chh))) if sixel_ok => {
                     // a page being read plays the open from its start, then the wait looped while it is still on its way (#142)
@@ -1001,7 +1158,8 @@ fn main() {
                     }
                     film_due = Some(Duration::from_millis(left.clamp(1, 1000) as u64));
                 }
-                _ => shown_film = None,
+                _ if window.is_none() => shown_film = None,
+                _ => {}
             }
             dirty = again || !frame_drawn;
         }
@@ -1097,15 +1255,13 @@ fn main() {
                 let shows = app.incoming(m);
                 // a theme step changed the animation: the new piece read aside, none at once (#126)
                 match app.films_want.take() {
-                    // the window draws no pictures yet: no piece to read
-                    Some(Some(_)) if window.is_some() => {}
                     Some(Some(dir)) => {
                         // a drawn piece in the step's own palette, not yet worn: it comes in the same result
                         let mut pal = piece_pal.clone();
                         if let Some(m) = &app.palette {
                             pal.extend(m.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))));
                         }
-                        spawn_films(dir, pal, films_tx.clone())
+                        spawn_films(dir, pal, films_as, films_tx.clone())
                     }
                     Some(None) => {
                         films = None;
@@ -1124,6 +1280,13 @@ fn main() {
                 // the window says its size in cells; a terminal's is read as the frame is drawn
                 if window.is_some() {
                     window_size = (cols, rows);
+                    // the window's screen has another scale: the films again, at the size a cell has there
+                    if film_kind(&window) != films_as {
+                        films_as = film_kind(&window);
+                        if let Some(dir) = app.cfg.transitions.clone() {
+                            spawn_films(dir, piece_pal.clone(), films_as, films_tx.clone());
+                        }
+                    }
                 }
                 mouse_at = None;
                 app.stop_video(); // the frame moves: the player would stand where it was (#125)

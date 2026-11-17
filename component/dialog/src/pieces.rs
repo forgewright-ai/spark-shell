@@ -876,25 +876,39 @@ fn in_parallel<T: Send, R: Send>(items: Vec<T>, f: impl Fn(T) -> R + Sync) -> Ve
     })
 }
 
-fn film(name: &str, ro: &Roles, scale: u32, anim: Anim) -> Option<Film> {
+fn film(name: &str, ro: &Roles, scale: u32, anim: Anim, pixels: bool) -> Option<Film> {
     let s = scale.clamp(1, 2);
     let (w, h) = ((W as u32) * s, (H as u32) * s);
     let shown = in_parallel(frames(name, ro, s, anim)?, |(px, ms)| {
         let img = Image::from_rgba(w, h, &px)?;
+        if pixels {
+            return Some((String::new(), ms.max(FRAME_MIN_MS), Some(std::sync::Arc::new(crate::draw::Pic::of(&img)))));
+        }
         let (sx, _, _) = show(&img, w, h, &Viewport::FIT)?;
-        Some((sx, ms.max(FRAME_MIN_MS)))
+        Some((sx, ms.max(FRAME_MIN_MS), None))
     });
-    let out: Option<Vec<(String, u32)>> = shown.into_iter().collect();
+    let out: Option<Vec<_>> = shown.into_iter().collect();
     let out = out?;
-    (!out.is_empty()).then_some(Film { w, h, frames: out })
+    let pics = out.iter().filter_map(|(_, _, pic)| pic.clone()).collect();
+    let frames: Vec<(String, u32)> = out.into_iter().map(|(sx, ms, _)| (sx, ms)).collect();
+    (!frames.is_empty()).then_some(Film { w, h, frames, pics })
 }
 
 /// A piece's three films in the palette: what main.rs plays for `draw:PIECE`. None for a name that is no piece.
 pub fn films(name: &str, ro: &Roles, scale: u32) -> Option<Films> {
+    films_as(name, ro, scale, false)
+}
+
+/// As `films`, their frames as pixels: what a window paints.
+pub fn films_pixels(name: &str, ro: &Roles, scale: u32) -> Option<Films> {
+    films_as(name, ro, scale, true)
+}
+
+fn films_as(name: &str, ro: &Roles, scale: u32, pixels: bool) -> Option<Films> {
     Some(Films {
-        open: film(name, ro, scale, Anim::Open)?,
-        wait: film(name, ro, scale, Anim::Wait)?,
-        close: film(name, ro, scale, Anim::Close)?,
+        open: film(name, ro, scale, Anim::Open, pixels)?,
+        wait: film(name, ro, scale, Anim::Wait, pixels)?,
+        close: film(name, ro, scale, Anim::Close, pixels)?,
     })
 }
 

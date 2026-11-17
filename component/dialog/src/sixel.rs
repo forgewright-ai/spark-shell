@@ -135,6 +135,11 @@ impl Image {
         }
     }
 
+    /// Every pixel, row by row.
+    pub fn pixels(&self) -> &[[u8; 4]] {
+        &self.px
+    }
+
     /// The pixel at (x, y).
     pub fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
         self.px[(y * self.w + x) as usize]
@@ -260,6 +265,12 @@ pub fn decode(png: &[u8]) -> Option<Image> {
 /// pixels, blended on the row's `ground` so its edges stay soft; the rest of the box left unpainted, the ground
 /// showing. Its colors cut to at most 255, as every picture's. None for a box under 8 pixels.
 pub fn icon(img: &Image, bw: u32, bh: u32, ground: Option<[u8; 3]>) -> Option<String> {
+    show_with(&icon_box(img, bw, bh, ground)?, bw, bh, &Viewport::FIT, 255).map(|(s, _, _)| s)
+}
+
+/// An app's icon as pixels in its box: what `icon` writes as sixel, and what a window paints as it is (with no
+/// ground, its edges keep their own opacity and the window blends them).
+pub fn icon_box(img: &Image, bw: u32, bh: u32, ground: Option<[u8; 3]>) -> Option<Image> {
     let side = bw.min(bh);
     if side < 8 {
         return None;
@@ -286,8 +297,7 @@ pub fn icon(img: &Image, bw: u32, bh: u32, ground: Option<[u8; 3]>) -> Option<St
             rgba[o..o + 4].copy_from_slice(&px);
         }
     }
-    let boxed = Image::from_rgba(bw, bh, &rgba)?;
-    show_with(&boxed, bw, bh, &Viewport::FIT, 255).map(|(s, _, _)| s)
+    Image::from_rgba(bw, bh, &rgba)
 }
 
 /// A picture for a box of `bw` by `bh` pixels, as sixel, with its size (#36: a wallpaper beside its
@@ -307,6 +317,13 @@ pub fn show(img: &Image, bw: u32, bh: u32, view: &Viewport) -> Option<(String, u
 
 /// As `show`, its colors cut to at most `colors` (a drag's lighter frames, #148).
 pub fn show_with(img: &Image, bw: u32, bh: u32, view: &Viewport, colors: usize) -> Option<(String, u32, u32)> {
+    let pic = fit(img, bw, bh, view)?;
+    Some((encode(pic.w, pic.h, &inked(&pic.px, colors.clamp(2, 255))), pic.w, pic.h))
+}
+
+/// The picture in a box of `bw` by `bh` pixels as `view` has it, as pixels: what `show` writes as sixel, and what a
+/// window paints as it is. None for a box under 8 pixels.
+pub fn fit(img: &Image, bw: u32, bh: u32, view: &Viewport) -> Option<Image> {
     if bw < 8 || bh < 8 {
         return None;
     }
@@ -343,7 +360,7 @@ pub fn show_with(img: &Image, bw: u32, bh: u32, view: &Viewport, colors: usize) 
             out.push([(sum[0] / n) as u8, (sum[1] / n) as u8, (sum[2] / n) as u8, (sum[3] / n) as u8]);
         }
     }
-    Some((encode(w, h, &inked(&out, colors.clamp(2, 255))), w, h))
+    Some(Image { w, h, px: out })
 }
 
 /// The pixels with their colors cut to at most 255, as RGBA bytes: the 255 most used cells of a

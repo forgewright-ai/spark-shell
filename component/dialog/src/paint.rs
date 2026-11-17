@@ -43,6 +43,11 @@ pub struct Lib {
     rectangle: unsafe extern "C" fn(*mut Cairo, f64, f64, f64, f64),
     fill: unsafe extern "C" fn(*mut Cairo),
     move_to: unsafe extern "C" fn(*mut Cairo, f64, f64),
+    save: unsafe extern "C" fn(*mut Cairo),
+    restore: unsafe extern "C" fn(*mut Cairo),
+    translate: unsafe extern "C" fn(*mut Cairo, f64, f64),
+    set_source_surface: unsafe extern "C" fn(*mut Cairo, *mut CairoSurface, f64, f64),
+    paint: unsafe extern "C" fn(*mut Cairo),
     font_description_from_string: unsafe extern "C" fn(*const c_char) -> *mut FontDesc,
     font_description_free: unsafe extern "C" fn(*mut FontDesc),
     font_description_set_weight: unsafe extern "C" fn(*mut FontDesc, c_int),
@@ -93,6 +98,11 @@ impl Lib {
             rectangle: sym!(cairo, c, "cairo_rectangle"),
             fill: sym!(cairo, c, "cairo_fill"),
             move_to: sym!(cairo, c, "cairo_move_to"),
+            save: sym!(cairo, c, "cairo_save"),
+            restore: sym!(cairo, c, "cairo_restore"),
+            translate: sym!(cairo, c, "cairo_translate"),
+            set_source_surface: sym!(cairo, c, "cairo_set_source_surface"),
+            paint: sym!(cairo, c, "cairo_paint"),
             font_description_from_string: sym!(pango, p, "pango_font_description_from_string"),
             font_description_free: sym!(pango, p, "pango_font_description_free"),
             font_description_set_weight: sym!(pango, p, "pango_font_description_set_weight"),
@@ -191,6 +201,26 @@ unsafe fn run(lib: &Lib, font: &Font, surface: *mut CairoSurface, scale: f64, st
                 ink(*color);
                 (lib.move_to)(cr, *x, *y);
                 (lib.cairo_show_layout)(cr, layout);
+            }
+            Step::Picture { x, y, scale, pic } => {
+                let (w, h) = (pic.w as c_int, pic.h as c_int);
+                if w <= 0 || h <= 0 || pic.data.len() < (w as usize) * (h as usize) * 4 || *scale <= 0.0 {
+                    continue;
+                }
+                // cairo reads the pixels and writes none: the picture is the source, never the target
+                let source = (lib.image_surface_create_for_data)(pic.data.as_ptr() as *mut u8, CAIRO_FORMAT_ARGB32, w, h, w * 4);
+                if !source.is_null() && (lib.surface_status)(source) == 0 {
+                    (lib.save)(cr);
+                    (lib.translate)(cr, *x, *y);
+                    (lib.scale)(cr, 1.0 / *scale, 1.0 / *scale);
+                    (lib.set_source_surface)(cr, source, 0.0, 0.0);
+                    (lib.paint)(cr);
+                    // the source let go before its pixels are
+                    (lib.restore)(cr);
+                }
+                if !source.is_null() {
+                    (lib.surface_destroy)(source);
+                }
             }
         }
     }

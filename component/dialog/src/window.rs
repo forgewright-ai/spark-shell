@@ -27,7 +27,8 @@ use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shm::slot::SlotPool;
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::{mpsc, Arc};
 use std::time::Duration;
 use wayland_client::globals::registry_queue_init;
 use wayland_client::protocol::wl_keyboard::{self, KeyState, WlKeyboard};
@@ -73,10 +74,16 @@ pub struct Handle {
     pub cell: Cell,
     /// The size asked for, in cells: the window's until it says another.
     pub size: (u16, u16),
+    scale: Arc<AtomicI32>,
     tx: Sender<Cmd>,
 }
 
 impl Handle {
+    /// How many of the screen's pixels stand on one of the window's: 1, or 2 and more on a screen of many pixels.
+    /// A picture is made for the screen's pixels. A change is said as a size (Event::Resize), the cells the same.
+    pub fn scale(&self) -> u32 {
+        self.scale.load(Ordering::Relaxed).max(1) as u32
+    }
     /// A frame to show: the grid's steps, and the ground for the pixels past the last whole cell.
     pub fn frame(&self, steps: Vec<Step>, ground: Rgb) {
         let _ = self.tx.send(Cmd::Frame(steps, ground));
@@ -96,11 +103,13 @@ pub fn open(setup: Setup, send: impl Fn(Out) + Send + 'static) -> Result<Handle,
     let (tx, rx) = channel::<Cmd>();
     let (ready_tx, ready_rx) = mpsc::channel::<Result<Cell, String>>();
     let size = (setup.cols, setup.rows);
+    let scale = Arc::new(AtomicI32::new(1));
+    let shared = scale.clone();
     std::thread::Builder::new()
         .name("window".into())
         .spawn(move || {
             let send: Box<dyn Fn(Out)> = Box::new(send);
-            let (mut event_loop, mut state) = match State::new(setup, rx, send) {
+            let (mut event_loop, mut state) = match State::new(setup, rx, send, shared) {
                 Ok(s) => s,
                 Err(e) => {
                     let _ = ready_tx.send(Err(e));
@@ -118,7 +127,7 @@ pub fn open(setup: Setup, send: impl Fn(Out) + Send + 'static) -> Result<Handle,
         })
         .map_err(|e| format!("the window's thread: {e}"))?;
     let cell = ready_rx.recv().map_err(|_| "the window's thread ended".to_string())??;
-    Ok(Handle { cell, size, tx })
+    Ok(Handle { cell, size, scale, tx })
 }
 
 struct Ptr {
@@ -150,6 +159,8 @@ struct State {
     px: (u32, u32),
     grid: (u16, u16),
     scale: i32,
+    /// The scale as the dialog's loop reads it.
+    shared: Arc<AtomicI32>,
     configured: bool,
     /// The frame shown: drawn again when the size or the scale changes.
     frame: Option<(Vec<Step>, Rgb)>,
@@ -169,7 +180,12 @@ struct State {
 }
 
 impl State {
-    fn new(setup: Setup, cmds: calloop::channel::Channel<Cmd>, send: Box<dyn Fn(Out)>) -> Result<(EventLoop<'static, State>, State), String> {
+    fn new(
+        setup: Setup,
+        cmds: calloop::channel::Channel<Cmd>,
+        send: Box<dyn Fn(Out)>,
+        shared: Arc<AtomicI32>,
+    ) -> Result<(EventLoop<'static, State>, State), String> {
         if !wayland_sys::client::is_lib_available() {
             return Err("libwayland-client.so.0 is missing (Wayland's client library)".into());
         }
@@ -181,7 +197,7 @@ impl State {
             ConnectError::NoCompositor => "no Wayland compositor here (WAYLAND_DISPLAY)".to_string(),
             ConnectError::InvalidFd => "WAYLAND_SOCKET is not a socket".to_string(),
         })?;
-        let (globals, queue) = registry_queue_init::<State>(&conn).map_err(|e| format!("the compositor's globals: {e}"))?;
+        let (globals, mut queue) = registry_queue_init::<State>(&conn).map_err(|e| format!("the compositor's globals: {e}"))?;
         let qh = queue.handle();
         let event_loop: EventLoop<'static, State> = EventLoop::try_new().map_err(|e| format!("event loop: {e}"))?;
         let handle = event_loop.handle();
@@ -199,9 +215,6 @@ impl State {
         window.set_title(setup.title);
         // a first commit with nothing on it: the compositor answers with the size, and the first frame maps the window
         window.commit();
-        WaylandSource::new(conn, queue)
-            .insert(handle.clone())
-            .map_err(|e| format!("event loop: {}", e.error))?;
         handle
             .insert_source(cmds, |msg, &mut (), s: &mut State| match msg {
                 Msg::Msg(Cmd::Frame(steps, ground)) => {
@@ -223,7 +236,7 @@ impl State {
                 Msg::Closed => s.stop = true,
             })
             .map_err(|e| format!("event loop: {}", e.error))?;
-        let state = State {
+        let mut state = State {
             registry: RegistryState::new(&globals),
             outputs: OutputState::new(&globals, &qh),
             seats: SeatState::new(&globals, &qh),
@@ -241,6 +254,7 @@ impl State {
             px: want,
             grid: (setup.cols, setup.rows),
             scale: 1,
+            shared,
             configured: false,
             frame: None,
             kb,
@@ -254,6 +268,17 @@ impl State {
             wheel: Wheel::default(),
             stop: false,
         };
+        // the screens' scales before the first frame: a picture is made for the screen's pixels from the start. The
+        // largest, where there are several; the compositor says the window's own once it is on a screen
+        for _ in 0..2 {
+            queue.roundtrip(&mut state).map_err(|e| format!("the compositor: {e}"))?;
+        }
+        let largest = state.outputs.outputs().filter_map(|o| state.outputs.info(&o)).map(|i| i.scale_factor).max();
+        state.scale = largest.unwrap_or(1).max(1);
+        state.shared.store(state.scale, Ordering::Relaxed);
+        WaylandSource::new(conn, queue)
+            .insert(state.handle.clone())
+            .map_err(|e| format!("event loop: {}", e.error))?;
         Ok((event_loop, state))
     }
 
@@ -408,7 +433,10 @@ impl CompositorHandler for State {
     fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlSurface, factor: i32) {
         if self.scale != factor.max(1) {
             self.scale = factor.max(1);
+            self.shared.store(self.scale, Ordering::Relaxed);
             self.draw();
+            // the dialog's loop draws again: its pictures are for the screen's pixels
+            self.say(Event::Resize(self.grid.0, self.grid.1));
         }
     }
 

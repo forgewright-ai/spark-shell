@@ -3,6 +3,8 @@
 //! what a painter (paint.rs) then draws with cairo and pango, and what a test reads without either.
 
 use crate::grid::{Buffer, CellDiffOption, Color, Modifier};
+use crate::sixel::Image;
+use std::sync::Arc;
 
 /// A red, a green and a blue.
 pub type Rgb = [u8; 3];
@@ -54,6 +56,26 @@ pub fn tones(pal: &crate::palette::Palette) -> Tones<'static> {
     }
 }
 
+/// A picture's pixels as the painter takes them: `w` by `h`, four bytes a pixel, each pixel one number of alpha,
+/// red, green and blue in the machine's byte order, the colors already multiplied by the alpha (cairo's ARGB32).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Pic {
+    pub w: u32,
+    pub h: u32,
+    pub data: Vec<u8>,
+}
+
+impl Pic {
+    pub fn of(img: &Image) -> Pic {
+        let mut data = Vec::with_capacity(img.pixels().len() * 4);
+        for [r, g, b, a] in img.pixels() {
+            let pre = |c: u8| (c as u32 * *a as u32 + 127) / 255;
+            data.extend_from_slice(&(((*a as u32) << 24) | (pre(*r) << 16) | (pre(*g) << 8) | pre(*b)).to_ne_bytes());
+        }
+        Pic { w: img.w, h: img.h, data }
+    }
+}
+
 /// One thing to draw, in pixels from the window's top left corner.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Step {
@@ -70,6 +92,9 @@ pub enum Step {
     },
     /// A line along the foot of a symbol's cells.
     Under { x: f64, y: f64, w: f64, color: Rgb },
+    /// A picture with its corner there, drawn over what is under it. `scale` is how many of its pixels stand on one
+    /// of the window's: a picture made for a screen of twice the pixels is drawn at half its size, pixel for pixel.
+    Picture { x: f64, y: f64, scale: f64, pic: Arc<Pic> },
 }
 
 /// The steps that draw a grid: the ground over the whole of it first, then row by row a box behind each run of
@@ -275,6 +300,16 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn a_pictures_pixels_are_multiplied_by_their_alpha() {
+        let img = Image::from_rgba(2, 1, &[255, 128, 0, 255, 200, 100, 50, 128]).unwrap();
+        let pic = Pic::of(&img);
+        assert_eq!((pic.w, pic.h, pic.data.len()), (2, 1, 8));
+        let px = |i: usize| u32::from_ne_bytes(pic.data[i * 4..i * 4 + 4].try_into().unwrap());
+        assert_eq!(px(0), 0xffff8000, "a solid pixel is itself: alpha, red, green, blue");
+        assert_eq!(px(1), 0x80643219, "half clear: each color about half");
     }
 
     #[test]
