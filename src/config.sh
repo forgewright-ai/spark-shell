@@ -183,8 +183,13 @@ config_renames() {   # spark-shell on: the pad's settings a config from v0.142 o
     # a setting the config already holds under its new name keeps that line; the old one goes
     awk 'NR == FNR { if ($0 ~ /^WINPAD_[A-Z_]*=/) { k = $0; sub(/=.*/, "", k); have[k] = 1 }; next }
         /^PAD_(PLACE|WIDTH|SIDE_WIDTH|HEIGHT|VIEW|BAND)=/ { k = $0; sub(/=.*/, "", k); if (!(("WIN" k) in have)) print "WIN" $0; next }
-        { print }' "$CONFIG" "$CONFIG" > "$TMP/config" && cp "$TMP/config" "$CONFIG"
+        { print }' "$CONFIG" "$CONFIG" > "$TMP/config" && config_put "$TMP/config"
     ok config "$_crn settings of the pad are WINPAD_ now ($CONFIG)"
+}
+config_put() {   # config_put FILE -- FILE's lines become the config in one step: written beside it and moved onto it, so whoever reads the config meets the old file or the new one. cp emptied it before it wrote it, and a spark-shell that started in that moment ran on the defaults: a bar started again by a drag came back in the default text's size
+    if [ -L "$CONFIG" ]; then cp "$1" "$CONFIG"; return; fi   # a config that is a link stays a link: written through it, as before
+    _cpn=$CONFIG.new.$$
+    cp "$CONFIG" "$_cpn" && cat "$1" > "$_cpn" && mv "$_cpn" "$CONFIG" || { rm -f "$_cpn"; return 1; }   # the copy first: the new file keeps the old one's mode
 }
 config_set() {   # config_set KEY VALUE -- one line replaced or added; a value load_env would refuse is refused first
     case $2 in *[';`$()|&<>']*) printf 'spark-shell: %s=%s cannot be kept: a value holds none of ; ` $ ( ) | & < >\n' "$1" "$2" >&2; exit 1 ;; esac
@@ -196,7 +201,7 @@ config_set() {   # config_set KEY VALUE -- one line replaced or added; a value l
     mkdir -p "$CONFIG_DIR"
     if [ -f "$CONFIG" ] && grep -q "^$1=" "$CONFIG"; then
         sed "s|^$1=.*|$1=$(esc "$2")|" "$CONFIG" > "$TMP/config"
-        cp "$TMP/config" "$CONFIG"
+        config_put "$TMP/config"
     else
         [ -f "$CONFIG" ] || printf '# spark-shell config -- KEY=value (config.example shows the keys)\n' > "$CONFIG"
         printf '%s=%s\n' "$1" "$2" >> "$CONFIG"

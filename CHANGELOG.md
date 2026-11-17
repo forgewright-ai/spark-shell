@@ -23,6 +23,15 @@
 - The dialog's release build is spark-dialog-x86_64-linux-gnu: it links
   glibc, as the bar's does, to open Wayland, cairo and pango when it
   runs.
+- Where sh is bash (Arch, Fedora, openSUSE) the bar's status no longer
+  starts again by itself. A click or the wheel on the bar that came
+  while the status looked at the drives could end it; it came back a
+  second later, and a sound change that had just failed lost its sign.
+  bash ends a shell there, so the look runs apart from the status.
+- A setting is written in one step. The config was emptied and then
+  written, and a program that started in that instant ran on the
+  defaults: after a drag the bar could come back in the default text
+  size.
 
 ## v0.151
 
@@ -30,11 +39,6 @@
   up or down the screen, as a dragged pad does, and the line at the
   other edge still says where it will land. Before, a drag showed the
   pointer alone, and the line once the pointer was past the middle.
-- Where sh is bash (Arch, Fedora, openSUSE) the bar's status no longer
-  starts again by itself. A click or the wheel on the bar that came
-  while the status looked at the drives could end it; it came back a
-  second later, and a sound change that had just failed lost its sign.
-  bash ends a shell there, so the look runs apart from the status.
 
 ## v0.150.2
 

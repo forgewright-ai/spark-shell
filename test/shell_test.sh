@@ -3959,6 +3959,15 @@ _pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'WINPAD_BAND=off' "$HOME/winpad.env
 [ "$rc" = 0 ] && [ "$out" = "pad band off $dot no band, its grip and its icons alone" ] && grep -qx 'WINPAD_BAND=off' "$cfg" && [ "$(grep -c '' "$HOME/pad.log")" = 2 ] && grep -qx 'WINPAD_BAND=off' "$HOME/winpad.env" && grep -qE '^WINPAD_BAND_HEX=[0-9a-f]{6}$' "$HOME/winpad.env" \
     && ok "desktop pad band off: a running pad starts again without its band, its color still handed apart (#266)" || bad "pad band again pad" "rc=$rc $out $(cat "$HOME/pad.log" "$HOME/winpad.env" 2>&1)"
 pad_down
+# the config is replaced in one step (v0.152): written beside it and moved onto it, so whoever reads it meets the old file or
+# the new one. cp emptied it first, and a bar started in that moment came back on the defaults. Its mode stays, nothing is
+# left beside it, and a config that is a link stays a link
+_ci=$(ls -i "$cfg" | awk '{print $1}'); chmod 600 "$cfg"; padr band on
+[ "$rc" = 0 ] && grep -qx 'WINPAD_BAND=on' "$cfg" && [ "$(ls -i "$cfg" | awk '{print $1}')" != "$_ci" ] && [ "$(ls -l "$cfg" | cut -c1-10)" = '-rw-------' ] && [ -z "$(ls "$cfg".new.* 2>/dev/null)" ] \
+    && ok "config: a changed line is written beside the config and moved onto it, in one step: another file under the same name, its mode kept, nothing left beside it" || bad "config in one step" "rc=$rc $out $(ls -li "$cfg"* 2>&1)"
+mv "$cfg" "$cfg.real"; ln -s "$cfg.real" "$cfg"; padr band off
+[ "$rc" = 0 ] && [ -L "$cfg" ] && grep -qx 'WINPAD_BAND=off' "$cfg.real" && ok "config: a config that is a link stays a link, written through it" || bad "config link" "rc=$rc $out $(ls -l "$cfg"* 2>&1)"
+rm -f "$cfg"; mv "$cfg.real" "$cfg"; chmod 644 "$cfg"
 printf 'WINPAD_BAND=maybe\n' >> "$cfg"; padr band
 [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'WINPAD_BAND=maybe in .*: on or off' && ok "config: WINPAD_BAND other than on or off refused in one line (#266)" || bad "pad band config" "rc=$rc $out"
 sed -i.bak '/^WINPAD_BAND=/d' "$cfg"; rm -f "$cfg.bak"
