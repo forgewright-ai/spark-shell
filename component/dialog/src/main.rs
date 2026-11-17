@@ -169,6 +169,7 @@ impl Window {
     fn scale(&self) -> u32 {
         1
     }
+    fn paste(&self, _: bool) {}
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -1296,6 +1297,20 @@ fn main() {
                 dirty = true;
             }
             Ev::Term(Event::Key(k)) if app.cfg.keys.takes(&k) => {
+                // in a window of its own the dialog asks for the clipboard itself, where a terminal pasted for it:
+                // Ctrl+V or Ctrl+Shift+V the clipboard, Shift+Insert what the pointer last selected; a key a person
+                // bound to an action stays that action's
+                if let (Some(w), None) = (&window, app.cfg.keys.action(k)) {
+                    let ctrl = k.modifiers.contains(KeyModifiers::CONTROL) && !k.modifiers.intersects(KeyModifiers::ALT | KeyModifiers::SUPER);
+                    if ctrl && matches!(k.code, KeyCode::Char('v' | 'V')) {
+                        w.paste(false);
+                        continue;
+                    }
+                    if k.code == KeyCode::Insert && k.modifiers == KeyModifiers::SHIFT {
+                        w.paste(true);
+                        continue;
+                    }
+                }
                 dirty = true;
                 // a letter typed while the opening plays lands at the prompt and the opening plays on; Enter, Esc, an
                 // arrow or a click cut it (#138)

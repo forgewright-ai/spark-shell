@@ -13,10 +13,16 @@ use calloop::timer::{TimeoutAction, Timer};
 use calloop::{EventLoop, LoopHandle, RegistrationToken};
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
+use smithay_client_toolkit::data_device_manager::data_device::{DataDevice, DataDeviceHandler};
+use smithay_client_toolkit::data_device_manager::data_offer::{DataOfferHandler, DragOffer};
+use smithay_client_toolkit::data_device_manager::DataDeviceManagerState;
 use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
+use smithay_client_toolkit::primary_selection::device::{PrimarySelectionDevice, PrimarySelectionDeviceHandler};
+use smithay_client_toolkit::primary_selection::PrimarySelectionManagerState;
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::{Shape, WpCursorShapeDeviceV1};
+use smithay_client_toolkit::reexports::protocols::wp::primary_selection::zv1::client::zwp_primary_selection_device_v1::ZwpPrimarySelectionDeviceV1;
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
 use smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager;
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind, PointerHandler};
@@ -31,6 +37,8 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 use wayland_client::globals::registry_queue_init;
+use wayland_client::protocol::wl_data_device::WlDataDevice;
+use wayland_client::protocol::wl_data_device_manager::DndAction;
 use wayland_client::protocol::wl_keyboard::{self, KeyState, WlKeyboard};
 use wayland_client::protocol::wl_output::{Transform, WlOutput};
 use wayland_client::protocol::wl_pointer::WlPointer;
@@ -66,6 +74,16 @@ enum Cmd {
     Frame(Vec<Step>, Rgb),
     Title(String),
     Pointer(&'static str),
+    Paste(bool),
+}
+
+/// The most a paste brings: a megabyte of text.
+const PASTE_MOST: u64 = 1 << 20;
+/// The kinds of text a paste takes, the best first.
+const TEXT_KINDS: [&str; 5] = ["text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "TEXT", "STRING"];
+
+fn text_kind(kinds: &[String]) -> Option<String> {
+    TEXT_KINDS.iter().find(|k| kinds.iter().any(|have| have == *k)).map(|k| k.to_string())
 }
 
 /// The window, held by the dialog's loop.
@@ -96,10 +114,15 @@ impl Handle {
     pub fn pointer(&self, shape: &'static str) {
         let _ = self.tx.send(Cmd::Pointer(shape));
     }
+    /// The clipboard's text asked for, or the text last selected with the pointer (`primary`): it comes as a paste
+    /// (Event::Paste), when there is text to take.
+    pub fn paste(&self, primary: bool) {
+        let _ = self.tx.send(Cmd::Paste(primary));
+    }
 }
 
 /// The window opened on a thread of its own. The error says what is missing: a library, the compositor, the font.
-pub fn open(setup: Setup, send: impl Fn(Out) + Send + 'static) -> Result<Handle, String> {
+pub fn open(setup: Setup, send: impl Fn(Out) + Send + Sync + 'static) -> Result<Handle, String> {
     let (tx, rx) = channel::<Cmd>();
     let (ready_tx, ready_rx) = mpsc::channel::<Result<Cell, String>>();
     let size = (setup.cols, setup.rows);
@@ -108,7 +131,7 @@ pub fn open(setup: Setup, send: impl Fn(Out) + Send + 'static) -> Result<Handle,
     std::thread::Builder::new()
         .name("window".into())
         .spawn(move || {
-            let send: Box<dyn Fn(Out)> = Box::new(send);
+            let send: Say = Arc::new(send);
             let (mut event_loop, mut state) = match State::new(setup, rx, send, shared) {
                 Ok(s) => s,
                 Err(e) => {
@@ -130,6 +153,9 @@ pub fn open(setup: Setup, send: impl Fn(Out) + Send + 'static) -> Result<Handle,
     Ok(Handle { cell, size, scale, tx })
 }
 
+/// How the window says something to the dialog's loop, from its own thread or from one that reads a paste.
+type Say = Arc<dyn Fn(Out) + Send + Sync>;
+
 struct Ptr {
     _wl: WlPointer,
     device: Option<WpCursorShapeDeviceV1>,
@@ -148,11 +174,16 @@ struct State {
     shm: Shm,
     pool: SlotPool,
     cursors: Option<CursorShapeManager>,
+    /// The clipboard and the pointer's selection, where the compositor has them: read for a paste, never written.
+    clipboard: Option<DataDeviceManagerState>,
+    clipboard_device: Option<DataDevice>,
+    primary: Option<PrimarySelectionManagerState>,
+    primary_device: Option<PrimarySelectionDevice>,
     handle: LoopHandle<'static, State>,
     window: Window,
     lib: Lib,
     font: Font,
-    send: Box<dyn Fn(Out)>,
+    send: Say,
     /// The size asked for, in pixels: the window's where the compositor names none.
     want: (u32, u32),
     /// The surface's size in pixels, the grid's in cells, the output's scale.
@@ -180,12 +211,7 @@ struct State {
 }
 
 impl State {
-    fn new(
-        setup: Setup,
-        cmds: calloop::channel::Channel<Cmd>,
-        send: Box<dyn Fn(Out)>,
-        shared: Arc<AtomicI32>,
-    ) -> Result<(EventLoop<'static, State>, State), String> {
+    fn new(setup: Setup, cmds: calloop::channel::Channel<Cmd>, send: Say, shared: Arc<AtomicI32>) -> Result<(EventLoop<'static, State>, State), String> {
         if !wayland_sys::client::is_lib_available() {
             return Err("libwayland-client.so.0 is missing (Wayland's client library)".into());
         }
@@ -232,6 +258,7 @@ impl State {
                     };
                     s.set_shape();
                 }
+                Msg::Msg(Cmd::Paste(primary)) => s.paste(primary),
                 // the dialog's loop is gone
                 Msg::Closed => s.stop = true,
             })
@@ -241,6 +268,10 @@ impl State {
             outputs: OutputState::new(&globals, &qh),
             seats: SeatState::new(&globals, &qh),
             cursors: CursorShapeManager::bind(&globals, &qh).ok(),
+            clipboard: DataDeviceManagerState::bind(&globals, &qh).ok(),
+            clipboard_device: None,
+            primary: PrimarySelectionManagerState::bind(&globals, &qh).ok(),
+            primary_device: None,
             _compositor: compositor,
             _xdg: xdg,
             shm,
@@ -337,6 +368,33 @@ impl State {
             d.set_shape(p.serial, want);
             p.shape = Some(want);
         }
+    }
+
+    /// The clipboard's text, or the pointer's selection, read aside and said as a paste: the program that holds it
+    /// writes it in its own time, and the window never waits for it.
+    fn paste(&mut self, primary: bool) {
+        let pipe = if primary {
+            let Some(offer) = self.primary_device.as_ref().and_then(|d| d.data().selection_offer()) else {
+                return;
+            };
+            let Some(kind) = offer.with_mime_types(text_kind) else { return };
+            offer.receive(kind).ok()
+        } else {
+            let Some(offer) = self.clipboard_device.as_ref().and_then(|d| d.data().selection_offer()) else {
+                return;
+            };
+            let Some(kind) = offer.with_mime_types(text_kind) else { return };
+            offer.receive(kind).ok()
+        };
+        let Some(pipe) = pipe else { return };
+        let send = self.send.clone();
+        std::thread::spawn(move || {
+            use std::io::Read;
+            let mut bytes = Vec::new();
+            if pipe.take(PASTE_MOST).read_to_end(&mut bytes).is_ok() && !bytes.is_empty() {
+                send(Out::Event(Event::Paste(String::from_utf8_lossy(&bytes).into_owned())));
+            }
+        });
     }
 
     fn stop_repeat(&mut self) {
@@ -484,6 +542,12 @@ impl SeatHandler for State {
         if capability == Capability::Keyboard && self.keyboard.is_none() {
             self.keyboard = Some(seat.get_keyboard(qh, KeyData));
         }
+        if self.clipboard_device.is_none() {
+            self.clipboard_device = self.clipboard.as_ref().map(|m| m.get_data_device(qh, &seat));
+        }
+        if self.primary_device.is_none() {
+            self.primary_device = self.primary.as_ref().map(|m| m.get_selection_device(qh, &seat));
+        }
     }
 
     fn remove_capability(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlSeat, capability: Capability) {
@@ -541,6 +605,10 @@ impl PointerHandler for State {
                     if let Some(b) = button_of(button) {
                         self.left |= b == MouseButton::Left;
                         self.mouse(MouseEventKind::Down(b), at);
+                        // the middle button pastes what the pointer last selected, as in a terminal
+                        if b == MouseButton::Middle {
+                            self.paste(true);
+                        }
                     }
                 }
                 PointerEventKind::Release { button, .. } => {
@@ -569,6 +637,24 @@ fn button_of(button: u32) -> Option<MouseButton> {
         BTN_MIDDLE => Some(MouseButton::Middle),
         _ => None,
     }
+}
+
+// the clipboard is read when a paste is asked for: what it offers, and a drag over the window, change nothing here
+impl DataDeviceHandler for State {
+    fn enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice, _: f64, _: f64, _: &WlSurface) {}
+    fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {}
+    fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice, _: f64, _: f64) {}
+    fn selection(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {}
+    fn drop_performed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {}
+}
+
+impl DataOfferHandler for State {
+    fn source_actions(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &mut DragOffer, _: DndAction) {}
+    fn selected_action(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &mut DragOffer, _: DndAction) {}
+}
+
+impl PrimarySelectionDeviceHandler for State {
+    fn selection(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &ZwpPrimarySelectionDeviceV1) {}
 }
 
 impl ShmHandler for State {
@@ -621,3 +707,21 @@ impl ProvidesRegistryState for State {
 
 delegate_registry!(State);
 delegate_dispatch2!(State);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_paste_takes_text_and_the_best_kind_of_it() {
+        let kinds = |k: &[&str]| k.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            text_kind(&kinds(&["text/html", "text/plain", "text/plain;charset=utf-8"])).as_deref(),
+            Some("text/plain;charset=utf-8"),
+            "UTF-8 text before plain text, whatever their order"
+        );
+        assert_eq!(text_kind(&kinds(&["STRING", "UTF8_STRING"])).as_deref(), Some("UTF8_STRING"));
+        assert_eq!(text_kind(&kinds(&["image/png", "text/html"])), None, "a picture or a page is no text to type");
+        assert_eq!(text_kind(&[]), None);
+    }
+}
