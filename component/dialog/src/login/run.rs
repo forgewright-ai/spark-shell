@@ -268,7 +268,13 @@ pub fn main() {
             dirty = true;
         }
         if dirty {
-            let _ = term.draw(|f| login_ui::draw(&l, &pal, &last_clock, f.buffer_mut()));
+            let _ = term.draw(|f| {
+                // the login screen draws the dialog's own grid; the terminal is handed its cells
+                let area = f.area();
+                let mut b = spark_dialog::grid::Buffer::empty(spark_dialog::grid::Rect::new(0, 0, area.width, area.height));
+                login_ui::draw(&l, &pal, &last_clock, &mut b);
+                spark_dialog::terminal::blit(&b, f.buffer_mut());
+            });
             dirty = false;
         }
         let Ok(ev) = rx.recv() else { break };

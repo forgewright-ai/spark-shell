@@ -1,7 +1,7 @@
 mod common;
-use ratatui::{buffer::Buffer, layout::Rect};
 use serde_json::json;
 use spark_dialog::app::{App, Config, Helper, HintKey, Item, Mode, Sign, View, DESTS, HELP_DEST};
+use spark_dialog::grid::{Buffer, Rect};
 
 fn app() -> App {
     App::new(Config::default(), &[])

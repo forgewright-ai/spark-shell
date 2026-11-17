@@ -4,10 +4,10 @@
 // UPDATE_GOLDEN=1 writes the files after a change that was looked at.
 mod common;
 use common::palette;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
 use serde_json::json;
 use spark_dialog::app::{App, Config, Item, Line, Mode, Provider, Sign, Staged, Step, View, Who, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
+use spark_dialog::grid::Buffer;
+use spark_dialog::grid::Rect;
 use spark_dialog::model;
 use spark_dialog::reply::{Mark, Reply};
 
@@ -1056,7 +1056,7 @@ fn a_day_with_a_reminder_is_in_the_accent_and_today_is_a_chip() {
     let (x, wk) = (22u16, y + 2 + 3);
     assert_eq!(format!("{}{}", b[(x, wk)].symbol(), b[(x + 1, wk)].symbol()), "23");
     assert_eq!(b[(x, wk)].fg, p.accent);
-    assert!(b[(x, wk)].modifier.contains(ratatui::style::Modifier::BOLD));
+    assert!(b[(x, wk)].modifier.contains(spark_dialog::grid::Modifier::BOLD));
     // the 18th, today, has a reminder too: the chip wins
     let wk = y + 2 + 3;
     assert_eq!(format!("{}{}", b[(2, wk)].symbol(), b[(3, wk)].symbol()), "18");

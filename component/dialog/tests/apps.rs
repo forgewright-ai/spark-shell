@@ -3,13 +3,13 @@
 // every change applied at once with Undo on the status row. Nothing is a draft, nothing asks before it
 // leaves, and no label changes under a moving pointer.
 mod common;
-use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
 use serde_json::json;
 use spark_dialog::app::{App, Config, Found, Helper, HintKey, Item, View};
 use spark_dialog::apps::{
     preferences::{Preference, Preferences},
     Action, Line, Navigation, Page,
 };
+use spark_dialog::grid::{Buffer, Modifier, Rect};
 use spark_dialog::reply::Mark;
 use std::path::PathBuf;
 
@@ -1298,7 +1298,7 @@ fn an_apps_icon_is_drawn_in_its_rows_two_cells_which_the_buffer_skips_and_its_na
     let icon = &d.icons[0];
     assert_eq!((icon.x, icon.y, icon.lit), (4, row as u16, false));
     for x in 4..6 {
-        assert_eq!(b[(x, row as u16)].diff_option, ratatui::buffer::CellDiffOption::Skip, "sixel's cell");
+        assert_eq!(b[(x, row as u16)].diff_option, spark_dialog::grid::CellDiffOption::Skip, "sixel's cell");
     }
     // a letter tile is text, on the band's color
     let tile = text.iter().position(|l| l.contains("browser")).unwrap() as u16;
@@ -1346,7 +1346,7 @@ fn in_a_window_wider_than_the_column_an_icon_stands_in_the_column_beside_its_nam
     assert_eq!((d.icons[0].x, d.icons[0].y), (name - 3, row as u16), "the icon three cells before the name");
     assert!(d.icons[0].x > 4, "in the column, not at the window's edge");
     for x in d.icons[0].x..d.icons[0].x + 2 {
-        assert_eq!(b[(x, row as u16)].diff_option, ratatui::buffer::CellDiffOption::Skip);
+        assert_eq!(b[(x, row as u16)].diff_option, spark_dialog::grid::CellDiffOption::Skip);
     }
     cleanup(&a);
 }

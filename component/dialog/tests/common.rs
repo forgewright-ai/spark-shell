@@ -2,10 +2,10 @@
 // server on in-process pipes, and a pump that feeds its messages to the app.
 #![allow(dead_code)]
 
-use ratatui::buffer::{Buffer, CellDiffOption};
-use ratatui::style::{Color, Modifier};
 use serde_json::{json, Value};
 use spark_dialog::app::{App, Config};
+use spark_dialog::grid::{Buffer, CellDiffOption};
+use spark_dialog::grid::{Color, Modifier};
 use spark_dialog::mcp::{Incoming, Server};
 use spark_dialog::palette::Palette;
 use spark_dialog::scrub::cells;

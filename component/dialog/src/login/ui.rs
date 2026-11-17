@@ -3,13 +3,11 @@
 //! terminal's own ground, which foot draws with transparency over the
 //! wallpaper. One text column, every color a slot of the palette.
 
+use crate::grid::{Buffer, Color, Modifier, Rect, Style};
 use crate::login::{Field, Key, Login, Note, Power, Session, Spot, View};
 use crate::palette::Palette;
 use crate::scrub::{cells, cut};
 use crate::ui::{CROSS, DOT, RING};
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
 
 /// The strip's width, in cells.
 pub const STRIP: u16 = 58;

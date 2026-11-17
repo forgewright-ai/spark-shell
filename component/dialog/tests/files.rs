@@ -3,11 +3,11 @@
 // that land after a pane switch or in another view.
 mod common;
 use common::{app_with, ordinary, palette, pump, pump_for, result, stub, Script, QUIET};
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
 use serde_json::{json, Value};
 use spark_dialog::app::{App, Config, HintKey, Item, Mode, Provider, Step, View, Who, HEIGHT, WIDTH};
 use spark_dialog::files::{Action, Batch, Page, Pane, Side, Verb};
+use spark_dialog::grid::Buffer;
+use spark_dialog::grid::Rect;
 use spark_dialog::model;
 use spark_dialog::reply::Mark;
 use std::sync::{Arc, Mutex};

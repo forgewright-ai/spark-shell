@@ -7,15 +7,13 @@
 use crate::animation::Reel;
 use crate::app::{App, FolderShape, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, SETTINGS, WIDTH};
 use crate::files::{Pane, Side};
+use crate::grid::{Buffer, CellDiffOption, Color, Modifier, Rect, Style};
 use crate::page::Line as PageLine;
 use crate::palette::Palette;
 use crate::progress;
 use crate::reply::Mark;
 use crate::scrub::{cells, cut, cut_middle, cut_words};
 use crate::sixel::Viewport;
-use ratatui::buffer::{Buffer, CellDiffOption};
-use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
 
 pub const DOT: &str = "\u{25cf}";
 pub const RING: &str = "\u{25cb}";

@@ -1512,7 +1512,7 @@ fn an_overlong_literal_addition_refuses_without_changing_the_draft() {
     assert!(matches!(app.mode, Mode::Ask { .. }));
     assert_eq!(app.reply.as_ref().unwrap().mark, Mark::Refused);
     assert!(app.reply.as_ref().unwrap().text.contains("2000 characters; the text was not added"));
-    let mut buffer = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 60, 44));
+    let mut buffer = spark_dialog::grid::Buffer::empty(spark_dialog::grid::Rect::new(0, 0, 60, 44));
     spark_dialog::ui::draw(&app, &palette("tokyonight-night"), "", &mut buffer);
     let visible = buffer.content.iter().map(|cell| cell.symbol()).collect::<String>();
     assert!(visible.contains("2000 characters"), "the refusal is visible while the text field stays open");
@@ -2002,7 +2002,7 @@ fn a_glyph_family_step_changes_the_dialogs_signs_at_once() {
     });
     app.view = View::Conversation;
     let signs: Vec<String> = {
-        let mut b = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, app.size.0, app.size.1));
+        let mut b = spark_dialog::grid::Buffer::empty(spark_dialog::grid::Rect::new(0, 0, app.size.0, app.size.1));
         spark_dialog::ui::draw(&app, &palette("tokyonight-night"), "", &mut b);
         let top = spark_dialog::ui::head(&app).content;
         (top..spark_dialog::ui::status_y(app.size.1))
@@ -2168,8 +2168,8 @@ fn marching(h: &str) -> bool {
 }
 
 fn header(app: &App) -> String {
-    use ratatui::buffer::Buffer;
-    use ratatui::layout::Rect;
+    use spark_dialog::grid::Buffer;
+    use spark_dialog::grid::Rect;
     let (w, h) = (spark_dialog::app::WIDTH, spark_dialog::app::HEIGHT);
     let mut b = Buffer::empty(Rect::new(0, 0, w, h));
     spark_dialog::ui::draw(app, &palette("tokyonight-night"), "Sun 18 Oct \u{b7} 12:04", &mut b);
@@ -2198,7 +2198,7 @@ fn the_march_is_sparks_alone() {
     assert!(app.busy() && app.thinking());
     assert_eq!(app.work(), Work::Think, "spark is asked");
     app.frame = 3;
-    let mut buffer = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 60, 40));
+    let mut buffer = spark_dialog::grid::Buffer::empty(spark_dialog::grid::Rect::new(0, 0, 60, 40));
     spark_dialog::ui::draw(&app, &palette("tokyonight-night"), "", &mut buffer);
     let header: String = (0..60).map(|x| buffer[(x, 0)].symbol()).collect();
     assert!(
@@ -2783,11 +2783,11 @@ fn an_animations_row_names_its_folder_and_nothing_plays_beside_the_list() {
     app.in_list = true;
     app.sel = 0;
     let p = palette("tokyonight-night");
-    let mut b = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, app.size.0, app.size.1));
+    let mut b = spark_dialog::grid::Buffer::empty(spark_dialog::grid::Rect::new(0, 0, app.size.0, app.size.1));
     let drawn = spark_dialog::ui::draw(&app, &p, "Sun 18 Oct \u{b7} 12:04", &mut b);
     // #196: nothing plays beside the list; its rows keep the whole width, lit or not
     assert!(drawn.preview.is_none() && drawn.film.is_none(), "no picture, no film beside the list");
-    let row = |b: &ratatui::buffer::Buffer, y: u16| (0..b.area.width).map(|x| b[(x, y)].symbol().to_string()).collect::<String>();
+    let row = |b: &spark_dialog::grid::Buffer, y: u16| (0..b.area.width).map(|x| b[(x, y)].symbol().to_string()).collect::<String>();
     let lit = drawn.picks.iter().find(|(_, n)| *n == 0).map(|(y, _)| *y).unwrap();
     assert!(row(&b, lit).contains("the palette's own"), "the row's column whole: {:?}", row(&b, lit));
 }
@@ -2876,7 +2876,7 @@ fn a_pick_in_a_list_moves_its_check_in_place_and_says_nothing() {
 
 /// The grid as drawn at 60 by 40, a string a row, and the lit row's y.
 fn frame(app: &App) -> (Vec<String>, Option<u16>) {
-    let mut b = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 60, 40));
+    let mut b = spark_dialog::grid::Buffer::empty(spark_dialog::grid::Rect::new(0, 0, 60, 40));
     let d = spark_dialog::ui::draw(app, &palette("tokyonight-night"), "Sun 18 Oct \u{b7} 12:04", &mut b);
     let rows = (0..40).map(|y| (0..60).map(|x| b[(x, y)].symbol().to_string()).collect::<String>()).collect();
     let lit = d.picks.iter().find(|(_, n)| app.in_list && *n == app.sel).map(|(y, _)| *y);

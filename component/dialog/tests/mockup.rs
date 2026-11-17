@@ -3,11 +3,11 @@
 // MOCKUP_DIR=... cargo test --test mockup -- --nocapture; it writes one HTML
 // page per state and palette. Not a golden: a picture to decide from.
 mod common;
-use ratatui::buffer::{Buffer, CellDiffOption};
-use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier};
 use serde_json::{json, Value};
 use spark_dialog::app::{App, Config, Provider, Staged, Step, View, Who, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
+use spark_dialog::grid::Rect;
+use spark_dialog::grid::{Buffer, CellDiffOption};
+use spark_dialog::grid::{Color, Modifier};
 use spark_dialog::model;
 use spark_dialog::palette::Palette;
 use spark_dialog::scrub::cells;

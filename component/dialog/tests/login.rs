@@ -4,10 +4,10 @@
 // UPDATE_GOLDEN=1 writes the files after a change that was looked at.
 mod common;
 use common::palette;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
 use serde_json::{json, Value};
 use spark_dialog::greetd::{self, Outcome, Secret};
+use spark_dialog::grid::Buffer;
+use spark_dialog::grid::Rect;
 use spark_dialog::login::ui as login_ui;
 use spark_dialog::login::{Field, Key, Login, Note, Power, Session, Spot, View};
 use std::os::unix::net::UnixStream;
@@ -119,7 +119,7 @@ fn a_closed_socket_is_a_failure_not_a_hang() {
 
 /// The screen in its real colors over the palette's wallpaper, for a person to look at before a golden is kept.
 fn html(b: &Buffer, p: &spark_dialog::palette::Palette, pal: &str) -> String {
-    use ratatui::style::{Color, Modifier};
+    use spark_dialog::grid::{Color, Modifier};
     let hex = |c: Color| match c {
         Color::Rgb(r, g, b) => format!("#{:02x}{:02x}{:02x}", r, g, b),
         _ => "transparent".into(),

@@ -4,9 +4,9 @@
 // stand under the prompt with the diamond's rule under them, the reply is the last row above the plain rule,
 // and the frame has one width per view, in the middle of the window.
 mod common;
-use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
 use serde_json::json;
 use spark_dialog::app::{App, Config, HintKey, Item, Mode, Provider, Step, Target, View, Who, DESTS, SETTINGS_DEST};
+use spark_dialog::grid::{Buffer, Modifier, Rect};
 use spark_dialog::model;
 use spark_dialog::palette::Palette;
 use spark_dialog::reply::{Mark, Reply};

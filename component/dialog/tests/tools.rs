@@ -2,9 +2,9 @@
 // `spark-shell provide tools` writes them.
 mod common;
 use common::palette;
-use ratatui::{buffer::Buffer, layout::Rect};
 use serde_json::{json, Value};
 use spark_dialog::app::{App, Config, HintKey, Item, Mode, Provider, View, DESTS};
+use spark_dialog::grid::{Buffer, Rect};
 use spark_dialog::model;
 use spark_dialog::ui;
 

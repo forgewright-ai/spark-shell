@@ -1,7 +1,7 @@
 //! The palette spark-shell hands the dialog in the environment: every
 //! color a slot of the palette, never one of the dialog's own.
 
-use ratatui::style::Color;
+use crate::grid::Color;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Palette {

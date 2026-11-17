@@ -2,17 +2,16 @@
 //! `spark-shell dialog` in a foot window of 60 by 40 cells.
 
 use ratatui::backend::CrosstermBackend;
-use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::{
     self, DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste, EnableFocusChange, EnableMouseCapture, Event, KeyCode,
     KeyModifiers, KeyboardEnhancementFlags, MouseButton, MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use ratatui::crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::crossterm::{execute, queue};
-use ratatui::layout::Rect;
 use ratatui::Terminal;
 use spark_dialog::animation::{self, Reel};
 use spark_dialog::app::{App, Config, Helper, Job, View};
+use spark_dialog::grid::{Buffer, Color, Modifier, Rect};
 use spark_dialog::mcp::{Incoming, Server};
 use spark_dialog::palette::{slots_here, Palette};
 use spark_dialog::sixel::Image;
@@ -218,11 +217,11 @@ fn run_job(job: Job, tx: mpsc::Sender<Ev>, listening: Arc<Mutex<Option<u32>>>) {
 }
 
 /// A color of the palette as crossterm writes it: a slot stays a slot (#34).
-fn term_color(c: ratatui::style::Color) -> ratatui::crossterm::style::Color {
+fn term_color(c: Color) -> ratatui::crossterm::style::Color {
     match c {
-        ratatui::style::Color::Rgb(r, g, b) => ratatui::crossterm::style::Color::Rgb { r, g, b },
-        ratatui::style::Color::Indexed(n) => ratatui::crossterm::style::Color::AnsiValue(n),
-        _ => ratatui::crossterm::style::Color::Reset,
+        Color::Rgb(r, g, b) => ratatui::crossterm::style::Color::Rgb { r, g, b },
+        Color::Indexed(n) => ratatui::crossterm::style::Color::AnsiValue(n),
+        Color::Reset => ratatui::crossterm::style::Color::Reset,
     }
 }
 
@@ -247,9 +246,9 @@ fn blank(out: &mut std::io::Stdout, (x, y, w, h): (u16, u16, u16, u16), ground: 
 type IconKey = (String, Option<[u8; 3]>, u32, u32);
 
 /// A color's red, green and blue, where it is one; a slot's index has none (the icon is then drawn unblended).
-fn rgb_of(c: ratatui::style::Color) -> Option<[u8; 3]> {
+fn rgb_of(c: Color) -> Option<[u8; 3]> {
     match c {
-        ratatui::style::Color::Rgb(r, g, b) => Some([r, g, b]),
+        Color::Rgb(r, g, b) => Some([r, g, b]),
         _ => None,
     }
 }
@@ -277,7 +276,7 @@ fn repaint(out: &mut std::io::Stdout, buf: &Buffer, x: u16, y: u16, w: u16) {
             break;
         }
         let c = &buf[(cx, y)];
-        let bold = if c.modifier.contains(ratatui::style::Modifier::BOLD) {
+        let bold = if c.modifier.contains(Modifier::BOLD) {
             Attribute::Bold
         } else {
             Attribute::NormalIntensity
@@ -454,7 +453,7 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
 /// can block resize until the next key. A fullscreen resize only writes output.
 fn invalidate_frame(term: &mut Terminal<CrosstermBackend<std::io::Stdout>>) {
     if let Ok(size) = term.size() {
-        let _ = term.resize(Rect::new(0, 0, size.width, size.height));
+        let _ = term.resize(ratatui::layout::Rect::new(0, 0, size.width, size.height));
     }
 }
 
@@ -629,7 +628,7 @@ fn main() {
             piece_pal.extend(m.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))));
             if !slots {
                 pal = colors.clone();
-                if let ratatui::style::Color::Rgb(r, g, b) = pal.surface {
+                if let Color::Rgb(r, g, b) = pal.surface {
                     let _ = write!(out, "\x1b]11;#{:02x}{:02x}{:02x}\x1b\\", r, g, b);
                     let _ = out.flush();
                 }
@@ -696,12 +695,8 @@ fn main() {
                 let mut b = Buffer::empty(Rect::new(0, 0, area.width, area.height));
                 drawn = ui::draw(&app, &pal, &last_clock, &mut b);
                 frame_buf = b.clone();
-                let fb = f.buffer_mut();
-                for y in 0..area.height {
-                    for x in 0..area.width {
-                        fb[(x, y)] = b[(x, y)].clone();
-                    }
-                }
+                // the grid is the dialog's own; the terminal is handed its cells
+                spark_dialog::terminal::blit(&b, f.buffer_mut());
                 // the opening alone has no cursor: nothing is there to type into yet (#142)
                 if !drawn.alone && !app.list_keys && app.chip_focus.is_none() {
                     f.set_cursor_position(drawn.cursor);
