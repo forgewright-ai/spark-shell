@@ -71,18 +71,23 @@ storage_drives() { storage_list | awk -F '\037' '$1 == "drive" { print $3 "\t" $
 storage_sig() { _bsg=''; for _b in "$BAR_SYS"/block/sd* "$BAR_SYS"/block/mmcblk* "$BAR_SYS"/block/nvme*; do [ ! -e "$_b" ] || _bsg="$_bsg ${_b##*/}"; done; }   # _bsg: the disks; no process, the bar asks every second
 storage_notice() {   # a new drive, said once
     command -v lsblk >/dev/null 2>&1 || return 0
-    storage_drives > "$TMP/drives.now"
-    if [ -n "${_storage_seen:-}" ] && [ -f "$STORAGE_SEEN" ]; then
-        # through a file, never a pipe: grep says 1 at every look that finds no new drive, and bash 5.3 ends a shell under
-        # set -e when a trapped signal (the bar's redraw) comes while it waits on a pipeline whose first command failed,
-        # whatever follows the pipeline. The bar's loop ended there and was started again, its failed change's sign lost
-        grep -vxF -f "$STORAGE_SEEN" "$TMP/drives.now" > "$TMP/drives.new" || :
-        while IFS="$TAB" read -r _d _s _n; do
-            notify_send device.added "$_n plugged in" "$(files_size "$_s"), not mounted"   # a click opens Storage in the dialog
-        done < "$TMP/drives.new"
-    fi
+    # The look runs in a shell of its own that always ends well. The bar's loop asks for it, and that loop traps the bar's
+    # redraw signal: bash ends a shell under set -e when a trapped signal comes while it waits on a command that failed, the
+    # first of a pipeline too, whatever follows it (`|| :` does not help), and grep says 1 at every look that finds no new
+    # drive. The loop ended there and was started again, its failed change's sign lost. In here no signal is trapped, and
+    # the loop waits on nothing that fails; a look that cannot be kept is taken again
+    (
+        set +e
+        storage_drives > "$TMP/drives.now"
+        if [ -n "${_storage_seen:-}" ] && [ -f "$STORAGE_SEEN" ]; then
+            grep -vxF -f "$STORAGE_SEEN" "$TMP/drives.now" | while IFS="$TAB" read -r _d _s _n; do
+                notify_send device.added "$_n plugged in" "$(files_size "$_s"), not mounted"   # a click opens Storage in the dialog
+            done
+        fi
+        mkdir_private "$STATE_DIR" && cp "$TMP/drives.now" "$STORAGE_SEEN"
+        exit 0
+    )
     _storage_seen=1
-    mkdir_private "$STATE_DIR" && cp "$TMP/drives.now" "$STORAGE_SEEN" || :   # a look that cannot be kept is taken again: it never ends the loop
 }
 storage_rule() { render_sed "s|@USER@|$(esc "$(id -un)")|g" "$REPO/template/etc/polkit-1/rules.d/50-spark-shell-storage.rules"; }
 storage_apply() {   # on desktop's storage row: the polkit rule

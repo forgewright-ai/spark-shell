@@ -10,8 +10,7 @@
   starts again by itself. A click or the wheel on the bar that came
   while the status looked at the drives could end it; it came back a
   second later, and a sound change that had just failed lost its sign.
-  bash 5.3 ends a shell there, and the look no longer runs through a
-  pipe.
+  bash ends a shell there, so the look runs apart from the status.
 
 ## v0.150.2
 
