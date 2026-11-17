@@ -1,5 +1,5 @@
-//! spark-dialog: the terminal, the event loop, the helpers. Run by
-//! `spark-shell dialog` in a foot window of 60 by 40 cells.
+//! spark-dialog: the event loop, the helpers, and what shows the dialog: a window of its own (--window, 60 by
+//! 40 cells of its font), or the terminal it runs in. Run by `spark-shell dialog`.
 
 use ratatui::backend::CrosstermBackend;
 use ratatui::crossterm::event::{
@@ -24,6 +24,7 @@ use std::time::{Duration, Instant};
 const USAGE: &str = "spark-dialog -- the spark dialog, one window for every domain (run by spark-shell dialog)
 
   spark-dialog [--provider \"PATH WORDS\"]... [--home SECTION] [--title TEXT]
+               [--window] [--font \"FACE SIZE\"]
                [--band on|off] [--close on|off] [--progress on|off]
                [--composer plus,model,talk] [--attach \"txt md\"]
                [--spark-shell PATH] [--spark PATH] [--transitions DIR]
@@ -45,6 +46,9 @@ enum Ev {
 struct Args {
     cfg: Config,
     providers: Vec<(String, Vec<String>)>,
+    /// A window of the dialog's own, not the terminal it runs in; its text's face in pango's words.
+    window: bool,
+    font: String,
 }
 
 fn onoff(v: &str) -> Result<bool, String> {
@@ -58,6 +62,7 @@ fn onoff(v: &str) -> Result<bool, String> {
 fn args() -> Result<Args, String> {
     let mut cfg = Config::default();
     let mut providers = vec![];
+    let (mut window, mut font) = (false, String::from("monospace 12"));
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         let mut val = |name: &str| it.next().ok_or_else(|| format!("{} takes a value", name));
@@ -68,6 +73,17 @@ fn args() -> Result<Args, String> {
                 spark_dialog::mcp::argv_ok(&words)?;
                 let label = words.last().cloned().unwrap_or_default();
                 providers.push((label, words));
+            }
+            // a window of its own: the compositor frames it, so the dialog draws no band row
+            "--window" => {
+                window = true;
+                cfg.band = false;
+            }
+            "--font" => {
+                font = val("--font")?;
+                if font.trim().is_empty() || font.chars().any(char::is_control) {
+                    return Err("the font is a face and a size, as \"Monaspace Neon 12\"".into());
+                }
             }
             "--home" => cfg.home = Some(val("--home")?),
             "--title" => cfg.title = Some(val("--title")?),
@@ -112,7 +128,60 @@ fn args() -> Result<Args, String> {
     if let Some(config) = config {
         cfg.keys = spark_dialog::keys::Bindings::load(&config.join("spark-shell/home-keys.json"))?;
     }
-    Ok(Args { cfg, providers })
+    Ok(Args { cfg, providers, window, font })
+}
+
+/// The dialog's own window (window.rs), where there is one to open.
+#[cfg(target_os = "linux")]
+type Window = spark_dialog::window::Handle;
+
+#[cfg(target_os = "linux")]
+fn open_window(font: &str, title: &str, tx: mpsc::Sender<Ev>) -> Result<Window, String> {
+    use spark_dialog::window::{open, Out, Setup};
+    let setup = Setup {
+        font: font.to_string(),
+        app_id: "spark-dialog".into(),
+        title: title.to_string(),
+        cols: 60,
+        rows: 40,
+    };
+    open(setup, move |o| {
+        let _ = tx.send(match o {
+            Out::Event(e) => Ev::Term(e),
+            Out::Gone => Ev::Gone,
+        });
+    })
+}
+
+/// Away from Linux there is no window to open: the dialog runs in a terminal there.
+#[cfg(not(target_os = "linux"))]
+struct Window {
+    cell: spark_dialog::draw::Cell,
+    size: (u16, u16),
+}
+
+#[cfg(not(target_os = "linux"))]
+impl Window {
+    fn frame(&self, _: Vec<spark_dialog::draw::Step>, _: spark_dialog::draw::Rgb) {}
+    fn title(&self, _: &str) {}
+    fn pointer(&self, _: &'static str) {}
+}
+
+#[cfg(not(target_os = "linux"))]
+fn open_window(_: &str, _: &str, _: mpsc::Sender<Ev>) -> Result<Window, String> {
+    Err("a window of its own opens only on Linux, under a Wayland compositor".into())
+}
+
+/// The pointer's shape where a click acts (#129): asked of the compositor for a window of the dialog's own, of
+/// the terminal (OSC 22, its cursor theme's names) otherwise.
+fn point(window: &Option<Window>, out: &mut std::io::Stdout, shape: &'static str) {
+    match window {
+        Some(w) => w.pointer(shape),
+        None => {
+            let _ = write!(out, "\x1b]22;{}\x1b\\", shape);
+            let _ = out.flush();
+        }
+    }
 }
 
 /// The date and the time, the header's right: the machine's own clock and zone, in the person's
@@ -451,7 +520,8 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
 /// Force a full repaint without querying the cursor. Terminal::clear asks the
 /// input reader for a cursor report; with event::read on another thread that
 /// can block resize until the next key. A fullscreen resize only writes output.
-fn invalidate_frame(term: &mut Terminal<CrosstermBackend<std::io::Stdout>>) {
+fn invalidate_frame(term: &mut Option<Terminal<CrosstermBackend<std::io::Stdout>>>) {
+    let Some(term) = term else { return };
     if let Ok(size) = term.size() {
         let _ = term.resize(ratatui::layout::Rect::new(0, 0, size.width, size.height));
     }
@@ -464,7 +534,7 @@ fn main() {
     if std::env::args().nth(1).as_deref() == Some("login") {
         login_run::main();
     }
-    let a = match args() {
+    let mut a = match args() {
         Ok(a) => a,
         Err(e) => {
             if e.is_empty() {
@@ -475,10 +545,15 @@ fn main() {
             std::process::exit(2);
         }
     };
-    let mut pal = Palette::from_env();
-    let slots = slots_here();
+    // a terminal's slots recolor with the terminal; a window of the dialog's own has none, and wears the colors
+    let slots = slots_here() && !a.window;
     // the palette as colors, slots or not: a picture tinted in it needs them (a spectrogram, #156)
     let mut colors = Palette::from(|k| std::env::var(k).ok());
+    let mut pal = if a.window { colors.clone() } else { Palette::from_env() };
+    if a.window {
+        // the window draws no pictures yet: no opening to wait for
+        a.cfg.transitions = None;
+    }
     let labels: Vec<String> = a.providers.iter().map(|(l, _)| l.clone()).collect();
     let mut app = App::new(a.cfg, &labels);
     app.glyphs = spark_dialog::glyphs::Glyphs::from_env();
@@ -514,26 +589,40 @@ fn main() {
         });
     }
     let mut out = std::io::stdout();
-    let _ = terminal::enable_raw_mode();
-    let _ = execute!(
-        out,
-        EnterAlternateScreen,
-        EnableMouseCapture,
-        EnableBracketedPaste,
-        EnableFocusChange,
-        ratatui::crossterm::cursor::SetCursorStyle::BlinkingBlock
-    );
-    // the kitty keyboard protocol (foot speaks it): Shift+Enter is a key of its own, a new line, not
-    // Enter. Asked before the keys' thread starts: that thread would hold the terminal's answer.
-    let kitty = terminal::supports_keyboard_enhancement().unwrap_or(false);
-    if kitty {
-        // and a key held says so, so copy, move and trash can count it once (keys.rs)
+    // what shows the dialog: a window of its own, which hands the loop its keys, its pointer and its size, or
+    // the terminal it runs in
+    let window: Option<Window> = a.window.then(|| match open_window(&a.font, &app.window_title(), tx.clone()) {
+        Ok(w) => w,
+        Err(e) => {
+            println!("spark-dialog -- {}", e);
+            std::process::exit(1);
+        }
+    });
+    // the window's size in cells: the one asked for until the window says another
+    let mut window_size = window.as_ref().map_or((0, 0), |w| w.size);
+    let mut kitty = false;
+    if window.is_none() {
+        let _ = terminal::enable_raw_mode();
         let _ = execute!(
             out,
-            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES | KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
+            EnterAlternateScreen,
+            EnableMouseCapture,
+            EnableBracketedPaste,
+            EnableFocusChange,
+            ratatui::crossterm::cursor::SetCursorStyle::BlinkingBlock
         );
+        // the kitty keyboard protocol (foot speaks it): Shift+Enter is a key of its own, a new line, not
+        // Enter. Asked before the keys' thread starts: that thread would hold the terminal's answer.
+        kitty = terminal::supports_keyboard_enhancement().unwrap_or(false);
+        if kitty {
+            // and a key held says so, so copy, move and trash can count it once (keys.rs)
+            let _ = execute!(
+                out,
+                PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES | KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
+            );
+        }
     }
-    {
+    if window.is_none() {
         let tx = tx.clone();
         std::thread::spawn(move || {
             let mut errors = 0;
@@ -589,16 +678,25 @@ fn main() {
     let mut shown_film: Option<ShownFilm> = None;
     let mut film_due: Option<Duration> = None;
 
-    let mut term = match Terminal::new(CrosstermBackend::new(std::io::stdout())) {
-        Ok(t) => t,
-        Err(e) => {
-            let _ = terminal::disable_raw_mode();
-            println!("spark-dialog -- {}", e);
-            std::process::exit(1);
-        }
+    let mut term = match &window {
+        Some(_) => None,
+        None => match Terminal::new(CrosstermBackend::new(std::io::stdout())) {
+            Ok(t) => Some(t),
+            Err(e) => {
+                let _ = terminal::disable_raw_mode();
+                println!("spark-dialog -- {}", e);
+                std::process::exit(1);
+            }
+        },
     };
     let listening = Arc::new(Mutex::new(None));
-    let sixel_ok = sixel::terminal_draws_it(&std::env::var("TERM").unwrap_or_default());
+    // pictures are sixel, a terminal's: the window draws none yet
+    let sixel_ok = window.is_none() && sixel::terminal_draws_it(&std::env::var("TERM").unwrap_or_default());
+    // a cell's size in pixels: the window's font says it, or the terminal
+    let cell_size = |window: &Option<Window>| match window {
+        Some(w) => Some((w.cell.w as u32, w.cell.h as u32)),
+        None => cell_px(),
+    };
     // the picture beside a list (a wallpaper's): where it is drawn now, when one was last tried, the last one made
     let mut shown_preview: Option<ui::Picture> = None;
     let mut preview_tried = Instant::now();
@@ -628,7 +726,7 @@ fn main() {
             piece_pal.extend(m.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))));
             if !slots {
                 pal = colors.clone();
-                if let Color::Rgb(r, g, b) = pal.surface {
+                if let (Color::Rgb(r, g, b), None) = (pal.surface, &window) {
                     let _ = write!(out, "\x1b]11;#{:02x}{:02x}{:02x}\x1b\\", r, g, b);
                     let _ = out.flush();
                 }
@@ -644,7 +742,9 @@ fn main() {
             let prefs = spark_dialog::preferences::read();
             // icons before the apps' names (#230): DIALOG_ICONS on, in a terminal that draws sixel, drawn at the cell's
             // size; turned on, or the cell's size changed, the catalog is read again for icons drawn at it
-            let px = cell_px().map(|(cw, chh)| chh.min(cw * spark_dialog::page::ICON_CELLS as u32)).unwrap_or(0);
+            let px = cell_size(&window)
+                .map(|(cw, chh)| chh.min(cw * spark_dialog::page::ICON_CELLS as u32))
+                .unwrap_or(0);
             let icons = !prefs.icons_off && sixel_ok && px >= 8;
             if prefs.spacing != app.apps.spacing {
                 app.apps.spacing = prefs.spacing;
@@ -685,45 +785,68 @@ fn main() {
                     pv.heard = image(&file, &mut images).and_then(|i| preview::sound(i, wave));
                 }
             }
-            let _ = out.write_all(b"\x1b[?2026h");
-            let _ = out.flush();
-            let frame_drawn = term.draw(|f| {
-                let area = f.area();
-                // Use the frame actually being drawn, not an earlier size
-                // query that can race the compositor's next configure event.
-                app.size = (area.width, area.height);
-                let mut b = Buffer::empty(Rect::new(0, 0, area.width, area.height));
+            let frame_drawn = if let Some(w) = &window {
+                // the grid drawn as steps and handed to the window, the text cursor with it
+                app.size = window_size;
+                let mut b = Buffer::empty(Rect::new(0, 0, window_size.0, window_size.1));
                 drawn = ui::draw(&app, &pal, &last_clock, &mut b);
-                frame_buf = b.clone();
-                // the grid is the dialog's own; the terminal is handed its cells
-                spark_dialog::terminal::blit(&b, f.buffer_mut());
+                let tones = spark_dialog::draw::tones(&pal);
+                let mut steps = spark_dialog::draw::steps(&b, w.cell, &tones);
                 // the opening alone has no cursor: nothing is there to type into yet (#142)
                 if !drawn.alone && !app.list_keys && app.chip_focus.is_none() {
-                    f.set_cursor_position(drawn.cursor);
+                    steps.extend(spark_dialog::draw::cursor(&b, w.cell, &tones, drawn.cursor, app.window_focused));
                 }
-            });
-            let frame_drawn = frame_drawn.is_ok();
+                frame_buf = b;
+                w.frame(steps, tones.ground);
+                true
+            } else if let Some(term) = term.as_mut() {
+                let _ = out.write_all(b"\x1b[?2026h");
+                let _ = out.flush();
+                let frame_drawn = term.draw(|f| {
+                    let area = f.area();
+                    // Use the frame actually being drawn, not an earlier size
+                    // query that can race the compositor's next configure event.
+                    app.size = (area.width, area.height);
+                    let mut b = Buffer::empty(Rect::new(0, 0, area.width, area.height));
+                    drawn = ui::draw(&app, &pal, &last_clock, &mut b);
+                    frame_buf = b.clone();
+                    // the grid is the dialog's own; the terminal is handed its cells
+                    spark_dialog::terminal::blit(&b, f.buffer_mut());
+                    // the opening alone has no cursor: nothing is there to type into yet (#142)
+                    if !drawn.alone && !app.list_keys && app.chip_focus.is_none() {
+                        f.set_cursor_position(drawn.cursor);
+                    }
+                });
+                let _ = out.write_all(b"\x1b[?2026l");
+                frame_drawn.is_ok()
+            } else {
+                false
+            };
             if !frame_drawn {
                 // SIGWINCH can interrupt an output write. Invalidate the diff
                 // and retry on the next event even when the size is unchanged.
                 invalidate_frame(&mut term);
                 shown_icons.clear();
             }
-            let _ = out.write_all(b"\x1b[?2026l");
             // the mouse still and the frame new: the pointer's shape asked again where it rests
             if let Some((c, r)) = mouse_at {
                 let want = pointer_at(&app, &drawn, c, r, false);
                 if want != pointer && drag.is_none() {
                     pointer = want;
-                    let _ = write!(out, "\x1b]22;{}\x1b\\", want);
+                    point(&window, &mut out, want);
                 }
             }
-            // the window wears the band: its words are the terminal's title, said again when they change, and
+            // the window wears the band: its words are the window's title, said again when they change, and
             // before the window is shown
             if !app.cfg.band {
                 let want = app.window_title();
                 if want != window_title {
-                    let _ = write!(out, "\x1b]2;{}\x1b\\", want);
+                    match &window {
+                        Some(w) => w.title(&want),
+                        None => {
+                            let _ = write!(out, "\x1b]2;{}\x1b\\", want);
+                        }
+                    }
                     window_title = want;
                 }
             }
@@ -747,7 +870,7 @@ fn main() {
             let mut again = false;
             if want != shown_preview {
                 shown_preview = None;
-                if let (Some(p), Some((cw, chh)), true) = (&want, cell_px(), sixel_ok) {
+                if let (Some(p), Some((cw, chh)), true) = (&want, cell_size(&window), sixel_ok) {
                     let drawing = Instant::now();
                     // one synchronized update: the old picture stays on screen until the new one is whole (#129)
                     let _ = out.write_all(b"\x1b[?2026h");
@@ -803,7 +926,7 @@ fn main() {
             // or one whose row was lit or let go, has its cells blanked on its row's ground and its sixel drawn there
             let want_icons = if sixel_ok { drawn.icons.clone() } else { vec![] };
             if want_icons != shown_icons {
-                if let Some((cw, chh)) = cell_px() {
+                if let Some((cw, chh)) = cell_size(&window) {
                     let cells = spark_dialog::page::ICON_CELLS;
                     let _ = out.write_all(b"\x1b[?2026h");
                     for old in shown_icons.iter().filter(|o| !want_icons.iter().any(|n| n.x == o.x && n.y == o.y)) {
@@ -834,7 +957,7 @@ fn main() {
             // a transition: its frame now, at the top left of its box, where the rows land and give way to it (#132), at
             // the GIF's own pace (#122)
             film_due = None;
-            match (drawn.film, &films, cell_px()) {
+            match (drawn.film, &films, cell_size(&window)) {
                 (Some((x, y, w, h, reel, since)), Some(f), Some((cw, chh))) if sixel_ok => {
                     // a page being read plays the open from its start, then the wait looped while it is still on its way (#142)
                     let ms = Instant::now().saturating_duration_since(since).as_millis();
@@ -934,7 +1057,7 @@ fn main() {
                 }
                 // Some launchers do not deliver SIGWINCH to the UI process.
                 // Size is cheap to query; a resize must redraw without a keypress.
-                if terminal::size().is_ok_and(|size| size != app.size) {
+                if term.is_some() && terminal::size().is_ok_and(|size| size != app.size) {
                     mouse_at = None;
                     app.stop_video();
                     shown_preview = None;
@@ -974,6 +1097,8 @@ fn main() {
                 let shows = app.incoming(m);
                 // a theme step changed the animation: the new piece read aside, none at once (#126)
                 match app.films_want.take() {
+                    // the window draws no pictures yet: no piece to read
+                    Some(Some(_)) if window.is_some() => {}
                     Some(Some(dir)) => {
                         // a drawn piece in the step's own palette, not yet worn: it comes in the same result
                         let mut pal = piece_pal.clone();
@@ -995,7 +1120,11 @@ fn main() {
                 app.helper(h, r);
                 dirty = true;
             }
-            Ev::Term(Event::Resize(_, _)) => {
+            Ev::Term(Event::Resize(cols, rows)) => {
+                // the window says its size in cells; a terminal's is read as the frame is drawn
+                if window.is_some() {
+                    window_size = (cols, rows);
+                }
                 mouse_at = None;
                 app.stop_video(); // the frame moves: the player would stand where it was (#125)
                 shown_preview = None;
@@ -1048,8 +1177,7 @@ fn main() {
                 let want = pointer_at(&app, &drawn, m.column, m.row, dragging);
                 if want != pointer {
                     pointer = want;
-                    let _ = write!(out, "\x1b]22;{}\x1b\\", want);
-                    let _ = out.flush();
+                    point(&window, &mut out, want);
                 }
                 match m.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
@@ -1107,7 +1235,7 @@ fn main() {
                         }
                     }
                     MouseEventKind::Drag(MouseButton::Left) => {
-                        if let (Some((c0, r0)), Some((cw, chh))) = (drag, cell_px()) {
+                        if let (Some((c0, r0)), Some((cw, chh))) = (drag, cell_size(&window)) {
                             app.preview_drag((m.column as f64 - c0 as f64) * cw as f64, (m.row as f64 - r0 as f64) * chh as f64);
                             drag = Some((m.column, m.row));
                             // the picture follows at most every DRAG_GAP, and no sooner than the last took to draw, at the
@@ -1142,19 +1270,21 @@ fn main() {
     let code = app.quit.unwrap_or(0);
     // a recording does not outlive the window
     run_job(Job::StopListening, tx.clone(), listening.clone());
-    if kitty {
-        let _ = execute!(term.backend_mut(), PopKeyboardEnhancementFlags);
+    if let Some(term) = term.as_mut() {
+        if kitty {
+            let _ = execute!(term.backend_mut(), PopKeyboardEnhancementFlags);
+        }
+        let _ = execute!(
+            term.backend_mut(),
+            DisableFocusChange,
+            DisableBracketedPaste,
+            DisableMouseCapture,
+            LeaveAlternateScreen
+        );
+        let _ = terminal::disable_raw_mode();
+        let _ = execute!(out, ratatui::crossterm::cursor::SetCursorStyle::DefaultUserShape);
+        let _ = term.show_cursor();
     }
-    let _ = execute!(
-        term.backend_mut(),
-        DisableFocusChange,
-        DisableBracketedPaste,
-        DisableMouseCapture,
-        LeaveAlternateScreen
-    );
-    let _ = terminal::disable_raw_mode();
-    let _ = execute!(out, ratatui::crossterm::cursor::SetCursorStyle::DefaultUserShape);
-    let _ = term.show_cursor();
     // the providers: each one's input closed, none waited for. Each ends the request it is answering,
     // reads the end of its input and leaves through its own EXIT trap; its process group of its own keeps
     // the window's closing from cutting one short. Waiting here held the window open as a bare terminal,

@@ -14,6 +14,7 @@ pub mod goto;
 pub mod greetd;
 pub mod grid;
 pub mod helper;
+pub mod input;
 pub mod interaction;
 pub mod keys;
 pub mod login;
@@ -35,3 +36,7 @@ pub mod sha256;
 pub mod sixel;
 pub mod terminal;
 pub mod ui;
+#[cfg(target_os = "linux")]
+pub mod window;
+#[cfg(target_os = "linux")]
+pub mod xkb;

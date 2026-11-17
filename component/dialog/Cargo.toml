@@ -23,9 +23,15 @@ unicode-width = "0.2"
 libc = "0.2"
 gif = { version = "0.14.2", default-features = false, features = ["std"] }
 
-# the window of the dialog's own: cairo and pango opened at run time, as spark-bar and spark-winpad open them
+# the window of the dialog's own, as spark-bar and spark-winpad have theirs: Wayland's client library, cairo, pango
+# and the keyboard's layouts opened at run time, so the binary needs no -devel package and runs on each family's own
 [target.'cfg(target_os = "linux")'.dependencies]
+smithay-client-toolkit = { version = "0.21", default-features = false, features = ["calloop", "system"] }
+wayland-client = { version = "0.31", features = ["dlopen"] }
+wayland-backend = { version = "0.3", features = ["client_system", "dlopen"] }
+wayland-sys = { version = "0.31", features = ["client", "dlopen"] }
 libloading = "0.9"
+calloop = { version = "0.14" }
 
 [profile.release]
 opt-level = "s"

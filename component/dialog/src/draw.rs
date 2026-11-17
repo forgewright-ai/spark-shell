@@ -148,6 +148,39 @@ pub fn steps(buf: &Buffer, cell: Cell, tones: &Tones) -> Vec<Step> {
     out
 }
 
+/// The text cursor on a cell, drawn after the grid's steps: a block of the text's color with the cell's symbol
+/// over it in the ground's. While the window is not the one typed into, the block's outline alone, the symbol
+/// as it was. Nothing for a cell that is not on the grid.
+pub fn cursor(buf: &Buffer, cell: Cell, tones: &Tones, (x, y): (u16, u16), focused: bool) -> Vec<Step> {
+    if x >= buf.area.width || y >= buf.area.height {
+        return vec![];
+    }
+    let c = &buf[(x, y)];
+    let cells = wide(c.symbol());
+    let (left, top, w, h) = (x as f64 * cell.w, y as f64 * cell.h, cells as f64 * cell.w, cell.h);
+    let fill = |x, y, w, h| Step::Fill { x, y, w, h, color: tones.ink };
+    if !focused {
+        return vec![
+            fill(left, top, w, 1.0),
+            fill(left, top + h - 1.0, w, 1.0),
+            fill(left, top, 1.0, h),
+            fill(left + w - 1.0, top, 1.0, h),
+        ];
+    }
+    let mut out = vec![fill(left, top, w, h)];
+    if !c.symbol().trim().is_empty() {
+        out.push(Step::Symbol {
+            x: left,
+            y: top,
+            cells,
+            text: c.symbol().to_string(),
+            color: tones.ground,
+            bold: c.modifier.contains(Modifier::BOLD),
+        });
+    }
+    out
+}
+
 /// How many cells a symbol takes: two for a wide one, else one.
 fn wide(symbol: &str) -> u16 {
     use unicode_width::UnicodeWidthChar;
@@ -242,6 +275,41 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn the_cursor_is_a_block_under_its_symbol_and_an_outline_out_of_focus() {
+        let mut b = Buffer::empty(Rect::new(0, 0, 4, 2));
+        b.set_string(1, 1, "a", Style::default().add_modifier(Modifier::BOLD));
+        let fill = |x: f64, y: f64, w: f64, h: f64| Step::Fill { x, y, w, h, color: INK };
+        // on a symbol: the block in the text's color, the symbol again in the ground's
+        assert_eq!(
+            cursor(&b, CELL, &tones(), (1, 1), true),
+            vec![
+                fill(10.0, 20.0, 10.0, 20.0),
+                Step::Symbol {
+                    x: 10.0,
+                    y: 20.0,
+                    cells: 1,
+                    text: "a".into(),
+                    color: GROUND,
+                    bold: true
+                }
+            ]
+        );
+        // on a space: the block alone
+        assert_eq!(cursor(&b, CELL, &tones(), (2, 0), true), vec![fill(20.0, 0.0, 10.0, 20.0)]);
+        // the window not typed into: four lines around the cell, nothing over its symbol
+        assert_eq!(
+            cursor(&b, CELL, &tones(), (1, 1), false),
+            vec![
+                fill(10.0, 20.0, 10.0, 1.0),
+                fill(10.0, 39.0, 10.0, 1.0),
+                fill(10.0, 20.0, 1.0, 20.0),
+                fill(19.0, 20.0, 1.0, 20.0)
+            ]
+        );
+        assert_eq!(cursor(&b, CELL, &tones(), (4, 0), true), vec![], "past the grid");
     }
 
     #[test]
