@@ -1,0 +1,290 @@
+//! The grid as drawing steps, for a window of the dialog's own: the ground, a box behind each run of cells that
+//! has a color of its own, then every symbol in its cell and a line under the ones that are underlined. Pure:
+//! what a painter (paint.rs) then draws with cairo and pango, and what a test reads without either.
+
+use crate::grid::{Buffer, CellDiffOption, Color, Modifier};
+
+/// A red, a green and a blue.
+pub type Rgb = [u8; 3];
+
+/// A cell's size in pixels, the text's own: every cell is that wide and that tall.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cell {
+    pub w: f64,
+    pub h: f64,
+}
+
+/// The colors the grid's own words stand for: the window's ground (Reset behind a symbol), the text's color
+/// (Reset on a symbol), and the palette's slots by their number.
+pub struct Tones<'a> {
+    pub ground: Rgb,
+    pub ink: Rgb,
+    pub slot: &'a dyn Fn(u8) -> Rgb,
+}
+
+impl Tones<'_> {
+    fn behind(&self, c: Color) -> Rgb {
+        match c {
+            Color::Reset => self.ground,
+            Color::Indexed(n) => (self.slot)(n),
+            Color::Rgb(r, g, b) => [r, g, b],
+        }
+    }
+    fn on(&self, c: Color) -> Rgb {
+        match c {
+            Color::Reset => self.ink,
+            Color::Indexed(n) => (self.slot)(n),
+            Color::Rgb(r, g, b) => [r, g, b],
+        }
+    }
+}
+
+/// The tones of a palette whose colors are a red, a green and a blue each, as a window of the dialog's own takes
+/// them: the surface behind, the text's color on. A slot's number, the terminal's way, stands for the text's.
+pub fn tones(pal: &crate::palette::Palette) -> Tones<'static> {
+    let rgb = |c: Color, or: Rgb| match c {
+        Color::Rgb(r, g, b) => [r, g, b],
+        _ => or,
+    };
+    let ink = rgb(pal.fg, [0xaa, 0xaa, 0xaa]);
+    Tones {
+        ground: rgb(pal.surface, [0x1f, 0x1f, 0x1f]),
+        ink,
+        slot: &|_| [0xaa, 0xaa, 0xaa],
+    }
+}
+
+/// One thing to draw, in pixels from the window's top left corner.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Step {
+    /// A box of one color.
+    Fill { x: f64, y: f64, w: f64, h: f64, color: Rgb },
+    /// A symbol at its cell's corner; `cells` is how many cells it takes, one or two.
+    Symbol {
+        x: f64,
+        y: f64,
+        cells: u16,
+        text: String,
+        color: Rgb,
+        bold: bool,
+    },
+    /// A line along the foot of a symbol's cells.
+    Under { x: f64, y: f64, w: f64, color: Rgb },
+}
+
+/// The steps that draw a grid: the ground over the whole of it first, then row by row a box behind each run of
+/// cells whose color is not the ground's, then the symbols. A space draws nothing, and neither does a cell a
+/// picture stands on: its ground is the window's, and the picture is drawn over it by whoever holds it.
+pub fn steps(buf: &Buffer, cell: Cell, tones: &Tones) -> Vec<Step> {
+    let (cols, rows) = (buf.area.width, buf.area.height);
+    let mut out = vec![Step::Fill {
+        x: 0.0,
+        y: 0.0,
+        w: cols as f64 * cell.w,
+        h: rows as f64 * cell.h,
+        color: tones.ground,
+    }];
+    for y in 0..rows {
+        let top = y as f64 * cell.h;
+        // the boxes: a run of cells of one color behind them, where it is not the ground's
+        let mut x = 0;
+        while x < cols {
+            let c = &buf[(x, y)];
+            let color = if c.diff_option == CellDiffOption::Skip {
+                tones.ground
+            } else {
+                tones.behind(c.bg)
+            };
+            let mut end = x + 1;
+            while end < cols {
+                let n = &buf[(end, y)];
+                let same = if n.diff_option == CellDiffOption::Skip {
+                    tones.ground
+                } else {
+                    tones.behind(n.bg)
+                };
+                if same != color {
+                    break;
+                }
+                end += 1;
+            }
+            if color != tones.ground {
+                out.push(Step::Fill {
+                    x: x as f64 * cell.w,
+                    y: top,
+                    w: (end - x) as f64 * cell.w,
+                    h: cell.h,
+                    color,
+                });
+            }
+            x = end;
+        }
+        // the symbols, each in its own cell: the grid holds them in place, never the text's own advance
+        for x in 0..cols {
+            let c = &buf[(x, y)];
+            if c.diff_option == CellDiffOption::Skip || c.symbol().trim().is_empty() {
+                continue;
+            }
+            let cells = wide(c.symbol());
+            let color = tones.on(c.fg);
+            out.push(Step::Symbol {
+                x: x as f64 * cell.w,
+                y: top,
+                cells,
+                text: c.symbol().to_string(),
+                color,
+                bold: c.modifier.contains(Modifier::BOLD),
+            });
+            if c.modifier.contains(Modifier::UNDERLINED) {
+                out.push(Step::Under {
+                    x: x as f64 * cell.w,
+                    y: top + cell.h - 1.0,
+                    w: cells as f64 * cell.w,
+                    color,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// How many cells a symbol takes: two for a wide one, else one.
+fn wide(symbol: &str) -> u16 {
+    use unicode_width::UnicodeWidthChar;
+    match symbol.chars().next().and_then(UnicodeWidthChar::width) {
+        Some(2) => 2,
+        _ => 1,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::grid::{Rect, Style};
+
+    const GROUND: Rgb = [10, 10, 10];
+    const INK: Rgb = [200, 200, 200];
+    const CELL: Cell = Cell { w: 10.0, h: 20.0 };
+
+    fn tones() -> Tones<'static> {
+        Tones {
+            ground: GROUND,
+            ink: INK,
+            slot: &|n| [n, n, n],
+        }
+    }
+
+    #[test]
+    fn the_ground_then_a_box_a_run_then_each_symbol_in_its_cell() {
+        let mut b = Buffer::empty(Rect::new(0, 0, 8, 2));
+        b.set_string(1, 0, "ab", Style::default().bg(Color::Rgb(1, 2, 3)));
+        b.set_string(
+            3,
+            0,
+            "c",
+            Style::default().bg(Color::Rgb(1, 2, 3)).fg(Color::Indexed(7)).add_modifier(Modifier::BOLD),
+        );
+        b.set_string(5, 0, "d", Style::default().bg(Color::Rgb(9, 9, 9)));
+        b.set_string(0, 1, "\u{754c}x", Style::default().add_modifier(Modifier::UNDERLINED));
+        let got = steps(&b, CELL, &tones());
+        let sym = |x: f64, y: f64, cells, text: &str, color, bold| Step::Symbol {
+            x,
+            y,
+            cells,
+            text: text.into(),
+            color,
+            bold,
+        };
+        assert_eq!(
+            got,
+            vec![
+                // the whole window's ground, once
+                Step::Fill {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 80.0,
+                    h: 40.0,
+                    color: GROUND
+                },
+                // three cells of one color are one box; the next color its own; the ground's cells none
+                Step::Fill {
+                    x: 10.0,
+                    y: 0.0,
+                    w: 30.0,
+                    h: 20.0,
+                    color: [1, 2, 3]
+                },
+                Step::Fill {
+                    x: 50.0,
+                    y: 0.0,
+                    w: 10.0,
+                    h: 20.0,
+                    color: [9, 9, 9]
+                },
+                sym(10.0, 0.0, 1, "a", INK, false),
+                sym(20.0, 0.0, 1, "b", INK, false),
+                sym(30.0, 0.0, 1, "c", [7, 7, 7], true),
+                sym(50.0, 0.0, 1, "d", INK, false),
+                // a wide symbol takes two cells, and the line under it both; the space after it draws nothing
+                sym(0.0, 20.0, 2, "\u{754c}", INK, false),
+                Step::Under {
+                    x: 0.0,
+                    y: 39.0,
+                    w: 20.0,
+                    color: INK
+                },
+                sym(20.0, 20.0, 1, "x", INK, false),
+                Step::Under {
+                    x: 20.0,
+                    y: 39.0,
+                    w: 10.0,
+                    color: INK
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_cell_a_picture_stands_on_draws_nothing_and_keeps_the_ground() {
+        let mut b = Buffer::empty(Rect::new(0, 0, 3, 1));
+        b.set_string(0, 0, "abc", Style::default().bg(Color::Rgb(5, 5, 5)));
+        b[(1, 0)].set_diff_option(CellDiffOption::Skip);
+        let got = steps(&b, CELL, &tones());
+        assert_eq!(
+            got[1..],
+            [
+                Step::Fill {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 10.0,
+                    h: 20.0,
+                    color: [5, 5, 5]
+                },
+                Step::Fill {
+                    x: 20.0,
+                    y: 0.0,
+                    w: 10.0,
+                    h: 20.0,
+                    color: [5, 5, 5]
+                },
+                Step::Symbol {
+                    x: 0.0,
+                    y: 0.0,
+                    cells: 1,
+                    text: "a".into(),
+                    color: INK,
+                    bold: false
+                },
+                Step::Symbol {
+                    x: 20.0,
+                    y: 0.0,
+                    cells: 1,
+                    text: "c".into(),
+                    color: INK,
+                    bold: false
+                },
+            ],
+            "the picture's cell has no box and no symbol"
+        );
+    }
+}

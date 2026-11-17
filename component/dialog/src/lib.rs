@@ -6,6 +6,7 @@ pub mod app;
 pub mod apps;
 pub mod audit;
 pub mod calendar;
+pub mod draw;
 pub mod files;
 pub mod gate;
 pub mod glyphs;
@@ -19,6 +20,8 @@ pub mod login;
 pub mod mcp;
 pub mod model;
 pub mod page;
+#[cfg(target_os = "linux")]
+pub mod paint;
 pub mod palette;
 pub mod pieces;
 pub mod preferences;

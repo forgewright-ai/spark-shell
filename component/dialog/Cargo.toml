@@ -23,6 +23,10 @@ unicode-width = "0.2"
 libc = "0.2"
 gif = { version = "0.14.2", default-features = false, features = ["std"] }
 
+# the window of the dialog's own: cairo and pango opened at run time, as spark-bar and spark-winpad open them
+[target.'cfg(target_os = "linux")'.dependencies]
+libloading = "0.9"
+
 [profile.release]
 opt-level = "s"
 lto = true
