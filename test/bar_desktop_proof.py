@@ -2621,8 +2621,15 @@ def geometry(d):
     # for): gone before the drag, so a run found after it is one the drop asked for
     settle(lambda: not moves(), 10)
     pid, was = d.bar_pid(), d.conf("BAR_POSITION")
-    # held a second before it is let go, the accent looked for at the other edge all the while
-    lit = drag(high // 2, H // 2 - 2 * high, lambda: seen(lambda: (not guide("bottom")[1], None), 1)[0])
+    # held a second before it is let go, the accent looked for at the other edge all the while; and the bar's copy
+    # under the pointer, its top as far above it as the press was into the bar (v0.151)
+    held_at = H // 2 - 2 * high
+    copy_y = held_at - high // 2 + (BAR - MARK) // 2
+    def held_in_its_half():
+        copied = mark_seen(d, mark.x, copy_y)
+        d.shot("geometry-dragged-copy")
+        return copied, seen(lambda: (not guide("bottom")[1], None), 1)[0]
+    (copied, copy_saw), lit = drag(high // 2, held_at, held_in_its_half)
     # two clicks after it, each answered: the shell has read by now whatever the drop sent
     d.click(sign.mid)
     d.until(lambda s: s.named("out.name") == "output muted", "out muted by a click after the drop")
@@ -2634,6 +2641,10 @@ def geometry(d):
        "the bar pressed on its own ground, where no target is, dragged down and let go in the screen's upper half stays: the same process at the top, the config's BAR_POSITION as it was, and spark-shell was asked nothing",
        (pid, d.bar_pid(), s.bar().edge, was, d.conf("BAR_POSITION"), moving))
     ok(not lit, "held there for a second before it was let go, the pointer in the bar's own half of the screen, no line showed: none of the screen's last four rows had the accent in it")
+    gone, gone_saw = mark_seen(d, mark.x, copy_y, False)
+    ok(copied and gone,
+       "while it was held there a copy of the bar followed the pointer, as a dragged pad does: the logo stood %d rows down, the copy's top as far over the pointer as the press was into the bar; let go, the copy is gone" % copy_y,
+       (copy_saw, gone_saw))
     d.away()
 
     def there_and_back():

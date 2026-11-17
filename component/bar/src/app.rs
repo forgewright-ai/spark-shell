@@ -4,7 +4,8 @@
 //! level's number flows to its new digits. While one does, the bar draws on the surface's frame
 //! callbacks; at rest it asks for none and does not wake. While a bar has the keys, a transparent surface
 //! over the rest of each output takes the pointer there: what it does off the bar gives the keys back.
-//! While a bar is dragged, a line at the screen's other edge shows where it would land.
+//! While a bar is dragged, a copy of it follows the pointer and a line at the screen's other edge shows where it
+//! would land.
 
 use crate::bar::{self, Act, Astray, Draw, Edge, KeyAct, Layout, Levels, Metrics, Module, Off, Prefs, Press, Scene, Shown, Status, Tone, View, Workspace};
 use crate::keys::Keyboard;
@@ -26,7 +27,7 @@ use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind, Poin
 use smithay_client_toolkit::seat::{Capability, SeatHandler, SeatState};
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface, LayerSurfaceConfigure};
 use smithay_client_toolkit::shell::WaylandSurface;
-use smithay_client_toolkit::shm::slot::SlotPool;
+use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
 use std::collections::HashMap;
@@ -45,6 +46,8 @@ use wayland_client::{Connection, QueueHandle, WEnum};
 const NAMESPACE: &str = "spark-bar";
 /// The namespace of the line that shows where a dragged bar would land.
 const GUIDE_NAMESPACE: &str = "spark-bar-guide";
+/// The namespace of the copy of a dragged bar that follows the pointer.
+const FOLLOW_NAMESPACE: &str = "spark-bar-drag";
 const BTN_LEFT: u32 = 0x110;
 const BTN_RIGHT: u32 = 0x111;
 const BTN_MIDDLE: u32 = 0x112;
@@ -191,6 +194,9 @@ struct Held {
     /// The line at the screen's other edge, while a drop now would stand the bar there. It is the press's own, so
     /// it goes with it however the press ends.
     guide: Option<LayerSurface>,
+    /// The copy of the bar that follows the pointer while it is dragged, and the row its top stands at. The press's
+    /// own too.
+    copy: Option<(LayerSurface, i32)>,
 }
 
 /// The layer shell's anchor for an edge of the screen.
@@ -829,6 +835,67 @@ impl App {
         }
     }
 
+    /// While a bar is dragged, a copy of it follows the pointer, as a dragged pad does: the bar's own picture on a
+    /// surface of its own on the overlay layer, as wide as the screen, its top under the pointer where the bar was
+    /// pressed. The bar itself stays docked until it is let go, so no window moves; the copy moves no window and
+    /// takes no pointer. `y` is the pointer in the bar's own frame.
+    fn follow(&mut self, y: f64) {
+        let Some(held) = self.pointer.as_ref().and_then(|p| p.held.as_ref()) else {
+            return;
+        };
+        let (oi, grab) = (held.out, held.at.1);
+        let Some(screen) = self.outs.get(oi).and_then(|o| self.outputs.info(&o.output)).and_then(|i| i.logical_size) else {
+            return;
+        };
+        let top = bar::follow_top(self.cfg.edge, y, grab, self.m.height, screen.1);
+        match held.copy.as_ref() {
+            Some((_, at)) if *at == top => {}
+            Some((layer, _)) => {
+                layer.set_margin(top, 0, 0, 0);
+                layer.commit();
+                if let Some((_, at)) = self.pointer.as_mut().and_then(|p| p.held.as_mut()).and_then(|h| h.copy.as_mut()) {
+                    *at = top;
+                }
+            }
+            None => {
+                let surface = self.compositor.create_surface(&self.qh);
+                let layer = self
+                    .layer_shell
+                    .create_layer_surface(&self.qh, surface, Layer::Overlay, Some(FOLLOW_NAMESPACE), Some(&self.outs[oi].output));
+                layer.set_anchor(Anchor::TOP | Anchor::LEFT | Anchor::RIGHT);
+                layer.set_size(0, self.m.height as u32);
+                layer.set_margin(top, 0, 0, 0);
+                layer.set_exclusive_zone(-1);
+                layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+                if let Ok(region) = Region::new(&self.compositor) {
+                    layer.wl_surface().set_input_region(Some(region.wl_region()));
+                }
+                layer.commit();
+                if let Some(held) = self.pointer.as_mut().and_then(|p| p.held.as_mut()) {
+                    held.copy = Some((layer, top));
+                }
+            }
+        }
+    }
+
+    /// The copy of a dragged bar drawn: the bar's own frame, as it is now.
+    fn draw_copy(&mut self) {
+        let Some(oi) = self.pointer.as_ref().and_then(|p| p.held.as_ref()).filter(|h| h.copy.is_some()).map(|h| h.out) else {
+            return;
+        };
+        let scale = self.outs.get(oi).map_or(1, |o| o.scale.max(1));
+        let Some((buffer, bw, bh, _)) = self.paint(oi) else { return };
+        let Some((layer, _)) = self.pointer.as_ref().and_then(|p| p.held.as_ref()).and_then(|h| h.copy.as_ref()) else {
+            return;
+        };
+        let surface = layer.wl_surface();
+        surface.set_buffer_scale(scale);
+        if buffer.attach_to(surface).is_ok() {
+            surface.damage_buffer(0, 0, bw, bh);
+            layer.commit();
+        }
+    }
+
     /// The guide handed its width, the screen's: the accent, whole, at its output's scale.
     fn draw_guide(&mut self, w: i32) {
         let Some(held) = self.pointer.as_ref().and_then(|p| p.held.as_ref()) else {
@@ -892,6 +959,8 @@ impl App {
         for oi in 0..self.outs.len() {
             self.draw(oi);
         }
+        // a dragged bar's copy shows what the bar shows
+        self.draw_copy();
     }
 
     /// One bar drawn: the frame the pure half says for now, each thing in its tone's color. While a number
@@ -900,6 +969,30 @@ impl App {
     fn draw(&mut self, oi: usize) {
         if self.outs[oi].layer.is_none() || self.outs[oi].width <= 0 {
             return;
+        }
+        let scale = self.outs[oi].scale.max(1);
+        let Some((buffer, bw, bh, moving)) = self.paint(oi) else { return };
+        // the next frame, only while a number on this bar is on its way
+        let o = &self.outs[oi];
+        let ask = moving && !o.waiting;
+        let Some(layer) = o.layer.as_ref() else { return };
+        let surface = layer.wl_surface();
+        surface.set_buffer_scale(scale);
+        if buffer.attach_to(surface).is_ok() {
+            surface.damage_buffer(0, 0, bw, bh);
+            if ask {
+                surface.frame(&self.qh, FrameCallbackData(surface.clone()));
+            }
+            layer.commit();
+            self.outs[oi].waiting |= ask;
+        }
+    }
+
+    /// An output's bar painted into a buffer of its own: the frame the pure half says for now, each thing in its
+    /// tone's color. The buffer, its size in pixels, and whether a number on it is on its way.
+    fn paint(&mut self, oi: usize) -> Option<(Buffer, i32, i32, bool)> {
+        if self.outs.get(oi).is_none_or(|o| o.width <= 0) {
+            return None;
         }
         let scale = self.outs[oi].scale.max(1);
         self.load_mark(scale);
@@ -911,7 +1004,7 @@ impl App {
         let (bw, bh) = (w * scale, h * scale);
         let Ok((buffer, data)) = self.pool.create_buffer(bw, bh, bw * 4, wl_shm::Format::Argb8888) else {
             eprintln!("spark-bar: no shared memory for a frame");
-            return;
+            return None;
         };
         let view = View {
             hover: o.hover,
@@ -924,9 +1017,7 @@ impl App {
             at: now,
         };
         {
-            let Some(c) = Canvas::new(&self.lib, &self.font, data, bw, bh, bw * 4, scale as f64) else {
-                return;
-            };
+            let c = Canvas::new(&self.lib, &self.font, data, bw, bh, bw * 4, scale as f64)?;
             c.fill(0.0, 0.0, w as f64, h as f64, look.ground, look.alpha);
             for draw in lay.frame(&view) {
                 match draw {
@@ -952,19 +1043,7 @@ impl App {
                 }
             }
         }
-        // the next frame, only while a number on this bar is on its way
-        let ask = lay.moving(&view) && !o.waiting;
-        let Some(layer) = o.layer.as_ref() else { return };
-        let surface = layer.wl_surface();
-        surface.set_buffer_scale(scale);
-        if buffer.attach_to(surface).is_ok() {
-            surface.damage_buffer(0, 0, bw, bh);
-            if ask {
-                surface.frame(&self.qh, FrameCallbackData(surface.clone()));
-            }
-            layer.commit();
-            self.outs[oi].waiting |= ask;
-        }
+        Some((buffer, bw, bh, lay.moving(&view)))
     }
 
     fn out_of(&self, surface: &WlSurface) -> Option<usize> {
@@ -1004,7 +1083,8 @@ impl LayerShellHandler for App {
         // the bar closed under a press on its ground, or the press's guide: the press is over, and no guide stays
         if let Some(p) = self.pointer.as_mut() {
             let bar = |h: &Held| self.outs.get(h.out).is_some_and(|o| o.layer.as_ref() == Some(layer));
-            if p.held.as_ref().is_some_and(|h| h.guide.as_ref() == Some(layer) || bar(h)) {
+            let copy = |h: &Held| h.copy.as_ref().is_some_and(|(l, _)| l == layer);
+            if p.held.as_ref().is_some_and(|h| h.guide.as_ref() == Some(layer) || copy(h) || bar(h)) {
                 p.held = None;
             }
         }
@@ -1027,6 +1107,16 @@ impl LayerShellHandler for App {
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface, configure: LayerSurfaceConfigure, _: u32) {
         if self.pointer.as_ref().and_then(|p| p.held.as_ref()).and_then(|h| h.guide.as_ref()) == Some(layer) {
             self.draw_guide(configure.new_size.0 as i32);
+            return;
+        }
+        if self
+            .pointer
+            .as_ref()
+            .and_then(|p| p.held.as_ref())
+            .and_then(|h| h.copy.as_ref())
+            .is_some_and(|(l, _)| l == layer)
+        {
+            self.draw_copy();
             return;
         }
         if let Some(oi) = self.outs.iter().position(|o| o.keyer.as_ref() == Some(layer)) {
@@ -1214,6 +1304,7 @@ impl PointerHandler for App {
                         held.drag |= dx.hypot(dy) >= bar::DRAG_START;
                         if held.drag {
                             self.shape(Cursor::Grab);
+                            self.follow(ev.position.1);
                             self.guide(ev.position.1);
                             continue;
                         }
@@ -1235,6 +1326,7 @@ impl PointerHandler for App {
                                 at: ev.position,
                                 drag: false,
                                 guide: None,
+                                copy: None,
                             });
                         }
                     }

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.151
+
+- A dragged bar comes with the pointer: a copy of the bar follows it
+  up or down the screen, as a dragged pad does, and the line at the
+  other edge still says where it will land. Before, a drag showed the
+  pointer alone, and the line once the pointer was past the middle.
+
 ## v0.150.2
 
 - After `spark-shell update` the bar runs the new code even when only

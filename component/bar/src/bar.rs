@@ -818,6 +818,17 @@ pub fn guide_at(edge: Edge, y: f64, height: i32, screen: i32) -> Option<Edge> {
     (to != edge).then_some(to)
 }
 
+/// Where the top of a dragged bar's copy stands on its screen, in the screen's own rows from its top: under the
+/// pointer, held where the bar was pressed (`grab`, the press's y in the bar), and never past either edge. `y` is
+/// the pointer in the bar's own frame, read as `dropped` reads it.
+pub fn follow_top(edge: Edge, y: f64, grab: f64, height: i32, screen: i32) -> i32 {
+    let down = match edge {
+        Edge::Top => y,
+        Edge::Bottom => (screen - height) as f64 + y,
+    };
+    ((down - grab).round() as i32).clamp(0, (screen - height).max(0))
+}
+
 /// The click that asks spark-shell to stand the bar at an edge: what a drop at the other edge sends.
 pub fn stand_at(edge: Edge) -> Click {
     Click {
@@ -5170,6 +5181,33 @@ mod tests {
             }
         }
         assert_eq!(GUIDE, 3);
+    }
+
+    #[test]
+    fn a_dragged_bars_copy_stands_under_the_pointer_where_the_bar_was_pressed() {
+        // pressed at its row 20 and not yet moved: the copy stands where the bar does, at either edge
+        assert_eq!(follow_top(Edge::Top, 20.0, 20.0, 36, 1080), 0);
+        assert_eq!(follow_top(Edge::Bottom, 20.0, 20.0, 36, 1080), 1044);
+        // it goes with the pointer, row for row
+        assert_eq!(follow_top(Edge::Top, 320.0, 20.0, 36, 1080), 300);
+        assert_eq!(follow_top(Edge::Bottom, -280.0, 20.0, 36, 1080), 744);
+        // and never past the screen's edges, wherever the pointer goes
+        assert_eq!(follow_top(Edge::Top, -50.0, 20.0, 36, 1080), 0);
+        assert_eq!(follow_top(Edge::Top, 5000.0, 20.0, 36, 1080), 1044);
+        assert_eq!(follow_top(Edge::Bottom, -5000.0, 20.0, 36, 1080), 0);
+        assert_eq!(follow_top(Edge::Bottom, 500.0, 20.0, 36, 1080), 1044);
+        // let go at the other edge, the copy is where the bar will stand: from either edge, on the last row it
+        // reaches before a drop
+        assert_eq!(
+            (follow_top(Edge::Top, 1079.0, 20.0, 36, 1080), dropped(Edge::Top, 1079.0, 36, 1080)),
+            (1044, Edge::Bottom)
+        );
+        assert_eq!(
+            (follow_top(Edge::Bottom, -1044.0, 20.0, 36, 1080), dropped(Edge::Bottom, -1044.0, 36, 1080)),
+            (0, Edge::Top)
+        );
+        // a screen shorter than the bar: its top, never under it
+        assert_eq!(follow_top(Edge::Top, 10.0, 0.0, 36, 20), 0);
     }
 
     #[test]
