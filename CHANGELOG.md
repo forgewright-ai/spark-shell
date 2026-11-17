@@ -6,6 +6,12 @@
   up or down the screen, as a dragged pad does, and the line at the
   other edge still says where it will land. Before, a drag showed the
   pointer alone, and the line once the pointer was past the middle.
+- Where sh is bash (Arch, Fedora, openSUSE) the bar's status no longer
+  starts again by itself. A click or the wheel on the bar that came
+  while the status looked at the drives could end it; it came back a
+  second later, and a sound change that had just failed lost its sign.
+  bash 5.3 ends a shell there, and the look no longer runs through a
+  pipe.
 
 ## v0.150.2
 
