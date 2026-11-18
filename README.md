@@ -32,7 +32,10 @@ asks first.
 To update, run `spark-shell update`: the clone moves to the newest
 release signed by a key in its `allowed-signers`, never to a commit
 nobody signed, and `on` runs again from it. A tag whose release is not
-published yet moves nothing: run it again a few minutes later.
+published yet moves nothing: run it again a few minutes later. Two
+kinds of key sign: the release key any release, and a patch key, on a
+machine that tags fixes by the rule in `test/tag.sh`, a patch (vX.Y.Z)
+alone.
 
 ## Where it runs
 

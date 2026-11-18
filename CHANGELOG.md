@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.154
+
+- A second kind of key may sign a release: a patch key, kept on a
+  machine that tags fixes. An install takes what it signed for a patch
+  (vX.Y.Z) and for no other tag: a vX.Y stays the release key's alone.
+  Whoever holds that machine can sign a patch: a known exposure, taken
+  by choice.
+- `sh test/tag.sh` is that machine's rule. It tags main under a
+  three-part heading when nothing guarded differs from the release it
+  patches, the keys of `config.example` are as they were, at most 400
+  lines changed, CI passed in main's own run and the fix has rested
+  six hours on main. The entry, with the help, is guarded.
+- A release needs main's own CI run of its commit: a branch's run may
+  be the fast lane's.
+
 ## v0.153.1
 
 - A write as root that fails ends `spark-shell on` or `off` there, with
