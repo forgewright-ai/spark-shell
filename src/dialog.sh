@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- the dialog
-# sets: DIALOG_BIN DIALOG_URL SEMANTIC_LOG SEMANTIC_MODEL SEMANTIC_SHA256 SEMANTIC_SIZE SEMANTIC_URL WALLPAPER_BIN
+# sets: DIALOG_BIN DIALOG_URL PATCH_SIGNER SEMANTIC_LOG SEMANTIC_MODEL SEMANTIC_SHA256 SEMANTIC_SIZE SEMANTIC_URL WALLPAPER_BIN
 # reads: MODE REPO STATE_DIR TMP
 DIALOG_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-dialog
 DIALOG_URL=${SPARK_SHELL_DIALOG_URL:-https://github.com/forgewright-ai/spark-shell/releases/download}   # the release assets; file:// or none in the tests
@@ -31,7 +31,16 @@ release_tag() {   # -> clone_tag when it pins a dialog and component/dialog/ is 
     git -C "$REPO" diff --quiet "$_rt" -- component/dialog 2>/dev/null || return 1
     printf '%s\n' "$_rt"
 }
-tag_verify() { git -C "$REPO" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$REPO/allowed-signers" -c gpg.program=false -c gpg.openpgp.program=false -c gpg.x509.program=false verify-tag "$1"; }   # tag_verify TAG -- by allowed-signers alone: a signature of another kind gets no program
+# Two kinds of key in allowed-signers, by the principal that starts a line. A release key signs any release. A patch
+# key, PATCH_SIGNER, signs a patch release (vX.Y.Z) and nothing else: it lives on a machine that tags fixes by a rule
+# (test/tag.sh), so a vX.Y, a gallery or any other tag it signed is no signed tag here
+PATCH_SIGNER=spark-shell-patch
+tag_is_patch() { case ${1#v} in *[!0-9.]*|*..*|.*|*.|*.*.*.*) return 1 ;; *.*.*) [ "v${1#v}" = "$1" ] ;; *) return 1 ;; esac; }   # tag_is_patch TAG -- vX.Y.Z, three numbers
+signers_for() {   # signers_for TAG -> the file of the keys that may have signed TAG: every key for a patch release, the release keys alone for any other tag
+    if tag_is_patch "$1"; then printf '%s\n' "$REPO/allowed-signers"
+    else grep -v "^$PATCH_SIGNER " "$REPO/allowed-signers" > "$TMP/signers.release" || :; printf '%s\n' "$TMP/signers.release"; fi
+}
+tag_verify() { git -C "$REPO" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$(signers_for "$1")" -c gpg.program=false -c gpg.openpgp.program=false -c gpg.x509.program=false verify-tag "$1"; }   # tag_verify TAG -- by the keys allowed-signers has for a tag of its kind alone: a signature of another kind gets no program
 tag_signed() {   # tag_signed TAG -> 0 when a key in allowed-signers signed it and the tag object names itself TAG
     command -v ssh-keygen >/dev/null 2>&1 && [ -f "$REPO/allowed-signers" ] || return 1
     tag_verify "$1" >/dev/null 2>&1 || return 1

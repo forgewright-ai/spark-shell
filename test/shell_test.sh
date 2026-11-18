@@ -6953,7 +6953,8 @@ fast|0|test/shell_test.sh test/modules_check.py
 fast|400|src/bar.sh test/shell_test.sh CHANGELOG.md
 standard|401|src/bar.sh test/shell_test.sh CHANGELOG.md
 standard|10|src/config.sh
-standard|10|spark-shell
+guarded|10|spark-shell
+guarded|10|src/gallery.sh
 standard|10|component/bar/src/app.rs
 standard|0|component/bar/bar.env
 standard|10|template/.config/sway/config
@@ -6964,7 +6965,7 @@ standard|10|test/desktop_proof.sh
 standard|10|test/winpad_build.sh
 standard|10|a/new/kind
 standard|10|src/GONE.sh
-standard|10|src/bar.sh spark-shell
+standard|10|src/bar.sh lib/home.py
 guarded|10|src/setup.sh
 guarded|10|src/dialog.sh
 guarded|10|src/console.sh
@@ -6979,9 +6980,10 @@ guarded|1|distro/void.env
 guarded|1|test/gate.sh
 guarded|1|test/lane.sh
 guarded|1|test/prove.sh
+guarded|1|test/tag.sh
 guarded|10|src/bar.sh README.md src/login.sh spark-shell
 CASES
-[ -z "$_lb" ] && ok "test/lane.sh: a small fix in the user's side of the shell, the tests or the words is fast, to 400 lines; a component, a template, the entry, a proof, the config's module and a path it does not name are standard; the workflows, the hooks, the signers, the gate, on and off, the update and a module that acts as root are guarded, and guarded wins" || bad "lanes by path" "$_lb"
+[ -z "$_lb" ] && ok "test/lane.sh: a small fix in the user's side of the shell, the tests or the words is fast, to 400 lines; a component, a template, a helper, a proof, the config's module and a path it does not name are standard; the workflows, the hooks, the signers, the gate and the tagging rule, the entry, on and off, the update, the gallery and a module that acts as root are guarded, and guarded wins" || bad "lanes by path" "$_lb"
 # the jobs a lane asks for are ci.yml's own: the full list is every job but the four every run has, each of them asked
 # for by the plan in its own name, and green needs them all. A job added to ci.yml and not to the list fails here. A
 # job that waits for the pins spells out lint's result and theirs: with the builds skipped (the fast lane) the default,
@@ -7013,7 +7015,7 @@ if command -v git >/dev/null 2>&1; then
     _lane() { sh "$_lr/test/lane.sh" "$@" | sed -n -e 's/^lane=//p' -e 's/^why=//p' | tr '\n' '|'; }
     git init -q -b main "$_lr"; mkdir -p "$_lr/test" "$_lr/src" "$_lr/.github/workflows"
     cp "$REPO/test/lane.sh" "$_lr/test/lane.sh"
-    printf 'a() { :; }\n' > "$_lr/src/PLAIN.sh"; printf 'b() { root_put a b; }\n' > "$_lr/src/ROOTS.sh"
+    printf 'a() { :; }\n' > "$_lr/src/PLAIN.sh"; printf 'b() { root_put a b; }\n' > "$_lr/src/ROOTS.sh"; printf 'e() { :; }\n' > "$_lr/src/OTHER.sh"
     echo 'on: push' > "$_lr/.github/workflows/X.yml"; echo words > "$_lr/README.md"
     _lgit add -A; _lgit commit -q -m base
     _lb=''
@@ -7035,9 +7037,28 @@ if command -v git >/dev/null 2>&1; then
     out=$(_lane); case $out in 'guarded|.github/workflows/X.yml|') ;; *) _lb="$_lb [a workflow moved under test/: $out]" ;; esac
     _lgit update-ref refs/remotes/origin/main HEAD
     _lgit rm -q src/ROOTS.sh; _lgit commit -q -m gone
-    out=$(_lane); case $out in 'standard|src/ROOTS.sh|') ;; *) _lb="$_lb [a module taken out: $out]" ;; esac
+    out=$(_lane); case $out in 'guarded|src/ROOTS.sh|') ;; *) _lb="$_lb [a module that acted as root, taken out: $out]" ;; esac
+    _lgit update-ref refs/remotes/origin/main HEAD
+    _lgit rm -q src/OTHER.sh; _lgit commit -q -m gone2
+    out=$(_lane); case $out in 'standard|src/OTHER.sh|') ;; *) _lb="$_lb [a plain module taken out: $out]" ;; esac
+    _lgit update-ref refs/remotes/origin/main HEAD
+    grep -v root_try "$_lr/src/PLAIN.sh" > "$_lr/p"; mv "$_lr/p" "$_lr/src/PLAIN.sh"; _lgit commit -q -a -m unroot; _lu=$(_lgit rev-parse HEAD)
+    out=$(_lane); case $out in 'guarded|src/PLAIN.sh|') ;; *) _lb="$_lb [a module whose root call is taken out: $out]" ;; esac
+    # a name git quotes is never a small thing: a workflow named with a letter outside ASCII, a file with a tab in its name
+    _lgit update-ref refs/remotes/origin/main HEAD
+    mkdir -p "$_lr/.github/workflows"; echo 'on: push' > "$_lr/.github/workflows/$(printf 'caf\303\251').yml"; _lgit add -A; _lgit commit -q -m accent
+    out=$(_lane | cut -d'|' -f1); [ "$out" = guarded ] || _lb="$_lb [a workflow named outside ASCII: $out]"
+    _lgit update-ref refs/remotes/origin/main HEAD
+    echo x > "$_lr/$(printf 'a\tb')"; _lgit add -A; _lgit commit -q -m tab
+    out=$(_lane | cut -d'|' -f1); [ "$out" = guarded ] || _lb="$_lb [a name with a tab: $out]"
+    _lgit update-ref refs/remotes/origin/main HEAD
+    # a commit that is not checked out, and another clone asked by this tree's list: read from git, as the tagging rule asks
+    _lw=$(_lgit rev-parse HEAD); echo more >> "$_lr/README.md"; _lgit commit -q -a -m words
+    out=$(_lane --base "$_lu~1" --at "$_lu"); case $out in 'guarded|src/PLAIN.sh|') ;; *) _lb="$_lb [--at a commit behind HEAD: $out]" ;; esac
+    out=$(_lane --base "$_lw"); case $out in fast\|*' 1 lines|') ;; *) _lb="$_lb [from the commit before the last to HEAD: $out]" ;; esac
+    out=$(cd "$_lr" && sh "$REPO/test/lane.sh" --here --base "$_lu~1" --at "$_lu" | sed -n -e 's/^lane=//p' -e 's/^why=//p' | tr '\n' '|'); case $out in 'guarded|src/PLAIN.sh|') ;; *) _lb="$_lb [--here, another clone: $out]" ;; esac
     out=$(_lane --base no-such-commit); case $out in 'standard|no base to measure the change from|') ;; *) _lb="$_lb [a base that is no commit: $out]" ;; esac
-    [ -z "$_lb" ] && ok "test/lane.sh on a change: measured from where the branch left origin/main; tests and the changelog count for no line; a module that starts to act as root is guarded, a workflow moved under test/ too, a module taken out is standard; no base to measure from takes every job" || bad "lanes by change" "$_lb"
+    [ -z "$_lb" ] && ok "test/lane.sh on a change: measured from where the branch left origin/main; tests and the changelog count for no line; a module that starts to act as root is guarded, one that stops and one taken out that did too, and a workflow moved under test/; a plain module taken out is standard; a name git quotes is guarded; a commit that is not checked out and another clone are read from git; no base to measure from takes every job" || bad "lanes by change" "$_lb"
 fi
 # test/prove.sh: the desktop job's proofs, each one, and a folder that is not its own is never removed
 _lb=''
@@ -7216,8 +7237,10 @@ if want 22; then
 fresh
 desktop_stubs
 theme_fixture '#ff5555'
-grep -q '^spark-shell-release namespaces="git" ssh-ed25519 [A-Za-z0-9+/=]*$' "$REPO/allowed-signers" && [ "$(grep -c '' "$REPO/allowed-signers")" = 1 ] \
-    && ok "allowed-signers: one key, the release's, its principal a role and no address" || bad "allowed-signers" "$(cut -c1-60 "$REPO/allowed-signers")"
+[ "$(sed -n 1p "$REPO/allowed-signers" | grep -c '^spark-shell-release namespaces="git" ssh-ed25519 [A-Za-z0-9+/=]*$')" = 1 ] \
+    && [ "$(sed -n 2p "$REPO/allowed-signers" | grep -c '^spark-shell-patch namespaces="git" ssh-ed25519 [A-Za-z0-9+/=]*$')" = 1 ] \
+    && [ "$(grep -c '' "$REPO/allowed-signers")" = 2 ] && [ "$(cut -d' ' -f4 "$REPO/allowed-signers" | sort -u | grep -c '')" = 2 ] \
+    && ok "allowed-signers: two keys, the release's and the patch key's, each principal a role and no address" || bad "allowed-signers" "$(cut -c1-60 "$REPO/allowed-signers")"
 grep -q '^DIALOG_SHA256_X86_64_LINUX_GNU=[0-9a-f]\{64\}$' "$REPO/component/dialog/dialog.env" && ok "dialog.env: the x86_64 build pinned by its sha256" || bad "dialog.env" "$(cat "$REPO/component/dialog/dialog.env")"
 # the about provider: the template's key sentences, each combo a column, the splash's groups
 printf '%s\n' "$(rq 1 resources/read '{"uri":"spark-shell://about/rows"}')" | sh "$SH" provide about | jq -r 'select(.id == 1) | .result.contents[0].text' > "$H/about.json"
@@ -8536,6 +8559,110 @@ GPG
 else
     printf '  note update: ssh-keygen not found; the section is skipped\n'
 fi
+# --- the patch key and its rule (test/tag.sh): a second kind of key in allowed-signers, on a machine that tags fixes.
+# Installs take what it signed for a patch, vX.Y.Z, and for no other tag; the rule tags main under a three-part
+# heading when nothing guarded differs from the release it patches, it is a fix alone, main's own run passed and
+# the fix has rested. A bare origin, scratch keys and a curl that answers for GitHub stand in; the rule runs from
+# this tree (the copy that judges), in a clone of its own, as the machine runs the installed one.
+if command -v ssh-keygen >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    fresh
+    U=$(tmpd)
+    export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t GIT_CONFIG_NOSYSTEM=1
+    ssh-keygen -q -t ed25519 -N '' -C r -f "$U/key"; ssh-keygen -q -t ed25519 -N '' -C p -f "$U/patch"; ssh-keygen -q -t ed25519 -N '' -C o -f "$U/other"
+    git init -q --bare -b main "$U/origin.git"; git init -q -b main "$U/w"
+    (cd "$REPO" && tar -cf - --exclude=.git --exclude=target --exclude=target2 .) | tar -xf - --no-same-owner -C "$U/w"
+    cp "$SH" "$U/w/spark-shell"
+    { printf 'spark-shell-release namespaces="git" %s\n' "$(cut -d' ' -f1,2 "$U/key.pub")"; printf 'spark-shell-patch namespaces="git" %s\n' "$(cut -d' ' -f1,2 "$U/patch.pub")"; } > "$U/w/allowed-signers"
+    cp "$U/w/allowed-signers" "$U/signers"   # what the installed release trusts
+    W() { git -C "$U/w" -c core.hooksPath=/dev/null "$@"; }
+    W config gpg.format ssh; W config user.signingkey "$U/key"; W remote add origin "$U/origin.git"
+    land() { printf '# Changelog\n\n## %s\n\n- a fix\n\n## v9.0\n\n- the first\n' "$1" > "$U/w/CHANGELOG.md"; W add -A; W commit -q -m "$2"; W push -q origin main; }   # land HEADING WORDS -- main moves, under that heading
+    land v9.0 v9.0; W tag -s -m v9.0 v9.0; W push -q origin v9.0
+    git clone -q "$U/origin.git" "$U/c"; C=$U/c/spark-shell   # an install, at v9.0
+    # the clone that tags: it signs with the patch key, and origin is on github.com by its name alone
+    git clone -q "$U/origin.git" "$U/t"
+    git -C "$U/t" config gpg.format ssh; git -C "$U/t" config user.signingkey "$U/patch"
+    git -C "$U/t" config "url.$U/origin.git.insteadOf" https://github.com/test/spark-shell.git
+    git -C "$U/t" remote set-url origin https://github.com/test/spark-shell.git
+    # GitHub's answer: main's own run of the commit asked about, made $U/made seconds ago, from the branch in $U/branch
+    cat > "$U/curl" <<'CURL'
+#!/bin/sh
+for a in "$@"; do u=$a; done
+printf '%s\n' "$u" >> "$CURL_DIR/asked"
+sha=${u#*head_sha=}; sha=${sha%%&*}
+jq -n --arg sha "$sha" --arg b "$(cat "$CURL_DIR/branch")" --argjson ago "$(cat "$CURL_DIR/made")" '{workflow_runs: [{head_sha: $sha, head_branch: $b, event: "push", conclusion: "success", created_at: (now - $ago | todate)}]}'
+CURL
+    chmod +x "$U/curl"; echo main > "$U/branch"; echo 25200 > "$U/made"   # seven hours
+    T() { (cd "$U/t" && CURL_DIR=$U SPARK_SHELL_TAG_CURL=$U/curl SPARK_SHELL_TAG_SIGNERS=$U/signers sh "$REPO/test/tag.sh" "$@" 2>&1); }
+    on_origin() { git -C "$U/origin.git" rev-parse -q --verify "refs/tags/$1" >/dev/null 2>&1; }
+    # a vX.Y heading is a person's
+    land v9.1 minor
+    out=$(T) && rc=0 || rc=$?
+    [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^tag: main is at [0-9a-f]\{7\}, under ## v9\.1: no patch, a person tags it$' && ! on_origin v9.1 \
+        && ok "tag: main under a vX.Y heading is no patch: a person tags it, nothing is done" || bad "tag: a minor" "$rc $out"
+    # a fix under a three-part heading: a line of a module that does not act as root
+    echo '# a fix' >> "$U/w/src/notes.sh"; land v9.0.1 fix
+    echo 0 > "$U/made"
+    out=$(T) && rc=0 || rc=$?
+    [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^tag: v9\.0\.1 waits: main at [0-9a-f]\{7\} is 0 minutes old, and a fix rests 6 hours before its tag (--now skips the rest)$' && ! on_origin v9.0.1 \
+        && ok "tag: a fix rests six hours on main before its tag, by the run GitHub made for it" || bad "tag: the rest" "$rc $out"
+    out=$(T --now --dry-run) && rc=0 || rc=$?
+    [ "$rc" = 0 ] && printf '%s\n' "$out" | sed -n 1p | grep -q '^tag: would tag v9\.0\.1 at [0-9a-f]\{7\}, a fast change of 1 lines since v9\.0:$' && ! on_origin v9.0.1 && [ -z "$(git -C "$U/t" tag -l v9.0.1)" ] \
+        && ok "tag --now --dry-run: a person's word skips the rest; the dry run names the tag and makes none" || bad "tag: dry run" "$rc $out"
+    echo fix > "$U/branch"
+    out=$(T --now) && rc=0 || rc=$?
+    [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q "^tag: refused: ci.yml has not passed for main at [0-9a-f]\{7\} in main's own run -- nothing tagged$" && ! on_origin v9.0.1 \
+        && grep -q 'actions/workflows/ci.yml/runs?head_sha=[0-9a-f]\{40\}&branch=main&event=push&status=success' "$U/asked" \
+        && ok "tag: a pass in a branch's run is no pass: main's own run of the exact commit is asked for" || bad "tag: a branch's run" "$rc $out $(tail -1 "$U/asked")"
+    echo main > "$U/branch"; echo 25200 > "$U/made"
+    out=$(T) && rc=0 || rc=$?
+    [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^tag: v9\.0\.1 at [0-9a-f]\{7\}, a fast change of 1 lines since v9\.0$' && on_origin v9.0.1 \
+        && git -C "$U/origin.git" -c gpg.format=ssh -c gpg.ssh.allowedSignersFile="$U/signers" verify-tag v9.0.1 2>&1 | grep -q 'signature for spark-shell-patch ' \
+        && [ "$(git -C "$U/origin.git" rev-parse 'v9.0.1^{commit}')" = "$(git -C "$U/origin.git" rev-parse main)" ] \
+        && ok "tag: a rested fix whose run passed is tagged at main, signed by the patch key, and pushed" || bad "tag: tagged" "$rc $out"
+    out=$(T) && rc=0 || rc=$?
+    [ "$rc" = 0 ] && [ "$out" = "tag: v9.0.1 exists: nothing to do" ] && ok "tag: a patch that has its tag: nothing to do" || bad "tag: nothing to do" "$rc $out"
+    # an install takes it, and says who signed it
+    out=$(sh "$C" update --dry-run 2>&1) && rc=0 || rc=$?
+    [ "$rc" = 0 ] && [ "$out" = "spark-shell update: would move v9.0 -> v9.0.1, signed by spark-shell-patch" ] && ok "update: a patch the patch key signed is a release: the move names the key" || bad "update: patch key" "$rc $out"
+    # a vX.Y the patch key signed is no release, here or in the rule: that name is a release key's alone
+    echo more >> "$U/w/README.md"; land v9.2 minor2; W -c user.signingkey="$U/patch" tag -s -m v9.2 v9.2; W push -q origin v9.2
+    out=$(sh "$C" update --dry-run 2>&1) && rc=0 || rc=$?
+    [ "$rc" = 0 ] && [ "$out" = "spark-shell update: would move v9.0 -> v9.0.1, signed by spark-shell-patch (skipped, not a signed release: v9.2)" ] \
+        && ok "update: a vX.Y the patch key signed is not a signed release: skipped and named" || bad "update: patch key on a minor" "$rc $out"
+    echo '# a fix' >> "$U/w/src/notes.sh"; land v9.2.1 fix2
+    out=$(T --now) && rc=0 || rc=$?
+    [ "$rc" = 1 ] && [ "$out" = "tag: refused: v9.2 is not signed by a key the installed allowed-signers trust for it: not a release -- nothing tagged" ] && ! on_origin v9.2.1 \
+        && ok "tag: the tag it patches must be a release: a vX.Y the patch key signed is no base for a patch" || bad "tag: base" "$rc $out"
+    # more than a fix, each said: too large, a new setting, something guarded, a new line of help (the entry's head)
+    i=0; while [ "$i" -lt 400 ]; do echo "# $i"; i=$((i + 1)); done >> "$U/w/src/notes.sh"; land v9.0.2 large
+    out=$(T --now) && rc=0 || rc=$?
+    _tb=''; [ "$rc" = 1 ] && [ "$out" = "tag: refused: 402 lines differ from v9.0.1 outside test/ and the changelog, more than 400: a person tags it -- nothing tagged" ] || _tb="$_tb [large: $rc $out]"
+    echo 'NEW_KEY=1' >> "$U/w/config.example"; land v9.0.2 key
+    out=$(T --now) && rc=0 || rc=$?
+    [ "$rc" = 1 ] && [ "$out" = "tag: refused: the keys of config.example differ from v9.0.1: more than a fix, a person tags it -- nothing tagged" ] || _tb="$_tb [key: $rc $out]"
+    echo '# a word' >> "$U/w/src/login.sh"; land v9.0.2 root
+    out=$(T --now) && rc=0 || rc=$?
+    [ "$rc" = 1 ] && [ "$out" = "tag: refused: v9.0.2 changes src/login.sh since v9.0.1, and that is guarded: a person tags it -- nothing tagged" ] || _tb="$_tb [guarded: $rc $out]"
+    sed -i.bak '3s/$/ and more/' "$U/w/spark-shell"; rm -f "$U/w/spark-shell.bak"; land v9.0.2 help
+    out=$(T --now) && rc=0 || rc=$?
+    [ "$rc" = 1 ] && [ "$out" = "tag: refused: v9.0.2 changes spark-shell since v9.0.1, and that is guarded: a person tags it -- nothing tagged" ] || _tb="$_tb [the entry: $rc $out]"
+    [ -z "$_tb" ] && ! on_origin v9.0.2 && [ -z "$(git -C "$U/t" tag -l v9.0.2)" ] \
+        && ok "tag: more than a fix is a person's, each said: over 400 lines, a new key of config.example, a module that acts as root, the entry and its help" || bad "tag: the fence" "$_tb"
+    # a key the installed release does not trust signs nothing that leaves
+    git clone -q "$U/origin.git" "$U/t2"; git -C "$U/t2" config gpg.format ssh; git -C "$U/t2" config user.signingkey "$U/other"
+    git -C "$U/t2" config "url.$U/origin.git.insteadOf" https://github.com/test/spark-shell.git; git -C "$U/t2" remote set-url origin https://github.com/test/spark-shell.git
+    W revert --no-edit HEAD HEAD~1 HEAD~2 HEAD~3 >/dev/null; land v9.0.2 again
+    out=$(cd "$U/t2" && CURL_DIR=$U SPARK_SHELL_TAG_CURL=$U/curl SPARK_SHELL_TAG_SIGNERS=$U/signers sh "$REPO/test/tag.sh" --now 2>&1) && rc=0 || rc=$?
+    [ "$rc" = 1 ] && [ "$out" = "tag: refused: the key this clone signs with is not one the installed allowed-signers trust; the tag is undone -- nothing tagged" ] && ! on_origin v9.0.2 && [ -z "$(git -C "$U/t2" tag -l v9.0.2)" ] \
+        && ok "tag: a tag signed by a key the installed release does not trust is undone before it leaves" || bad "tag: another key" "$rc $out"
+    out=$(T --now) && rc=0 || rc=$?
+    [ "$rc" = 0 ] && on_origin v9.0.2 && ok "tag: the same commit, from the clone with the patch key, is tagged" || bad "tag: after the fence" "$rc $out"
+    unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL GIT_CONFIG_NOSYSTEM
+    rm -rf "$U"
+else
+    printf '  note tag: ssh-keygen or jq not found; the section is skipped\n'
+fi
 # the gallery (#247, arc 5): its newest release (gallery-vN) a key in allowed-signers signed for the gallery, every file its
 # index line's size and sha256, data alone; a newer unsigned tag, another key's and the key's for something else skipped
 # and named; a stale index, a key a shared theme never sets, a list's value of two words, a picture not as its name, its
@@ -8548,6 +8675,7 @@ if command -v ssh-keygen >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; 
     ssh-keygen -q -t ed25519 -N '' -C t -f "$U/key"; ssh-keygen -q -t ed25519 -N '' -C o -f "$U/other"
     mkdir -p "$U/c"; (cd "$REPO" && tar -cf - --exclude=.git --exclude=target .) | tar -xf - --no-same-owner -C "$U/c"; cp "$SH" "$U/c/spark-shell"
     printf 'spark-shell-release namespaces="git" %s\n' "$(cut -d' ' -f1,2 "$U/key.pub")" > "$U/c/allowed-signers"
+    printf 'spark-shell-patch namespaces="git" %s\n' "$(cut -d' ' -f1,2 "$U/other.pub")" >> "$U/c/allowed-signers"   # a patch key vouches for a patch release alone, never for the gallery
     G=$U/gallery; mkdir -p "$G/themes/harbor" "$G/wallpapers"
     python3 -I "$REPO/lib/look.py" words --hue teal --accent orange --warmth cool --contrast normal --light dark > "$G/themes/harbor/palette.env"
     printf 'FORMAT=2\nPALETTE=words\nWORDS=harbor at dusk\nWALLPAPER=fjord\nFACE=xenon\nGLYPH_FAMILY=banner\nANIMATION=tide\nALPHA=0.9\n' > "$G/themes/harbor/look.env"
@@ -8593,13 +8721,13 @@ if command -v ssh-keygen >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; 
     rc=0; out=$(GS theme install harbor 2>&1) || rc=$?
     [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: a saved theme of yours is named harbor -- spark-shell theme delete harbor first, or keep yours' ] && ok "theme install over a saved theme of yours: refused, yours kept" || bad "install over yours" "rc=$rc $out"
     printf 'GALLERY=gallery-v1\n' >> "$HOME/.config/spark-shell/themes/harbor/look.env"
-    # newer tags: one no key signed, one another key signed, one the key signed for something else (no gallery line); skipped
+    # newer tags: one no key signed, one a patch key signed, one the key signed for something else (no gallery line); skipped
     # and named, the release before them taken
     printf 'FORMAT=2\nPALETTE=words\nWALLPAPER=fjord\nFACE=radon\n' > "$G/themes/harbor/look.env"; gindex; gtag gallery-v2
     gtag gallery-v3 "$U/other"; gtag gallery-v4 "$U/key" 'gallery-v4'
     out=$(GS theme gallery 2>&1) || :
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "The gallery at gallery-v1 ($G), signed by a key in allowed-signers:" ] && printf '%s\n' "$out" | grep -qx 'Not taken, as no key in allowed-signers signed them: gallery-v4 gallery-v3 gallery-v2.' \
-        && ok "theme gallery: a newer tag no key signed, another key's, or the key's for something else (no gallery line) is skipped and named; the release before them taken" || bad "gallery unsigned" "$out"
+        && ok "theme gallery: a newer tag no key signed, a patch key's, or the key's for something else (no gallery line) is skipped and named; the release before them taken" || bad "gallery unsigned" "$out"
     gex() {   # gex TAG WHY WHAT -- the gallery's TAG, signed; theme install harbor refused with WHY after "was not installed: "
         gtag "$1" "$U/key"; rc=0; out=$(GS theme install harbor 2>&1) || rc=$?
         [ "$rc" = 1 ] && [ "$out" = "spark-shell theme: harbor from the gallery's $1 was not installed: $2" ] && ok "theme install (#247): $3" || bad "install: $3" "rc=$rc $out"

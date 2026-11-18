@@ -19,7 +19,7 @@ gallery_num() { case ${1#gallery-v} in [1-9]|[1-9][0-9]|[1-9][0-9][0-9]|[1-9][0-
 gallery_signed() {   # gallery_signed TAG -> 0 when a key in allowed-signers signed TAG, it names itself and a commit, and its message says "spark-shell-gallery TAG"; GALLERY_TREE its tree's object id
     _go=$(gallery_git -C "$GALLERY_GIT" rev-parse --verify -q "refs/tags/$1" 2>/dev/null) || return 1
     case $_go in *[!0-9a-f]*|'') return 1 ;; esac
-    gallery_git -C "$GALLERY_GIT" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$REPO/allowed-signers" -c gpg.program=false -c gpg.openpgp.program=false -c gpg.x509.program=false verify-tag "$_go" >/dev/null 2>&1 || return 1
+    gallery_git -C "$GALLERY_GIT" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$(signers_for "$1")" -c gpg.program=false -c gpg.openpgp.program=false -c gpg.x509.program=false verify-tag "$_go" >/dev/null 2>&1 || return 1
     gallery_git -C "$GALLERY_GIT" cat-file tag "$_go" > "$TMP/gallery.tag" 2>/dev/null || return 1
     [ "$(sed -n 's/^tag //p' "$TMP/gallery.tag" | sed -n 1p)" = "$1" ] && [ "$(sed -n 's/^type //p' "$TMP/gallery.tag" | sed -n 1p)" = commit ] || return 1
     [ "$(sed -n '/^$/{n;p;q;}' "$TMP/gallery.tag")" = "spark-shell-gallery $1" ] || return 1
