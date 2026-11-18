@@ -55,6 +55,8 @@
   build.
 - The pad builds with libloading 0.9.1, and winpad.env pins that build.
 - The bar builds with libloading 0.9.1, and bar.env pins that build.
+- The ear and the wallpaper build with libloading 0.9.1, and ear.env
+  and wallpaper.env pin those builds.
 - CI takes a change by what it touches. A fix of up to 400 lines in a
   module that neither acts as root nor fetches, in the tests or in the
   docs runs lint and the suite on Debian and Fedora. Anything else
