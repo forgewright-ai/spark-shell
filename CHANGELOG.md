@@ -53,6 +53,7 @@
   drop it.
 - The dialog builds with libloading 0.9.1, and dialog.env pins that
   build.
+- The pad builds with libloading 0.9.1, and winpad.env pins that build.
 
 ## v0.152.1
 
