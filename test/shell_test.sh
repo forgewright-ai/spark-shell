@@ -4947,9 +4947,12 @@ EVSWAY_STUB
     ev_kill() { [ -z "$_ep" ] || kill "$_ep" 2>/dev/null || :; }   # never a signal to no pid
     rm -f "$HOME/ev.log" "$HOME/ev.pid"
     SWAYSOCK=$H/sock PATH="$H/evsway:$PATH" sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
-    ev_up; _e1=$(evn); kill -9 "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :; ev_end
-    [ "$_e1" -ge 3 ] && ev_gone && [ "$_e3" = "$_e2" ] \
-        && ok "the workspace watcher ends with its loop: the loop killed outright, its group left running, the reader leaves at the next event and the subscriber ends; the names are read no more" || bad "watcher outlives the loop" "$_e1 $_e2 $_e3 pid=$_ep $(ev_gone || echo alive)"
+    ev_up; _e1=$(evn); _bk=$(pgrep -P "$bp" 2>/dev/null || :); kill -9 "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :; ev_end
+    # what the loop started is gone with it, the lines too: they are a process of their own (v0.153) and write into a file here, so no broken pipe ends them
+    for _i in $(seq 1 40); do _ba=''; for _k in $_bk; do ! kill -0 "$_k" 2>/dev/null || _ba="$_ba $_k"; done; [ -n "$_ba" ] || break; sleep .1; done
+    [ "$_e1" -ge 3 ] && ev_gone && [ "$_e3" = "$_e2" ] && [ -n "$_bk" ] && [ -z "$_ba" ] \
+        && ok "the workspace watcher ends with its loop: the loop killed outright, its group left running, the reader leaves at the next event and the subscriber ends; the names are read no more, and the lines' own process ends within a second" || bad "watcher outlives the loop" "$_e1 $_e2 $_e3 pid=$_ep $(ev_gone || echo alive) started:$_bk left:$_ba"
+    for _k in $_ba; do kill "$_k" 2>/dev/null || :; done
     ev_kill
     # a line no bar reads ends the loop at that write, its pid file gone and its watcher with it: where the broken pipe
     # is a signal (the trap), and where it is an error, the signal ignored as the bar's own program may hand it on

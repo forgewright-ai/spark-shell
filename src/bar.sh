@@ -807,6 +807,7 @@ bar_status_lines() {   # the lines, one every 15 s and one when asked, in a proc
             [ ! -e "$TMP/bar.asked" ] || kill "$sleeper" 2>/dev/null || :   # asked for while the line was drawn: draw again
             wait "$sleeper" 2>/dev/null || :
             : > "$TMP/bar.sleeper"
+            kill -0 "$$" 2>/dev/null || exit 0   # the process that takes the signals is gone, killed outright: the lines go within a second, read by a bar or by no one
             if [ -e "$TMP/bar.asked" ]; then rm -f "$TMP/bar.asked"; redraw=1; fi
             t=$((t + 1))
             storage_sig; [ "$_bsg" = "$_bseen" ] || { _bseen=$_bsg; redraw=1; }   # a disk came or went
