@@ -743,15 +743,45 @@ bar_status() {   # bar_status [--once]
     theme_load; al_mend_file
     if [ "${1:-}" = --once ]; then bar_line | sed 's/,$//'; return 0; fi
     command -v jq >/dev/null 2>&1 || echo "spark-shell bar status: jq is not installed, so the bar takes no clicks (spark-shell on)" >&2
-    mkdir_private "$STATE_DIR"; printf '%s\n' "$$" > "$BAR_PID"
-    # traps first: a SIGUSR1 may come at once
-    reader=''; sleeper=''; watcher=''
-    trap 'kill ${reader:-} ${sleeper:-} ${watcher:-} 2>/dev/null || :; bar_pid_drop; exit 0' INT TERM HUP PIPE   # set -e: a failed kill in a trap ends the shell
-    trap 'redraw=1; kill ${sleeper:-} 2>/dev/null || :' USR1   # a click mid-draw: draw again
-    printf '{"version":1,"click_events":true}\n[\n' || { bar_pid_drop; return 0; }   # no bar reads: a write that fails ends the loop here, as the trap does where the broken pipe is a signal
+    # This process takes the signals and, from its first trap on, expands no command substitution: the lines are a
+    # child's work, and the child holds no trap. bash 5.2 runs a pending trap inside the parse of a command substitution,
+    # the trap's text fails to parse there and the shell ends (5.3 does not): a loop that took its redraw as a trap
+    # ended by itself where sh is bash 5.2, at a click or a turn of the wheel. A redraw asked for is a file the child
+    # looks for, and its one-second sleep ended. The signal is caught, never ignored: what is ignored here stays
+    # ignored in every program a click starts, and a status loop among them could not take its redraw
+    mkdir_private "$STATE_DIR"
+    reader=''; watcher=''; loop=''
+    _bsw=0; wm_session || _bsw=1
+    : > "$TMP/bar.sleeper"
+    trap 'bar_ask' USR1
+    trap 'bar_status_end; exit 0' INT TERM HUP PIPE
+    printf '%s\n' "$$" > "$BAR_PID"   # after the traps: a redraw may be asked for at once
+    printf '{"version":1,"click_events":true}\n[\n' || { bar_pid_drop; return 0; }   # no bar reads: a write that fails ends it here
     exec 3<&0; bar_clicks <&3 &   # a background job's stdin is /dev/null in dash
     reader=$!
-    ! wm_session || { bar_ws_watch </dev/null & watcher=$!; }
+    [ "$_bsw" = 1 ] || { bar_ws_watch </dev/null & watcher=$!; }
+    bar_status_lines &
+    loop=$!
+    while :; do   # a redraw asked for ends the wait with a status past 128, and so does a loop a signal ended: the second is gone
+        _bsl=0; wait "$loop" 2>/dev/null || _bsl=$?
+        [ "$_bsl" -gt 128 ] && kill -0 "$loop" 2>/dev/null || break
+    done
+    bar_status_end
+}
+bar_ask() {   # SIGUSR1: a redraw asked for. The file says so to a line being drawn; the sleep ended wakes a loop that waits. No program run, no substitution
+    : > "$TMP/bar.asked"
+    _bas=''; read -r _bas 2>/dev/null < "$TMP/bar.sleeper" || :
+    [ -z "$_bas" ] || kill "$_bas" 2>/dev/null || :
+}
+bar_status_end() {   # the lines, their sleep, the clicks' reader and the workspaces' watcher ended; the pid file dropped
+    trap '' USR1 INT TERM HUP PIPE
+    _bse=''; read -r _bse 2>/dev/null < "$TMP/bar.sleeper" || :
+    # shellcheck disable=SC2086   # each a pid or nothing
+    kill ${loop:-} ${reader:-} ${watcher:-} ${_bse:-} 2>/dev/null || :
+    bar_pid_drop
+}
+bar_status_lines() {   # the lines, one every 15 s and one when asked, in a process of its own: it holds no trap (bar_status says why)
+    sleeper=''
     _ts=$(theme_sum); _bp=$({ cksum < "$BAR_PALETTE"; } 2>/dev/null || :); _line=''
     storage_sig; _bseen=$_bsg
     MACHINE_AT_FACTS=$(( $(date +%s) - MACHINE_FACTS_EVERY + 60 ))   # .facts a minute in: the devices are up
@@ -773,14 +803,18 @@ bar_status() {   # bar_status [--once]
         t=0   # one-second sleeps: a signal ends one
         while [ "$t" -lt 15 ] && [ "$redraw" = 0 ]; do
             sleep 1 & sleeper=$!
+            printf '%s\n' "$sleeper" > "$TMP/bar.sleeper"   # the pid first, the look after: whoever asks now either finds the pid or is found here
+            [ ! -e "$TMP/bar.asked" ] || kill "$sleeper" 2>/dev/null || :   # asked for while the line was drawn: draw again
             wait "$sleeper" 2>/dev/null || :
+            : > "$TMP/bar.sleeper"
+            if [ -e "$TMP/bar.asked" ]; then rm -f "$TMP/bar.asked"; redraw=1; fi
             t=$((t + 1))
             storage_sig; [ "$_bsg" = "$_bseen" ] || { _bseen=$_bsg; redraw=1; }   # a disk came or went
         done
     done
-    kill ${reader:-} ${sleeper:-} ${watcher:-} 2>/dev/null || :; bar_pid_drop
+    kill ${sleeper:-} 2>/dev/null || :
 }
-bar_pid_drop() { [ "$(cat "$BAR_PID" 2>/dev/null)" != "$$" ] || rm -f "$BAR_PID"; }   # the pid file goes with the loop that wrote it: a loop started since has its own pid in it
+bar_pid_drop() { _bpd=''; read -r _bpd 2>/dev/null < "$BAR_PID" || :; [ "$_bpd" != "$$" ] || rm -f "$BAR_PID"; }   # the pid file goes with the loop that wrote it: a loop started since has its own pid in it. No substitution: a trap runs it
 bar_font_follow() {   # BAR_TEXT=auto: the font follows the screen; _bff is the last sent
     wm_live && wm_here || return 0
     BAR_TEXT=$(bar_style BAR_TEXT auto); [ "$BAR_TEXT" = auto ] || { _bff=''; return 0; }   # a fixed size: already rendered

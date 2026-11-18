@@ -8664,31 +8664,21 @@ JSON
     pkill -P "$bp" 2>/dev/null || :; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :   # its own bar alone, by its parent: another suite's may run beside it
     [ "$(cat "$nlog" 2>/dev/null)" = '-a|spark-shell|-c|device.added|--|SanDisk Ultra plugged in|28.9 GB, not mounted|' ] && ! grep -q 'Elements\|drive plugged' "$nlog" \
         && ok "bar: a drive plugged in while it runs is said once, within its second's look; what was there at its start is not (#73)" || bad "drive notice" "$(cat "$nlog" 2>&1) $(head -c 300 "$H/bar.out")"
-    # the bar's redraw signals while the loop looks at the drives, under bash where there is one: the loop lives on. bash
-    # ends a shell under set -e when a trapped signal comes while it waits on a command that failed, the first of a pipeline
-    # too, whatever follows it, and grep says 1 at every look that finds no new drive: on a system whose sh is bash the loop
-    # ended in about two desktop proofs in five and was started again (v0.151)
-    # bash 5.2 has a fault of its own here: it runs a pending trap inside the parse of a command substitution
-    # (parse_command in eval.c; 5.3 does not), the trap's text then fails to parse ("trap: line 2: unexpected EOF while
-    # looking for matching `)'") and the shell ends with status 2. No failed wait is in it, and a run it ends proves
-    # nothing about ours, so that run is made again, three at most
+    # the bar's redraw signals while the lines are drawn, under bash where there is one: the loop lives on. Two faults ended
+    # it there. bash ends a shell under set -e when a trapped signal comes while it waits on a command that failed, the
+    # first of a pipeline too, whatever follows it, and grep says 1 at every look that finds no new drive (v0.151). And
+    # bash 5.2 runs a pending trap inside the parse of a command substitution, where the trap's text fails to parse
+    # ("trap: line 2: unexpected EOF while looking for matching `)'") and the shell ends with status 2 (v0.153). So the
+    # process that takes the signal draws nothing and waits on nothing that fails, and the one that draws holds no trap
     if command -v bash >/dev/null 2>&1; then
-        _bt=0; _bs=''
-        while [ "$_bt" -lt 3 ]; do
-            _bt=$((_bt + 1))
-            ( SPARK_SHELL_SYS=$S WAYLAND_DISPLAY=wayland-1 SPARK_SHELL_NO_CHIME=1 exec bash "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" ) & bp=$!
-            _i=0; while [ "$_i" -lt 120 ] && [ "$(grep -c '^\[{' "$H/bar.out" 2>/dev/null)" = 0 ]; do sleep 0.25; _i=$((_i + 1)); done
-            _i=0; while [ "$_i" -lt 800 ] && kill -USR1 "$bp" 2>/dev/null; do _i=$((_i + 1)); sleep 0.01; done
-            if kill -0 "$bp" 2>/dev/null; then _bs=lives
-            else _st=0; wait "$bp" 2>/dev/null || _st=$?; _bs="ended after $_i signals with status $_st ($(bash --version | head -1)); it said: $(tail -c 300 "$H/bar.err"); $(grep -c '^,\{0,1\}\[{' "$H/bar.out") lines written"; fi
-            pkill -P "$bp" 2>/dev/null || :; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
-            case $_bs in *'trap: line '*'unexpected EOF while looking for matching'*) ;; *) break ;; esac
-        done
-        case $_bs in
-            lives) ok "bar: under bash the loop lives through 800 redraw signals sent while it looks at the drives" ;;
-            *'trap: line '*'unexpected EOF while looking for matching'*) ok "bar: under bash 5.2 three runs in three ended on bash's own fault (a trap run inside a command substitution's parse), none on a failed wait" ;;
-            *) bad "bar loop under bash" "$_bs" ;;
-        esac
+        ( SPARK_SHELL_SYS=$S WAYLAND_DISPLAY=wayland-1 SPARK_SHELL_NO_CHIME=1 exec bash "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" ) & bp=$!
+        _i=0; while [ "$_i" -lt 120 ] && [ "$(grep -c '^\[{' "$H/bar.out" 2>/dev/null)" = 0 ]; do sleep 0.25; _i=$((_i + 1)); done
+        _bl0=$(grep -c '^,\{0,1\}\[{' "$H/bar.out")
+        _i=0; while [ "$_i" -lt 800 ] && kill -USR1 "$bp" 2>/dev/null; do _i=$((_i + 1)); sleep 0.01; done
+        _bl1=$(grep -c '^,\{0,1\}\[{' "$H/bar.out"); _bkids=$(pgrep -P "$bp" 2>/dev/null | wc -l | tr -d ' ')
+        if kill -0 "$bp" 2>/dev/null && [ "$_bl1" -gt "$((_bl0 + 3))" ] && [ "$_bkids" -ge 1 ]; then ok "bar: under bash the loop lives through 800 redraw signals and draws a line for them, in a process that holds no trap (v0.153)"
+        else _st=0; kill -0 "$bp" 2>/dev/null || { wait "$bp" 2>/dev/null || _st=$?; }; bad "bar loop under bash" "after $_i signals: status $_st ($(bash --version | head -1)); it said: $(tail -c 300 "$H/bar.err"); $_bl0 lines before, $_bl1 after, $_bkids children"; fi
+        pkill -P "$bp" 2>/dev/null || :; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
     fi
     # the power: what logind does, or the sudo rule of runit; the keys and the lid said, never changed
     # No lock is running in this fixture, even if the host is locked.

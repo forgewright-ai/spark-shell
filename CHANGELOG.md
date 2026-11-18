@@ -15,6 +15,12 @@
   and `spark-shell provide system`. `spark-shell on` takes the line
   named tools off spark's MCP list and puts system on it. What the
   section keeps moves to its new folder by itself.
+- The bar's status no longer depends on how bash treats a signal it
+  catches. The process that takes the redraw signal draws nothing, and
+  the lines are drawn by one that catches none. Two faults of bash
+  ended the status at a click or a turn of the wheel: the one of
+  v0.152, and one in bash 5.2, which is the sh of no system
+  spark-shell is proven on.
 
 ## v0.152.1
 
