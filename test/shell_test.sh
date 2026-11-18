@@ -589,7 +589,7 @@ rq() { jq -cn --argjson i "$1" --arg m "$2" --argjson p "${3:-null}" '{jsonrpc: 
 
 call() { rq "$1" tools/call "$(jq -cn --arg n "$2" --argjson a "${3:-"{}"}" '{name: $n, arguments: $a}')"; }   # call ID TOOL [ARGUMENTS] (a quoted {} default: /bin/sh leaves {\} as it is, and jq refused it)
 
-mcp() { _s=$1; shift; printf '%s\n' "$@" | sh "$SH" provide "$_s" > "$H/mcp.out" 2> "$H/mcp.err"; }   # mcp SECTION LINE... -> $H/mcp.out, its stderr apart
+mcp() { _s=$1; shift; printf '%s\n' "$@" | sh "$SH" provide "$_s" > "$H/mcp.out" 2> "$H/mcp.err" || { _ms=$?; printf '  provide %s ended %s: %s\n' "$_s" "$_ms" "$(tail -3 "$H/mcp.err" | tr '\n' ' ')"; return "$_ms"; }; }   # mcp SECTION LINE... -> $H/mcp.out, its stderr apart. A provider that ends badly says which, its status and its last words: the suite stops there (set -e), and a part that stops without a word cannot be read (the macOS row once, 2026-11-18)
 
 ans() { jq -c --argjson i "$1" 'select(.id == $i)' "$H/mcp.out"; }   # ans ID -> that answer
 
@@ -8641,7 +8641,7 @@ STUB
     # the notifications section: mako not there, not running, then running
     rq() { jq -cn --argjson i "$1" --arg m "$2" --argjson p "${3:-null}" '{jsonrpc: "2.0", id: $i, method: $m} + (if $p == null then {} else {params: $p} end)'; }
     call() { rq "$1" tools/call "$(jq -cn --arg n "$2" --argjson a "${3:-"{}"}" '{name: $n, arguments: $a}')"; }
-    mcp() { _s=$1; shift; printf '%s\n' "$@" | sh "$SH" provide "$_s" > "$H/mcp.out" 2> "$H/mcp.err"; }
+    mcp() { _s=$1; shift; printf '%s\n' "$@" | sh "$SH" provide "$_s" > "$H/mcp.out" 2> "$H/mcp.err" || { _ms=$?; printf '  provide %s ended %s: %s\n' "$_s" "$_ms" "$(tail -3 "$H/mcp.err" | tr '\n' ' ')"; return "$_ms"; }; }
     ans() { jq -c --argjson i "$1" 'select(.id == $i)' "$H/mcp.out"; }
     rows() { mcp "$1" "$(rq 1 resources/read "{\"uri\":\"spark-shell://$1/rows\"}")"; ans 1 | jq -r '.result.contents[0].text'; }
     out=$(env -u DBUS_SESSION_BUS_ADDRESS SPARK_SHELL_NO_MAKO=1 sh "$SH" panel notifications --list 2>&1 | sed -n 2p)   # a runner may have a mako of its own: the switch, never PATH
