@@ -124,15 +124,18 @@ sys=$(dirname "$(command -v uname)"):/usr/bin:/bin   # the system's tools alone;
 # sh test/shell_test.sh --parallel   every part at once, a process each, the
 #                                     logs printed whole as they end: CI's way
 # The parts are cut by time (section 19 in two, at the login screen), so the
-# longest takes a quarter of the whole; a section's state carries only to
-# the next section of the same part.
-PARTS="base console screen providers theme"
+# longest takes a quarter of the whole: four processors run seven parts in
+# about the time of the longest. A section's state carries only to the next
+# section of the same part.
+PARTS="base layout console screen bar providers theme"
 sections_of() {   # sections_of PART -- the sections a part holds
     case $1 in
-        base) echo "1 2 3 4 5 8 9 10 13 14 15 16 17 18" ;;
+        base) echo "1 2 3 4 5 8 9 10 13 14" ;;
+        layout) echo "15 16 17 18" ;;
         console) echo "19" ;;
         screen) echo "19b" ;;
-        providers) echo "20 21 22 22b 23" ;;
+        bar) echo "20" ;;
+        providers) echo "21 22 22b 23" ;;
         theme) echo "24 25" ;;
         *) return 1 ;;
     esac
@@ -6851,6 +6854,117 @@ _ci=$(grep -oE 'python3( -I)? test/[A-Za-z0-9_]+\.py' "$REPO/.github/workflows/c
 _gm=$(printf '%s\n' "$_ci" | while IFS= read -r _l; do printf '%s\n' "$_gl" | grep -qxF "$_l" || echo "$_l"; done)
 [ -n "$_ci" ] && [ -z "$_gm" ] && printf '%s\n' "$_gl" | grep -qx 'cargo fmt --check' && printf '%s\n' "$_gl" | grep -qx 'shellcheck' && grep -qx 'exec sh test/gate.sh --quick' "$REPO/.githooks/pre-push" \
     && ok "test/gate.sh (#155): every python3 test of ci.yml in its list, the lint and the dialog's checks too; the pre-push hook runs its quick part" || bad "gate list" "missing: $_gm; $_gl"
+# the lanes (test/lane.sh): the lane a change takes by what it touches, the one list ci.yml's plan job asks. The paths
+# a case names are read from this tree, as the list reads a module to see whether it acts as root
+_lb=''
+while IFS='|' read -r _lw _ll _lp; do
+    [ -n "$_lw" ] || continue
+    _lg=$(printf '%s\n' "$_lp" | tr ' ' '\n' | sh "$REPO/test/lane.sh" --paths --lines "$_ll" | sed -n 's/^lane=//p')
+    [ "$_lg" = "$_lw" ] || _lb="$_lb [$_lp, $_ll lines: $_lg, not $_lw]"
+done <<'CASES'
+fast|10|src/bar.sh
+fast|10|src/notes.sh src/home.sh
+fast|0|README.md CHANGELOG.md CREDITS.md config.example
+fast|0|test/shell_test.sh test/modules_check.py
+fast|400|src/bar.sh test/shell_test.sh CHANGELOG.md
+standard|401|src/bar.sh test/shell_test.sh CHANGELOG.md
+standard|10|src/config.sh
+standard|10|spark-shell
+standard|10|component/bar/src/app.rs
+standard|0|component/bar/bar.env
+standard|10|template/.config/sway/config
+standard|10|lib/home.py
+standard|10|lib/shim/xterm
+standard|10|test/bar_desktop_proof.py
+standard|10|test/desktop_proof.sh
+standard|10|test/winpad_build.sh
+standard|10|a/new/kind
+standard|10|src/GONE.sh
+standard|10|src/bar.sh spark-shell
+guarded|10|src/setup.sh
+guarded|10|src/dialog.sh
+guarded|10|src/console.sh
+guarded|10|src/login.sh
+guarded|10|src/packages.sh
+guarded|1|.github/workflows/ci.yml
+guarded|1|.github/workflows/release.yml
+guarded|1|.github/dependabot.yml
+guarded|1|.githooks/pre-push
+guarded|1|allowed-signers
+guarded|1|distro/void.env
+guarded|1|test/gate.sh
+guarded|1|test/lane.sh
+guarded|1|test/prove.sh
+guarded|10|src/bar.sh README.md src/login.sh spark-shell
+CASES
+[ -z "$_lb" ] && ok "test/lane.sh: a small fix in the user's side of the shell, the tests or the words is fast, to 400 lines; a component, a template, the entry, a proof, the config's module and a path it does not name are standard; the workflows, the hooks, the signers, the gate, on and off, the update and a module that acts as root are guarded, and guarded wins" || bad "lanes by path" "$_lb"
+# the jobs a lane asks for are ci.yml's own: the full list is every job but the four every run has, each of them asked
+# for by the plan in its own name, and green needs them all. A job added to ci.yml and not to the list fails here. A
+# job that waits for the pins spells out lint's result and theirs: with the builds skipped (the fast lane) the default,
+# every job before it passed, would skip it too
+_lci=$REPO/.github/workflows/ci.yml
+_lj=$(awk '/^jobs:/ { f = 1; next } f && /^  [a-z][a-z0-9-]*:$/ { sub(/^  /, ""); sub(/:$/, ""); print }' "$_lci")
+_lfull=$(sh "$REPO/test/lane.sh" --full | sed -n 's/^jobs=//p')
+_lfast=$(printf 'src/bar.sh\n' | sh "$REPO/test/lane.sh" --paths --lines 1 | sed -n 's/^jobs=//p')
+_lgn=$(awk '$0 == "  green:" { f = 1; next } f && /^    needs: / { print; exit }' "$_lci" | tr '[],' '   ')
+_lb=''
+[ "$(printf '%s\n' "$_lj" | grep -vx -e plan -e lint -e pins -e green | sort | tr '\n' ' ')" = "$(printf '%s\n' $_lfull | sort | tr '\n' ' ')" ] || _lb="$_lb [the full list is not ci.yml's jobs]"
+for _j in $_lfull; do
+    _blk=$(awk -v j="  $_j:" '$0 == j { f = 1; next } f && /^  [a-z][a-z0-9-]*:$/ { exit } f' "$_lci")
+    _lif="contains(format(' {0} ', needs.plan.outputs.jobs), ' $_j ')"
+    if printf '%s\n' "$_blk" | grep -q '^    needs: \[lint, plan, pins[],]'; then _lif="\${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && $_lif }}"
+    else printf '%s\n' "$_blk" | grep -q '^    needs: \[lint, plan[],]' || _lb="$_lb [$_j does not need the plan]"; fi
+    printf '%s\n' "$_blk" | grep -qxF "    if: $_lif" || _lb="$_lb [$_j is not asked for by the plan]"
+    case " $_lgn " in *" $_j "*) ;; *) _lb="$_lb [green does not need $_j]" ;; esac
+done
+for _j in $_lfast; do case " $_lfull " in *" $_j "*) ;; *) _lb="$_lb [the fast lane asks for $_j, which is no job]" ;; esac; done
+[ "$_lfast" = ' debian fedora ' ] || _lb="$_lb [the fast lane's jobs: $_lfast]"
+# the plan never asks the list in a push about itself, and main takes every job
+grep -qF "if grep -q '^\\.github/' \"\$RUNNER_TEMP/changed\" || grep -qxF test/lane.sh \"\$RUNNER_TEMP/changed\"; then" "$_lci" || _lb="$_lb [the plan asks a changed list about itself]"
+grep -qF '[ "$REF" = refs/heads/main ] || base=$(git merge-base origin/main HEAD' "$_lci" || _lb="$_lb [main is measured]"
+[ -z "$_lb" ] && ok "ci.yml: the full lane is every job, each asked for by the plan in its own name and needed by green; the fast lane is the suite on a dash row and a bash row; main takes every job, and a push that changes the workflows or the list too" || bad "lanes and ci.yml" "$_lb"
+# the change itself, read from git: a scratch repository with the list in it
+if command -v git >/dev/null 2>&1; then
+    _lr=$(tmpd); _lgit() { git -C "$_lr" -c user.name=t -c user.email=you@example.com -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
+    _lane() { sh "$_lr/test/lane.sh" "$@" | sed -n -e 's/^lane=//p' -e 's/^why=//p' | tr '\n' '|'; }
+    git init -q -b main "$_lr"; mkdir -p "$_lr/test" "$_lr/src" "$_lr/.github/workflows"
+    cp "$REPO/test/lane.sh" "$_lr/test/lane.sh"
+    printf 'a() { :; }\n' > "$_lr/src/PLAIN.sh"; printf 'b() { root_put a b; }\n' > "$_lr/src/ROOTS.sh"
+    echo 'on: push' > "$_lr/.github/workflows/X.yml"; echo words > "$_lr/README.md"
+    _lgit add -A; _lgit commit -q -m base
+    _lb=''
+    out=$(_lane); case $out in 'standard|no base to measure the change from|') ;; *) _lb="$_lb [no origin/main: $out]" ;; esac
+    _lgit update-ref refs/remotes/origin/main HEAD
+    out=$(_lane); case $out in 'fast|nothing changed|') ;; *) _lb="$_lb [nothing changed: $out]" ;; esac
+    echo 'c() { :; }' >> "$_lr/src/PLAIN.sh"; _lgit commit -q -a -m one
+    out=$(_lane); case $out in fast\|*' 1 lines|') ;; *) _lb="$_lb [one line of a plain module: $out]" ;; esac
+    i=0; while [ "$i" -lt 500 ]; do echo ": $i"; i=$((i + 1)); done > "$_lr/test/big.sh"; _lgit add -A; _lgit commit -q -m tests
+    out=$(_lane); case $out in fast\|*' 1 lines|') ;; *) _lb="$_lb [500 lines of tests count for nothing: $out]" ;; esac
+    i=0; while [ "$i" -lt 400 ]; do echo ": $i"; i=$((i + 1)); done >> "$_lr/src/PLAIN.sh"; _lgit commit -q -a -m large
+    out=$(_lane); case $out in 'standard|401 lines changed outside the tests and the changelog, more than 400|') ;; *) _lb="$_lb [401 lines: $out]" ;; esac
+    _lgit update-ref refs/remotes/origin/main HEAD
+    echo 'd() { root_try a b; }' >> "$_lr/src/PLAIN.sh"; _lgit commit -q -a -m root
+    out=$(_lane); case $out in 'guarded|src/PLAIN.sh|') ;; *) _lb="$_lb [a module that starts to act as root: $out]" ;; esac
+    out=$(_lane --base HEAD); case $out in 'fast|nothing changed|') ;; *) _lb="$_lb [--base HEAD: $out]" ;; esac
+    _lgit update-ref refs/remotes/origin/main HEAD
+    _lgit mv .github/workflows/X.yml test/X.yml; _lgit commit -q -m moved
+    out=$(_lane); case $out in 'guarded|.github/workflows/X.yml|') ;; *) _lb="$_lb [a workflow moved under test/: $out]" ;; esac
+    _lgit update-ref refs/remotes/origin/main HEAD
+    _lgit rm -q src/ROOTS.sh; _lgit commit -q -m gone
+    out=$(_lane); case $out in 'standard|src/ROOTS.sh|') ;; *) _lb="$_lb [a module taken out: $out]" ;; esac
+    out=$(_lane --base no-such-commit); case $out in 'standard|no base to measure the change from|') ;; *) _lb="$_lb [a base that is no commit: $out]" ;; esac
+    [ -z "$_lb" ] && ok "test/lane.sh on a change: measured from where the branch left origin/main; tests and the changelog count for no line; a module that starts to act as root is guarded, a workflow moved under test/ too, a module taken out is standard; no base to measure from takes every job" || bad "lanes by change" "$_lb"
+fi
+# test/prove.sh: the desktop job's proofs, each one, and a folder that is not its own is never removed
+_lb=''
+for _p in $(awk '/^  desktop:/ { f = 1; next } f && /^  [a-z][a-z0-9-]*:$/ { exit } f' "$_lci" | grep -oE 'test/[a-z_]+_proof\.(py|sh)' | sort -u); do
+    grep -qF "/$_p\"" "$REPO/test/prove.sh" || _lb="$_lb [$_p is not proven]"
+done
+_pd=$(tmpd); echo mine > "$_pd/kept"
+st=0; out=$(PROVE_DIR=$_pd sh "$REPO/test/prove.sh" 2>&1) || st=$?
+[ "$st" -eq 2 ] && [ "$(cat "$_pd/kept" 2>/dev/null)" = mine ] || _lb="$_lb [a folder not its own: st=$st $out]"
+[ "$(sh "$REPO/test/prove.sh" --list | grep -c '^proof ')" = 6 ] && sh "$REPO/test/prove.sh" --list | grep -qx 'suite as root' || _lb="$_lb [the steps: $(sh "$REPO/test/prove.sh" --list | tr '\n' ',')]"
+[ -z "$_lb" ] && ok "test/prove.sh: every proof of ci.yml's desktop job is in it, with the gate and the suite as you and as CI's root; a folder it did not make is not touched" || bad "prove" "$_lb"
 # the want verb: one entry for words, the plan as JSON, a file asked about
 cat > "$H/.local/bin/spark" <<'STUB'
 #!/bin/sh

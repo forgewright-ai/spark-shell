@@ -8,12 +8,26 @@
 # family's container, spark-shell on as a plain user, the rendered
 # config read by sway, a headless sway with a foot in it. The green job
 # needs them all: the one name a ruleset on main can require.
+#
+# Not every push runs them all. The plan job asks test/lane.sh, the one
+# list, what the change touches. A small fix in the user's side of the
+# shell, the tests or the words takes the fast lane: lint and the suite
+# on a dash row and a bash row. Anything else takes every job. main
+# takes every job at each landing, so a commit a release is cut from has
+# had them all. A run asked for by hand takes every job too, or the
+# lane of the change from a commit it names. A component whose binary
+# is not the one its pin names ends the run after the builds (pins).
 name: ci
 on:
   push:
     branches: ['**']   # never a tag: its commit ran already
   pull_request:
   workflow_dispatch:
+    inputs:
+      base:
+        description: 'Take the lane of the change from this commit to the head. Empty takes every job.'
+        required: false
+        default: ''
 permissions:
   contents: read
 # a newer push to the same branch or pull request cancels the older run;
@@ -22,6 +36,54 @@ concurrency:
   group: ci-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
+  plan:
+    # the lane this change takes, by what it touches (test/lane.sh, the one
+    # list): the jobs it asks for. main and a run asked for by hand take
+    # every job; a branch takes its lane's, measured from where it left
+    # main. A change to the workflows or to the list itself takes every
+    # job whatever the list says: the list in the push is the one that
+    # runs, so it is not asked about itself.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      lane: ${{ steps.lane.outputs.lane }}
+      jobs: ${{ steps.lane.outputs.jobs }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: the lane, by what the change touches
+        id: lane
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BASE_ASKED: ${{ github.event.inputs.base }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -eu
+          base=''
+          case $EVENT in
+              pull_request) base=$PR_BASE ;;
+              workflow_dispatch) base=$BASE_ASKED ;;
+              *) [ "$REF" = refs/heads/main ] || base=$(git merge-base origin/main HEAD 2>/dev/null || :) ;;
+          esac
+          if [ -z "$base" ]; then
+              sh test/lane.sh --full > "$RUNNER_TEMP/lane"
+          elif ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
+              echo "ci: $base is no commit here"; exit 1
+          else
+              git diff --no-renames --name-only "$base" HEAD > "$RUNNER_TEMP/changed"
+              if grep -q '^\.github/' "$RUNNER_TEMP/changed" || grep -qxF test/lane.sh "$RUNNER_TEMP/changed"; then
+                  sh test/lane.sh --full > "$RUNNER_TEMP/lane"
+                  echo "ci: the workflows or the list changed, so every job runs"
+              else
+                  sh test/lane.sh --base "$base" > "$RUNNER_TEMP/lane"
+              fi
+          fi
+          cat "$RUNNER_TEMP/lane"
+          grep -e '^lane=' -e '^jobs=' "$RUNNER_TEMP/lane" >> "$GITHUB_OUTPUT"
   lint:
     # the cheap checks first, on one runner, and every other job needs it:
     # a privacy, ASCII, shellcheck or workflow finding costs this minute,
@@ -61,7 +123,7 @@ jobs:
       - name: ascii docs
         run: |
           tab=$(printf '\t')
-          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell src/*.sh test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/bar_build.sh test/desktop_proof.sh test/dialog_pty.py lib/terminal.py test/terminal_test.py lib/saver.py test/saver_test.py lib/office.py test/office_test.py $(find template distro gallery/theme component/dialog/src component/dialog/tests component/wallpaper/src component/winpad/src component/bar/src -type f ! -name '*.txt' | sort) component/dialog/Cargo.toml component/dialog/deny.toml component/dialog/dialog.env component/dialog/rust-toolchain.toml component/wallpaper/Cargo.toml component/wallpaper/deny.toml component/wallpaper/wallpaper.env component/wallpaper/rust-toolchain.toml component/winpad/Cargo.toml component/winpad/deny.toml component/winpad/winpad.env component/winpad/rust-toolchain.toml component/bar/Cargo.toml component/bar/deny.toml component/bar/bar.env component/bar/rust-toolchain.toml; do
+          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell src/*.sh test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/bar_build.sh test/desktop_proof.sh test/lane.sh test/prove.sh test/dialog_pty.py lib/terminal.py test/terminal_test.py lib/saver.py test/saver_test.py lib/office.py test/office_test.py $(find template distro gallery/theme component/dialog/src component/dialog/tests component/wallpaper/src component/winpad/src component/bar/src -type f ! -name '*.txt' | sort) component/dialog/Cargo.toml component/dialog/deny.toml component/dialog/dialog.env component/dialog/rust-toolchain.toml component/wallpaper/Cargo.toml component/wallpaper/deny.toml component/wallpaper/wallpaper.env component/wallpaper/rust-toolchain.toml component/winpad/Cargo.toml component/winpad/deny.toml component/winpad/winpad.env component/winpad/rust-toolchain.toml component/bar/Cargo.toml component/bar/deny.toml component/bar/bar.env component/bar/rust-toolchain.toml; do
             if LC_ALL=C grep -n "[^ -~${tab}]" "$f"; then
               echo "non-ASCII in $f"; exit 1; fi; done
       - name: no hex color in a template (the look is the 16 slots)
@@ -83,7 +145,7 @@ jobs:
           tar -xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$RUNNER_TEMP"
           sudo install -m 755 "$RUNNER_TEMP/shellcheck-v0.11.0/shellcheck" /usr/local/bin/shellcheck
           shellcheck --version | sed -n '2p'
-          shellcheck -x -S warning -e SC1107 spark-shell lib/shim/xterm test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/bar_build.sh test/desktop_proof.sh test/wifi_proof.sh test/login_upgrade_proof.sh test/dhcp_proof.sh test/gate.sh test/semantic_measure.sh .githooks/pre-push
+          shellcheck -x -S warning -e SC1107 spark-shell lib/shim/xterm test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/bar_build.sh test/desktop_proof.sh test/wifi_proof.sh test/login_upgrade_proof.sh test/dhcp_proof.sh test/gate.sh test/lane.sh test/prove.sh test/semantic_measure.sh .githooks/pre-push
       - name: zizmor over .github/workflows
         # the workflows are code too: zizmor (pinned, in a venv of its own)
         # reads every file under .github/workflows; medium and above fail.
@@ -92,7 +154,8 @@ jobs:
           "$RUNNER_TEMP/zizmor/bin/pip" install --quiet zizmor==1.30.1
           "$RUNNER_TEMP/zizmor/bin/zizmor" --min-severity medium .github/workflows
   linux:
-    needs: lint
+    needs: [lint, plan, pins]
+    if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' linux ') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
     steps:
@@ -134,7 +197,8 @@ jobs:
   debian:
     # the same suite on Debian itself, where distro/debian.env's names are
     # looked up. The privacy and ascii gates ran once, on linux.
-    needs: lint
+    needs: [lint, plan, pins]
+    if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' debian ') }}
     runs-on: ubuntu-latest
     container: debian:13@sha256:9cc080028c43b27d2074d63a5f9caf7166d731494965616c1a6d2827a004585c   # a stable release: pinned, bump the digest with a point release
     timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
@@ -156,7 +220,8 @@ jobs:
     # the same suite on Ubuntu 26.04, where sudo is sudo-rs and the
     # coreutils are uutils' (all but cp, mv and rm): the runners are 24.04,
     # so this container is the one place spark-shell meets them (#107).
-    needs: lint
+    needs: [lint, plan, pins]
+    if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' ubuntu ') }}
     runs-on: ubuntu-latest
     container: ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c   # a stable release: pinned, bump the digest with a point release
     timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
@@ -181,7 +246,8 @@ jobs:
           python3 test/provider_acceptance.py
   arch:
     # the same suite where the tools come from pacman
-    needs: lint
+    needs: [lint, plan, pins]
+    if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' arch ') }}
     runs-on: ubuntu-latest
     container: archlinux:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Arch there is, and -Syu moves it to today anyway
     timeout-minutes: 20   # the full shell and native provider suites need time for cleanup too
@@ -203,7 +269,8 @@ jobs:
     # the third family: xbps (glibc), the desktop's names too. xbps itself
     # first: a rolling distro refuses every install while xbps is behind.
     # libstdc++ is the runner's node (checkout)
-    needs: lint
+    needs: [lint, plan, pins]
+    if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' void ') }}
     runs-on: ubuntu-latest
     container: ghcr.io/void-linux/void-glibc-full:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Void there is, and -Su moves it to today anyway
     timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
@@ -238,7 +305,8 @@ jobs:
   fedora:
     # the fourth family: dnf over rpm, the names of distro/fedora.env looked
     # up with repoquery (a provider counts, as rpm -q --whatprovides does)
-    needs: lint
+    needs: [lint, plan, pins]
+    if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' fedora ') }}
     runs-on: ubuntu-latest
     container: fedora:44@sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80   # a versioned release: pinned, bump the digest with the next Fedora
     timeout-minutes: 15
@@ -261,7 +329,8 @@ jobs:
     # looked up on Tumbleweed itself. libstdc++6 is the runner's node
     # (checkout); findutils: the image has no find, and the files provider
     # and the reminders' prune are find
-    needs: lint
+    needs: [lint, plan, pins]
+    if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' opensuse ') }}
     runs-on: ubuntu-latest
     container: opensuse/tumbleweed:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Tumbleweed there is, and zypper dup moves it to today anyway
     timeout-minutes: 15
@@ -288,7 +357,8 @@ jobs:
     # drawn in it in two palettes, the pictures kept for a look. No seat,
     # no GPU, no sound card: a proof of the install and the render, said
     # so; a screen is a machine's proof.
-    needs: [lint, winpad, ear, bar]   # the pad's, the ear's and the bar's builds, proven on each family's sway (test/winpad_desktop_proof.py, test/voice_desktop_proof.py, test/bar_desktop_proof.py)
+    needs: [lint, plan, pins, winpad, ear, bar]   # the pad's, the ear's and the bar's builds, proven on each family's sway (test/winpad_desktop_proof.py, test/voice_desktop_proof.py, test/bar_desktop_proof.py)
+    if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' desktop ') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -413,7 +483,8 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
   macos:
-    needs: lint
+    needs: [lint, plan, pins]
+    if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' macos ') }}
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
@@ -436,7 +507,8 @@ jobs:
     # bytes; the binary kept as an artifact. The dialog opens Wayland, cairo
     # and pango at run time for its own window, so it links glibc as the bar
     # does. The first build of a new one prints the sha256 to pin.
-    needs: lint
+    needs: [lint, plan]
+    if: contains(format(' {0} ', needs.plan.outputs.jobs), ' dialog-build ')
     runs-on: ubuntu-latest
     timeout-minutes: 25
     container: rust:1.99.1-slim-bookworm@sha256:24707e70a4f1e23d9a7b25202ec43126d28a52294b96aad5c670df1fd1f1d400
@@ -470,7 +542,8 @@ jobs:
     # renders in two palettes, the host against stub providers), the release
     # binary dialog-build made at a pty against spark-shell's own providers
     # with no network, and cargo-deny.
-    needs: [lint, dialog-build]
+    needs: [lint, plan, dialog-build]
+    if: contains(format(' {0} ', needs.plan.outputs.jobs), ' dialog ')
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -505,7 +578,8 @@ jobs:
     # in one pinned Debian 12 image (glibc 2.36, the oldest a supported
     # family runs), so the build is reproducible and release.yml builds
     # the same bytes; the binary kept as an artifact; cargo-deny.
-    needs: lint
+    needs: [lint, plan]
+    if: contains(format(' {0} ', needs.plan.outputs.jobs), ' wallpaper ')
     runs-on: ubuntu-latest
     timeout-minutes: 25
     container: rust:1.99.1-slim-bookworm@sha256:24707e70a4f1e23d9a7b25202ec43126d28a52294b96aad5c670df1fd1f1d400
@@ -540,7 +614,8 @@ jobs:
   wallpaper-deny:
     # cargo-deny over the wallpaper loop's crates (advisories, licences), on the
     # runner: the action is a container of its own
-    needs: lint
+    needs: [lint, plan]
+    if: contains(format(' {0} ', needs.plan.outputs.jobs), ' wallpaper-deny ')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -557,7 +632,8 @@ jobs:
     # Debian 12 image the wallpaper job uses, so the build is reproducible
     # and release.yml builds the same bytes; the binary kept as an
     # artifact. The first build of a new pad prints the sha256 to pin.
-    needs: lint
+    needs: [lint, plan]
+    if: contains(format(' {0} ', needs.plan.outputs.jobs), ' winpad ')
     runs-on: ubuntu-latest
     timeout-minutes: 25
     container: rust:1.99.1-slim-bookworm@sha256:24707e70a4f1e23d9a7b25202ec43126d28a52294b96aad5c670df1fd1f1d400
@@ -592,7 +668,8 @@ jobs:
   winpad-deny:
     # cargo-deny over the pad's crates (advisories, licences), on the
     # runner: the action is a container of its own
-    needs: lint
+    needs: [lint, plan]
+    if: contains(format(' {0} ', needs.plan.outputs.jobs), ' winpad-deny ')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -609,7 +686,8 @@ jobs:
     # Debian 12 image the pad job uses, so the build is reproducible
     # and release.yml builds the same bytes; the binary kept as an
     # artifact. The first build of a new ear prints the sha256 to pin.
-    needs: lint
+    needs: [lint, plan]
+    if: contains(format(' {0} ', needs.plan.outputs.jobs), ' ear ')
     runs-on: ubuntu-latest
     timeout-minutes: 25
     container: rust:1.99.1-slim-bookworm@sha256:24707e70a4f1e23d9a7b25202ec43126d28a52294b96aad5c670df1fd1f1d400
@@ -644,7 +722,8 @@ jobs:
   ear-deny:
     # cargo-deny over the ear's crates (advisories, licences), on the
     # runner: the action is a container of its own
-    needs: lint
+    needs: [lint, plan]
+    if: contains(format(' {0} ', needs.plan.outputs.jobs), ' ear-deny ')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -661,7 +740,8 @@ jobs:
     # Debian 12 image the pad job uses, so the build is reproducible
     # and release.yml builds the same bytes; the binary kept as an
     # artifact. The first build of a new bar prints the sha256 to pin.
-    needs: lint
+    needs: [lint, plan]
+    if: contains(format(' {0} ', needs.plan.outputs.jobs), ' bar ')
     runs-on: ubuntu-latest
     timeout-minutes: 25
     container: rust:1.99.1-slim-bookworm@sha256:24707e70a4f1e23d9a7b25202ec43126d28a52294b96aad5c670df1fd1f1d400
@@ -696,7 +776,8 @@ jobs:
   bar-deny:
     # cargo-deny over the bar's crates (advisories, licences), on the
     # runner: the action is a container of its own
-    needs: lint
+    needs: [lint, plan]
+    if: contains(format(' {0} ', needs.plan.outputs.jobs), ' bar-deny ')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -707,21 +788,48 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
         with:
           manifest-path: component/bar/Cargo.toml
-  green:
-    # the one name a ruleset on main can require: it needs every job above
-    # and fails when any of them failed, was cancelled or was skipped. A
-    # pull request from this repository's own branch is the one run whose
-    # jobs are all skipped on purpose, and green skips with them.
-    needs: [lint, linux, debian, ubuntu, arch, void, fedora, opensuse, desktop, macos, dialog-build, dialog, wallpaper, wallpaper-deny, winpad, winpad-deny, ear, ear-deny, bar, bar-deny]
+  pins:
+    # the builds' word before the long jobs start. A component whose binary is
+    # not the one its pin names fails its build job, and that job's last line
+    # is the pin to write: the run ends here, three minutes in, and no row
+    # runs for a tree that cannot be green. Builds the lane did not ask for
+    # are skipped, and pass. A job that needs this one spells out lint's
+    # result and this one's: in the fast lane the builds before it are
+    # skipped, and a job left to the default would skip with them.
+    needs: [dialog-build, wallpaper, winpad, ear, bar]
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: every job passed
+      - name: every build that ran is the binary its pin names
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
           case " $RESULTS " in
-              *" failure "*|*" cancelled "*|*" skipped "*) echo "ci: a job did not pass: $RESULTS"; exit 1 ;;
+              *" failure "*|*" cancelled "*) echo "ci: a build did not pass, or its pin is not written: $RESULTS"; exit 1 ;;
           esac
-          echo "ci: green ($RESULTS)"
+          echo "ci: the builds hold ($RESULTS)"
+  green:
+    # the one name a ruleset on main can require: it needs every job above.
+    # A job the plan asked for must have passed; one it did not ask for is
+    # skipped, and that is its pass. lint, plan and pins are asked of every
+    # run. A pull request from this repository's own branch is the one run
+    # whose jobs are all skipped on purpose, and green skips with them.
+    needs: [lint, plan, pins, linux, debian, ubuntu, arch, void, fedora, opensuse, desktop, macos, dialog-build, dialog, wallpaper, wallpaper-deny, winpad, winpad-deny, ear, ear-deny, bar, bar-deny]
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: every job the plan asked for passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          ASKED: ${{ needs.plan.outputs.jobs }}
+          LANE: ${{ needs.plan.outputs.lane }}
+        run: |
+          set -eu
+          bad=$(printf '%s' "$NEEDS" | jq -r --arg asked "$ASKED" '
+              to_entries[] | .key as $k | .value.result as $r
+              | (($k == "lint") or ($k == "plan") or ($k == "pins") or ((" " + $asked + " ") | contains(" " + $k + " "))) as $must
+              | if $r == "success" or ($r == "skipped" and ($must | not)) then empty else "\($k) \($r)" end')
+          if [ -n "$bad" ]; then echo "ci: a job did not pass:"; printf '%s\n' "$bad"; exit 1; fi
+          echo "ci: green, the ${LANE:-unknown} lane"
