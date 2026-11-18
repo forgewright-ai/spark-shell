@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.153.1
+
+- A write as root that fails ends `spark-shell on` or `off` there, with
+  a row that says what could not be written and why, in the system's
+  own words. It was said to have worked: where a file was being put
+  back, the copy kept of it was then removed, and the file as it was
+  before spark-shell was lost.
+- on's last lines then say the two ways on: `spark-shell on` again goes
+  on from there once that is fixed, and `spark-shell off` puts back
+  what spark-shell changed. off's last lines say that off again goes
+  on from there. Nothing is undone for you, and no question is asked.
+- The same last lines follow when on or off ends any other way: a step
+  with no row of its own, or Ctrl+C.
+- The rule that lets you restart and shut down from the dialog, and
+  the rule that lets you mount drives, each say their own row when
+  they cannot be written, and on goes on. They were said to be in
+  place. The console's colors are no longer said to be back when
+  their line at boot could not be removed.
+- `spark-shell off` removes nothing of yours. A render you changed
+  since, or a file of your own where a render stood, is kept beside it
+  by its time before the file from before spark-shell comes back.
+  `off --dry-run` has a keep row for it.
+- `off desktop` keeps its record of the groups it added for the
+  brightness while one of them could not be removed, so off desktop
+  again finds it.
+
 ## v0.153
 
 - Home lists nine places in two groups: apps, files, workspaces, notes
