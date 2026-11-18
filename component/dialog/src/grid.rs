@@ -199,31 +199,28 @@ impl Buffer {
         }
     }
 
-    /// Words written from a cell on, to the row's end at most: a symbol a cell, a wide one two (its second cell a
-    /// space again), what joins a character with it in its cell, and no control character. Where it ended.
+    /// Words written from a cell on, to the row's end at most: a character with all that joins it (an accent, a
+    /// selector, the parts of one emoji) in one cell, as wide as the text's own measure says (scrub::cells), a wide
+    /// one's second cell a space again, and no control character. Where it ended.
     pub fn set_string(&mut self, x: u16, y: u16, string: &str, style: Style) -> (u16, u16) {
-        use unicode_width::UnicodeWidthChar;
+        use unicode_segmentation::UnicodeSegmentation;
+        use unicode_width::UnicodeWidthStr;
         let mut x = x;
         let end = self.area.right();
-        let mut last: Option<u16> = None;
-        for c in string.chars() {
-            if c.is_control() {
-                continue;
-            }
-            let width = c.width().unwrap_or(0) as u16;
+        let mut symbol = String::new();
+        for cluster in string.graphemes(true) {
+            symbol.clear();
+            symbol.extend(cluster.chars().filter(|c| !c.is_control()));
+            // the cluster's width, not its characters' sum: a sign with its emoji selector is two cells, a family of
+            // four joined is two, and the layout counted them so
+            let width = symbol.width() as u16;
             if width == 0 {
-                // what joins the character before it (an accent, a selector) stays in that character's cell
-                if let Some(at) = last {
-                    self[(at, y)].symbol.push(c);
-                }
                 continue;
             }
             if x >= end || end - x < width {
                 break;
             }
-            let mut buf = [0u8; 4];
-            self[(x, y)].set_symbol(c.encode_utf8(&mut buf)).set_style(style);
-            last = Some(x);
+            self[(x, y)].set_symbol(&symbol).set_style(style);
             for k in 1..width {
                 self[(x + k, y)].reset();
             }
@@ -268,6 +265,31 @@ mod tests {
         let mut b = Buffer::empty(Rect::new(0, 0, 3, 1));
         assert_eq!(b.set_string(0, 0, "ab\u{754c}", Style::default()), (2, 0));
         assert_eq!(b[(2, 0)].symbol(), " ");
+    }
+
+    #[test]
+    fn words_take_the_cells_the_layout_counted_for_them() {
+        // the layout measures text with scrub::cells; the grid must end where that measure says, or every column
+        // after the text sits a cell off. A sign with its emoji selector is two cells, not the sign's one
+        let warn = "\u{26a0}\u{fe0f}";
+        let mut b = Buffer::empty(Rect::new(0, 0, 6, 1));
+        assert_eq!(b.set_string(0, 0, &format!("{warn}ok"), Style::default()), (4, 0));
+        let row: Vec<&str> = (0..5).map(|x| b[(x, 0)].symbol()).collect();
+        assert_eq!(row, [warn, " ", "o", "k", " "]);
+        for text in [
+            "plain words",
+            "\u{26a0}\u{fe0f} low battery",
+            "caf\u{65}\u{301}",
+            "\u{754c}\u{9762}.txt",
+            "\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467} family",
+            "\u{1f1e7}\u{1f1f7} flag",
+            "tab\there",
+        ] {
+            let mut b = Buffer::empty(Rect::new(0, 0, 40, 1));
+            let (end, _) = b.set_string(0, 0, text, Style::default());
+            let shown: String = text.chars().filter(|c| !c.is_control()).collect();
+            assert_eq!(end as usize, crate::scrub::cells(&shown), "{text:?}");
+        }
     }
 
     #[test]

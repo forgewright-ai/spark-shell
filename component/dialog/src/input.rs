@@ -98,6 +98,9 @@ pub fn key(sym: u32, text: Option<char>, mods: Mods, kind: KeyEventKind) -> Opti
             } else {
                 mods.held()
             };
+            // with one of them held the key is a binding's, and a binding names its Shift apart from its letter:
+            // the capital Caps Lock gives with no Shift held is the plain letter (Ctrl+q, never Ctrl+Shift+q)
+            let c = if !plain && !mods.shift && c.is_uppercase() { lower(c) } else { c };
             return Some(KeyEvent::new_with_kind(KeyCode::Char(c), held, kind));
         }
     };
@@ -106,6 +109,47 @@ pub fn key(sym: u32, text: Option<char>, mods: Mods, kind: KeyEventKind) -> Opti
         held |= KeyModifiers::SHIFT;
     }
     Some(KeyEvent::new_with_kind(code, held, kind))
+}
+
+/// The small letter of a capital, where it is one character.
+fn lower(c: char) -> char {
+    let mut small = c.to_lowercase();
+    match (small.next(), small.next()) {
+        (Some(l), None) => l,
+        _ => c,
+    }
+}
+
+/// The left button as the window knows it, for telling a drag from a move.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Held(bool);
+
+impl Held {
+    pub fn press(&mut self, left: bool) {
+        self.0 |= left;
+    }
+    pub fn release(&mut self, left: bool) {
+        self.0 &= !left;
+    }
+    /// The pointer left the window. A button let go after that is let go elsewhere, and the window never hears
+    /// it: home put away at the press that opened an app got no release, and every move after was a drag.
+    pub fn leave(&mut self) {
+        self.0 = false;
+    }
+    pub fn dragging(self) -> bool {
+        self.0
+    }
+}
+
+/// The scale the window draws at before the compositor names its own: the one every screen has, and 1 where
+/// they differ. The compositor says the window's scale only when it is not the 1 a surface starts with, so a
+/// guess above 1 on a screen of scale 1 would never be corrected.
+pub fn first_scale(screens: impl IntoIterator<Item = i32>) -> i32 {
+    let mut all = screens.into_iter().map(|s| s.max(1));
+    match all.next() {
+        Some(first) if all.all(|s| s == first) => first,
+        _ => 1,
+    }
 }
 
 /// The cell under a place in pixels, on a grid of `cols` by `rows` cells of `cw` by `ch` pixels: a place past
@@ -173,6 +217,54 @@ mod tests {
         assert_eq!((k.code, k.modifiers), (KeyCode::Char('A'), KeyModifiers::SHIFT));
         let k = press(0xe9, Some('\u{e9}'), NONE).unwrap();
         assert_eq!(k.code, KeyCode::Char('\u{e9}'), "a letter outside ASCII");
+    }
+
+    #[test]
+    fn caps_lock_leaves_a_bound_letter_its_plain_self() {
+        // Caps Lock on, Ctrl+Q: the layout names the capital, no Shift is held, and the binding is Ctrl+q
+        let keys = Bindings::default();
+        let k = press(0x51, Some('Q'), CTRL).unwrap();
+        assert_eq!((k.code, k.modifiers), (KeyCode::Char('q'), KeyModifiers::CONTROL));
+        assert_eq!(keys.action(k), Some(HintKey::Quit));
+        assert_eq!(keys.action(press(0x43, Some('C'), CTRL).unwrap()), Some(HintKey::CopyPath));
+        // Shift held is said, with Caps Lock (the layout names the small letter) and without
+        let both = Mods { shift: true, ..CTRL };
+        let k = press(0x71, Some('q'), both).unwrap();
+        assert_eq!((k.code, k.modifiers), (KeyCode::Char('q'), KeyModifiers::CONTROL | KeyModifiers::SHIFT));
+        let k = press(0x51, Some('Q'), both).unwrap();
+        assert_eq!((k.code, k.modifiers), (KeyCode::Char('Q'), KeyModifiers::CONTROL | KeyModifiers::SHIFT));
+        // typed with no such key held, Caps Lock's capital stays a capital
+        assert_eq!(press(0x51, Some('Q'), NONE).unwrap().code, KeyCode::Char('Q'));
+    }
+
+    #[test]
+    fn a_button_let_go_elsewhere_is_no_drag() {
+        let mut held = Held::default();
+        assert!(!held.dragging());
+        held.press(true);
+        assert!(held.dragging(), "the left button held: a move is a drag");
+        held.release(true);
+        assert!(!held.dragging());
+        // the press put the window away: the pointer leaves it, and the release goes to no window
+        held.press(true);
+        held.leave();
+        assert!(!held.dragging(), "back over the window, a move is a move");
+        // another button changes nothing
+        held.press(false);
+        assert!(!held.dragging());
+        held.press(true);
+        held.release(false);
+        assert!(held.dragging());
+    }
+
+    #[test]
+    fn the_first_scale_is_the_one_every_screen_has() {
+        assert_eq!(first_scale([2, 2]), 2, "every screen at 2: pictures made for it from the start");
+        assert_eq!(first_scale([1]), 1);
+        assert_eq!(first_scale([2, 1]), 1, "they differ: 1, the scale the compositor corrects from");
+        assert_eq!(first_scale([1, 2]), 1);
+        assert_eq!(first_scale([]), 1, "no screen known yet");
+        assert_eq!(first_scale([0]), 1);
     }
 
     #[test]

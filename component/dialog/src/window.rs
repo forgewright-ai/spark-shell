@@ -5,7 +5,7 @@
 //! the focus.
 
 use crate::draw::{Cell, Rgb, Step};
-use crate::input::{self, Wheel};
+use crate::input::{self, Held, Wheel};
 use crate::paint::{self, Font, Lib, Pixels};
 use crate::xkb::{Composed, Keyboard};
 use calloop::channel::{channel, Event as Msg, Sender};
@@ -33,10 +33,11 @@ use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shm::slot::SlotPool;
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{mpsc, Arc};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use wayland_client::globals::registry_queue_init;
+use wayland_client::protocol::wl_callback::{self, WlCallback};
 use wayland_client::protocol::wl_data_device::WlDataDevice;
 use wayland_client::protocol::wl_data_device_manager::DndAction;
 use wayland_client::protocol::wl_keyboard::{self, KeyState, WlKeyboard};
@@ -66,6 +67,8 @@ pub struct Setup {
 pub enum Out {
     /// A key, the pointer, the size in cells, the focus: as a terminal says them.
     Event(Event),
+    /// The frames handed over before `when_drawn` are with the compositor: the window is mapped with them on it.
+    Drawn,
     /// The window is gone: closed, or the compositor left.
     Gone,
 }
@@ -75,10 +78,13 @@ enum Cmd {
     Title(String),
     Pointer(&'static str),
     Paste(bool),
+    Drawn,
 }
 
 /// The most a paste brings: a megabyte of text.
 const PASTE_MOST: u64 = 1 << 20;
+/// How long a paste waits for the program that holds the text.
+const PASTE_WAIT: Duration = Duration::from_secs(5);
 /// The kinds of text a paste takes, the best first.
 const TEXT_KINDS: [&str; 5] = ["text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "TEXT", "STRING"];
 
@@ -119,6 +125,11 @@ impl Handle {
     pub fn paste(&self, primary: bool) {
         let _ = self.tx.send(Cmd::Paste(primary));
     }
+    /// Asks the window to say (Out::Drawn) when the frames handed over so far are with the compositor. A window
+    /// mapped unseen is shown on that word, never on a guess of how long a frame takes to paint.
+    pub fn when_drawn(&self) {
+        let _ = self.tx.send(Cmd::Drawn);
+    }
 }
 
 /// The window opened on a thread of its own. The error says what is missing: a library, the compositor, the font.
@@ -142,6 +153,15 @@ pub fn open(setup: Setup, send: impl Fn(Out) + Send + Sync + 'static) -> Result<
             let _ = ready_tx.send(Ok(state.font.cell));
             let signal = event_loop.get_signal();
             let _ = event_loop.run(None, &mut state, |s| {
+                // the frames that came in one turn are one paint: the last of them
+                if s.stale {
+                    s.draw();
+                }
+                if s.ask_drawn && s.committed {
+                    s.ask_drawn = false;
+                    // the compositor answers once it has taken everything sent before, that frame's commit with it
+                    s.conn.display().sync(&s.qh, Synced);
+                }
                 if s.stop {
                     signal.stop();
                 }
@@ -180,6 +200,8 @@ struct State {
     primary: Option<PrimarySelectionManagerState>,
     primary_device: Option<PrimarySelectionDevice>,
     handle: LoopHandle<'static, State>,
+    conn: Connection,
+    qh: QueueHandle<State>,
     window: Window,
     lib: Lib,
     font: Font,
@@ -195,6 +217,10 @@ struct State {
     configured: bool,
     /// The frame shown: drawn again when the size or the scale changes.
     frame: Option<(Vec<Step>, Rgb)>,
+    /// A frame came and is not painted yet; a frame is on the surface; the dialog's loop asked to hear of it.
+    stale: bool,
+    committed: bool,
+    ask_drawn: bool,
     kb: Keyboard,
     keyboard: Option<WlKeyboard>,
     /// A held key that repeats: its evdev code and its timer.
@@ -205,8 +231,10 @@ struct State {
     shape: Shape,
     /// The cell the pointer was last said at, the left button held, the wheel's scroll not yet a step.
     at: Option<(u16, u16)>,
-    left: bool,
+    held: Held,
     wheel: Wheel,
+    /// A paste is being read: one at a time, so a held Ctrl+V starts no second reader.
+    pasting: Arc<AtomicBool>,
     stop: bool,
 }
 
@@ -245,8 +273,9 @@ impl State {
             .insert_source(cmds, |msg, &mut (), s: &mut State| match msg {
                 Msg::Msg(Cmd::Frame(steps, ground)) => {
                     s.frame = Some((steps, ground));
-                    s.draw();
+                    s.stale = true;
                 }
+                Msg::Msg(Cmd::Drawn) => s.ask_drawn = true,
                 Msg::Msg(Cmd::Title(t)) => s.window.set_title(t),
                 Msg::Msg(Cmd::Pointer(name)) => {
                     s.shape = match name {
@@ -277,6 +306,8 @@ impl State {
             shm,
             pool,
             handle,
+            conn: conn.clone(),
+            qh: qh.clone(),
             window,
             lib,
             font,
@@ -288,6 +319,9 @@ impl State {
             shared,
             configured: false,
             frame: None,
+            stale: false,
+            committed: false,
+            ask_drawn: false,
             kb,
             keyboard: None,
             repeat: None,
@@ -295,17 +329,17 @@ impl State {
             pointer: None,
             shape: Shape::Default,
             at: None,
-            left: false,
+            held: Held::default(),
             wheel: Wheel::default(),
+            pasting: Arc::new(AtomicBool::new(false)),
             stop: false,
         };
-        // the screens' scales before the first frame: a picture is made for the screen's pixels from the start. The
-        // largest, where there are several; the compositor says the window's own once it is on a screen
+        // the screens' scale before the first frame: a picture is made for the screen's pixels from the start, where
+        // every screen has the same. The compositor says the window's own once it is on a screen
         for _ in 0..2 {
             queue.roundtrip(&mut state).map_err(|e| format!("the compositor: {e}"))?;
         }
-        let largest = state.outputs.outputs().filter_map(|o| state.outputs.info(&o)).map(|i| i.scale_factor).max();
-        state.scale = largest.unwrap_or(1).max(1);
+        state.scale = input::first_scale(state.outputs.outputs().filter_map(|o| state.outputs.info(&o)).map(|i| i.scale_factor));
         state.shared.store(state.scale, Ordering::Relaxed);
         WaylandSource::new(conn, queue)
             .insert(state.handle.clone())
@@ -320,6 +354,7 @@ impl State {
     /// The frame painted and shown, at the surface's size and the output's scale. Nothing before the compositor
     /// has answered the first commit, and nothing before the dialog's first frame: the window maps drawn.
     fn draw(&mut self) {
+        self.stale = false;
         if !self.configured {
             return;
         }
@@ -355,6 +390,7 @@ impl State {
         if buffer.attach_to(surface).is_ok() {
             surface.damage_buffer(0, 0, bw, bh);
             surface.commit();
+            self.committed = true;
         }
     }
 
@@ -387,11 +423,16 @@ impl State {
             offer.receive(kind).ok()
         };
         let Some(pipe) = pipe else { return };
-        let send = self.send.clone();
+        // one reader at a time: a paste asked for while one is read (the key held, a program slow to write) is not
+        // a second one, and its pipe closes here
+        if self.pasting.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let (send, pasting) = (self.send.clone(), self.pasting.clone());
         std::thread::spawn(move || {
-            use std::io::Read;
-            let mut bytes = Vec::new();
-            if pipe.take(PASTE_MOST).read_to_end(&mut bytes).is_ok() && !bytes.is_empty() {
+            let text = read_text(pipe, PASTE_MOST, PASTE_WAIT);
+            pasting.store(false, Ordering::SeqCst);
+            if let Some(bytes) = text.filter(|b| !b.is_empty()) {
                 send(Out::Event(Event::Paste(String::from_utf8_lossy(&bytes).into_owned())));
             }
         });
@@ -590,11 +631,12 @@ impl PointerHandler for State {
                         p.over = false;
                     }
                     self.at = None;
+                    self.held.leave();
                 }
                 // a motion is said when it reaches another cell, as a terminal says it
                 PointerEventKind::Motion { .. } if self.at != Some(at) => {
                     self.at = Some(at);
-                    let kind = if self.left {
+                    let kind = if self.held.dragging() {
                         MouseEventKind::Drag(MouseButton::Left)
                     } else {
                         MouseEventKind::Moved
@@ -603,7 +645,7 @@ impl PointerHandler for State {
                 }
                 PointerEventKind::Press { button, .. } => {
                     if let Some(b) = button_of(button) {
-                        self.left |= b == MouseButton::Left;
+                        self.held.press(b == MouseButton::Left);
                         self.mouse(MouseEventKind::Down(b), at);
                         // the middle button pastes what the pointer last selected, as in a terminal
                         if b == MouseButton::Middle {
@@ -613,7 +655,7 @@ impl PointerHandler for State {
                 }
                 PointerEventKind::Release { button, .. } => {
                     if let Some(b) = button_of(button) {
-                        self.left &= b != MouseButton::Left;
+                        self.held.release(b == MouseButton::Left);
                         self.mouse(MouseEventKind::Up(b), at);
                     }
                 }
@@ -660,6 +702,59 @@ impl PrimarySelectionDeviceHandler for State {
 impl ShmHandler for State {
     fn shm_state(&mut self) -> &mut Shm {
         &mut self.shm
+    }
+}
+
+/// The compositor's answer to a sync: it has taken every request sent before it.
+struct Synced;
+
+impl Dispatch2<WlCallback, State> for Synced {
+    fn event(&self, s: &mut State, _: &WlCallback, event: wl_callback::Event, _: &Connection, _: &QueueHandle<State>) {
+        if let wl_callback::Event::Done { .. } = event {
+            (s.send)(Out::Drawn);
+        }
+    }
+}
+
+/// The text a program writes into a pipe, read until it closes its end: `most` bytes at most. None when it has
+/// not closed within `wait`: a program that hangs holds no thread of the dialog's for good, and half a text is
+/// not pasted.
+fn read_text(mut pipe: impl std::io::Read + std::os::fd::AsFd, most: u64, wait: Duration) -> Option<Vec<u8>> {
+    use std::os::fd::AsRawFd;
+    let until = Instant::now() + wait;
+    let most = usize::try_from(most).unwrap_or(usize::MAX);
+    let mut bytes = Vec::new();
+    let mut part = [0u8; 16384];
+    loop {
+        if bytes.len() >= most {
+            return Some(bytes);
+        }
+        let left = until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return None;
+        }
+        let mut fds = [libc::pollfd {
+            fd: pipe.as_fd().as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        }];
+        // SAFETY: one pollfd, alive for the call, of a descriptor this function holds
+        let ready = unsafe { libc::poll(fds.as_mut_ptr(), 1, left.as_millis().min(i32::MAX as u128) as i32) };
+        if ready == 0 {
+            return None;
+        }
+        if ready < 0 {
+            if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            return None;
+        }
+        match pipe.read(&mut part) {
+            Ok(0) => return Some(bytes),
+            Ok(n) => bytes.extend_from_slice(&part[..n.min(most - bytes.len())]),
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::Interrupted | std::io::ErrorKind::WouldBlock) => continue,
+            Err(_) => return None,
+        }
     }
 }
 
@@ -723,5 +818,31 @@ mod tests {
         assert_eq!(text_kind(&kinds(&["STRING", "UTF8_STRING"])).as_deref(), Some("UTF8_STRING"));
         assert_eq!(text_kind(&kinds(&["image/png", "text/html"])), None, "a picture or a page is no text to type");
         assert_eq!(text_kind(&[]), None);
+    }
+
+    #[test]
+    fn a_paste_is_read_to_its_end_and_never_waited_for_for_good() {
+        use std::io::Write;
+        // the program writes its text and closes: all of it
+        let (r, mut w) = std::io::pipe().unwrap();
+        w.write_all(b"two words").unwrap();
+        drop(w);
+        assert_eq!(read_text(r, 1 << 20, Duration::from_secs(5)).as_deref(), Some(&b"two words"[..]));
+        // more than the most a paste brings: the most, at once, the program's end still open
+        let (r, mut w) = std::io::pipe().unwrap();
+        w.write_all(&[b'x'; 300]).unwrap();
+        assert_eq!(read_text(r, 100, Duration::from_secs(5)).map(|b| b.len()), Some(100));
+        drop(w);
+        // a program that wrote half and hangs: nothing, within the wait, and the reader is free again
+        let (r, mut w) = std::io::pipe().unwrap();
+        w.write_all(b"half").unwrap();
+        let before = Instant::now();
+        assert_eq!(read_text(r, 1 << 20, Duration::from_millis(150)), None);
+        assert!(before.elapsed() < Duration::from_secs(2), "the wait is the wait asked for");
+        drop(w);
+        // nothing to paste is an empty text, not a failure
+        let (r, w) = std::io::pipe().unwrap();
+        drop(w);
+        assert_eq!(read_text(r, 1 << 20, Duration::from_secs(5)).as_deref(), Some(&b""[..]));
     }
 }

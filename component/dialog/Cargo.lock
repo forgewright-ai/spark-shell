@@ -940,6 +940,7 @@ dependencies = [
  "ratatui",
  "serde_json",
  "smithay-client-toolkit",
+ "unicode-segmentation",
  "unicode-width",
  "wayland-backend",
  "wayland-client",

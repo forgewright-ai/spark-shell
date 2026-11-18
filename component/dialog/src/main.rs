@@ -37,6 +37,8 @@ enum Ev {
     Term(Event),
     /// The terminal is gone (its window closed): the dialog goes with it, and its providers.
     Gone,
+    /// The dialog's own window has its frames with the compositor: it is mapped, and can be shown.
+    Drawn,
     Mcp(Incoming),
     Tick,
     Helper(Helper, Result<String, String>),
@@ -149,6 +151,7 @@ fn open_window(font: &str, title: &str, tx: mpsc::Sender<Ev>) -> Result<Window, 
     open(setup, move |o| {
         let _ = tx.send(match o {
             Out::Event(e) => Ev::Term(e),
+            Out::Drawn => Ev::Drawn,
             Out::Gone => Ev::Gone,
         });
     })
@@ -488,6 +491,20 @@ fn reveal() {
     opacity(1, Duration::from_millis(25));
 }
 
+/// The same for either window. foot's is mapped before the dialog runs, so a moment's wait is enough. The
+/// dialog's own maps with its first frame, and how long that frame takes to paint is not known: the window says
+/// when the frame is with the compositor (Ev::Drawn), and it is shown then. Shown sooner, the command finds no
+/// window, and the one that maps after it stays unseen. `asked` holds when the window was asked.
+fn show(window: &Option<Window>, asked: &mut Option<Instant>) {
+    match window {
+        Some(w) => {
+            w.when_drawn();
+            *asked = Some(Instant::now());
+        }
+        None => reveal(),
+    }
+}
+
 /// The dialog's window made clear (0) or solid (1) on sway's own socket: clear while a step puts a window in
 /// front, so the click shows that window coming at once, solid again when the step comes back refused (#196).
 fn opacity(level: u8, after: Duration) {
@@ -707,6 +724,8 @@ fn main() {
     // nothing comes before the animation, no cursor and no empty surface (#167)
     // under sway, always: a dialog run elsewhere finds no window of that app id unseen, and nothing changes
     let mut unseen = std::env::var_os("SWAYSOCK").is_some();
+    // the dialog's own window asked to say when its frame is drawn, and not yet heard from
+    let mut drawn_asked: Option<Instant> = None;
     // the title last written to the terminal, where the window wears the band
     let mut window_title = String::new();
     let (mut drag_drawn, mut drag_owed) = (Instant::now(), false);
@@ -778,6 +797,7 @@ fn main() {
                 shown_icons.clear();
             }
             shown_preview = None;
+            win_preview = None; // a sound's picture wears the palette's tones: made again in the new ones
             dirty = true;
         }
         // the preferences read and the clock written once a second at most, never per event or pointer motion (#196)
@@ -951,7 +971,7 @@ fn main() {
                         shown_film = Some(((x, y, fw, fh), reel, shown));
                         // the opening's first frame is on the window: it is shown (#167)
                         if unseen {
-                            reveal();
+                            show(&window, &mut drawn_asked);
                             unseen = false;
                         }
                         film_due = Some(Duration::from_millis(left.clamp(1, 1000) as u64));
@@ -1014,7 +1034,7 @@ fn main() {
             let _ = out.flush();
             // with no opening to wait for (none chosen, or it never came), the first whole frame shows the window
             if unseen && !matches!(app.motion, Some((Reel::Open, _))) {
-                reveal();
+                show(&window, &mut drawn_asked);
                 unseen = false;
             }
             if app.hidden != cleared && !unseen {
@@ -1203,6 +1223,13 @@ fn main() {
         };
         match ev {
             Ev::Gone => app.quit = Some(129),
+            Ev::Drawn => {
+                // the window is mapped with its frame on it: shown, unless a step has cleared it since
+                drawn_asked = None;
+                if !cleared {
+                    opacity(1, Duration::ZERO);
+                }
+            }
             Ev::Films(f) => {
                 // the open plays from its start when it is still pending: the dialog opened on its home a moment ago and no
                 // key cut it (a letter typed lands at the prompt and cuts nothing, #138); else the rows show
@@ -1241,6 +1268,13 @@ fn main() {
                 if unseen && started.elapsed() >= Duration::from_millis(1500) {
                     reveal();
                     unseen = false;
+                }
+                // and one that never said its frame was drawn is shown as well
+                if drawn_asked.is_some_and(|t| t.elapsed() >= Duration::from_millis(1500)) {
+                    drawn_asked = None;
+                    if !cleared {
+                        opacity(1, Duration::ZERO);
+                    }
                 }
                 // an opening whose animation never came: the rows show (#138)
                 if films.is_none() && matches!(app.motion, Some((Reel::Open, _))) && started.elapsed() >= Duration::from_millis(1500) {
