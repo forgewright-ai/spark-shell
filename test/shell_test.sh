@@ -7462,7 +7462,7 @@ STUB
     # a server whose pid file a lost start overwrote: stop finds it by its socket; the dialog, whose --semantic names
     # the same socket, is never one
     "$E/llama.cpp-b10/llama-server" -m "$M" --host "$SOCK" & op=$!
-    sh -c 'sleep 60; :' sh --semantic "$SOCK" & dp=$!
+    sh -c 'sleep 60 & trap "kill $!" TERM; wait' sh --semantic "$SOCK" & dp=$!   # its sleep ends with it: killed alone, it left a sleep 60 behind the suite
     sleep 0.3; rm -f "$PIDF"; sh "$S" semantic stop
     gone "$op" && kill -0 "$dp" 2>/dev/null \
         && ok "semantic stop: a server with no pid file is found by its socket and stopped; the dialog, which only names the socket, is left alone" || bad "semantic stop orphan" "op=$op dp=$dp"
