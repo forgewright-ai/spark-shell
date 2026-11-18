@@ -55,6 +55,18 @@
   build.
 - The pad builds with libloading 0.9.1, and winpad.env pins that build.
 - The bar builds with libloading 0.9.1, and bar.env pins that build.
+- CI takes a change by what it touches. A fix of up to 400 lines in a
+  module that neither acts as root nor fetches, in the tests or in the
+  docs runs lint and the suite on Debian and Fedora. Anything else
+  runs every job, and main runs every job at each landing.
+  `sh test/lane.sh` names the lane.
+- A component whose pin is not written ends a CI run after the builds,
+  about three minutes in.
+- `sh test/prove.sh` proves a change before a push: the gate, the suite
+  as a user and as root the way CI's containers run it, and the
+  desktop's proofs, each in a home of its own with sudo refused.
+- Dependabot opens one pull request for a crate across the five
+  components.
 
 ## v0.152.1
 

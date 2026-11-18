@@ -108,7 +108,10 @@ lists every key with its default, and the commands write them.
     sh test/gate.sh
 
 `sh test/gate.sh` runs every check CI runs, on this machine; the
-pre-push hook runs `sh test/gate.sh --quick`. The suite,
+pre-push hook runs `sh test/gate.sh --quick`. `sh test/prove.sh` adds
+the suite as CI's containers run it and the desktop's proofs, each in
+a home of its own with sudo refused. `sh test/lane.sh` names the jobs
+CI runs for a change. The suite,
 `sh test/shell_test.sh`, runs in a throwaway HOME and never touches
 yours. Report a problem at
 https://github.com/forgewright-ai/spark-shell/issues.
