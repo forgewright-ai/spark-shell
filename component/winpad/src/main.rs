@@ -306,6 +306,10 @@ fn run(keys: bool) -> Result<(), String> {
     use wayland_client::{ConnectError, Connection};
 
     let cfg = config();
+    // before the lock, which says this pid to whoever sends the keys: a signal that came before it was taken into
+    // the loop would end the pad by its own action, and its keeper would take that for a crash. And before any
+    // thread starts: the threads inherit the blocked mask, so the signals reach this loop
+    let signals = Signals::new(&[Signal::SIGUSR1, Signal::SIGUSR2, Signal::SIGTERM, Signal::SIGINT]).map_err(|e| format!("signals: {e}"))?;
     let Some(_lock) = lock()? else { return Ok(()) };
     // the ground spark's mark stands on, the pad's own and the bar's: the dark S on a dark ground, the light one on a light one
     let byte = |v: f64| (v * 255.0).round().clamp(0.0, 255.0) as u8;
@@ -315,8 +319,6 @@ fn run(keys: bool) -> Result<(), String> {
         return Err("libwayland-client.so.0 is missing (Wayland's client library)".into());
     }
     let lib = spark_winpad::paint::Lib::open()?;
-    // before any thread starts: the threads inherit the blocked mask, so the signals reach this loop
-    let signals = Signals::new(&[Signal::SIGUSR1, Signal::SIGUSR2, Signal::SIGTERM, Signal::SIGINT]).map_err(|e| format!("signals: {e}"))?;
     let conn = Connection::connect_to_env().map_err(|e| match e {
         ConnectError::NoWaylandLib => "libwayland-client.so.0 is missing (Wayland's client library)".to_string(),
         ConnectError::NoCompositor => "no Wayland compositor here (WAYLAND_DISPLAY)".to_string(),

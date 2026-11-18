@@ -68,16 +68,16 @@ impl Ipc {
     }
 
     pub fn request(&mut self, kind: u32, payload: &str) -> io::Result<Value> {
-        self.s.write_all(&frame(kind, payload.as_bytes()))?;
-        let mut head = [0u8; 14];
-        self.s.read_exact(&mut head)?;
-        if &head[..6] != MAGIC {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "sway answered something else"));
+        let answer = exchange(&mut self.s, kind, payload);
+        if answer.is_err() {
+            // a request that failed (sway slow past the wait) may still be answered: left on this connection, that
+            // answer would be read as the next request's, and every one after it would be one behind. What comes
+            // after asks on a connection of its own
+            if let Ok(s) = socket() {
+                self.s = s;
+            }
         }
-        let len = u32::from_ne_bytes(head[6..10].try_into().unwrap()) as usize;
-        let mut body = vec![0u8; len];
-        self.s.read_exact(&mut body)?;
-        serde_json::from_slice(&body).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        answer
     }
 
     /// Every output's workspaces, as sway lists them.
@@ -101,6 +101,25 @@ impl Ipc {
     }
 }
 
+/// One request and its answer on a connection. sway answers with the request's own type: an answer of another
+/// type is not this request's.
+fn exchange(s: &mut (impl Read + Write), kind: u32, payload: &str) -> io::Result<Value> {
+    s.write_all(&frame(kind, payload.as_bytes()))?;
+    let mut head = [0u8; 14];
+    s.read_exact(&mut head)?;
+    if &head[..6] != MAGIC {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "sway answered something else"));
+    }
+    let len = u32::from_ne_bytes(head[6..10].try_into().unwrap()) as usize;
+    let got = u32::from_ne_bytes(head[10..14].try_into().unwrap());
+    let mut body = vec![0u8; len];
+    s.read_exact(&mut body)?;
+    if got != kind {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "sway answered another request"));
+    }
+    serde_json::from_slice(&body).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+}
+
 /// A connection that hears sway's events of those kinds: non-blocking, for the event loop.
 pub fn subscribe(kinds: &[&str]) -> io::Result<UnixStream> {
     let mut s = socket()?;
@@ -121,6 +140,20 @@ pub fn subscribe(kinds: &[&str]) -> io::Result<UnixStream> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_answer_to_another_request_is_no_answer() {
+        // sway answered the request before this one late: its answer waits on the connection, and is not taken for
+        // this request's
+        let (mut ours, mut sways) = UnixStream::pair().unwrap();
+        sways.write_all(&frame(GET_OUTPUTS, br#"[{"success":true}]"#)).unwrap();
+        let e = exchange(&mut ours, GET_WORKSPACES, "").unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::InvalidData);
+        // its own answer is read whole
+        let (mut ours, mut sways) = UnixStream::pair().unwrap();
+        sways.write_all(&frame(GET_WORKSPACES, br#"{"nodes":[]}"#)).unwrap();
+        assert_eq!(exchange(&mut ours, GET_WORKSPACES, "").unwrap(), serde_json::json!({"nodes": []}));
+    }
 
     #[test]
     fn frames_split_whole_and_keep_a_partial_one() {

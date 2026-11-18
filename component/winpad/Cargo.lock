@@ -343,7 +343,7 @@ dependencies = [
 
 [[package]]
 name = "spark-winpad"
-version = "0.150.0"
+version = "0.153.0"
 dependencies = [
  "calloop",
  "libc",

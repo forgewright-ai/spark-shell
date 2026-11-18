@@ -224,6 +224,9 @@ fn safe(name: &str) -> String {
             '>' => "&gt;".to_string(),
             '"' => "&quot;".to_string(),
             '\\' => "\\\\".to_string(),
+            // sway puts a window's own words where a title_format says %title, %app_id, %shell: a percent sign in
+            // a name is written as its reference, which sway does not read and pango draws as the sign
+            '%' => "&#37;".to_string(),
             c => c.to_string(),
         })
         .collect()
@@ -292,7 +295,9 @@ fn meets(a: Rect, b: Rect) -> bool {
 /// The title bands on each screen's current workspace, the tiled windows first and the floating ones in
 /// their stacking order: each view with a title bar, its band placed by its parent's rect as sway gives
 /// it, in the screen's own pixels. A workspace with a view in full screen has none, and a band whose
-/// glyphs lie under a window above it is left out. `cell` is the width of one character of the title.
+/// glyphs lie under a floating window above it is left out: a tiled window lies over no other, and the tabs
+/// of one container, which sway gives one rect, lie over none of their own. `cell` is the width of one
+/// character of the title.
 pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
     struct Seen {
         band: Rect,
@@ -303,12 +308,15 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
         focused: bool,
         urgent: bool,
         full: bool,
+        /// The floating container it is in, by its id; none for a tiled window.
+        afloat: Option<i64>,
     }
-    fn walk(n: &Value, at: Rect, out: &mut Vec<Seen>) {
+    fn walk(n: &Value, at: Rect, afloat: Option<i64>, out: &mut Vec<Seen>) {
         let r = rect_of(&n["rect"]);
         if kids(n).next().is_some() {
             for k in kids(n) {
-                walk(k, r, out);
+                let afloat = if k["type"] == "floating_con" { k["id"].as_i64() } else { afloat };
+                walk(k, r, afloat, out);
             }
             return;
         }
@@ -328,9 +336,11 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
             focused: n["focused"] == true,
             urgent: n["urgent"] == true,
             full: num(&n["fullscreen_mode"]) != 0,
+            afloat,
         });
     }
     let mut out: Vec<Band> = vec![];
+    let mut afloat: Vec<Option<i64>> = vec![];
     for o in tree["nodes"].as_array().into_iter().flatten() {
         let name = o["name"].as_str().unwrap_or("");
         if o["type"] != "output" || name == "__i3" {
@@ -347,12 +357,13 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
             continue;
         };
         let mut seen = vec![];
-        walk(ws, rect_of(&ws["rect"]), &mut seen);
+        walk(ws, rect_of(&ws["rect"]), None, &mut seen);
         if seen.iter().any(|s| s.full) {
             continue;
         }
         let shift = |r: Rect| Rect::new(r.x - orect.x, r.y - orect.y, r.w, r.h);
         for s in seen.into_iter().filter(|s| s.band.h > 0 && s.band.w > 0) {
+            afloat.push(s.afloat);
             out.push(Band {
                 id: s.id,
                 output: name.to_string(),
@@ -369,7 +380,8 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
         .map(|i| {
             let [a, _, b, _] = glyph_cells(out[i].rect, cell);
             let zone = Rect::new(a.x, a.y, b.x + b.w - a.x, a.h);
-            !out[i + 1..].iter().any(|o| o.output == out[i].output && meets(zone, o.whole))
+            // what lies over a band: a floating container that is not the band's own, later in the stacking order
+            !(i + 1..out.len()).any(|j| afloat[j].is_some() && afloat[j] != afloat[i] && out[j].output == out[i].output && meets(zone, out[j].whole))
         })
         .collect();
     out.into_iter().zip(keep).filter_map(|(b, k)| k.then_some(b)).collect()
@@ -416,6 +428,42 @@ mod tests {
         assert_eq!(glyph_at(b[0].rect, 10.0, 120.0, 50.0, true), Some(Glyph::Mic));
         assert_eq!(glyph_at(b[0].rect, 10.0, 150.0, 50.0, true), None);
         assert_eq!(GLYPHS.chars().count(), 9);
+    }
+
+    /// Four windows in one tabbed container, as sway 1.12 gives them: one rect for all, and each its own tab.
+    fn tabs(over: Option<i64>) -> Value {
+        let tab = |id: i64, x: i64, focused: bool| {
+            serde_json::json!({"type": "con", "id": id, "pid": id, "name": format!("tab {id}"), "app_id": "foot", "focused": focused, "urgent": false, "fullscreen_mode": 0,
+                "rect": {"x": 16, "y": 80, "width": 1888, "height": 984}, "deco_rect": {"x": x, "y": 0, "width": 472, "height": 28}})
+        };
+        // a floating window whose title lies over the buttons of the tab at `over`
+        let floats = over.map_or(serde_json::json!([]), |x| {
+            serde_json::json!([{"type": "floating_con", "id": 20, "pid": 20, "name": "over", "app_id": "foot", "focused": false, "urgent": false, "fullscreen_mode": 0,
+                "rect": {"x": 16 + x, "y": 88, "width": 300, "height": 200}, "deco_rect": {"x": x, "y": 8, "width": 300, "height": 28}}])
+        });
+        serde_json::json!({"type": "root", "nodes": [{"type": "output", "name": "DP-1", "id": 3, "current_workspace": "1", "rect": {"x": 0, "y": 0, "width": 1920, "height": 1080},
+            "nodes": [{"type": "workspace", "name": "1", "id": 4, "rect": {"x": 16, "y": 52, "width": 1888, "height": 1012},
+                "nodes": [{"type": "con", "id": 11, "layout": "tabbed", "rect": {"x": 16, "y": 52, "width": 1888, "height": 1012}, "deco_rect": {"x": 0, "y": 0, "width": 0, "height": 0},
+                    "nodes": [tab(5, 0, false), tab(8, 472, false), tab(9, 944, false), tab(10, 1416, true)]}],
+                "floating_nodes": floats}]}]})
+    }
+
+    #[test]
+    fn every_tab_of_a_container_keeps_its_band() {
+        // sway gives the tabs one rect, the container's: a later tab lies over no earlier tab's buttons
+        let b = bands(&tabs(None), 10.0);
+        assert_eq!(b.iter().map(|b| b.id).collect::<Vec<_>>(), [5, 8, 9, 10]);
+        assert_eq!(b[1].rect, Rect::new(488, 52, 472, 28));
+        // a floating window over the second tab's buttons hides that band alone
+        let b = bands(&tabs(Some(472)), 10.0);
+        assert_eq!(b.iter().map(|b| b.id).collect::<Vec<_>>(), [5, 9, 10, 20]);
+    }
+
+    #[test]
+    fn a_percent_sign_in_a_name_is_no_word_of_sways() {
+        // sway reads %title, %app_id, %shell in a title_format: a name that holds one is written so it reads none
+        assert_eq!(safe("printf %shell and %title"), "printf &#37;shell and &#37;title");
+        assert_eq!(cells(&safe("100%")), 4, "the reference is one cell, as the sign is");
     }
 
     fn a_style(half: Option<&str>) -> Style {

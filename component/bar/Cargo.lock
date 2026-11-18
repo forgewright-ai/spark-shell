@@ -343,7 +343,7 @@ dependencies = [
 
 [[package]]
 name = "spark-bar"
-version = "0.151.0"
+version = "0.153.0"
 dependencies = [
  "calloop",
  "libc",

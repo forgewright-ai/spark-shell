@@ -197,6 +197,9 @@ struct Held {
     /// The copy of the bar that follows the pointer while it is dragged, and the row its top stands at. The press's
     /// own too.
     copy: Option<(LayerSurface, i32)>,
+    /// The compositor has answered the copy's first commit: a frame handed to it before that is a protocol
+    /// error, and the compositor ends the bar for it.
+    copy_ready: bool,
 }
 
 /// The layer shell's anchor for an edge of the screen.
@@ -880,7 +883,15 @@ impl App {
 
     /// The copy of a dragged bar drawn: the bar's own frame, as it is now.
     fn draw_copy(&mut self) {
-        let Some(oi) = self.pointer.as_ref().and_then(|p| p.held.as_ref()).filter(|h| h.copy.is_some()).map(|h| h.out) else {
+        // not before its first configure: a line of the status, or the pointer's own move, can ask for a frame in
+        // the moment between the copy's making and the compositor's answer
+        let Some(oi) = self
+            .pointer
+            .as_ref()
+            .and_then(|p| p.held.as_ref())
+            .filter(|h| h.copy.is_some() && h.copy_ready)
+            .map(|h| h.out)
+        else {
             return;
         };
         let scale = self.outs.get(oi).map_or(1, |o| o.scale.max(1));
@@ -1116,6 +1127,9 @@ impl LayerShellHandler for App {
             .and_then(|h| h.copy.as_ref())
             .is_some_and(|(l, _)| l == layer)
         {
+            if let Some(held) = self.pointer.as_mut().and_then(|p| p.held.as_mut()) {
+                held.copy_ready = true;
+            }
             self.draw_copy();
             return;
         }
@@ -1319,6 +1333,10 @@ impl PointerHandler for App {
                         BTN_RIGHT => 3,
                         _ => continue,
                     };
+                    // the bar is being dragged: another button pressed acts on nothing
+                    if self.pointer.as_ref().and_then(|p| p.held.as_ref()).is_some_and(|h| h.drag) {
+                        continue;
+                    }
                     if button == 1 && self.outs[oi].layout.hit(ev.position.0, ev.position.1).is_none() {
                         if let Some(p) = self.pointer.as_mut() {
                             p.held = Some(Held {
@@ -1327,6 +1345,7 @@ impl PointerHandler for App {
                                 drag: false,
                                 guide: None,
                                 copy: None,
+                                copy_ready: false,
                             });
                         }
                     }
@@ -1342,7 +1361,12 @@ impl PointerHandler for App {
                         self.press(oi, ev.position, if steps < 0.0 { 4 } else { 5 });
                     }
                 }
-                PointerEventKind::Release { .. } => {
+                // the left button let go ends its hold; another button's release, with the left still down, does not
+                // drop the bar
+                PointerEventKind::Release { button, .. } => {
+                    if button != BTN_LEFT {
+                        continue;
+                    }
                     let Some(held) = self.pointer.as_mut().and_then(|p| p.held.take()) else {
                         continue;
                     };

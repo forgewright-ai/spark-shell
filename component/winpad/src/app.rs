@@ -1006,7 +1006,10 @@ impl App {
             .and_then(|f| std::fs::read_to_string(f).ok())
             .and_then(|s| s.trim().parse::<i32>().ok())
         {
-            if pid > 1 {
+            // the file outlives a crash and a restart of the machine: by then its pid is another program's, and the
+            // signal's own action would end that program. Sent only to a process that is the status loop still
+            let is_loop = std::fs::read(format!("/proc/{pid}/cmdline")).is_ok_and(|c| is_status_loop(&c));
+            if pid > 1 && is_loop {
                 unsafe {
                     libc::kill(pid, libc::SIGUSR1);
                 }
@@ -2013,6 +2016,10 @@ impl OutputHandler for App {
         self.press = None;
         self.drag = None;
         self.list = None;
+        // the keys were on the screen that went: given back, and a pad shown only for them goes again
+        if self.keys.as_ref().is_some_and(|k| !self.outs.iter().any(|o| o.name == k.out)) {
+            self.keys_off();
+        }
         self.refit();
     }
 }
@@ -2152,3 +2159,25 @@ impl ProvidesRegistryState for App {
 
 delegate_registry!(App);
 delegate_dispatch2!(App);
+/// Whether a process's command line (as /proc gives it, its words ended by NUL) is the bar's status loop:
+/// `spark-shell bar status`, under whatever sh runs it.
+pub fn is_status_loop(cmdline: &[u8]) -> bool {
+    let words: Vec<&[u8]> = cmdline.split(|b| *b == 0).collect();
+    words.windows(2).any(|w| w[0] == b"bar" && w[1] == b"status")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_status_loop_is_signalled() {
+        assert!(is_status_loop(b"sh\0/home/ada/.spark-shell/spark-shell\0bar\0status\0"));
+        assert!(is_status_loop(b"/bin/bash\0/opt/spark-shell/spark-shell\0bar\0status\0"));
+        // the pid the file names is another program's by now: a terminal, a browser, the bar's own start
+        assert!(!is_status_loop(b"foot\0--app-id\0spark-shell\0"));
+        assert!(!is_status_loop(b"sh\0/home/ada/.spark-shell/spark-shell\0bar\0start\0"));
+        assert!(!is_status_loop(b"vim\0bar status\0"));
+        assert!(!is_status_loop(b""));
+    }
+}
