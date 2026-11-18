@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.153
+
+- Home lists nine places in two groups: apps, files, workspaces, notes
+  and calendar; then settings, system, help and power.
+- workspace is named workspaces: it lists them all.
+- tools is named system, the name this place has on other desktops.
+  Its rows are check, space, running, details, updates and software.
+  details is the row that was named system.
+- about is the last row of system and no longer a place of home.
+- In settings, the group that was named system is two: power (power,
+  battery) and spark (talk, connections).
+- The section's name is system everywhere: `spark-shell panel system`
+  and `spark-shell provide system`. `spark-shell on` takes the line
+  named tools off spark's MCP list and puts system on it. What the
+  section keeps moves to its new folder by itself.
+
 ## v0.152.1
 
 - `spark-shell update` moves a Linux install on v0.151 or before again.
