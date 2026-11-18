@@ -21,6 +21,36 @@
   ended the status at a click or a turn of the wheel: the one of
   v0.152, and one in bash 5.2, which is the sh of no system
   spark-shell is proven on.
+- Home is shown when its frame is drawn. With no opening animation, a
+  first frame slow to paint left home open and not shown: it was shown
+  before its window was there. The window now says when its frame is
+  with the compositor.
+- In a tabbed container every tab's buttons act. Only the last tab's
+  did; a click on another tab's button focused the tab.
+- The redraw signal goes to the bar's status alone. The pid kept in
+  the bar's file outlives a crash and a restart of the machine, and a
+  change that redraws the bar sent the signal to whatever program had
+  that pid by then, which ended it. The pad sent it the same way.
+- With Caps Lock on, the keys with Ctrl work in home.
+- On two screens of different scale, home is painted at the scale of
+  the screen it is on.
+- After a click that opens an app, the pointer's moves over home are
+  moves again, not a drag.
+- A name with an emoji sign in it no longer puts the rest of its row
+  one cell off.
+- A paste waits five seconds for the program that holds the text, and
+  a held Ctrl+V starts one read.
+- A sound's picture takes the new look's tones when the look changes
+  while it is open.
+- One slow answer from sway no longer leaves the pad and the bar
+  reading each later answer one request late.
+- A percent sign in a window's name is shown as written: sway read
+  %title and its like inside the name.
+- The pad takes its key signals from its first moment, and gives the
+  keys back when their screen goes.
+- The bar draws its dragged copy once the compositor has answered for
+  it, and a second button pressed while the bar is dragged does not
+  drop it.
 
 ## v0.152.1
 
