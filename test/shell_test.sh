@@ -27,7 +27,8 @@ tmpd() { _td=$(mktemp -d) && printf '%s\n' "$_td" >> "$TMPDIRS" && printf '%s\n'
 # the suite's own exit status kept: under set -e a command of the trap that failed (a chmod in a tree a test left) ended
 # the suite with 1 after 0 failed
 _rc=0   # set again inside the trap; named here so shellcheck sees it
-trap '_rc=$?; while IFS= read -r _td; do [ -z "$_td" ] || { chmod -R u+rwX "$_td" 2>/dev/null || :; rm -rf "$_td" 2>/dev/null || :; }; done < "$TMPDIRS" || :; rm -f "$TMPDIRS" || :; exit "$_rc"' EXIT
+_ended=1   # empty while a run holds sections: one that stops before its last line (set -e, a command no test guards) says so, with the status, in place of ending without a word
+trap '_rc=$?; [ -n "$_ended" ] || printf "  FAIL the suite stopped before its end   status %s, at the command after the last line above\n" "$_rc"; while IFS= read -r _td; do [ -z "$_td" ] || { chmod -R u+rwX "$_td" 2>/dev/null || :; rm -rf "$_td" 2>/dev/null || :; }; done < "$TMPDIRS" || :; rm -f "$TMPDIRS" || :; exit "$_rc"' EXIT
 # never the person's own session: a test that notifies, locks or asks a compositor must reach none of it,
 # whatever the shell that started the suite carries
 unset WAYLAND_DISPLAY SWAYSOCK I3SOCK DISPLAY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR
@@ -126,16 +127,21 @@ sys=$(dirname "$(command -v uname)"):/usr/bin:/bin   # the system's tools alone;
 # The parts are cut by time (section 19 in two, at the login screen), so the
 # longest takes a quarter of the whole: four processors run seven parts in
 # about the time of the longest. A section's state carries only to the next
-# section of the same part.
+# section of the same part. A Mac's runner has three processors, and five
+# processes at once is what it ran well: seven made a test that waits on a
+# process end the suite there, twice in three runs. Two pairs share one.
 PARTS="base layout console screen bar providers theme"
+[ "$(uname -s)" != Darwin ] || PARTS="base+layout console screen bar+providers theme"
 sections_of() {   # sections_of PART -- the sections a part holds
     case $1 in
         base) echo "1 2 3 4 5 8 9 10 13 14" ;;
         layout) echo "15 16 17 18" ;;
+        base+layout) echo "1 2 3 4 5 8 9 10 13 14 15 16 17 18" ;;
         console) echo "19" ;;
         screen) echo "19b" ;;
         bar) echo "20" ;;
         providers) echo "21 22 22b 23" ;;
+        bar+providers) echo "20 21 22 22b 23" ;;
         theme) echo "24 25" ;;
         *) return 1 ;;
     esac
@@ -163,6 +169,7 @@ case ${1:-} in
         exit $rc ;;
     *) echo "usage: sh test/shell_test.sh [--part NAME | --parallel]" >&2; exit 2 ;;
 esac
+_ended=''
 want() {   # want SECTION -- whether this run holds the section
     [ "$SECTIONS" = all ] || case " $SECTIONS " in *" $1 "*) ;; *) return 1 ;; esac
 }
@@ -4227,7 +4234,7 @@ WSO=${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/spark-shell}; WSO=${WSO:-$HOME/.local/st
 la=$(printf '\342\237\250'); ra=$(printf '\342\237\251'); ls_=$(printf '\342\227\202'); rs_=$(printf '\342\226\270')
 rm -f "$HOME/swaymsg.log" "$HOME/ws-later" "$WSO"; touch "$HOME/ws-test"
 SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status </dev/null >/dev/null 2>&1 & bp=$!
-i=0; while [ "$i" -lt 50 ] && [ "$(cat "$HOME/swaymsg.log" 2>/dev/null | grep -c '^-- rename')" -lt 5 ]; do sleep 0.1; i=$((i + 1)); done; kill "$bp" 2>/dev/null; wait "$bp" 2>/dev/null
+i=0; while [ "$i" -lt 50 ] && [ "$(cat "$HOME/swaymsg.log" 2>/dev/null | grep -c '^-- rename')" -lt 5 ]; do sleep 0.1; i=$((i + 1)); done; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :   # its status is not the test: a loop ended before its trap stood (a slow runner) ended the suite here
 [ "$(grep '^-- rename' "$HOME/swaymsg.log" 2>/dev/null)" = "$(printf '%s\n' "-- rename workspace \"1\" to \"1:${la}1$ra\"" "-- rename workspace \"3 writing\" to \"3:${la}3$ra writing\"" "-- rename workspace \"10\" to \"10:${la}10$ra\"" "-- rename workspace \"11\" to \"11:${la}11$ra\"" "-- rename workspace \"5\" to \"5:${la}5$ra\"")" ] && [ ! -e "$WSO" ] \
     && ok "bar status: each workspace takes its number in stone's angle brackets at the bar's start, a new one (5) at once; a layout's 3 writing keeps its words, 2:x the user's own is left, 11 past the tenth is named too (#248)" || bad "workspace labels" "$(cat "$HOME/swaymsg.log" 2>&1)"
 # theme family (#248): the open workspaces renamed at once in the new family, every name of ours (another family's label, its
@@ -9059,7 +9066,7 @@ STUB
         [ -s "$mf" ] && [ -s "$mn" ] && [ "$(cat "$HOME/spark.calls" 2>/dev/null)" = mcp ] && ! grep -q 'Brightness' "$mn" \
             && ok "the desktop's start (desktop --pending): both files aside, then spark mcp once, inside the session (#159)" || bad "machine start" "$(ls -la "$M" 2>&1) $(cat "$HOME/spark.calls" 2>&1)"
         rm -rf "$M"; SPARK_MACHINE_DIR=$M SWAYSOCK=$H/sway.sock sh "$SH" bar status </dev/null >/dev/null 2>&1 & bp=$!
-        i=0; while [ "$i" -lt 50 ] && [ ! -s "$mn" ]; do sleep 0.1; i=$((i + 1)); done; kill "$bp" 2>/dev/null; wait "$bp" 2>/dev/null
+        i=0; while [ "$i" -lt 50 ] && [ ! -s "$mn" ]; do sleep 0.1; i=$((i + 1)); done; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :   # its status is not the test: a loop ended before its trap stood (a slow runner) ended the suite here
         [ -s "$mn" ] && [ ! -e "$mf" ] && ok "the bar's loop: .now at its first pass, aside; .facts a minute in" || bad "machine bar" "$(ls -la "$M" 2>&1)"
         rm -rf "$M"; SPARK_MACHINE_DIR=$M SWAYSOCK=$H/sock sh "$SH" desktop --pending >/dev/null 2>&1; sleep 1
         [ ! -e "$M" ] && ok "no running sway's socket there: the start writes nothing" || bad "machine no socket" "$(ls -la "$M" 2>&1)"
@@ -9259,5 +9266,6 @@ rm -rf "$voice"
 
 fi
 
+_ended=1
 printf '%s\n' "shell_test: $pass ok, $fail failed"
 [ "$fail" -eq 0 ]
