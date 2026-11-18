@@ -172,6 +172,9 @@ me=$(id -un)
 kids_of() {   # kids_of PID -> its children's pids, as the kernel lists them: pgrep is a stub in some sections and missing in some of CI's images
     cat "/proc/$1/task/$1/children" 2>/dev/null || awk -v p="$1" '$4 == p { print $1 }' /proc/[0-9]*/stat 2>/dev/null || :
 }
+lives() {   # lives PID -- it runs still. One that ended and that nobody reaped does not: in CI's containers the first process reaps no orphan, and kill -0 says yes to what is left of it
+    [ -d "/proc/$1" ] && ! grep -q '^State:[[:space:]]*Z' "/proc/$1/status" 2>/dev/null
+}
 noon_tz() {   # -> a zone whose clock reads about noon now, for a test of today and tomorrow: one never runs across midnight (a CI run at 23:56 UTC failed three)
     # an IANA zone, as the reminders verify theirs (Etc/GMT-N is N hours ahead of UTC); none where the zone files are not there
     _nh=$(TZ=UTC date +%H); _nh=${_nh#0}; _nd=$((12 - _nh))
@@ -4952,7 +4955,7 @@ EVSWAY_STUB
     SWAYSOCK=$H/sock PATH="$H/evsway:$PATH" sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
     ev_up; _e1=$(evn); _bk=$(kids_of "$bp"); kill -9 "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :; ev_end
     # what the loop started is gone with it, the lines too: they are a process of their own (v0.153) and write into a file here, so no broken pipe ends them
-    for _i in $(seq 1 40); do _ba=''; for _k in $_bk; do ! kill -0 "$_k" 2>/dev/null || _ba="$_ba $_k"; done; [ -n "$_ba" ] || break; sleep .1; done
+    for _i in $(seq 1 40); do _ba=''; for _k in $_bk; do ! lives "$_k" || _ba="$_ba $_k"; done; [ -n "$_ba" ] || break; sleep .1; done
     [ "$_e1" -ge 3 ] && ev_gone && [ "$_e3" = "$_e2" ] && [ -n "$_bk" ] && [ -z "$_ba" ] \
         && ok "the workspace watcher ends with its loop: the loop killed outright, its group left running, the reader leaves at the next event and the subscriber ends; the names are read no more, and the lines' own process ends within a second" || bad "watcher outlives the loop" "$_e1 $_e2 $_e3 pid=$_ep $(ev_gone || echo alive) started:$_bk left:$_ba"
     for _k in $_ba; do kill "$_k" 2>/dev/null || :; done
