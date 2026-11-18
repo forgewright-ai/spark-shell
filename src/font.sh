@@ -63,6 +63,7 @@ font_apply() {
     else ok font "$CONSOLE_FONT ($file)"; fi
 }
 font_off() {   # the font lines back from every .spark-shell-orig
+    row_part=font
     for shape in setup vconsole rcconf; do
         file=$(font_file "$shape")
         [ -e "$file.spark-shell-orig" ] || continue

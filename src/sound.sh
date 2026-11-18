@@ -195,13 +195,13 @@ light_off() {   # by the record alone
     [ -s "$STATE_DIR/light.groups" ] || return 0
     need light "your video and i2c memberships removed, as spark-shell added them (sudo)" || return 0
     seat_root off "the brightness" || return 0
-    _me=$(id -un)
+    _me=$(id -un); _ok=1
     for _g in $(cat "$STATE_DIR/light.groups"); do
         case " $LIGHT_GROUPS " in *" $_g "*) ;; *) continue ;; esac
         if ! in_group "$_g" "$_me" || root_do gpasswd -d "$_me" "$_g" >/dev/null 2>&1; then row ok light "$_me is out of the $_g group spark-shell added: it takes effect at your next login"
-        else row todo light "gpasswd could not take $_me out of $_g -- spark-shell off desktop again"; fi
+        else _ok=0; row todo light "gpasswd could not take $_me out of $_g -- spark-shell off desktop again"; fi
     done
-    rm -f "$STATE_DIR/light.groups"
+    [ "$_ok" = 0 ] || rm -f "$STATE_DIR/light.groups"   # the record stays while a group is left: off again finds it, as the row says (sound_off and seat_off keep theirs so)
 }
 sound_start() {   # PipeWire, WirePlumber and the PulseAudio server for the desktop about to start, where nothing else runs them; their pids in SOUND_PIDS
     SOUND_PIDS=''

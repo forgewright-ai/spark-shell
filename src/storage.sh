@@ -95,10 +95,10 @@ storage_apply() {   # on desktop's storage row: the polkit rule
     storage_rule > "$TMP/storage.rules"; _rs=$(cksum < "$TMP/storage.rules")
     if [ "$(cat "$STATE_DIR/storage.polkit" 2>/dev/null)" = "$_rs" ]; then ok storage "you mount and eject drives (/$STORAGE_RULE)"; return 0; fi
     need storage "let $(id -un) mount and eject USB drives: /$STORAGE_RULE (polkit, sudo)" && seat_root on "the drives" || return 0
-    if root_do mkdir -p "$ROOT/${STORAGE_RULE%/*}" && root_put "$TMP/storage.rules" "$ROOT/$STORAGE_RULE" 0644; then
+    if root_try "$TMP/storage.rules" "$ROOT/$STORAGE_RULE" 0644; then   # it makes the folder too
         mkdir_private "$STATE_DIR"; printf '%s\n' "$_rs" > "$STATE_DIR/storage.polkit"
         ok storage "you mount and eject drives (/$STORAGE_RULE)"
-    else row todo storage "the polkit rule could not be written -- spark-shell on desktop again"; acting=0; fi
+    else row todo storage "the polkit rule could not be written${root_why:+: $root_why} -- spark-shell on desktop again"; acting=0; fi
 }
 storage_off() {   # by the record only
     [ -e "$STATE_DIR/storage.polkit" ] || return 0

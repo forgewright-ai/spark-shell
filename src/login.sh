@@ -185,6 +185,7 @@ login_screens() {   # -> the login screen's screens.conf: the output lines of yo
 }
 login_screens_follow() {   # after a screen setting: the login screen's copy now when root asks no password, else said in one line
     login_wanted && [ -f "$ROOT/$LOGIN_ETC/sway.conf" ] || return 0
+    row_part=login
     mkdir -p "$TMP/login"; login_screens > "$TMP/login/screens.conf"
     ! cmp -s "$TMP/login/screens.conf" "$ROOT/$LOGIN_ETC/screens.conf" || return 0
     if [ -n "$ROOT" ] || [ "$(id -u)" -eq 0 ] || sudo -n true 2>/dev/null; then root_put "$TMP/login/screens.conf" "$ROOT/$LOGIN_ETC/screens.conf"
@@ -319,6 +320,7 @@ login_follow() {   # theme and wallpaper: the login screen takes the new look to
 }
 login_screen_off() {   # by the records alone: the boot back to getty, the screen's files gone once greetd stopped
     [ "$OS" != Darwin ] && login_screen_traces || return 0
+    row_part=login
     if [ "$MODE" = dry ]; then row would login "the console login on tty1 from the next boot, the login screen's files removed (sudo)"; return 0; fi
     login_root off || return 0
     if [ "$(init_shape)" = systemd ]; then
@@ -364,23 +366,32 @@ render_all() {
     if desktop_wanted; then desktop_apply; fi
 }
 
-hand_back() {   # hand_back REL... -- each render of ours under HOME (marker or.bak) restored
+hand_back() {   # hand_back REL... -- each render of ours under HOME (marker or.bak) restored. on keeps a file of yours before it writes over it (render_one); off does the same before it removes one
     for rel in "$@"; do
         p=$HOME/$rel
         if [ -f "$p" ] && [ ! -L "$p" ]; then
             if grep -q 'rendered by spark-shell' "$p" 2>/dev/null || [ -e "$p.bak" ]; then
+                ! yours_since "$p" || kept_aside "$p"
                 restore_one "$p"
             fi
         fi
     done
 }
-restore_one() {   # restore_one PATH --.bak back, or gone; never a husk
-    [ -e "$1" ] || [ -L "$1" ] || return 0
-    rm -f "$1"
+yours_since() {   # yours_since PATH -> true when the file there is not the render spark-shell wrote: one with no marker, or a render changed by hand since. What render_one keeps before it renders
+    ! grep -q 'rendered by spark-shell' "$1" 2>/dev/null || render_by_hand "$1"
+}
+kept_aside() {   # kept_aside PATH -- the file moved beside itself by its time, as a later backup is named: off removes nothing of yours
+    _ka=$1.bak.$(date +%Y%m%d%H%M%S); _kb=$_ka; _kn=1
+    while [ -e "$_kb" ] || [ -L "$_kb" ]; do _kb=$_ka.$_kn; _kn=$((_kn + 1)); done
+    mv "$1" "$_kb"
+    row ok restore "$1 -- yours since: kept as ${_kb##*/}"
+}
+restore_one() {   # restore_one PATH --.bak back, or gone; never a husk. The.bak is moved onto the file in one step, so the file is there until the one from before is
     if [ -e "$1.bak" ] || [ -L "$1.bak" ]; then
-        mv "$1.bak" "$1"
+        mv -f "$1.bak" "$1"
         row ok restore "$1 -- back from ${1##*/}.bak"
-    else
+    elif [ -e "$1" ] || [ -L "$1" ]; then
+        rm -f "$1"
         row ok restore "$1 -- removed (no ${1##*/}.bak: there was no file before)"
     fi
 }

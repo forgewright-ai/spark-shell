@@ -190,6 +190,7 @@ boot_rebuilt() {   # boot_rebuilt grub|uki -- the rebuild, and for GRUB its arti
 }
 boot_off() {   # spark-shell's boot traces out, per shape found, then the rebuild; a failed one stays pending
     [ "$OS" != Darwin ] || return 0
+    row_part=quiet   # no need names it here: a write that fails is said under it
     _g=0; _u=0; _m=''
     [ ! -e "$ROOT/$GRUB_DROPIN" ] || _g=1
     for f in "$ROOT/etc/default/grub" "$ROOT/etc/rc.conf" "$ROOT/$GETTY_CONF"; do [ -z "$(marked "$f" "$QUIET_MARK")" ] || _m="$_m $f"; done

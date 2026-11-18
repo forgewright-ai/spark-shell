@@ -182,6 +182,10 @@ me=$(id -un)
 kids_of() {   # kids_of PID -> its children's pids, as the kernel lists them: pgrep is a stub in some sections and missing in some of CI's images
     cat "/proc/$1/task/$1/children" 2>/dev/null || awk -v p="$1" '$4 == p { print $1 }' /proc/[0-9]*/stat 2>/dev/null || :
 }
+nowrite() {   # nowrite DIR [PATH] -- a cp in DIR (a folder first on PATH) that refuses PATH from now on, as a file system that takes no write there does; with no PATH it takes every one again. For root as for anyone: CI's suites run as root, which no mode stops
+    [ -x "$1/cp" ] || { printf '#!/bin/sh\nfor a; do last=$a; done\nif [ -s "%s/nowrite" ] && [ "$last" = "$(cat "%s/nowrite")" ]; then echo "cp: cannot create regular file \047$last\047: Read-only file system" >&2; exit 1; fi\nexec %s "$@"\n' "$H" "$H" "$(command -v cp)" > "$1/cp"; chmod +x "$1/cp"; }
+    if [ $# = 2 ]; then printf '%s\n' "$2" > "$H/nowrite"; else rm -f "$H/nowrite"; fi
+}
 lives() {   # lives PID -- it runs still. One that ended and that nobody reaped does not: in CI's containers the first process reaps no orphan, and kill -0 says yes to what is left of it
     [ -d "/proc/$1" ] && ! grep -q '^State:[[:space:]]*Z' "/proc/$1/status" 2>/dev/null
 }
@@ -797,6 +801,32 @@ sh "$SH" on --yes >/dev/null
 [ "$(ls "$HOME"/.tmux.conf.bak.* 2>/dev/null | wc -l | tr -d ' ')" = 1 ] && ok "on: a file the same as one kept already is not kept twice (btop writes its conf back on every exit)" || bad "backup twice" "$(ls -la "$HOME"/.tmux.conf* 2>&1)"
 sh "$SH" off >/dev/null
 [ "$(cat "$HOME/.tmux.conf")" = 'first of mine' ] && ok "off: the first .bak comes back, the file you had before spark-shell" || bad "off first backup" "$(ls -la "$HOME"/.tmux.conf* 2>&1)"
+
+# off removes nothing of yours (v0.153.1), as on does not: a render you changed since is kept beside it by its time, then
+# the file from before comes back; so is a file of your own that stands where a render was
+fresh
+theme_fixture '#ff5555'
+printf 'mine before\n' > "$HOME/.tmux.conf"
+sh "$SH" on --yes >/dev/null
+printf '# a line of mine\n' >> "$HOME/.tmux.conf"; "$(command -v cp)" "$HOME/.tmux.conf" "$H/changed"
+out=$(sh "$SH" off --dry-run)
+printf '%s\n' "$out" | grep -q '^would  keep         .*/\.tmux\.conf -- yours since' && printf '%s\n' "$out" | grep -q '^would  restore .*/\.tmux\.conf -- back from \.tmux\.conf\.bak$' && [ -f "$HOME/.tmux.conf.bak" ] && cmp -s "$HOME/.tmux.conf" "$H/changed" \
+    && ok "off --dry-run: a render changed since has a keep row before its restore row, and nothing is touched" || bad "off dry-run keep" "$out"
+out=$(sh "$SH" off)
+[ "$(cat "$HOME/.tmux.conf")" = 'mine before' ] && [ ! -e "$HOME/.tmux.conf.bak" ] && [ "$(ls "$HOME"/.tmux.conf.bak.* 2>/dev/null | wc -l | tr -d ' ')" = 1 ] && cmp -s "$(ls "$HOME"/.tmux.conf.bak.*)" "$H/changed" \
+    && printf '%s\n' "$out" | grep -q '\.tmux\.conf -- yours since: kept as \.tmux\.conf\.bak\.[0-9]' \
+    && ok "off: a render you changed since is kept beside it by its time, said in a row, and the file from before comes back" || bad "off keeps a changed render" "$(ls -la "$HOME"/.tmux.conf* 2>&1) $out"
+rm -f "$HOME"/.tmux.conf.bak.*
+sh "$SH" on --yes >/dev/null
+printf 'all mine now\n' > "$HOME/.tmux.conf"
+sh "$SH" off >/dev/null
+[ "$(cat "$HOME/.tmux.conf")" = 'mine before' ] && [ "$(cat "$HOME"/.tmux.conf.bak.* 2>/dev/null)" = 'all mine now' ] \
+    && ok "off: a file of your own where a render stood is kept the same way, never removed" || bad "off keeps your own file" "$(ls -la "$HOME"/.tmux.conf* 2>&1)"
+# a render as spark-shell wrote it, with nothing from before: removed, and nothing kept of it
+fresh
+theme_fixture '#ff5555'
+sh "$SH" on --yes >/dev/null; sh "$SH" off >/dev/null
+[ ! -e "$HOME/.tmux.conf" ] && [ "$(ls "$HOME"/.tmux.conf* 2>/dev/null | wc -l | tr -d ' ')" = 0 ] && ok "off: a render as spark-shell wrote it leaves nothing behind" || bad "off clean render" "$(ls -la "$HOME"/.tmux.conf* 2>&1)"
 
 fi
 
@@ -2570,8 +2600,38 @@ printf '%s\n' "$ck" | grep -q "^ok     font         Terminus 16x32 ($f)$" && ok 
 printf '%s\n' "$(sed 's/^FONTFACE=.*/FONTFACE="VGA"/' "$f")" > "$f"
 ck=$(L check || true)
 printf '%s\n' "$ck" | grep -q "^FAIL   font         $f says VGA 16x32 -- spark-shell on (sudo once)$" && ok "check: a changed font is a FAIL with its remedy" || bad "check font fail" "$(printf '%s\n' "$ck" | grep font)"
+# a write as root that fails (v0.153.1). It was said to have worked: the copy kept of a file went after a restore that
+# had not happened. It ends the run now, with a row in the system's own words, and the copy stays
+"$(command -v cp)" "$f" "$H/cs.set"; nowrite "$H/lx" "$f"
+rc=0; out=$(L font none 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$(printf '%s\n' "$out" | tail -1)" = "todo   font         $f could not be written: Read-only file system" ] && cmp -s "$f" "$H/cs.set" && cmp -s "$f.spark-shell-orig" "$H/cs.orig" \
+    && ok "font none where the file takes no write: its last row says so in the system's words and the run ends there; the file as it was, its copy kept" || bad "font none unwritable" "rc=$rc $(printf '%s' "$out" | tr '\n' '|') copy: $(ls "$f.spark-shell-orig" 2>&1)"
+# the same in off: its last lines say what is kept and how it goes on; nothing is undone for the person, and no question asked
+rc=0; out=$(L off 2>&1) || rc=$?
+[ "$rc" = 1 ] && printf '%s\n' "$out" | grep -qxF "todo   font         $f could not be written: Read-only file system" \
+    && [ "$(printf '%s\n' "$out" | tail -2)" = "$(printf '%s\n' 'spark-shell off: stopped there. What it has not put back yet is still kept' '  spark-shell off again goes on from there, once that is fixed')" ] \
+    && cmp -s "$f.spark-shell-orig" "$H/cs.orig" && ! printf '%s\n' "$out" | grep -q "console's font is back" \
+    && ok "off where a root file takes no write: the row, then its last lines say what is kept and that off again goes on from there; the copy kept, nothing said to be back" || bad "off stopped" "rc=$rc $(printf '%s' "$out" | tr '\n' '|')"
+nowrite "$H/lx"
 L font none >/dev/null
 cmp -s "$f" "$H/cs.orig" && [ ! -e "$f.spark-shell-orig" ] && ok "font none: console-setup byte for byte as it was, the copy gone" || bad "font none setup" "$(diff "$H/cs.orig" "$f")"
+# on stops the same way, and its last lines say the two ways on: on again, or off. Then the write is taken, and on again goes on
+printf 'CONSOLE_FONT=Terminus 16x32\n' >> "$HOME/.config/spark-shell/config"; nowrite "$H/lx" "$f"
+rc=0; out=$(L on --yes 2>&1) || rc=$?
+[ "$rc" = 1 ] && printf '%s\n' "$out" | grep -qxF "todo   font         $f could not be written: Read-only file system" \
+    && [ "$(printf '%s\n' "$out" | tail -3)" = "$(printf '%s\n' 'spark-shell on: stopped there. What it did before stays done' '  spark-shell on again goes on from there, once that is fixed' '  spark-shell off puts back what spark-shell changed (spark-shell off --dry-run shows it first)')" ] \
+    && cmp -s "$f" "$H/cs.orig" && cmp -s "$f.spark-shell-orig" "$H/cs.orig" \
+    && ok "on where a root file takes no write: the row, then its last lines say what stays and the two ways on, on again or off; nothing undone by itself" || bad "on stopped" "rc=$rc $(printf '%s' "$out" | tr '\n' '|')"
+nowrite "$H/lx"; rc=0; out=$(L on --yes 2>&1) || rc=$?
+[ "$rc" = 0 ] && grep -qx 'FONTFACE="Terminus"' "$f" && ! printf '%s\n' "$out" | grep -q 'stopped there' && ok "on again, the write taken: it goes on from there, and says no stop" || bad "on after the stop" "rc=$rc $(printf '%s' "$out" | tr '\n' '|')"
+# a step that ends on with no row of its own (here the copy kept of the file, a plain copy as root): its own words, then the same last lines
+L font none >/dev/null; printf 'CONSOLE_FONT=Terminus 16x32\n' >> "$HOME/.config/spark-shell/config"; nowrite "$H/lx" "$f.spark-shell-orig"
+rc=0; out=$(L on --yes 2>&1) || rc=$?
+[ "$rc" != 0 ] && printf '%s\n' "$out" | grep -q "^cp: cannot create regular file .*console-setup.spark-shell-orig.: Read-only file system$" \
+    && [ "$(printf '%s\n' "$out" | tail -3 | head -1)" = 'spark-shell on: stopped there. What it did before stays done' ] && cmp -s "$f" "$H/cs.orig" \
+    && ok "on ended by a step with no row of its own: the program's own words, then on's last lines all the same" || bad "on ended plain" "rc=$rc $(printf '%s' "$out" | tr '\n' '|')"
+nowrite "$H/lx"; L on --yes >/dev/null 2>&1; L font none >/dev/null
+cmp -s "$f" "$H/cs.orig" && [ ! -e "$f.spark-shell-orig" ] || bad "the console block's state after the stops" "$(diff "$H/cs.orig" "$f" 2>&1) $(ls "$f".* 2>&1)"
 # vconsole.conf: a kbd font file's stem, its size from its own header
 fresh
 console_stubs Linux
@@ -2916,6 +2976,18 @@ L on desktop --yes </dev/null >/dev/null 2>&1
 grep -q "^video:x:13:$me\$" "$H/root/etc/group" && grep -q "^i2c:x:20:$me\$" "$H/root/etc/group" && [ "$(cat "$HOME/.local/state/spark-shell/light.groups")" = "$(printf 'video\ni2c')" ] \
     && L off desktop >/dev/null 2>&1 && ! grep -q "^video:x:13:.*$me" "$H/root/etc/group" && ! grep -q "^i2c:x:20:.*$me" "$H/root/etc/group" && [ ! -e "$HOME/.local/state/spark-shell/light.groups" ] \
     && ok "on desktop adds you to video and i2c for the brightness, recorded; off desktop takes you out of both" || bad "light groups" "$(cat "$H/root/etc/group" "$H/log")"
+# a group gpasswd cannot take you out of: its row says off desktop again, and the record stays so that again finds it (v0.153.1:
+# the record went, and again did nothing)
+void_sound
+printf 'video:x:13:\ni2c:x:20:\n' >> "$H/root/etc/group"
+L on desktop --yes </dev/null >/dev/null 2>&1
+mv "$H/lx/gpasswd" "$H/lx/gpasswd.works"; printf '#!/bin/sh\n[ "$3" != i2c ] || exit 1\nexec "%s/lx/gpasswd.works" "$@"\n' "$H" > "$H/lx/gpasswd"; chmod +x "$H/lx/gpasswd"
+out=$(L off desktop 2>&1 || :)
+printf '%s\n' "$out" | grep -qx "todo   light        gpasswd could not take $me out of i2c -- spark-shell off desktop again" && ! grep -q "^video:x:13:.*$me" "$H/root/etc/group" && grep -q "^i2c:x:20:$me\$" "$H/root/etc/group" \
+    && [ -s "$HOME/.local/state/spark-shell/light.groups" ] && ok "off desktop, one group not removed: the row says again, and the record stays" || bad "light record" "$out $(cat "$H/root/etc/group") $(ls "$HOME/.local/state/spark-shell")"
+mv "$H/lx/gpasswd.works" "$H/lx/gpasswd"
+L off desktop >/dev/null 2>&1 || :
+! grep -q "^i2c:x:20:.*$me" "$H/root/etc/group" && [ ! -e "$HOME/.local/state/spark-shell/light.groups" ] && ok "off desktop again: out of the group that was left, the record gone" || bad "light again" "$(cat "$H/root/etc/group") $(ls "$HOME/.local/state/spark-shell")"
 # links and a membership that were there before: nothing recorded, nothing undone
 void_sound
 mkdir -p "$conf"; for f in 50-pipewire.conf 99-pipewire-default.conf; do ln -s "$share/$f" "$conf/$f"; done
@@ -8857,7 +8929,14 @@ EOF
     touch "$HOME/visudo.no"; out1=$(sh "$SH" on desktop --yes 2>&1 || :); rm -f "$HOME/visudo.no"
     printf '%s\n' "$out1" | grep -q '^todo   power        visudo refused the sudoers file -- nothing written$' && [ ! -e "$H/root/etc/sudoers.d/spark-shell-power" ] \
         && ok "runit: a sudoers file visudo refuses is never written (#72)" || bad "power visudo" "$out1"
-    out=$(sh "$SH" on desktop --yes 2>&1 || :); me=$(id -un); sud=$H/root/etc/sudoers.d/spark-shell-power; pol=$H/root/etc/polkit-1/rules.d/50-spark-shell-storage.rules
+    me=$(id -un); sud=$H/root/etc/sudoers.d/spark-shell-power; pol=$H/root/etc/polkit-1/rules.d/50-spark-shell-storage.rules
+    # the rule's file takes no write: the step's own row says so with the reason, nothing is recorded as written, and on goes on to
+    # what follows (v0.153.1: the row was never reached, and the rule was said to be in place)
+    nowrite "$H/.local/bin" "$sud"; rc=0; out0=$(sh "$SH" on desktop --yes 2>&1) || rc=$?; nowrite "$H/.local/bin"
+    printf '%s\n' "$out0" | grep -qx 'todo   power        the sudoers file could not be written: Read-only file system -- spark-shell on desktop again' && [ ! -e "$sud" ] && [ ! -e "$HOME/.local/state/spark-shell/power.sudoers" ] \
+        && ! printf '%s\n' "$out0" | grep -q 'stopped there' && ! printf '%s\n' "$out0" | grep -q '^ok     power ' \
+        && ok "runit: a sudoers file that cannot be written is a todo row with the reason, not said to be in place, nothing recorded; on goes on" || bad "power unwritable" "rc=$rc $(printf '%s' "$out0" | tr '\n' '|')"
+    out=$(sh "$SH" on desktop --yes 2>&1 || :)
     printf '%s\n' "$out" | grep -q '^ok     power        you suspend, restart and shut down from the dialog (/etc/sudoers.d/spark-shell-power)$' && printf '%s\n' "$out1" | grep -q '^ok     storage      you mount and eject drives (/etc/polkit-1/rules.d/50-spark-shell-storage.rules)$' \
         && grep -qxF "$me ALL=(root) NOPASSWD: /usr/bin/zzz \"\", /usr/bin/reboot \"\", /usr/bin/poweroff \"\"" "$sud" && [ "$(ls -l "$sud" | cut -c1-10)" = '-r--r-----' ] \
         && grep -qF "subject.user == \"$me\"" "$pol" && grep -qF '"org.freedesktop.udisks2.filesystem-mount"' "$pol" && ! grep -q 'filesystem-mount-system\|encrypted-unlock' "$pol" \

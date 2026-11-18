@@ -114,6 +114,7 @@ cmd_on() {   # cmd_on [desktop|login]
     config_load
     on_config "$@"
     sudo_upfront
+    [ "$MODE" = dry ] || run_verb="on${1:+ $1}"   # from here on it acts: a stop at a failure says the ways on (run_closing)
     loud && printf '== packages\n'
     on_packages "$@"
     if [ "$MODE" != dry ]; then
@@ -257,6 +258,7 @@ cmd_off() {   # cmd_off [desktop|login]
     config_load
     [ "$OS" = Darwin ] || pm_detect
     if [ "$MODE" = dry ]; then off_would "${1:-}"; return 0; fi
+    run_verb="off${1:+ $1}"   # from here on it acts: a stop at a failure says how it goes on (run_closing)
     if [ "${1:-}" = login ]; then
         config_set LOGIN no
         LOGIN=no; export LOGIN
@@ -362,6 +364,7 @@ off_would() {   # off_would [desktop|login]
         p=$HOME/$rel
         [ -f "$p" ] && [ ! -L "$p" ] || continue
         grep -q 'rendered by spark-shell' "$p" 2>/dev/null || [ -e "$p.bak" ] || continue
+        ! yours_since "$p" || row would keep "$p -- yours since: kept beside it by its time, nothing of yours removed"
         if [ -e "$p.bak" ]; then row would restore "$p -- back from ${p##*/}.bak"
         else row would restore "$p -- removed (no ${p##*/}.bak: there was no file before)"; fi
     done

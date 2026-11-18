@@ -267,7 +267,7 @@ palette_off() {   # palette_off all|ours -- VGA again, the files gone
             if [ -n "$_line" ]; then
                 marked_text "$ROOT/etc/rc.local" "$PALETTE_MARK" > "$TMP/rc.local"
                 if [ "$(cat "$TMP/rc.local")" = '#!/bin/sh' ]; then root_do rm -f "$ROOT/etc/rc.local" || held=0   # the one spark-shell made
-                else root_put "$TMP/rc.local" "$ROOT/etc/rc.local" || held=0; fi
+                else root_try "$TMP/rc.local" "$ROOT/etc/rc.local" || held=0; fi
             fi
             if command -v setvtrgb >/dev/null 2>&1 && vt_here && [ "$(vt_live)" != "$(head -1 "$TMP/vga.rgb")" ]; then
                 root_do setvtrgb vga >/dev/null 2>&1 || held=0

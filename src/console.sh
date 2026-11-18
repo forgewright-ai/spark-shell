@@ -62,17 +62,21 @@ root_ready() {   # root_ready ROW -- a root to write with, asked once; else a to
 # under /boot (a vfat ESP, dmask 0077) a user cannot see a file: root tests
 # and reads there, and a failed chmod is no error (vfat has no modes)
 root_exists() { [ -e "$1" ] || root_do test -e "$1" 2>/dev/null; }   # root_exists PATH
-root_put() {   # root_put SRC DST [MODE] -- a root file written from SRC; a new one takes MODE (0644)
+root_try() {   # root_try SRC DST [MODE] -- a root file written from SRC; a new one takes MODE (0644). False when it could not be written, root_why the system's words: for a step that has its own row for that
     _new=0; root_exists "$2" || _new=1
-    root_do mkdir -p "$(dirname "$2")"
-    root_do cp "$1" "$2"
+    root_why=$(root_do mkdir -p "$(dirname "$2")" 2>&1) && root_why=$(root_do cp "$1" "$2" 2>&1) || { root_why=$(root_said "$root_why"); return 1; }
+    root_why=''
     [ "$_new" = 0 ] || root_do chmod "${3:-0644}" "$2" 2>/dev/null || true
 }
-root_swap() {   # root_swap SRC DST MODE -- a root program put in place by a rename: Linux refuses a write to a running binary
-    root_do mkdir -p "$(dirname "$2")"
-    root_do cp "$1" "$2.spark-shell-new"
-    root_do chmod "$3" "$2.spark-shell-new"
-    root_do mv -f "$2.spark-shell-new" "$2"
+# a write that failed was once said to have worked: this returned the chmod's status, and where a step asked (root_put
+# A B && rm the copy kept of B) the copy went after a restore that had not happened. It ends the run now, with a row
+root_put() { root_try "$@" || root_stop "$2"; }   # root_put SRC DST [MODE] -- root_try, and the run ends where it fails (root_stop)
+root_swap() {   # root_swap SRC DST MODE -- a root program put in place by a rename: Linux refuses a write to a running binary. A step that fails ends the run, and no half-made file stays beside the program
+    root_why=$(root_do mkdir -p "$(dirname "$2")" 2>&1) && root_why=$(root_do cp "$1" "$2.spark-shell-new" 2>&1) \
+        && root_why=$(root_do chmod "$3" "$2.spark-shell-new" 2>&1) && root_why=$(root_do mv -f "$2.spark-shell-new" "$2" 2>&1) && { root_why=''; return 0; }
+    root_why=$(root_said "$root_why")
+    root_do rm -f "$2.spark-shell-new" 2>/dev/null || :
+    root_stop "$2"
 }
 root_read() {   # root_read FILE -> its bytes (root when a user cannot read it); false when absent or unreadable
     if [ -r "$1" ]; then cat "$1"; else root_do cat "$1" 2>/dev/null; fi
