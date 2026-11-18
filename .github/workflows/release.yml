@@ -34,38 +34,43 @@ jobs:
         # the record, which verifies against its own tree once. The root's
         # name is here and not read from the history: a walk that stopped
         # wherever the file was missing could be stopped by the history it
-        # checks. Only ssh signatures are read.
+        # checks. Only ssh signatures are read. A patch key, a line of
+        # allowed-signers that starts spark-shell-patch, vouches for a patch
+        # (vX.Y.Z) and for no other tag: a vX.Y is a release key's alone.
         run: |
           set -eu
           git merge-base --is-ancestor "${GITHUB_REF_NAME}^{commit}" origin/main || { echo "release: $GITHUB_REF_NAME is not on main"; exit 1; }
           keys="$RUNNER_TEMP/allowed-signers"; root=v0.135
           verify() { git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile="$keys" -c gpg.program=false -c gpg.openpgp.program=false -c gpg.x509.program=false verify-tag "$1"; }
           before() { git describe --abbrev=0 --match 'v[0-9]*' "$1^{commit}^" 2>/dev/null; }
+          signers() { git show "$1:allowed-signers" > "$keys.all" 2>/dev/null || return 1; case ${2#v} in *.*.*) cat "$keys.all" ;; *) grep -v '^spark-shell-patch ' "$keys.all" || true ;; esac > "$keys"; }   # signers RELEASE TAG -- the keys of RELEASE that may have signed TAG
           if [ "$GITHUB_REF_NAME" = "$root" ]; then
-            prev=$root; git show "$root:allowed-signers" > "$keys"; from="its own allowed-signers, the root of the record"
+            prev=$root; signers "$root" "$root"; from="its own allowed-signers, the root of the record"
           else
             prev=$(before "$GITHUB_REF_NAME") || { echo "release: no release behind $GITHUB_REF_NAME vouches for it"; exit 1; }
-            git show "$prev:allowed-signers" > "$keys" 2>/dev/null || { echo "release: $prev has no allowed-signers"; exit 1; }
+            signers "$prev" "$GITHUB_REF_NAME" || { echo "release: $prev has no allowed-signers"; exit 1; }
             from="$prev's allowed-signers"
           fi
-          verify "$GITHUB_REF_NAME" || { echo "release: $GITHUB_REF_NAME is not signed by a key in $from"; exit 1; }
+          verify "$GITHUB_REF_NAME" || { echo "release: $GITHUB_REF_NAME is not signed by a key in $from that may sign it"; exit 1; }
           [ "$(git cat-file tag "$GITHUB_REF_NAME" | sed -n '/^$/q; s/^tag //p')" = "$GITHUB_REF_NAME" ] || { echo "the tag object names another tag"; exit 1; }
           t=$prev
           while [ "$t" != "$root" ]; do
             p=$(before "$t") || { echo "release: the chain stops at $t, short of $root"; exit 1; }
-            git show "$p:allowed-signers" > "$keys" 2>/dev/null || { echo "release: $p has no allowed-signers: the chain is broken"; exit 1; }
+            signers "$p" "$t" || { echo "release: $p has no allowed-signers: the chain is broken"; exit 1; }
             verify "$t" >/dev/null 2>&1 || { echo "release: $t, a release behind $GITHUB_REF_NAME, is not signed by a key in $p's allowed-signers: the chain is broken"; exit 1; }
             t=$p
           done
           echo "release: $GITHUB_REF_NAME signed by a key in $from; the chain behind it verified back to $root"
-      - name: ci.yml passed for the tag's commit
+      - name: ci.yml passed for the tag's commit, in main's own run
+        # main's run takes every job. A branch's run may be the fast lane's
+        # (ci.yml, the plan job), and that is no pass for a release.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
           sha=$(git rev-parse "${GITHUB_REF_NAME}^{commit}")
-          n=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&status=success" --jq '.total_count')
-          [ "$n" -gt 0 ] || { echo "no green ci.yml run for $sha"; exit 1; }
+          n=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&status=success&branch=main&event=push" --jq '.total_count')
+          [ "$n" -gt 0 ] || { echo "no green ci.yml run of main's own for $sha"; exit 1; }
       - name: the toolchain component/dialog/rust-toolchain.toml pins
         working-directory: component/dialog
         run: rustup show active-toolchain || rustup toolchain install
