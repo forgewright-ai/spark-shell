@@ -1054,6 +1054,15 @@ else
     sleep 0 & dead=$!; wait "$dead" || :; printf '%s\n' "$dead" > "$bpid"; touch -t 200001010000 "$bpid"   # a bar gone: a process that ended by itself, no signal sent
     out=$(SWAYSOCK=/nonexistent sh "$SH" on --yes)
     ! printf '%s\n' "$out" | grep -q 'reloaded' && ok "on: a bar's file whose bar is gone asks no reload" || bad "dead bar no reload" "$out"
+    # the bar's file outlives a crash and a restart of the machine: by then its pid is another program's, and the redraw
+    # signal's own action would end that program. A program that is no status loop, named by the file, is left alone
+    # (v0.153); and it is one the signal would have ended, or this would show nothing
+    sleep 120 & other=$!; printf '%s\n' "$other" > "$bpid"
+    out=$(SWAYSOCK=/nonexistent sh "$SH" on --yes)
+    _ol=gone; ! lives "$other" || _ol=lives
+    kill -USR1 "$other" 2>/dev/null || :; _ow=0; wait "$other" 2>/dev/null || _ow=$?
+    [ "$_ol" = lives ] && [ "$_ow" = 138 ] && ok "on: a program that is not the status loop, its pid in the bar's file, gets no redraw signal: it runs on, and the signal sent to it by hand ends it" || bad "redraw signal to another program" "after on: $_ol; after the signal by hand: wait said $_ow"
+    printf '%s\n' "$dead" > "$bpid"; touch -t 200001010000 "$bpid"   # the file as the step before left it
     # since v0.136 the code is in src/: a bar older than a module, after an update that changed src/ alone (v0.150.1 did), is
     # started again too. In a copy of the tree, so only the copy's files take the times; its first on renders sway's file for
     # the copy, so the next runs have no other cause to reload

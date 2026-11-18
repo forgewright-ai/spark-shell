@@ -828,7 +828,15 @@ bar_font_follow() {   # BAR_TEXT=auto: the font follows the screen; _bff is the 
     wm_send "bar $_bfb font pango:$_bfn" >/dev/null 2>&1 && { _bff=$_bfn; layout_refit_soon; } || :
 }
 bar_style() { _bv=$(sed -n "s/^$1=//p" "$CONFIG" 2>/dev/null | tail -1); printf '%s' "${_bv:-$2}"; }   # bar_style KEY DEFAULT -> the config's value now
-bar_redraw() { [ -f "$BAR_PID" ] && read -r p < "$BAR_PID" && kill -USR1 "$p" 2>/dev/null || :; }
+bar_loop_pid() {   # -> the status loop's pid, from its file; false when none runs. The file outlives a crash and a restart of the machine, and by then its pid is another program's: SIGUSR1 would end that program
+    [ -s "$BAR_PID" ] || return 1
+    _blp=''; read -r _blp 2>/dev/null < "$BAR_PID" || [ -n "$_blp" ] || return 1   # a pid with no new line after it is read too
+    case $_blp in ''|*[!0-9]*) return 1 ;; esac
+    kill -0 "$_blp" 2>/dev/null || return 1
+    [ ! -r "/proc/$_blp/cmdline" ] || tr '\0' ' ' < "/proc/$_blp/cmdline" | grep -q ' bar status' || return 1
+    printf '%s\n' "$_blp"
+}
+bar_redraw() { _brp=$(bar_loop_pid) && kill -USR1 "$_brp" 2>/dev/null || :; }   # a line now: the signal goes to the status loop alone, as the bar's and the pad's go to theirs (sparkbar_pid, winpad_pid_in)
 bar_stale() { [ -f "$BAR_PID" ] && [ -n "$(find "$REPO/spark-shell" "$REPO/src" -newer "$BAR_PID" 2>/dev/null)" ] && read -r _bsp < "$BAR_PID" && kill -0 "$_bsp" 2>/dev/null; }   # -> 0 when the bar predates a change to spark-shell or to a module it reads (src/, since v0.136)
 BAR_PALETTE=$STATE_DIR/bar.palette   # written by a look change, a preview too: the five colors a line is drawn in, then what spark's bar wears beyond them, the ground, the lit shade and the alpha
 bar_palette() { mkdir_private "$STATE_DIR" && printf 'HEX_FG=%s\nHEX_ACCENT=%s\nHEX_MUTED=%s\nHEX_ANSI_1=%s\nHEX_ANSI_3=%s\nHEX_BG=%s\nPANEL_HI=%s\nALPHA=%s\nPANEL_INK=%s\nPANEL_ATTENTION=%s\n' "$HEX_FG" "$HEX_ACCENT" "$HEX_MUTED" "$HEX_ANSI_1" "$HEX_ANSI_3" "$HEX_BG" "$PANEL_HI" "$ALPHA" "$PANEL_INK" "$PANEL_ATTENTION" > "$BAR_PALETTE"; }
