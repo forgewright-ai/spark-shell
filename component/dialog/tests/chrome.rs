@@ -200,7 +200,7 @@ fn last_glyph(buf: &Buffer, y: u16) -> u16 {
 
 #[test]
 fn the_lit_band_is_the_list_column_with_the_same_air_at_every_size() {
-    for (view, rows) in [(View::Home, [0usize, 9]), (View::Section(0), [0, 2]), (View::Dest(SETTINGS_DEST), [0, 1])] {
+    for (view, rows) in [(View::Home, [0usize, 8]), (View::Section(0), [0, 2]), (View::Dest(SETTINGS_DEST), [0, 1])] {
         for (w, h) in [(60u16, 40u16), (80, 40), (150, 40), (36, 20)] {
             let mut bands = vec![];
             for n in rows {
@@ -615,11 +615,11 @@ fn a_places_second_column_is_its_state_from_what_the_dialog_already_holds() {
     let mut app = home();
     let state = |app: &App, name: &str| app.dest_state(DESTS.iter().position(|d| d.name == name).unwrap());
     // before anything is known: the purpose stands, muted, for every place but the two whose sections are here
-    for name in ["apps", "files", "notes", "calendar", "settings", "about", "tools", "power"] {
+    for name in ["apps", "files", "notes", "calendar", "settings", "system", "power"] {
         assert_eq!(state(&app, name), None, "{name}");
     }
     assert_eq!(
-        state(&app, "workspace").as_deref(),
+        state(&app, "workspaces").as_deref(),
         Some("2 windows \u{b7} terminal, firefox"),
         "the windows by name, lowercase"
     );
@@ -680,12 +680,11 @@ fn a_places_second_column_is_its_state_from_what_the_dialog_already_holds() {
         Some("tokyonight-night \u{b7} 2 screens"),
         "the look and the screens, never the network"
     );
-    assert_eq!(
-        state(&app, "about").as_deref(),
-        Some("spark-shell v0.124"),
-        "the installed release, nothing else"
+    assert!(
+        DESTS.iter().all(|d| d.name != "about"),
+        "about is a row of the system place, no place of the home (v0.153)"
     );
-    assert_eq!(state(&app, "tools"), None, "no state worth more than its purpose");
+    assert_eq!(state(&app, "system"), None, "before its check is known, its purpose stands");
     assert_eq!(state(&app, "power"), None);
     // the about page opens on the versions, the dialog's own aligned under the installed release (the dialog design notes, v0.127)
     app.view = View::About;
@@ -696,7 +695,7 @@ fn a_places_second_column_is_its_state_from_what_the_dialog_already_holds() {
 }
 
 #[test]
-fn the_home_is_ten_lowercase_places_in_three_groups_that_breathe_when_the_window_has_the_rows() {
+fn the_home_is_nine_lowercase_places_in_two_groups_that_breathe_when_the_window_has_the_rows() {
     let mut app = home();
     let shape = |app: &App| -> Vec<String> {
         app.items()
@@ -716,21 +715,18 @@ fn the_home_is_ten_lowercase_places_in_three_groups_that_breathe_when_the_window
             "-",
             "files",
             "-",
-            "workspace",
+            "workspaces",
             "-",
             "notes",
             "-",
             "calendar",
             "-",
-            "tools",
-            "-",
             "-",
             "settings",
             "-",
+            "system",
+            "-",
             "help",
-            "-",
-            "about",
-            "-",
             "-",
             "power"
         ]
@@ -739,20 +735,7 @@ fn the_home_is_ten_lowercase_places_in_three_groups_that_breathe_when_the_window
     app.size = (36, 20);
     assert_eq!(
         shape(&app),
-        [
-            "apps",
-            "files",
-            "workspace",
-            "notes",
-            "calendar",
-            "tools",
-            "-",
-            "settings",
-            "help",
-            "about",
-            "-",
-            "power"
-        ]
+        ["apps", "files", "workspaces", "notes", "calendar", "-", "settings", "system", "help", "power"]
     );
     assert!(
         DESTS.iter().all(|d| d.name == d.name.to_lowercase()),
@@ -1326,7 +1309,7 @@ fn the_windows_title_says_the_place_and_holds_nothing_that_could_retitle_or_redr
     app.view = View::Section(0);
     assert_eq!(
         app.window_title(),
-        "home  workspace \u{b7} side by side",
+        "home  workspaces \u{b7} side by side",
         "the name, then the place and its state"
     );
     // the model is named nowhere on home: its name and its choice are settings'
@@ -1336,7 +1319,10 @@ fn the_windows_title_says_the_place_and_holds_nothing_that_could_retitle_or_redr
     app.view = View::Section(0);
     app.providers[0].title = "a\u{1b}]2;evil\u{7}b\u{9c}c\u{202e}d\ne\tf".into();
     let title = app.window_title();
-    assert_eq!(title, "home  workspace \u{b7} a]2;evilbcde f", "the controls gone, the letters left as letters");
+    assert_eq!(
+        title, "home  workspaces \u{b7} a]2;evilbcde f",
+        "the controls gone, the letters left as letters"
+    );
     assert!(
         title.chars().all(|c| !c.is_control() && !('\u{202a}'..='\u{202e}').contains(&c)),
         "no control character reaches the terminal: {:?}",

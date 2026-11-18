@@ -120,7 +120,7 @@ pub struct Dest {
     pub purpose: &'static str,
     pub sections: &'static [&'static str],
 }
-pub const DESTS: [Dest; 10] = [
+pub const DESTS: [Dest; 9] = [
     Dest {
         name: "apps",
         purpose: "open an application",
@@ -132,7 +132,7 @@ pub const DESTS: [Dest; 10] = [
         sections: &["files"],
     },
     Dest {
-        name: "workspace",
+        name: "workspaces",
         purpose: "windows and layouts",
         sections: &["window", "layout"],
     },
@@ -147,14 +147,16 @@ pub const DESTS: [Dest; 10] = [
         sections: &["clock", "reminders"],
     },
     Dest {
-        name: "tools",
-        purpose: "check, space, running",
-        sections: &["tools"],
-    },
-    Dest {
         name: "settings",
         purpose: "devices and appearance",
         sections: &[],
+    },
+    // the machine: its check, its space, what runs, its details, its updates and software, and about (v0.153;
+    // named tools through v0.152, with about a place of its own)
+    Dest {
+        name: "system",
+        purpose: "check, space, running",
+        sections: &["system"],
     },
     Dest {
         name: "help",
@@ -162,19 +164,14 @@ pub const DESTS: [Dest; 10] = [
         sections: &[],
     },
     Dest {
-        name: "about",
-        purpose: "project, license and credits",
-        sections: &["about"],
-    },
-    Dest {
         name: "power",
         purpose: "lock, logout, restart, shutdown",
         sections: &["power"],
     },
 ];
-pub const SETTINGS_DEST: usize = 6;
+pub const SETTINGS_DEST: usize = 5;
 pub const HELP_DEST: usize = 7;
-pub const TOOLS_DEST: usize = 5;
+pub const SYSTEM_DEST: usize = 6;
 pub const CALENDAR_DEST: usize = 4;
 pub const WORKSPACE_DEST: usize = 2;
 /// The steps of the workspace place whose receipt stands on the status row, as a change of Apps does (the dialog design notes).
@@ -194,7 +191,7 @@ const WORKSPACE_SAYS: [&str; 13] = [
     "layout_add",
 ];
 /// Settings: a section each, then Talk and Connections, in this order, under their groups (#137); About is a
-/// place of the home since v0.114 (#136).
+/// row of the system place since v0.153 (a place of the home from v0.114, #136).
 pub const SETTINGS: [(&str, &str, &str); 17] = [
     ("out", "sound", "output and volume"),
     ("mic", "microphone", "input and level"),
@@ -222,7 +219,9 @@ pub fn setting_group(label: &str) -> &'static str {
         "wifi" | "bt" | "lan" => "network",
         "storage" | "display" | "keyboard" | "pointer" => "devices",
         "theme" | "wallpaper" | "bar" | "notifications" => "look",
-        _ => "system",
+        // power and spark since v0.153: system is a place of the home now, and no group of settings shares its name
+        "power" | "bat" => "power",
+        _ => "spark",
     }
 }
 /// What a search from Home finds, in the order its groups stand (#169): a heading each, the best few
@@ -305,7 +304,7 @@ pub const READ_GAP: Duration = Duration::from_millis(250);
 /// Rows older than this are read again when their place comes back on screen.
 pub const STALE: Duration = Duration::from_secs(5);
 /// The lists under a section that change by themselves: subscribed by their own uri while on screen (v0.129).
-pub const WATCHED_LISTS: &[&str] = &["spark-shell://tools/rows/running"];
+pub const WATCHED_LISTS: &[&str] = &["spark-shell://system/rows/running"];
 /// The sections whose rows the home's places say (#36): read again when the home comes back.
 /// How long a launch no window confirmed may still bring its window (the desktop's own wait for a slow app).
 const LAUNCH_WAIT: Duration = Duration::from_secs(30);
@@ -2302,8 +2301,8 @@ impl App {
             View::Help => self.help_items(&mut list),
             View::Steps(p) => {
                 // a window's page, a layout's, a program's: what it is above its steps, as an app's details have it
-                if matches!(self.providers[*p].label.as_str(), "window" | "layout" | "tools") {
-                    let tools = self.providers[*p].label == "tools";
+                if matches!(self.providers[*p].label.as_str(), "window" | "layout" | "system") {
+                    let tools = self.providers[*p].label == "system";
                     if let Some(r) = &self.steps_row {
                         list.push(Item::Title(r.text.clone()));
                         // a program says its cpu, its memory and its processes; a window, its first column
@@ -2390,14 +2389,14 @@ impl App {
             }
             View::Home => {
                 if self.query().trim().is_empty() {
-                    // the places in three groups: the everyday places, the system's, and power alone at the end. A
+                    // the places in two groups: the everyday places, then the machine's, power last (v0.153). A
                     // menu breathes: a row of air between its rows when the window has the rows for it, two between
                     // its groups; the minimum window single spaces, a row of air between the groups, and scrolls
                     let dests = self.dests();
                     let room = self.list_room() as usize;
                     let airy = room > dests.len() * 2;
                     for (k, d) in dests.iter().enumerate() {
-                        let group = *d == SETTINGS_DEST || *d == DESTS.len() - 1;
+                        let group = *d == SETTINGS_DEST;
                         if k > 0 && (airy || group) {
                             list.push(Item::Blank);
                         }
@@ -3192,7 +3191,7 @@ impl App {
     }
 
     /// A place's state for the home (the dialog design notes): what it holds now, from what the dialog already has, cheaply;
-    /// None keeps what it is for. Tools and power have no state worth more than their purpose.
+    /// None keeps what it is for. Power has no state worth more than its purpose.
     pub fn dest_state(&self, d: usize) -> Option<String> {
         let sep = crate::ui::SEP;
         let prov = |l: &str| self.providers.iter().find(|p| p.label == l && p.dead.is_none() && p.ready);
@@ -3233,21 +3232,14 @@ impl App {
                 return (!parts.is_empty()).then(|| parts.join(sep));
             }
             "help" => return Some(format!("{} shortcuts", self.shortcuts())),
-            "about" => {
-                let v = self
-                    .about_idx
-                    .map(|i| self.providers[i].version.trim_start_matches('v').to_string())
-                    .filter(|v| !v.is_empty())?;
-                return Some(format!("spark-shell v{}", v));
-            }
-            // tools: the last check, as its check row says it (the dialog design notes, v0.129)
-            "tools" => {
-                return prov("tools")
-                    .and_then(|p| p.rows.rows.iter().find(|r| r.id == "tools:check"))
+            // system: the last check, as its check row says it (the dialog design notes, v0.129)
+            "system" => {
+                return prov("system")
+                    .and_then(|p| p.rows.rows.iter().find(|r| r.id == "system:check"))
                     .and_then(|r| r.columns.first().cloned());
             }
             "notes" | "calendar" => {}
-            "workspace" => {
+            "workspaces" => {
                 // the windows open and their apps, each named once; the layouts where no window is. With no desktop
                 // the window section says so, and the layouts are what the place holds
                 if self.providers.iter().any(|p| p.label == "window" && p.dead.is_none() && !p.ready) {
@@ -4303,9 +4295,6 @@ impl App {
         }
         if d == SETTINGS_DEST || d == CALENDAR_DEST || d == WORKSPACE_DEST {
             return View::Dest(d);
-        }
-        if DESTS[d].sections == ["about"] {
-            return View::About;
         }
         let secs = self.dest_sections(d);
         match secs.as_slice() {
@@ -6074,10 +6063,10 @@ impl App {
             // menu's and act on one click (the dialog design notes)
             Item::Folder(_) | Item::Row(..) | Item::Hit(_) => self.prov_of(&it).is_some_and(|p| match self.providers[p].label.as_str() {
                 "files" | "notes" => true,
-                // tools' objects: a program, a package, a folder; its menu rows act on one click (v0.129)
-                "tools" => self
+                // system's objects: a program, a package, a folder; its menu rows act on one click (v0.129)
+                "system" => self
                     .row_ref(&it)
-                    .is_some_and(|r| r.id.starts_with("tools:program:") || r.id.starts_with("tools:package:") || r.id.starts_with("tools:folder:")),
+                    .is_some_and(|r| r.id.starts_with("system:program:") || r.id.starts_with("system:package:") || r.id.starts_with("system:folder:")),
                 "window" | "layout" => self
                     .row_ref(&it)
                     .and_then(|r| r.tool.as_ref())
@@ -6323,7 +6312,7 @@ impl App {
             View::Help => "help".into(),
             View::Conversation => "conversation".into(),
             View::Dest(d) => DESTS[*d].name.to_lowercase(),
-            View::Section(p) | View::Folder(p, _) | View::Steps(p) if matches!(self.providers[*p].label.as_str(), "window" | "layout") => "workspace".into(),
+            View::Section(p) | View::Folder(p, _) | View::Steps(p) if matches!(self.providers[*p].label.as_str(), "window" | "layout") => "workspaces".into(),
             View::Section(p) | View::Folder(p, _) | View::Steps(p) => section_name(&self.providers[*p].label).to_lowercase(),
             View::About => "about".into(),
             View::Models => "model".into(),

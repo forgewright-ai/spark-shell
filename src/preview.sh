@@ -45,10 +45,10 @@ provide_page() {   # provide_page SECTION ROW-ID -> the row's page
         wifi:wifi:*) wifi_page "$2" ;;
         bt:'bt:'*' '?*) bt_page "${2#bt:* }" ;;
         storage:'storage:'*' '?*) storage_page "${2#storage:* }" ;;
-        tools:tools:package:?*) tools_package_page "${2#tools:package:}" ;;
-        tools:tools:program:?*) tools_program_page "${2#tools:program:}" ;;
-        tools:tools:space:caches) tools_space_view caches ;;
-        tools:tools:folder:?*) tools_space_view "folder:${2#tools:folder:}" ;;
+        system:system:package:?*) system_package_page "${2#system:package:}" ;;
+        system:system:program:?*) system_program_page "${2#system:program:}" ;;
+        system:system:space:caches) system_space_view caches ;;
+        system:system:folder:?*) system_space_view "folder:${2#system:folder:}" ;;
         about:about:license) scrub_text < "$REPO/LICENSE" | jq -Rn '{title: "license", lines: [inputs], bold: []}' ;;
         about:about:credits) scrub_text < "$REPO/CREDITS.md" | jq -Rn '[inputs] as $l | {title: "credits", lines: ($l | map(sub("^#+ *"; ""))), bold: [range($l | length) | select($l[.] | startswith("#"))]}' ;;
         *) return 1 ;;

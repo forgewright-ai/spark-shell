@@ -243,7 +243,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
             [ -n "${3:-}" ] && [ "$(printf '%s' "$3" | wc -c)" -le 32 ] && [ "$(printf '%s' "$3" | tr -d '\001-\037\177')" = "$3" ] || { echo 'a network name is 1 to 32 bytes, without control characters'; return 1; }
             echo "$3"; return 0 ;;
         spark:chat|undo:all|about:open|about:site) echo ''; return 0 ;;
-        tools:*) tools_gate "$2" "${3:-}"; return ;;
+        system:*) system_gate "$2" "${3:-}"; return ;;
         layout:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: save takes a name"; return 1 ;;
         layout:add) _n=$(jq -r '.suggested // [] | .[]' "$LAYOUT_LAST" 2>/dev/null | awk -v w="$(panel_lower "$3")" 'tolower($0) == w && !d {print; d = 1}'); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "layout: $3 was not suggested for the last layout"; return 1 ;;
         apps:open) panel_apps_read "$TMP/apps.gate"   # the step opens from this list too: one read

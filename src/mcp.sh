@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the wire: the MCP server on stdio, one process on fd 3
 # sets: PROVIDE_POLL PROVIDE_WATCHED
-# reads: ANIMATION_NAMES CONFIG FONT_FACES GLYPH_FAMILIES NOTES_DIR OS PROVIDE_LINE_MAX PROVIDE_PROTOCOL PROVIDE_SECTIONS REPO TAB THEME_ENV THEME_KEYS TMP TOOLS_CHECK
+# reads: ANIMATION_NAMES CONFIG FONT_FACES GLYPH_FAMILIES NOTES_DIR OS PROVIDE_LINE_MAX PROVIDE_PROTOCOL PROVIDE_SECTIONS REPO TAB THEME_ENV THEME_KEYS TMP SYSTEM_CHECK
 # only MCP on the wire: fd 1 goes to stderr; the loop alone writes fd 3
 rpc_send() { ( printf '%s\n' "$1" >&3 ) 2>/dev/null || :; }   # a subshell: a closed wire ends it, never the provider
 rpc_result() { printf '%s' "$2" | jq -c --argjson id "$1" '{jsonrpc: "2.0", id: $id, result: .}' >&3; }   # rpc_result ID JSON -- by stdin: no argument limit
@@ -20,10 +20,10 @@ provide_watch() {   # provide_watch SECTION [PAGE] -- polls; a change pokes the 
     _seen=$TMP/rows.seen; _wpage=${2:-}; TMP=$TMP/watch; mkdir -p "$TMP"
     _every=$PROVIDE_POLL; [ -n "$_every" ] || case $(panel_cost "$1") in slow) _every=15 ;; fast) _every=5 ;; *) _every=3 ;; esac
     if [ -n "$_wpage" ]; then
-        _last=$(provide_tools_page "$_wpage" 2>/dev/null | cksum)
+        _last=$(provide_system_page "$_wpage" 2>/dev/null | cksum)
         while :; do
             sleep "$_every"
-            _now=$(provide_tools_page "$_wpage" 2>/dev/null | cksum)
+            _now=$(provide_system_page "$_wpage" 2>/dev/null | cksum)
             [ "$_now" = "$_last" ] || { _last=$_now; fifo_put poke; }
         done
     fi
@@ -41,7 +41,7 @@ provide_watch_check() {   # provide_watch_check SUM -- polls the check's record;
     _every=${PROVIDE_POLL:-3}; _last=$1
     while :; do
         sleep "$_every"
-        _now=$({ cksum < "$TOOLS_CHECK"; } 2>/dev/null)
+        _now=$({ cksum < "$SYSTEM_CHECK"; } 2>/dev/null)
         [ "$_now" = "$_last" ] || { _last=$_now; fifo_put poke; }
     done
 }
@@ -70,7 +70,7 @@ provide_main() {   # provide_main SECTION
     config_load; [ "$OS" = Darwin ] || pm_detect; theme_load; SND=''; [ "$OS" = Darwin ] || SND=$(snd_tool)
     PANEL_VERSION_NOW=$(panel_version); PANEL_VERSION_READ=1   # pinned for the provider's life
     [ "$sec" != display ] || { if saver_can; then SAVER_CAN_NOW=1; else SAVER_CAN_NOW=0; fi; }   # python3 asked once, not per read
-    [ "$sec" != tools ] || tools_sbom_warm
+    [ "$sec" != system ] || system_sbom_warm
     exec 3>&1 1>&2 6<&0   # fd 3 the wire out, fd 6 the wire in
     WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; CLIENT_PAIRING=''; : > "$PROOTS"
     REM_DELETED=$TMP/deleted   # kept for undo until the provider ends
@@ -140,7 +140,7 @@ provide_resource() {   # provide_resource ID METHOD URI -- a read, a subscriptio
             rpc_result "$1" "$(jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/rows.last")" ;;
         resources/subscribe) SUBSCRIBED=1
             case " $PROVIDE_WATCHED " in *" $sec "*) [ -n "$WATCH" ] || { provide_watch "$sec" 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; } ;; esac
-            [ "$sec" != tools ] || [ -n "$WATCH" ] || { _sum=$({ cksum < "$TOOLS_CHECK"; } 2>/dev/null); provide_watch_check "$_sum" 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; }
+            [ "$sec" != system ] || [ -n "$WATCH" ] || { _sum=$({ cksum < "$SYSTEM_CHECK"; } 2>/dev/null); provide_watch_check "$_sum" 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; }
             rpc_result "$1" '{}' ;;
         resources/unsubscribe) SUBSCRIBED=''; [ -z "$WATCH" ] || { kill "$WATCH" 2>/dev/null || :; wait "$WATCH" 2>/dev/null || :; WATCH=''; }; rpc_result "$1" '{}' ;;
     esac
@@ -163,7 +163,7 @@ provide_resource_files() {   # provide_resource_files ID METHOD URI -- the files
     esac
     return 0
 }
-provide_resource_special() {   # provide_resource_special ID METHOD URI -- one section's own resources: a read of them, or tools' running list watched; false when the uri is not one
+provide_resource_special() {   # provide_resource_special ID METHOD URI -- one section's own resources: a read of them, or system's running list watched; false when the uri is not one
     case $sec:$2:$3 in
         theme:resources/read:spark-shell://theme/rows/wallpapers)
             provide_wall_rows > "$TMP/wall.last"   # for the gate
@@ -178,8 +178,8 @@ provide_resource_special() {   # provide_resource_special ID METHOD URI -- one s
             else rpc_error "$1" -32002 "no network interface at that uri"; fi ;;
         window:resources/read:spark-shell://window/rows/?*)
             rpc_result "$1" "$(provide_window_rows "$3" | jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')" ;;
-        tools:resources/read:spark-shell://tools/rows/?*)
-            if provide_tools_page "${3#spark-shell://tools/rows/}" > "$TMP/tools.page" 2>/dev/null && [ -s "$TMP/tools.page" ]; then rpc_result "$1" "$(jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/tools.page")"
+        system:resources/read:spark-shell://system/rows/?*)
+            if provide_system_page "${3#spark-shell://system/rows/}" > "$TMP/system.page" 2>/dev/null && [ -s "$TMP/system.page" ]; then rpc_result "$1" "$(jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/system.page")"
             else rpc_error "$1" -32002 "no tool page at that uri"; fi ;;
         clock:resources/read:spark-shell://clock/rows/settings)
             rpc_result "$1" "$(provide_rows clock settings | jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')" ;;
@@ -191,8 +191,8 @@ provide_resource_special() {   # provide_resource_special ID METHOD URI -- one s
                 rpc_result "$1" "$(jq -c --arg u "$3" '.rows |= map(select(.tool.name == "notes_open")) | .short = [] | {contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/notes.found.json")"
             else rpc_error "$1" -32002 "no search at that uri"; fi
             NOTES_WORDS='' ;;
-        tools:resources/subscribe:spark-shell://tools/rows/running) SUBSCRIBED=1; [ -n "$WATCH" ] || { provide_watch tools running 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; }; rpc_result "$1" '{}' ;;   # polled while on screen
-        tools:resources/unsubscribe:spark-shell://tools/rows/running) SUBSCRIBED=''; [ -z "$WATCH" ] || { kill "$WATCH" 2>/dev/null || :; wait "$WATCH" 2>/dev/null || :; WATCH=''; }; rpc_result "$1" '{}' ;;
+        system:resources/subscribe:spark-shell://system/rows/running) SUBSCRIBED=1; [ -n "$WATCH" ] || { provide_watch system running 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; }; rpc_result "$1" '{}' ;;   # polled while on screen
+        system:resources/unsubscribe:spark-shell://system/rows/running) SUBSCRIBED=''; [ -z "$WATCH" ] || { kill "$WATCH" 2>/dev/null || :; wait "$WATCH" 2>/dev/null || :; WATCH=''; }; rpc_result "$1" '{}' ;;
         *) return 1 ;;
     esac
     return 0
@@ -414,7 +414,7 @@ provide_call_answer() {   # provide_call_answer ID -- the result: the receipt, t
     if [ -s "$TMP/sound.undo" ]; then _undo=$(tool_call_json "${sec}_level" "$(cat "$TMP/sound.undo")"); fi
     # the rows go with the answer; gate and watcher take them as seen
     [ -s "$TMP/action.effect" ] || printf 'null' > "$TMP/action.effect"
-    if [ -f "$TMP/opened" ] || [ "$sec" = tools ]; then printf 'null' > "$TMP/rows.last.new"   # tools: no rows; the host reads again
+    if [ -f "$TMP/opened" ] || [ "$sec" = system ]; then printf 'null' > "$TMP/rows.last.new"   # system: no rows; the host reads again
     else provide_rows "$sec" > "$TMP/rows.last.new" && cp "$TMP/rows.last.new" "$TMP/rows.last" && provide_seen; fi
     rpc_result "$1" "$(jq -cn --arg r "$_out" --argjson u "$_undo" --argjson p "$_pal" --argjson t "$_trn" --argjson o "$([ -f "$TMP/opened" ] && echo true || echo false)" \
         --slurpfile e "$TMP/action.effect" --slurpfile rows "$TMP/rows.last.new" '
@@ -446,6 +446,7 @@ provide_quick() {   # provide_quick SECTION TOOL VALUE -> 0 when the rows always
 provide_refuse() { rpc_result "$1" "$(jq -cn --arg t "$2" '{content: [{type: "text", text: $t}], isError: true}')"; }   # provide_refuse ID SENTENCE -- a result with isError
 cmd_provide() {   # cmd_provide SECTION
     [ $# -eq 1 ] || refuse_in provide "one section: $(printf '%s' "$PROVIDE_SECTIONS" | sed 's/ /, /g')" >&2
+    [ "$1" != system ] || system_state_names
     provide_main "$1"
 }
 

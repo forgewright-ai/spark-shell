@@ -28,13 +28,13 @@ const SECTIONS: &[&str] = &[
     "theme",
     "bar",
     "power",
-    "tools",
+    "system",
     "files",
     "about",
     "clock",
 ];
 
-/// The names a case may give the thing it wants: a place, a setting, a tools page, a row's own step, a step.
+/// The names a case may give the thing it wants: a place, a setting, a page of the system place, a row's own step, a step.
 fn ids(app: &App, it: &Item) -> Vec<String> {
     match it {
         Item::Dest(d) => vec![format!("page:{}", DESTS[*d].name)],
@@ -45,8 +45,8 @@ fn ids(app: &App, it: &Item) -> Vec<String> {
             let prov = &app.providers[*p];
             let row = &prov.rows.rows[*r];
             let mut out = vec![format!("row:{}/{}", prov.label, row.id)];
-            if prov.label == "tools" {
-                out.push(format!("page:tools/{}", row.text));
+            if prov.label == "system" {
+                out.push(format!("page:system/{}", row.text));
             }
             out.extend(row.tool.iter().map(|c| c.name.clone()));
             out

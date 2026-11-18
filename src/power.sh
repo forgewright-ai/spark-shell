@@ -169,7 +169,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line; exit 1 when not do
         pointer) input_setting pointer "$_a" "$_arg" ;;
         keyboard) panel_act_keyboard ;;
         about) case $_a in open) panel_about 72 ;; site) about_site ;; *) echo "$_a is not something about does"; return 1 ;; esac ;;
-        tools) tools_act "$_a" "$_arg" ;;
+        system) system_act "$_a" "$_arg" ;;
         bar) panel_act_bar ;;
         undo) case $_a in all) panel_undo ;; *) echo "$_a is not something undo does"; return 1 ;; esac ;;
         *) echo "$_p takes no action"; return 1 ;;

@@ -1,14 +1,15 @@
 # shellcheck extended-analysis=false
 # --- rows: a section as an MCP server on stdio
-# sets: PROVIDE_CLIENT PROVIDE_LINE_MAX PROVIDE_PROTOCOL PROVIDE_SECTIONS PROVIDE_TOOLS SCRUB_JQ
+# sets: PROVIDE_CLIENT PROVIDE_LINE_MAX PROVIDE_PROTOCOL PROVIDE_SECTIONS PROVIDE_SECTIONS_OLD PROVIDE_TOOLS SCRUB_JQ
 # reads: ANIMATION_NAMES KEPT_LAYOUTS LAYOUTS_DIR LAYOUT_LAST PANEL_CROSS PANEL_DOT PANEL_GO PANEL_RING PANEL_SEP PANEL_TICK REPO SAVER_NAMES TAB THUMB_DIR TMP US WALL_TYPES
 # a section as an MCP server on stdio, JSON-RPC a line. Every JSON value
 # is built by jq with --arg, every request is parsed by jq; a method or a
 # tool name is matched by case, never run as a name
 PROVIDE_PROTOCOL=2025-06-18
-PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps tools about undo files"   # every panel section but spark, and files
+PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps system about undo files"   # every panel section but spark, and files
+PROVIDE_SECTIONS_OLD='tools'   # the names a section had before: tools is system since v0.153. A line spark's MCP list holds under one is ours to take off
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_icons theme_spacing theme_family theme_face theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open about_site undo_all files_browse files_open files_app files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden tools_check tools_fix tools_copy_details tools_update tools_update_system tools_export tools_front tools_end tools_measure tools_clean_packages"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_icons theme_spacing theme_family theme_face theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open about_site undo_all files_browse files_open files_app files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden system_check system_fix system_copy_details system_update system_update_system system_export system_front system_end system_measure system_clean_packages"
 # the scrubber for every string a provider hands on: what can redraw or
 # reorder a screen goes
 #   C0 but the tab, DEL and C1            \u0000-\u0008 \u000b-\u001f \u007f-\u009f
@@ -53,7 +54,7 @@ tool_spec() {
         display|clock) tool_spec_display "$1" ;;
         keyboard|pointer) tool_spec_input "$1" ;;
         notifications|storage|power|bar) tool_spec_system "$1" ;;
-        layout|apps|about|tools|undo) tool_spec_desktop "$1" ;;
+        layout|apps|about|system|undo) tool_spec_desktop "$1" ;;
         files) tool_spec_files "$1" ;;
         *) return 1 ;;
     esac
@@ -225,7 +226,7 @@ tool_spec_system() {   # the notifications, storage, power and bar tools
         *) return 1 ;;
     esac
 }
-tool_spec_desktop() {   # the layout, apps, about, tools and undo tools
+tool_spec_desktop() {   # the layout, apps, about, system and undo tools
     case $1 in
         layout_open)       _ts=layout _ta=open _tp=name _tk=string _th='' _tt='layout open NAME' _td='Open a saved layout.' ;;
         layout_new)        _ts=layout _ta=new _tp=words _tk=string _th=f _tt='layout new WORDS' _td='Open the apps for a task, picked by spark.' ;;
@@ -239,16 +240,16 @@ tool_spec_desktop() {   # the layout, apps, about, tools and undo tools
         apps_terminal)     _ts=apps _ta=terminal _th=o _tt='apps terminal' _td='Open a terminal window.' ;;
         about_open)        _ts=about _ta=open _th=ri _tt='about' _td='The version, the project, the license and the credits.' ;;
         about_site)        _ts=about _ta=site _th=o _tt='about site' _td='Open the project page in the browser.' ;;
-        tools_check)       _ts=tools _ta=check _th=rf _tt='tools check' _td='Run spark-shell check again and keep its result.' ;;
-        tools_fix)         _ts=tools _ta=fix _tp=command _tk=string _th=ofp _tt='tools fix COMMAND' _td='Run a fix the last check gave, a spark-shell command, in a terminal window.' ;;
-        tools_copy_details) _ts=tools _ta=copy-details _th=f _tt='tools copy details' _td='Copy the hardware and software details to the clipboard, for a bug report.' ;;
-        tools_update)      _ts=tools _ta=update _th=ofp _tt='tools update' _td='Run spark-shell update in a terminal window.' ;;
-        tools_update_system) _ts=tools _ta=update-system _th=ofp _tt='tools update system' _td='Run the system upgrade in a terminal window.' ;;
-        tools_export)      _ts=tools _ta=export _th=f _tt='tools export' _td='Save the installed software as a CycloneDX file.' ;;
-        tools_front)       _ts=tools _ta=front _tp=name _tk=string _th=of _tt='tools front NAME' _td='Put a running program'"'"'s newest window in front.' ;;
-        tools_measure)     _ts=tools _ta=measure _th=rf _tt='tools measure' _td='Measure what uses the disk again: your home by folder, the trash, the package cache and the app caches.' ;;
-        tools_clean_packages) _ts=tools _ta=clean-packages _th=ofp _tt='tools clean packages' _td='Run the package manager'"'"'s clean of its download cache in a terminal window.' ;;
-        tools_end)         _ts=tools _ta=end _tp=name _tk=string _th=df _tt='end NAME' _td='End a program and all its processes. Unsaved work is lost.' ;;
+        system_check)       _ts=system _ta=check _th=rf _tt='system check' _td='Run spark-shell check again and keep its result.' ;;
+        system_fix)         _ts=system _ta=fix _tp=command _tk=string _th=ofp _tt='system fix COMMAND' _td='Run a fix the last check gave, a spark-shell command, in a terminal window.' ;;
+        system_copy_details) _ts=system _ta=copy-details _th=f _tt='system copy details' _td='Copy the hardware and software details to the clipboard, for a bug report.' ;;
+        system_update)      _ts=system _ta=update _th=ofp _tt='system update' _td='Run spark-shell update in a terminal window.' ;;
+        system_update_system) _ts=system _ta=update-system _th=ofp _tt='system update system' _td='Run the system upgrade in a terminal window.' ;;
+        system_export)      _ts=system _ta=export _th=f _tt='system export' _td='Save the installed software as a CycloneDX file.' ;;
+        system_front)       _ts=system _ta=front _tp=name _tk=string _th=of _tt='system front NAME' _td='Put a running program'"'"'s newest window in front.' ;;
+        system_measure)     _ts=system _ta=measure _th=rf _tt='system measure' _td='Measure what uses the disk again: your home by folder, the trash, the package cache and the app caches.' ;;
+        system_clean_packages) _ts=system _ta=clean-packages _th=ofp _tt='system clean packages' _td='Run the package manager'"'"'s clean of its download cache in a terminal window.' ;;
+        system_end)         _ts=system _ta=end _tp=name _tk=string _th=df _tt='end NAME' _td='End a program and all its processes. Unsaved work is lost.' ;;
         undo_all)          _ts=undo _ta=all _th='' _tt='undo' _td='Take the last thing done back.' ;;
         *) return 1 ;;
     esac
@@ -334,7 +335,7 @@ provide_person_ok() { case $PROVIDE_CLIENT in ''|spark-dialog) return 0 ;; esac;
 provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state", "rows": [{"id", "sign", "text", "tool", "more", "columns", "children", "group"}], "short": [ID]}; a tool may carry "ask", the arguments the host asks for
     [ "$1" != clock ] || [ "${2:-}" = settings ] || { provide_clock_rows; return; }
     [ "$1" != about ] || { provide_about_rows; return; }
-    [ "$1" != tools ] || { provide_tools_rows; return; }
+    [ "$1" != system ] || { provide_system_rows; return; }
     [ "$1" != files ] || { provide_files_rows; return; }
     THEME_ENUM_NOW=''; [ "$1" != theme ] || THEME_ENUM_NOW=$(theme_enum)   # the palette names once for this read, not once a row
     WIFI_TOOL_READ=''; [ "$1" != wifi ] || { WIFI_TOOL_NOW=$(wifi_tool); WIFI_TOOL_READ=1; }   # the wifi manager once for this read
@@ -593,4 +594,4 @@ provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION [GROUP|COLUMN
 provide_clock_rows() {
     jq -cn --arg state "$(time_zone), $(time_sync)" '{title: "clock", state: $state, rows: [{id: "clock:settings", sign: "opens", text: "time settings", tool: null, more: [], columns: [], children: "spark-shell://clock/rows/settings", group: null}], short: ["clock:settings"]}'
 }
-provide_title() { [ "$1" != about ] || return 0; [ "$1" != tools ] || return 0; [ "$1" != files ] || { echo "your home folder"; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }
+provide_title() { [ "$1" != about ] || return 0; [ "$1" != system ] || return 0; [ "$1" != files ] || { echo "your home folder"; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }

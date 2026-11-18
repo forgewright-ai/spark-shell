@@ -897,7 +897,7 @@ fn the_home_is_six_places_and_settings_holds_the_sections_that_run() {
     };
     assert_eq!(
         names(&app),
-        vec!["apps", "files", "workspace", "notes", "calendar", "tools", "settings", "help", "about", "power"]
+        vec!["apps", "files", "workspaces", "notes", "calendar", "settings", "system", "help", "power"]
     );
     at_row(&mut app, View::Home, SETTINGS_DEST);
     app.enter();
@@ -1863,12 +1863,12 @@ fn a_provider_checks_its_rows_only_while_they_are_on_screen_and_its_first_rows_c
 
 #[test]
 fn the_running_list_is_checked_by_its_own_uri_while_it_is_on_screen() {
-    let (mut app, rx, tx) = app_with(&["tools"]);
+    let (mut app, rx, tx) = app_with(&["system"]);
     let asked = Arc::new(Mutex::new(vec![]));
     let a2 = asked.clone();
-    let rows = json!({"title": "tools", "state": "", "rows": [
-        {"id": "tools:running", "sign": "blank", "text": "running", "tool": null, "more": [], "columns": ["412 processes"],
-         "children": "spark-shell://tools/rows/running", "group": null}
+    let rows = json!({"title": "system", "state": "", "rows": [
+        {"id": "system:running", "sign": "blank", "text": "running", "tool": null, "more": [], "columns": ["412 processes"],
+         "children": "spark-shell://system/rows/running", "group": null}
     ], "short": []});
     let script: common::Script = Box::new(move |v, send| {
         if let (Some(m), Some(u)) = (v.get("method").and_then(Value::as_str), v.pointer("/params/uri").and_then(Value::as_str)) {
@@ -1876,28 +1876,28 @@ fn the_running_list_is_checked_by_its_own_uri_while_it_is_on_screen() {
                 a2.lock().unwrap().push(format!("{m} {u}"));
             }
         }
-        if let Some(r) = ordinary("tools", v, &json!([]), &rows) {
+        if let Some(r) = ordinary("system", v, &json!([]), &rows) {
             send(r);
         }
     });
-    app.servers.push(stub(0, "tools", script, tx));
+    app.servers.push(stub(0, "system", script, tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
     let said = || asked.lock().unwrap().clone();
     app.view = View::Section(0);
     assert!(pump(&mut app, &rx, |_| said().len() == 1));
-    app.view = View::Folder(0, "spark-shell://tools/rows/running".into());
+    app.view = View::Folder(0, "spark-shell://system/rows/running".into());
     assert!(pump(&mut app, &rx, |_| said().len() == 3));
     app.view = View::Section(0);
     assert!(pump(&mut app, &rx, |_| said().len() == 5));
     assert_eq!(
         said(),
         vec![
-            "resources/subscribe spark-shell://tools/rows",
-            "resources/unsubscribe spark-shell://tools/rows",
-            "resources/subscribe spark-shell://tools/rows/running",
-            "resources/unsubscribe spark-shell://tools/rows/running",
-            "resources/subscribe spark-shell://tools/rows",
+            "resources/subscribe spark-shell://system/rows",
+            "resources/unsubscribe spark-shell://system/rows",
+            "resources/subscribe spark-shell://system/rows/running",
+            "resources/unsubscribe spark-shell://system/rows/running",
+            "resources/subscribe spark-shell://system/rows",
         ],
         "one thing watched at a time: the running list by its own uri while it is on screen"
     );
@@ -2710,8 +2710,9 @@ fn a_search_opens_the_rows_it_found() {
 }
 
 #[test]
-fn settings_stand_in_groups_and_the_home_holds_about_and_power() {
-    // #137: Settings under the groups' headings; #136: About and Power are places of the home, About out of Settings
+fn settings_stand_in_groups_and_the_home_ends_with_system_help_and_power() {
+    // #137: Settings under the groups' headings; About is in neither Settings (#136) nor the home's list: it is a row
+    // of the system place (v0.153), and no group of Settings is named system
     let (mut app, _rx, _tx) = app_with(&["out", "wifi", "theme", "power", "about"]);
     app.view = View::Dest(SETTINGS_DEST);
     let items = app.items();
@@ -2722,7 +2723,7 @@ fn settings_stand_in_groups_and_the_home_holds_about_and_power() {
             _ => None,
         })
         .collect();
-    assert_eq!(heads, vec!["sound", "network", "look", "system"], "{:?}", items);
+    assert_eq!(heads, vec!["sound", "network", "look", "power", "spark"], "{:?}", items);
     assert!(
         !items
             .iter()
@@ -2738,16 +2739,8 @@ fn settings_stand_in_groups_and_the_home_holds_about_and_power() {
             _ => None,
         })
         .collect();
-    assert!(names.ends_with(&["settings", "help", "about", "power"]), "{:?}", names);
-    app.in_list = true;
-    app.sel = app
-        .picks()
-        .iter()
-        .position(|i| matches!(i, Item::Dest(d) if spark_dialog::app::DESTS[*d].name == "about"))
-        .unwrap();
-    app.enter();
-    assert_eq!(app.view, View::About, "About opens the about");
-    app.escape();
+    assert!(names.ends_with(&["settings", "system", "help", "power"]), "{:?}", names);
+    assert!(!names.contains(&"about"), "about is no place of the home: {:?}", names);
     app.in_list = true;
     app.sel = app
         .picks()

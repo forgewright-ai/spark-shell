@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""tools_running.py -- the programs running, for the tools place's running page (v0.129).
+"""running.py -- the programs running, for the system place's running page (v0.129).
 
-  tools_running.py list PROC STATE [WINDOWS]   a TSV line a program, the busiest first:
+  running.py list PROC STATE [WINDOWS]   a TSV line a program, the busiest first:
       NAME CPU PRIVATE RESIDENT COUNT UIDS STARTED PIDS COMMAND WINDOW
-  tools_running.py tree PROC PID                PID and every process under it, a pid a line
+  running.py tree PROC PID                PID and every process under it, a pid a line
 
 A program is the name of its command's first word (an interpreter's script by the script's
 name), so a program's processes are one line; a kernel thread, which has no command, is not

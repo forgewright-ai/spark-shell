@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the dialog's search by meaning
 # sets: MCP_ENV
-# reads: DIALOG_BIN MODE OS PROVIDE_SECTIONS REPO SEMANTIC_LOG SEMANTIC_MODEL SEMANTIC_SHA256 SEMANTIC_SIZE SEMANTIC_URL SPARK_CONFIG_DIR STATE_DIR TMP
+# reads: DIALOG_BIN MODE OS PROVIDE_SECTIONS PROVIDE_SECTIONS_OLD REPO SEMANTIC_LOG SEMANTIC_MODEL SEMANTIC_SHA256 SEMANTIC_SIZE SEMANTIC_URL SPARK_CONFIG_DIR STATE_DIR TMP
 semantic_engine() {   # -> spark's llama-server: SPARK_ENGINE_DIR's, else the newest engine (the highest -bNNNN); false when none
     _sed=$(sed -n 's/^SPARK_ENGINE_DIR=//p' "$SPARK_CONFIG_DIR/spark.env" 2>/dev/null | tail -1 | sed 's/^"\(.*\)"$/\1/')
     tilde='~'; case $_sed in "$tilde"|"$tilde/"*) _sed=$HOME${_sed#"$tilde"} ;; esac
@@ -100,6 +100,7 @@ mcp_spark() { _sp=$(spark_bin); [ -n "$_sp" ] && "$_sp" help </dev/null 2>/dev/n
 mcp_line() { [ -f "$MCP_ENV" ] || return 0; sed -n "s/^MCP_SERVER_$(printf '%s' "$1" | tr 'a-z' 'A-Z')=//p" "$MCP_ENV" | tail -1 | sed 's/^"\(.*\)"$/\1/'; }   # mcp_line NAME -> its program and words on spark's list
 mcp_ours() { case $(mcp_line "$1") in */spark-shell" provide $1") return 0 ;; *) return 1 ;; esac; }   # spark-shell's line, this clone's or an older one's
 mcp_mine() { for s in $PROVIDE_SECTIONS; do if mcp_ours "$s"; then printf ' %s' "$s"; fi; done; }   # -> " NAME..." the lines on spark's list that are ours
+mcp_old() { for s in $PROVIDE_SECTIONS_OLD; do if mcp_ours "$s"; then printf ' %s' "$s"; fi; done; }   # -> " NAME..." our lines under a name a section had before: spark would start a provider that is no section now
 mcp_apply() {   # the mcp row of `on desktop`: each provider on spark's MCP list
     _sp=$(mcp_spark) || { skip mcp "spark 1.90 or newer lists the desktop's tools (spark update)"; return 0; }
     _want=''; _theirs=''
@@ -109,8 +110,12 @@ mcp_apply() {   # the mcp row of `on desktop`: each provider on spark's MCP list
         if [ -n "$_l" ] && ! mcp_ours "$s"; then _theirs="$_theirs $s"; else _want="$_want $s"; fi
     done
     [ -z "$_theirs" ] || row todo mcp "already on spark's MCP list as servers of yours, left as they are:$_theirs"
-    if [ -z "$_want" ]; then ok mcp "spark-shell's providers are on spark's MCP list"; return 0; fi
-    need mcp "put$_want on spark's MCP list" || return 0
+    _gone=$(mcp_old)
+    if [ -z "$_want$_gone" ]; then ok mcp "spark-shell's providers are on spark's MCP list"; return 0; fi
+    _mw=''; [ -z "$_want" ] || _mw="put$_want on spark's MCP list"
+    [ -z "$_gone" ] || _mw="${_mw:+$_mw; }take$_gone, a section's name before, off spark's MCP list"
+    need mcp "$_mw" || return 0
+    for s in $_gone; do "$_sp" mcp rm "$s" </dev/null >/dev/null 2>&1 || :; done
     for s in $_want; do
         if mcp_ours "$s"; then "$_sp" mcp rm "$s" </dev/null >/dev/null 2>&1 || :; fi   # a line an older clone wrote
         "$_sp" mcp add "$s" "$REPO/spark-shell" provide "$s" </dev/null >/dev/null 2>"$TMP/mcp.err" || { row todo mcp "$s: $(head -1 "$TMP/mcp.err") -- spark-shell on desktop again"; return 0; }
@@ -119,7 +124,7 @@ mcp_apply() {   # the mcp row of `on desktop`: each provider on spark's MCP list
 }
 mcp_off() {   # off: our lines off spark's MCP list; a server of yours stays
     _sp=$(mcp_spark) || return 0
-    _mo=$(mcp_mine); [ -n "$_mo" ] || return 0
+    _mo="$(mcp_mine)$(mcp_old)"; [ -n "$_mo" ] || return 0
     for s in $_mo; do "$_sp" mcp rm "$s" </dev/null >/dev/null 2>&1 || :; done
     row ok mcp "$(printf '%s' "$_mo" | wc -w | tr -d ' ') providers off spark's MCP list"
 }

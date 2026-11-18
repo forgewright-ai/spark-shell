@@ -16,7 +16,7 @@
 ["lock", ["power_lock"]],
 ["shutdown", ["power_shutdown"]],
 ["settings", ["page:settings"]],
-["updates", ["page:tools/updates"]],
+["updates", ["page:system/updates"]],
 ["screenshot", ["window_capture"]],
 ["printer", ["page:settings/printers"]],
 ["web browser", ["apps_open"]],

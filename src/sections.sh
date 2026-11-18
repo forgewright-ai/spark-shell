@@ -42,7 +42,7 @@ panel_title() {   # panel_title SECTION -> the lines that say what opened the pa
             case ${_sn:-0} in 0) echo "$(panel_col storage)no drive plugged in" ;; 1) echo "$(panel_col storage)1 drive" ;; *) echo "$(panel_col storage)$_sn drives" ;; esac ;;
         power) _pu=$(power_up); echo "$(panel_col power)${_pu:-lock, suspend, restart}" ;;
         about) echo "$(panel_col about)spark-shell $(panel_version) $PANEL_SEP the project, the license, the credits" ;;
-        tools) echo "$(panel_col tools)$(tools_check_state)" ;;
+        system) echo "$(panel_col system)$(system_check_state)" ;;
         layout) _n=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | wc -l | tr -d ' '); _last=''; [ ! -f "$LAYOUT_LAST" ] || _last=$(layout_words "$LAYOUT_LAST")
             if [ "$_n" -eq 0 ]; then echo "$(panel_col layout)none saved yet"
             else echo "$(panel_col layout)$_n saved${_last:+ $PANEL_SEP last: $_last}"; fi ;;
@@ -107,7 +107,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
         theme) panel_rows_theme "$@" ;;
         wallpapers) panel_rows_wallpapers "$@" ;;
         about) printf '%s\tspark-shell %s\topen\n' "$PANEL_GO" "$(panel_version)" ;;   # the splash, in this window
-        tools) tools_menu | while IFS="$TAB" read -r _tmn _tms _tml; do printf -- '-\t%s  %s\tshow\n' "$_tmn" "$_tms"; done ;;   # the six, as text: the dialog opens their pages
+        system) system_menu | while IFS="$TAB" read -r _tmn _tms _tml; do printf -- '-\t%s  %s\tshow\n' "$_tmn" "$_tms"; done ;;   # the six, as text: the dialog opens their pages
         window) panel_rows_window "$@" ;;
         display) panel_rows_display "$@" ;;
         keyboard) panel_rows_keyboard "$@" ;;

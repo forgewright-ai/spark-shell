@@ -668,14 +668,14 @@ def busy(binary, env, home):
 
 
 def tools_walk(binary, env, home):
-    """Home, tools, check (it runs, and the page shows), Esc back to the six; running: the walk's own program found by
+    """Home, system, check (it runs, and the page shows), Esc back to its rows; running: the walk's own program found by
     words, F9, end asks, keep working keeps it and comes back to it, end ends it; Esc home, Esc closes (v0.129)."""
     sleeper = os.path.join(home, "spark-pty-sleeper")   # a program of its own name: no other process is ever ended
     with open(sleeper, "w") as f:   # a script, named by its own name; a copy of sleep is a uutils multicall on some systems
         f.write("#!/usr/bin/env python3\nimport time\ntime.sleep(600)\n")
     os.chmod(sleeper, 0o700)
     held = subprocess.Popen([sleeper])
-    argv = [binary, "--provider", SS + " provide tools", "--provider", SS + " provide about", "--composer", "", "--spark-shell", SS]
+    argv = [binary, "--provider", SS + " provide system", "--provider", SS + " provide about", "--composer", "", "--spark-shell", SS]
     pid, fd = pty.fork()
     if pid == 0:
         os.execve(binary, argv, env)
@@ -701,11 +701,11 @@ def tools_walk(binary, env, home):
     # every check reads the screen as drawn: the dialog sends only the cells that change, so the bytes alone miss a
     # word whose letters were on screen already (`oftware`)
     tail = scr.text
-    ok(wait_for(lambda: "search" in tail() and "tools" in tail()), "the home draws with tools among its places", tail()[-400:])
-    os.write(fd, b"tools")
+    ok(wait_for(lambda: "search" in tail() and "system" in tail()), "the home draws with system among its places", tail()[-400:])
+    os.write(fd, b"system")
     time.sleep(0.5)
     os.write(fd, b"\r")
-    ok(wait_for(lambda: "processes" in tail() and "packages" in tail()), "tools opens on its six rows, each its state", tail()[-600:])
+    ok(wait_for(lambda: "processes" in tail() and "packages" in tail()), "system opens on its rows, each its state", tail()[-600:])
     seen.clear()
     os.write(fd, b"\x1b[B")   # opened from words typed, nothing is lit: an arrow lights the first row
     ok(wait_for(lambda: "test the setup and fix problems" in tail()), "Down lights check, its line on the status row", tail()[-600:])
@@ -729,13 +729,13 @@ def tools_walk(binary, env, home):
     os.write(fd, b"running")
     time.sleep(0.5)
     os.write(fd, b"\r")
-    if not wait_for(lambda: "tools \u00b7 running" in scr.text()):
+    if not wait_for(lambda: "system \u00b7 running" in scr.text()):
         return stop("running opens")
     os.write(fd, b"spark-pty")
     if not wait_for(lambda: re.search(r"spark-pty-sleeper \u00b7 \d+% cpu", scr.text())):
         return stop("words find the walk's program, its line on the status row")
     os.write(fd, b"\x1b[20~")   # F9
-    if not wait_for(lambda: "tools \u00b7 spark-pty-sleeper" in scr.text() and "    end" in scr.text()):
+    if not wait_for(lambda: "system \u00b7 spark-pty-sleeper" in scr.text() and "    end" in scr.text()):
         return stop("F9: the walk's program's actions, end among them")
     os.write(fd, b"\r")
     if not wait_for(asked):
@@ -746,7 +746,7 @@ def tools_walk(binary, env, home):
         return stop("keep working keeps it, back on the list with the bar on it")
     ok(True, "keep working keeps it, back on the list with the bar on it")
     os.write(fd, b"\x1b[20~")
-    if not wait_for(lambda: "tools \u00b7 spark-pty-sleeper" in scr.text() and "    end" in scr.text()):
+    if not wait_for(lambda: "system \u00b7 spark-pty-sleeper" in scr.text() and "    end" in scr.text()):
         return stop("F9 again: the walk's program's actions")
     os.write(fd, b"\r")
     if not wait_for(asked):   # the question names the walk's program, or nothing is confirmed

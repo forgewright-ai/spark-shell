@@ -1989,7 +1989,7 @@ else
     [ "$st" -eq 1 ] && [ "$out" = "spark-shell apps: the picker needs a terminal -- the file is $apps_file (name[: your words], one per line)" ] \
         && ok "apps without a terminal: refused in one line naming the file, exit 1" || bad "apps no tty" "st=$st $out"
     st=0; out=$(sh "$SH" desktop tools </dev/null 2>&1) || st=$?
-    [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: the picker needs a terminal' && ok "old spellings: desktop tools is the same picker, the same refusal" || bad "tools refusal" "st=$st $out"
+    [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: the picker needs a terminal' && ok "old spellings: desktop tools is the same picker, the same refusal" || bad "system refusal" "st=$st $out"
     st=0; out=$(sh "$SH" desktop apps </dev/null 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = "spark-shell desktop: the picker needs a terminal -- the file is $apps_file (name[: your words], one per line)" ] \
         && ok "old spellings: desktop apps without a terminal, refused in one line naming the file" || bad "desktop apps no tty" "st=$st $out"
@@ -5848,7 +5848,7 @@ for _mf in "$REPO"/lib/motion_*.py; do _mn=${_mf##*/motion_}; wall_n=${_mn%.py};
 [ -z "$_wb" ] && [ "$(ls "$REPO/gallery/wallpaper" | wc -l | tr -d ' ')" = 36 ] && ok "gallery/wallpaper/: the 18 drawings, each its SVG and a 3840 by 2160 PNG; lib/motion_NAME.py a script of a shipped one alone, lib/wallpaper.py the scenes'" || bad "wallpaper files" "$_wb $(ls "$REPO/gallery/wallpaper")"
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
-for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps tools about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
+for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps system about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
 [ "$(grep -c '' "$H/tools.all")" = 158 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
     && ok "provide: the twenty-five sections hold the 158 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
@@ -6014,24 +6014,24 @@ mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},
 jq -e -s 'all(.[]; (.name | test("^[a-z][a-z0-9_]{0,63}$")) and (.title | test("^[a-z][a-z-]*( [a-z-]+| [A-Z]+)*$")) and (.title | length) <= 60)' "$H/tools.all" >/dev/null \
     && ok "provide: every tool name is lower case with underscores, every title a sentence of plain words with its argument in capitals, 60 at most" || bad "tool shapes" "$(jq -r '.name + " | " + .title' "$H/tools.all")"
 jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.destructiveHint | type) == "boolean" and (.idempotentHint | type) == "boolean" and .openWorldHint == false)' "$H/tools.all" >/dev/null \
-    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove files_empty files_purge power_logout power_restart power_shutdown printers_cancel theme_delete tools_end wifi_forget wifi_setup window_close' ] \
-    && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = 'notes_find tools_check tools_measure about_open files_show files_attach files_find files_say' ] \
-    && ok "provide: every hint spelled out (the spec's default is destructive); destructive only where something is lost (#112): forget, close, remove, delete, delete for good and empty the trash (#130), the power steps, a print job cancelled, the network manager installed, a program ended (v0.129); the network, clock and printer settings carry undo instead; read only: notes find, the check and the measure of tools, about, files show, attach, find and say" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
-[ "$(jq -r 'select(._meta["spark-shell/opens"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'about_site apps_open apps_terminal files_app files_browse files_open files_reveal notes_open power_lock storage_open tools_clean_packages tools_fix tools_front tools_update tools_update_system window_focus' ] \
+    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove files_empty files_purge power_logout power_restart power_shutdown printers_cancel system_end theme_delete wifi_forget wifi_setup window_close' ] \
+    && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = 'notes_find system_check system_measure about_open files_show files_attach files_find files_say' ] \
+    && ok "provide: every hint spelled out (the spec's default is destructive); destructive only where something is lost (#112): forget, close, remove, delete, delete for good and empty the trash (#130), the power steps, a print job cancelled, the network manager installed, a program ended (v0.129); the network, clock and printer settings carry undo instead; read only: notes find, the check and the measure of system, about, files show, attach, find and say" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
+[ "$(jq -r 'select(._meta["spark-shell/opens"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'about_site apps_open apps_terminal files_app files_browse files_open files_reveal notes_open power_lock storage_open system_clean_packages system_fix system_front system_update system_update_system window_focus' ] \
     && [ "$(jq -s '[.[] | select(._meta != null and ._meta != {"spark-shell/opens": true} and ._meta != {"spark-shell/opens": true, "spark-shell/person": true})] | length' "$H/tools.all")" = 0 ] \
-    && [ "$(jq -r 'select(._meta["spark-shell/person"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'tools_clean_packages tools_fix tools_update tools_update_system' ] \
+    && [ "$(jq -r 'select(._meta["spark-shell/person"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'system_clean_packages system_fix system_update system_update_system' ] \
     && ok "provide: the tools that put a window in front say so (_meta spark-shell/opens), so the dialog steps aside at the click (#196); a person's step says so too (spark-shell/person: a terminal, or sudo, v0.129.2); no other _meta" || bad "tool opens" "$(jq -c 'select(._meta) | [.name, ._meta]' "$H/tools.all")"
 # a person's step to the dialog alone (v0.129.2): another client that names itself (spark's MCP list, the prompt line, spark
 # do) neither sees it nor calls it; the suite's raw requests, which name no client, see every tool
 pinit() { rq 0 initialize "$(jq -cn --arg n "$1" '{protocolVersion: "2025-06-18", capabilities: {}, clientInfo: {name: $n, version: "1"}}')"; }
-mcp tools "$(pinit spark-dialog)" "$(rq 1 tools/list)"; _pd=$(ans 1 | jq -r '[.result.tools[].name] | join(" ")')
-mcp tools "$(pinit spark)" "$(rq 1 tools/list)" "$(call 2 tools_update)"; _ps=$(ans 1 | jq -r '[.result.tools[].name] | join(" ")')
-[ "$_pd" = 'tools_check tools_fix tools_copy_details tools_update tools_update_system tools_export tools_front tools_end tools_measure tools_clean_packages' ] \
-    && [ "$_ps" = 'tools_check tools_copy_details tools_export tools_front tools_end tools_measure' ] \
-    && [ "$(ans 2 | jq -r .error.message)" = 'tools_update runs from its row in the dialog, never from a plan' ] \
-    && ok "provide tools: a person's step to the dialog alone; spark sees the rest, and a call of one is refused in one line (v0.129.2)" || bad "person steps" "dialog: $_pd | spark: $_ps | $(ans 2)"
-# tools (v0.129): six utilities, a page each; the check kept, a fake /proc, a measured home; every step that ends or runs
-# something held to its gate. Linux alone: macOS has no /proc and no tools place
+mcp system "$(pinit spark-dialog)" "$(rq 1 tools/list)"; _pd=$(ans 1 | jq -r '[.result.tools[].name] | join(" ")')
+mcp system "$(pinit spark)" "$(rq 1 tools/list)" "$(call 2 system_update)"; _ps=$(ans 1 | jq -r '[.result.tools[].name] | join(" ")')
+[ "$_pd" = 'system_check system_fix system_copy_details system_update system_update_system system_export system_front system_end system_measure system_clean_packages' ] \
+    && [ "$_ps" = 'system_check system_copy_details system_export system_front system_end system_measure' ] \
+    && [ "$(ans 2 | jq -r .error.message)" = 'system_update runs from its row in the dialog, never from a plan' ] \
+    && ok "provide system: a person's step to the dialog alone; spark sees the rest, and a call of one is refused in one line (v0.129.2)" || bad "person steps" "dialog: $_pd | spark: $_ps | $(ans 2)"
+# system (named tools through v0.152; v0.129): six utilities, a page each, and about; the check kept, a fake /proc, a
+# measured home; every step that ends or runs something held to its gate. Linux alone: macOS has no /proc and no system place
 if [ "$(uname -s)" != Darwin ]; then
     SEP=$(printf '\302\267'); _ts=$H/.local/state/spark-shell; mkdir -p "$_ts"
     { date +%s; printf '%s\n' 'ok     rc           sourced from .zshrc' 'warn   tools        missing: fzf zoxide -- spark-shell on' 'FAIL   look         out of date: .tmux.conf -- spark-shell on' \
@@ -6051,37 +6051,47 @@ if [ "$(uname -s)" != Darwin ]; then
     tproc 4194401 "$(id -u)" 50 /usr/bin/sway; tproc 4194402 "$(id -u)" 10 /usr/bin/spark-dialog --home; tproc 4194403 "$_ou" 5 /usr/sbin/udevd
     tproc 4194404 0 0; tproc 4194405 "$(id -u)" 300 /usr/lib/firefox/firefox; tproc 4194406 "$(id -u)" 200 /usr/lib/firefox/firefox -contentproc
     tproc 4194407 "$(id -u)" 1 python3 /opt/notes-sync.py; tproc 4194408 "$(id -u)" 0 /usr/bin/swaybar -b bar-0
-    (SPARK_SHELL_PROC=$TP; export SPARK_SHELL_PROC; mcp tools "$(rq 1 resources/read '{"uri":"spark-shell://tools/rows"}')" "$(rq 2 resources/read '{"uri":"spark-shell://tools/rows/check"}')" \
-        "$(rq 3 resources/read '{"uri":"spark-shell://tools/rows/check/passed"}')" "$(rq 4 resources/read '{"uri":"spark-shell://tools/rows/running"}')" \
-        "$(rq 5 resources/read "$(jq -cn --arg u "spark-shell://tools/page/$(b64u tools:program:firefox)" '{uri: $u}')")" \
-        "$(call 6 tools_end '{"name":"sway"}')" "$(call 7 tools_end '{"name":"spark-dialog"}')" "$(call 8 tools_end '{"name":"udevd"}')" "$(call 9 tools_end '{"name":"nosuch"}')" \
-        "$(call 10 tools_front '{"name":"firefox"}')" "$(call 11 tools_fix '{"command":"rm -rf /"}')" "$(call 12 tools_fix '{"command":"spark-shell on"}')" \
-        "$(call 13 tools_clean_packages)" "$(rq 14 resources/read '{"uri":"spark-shell://tools/rows/system"}')" "$(rq 15 resources/read '{"uri":"spark-shell://tools/rows/updates"}')" \
-        "$(call 16 tools_end '{"name":"swaybar"}')")   # a subshell: sh keeps a variable set before a function after it
+    (SPARK_SHELL_PROC=$TP; export SPARK_SHELL_PROC; mcp system "$(rq 1 resources/read '{"uri":"spark-shell://system/rows"}')" "$(rq 2 resources/read '{"uri":"spark-shell://system/rows/check"}')" \
+        "$(rq 3 resources/read '{"uri":"spark-shell://system/rows/check/passed"}')" "$(rq 4 resources/read '{"uri":"spark-shell://system/rows/running"}')" \
+        "$(rq 5 resources/read "$(jq -cn --arg u "spark-shell://system/page/$(b64u system:program:firefox)" '{uri: $u}')")" \
+        "$(call 6 system_end '{"name":"sway"}')" "$(call 7 system_end '{"name":"spark-dialog"}')" "$(call 8 system_end '{"name":"udevd"}')" "$(call 9 system_end '{"name":"nosuch"}')" \
+        "$(call 10 system_front '{"name":"firefox"}')" "$(call 11 system_fix '{"command":"rm -rf /"}')" "$(call 12 system_fix '{"command":"spark-shell on"}')" \
+        "$(call 13 system_clean_packages)" "$(rq 14 resources/read '{"uri":"spark-shell://system/rows/details"}')" "$(rq 15 resources/read '{"uri":"spark-shell://system/rows/updates"}')" \
+        "$(call 16 system_end '{"name":"swaybar"}')")   # a subshell: sh keeps a variable set before a function after it
     rows() { ans "$1" | jq -c '.result.contents[0].text | fromjson'; }
     said() { ans "$1" | jq -r '.result.content[0].text'; }
-    [ "$(rows 1 | jq -c '[.rows[] | [.id, .text, .children]]')" = '[["tools:check","check","spark-shell://tools/rows/check"],["tools:space","space","spark-shell://tools/rows/space"],["tools:running","running","spark-shell://tools/rows/running"],["tools:system","system","spark-shell://tools/rows/system"],["tools:updates","updates","spark-shell://tools/rows/updates"],["tools:software","software","spark-shell://tools/rows/software"]]' ] \
+    [ "$(rows 1 | jq -c '[.rows[] | [.id, .text, .children]]')" = '[["system:check","check","spark-shell://system/rows/check"],["system:space","space","spark-shell://system/rows/space"],["system:running","running","spark-shell://system/rows/running"],["system:details","details","spark-shell://system/rows/details"],["system:updates","updates","spark-shell://system/rows/updates"],["system:software","software","spark-shell://system/rows/software"],["system:about","about","spark-shell://about/rows"]]' ] \
         && [ "$(rows 1 | jq -r '.rows[0].columns[0], .rows[2].columns[0], .rows[0].line')" = "$(printf '3 problems\n8 processes\ncheck %s test the setup and fix problems' "$SEP")" ] \
         && rows 1 | jq -e 'all(.rows[]; (.columns[0] | length) > 0)' >/dev/null \
-        && ok "provide tools: six rows, one word each, each its state (the last check, the processes) and its page as children" || bad "tools rows" "$(rows 1)"
+        && ok "provide system: six rows, one word each, each its state (the last check, the processes) and its page as children, then about, whose page is the about section's own (v0.153)" || bad "system rows" "$(rows 1)"
     [ "$(rows 2 | jq -c '[.rows[] | select(.text != "") | [.text, .group, (.columns[0] // ""), (.tool.arguments.command // "")]]')" = '[["programs","problems","missing: fzf zoxide",""],["config files","problems","out of date: .tmux.conf",""],["screen saver","problems","no screen saver",""],["fix",null,"spark-shell on","spark-shell on"],["fix",null,"spark-shell desktop","spark-shell desktop"],["1 passed",null,"",""],["1 not applicable",null,"",""],["check again",null,"checked at '"$(date -d "@$(sed -n 1p "$_ts/check.last")" +%H:%M)"'",""]]' ] \
         && [ "$(rows 2 | jq -r .state)" = '3 problems' ] && [ "$(rows 3 | jq -c '[.rows[] | [.text, .columns[0]]]')" = '[["shell startup","sourced from .zshrc"]]' ] \
-        && ok "tools check: the problems by plain name, one fix for the two that share it, the passed and the not applicable counted apart, check again with its time" || bad "tools check" "$(rows 2)"
-    [ "$(rows 4 | jq -c '[.rows[] | [.text, .columns, ([.more[].name] | join(" ")), .line]]')" = "$(jq -cn --arg s "$SEP" --arg o "$_onl" '[["firefox", ["0%", "3.1 MB"], "tools_end", "firefox \($s) 0% cpu \($s) 3.1 MB \($s) 2 processes"],
-            ["notes-sync.py", ["0%", "1.6 MB"], "tools_end", "notes-sync.py \($s) 0% cpu \($s) 1.6 MB \($s) 1 process"], ["spark-dialog", ["0%", "1.6 MB"], "", "spark-dialog \($s) 0% cpu \($s) 1.6 MB \($s) 1 process"],
+        && ok "system check: the problems by plain name, one fix for the two that share it, the passed and the not applicable counted apart, check again with its time" || bad "system check" "$(rows 2)"
+    [ "$(rows 4 | jq -c '[.rows[] | [.text, .columns, ([.more[].name] | join(" ")), .line]]')" = "$(jq -cn --arg s "$SEP" --arg o "$_onl" '[["firefox", ["0%", "3.1 MB"], "system_end", "firefox \($s) 0% cpu \($s) 3.1 MB \($s) 2 processes"],
+            ["notes-sync.py", ["0%", "1.6 MB"], "system_end", "notes-sync.py \($s) 0% cpu \($s) 1.6 MB \($s) 1 process"], ["spark-dialog", ["0%", "1.6 MB"], "", "spark-dialog \($s) 0% cpu \($s) 1.6 MB \($s) 1 process"],
             ["sway", ["0%", "1.6 MB"], "", "sway \($s) 0% cpu \($s) 1.6 MB \($s) 1 process"], ["swaybar", ["0%", "1.6 MB"], "", "swaybar \($s) 0% cpu \($s) 1.6 MB \($s) 1 process"],
             ["udevd", ["0%", "1.6 MB"], "", "udevd \($s) 0% cpu \($s) 1.6 MB \($s) 1 process \($s) user \($o)"]]')" ] \
         && [ "$(rows 4 | jq -r .state)" = '8 processes' ] && [ "$(ans 5 | jq -r '.result.contents[0].text | fromjson | .lines[2:5] | join("|")')" = 'processes   2|ids         4194405, 4194406|user        you' ] \
-        && ok "tools running: a program its command's name (a script by its script), its processes one row, a kernel thread left out; end on the person's own alone, not the desktop's parts or the dialog; its view" || bad "tools running" "$(rows 4) $(ans 5)"
+        && ok "system running: a program its command's name (a script by its script), its processes one row, a kernel thread left out; end on the person's own alone, not the desktop's parts or the dialog; its view" || bad "system running" "$(rows 4) $(ans 5)"
     [ "$(said 6)" = 'sway is the desktop: use logout in power' ] && [ "$(said 7)" = 'the dialog closes with Esc' ] && [ "$(said 8)" = "udevd belongs to $_on and cannot be ended here" ] \
         && [ "$(said 9)" = 'nosuch is not running' ] && [ "$(said 10)" = 'firefox has no window' ] && [ "$(said 11)" = 'rm -rf / is not a fix the last check gave' ] \
         && [ "$(said 12)" = 'a terminal window needs the desktop' ] && [ "$(said 13)" = 'no supported package manager here' ] \
         && [ "$(said 16)" = 'swaybar is part of the desktop: use logout in power' ] \
-        && ans 8 | jq -e '.result.isError' >/dev/null && ok "tools: end refuses the desktop and its parts, the dialog, another user's program and one not running; front one with no window; a fix the check did not give; a terminal with no desktop; a clean with no package manager" \
-        || bad "tools refusals" "$(for i in 6 7 8 9 10 11 12 13; do said $i; done | paste -sd '|' -)"
-    [ "$(rows 14 | jq -c '[.rows[] | .group] | unique')" != '[null]' ] && rows 14 | jq -e 'any(.rows[]; .id == "tools:copy-details" and .tool.name == "tools_copy_details") and all(.rows[]; .group == null or .group == "hardware" or .group == "operating system" or .group == "desktop")' >/dev/null \
-        && rows 15 | jq -e '[.rows[] | .id] | index("tools:update") != null' >/dev/null \
-        && ok "tools system and updates: the facts under hardware, operating system and desktop, copy details; update spark-shell" || bad "tools system" "$(rows 14) $(rows 15)"
+        && ans 8 | jq -e '.result.isError' >/dev/null && ok "system: end refuses the desktop and its parts, the dialog, another user's program and one not running; front one with no window; a fix the check did not give; a terminal with no desktop; a clean with no package manager" \
+        || bad "system refusals" "$(for i in 6 7 8 9 10 11 12 13; do said $i; done | paste -sd '|' -)"
+    [ "$(rows 14 | jq -c '[.rows[] | .group] | unique')" != '[null]' ] && rows 14 | jq -e 'any(.rows[]; .id == "system:copy-details" and .tool.name == "system_copy_details") and all(.rows[]; .group == null or .group == "hardware" or .group == "operating system" or .group == "desktop")' >/dev/null \
+        && rows 15 | jq -e '[.rows[] | .id] | index("system:update") != null' >/dev/null \
+        && ok "system details and updates: the facts under hardware, operating system and desktop, copy details; update spark-shell" || bad "system details" "$(rows 14) $(rows 15)"
+    # what the section keeps follows its name (v0.153): the folder named tools moves when the section first opens, and its
+    # kept package count goes; another verb moves nothing, and once there is a folder named system, one named tools is left
+    _tx=$H/statenames; mkdir -p "$_tx/spark-shell/tools/space" "$_tx/spark-shell/panel"; echo kept > "$_tx/spark-shell/tools/sbom"; echo 1 > "$_tx/spark-shell/panel/tools.packages"
+    XDG_STATE_HOME=$_tx sh "$SH" help >/dev/null 2>&1 || :; _tm0=$(ls "$_tx/spark-shell" | paste -sd ' ' -)
+    XDG_STATE_HOME=$_tx sh "$SH" panel system --list >/dev/null 2>&1 || :
+    _tm1="$(cat "$_tx/spark-shell/system/sbom" 2>&1),$(ls "$_tx/spark-shell/system" 2>&1 | paste -sd ' ' -),$(ls -d "$_tx/spark-shell/tools" "$_tx/spark-shell/panel/tools.packages" 2>/dev/null | wc -l | tr -d ' ')"
+    mkdir -p "$_tx/spark-shell/tools"; echo old > "$_tx/spark-shell/tools/sbom"; XDG_STATE_HOME=$_tx sh "$SH" panel system --list >/dev/null 2>&1 || :
+    [ "$_tm0" = 'panel tools' ] && [ "$_tm1" = 'kept,sbom space,0' ] && [ "$(cat "$_tx/spark-shell/system/sbom")" = kept ] && [ "$(cat "$_tx/spark-shell/tools/sbom")" = old ] \
+        && ok "system: what the section kept under tools is under system once it opens, the kept package count read again; help moves nothing, a later folder named tools is left alone (v0.153)" \
+        || bad "system state names" "$_tm0 | $_tm1 | $(ls -R "$_tx" 2>&1 | paste -sd ' ' -)"
     # a fix runs in a terminal, and the check runs again after it in the same window, so the record is the fix's
     # result and not the one from before it; an update runs alone
     cat > "$H/fix.want" <<EOF
@@ -6092,20 +6102,20 @@ $REPO/spark-shell check
 printf '\npress Enter to close\n'
 read _
 EOF
-    rm -f "$H/.local/state/swaymsg.log"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel tools fix 'spark-shell on' 2>&1) || st=$?
+    rm -f "$H/.local/state/swaymsg.log"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel system fix 'spark-shell on' 2>&1) || st=$?
     _tfs=$(sed -n 's/^exec foot sh //p' "$H/.local/state/swaymsg.log" 2>/dev/null | tail -1)
-    rm -f "$H/.local/state/swaymsg.log"; st2=0; out2=$(SWAYSOCK=/tmp/x sh "$SH" panel tools update 2>&1) || st2=$?
+    rm -f "$H/.local/state/swaymsg.log"; st2=0; out2=$(SWAYSOCK=/tmp/x sh "$SH" panel system update 2>&1) || st2=$?
     _tus=$(sed -n 's/^exec foot sh //p' "$H/.local/state/swaymsg.log" 2>/dev/null | tail -1)
     [ "$st" -eq 0 ] && [ "$out" = 'opened a terminal: spark-shell on' ] && [ -f "$_tfs" ] && [ "$(sed 1,2d "$_tfs")" = "$(cat "$H/fix.want")" ] \
         && [ "$st2" -eq 0 ] && [ -f "$_tus" ] && ! grep -q 'spark-shell check' "$_tus" \
-        && ok "tools fix: the fix in a terminal, then the check again in the same window, before Enter closes it; update with no check" \
-        || bad "tools fix check" "st=$st $out | $(cat "$_tfs" 2>&1) | st2=$st2 $out2"
+        && ok "system fix: the fix in a terminal, then the check again in the same window, before Enter closes it; update with no check" \
+        || bad "system fix check" "st=$st $out | $(cat "$_tfs" 2>&1) | st2=$st2 $out2"
     rm -f "$_tfs" "$_tus" "$H/fix.want"
-    # tools' menu on screen: a check that ran outside the dialog (the fix's terminal above) says the rows changed,
+    # system's menu on screen: a check that ran outside the dialog (the fix's terminal above) says the rows changed,
     # once, and a record left as it is says nothing more, though the running count moves. The record as it was is
     # read before the subscribe's answer, so a check that ends at once is not missed
     cp "$_ts/check.last" "$H/check.keep"; : > "$H/mcp.out"
-    { rq 1 resources/subscribe '{"uri":"spark-shell://tools/rows"}'
+    { rq 1 resources/subscribe '{"uri":"spark-shell://system/rows"}'
       tries=0
       until jq -e -s 'any(.id == 1)' "$H/mcp.out" >/dev/null 2>&1; do
           tries=$((tries + 1)); [ "$tries" -lt 300 ] || break; sleep 0.1
@@ -6116,41 +6126,41 @@ EOF
           tries=$((tries + 1)); [ "$tries" -lt 300 ] || break; sleep 0.1
       done
       sleep 2.5
-      rq 2 resources/unsubscribe '{"uri":"spark-shell://tools/rows"}'; } \
-        | SPARK_SHELL_PROVIDE_POLL=1 sh "$SH" provide tools > "$H/mcp.out" 2> "$H/mcp.err"
+      rq 2 resources/unsubscribe '{"uri":"spark-shell://system/rows"}'; } \
+        | SPARK_SHELL_PROVIDE_POLL=1 sh "$SH" provide system > "$H/mcp.out" 2> "$H/mcp.err"
     order=$(jq -r 'if .id then "r" + (.id | tostring) else .method end' "$H/mcp.out" | uniq | paste -sd ' ' -)
     [ "$order" = 'r1 notifications/resources/updated r2' ] && [ "$(jq -s '[.[] | select(.method == "notifications/resources/updated")] | length' "$H/mcp.out")" -eq 1 ] \
-        && ok "provide tools: a check that ran outside the dialog says the menu changed, once; nothing more while the record stays" \
-        || bad "tools check watch" "$order $(cat "$H/mcp.err")"
+        && ok "provide system: a check that ran outside the dialog says the menu changed, once; nothing more while the record stays" \
+        || bad "system check watch" "$order $(cat "$H/mcp.err")"
     mv "$H/check.keep" "$_ts/check.last"
     # running for real: a program of its own name, ended, and the provider that ends it untouched
     # a script, named by its own name as an interpreter's script is; a copy of sleep is a uutils multicall on
     # Ubuntu 26.04, which knows no such name and exits at once; it sleeps in itself, so no child is left behind
     printf '#!/usr/bin/env python3\nimport time\ntime.sleep(600)\n' > "$H/spark-test-sleeper"; chmod +x "$H/spark-test-sleeper"
     "$H/spark-test-sleeper" & _tsl=$!; sleep 0.5
-    (SPARK_SHELL_PROC=/proc; export SPARK_SHELL_PROC; mcp tools "$(call 1 tools_end '{"name":"spark-test-sleeper"}')")   # the real one: the section's bar fixture set a fake
+    (SPARK_SHELL_PROC=/proc; export SPARK_SHELL_PROC; mcp system "$(call 1 system_end '{"name":"spark-test-sleeper"}')")   # the real one: the section's bar fixture set a fake
     # its death is read from wait, not kill -0: until this shell reaps it, a child that ended is a zombie, and dash reaps
     # it only here; never a wait on one still running (600 seconds)
     _tsr=$(ans 1 | jq -r .result.structuredContent.receipt)
     if [ "$_tsr" = 'spark-test-sleeper ended' ]; then _tsw=0; wait "$_tsl" 2>/dev/null || _tsw=$?; else kill "$_tsl" 2>/dev/null || :; wait "$_tsl" 2>/dev/null || :; _tsw=none; fi
-    [ "$_tsr" = 'spark-test-sleeper ended' ] && [ "$_tsw" = 143 ] && ok "tools end: every process of the program stopped (TERM), said in the past tense; one ended and not yet reaped counts as ended" \
-        || bad "tools end" "$(ans 1) wait=$_tsw"
+    [ "$_tsr" = 'spark-test-sleeper ended' ] && [ "$_tsw" = 143 ] && ok "system end: every process of the program stopped (TERM), said in the past tense; one ended and not yet reaped counts as ended" \
+        || bad "system end" "$(ans 1) wait=$_tsw"
     # space: home measured, the app caches left out, the trash taken out of its folder, a hidden folder viewed, not opened
     mkdir -p "$H/spacebig" "$H/.spacehid" "$H/.cache/mozilla" "$H/.local/share/Trash/files"
     head -c 8000000 /dev/zero > "$H/spacebig/a"; head -c 7000000 /dev/zero > "$H/.spacehid/a"; head -c 300000 /dev/zero > "$H/.cache/mozilla/c"
-    mcp tools "$(rq 1 resources/read '{"uri":"spark-shell://tools/rows/space"}')" "$(rq 2 resources/read "$(jq -cn --arg u "spark-shell://tools/page/$(b64u tools:space:caches)" '{uri: $u}')")" \
-        "$(rq 3 resources/read "$(jq -cn --arg u "spark-shell://tools/page/$(b64u tools:folder:../etc)" '{uri: $u}')")" "$(call 4 tools_measure)"
+    mcp system "$(rq 1 resources/read '{"uri":"spark-shell://system/rows/space"}')" "$(rq 2 resources/read "$(jq -cn --arg u "spark-shell://system/page/$(b64u system:space:caches)" '{uri: $u}')")" \
+        "$(rq 3 resources/read "$(jq -cn --arg u "spark-shell://system/page/$(b64u system:folder:../etc)" '{uri: $u}')")" "$(call 4 system_measure)"
     _tbig=$(b64u "$(realpath "$H/spacebig")")
     rows 1 | jq -e --arg big "spark-shell://files/rows/$_tbig" --arg s "$SEP" '(.rows | map(.id)) as $ids
-        | ($ids | index("tools:fact:system disk") == 0) and ($ids | index("tools:folder:.cache") == null) and ($ids | index("tools:clean-packages") == null)
-        and any(.rows[]; .id == "tools:trash" and .children == "spark-shell://files/rows/trash" and .group == "cleanup")
-        and any(.rows[]; .id == "tools:caches" and (.page | startswith("spark-shell://tools/page/")) and .children == null)
-        and any(.rows[]; .id == "tools:folder:spacebig" and .children == $big and .group == "home" and (.line | endswith($s + " folder")))
-        and any(.rows[]; .id == "tools:folder:.spacehid" and .children == null and .page != null and (.line | endswith("hidden folder")))
-        and any(.rows[]; .id == "tools:measure" and .tool.name == "tools_measure" and (.columns[0] | startswith("measured at ")))' >/dev/null \
+        | ($ids | index("system:fact:system disk") == 0) and ($ids | index("system:folder:.cache") == null) and ($ids | index("system:clean-packages") == null)
+        and any(.rows[]; .id == "system:trash" and .children == "spark-shell://files/rows/trash" and .group == "cleanup")
+        and any(.rows[]; .id == "system:caches" and (.page | startswith("spark-shell://system/page/")) and .children == null)
+        and any(.rows[]; .id == "system:folder:spacebig" and .children == $big and .group == "home" and (.line | endswith($s + " folder")))
+        and any(.rows[]; .id == "system:folder:.spacehid" and .children == null and .page != null and (.line | endswith("hidden folder")))
+        and any(.rows[]; .id == "system:measure" and .tool.name == "system_measure" and (.columns[0] | startswith("measured at ")))' >/dev/null \
         && [ "$(ans 2 | jq -r '.result.contents[0].text | fromjson | .lines[0], .lines[3]' | cut -c1-7)" = "$(printf 'app cac\nmozilla')" ] \
         && [ "$(ans 3 | jq -r .error.code)" = -32002 ] && ans 4 | jq -r .result.structuredContent.receipt | grep -q '^measured: ' \
-        && ok "tools space: the system disk, cleanup (the trash in files, the app caches' view), home's folders as objects that open in files, a hidden one viewed; a folder outside home refused; measure again" || bad "tools space" "$(rows 1 | head -c 1500) $(ans 2) $(ans 3)"
+        && ok "system space: the system disk, cleanup (the trash in files, the app caches' view), home's folders as objects that open in files, a hidden one viewed; a folder outside home refused; measure again" || bad "system space" "$(rows 1 | head -c 1500) $(ans 2) $(ans 3)"
     rm -rf "$H/spacebig" "$H/.spacehid" "$H/spark-test-sleeper" "$TP"
 fi
 jq -e -s 'all(.[]; .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .outputSchema.type == "object")' "$H/tools.all" >/dev/null \
@@ -6166,7 +6176,7 @@ ans 2 | jq -r '.result.contents[0].text' > "$H/rows.json"
     && ok "provide: the rows resource: the palette in use (none, terminal default colors) a check with no tool, every other a row whose tool takes it by name, with its chip; the short form the one row that opens the section" || bad "provide rows" "$(cat "$H/rows.json" | head -c 600)"
 mcp theme "$(call 1 theme_palette '{"name":"nord"}')" "$(call 2 theme_palette '{"name":"nowhere"}')" "$(call 3 theme_text '{"size":"huge"}')" "$(call 4 theme_alpha '{"value":0.9,"x":1}')" "$(call 5 wifi_connect '{"name":"home"}')" "$(call 6 'Theme_Font')" "$(call 7 theme_alpha '{"value":2}')"
 [ "$(ans 1 | jq -c '.result.structuredContent | del(.palette, .transitions, .rows)')" = '{"receipt":"nord is on","undo":{"name":"theme_palette","arguments":{"name":"none"}}}' ] && [ "$(ans 1 | jq -r '.result.structuredContent.transitions')" = "$REPO/gallery/animation/tide/nord" ] && ans 1 | jq -e '.result.isError == false and (.result.content[0].text | fromjson) == (.result.structuredContent | del(.rows)) and .result.structuredContent.rows.title == "theme"' >/dev/null && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
-    && ok "provide tools/call: the palette set, the receipt in the present tense, the undo the step that takes it back, the same JSON in a text block; the animation it brings, for an open dialog to read again (#126)" || bad "provide call" "$(ans 1) $(cat "$H/mcp.err")"
+    && ok "provide system/call: the palette set, the receipt in the present tense, the undo the step that takes it back, the same JSON in a text block; the animation it brings, for an open dialog to read again (#126)" || bad "provide call" "$(ans 1) $(cat "$H/mcp.err")"
 nfg=$(sed -n 's/^THEME_FG=#//p' "$REPO/gallery/theme/nord.env"); nbg=$(sed -n 's/^THEME_BG=#//p' "$REPO/gallery/theme/nord.env")
 ans 1 | jq -e --arg f "$nfg" --arg b "$nbg" '.result.structuredContent.palette | (.HEX_FG | ascii_downcase) == ($f | ascii_downcase) and (.PANEL_BG | test("^[0-9a-fA-F]{6}$")) and (.PANEL_BG | ascii_downcase) != ($b | ascii_downcase) and (keys == (["GLYPH_FAMILY", "HEX_ACCENT", "HEX_FG", "PANEL_BG", "PANEL_HI", "PANEL_MUTED"] + [range(16) | "HEX_ANSI_\(.)"] | sort)) and .GLYPH_FAMILY == "stone" and all(to_entries[] | select(.key | startswith("HEX_ANSI_")); .value | test("^[0-9a-fA-F]{6}$"))' >/dev/null \
     && ok "provide theme: a step's result carries the palette as it is now, the dialog's surface a shade off the background, so the dialog repaints itself; the glyph family with it (#248), and the 16 colors a drawn piece takes (#247)" || bad "theme palette in result" "$(ans 1 | jq -c .result.structuredContent.palette) fg=$nfg bg=$nbg"
@@ -6331,7 +6341,7 @@ case $order in "r1 notifications/progress r2 notifications/resources/updated r3"
     && ok "provide: the watcher said the palette change made outside it once, and never the step's own, whose rows went with its answer (#196); progress only grows" || bad "provide watcher" "$(cat "$H/mcp.out")"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 st=0; out=$(sh "$SH" provide spark 2>&1 >/dev/null) || st=$?
-[ "$st" -eq 1 ] && [ "$out" = 'spark-shell provide: spark is not one: lan, wifi, bt, printers, out, mic, bat, clock, theme, window, display, keyboard, pointer, notifications, storage, power, notes, reminders, bar, layout, apps, tools, about, undo, files' ] && ok "provide spark: no provider (the dialog holds the chat itself), the list on stderr, exit 1" || bad "provide spark" "st=$st $out"
+[ "$st" -eq 1 ] && [ "$out" = 'spark-shell provide: spark is not one: lan, wifi, bt, printers, out, mic, bat, clock, theme, window, display, keyboard, pointer, notifications, storage, power, notes, reminders, bar, layout, apps, system, about, undo, files' ] && ok "provide spark: no provider (the dialog holds the chat itself), the list on stderr, exit 1" || bad "provide spark" "st=$st $out"
 st=0; out=$(sh "$SH" provide theme wifi 2>&1 >/dev/null) || st=$?
 [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell provide: one section: lan, ' && ok "provide with two words: one section, refused on stderr" || bad "provide two" "st=$st $out"
 # the dialog exits without waiting for its providers (#60): an answer that finds the reader gone (SIGPIPE)
@@ -7144,18 +7154,19 @@ case $1 in
 esac
 STUB
     chmod +x "$H/.local/bin/spark"; mcpf=$HOME/.config/spark/mcp.env; mkdir -p "$HOME/.config/spark"; rm -f "$HOME/mcp.log"
-    printf 'MCP_SERVER_FILES="/opt/mine/files-server"\nMCP_SERVER_WIFI="/old/clone/spark-shell provide wifi"\n' > "$mcpf"
+    printf 'MCP_SERVER_FILES="/opt/mine/files-server"\nMCP_SERVER_WIFI="/old/clone/spark-shell provide wifi"\nMCP_SERVER_TOOLS="/old/clone/spark-shell provide tools"\n' > "$mcpf"   # tools: the system section's name through v0.152
     out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes 2>&1 || :)
     printf '%s\n' "$out" | grep -q "^ok     mcp          24 providers on spark's MCP list: the prompt line and spark do know the desktop's tools$" \
         && printf '%s\n' "$out" | grep -q "^todo   mcp          already on spark's MCP list as servers of yours, left as they are: files$" \
         && grep -qx 'MCP_SERVER_FILES="/opt/mine/files-server"' "$mcpf" && grep -qx "MCP_SERVER_WIFI=\"$C/spark-shell provide wifi\"" "$mcpf" && grep -qx "MCP_SERVER_CLOCK=\"$C/spark-shell provide clock\"" "$mcpf" \
         && [ "$(grep -c '^MCP_SERVER_' "$mcpf")" = 25 ] && grep -qx 'mcp rm wifi' "$HOME/mcp.log" && ! grep -q 'mcp add files' "$HOME/mcp.log" \
-        && ok "on desktop: each provider on spark's MCP list through spark mcp add; a server of yours under one of the names stays; an older clone's line replaced" || bad "mcp add" "$(printf '%s\n' "$out" | grep mcp); $(cat "$mcpf")"
+        && grep -qx 'mcp rm tools' "$HOME/mcp.log" && ! grep -q '^MCP_SERVER_TOOLS=' "$mcpf" && grep -qx "MCP_SERVER_SYSTEM=\"$C/spark-shell provide system\"" "$mcpf" \
+        && ok "on desktop: each provider on spark's MCP list through spark mcp add; a server of yours under one of the names stays; an older clone's line replaced; our line under a name a section had before (tools, system since v0.153) taken off, so spark starts no provider that is no section" || bad "mcp add" "$(printf '%s\n' "$out" | grep mcp); $(cat "$mcpf")"
     rm -f "$HOME/mcp.log"; SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes >/dev/null 2>&1 || :
     [ ! -e "$HOME/mcp.log" ] && sh "$C/spark-shell" check 2>&1 | grep -q "^warn   mcp          24 of 25 providers on spark's MCP list -- spark-shell on desktop$" \
         && ok "on desktop again: nothing asked of spark; check counts the providers on the list" || bad "mcp again" "$(cat "$HOME/mcp.log" 2>&1); $(sh "$C/spark-shell" check 2>&1 | grep mcp)"
     out=$(sh "$C/spark-shell" off desktop --dry-run 2>&1 || :)
-    printf '%s\n' "$out" | grep -q "^would  mcp          take lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps tools about undo off spark's MCP list$" \
+    printf '%s\n' "$out" | grep -q "^would  mcp          take lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps system about undo off spark's MCP list$" \
         && ok "off desktop --dry-run: the lines that are ours, by name; a server of yours is not among them" || bad "mcp off would" "$(printf '%s\n' "$out" | grep mcp)"
     st=0; out=$(sh "$C/spark-shell" off desktop 2>&1) || st=$?
     printf '%s\n' "$out" | grep -q "^ok     mcp          24 providers off spark's MCP list$" && [ "$(cat "$mcpf")" = 'MCP_SERVER_FILES="/opt/mine/files-server"' ] \

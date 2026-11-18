@@ -229,7 +229,7 @@ fn a_step_of_a_dead_or_unready_provider_a_persons_step_and_a_path_step_are_never
     app.providers[3].ready = false;
     app.providers[4]
         .tools
-        .push(tool("tools_update", json!({"type": "object", "properties": {}}), true));
+        .push(tool("system_update", json!({"type": "object", "properties": {}}), true));
     let steps: Vec<(String, String)> = app
         .candidates()
         .into_iter()
@@ -715,16 +715,16 @@ fn a_persons_step_is_never_found_by_meaning_and_a_plan_that_names_one_is_refused
     let calls = Arc::new(Mutex::new(vec![]));
     let captured = calls.clone();
     let tools = json!([
-        {"name": "tools_check", "title": "tools check", "description": "Run the setup's tests.", "inputSchema": {"type": "object", "properties": {}},
+        {"name": "system_check", "title": "tools check", "description": "Run the setup's tests.", "inputSchema": {"type": "object", "properties": {}},
          "annotations": {"readOnlyHint": true, "destructiveHint": false}},
         {"name": "tools_find", "title": "tools find NAME", "description": "Find a running program by its name.",
          "inputSchema": {"type": "object", "properties": {"name": {"type": "string", "minLength": 1}}, "required": ["name"]},
          "annotations": {"readOnlyHint": true, "destructiveHint": false}},
-        {"name": "tools_update", "title": "tools update", "description": "Run spark-shell update in a terminal window.", "inputSchema": {"type": "object", "properties": {}},
+        {"name": "system_update", "title": "tools update", "description": "Run spark-shell update in a terminal window.", "inputSchema": {"type": "object", "properties": {}},
          "annotations": {"readOnlyHint": false, "destructiveHint": false}, "_meta": {"spark-shell/opens": true, "spark-shell/person": true}}
     ]);
-    let rows = json!({"title": "tools", "state": "", "rows": [
-        {"id": "tools:check", "sign": "blank", "text": "check", "tool": null, "more": [], "columns": ["no problems"], "children": "spark-shell://tools/rows/check", "group": null}
+    let rows = json!({"title": "system", "state": "", "rows": [
+        {"id": "system:check", "sign": "blank", "text": "check", "tool": null, "more": [], "columns": ["no problems"], "children": "spark-shell://system/rows/check", "group": null}
     ], "short": []});
     let script: Script = Box::new(move |v, send| {
         if let Some(r) = ordinary("tools", v, &tools, &rows) {
@@ -741,16 +741,16 @@ fn a_persons_step_is_never_found_by_meaning_and_a_plan_that_names_one_is_refused
     app.servers.push(stub(0, "tools", script, tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready && a.providers[0].tools.len() == 3));
-    assert!(app.providers[0].tools.iter().any(|t| t.name == "tools_update" && t.person));
+    assert!(app.providers[0].tools.iter().any(|t| t.name == "system_update" && t.person));
     app.view = View::Section(0);
     app.jobs.clear();
     assert!(
-        !app.candidates().iter().any(|(it, _)| matches!(it, Item::Step(_, n) if n == "tools_update")),
+        !app.candidates().iter().any(|(it, _)| matches!(it, Item::Step(_, n) if n == "system_update")),
         "a person's step is never found by what the words mean"
     );
     let (serial, _, offered) = fill_request(&mut app, "update everything", "tools_find");
     assert_eq!(tool_names(&offered), ["tools_find"], "the fill carries the one step found");
-    propose(&mut app, serial, json!([{"name": "tools_update", "arguments": {}}]));
+    propose(&mut app, serial, json!([{"name": "system_update", "arguments": {}}]));
     assert!(
         app.reply.as_ref().is_some_and(|r| r.text.contains("never from a plan")),
         "{:?}",

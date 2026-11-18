@@ -491,7 +491,7 @@ elif len(sys.argv) == 2:
                 checks.append("Power is five verbs; logout asks on a question page and keep working comes back")
                 close_home()
 
-                # tools (v0.129): the six; check runs; running finds the proof's own program (a name of its own, so no
+                # system (named tools through v0.152; v0.129): the six; check runs; running finds the proof's own program (a name of its own, so no
                 # other process is ended), F9, end asks, keep working keeps it, end ends it; system's three groups
                 sleeper = fixtures / "spark-proof-sleeper"
                 # a script, named by its own name; a copy of sleep is a uutils multicall on some systems
@@ -500,21 +500,21 @@ elif len(sys.argv) == 2:
                 held = subprocess.Popen([str(sleeper)], env=env)
                 try:
                     open_home()
-                    key("tools", "-k", "Return")
+                    key("system", "-k", "Return")
                     time.sleep(1)
                     text = "\n".join(screen())
-                    assert all(w in text for w in ("check", "space", "running", "system", "updates", "software")), "tools is six rows: " + text
-                    capture("tools-void")
+                    assert all(w in text for w in ("check", "space", "running", "details", "updates", "software", "about")), "system is six rows and about: " + text
+                    capture("system-void")
                     key("-k", "Down", "-k", "Return")   # opened from words typed, nothing is lit: Down lights check
                     wait_for(lambda: any(w in "\n".join(screen()) for w in ("check again", "passed", "not applicable")), "the check's page")
-                    capture("tools-check-void")
+                    capture("system-check-void")
                     key("-k", "Escape")
                     time.sleep(1)
                     key("running", "-k", "Return")
                     wait_for(lambda: "sway" in "\n".join(screen()), "running lists sway")
                     key("spark-proof")
                     wait_for(lambda: re.search(r"spark-proof-sleeper \u00b7 \d+% cpu", "\n".join(screen())), "words find the proof's program")
-                    capture("tools-running-void")
+                    capture("system-running-void")
                     # every step checks it is about the proof's own program before the next key: a wait that fails
                     # raises, so nothing is confirmed on a row the proof did not find
                     def asked():
@@ -529,7 +529,7 @@ elif len(sys.argv) == 2:
                     wait_for(actions, "F9: the proof's program's actions, end among them")
                     key("-k", "Return")
                     wait_for(asked, "end asks about the proof's program")
-                    capture("tools-end-void")
+                    capture("system-end-void")
                     key("-k", "Return")   # keep working is lit first: Enter keeps
                     wait_for(lambda: "keep working" not in "\n".join(screen()) and re.search(r"spark-proof-sleeper \u00b7 \d+% cpu", "\n".join(screen())), "keep working comes back with the bar on the program")
                     assert held.poll() is None, "keep working keeps the program"
@@ -547,10 +547,10 @@ elif len(sys.argv) == 2:
                         key("-k", "Escape")
                         time.sleep(.5)
                     assert "updates" in "\n".join(screen()), "Esc comes back to the six"
-                    key("system", "-k", "Return")
-                    text = wait_for(lambda: (lambda t: t if "operating system" in t else None)("\n".join(screen())), "system's page")
-                    assert "hardware" in text and "desktop" in text and "copy details" in text, "system is three groups and copy details: " + text
-                    capture("tools-system-void")
+                    key("details", "-k", "Return")
+                    text = wait_for(lambda: (lambda t: t if "operating system" in t else None)("\n".join(screen())), "the details' page")
+                    assert "hardware" in text and "desktop" in text and "copy details" in text, "details is three groups and copy details: " + text
+                    capture("system-details-void")
                     if shutil.which("wl-copy") and shutil.which("wl-paste"):
                         key("copy details", "-k", "Return")
                         time.sleep(1)

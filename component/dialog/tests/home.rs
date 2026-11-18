@@ -19,7 +19,7 @@ fn root_is_complete_quiet_and_restores_selection() {
         .collect();
     assert_eq!(
         names,
-        ["apps", "files", "workspace", "notes", "calendar", "tools", "settings", "help", "about", "power"]
+        ["apps", "files", "workspaces", "notes", "calendar", "settings", "system", "help", "power"]
     );
     app.light(HELP_DEST);
     app.enter();
@@ -224,12 +224,16 @@ fn the_frame_is_one_shape_at_the_top_and_the_bottom_in_both_views() {
     let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
     let positions: Vec<_> = drawn.picks.iter().map(|(y, _)| *y).collect();
     assert!(
-        positions[..6].windows(2).all(|ys| ys[1] - ys[0] == 2),
+        positions[..5].windows(2).all(|ys| ys[1] - ys[0] == 2),
         "a row of air between the rows: {:?}",
         positions
     );
-    assert_eq!(positions[6] - positions[5], 3, "two rows of air before settings: {:?}", positions);
-    assert_eq!(positions[9] - positions[8], 3, "and before power: {:?}", positions);
+    assert_eq!(positions[5] - positions[4], 3, "two rows of air before settings: {:?}", positions);
+    assert!(
+        positions[5..].windows(2).all(|ys| ys[1] - ys[0] == 2),
+        "settings, system, help and power are one group, power its last: {:?}",
+        positions
+    );
     assert_eq!(buffer[(spark_dialog::ui::PURPOSE_X, positions[0])].fg, palette.muted, "a purpose is muted");
 
     app.set_draft("unfinished request");

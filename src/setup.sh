@@ -462,9 +462,9 @@ cmd_status() {
     status_next
 }
 
-cmd_check() {   # the setup's tests, a line each, kept for tools' check
+cmd_check() {   # the setup's tests, a line each, kept for system's check
     { cmd_check_lines; echo $? > "$TMP/check.rc"; } | tee "$TMP/check.out"
-    [ ! -s "$TMP/check.out" ] || tools_check_keep "$TMP/check.out"
+    [ ! -s "$TMP/check.out" ] || system_check_keep "$TMP/check.out"
     return "$(cat "$TMP/check.rc" 2>/dev/null || echo 1)"
 }
 chk() {   # chk NAME ok|warn|fail DETAIL [REMEDY] -- a check's row; a warn names its remedy and does not fail

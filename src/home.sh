@@ -231,6 +231,7 @@ cmd_panel() {   # cmd_panel [SECTION] [--list | ACTION [ARG...]] | chat | "WORDS
         *) what=$1; shift; [ "$what" != look ] || what=theme   # look: a compatibility name for theme
            panel_section_ok "$what" || { bar_want "$what${1:+ $*}"; return; } ;;   # any other words: a want
     esac
+    [ "$what" != system ] || system_state_names
     case ${1:-} in
         --list) panel_list "$what"; return 0 ;;
         '') ;;

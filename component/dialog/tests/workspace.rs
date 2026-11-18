@@ -164,7 +164,7 @@ fn lit_text(app: &App) -> String {
 fn the_list_stands_in_order_with_the_bar_on_the_window_in_front() {
     let mut app = busy();
     at_workspace(&mut app);
-    assert_eq!(app.title(), "workspace");
+    assert_eq!(app.title(), "workspaces");
     assert_eq!(app.subtitle(), "4 windows");
     assert_eq!(lit_text(&app), "foot", "the bar is on the window that was in front");
     assert_eq!(app.selected_line().unwrap(), "foot \u{b7} btop \u{b7} workspace 2 \u{b7} floating");
@@ -259,7 +259,7 @@ fn f9_on_a_window_opens_its_page_and_a_choice_its_list_and_the_pick_comes_back()
     );
     app.hint_key(HintKey::Actions);
     assert!(matches!(app.view, View::Steps(0)), "{:?}", app.view);
-    assert_eq!((app.title().as_str(), app.subtitle().as_str()), ("workspace", "foot"));
+    assert_eq!((app.title().as_str(), app.subtitle().as_str()), ("workspaces", "foot"));
     golden(&mut app, "workspace-window", 60, 40);
     // the second step is move to workspace: a choice, so its list opens and the page is kept
     app.sel = 1;
@@ -486,7 +486,7 @@ fn a_terminal_session_has_the_layouts_alone() {
 
 #[test]
 fn homes_column_says_what_the_place_holds() {
-    let d = DESTS.iter().position(|d| d.name == "workspace").unwrap();
+    let d = DESTS.iter().position(|d| d.name == "workspaces").unwrap();
     let mut app = busy();
     assert_eq!(app.dest_state(d).unwrap(), "4 windows \u{b7} firefox, foot, chromium", "an app named once");
     assert_eq!(empty().dest_state(d).unwrap(), "no windows open");
