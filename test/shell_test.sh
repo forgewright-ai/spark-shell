@@ -169,6 +169,9 @@ want() {   # want SECTION -- whether this run holds the section
 # skips that section still needs them, so they stand here)
 esc=$(printf '\033')
 me=$(id -un)
+kids_of() {   # kids_of PID -> its children's pids, as the kernel lists them: pgrep is a stub in some sections and missing in some of CI's images
+    cat "/proc/$1/task/$1/children" 2>/dev/null || awk -v p="$1" '$4 == p { print $1 }' /proc/[0-9]*/stat 2>/dev/null || :
+}
 noon_tz() {   # -> a zone whose clock reads about noon now, for a test of today and tomorrow: one never runs across midnight (a CI run at 23:56 UTC failed three)
     # an IANA zone, as the reminders verify theirs (Etc/GMT-N is N hours ahead of UTC); none where the zone files are not there
     _nh=$(TZ=UTC date +%H); _nh=${_nh#0}; _nd=$((12 - _nh))
@@ -4947,7 +4950,7 @@ EVSWAY_STUB
     ev_kill() { [ -z "$_ep" ] || kill "$_ep" 2>/dev/null || :; }   # never a signal to no pid
     rm -f "$HOME/ev.log" "$HOME/ev.pid"
     SWAYSOCK=$H/sock PATH="$H/evsway:$PATH" sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
-    ev_up; _e1=$(evn); _bk=$(pgrep -P "$bp" 2>/dev/null || :); kill -9 "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :; ev_end
+    ev_up; _e1=$(evn); _bk=$(kids_of "$bp"); kill -9 "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :; ev_end
     # what the loop started is gone with it, the lines too: they are a process of their own (v0.153) and write into a file here, so no broken pipe ends them
     for _i in $(seq 1 40); do _ba=''; for _k in $_bk; do ! kill -0 "$_k" 2>/dev/null || _ba="$_ba $_k"; done; [ -n "$_ba" ] || break; sleep .1; done
     [ "$_e1" -ge 3 ] && ev_gone && [ "$_e3" = "$_e2" ] && [ -n "$_bk" ] && [ -z "$_ba" ] \
@@ -8678,7 +8681,7 @@ JSON
         _i=0; while [ "$_i" -lt 120 ] && [ "$(grep -c '^\[{' "$H/bar.out" 2>/dev/null)" = 0 ]; do sleep 0.25; _i=$((_i + 1)); done
         _bl0=$(grep -c '^,\{0,1\}\[{' "$H/bar.out")
         _i=0; while [ "$_i" -lt 800 ] && kill -USR1 "$bp" 2>/dev/null; do _i=$((_i + 1)); sleep 0.01; done
-        _bl1=$(grep -c '^,\{0,1\}\[{' "$H/bar.out"); _bkids=$(pgrep -P "$bp" 2>/dev/null | wc -l | tr -d ' ')
+        _bl1=$(grep -c '^,\{0,1\}\[{' "$H/bar.out"); _bkids=$(kids_of "$bp" | wc -w | tr -d ' ')
         if kill -0 "$bp" 2>/dev/null && [ "$_bl1" -gt "$((_bl0 + 3))" ] && [ "$_bkids" -ge 1 ]; then ok "bar: under bash the loop lives through 800 redraw signals and draws a line for them, in a process that holds no trap (v0.153)"
         else _st=0; kill -0 "$bp" 2>/dev/null || { wait "$bp" 2>/dev/null || _st=$?; }; bad "bar loop under bash" "after $_i signals: status $_st ($(bash --version | head -1)); it said: $(tail -c 300 "$H/bar.err"); $_bl0 lines before, $_bl1 after, $_bkids children"; fi
         pkill -P "$bp" 2>/dev/null || :; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
