@@ -10,23 +10,18 @@ updates:
       codeql:
         patterns:
           - "github/codeql-action*"
+  # one pull request for a crate, across the components that use it: the
+  # five share most of their crates, and a crate with a pull request for
+  # each component took five rounds of pins and runs
   - package-ecosystem: cargo
-    directory: /component/dialog
+    directories:
+      - /component/dialog
+      - /component/winpad
+      - /component/bar
+      - /component/ear
+      - /component/wallpaper
     schedule:
       interval: weekly
-  - package-ecosystem: cargo
-    directory: /component/winpad
-    schedule:
-      interval: weekly
-  - package-ecosystem: cargo
-    directory: /component/bar
-    schedule:
-      interval: weekly
-  - package-ecosystem: cargo
-    directory: /component/ear
-    schedule:
-      interval: weekly
-  - package-ecosystem: cargo
-    directory: /component/wallpaper
-    schedule:
-      interval: weekly
+    groups:
+      components:
+        group-by: dependency-name
