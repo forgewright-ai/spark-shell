@@ -51,6 +51,8 @@
 - The bar draws its dragged copy once the compositor has answered for
   it, and a second button pressed while the bar is dragged does not
   drop it.
+- The dialog builds with libloading 0.9.1, and dialog.env pins that
+  build.
 
 ## v0.152.1
 
