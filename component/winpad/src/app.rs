@@ -689,7 +689,8 @@ impl App {
     /// file that is gone keeps what it last said for three seconds, a bar started again, and then says no bar.
     pub fn bar_tick(&mut self) {
         let Some(file) = &self.cfg.bar_state else { return };
-        let text = match std::fs::read_to_string(file) {
+        // the text, and whether the pad is laid out again whatever it says: a bar back from being gone, or none come
+        let (text, again) = match std::fs::read_to_string(file) {
             Ok(text) if text.starts_with("bar\t") => {
                 let back = self.bar_gone > 0;
                 self.bar_gone = 0;
@@ -699,7 +700,7 @@ impl App {
                     }
                     return;
                 }
-                text
+                (text, back)
             }
             _ => {
                 self.bar_gone = self.bar_gone.saturating_add(1);
@@ -709,12 +710,18 @@ impl App {
                 if self.bar_gone != BAR_WAIT {
                     return;
                 }
-                String::new() // none came: the pad stands where it stood before the bar took it
+                (String::new(), true) // none came: the pad stands where it stood before the bar took it
             }
         };
-        self.bars = pad::bars(&text);
+        // the bar writes its state for more than where it stands (the pointer over it, a level it draws): the pad
+        // is laid out again when a bar came, went or moved, not at every word of that. It was, ten times a second
+        // while the pointer crossed the bar
+        let bars = pad::bars(&text);
         self.bar_text = text;
-        self.show_again();
+        if again || bars != self.bars {
+            self.bars = bars;
+            self.show_again();
+        }
     }
 
     /// The pad laid out anew after the bar changed; a pad that is dragged is drawn again and laid out at its drop.

@@ -268,7 +268,8 @@ pub fn group(names: &[String], cap: usize, rest: bool) -> Vec<Item> {
         out.push(Item { wins: vec![i] });
     }
     if rest && out.len() > cap {
-        let more: Vec<usize> = out.drain(cap - 1..).flat_map(|it| it.wins).collect();
+        let mut more: Vec<usize> = out.drain(cap - 1..).flat_map(|it| it.wins).collect();
+        more.sort_unstable(); // oldest first, as every item's windows are: a group folded in before a single window put its later windows ahead of it
         out.push(Item { wins: more });
     }
     out
@@ -1232,6 +1233,11 @@ mod tests {
         assert_eq!(wins(&group(&apps, 4, false)), vec![vec![0, 1, 3], vec![2], vec![4], vec![5]]);
         // then firefox
         assert_eq!(wins(&group(&apps, 3, false)), vec![vec![0, 1, 3], vec![2, 5], vec![4]]);
+        // the cells that are still too many fold into the last one, its windows oldest first like every item's:
+        // a group folded in before a single window put its later window ahead of that one
+        let mixed: Vec<String> = ["a", "b", "c", "b"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(wins(&group(&mixed, 1, true)), vec![vec![0, 1, 2, 3]]);
+        assert_eq!(wins(&group(&mixed, 2, true)), vec![vec![0], vec![1, 2, 3]]);
         // nothing more to fold: every app one icon, whatever the room
         assert_eq!(wins(&group(&apps, 2, false)), vec![vec![0, 1, 3], vec![2, 5], vec![4]]);
         assert_eq!(wins(&group(&apps, 0, false)), vec![vec![0, 1, 3], vec![2, 5], vec![4]]);
@@ -1446,6 +1452,13 @@ mod tests {
                 ),
             ]
         );
+        // what else the bar says of itself (the pointer over a target, a level it draws, its mode) is no word on
+        // where it stands: the same bars, so the pad that follows this file is not laid out again for it
+        let at = "bar\t3\noutput\tA\t1920\t36\ttop\t1\napps\tA\t354\t906\n";
+        let said = "target\tA\tworkspace:1\t8\t0\t30\t36\tplate\trest\tselected,visible\t1\n";
+        let over = "target\tA\tworkspace:1\t8\t0\t30\t36\tplate\thover\thover,selected,visible\t1\nlevel\tout\t55\nmode\tresize\n";
+        assert_eq!(bars(&format!("{at}{said}")), bars(&format!("{at}{over}")));
+        assert_eq!(bars(&format!("{at}{said}")).len(), 1);
         // a bar that says no room, an edge that is none of the two, a line that does not read: no bar there
         assert_eq!(bars("output\tA\t1920\t36\ttop\t1\n"), vec![]);
         assert_eq!(bars("apps\tA\t354\t906\n"), vec![]);

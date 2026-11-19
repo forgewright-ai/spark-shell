@@ -637,6 +637,19 @@ pub fn resting(rest: &str, workspaces: &[Workspace], output: &str) -> bool {
     workspaces.iter().any(|w| w.output == output && w.visible && rests(rest, &w.name))
 }
 
+/// A name as sway's command line takes it whole, no word of it a command: in double quotes, where sway reads a
+/// separator, an apostrophe and a backslash as they are (it reads no escape there). A double quote stands
+/// between apostrophes of its own, and sway joins the pieces. With the quotes and the backslashes dropped, as
+/// they were, a click on such a workspace showed another one, named without them.
+fn quoted(name: &str) -> String {
+    let whole: String = name.chars().filter(|c| !c.is_control()).collect();
+    if whole.is_empty() {
+        return "\"\"".to_string();
+    }
+    let piece = |p: &str| if p.is_empty() { String::new() } else { format!("\"{p}\"") };
+    whole.split('"').map(piece).collect::<Vec<_>>().join("'\"'")
+}
+
 /// sway's binding mode, from its answer to get_binding_state: its name, or None in the default mode.
 pub fn mode(v: &Value) -> Option<String> {
     v["name"].as_str().filter(|n| !n.is_empty() && *n != "default").map(String::from)
@@ -663,7 +676,7 @@ impl Workspace {
     pub fn command(&self) -> String {
         match self.num {
             Some(n) => format!("workspace number {n}"),
-            None => format!("workspace \"{}\"", self.name.replace(['"', '\\'], "")),
+            None => format!("workspace {}", quoted(&self.name)),
         }
     }
 
@@ -1203,7 +1216,8 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
     };
     let mut cells = if note.is_some() { NOTE_CELLS } else { status_cells(&pieces, more) };
     if !fits(cells) {
-        pieces.clear();
+        // nothing of the status fits, the time neither: what is left is dropped too, and said so in the state
+        dropped.extend(pieces.drain(..).map(|p| p.m.name.clone()));
         (more, cells) = (false, 0);
     }
     let start = right - cells * cell;
@@ -2419,7 +2433,14 @@ mod tests {
         assert_eq!(press(170.0, 1).act, Act::Sway("workspace number 5".into()), "no workspace 5 yet: as Super+5");
         assert_eq!(press(80.0, 1).act, Act::Sway("workspace number 2".into()), "the plate");
         assert_eq!(press(350.0, 1).act, Act::Sway("workspace number 11".into()));
-        assert_eq!(press(380.0, 1).act, Act::Sway("workspace \"mail box\"".into()));
+        // a name's own quotes stay in it, each between apostrophes of its own: sway joins the pieces, and reads
+        // a backslash, an apostrophe and a separator inside double quotes as they are (shown on sway 1.12)
+        assert_eq!(press(380.0, 1).act, Act::Sway("workspace \"mail \"'\"'\"box\"'\"'".into()));
+        assert_eq!(quoted("mail box"), "\"mail box\"");
+        assert_eq!(quoted("c\\d; exec x, it's"), "\"c\\d; exec x, it's\"");
+        assert_eq!(quoted("\"; exec x; \""), "'\"'\"; exec x; \"'\"'");
+        assert_eq!(quoted("a\nb"), "\"ab\"");
+        assert_eq!(quoted(""), "\"\"");
         // the left button alone, and no level is set by it
         for button in [2, 3, 4, 5] {
             assert_eq!(press(50.0, button), Press::default());
@@ -3339,9 +3360,11 @@ mod tests {
             }
             same
         });
-        // a bar with no room even for the time shows the mark and the run alone
+        // a bar with no room even for the time shows the mark and the run alone, and its state says the time's
+        // group is off it too: left out, a reader of the state took the clock as on the bar
         let l = sheet(523);
         assert_eq!(status_ids(&l), Vec::<&str>::new());
+        assert_eq!(l.dropped[9..], ["clock", "notifications"]);
         assert_eq!(l.targets.len(), 11);
         assert!(l.fixed.is_empty());
         // every pinned control gives up its number at once, in the line's order, and then every gauge
