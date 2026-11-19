@@ -3241,8 +3241,8 @@ fn a_play_and_a_stop_answered_out_of_order_are_both_audited() {
         json!({"type": "object", "properties": {"path": {"type": "string"}, "at": {"type": "number"}}, "required": ["path"], "additionalProperties": false});
     let stop_schema = json!({"type": "object", "properties": {"path": {"type": "string"}}, "additionalProperties": false});
     let tools = json!([
-        {"name": "files_play", "title": "files play PATH", "inputSchema": play_schema},
-        {"name": "files_stop", "title": "files stop", "inputSchema": stop_schema},
+        {"name": "files_play", "title": "files play PATH", "inputSchema": play_schema, "annotations": {"destructiveHint": false}},
+        {"name": "files_stop", "title": "files stop", "inputSchema": stop_schema, "annotations": {"destructiveHint": false}},
         {"name": "files_open", "title": "files open PATH", "inputSchema": stop_schema}
     ]);
     let rows = json!({"title": "notes", "rows": [
@@ -3303,4 +3303,218 @@ fn a_play_and_a_stop_answered_out_of_order_are_both_audited() {
     ] {
         assert!(record.lines().any(|l| l.ends_with(&want)), "{:?} is in the record", want);
     }
+}
+
+// --- the review of the dialog's older code (v0.153.1): each fault as it was, and gone
+
+/// A provider of one section, its tools and rows as given; `call` answers a tools/call, and `reads` counts the
+/// rows asked for: the first `deaf` of them get no answer.
+fn section_stub(label: &'static str, tools: Value, rows: Value, deaf: usize, mut call: impl FnMut(&Value, &mut dyn FnMut(Value)) + Send + 'static) -> Script {
+    let mut reads = 0;
+    Box::new(move |v, send| {
+        if v.get("method").and_then(Value::as_str) == Some("resources/read") {
+            reads += 1;
+            if reads <= deaf {
+                return;
+            }
+        }
+        if let Some(r) = ordinary(label, v, &tools, &rows) {
+            return send(r);
+        }
+        if v.get("method").and_then(Value::as_str) == Some("tools/call") {
+            call(v, send);
+        }
+    })
+}
+
+#[test]
+fn a_section_whose_first_rows_came_late_is_asked_again() {
+    // its first read gets no answer in time; only a section that had come once was read again, so it stayed empty
+    let (mut app, rx, tx) = app_with(&["out"]);
+    let tools =
+        json!([{"name": "out_mute", "title": "out mute", "inputSchema": {"type": "object", "properties": {}}, "annotations": {"destructiveHint": false}}]);
+    let rows = json!({"title": "out", "rows": [{"id": "out:mute", "sign": "blank", "text": "mute", "tool": {"name": "out_mute", "arguments": {}}, "more": [], "columns": [], "children": null}], "short": []});
+    app.servers.push(stub(0, "out", section_stub("out", tools, rows, 1, |_, _| {}), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| !a.providers[0].tools.is_empty() && a.providers[0].reading));
+    assert!(!app.providers[0].ready, "the first read is not answered");
+    app.tick(Instant::now() + spark_dialog::mcp::T_READ + Duration::from_secs(1));
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready), "asked again, and its rows came");
+    assert_eq!(app.providers[0].rows.rows.len(), 1);
+}
+
+#[test]
+fn a_refused_step_after_one_that_opened_a_window_keeps_the_dialog_and_is_said() {
+    // the first step of a plan opens a window, the second is refused: the dialog closed as though a window had
+    // come, and the refusal was never seen
+    let (mut app, rx, tx) = app_with(&["apps"]);
+    let tools = json!([{"name": "apps_open", "title": "apps open NAME", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": false}, "annotations": {"destructiveHint": false}, "_meta": {"spark-shell/opens": true}}]);
+    let rows = json!({"title": "apps", "rows": [
+        {"id": "apps:open foot", "sign": "blank", "text": "foot", "tool": {"name": "apps_open", "arguments": {"name": "foot"}}, "more": [], "columns": [], "children": null},
+        {"id": "apps:open gone", "sign": "blank", "text": "gone", "tool": {"name": "apps_open", "arguments": {"name": "gone"}}, "more": [], "columns": [], "children": null}
+    ], "short": []});
+    let script = section_stub("apps", tools, rows, 0, |v, send| {
+        let r = if v.pointer("/params/arguments/name").and_then(Value::as_str) == Some("foot") {
+            json!({"content": [{"type": "text", "text": "{\"opened\":true}"}], "structuredContent": {"opened": true}, "isError": false})
+        } else {
+            json!({"content": [{"type": "text", "text": "gone opened no window"}], "isError": true})
+        };
+        send(result(&v["id"], r));
+    });
+    app.servers.push(stub(0, "apps", script, tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    app.plan(r#"{"answer": "", "steps": [{"name": "apps_open", "arguments": {"name": "foot"}, "line": "apps open foot"}, {"name": "apps_open", "arguments": {"name": "gone"}, "line": "apps open gone"}], "refusals": []}"#);
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.queue.is_empty() && a.reply.is_some()));
+    assert!(app.quit.is_none() && !app.hidden, "refused: the dialog stays, in sight");
+    assert!(
+        app.reply
+            .as_ref()
+            .is_some_and(|r| r.mark == Mark::Refused && r.text.contains("gone opened no window")),
+        "{:?}",
+        app.reply
+    );
+}
+
+#[test]
+fn a_provider_s_question_keeps_the_draft_and_ends_with_its_call() {
+    // what was being typed when a provider asked was lost, and the cursor stayed where it had been
+    let (mut app, rx, calls, _r) = started();
+    let ask = || spark_dialog::app::Step {
+        prov: 0,
+        call: spark_dialog::model::Call {
+            name: "window_ask".into(),
+            arguments: serde_json::Map::new(),
+            ask: vec![],
+            said: None,
+            pick: None,
+            value: None,
+            children: None,
+        },
+        who: spark_dialog::app::Who::Person,
+        line: "window ask".into(),
+        typed: false,
+    };
+    app.run(ask());
+    for c in "hello".chars() {
+        app.typed(c);
+    }
+    assert!(pump(&mut app, &rx, |a| matches!(a.mode, Mode::Elicit { .. })));
+    assert_eq!((app.input.as_str(), app.cursor), ("", 0), "the question starts on an empty line, at its start");
+    for c in "box".chars() {
+        app.typed(c);
+    }
+    assert_eq!(app.input, "box");
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && calls.lock().unwrap().len() > 1));
+    assert_eq!(app.input, "hello", "the draft is back after the answer");
+    // a question whose call got no answer in time goes with it: left up, it held the queue for a request nobody waits on
+    app.input.clear();
+    app.cursor = 0;
+    app.run(ask());
+    assert!(pump(&mut app, &rx, |a| matches!(a.mode, Mode::Elicit { .. })));
+    app.tick(Instant::now() + spark_dialog::mcp::T_CALL + Duration::from_secs(1));
+    assert!(matches!(app.mode, Mode::Normal), "the question ended with its call");
+}
+
+#[test]
+fn a_provider_lost_while_it_sets_a_value_does_not_hold_the_other_sections() {
+    // a switch being set by a provider that then ended kept its slot for two minutes: every other switch waited
+    let (mut app, rx, tx) = app_with(&["bar", "theme"]);
+    let sw = |id: &str, tool: &str| {
+        json!({"id": id, "sign": "blank", "text": "a switch", "columns": [], "more": [], "children": null,
+        "switch": {"on": false, "turn_on": {"name": tool, "arguments": {"to": "on"}}, "turn_off": {"name": tool, "arguments": {"to": "off"}}}})
+    };
+    let tool = |name: &str| json!([{"name": name, "title": name.replace('_', " "), "inputSchema": {"type": "object", "properties": {"to": {"type": "string"}}}, "annotations": {"destructiveHint": false}}]);
+    let sent = Arc::new(Mutex::new(vec![]));
+    let seen = sent.clone();
+    app.servers.push(stub(
+        0,
+        "bar",
+        section_stub(
+            "bar",
+            tool("bar_tray"),
+            json!({"title": "bar", "rows": [sw("bar:tray", "bar_tray")], "short": []}),
+            0,
+            |_, _| {},
+        ),
+        tx.clone(),
+    ));
+    app.servers.push(stub(
+        1,
+        "theme",
+        section_stub(
+            "theme",
+            tool("theme_icons"),
+            json!({"title": "theme", "rows": [sw("theme:icons", "theme_icons")], "short": []}),
+            0,
+            move |v, send| {
+                seen.lock().unwrap().push(v["params"]["name"].clone());
+                send(result(
+                    &v["id"],
+                    json!({"content": [{"type": "text", "text": "{}"}], "structuredContent": {"receipt": "icons on"}, "isError": false}),
+                ));
+            },
+        ),
+        tx,
+    ));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers.iter().all(|p| p.ready && !p.tools.is_empty())));
+    let t0 = Instant::now();
+    at_row(&mut app, View::Section(0), 0);
+    app.clicked(0, t0); // the bar's switch: its provider never answers
+    app.incoming(Incoming::Gone(0, "it ended".into()));
+    at_row(&mut app, View::Section(1), 0);
+    app.clicked(0, t0 + Duration::from_secs(2));
+    assert!(
+        pump(&mut app, &rx, |_| sent.lock().unwrap().len() == 1),
+        "the other section's switch is sent at once"
+    );
+}
+
+#[test]
+fn a_credential_typed_for_a_proposed_step_is_not_written_back_into_the_box() {
+    // spark proposes a step that lacks its password; the person types it masked; the step then waits in the box
+    // with every value seen, and the password stood there in clear
+    let (mut app, rx, tx) = app_with(&["wifi"]);
+    let tools = json!([{"name": "wifi_connect", "title": "wifi connect NAME", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "password": {"type": "string", "format": "password"}}, "required": ["name", "password"], "additionalProperties": false}, "annotations": {"destructiveHint": false}}]);
+    let rows = json!({"title": "wifi", "rows": [{"id": "wifi:home", "sign": "blank", "text": "home", "tool": {"name": "wifi_connect", "arguments": {"name": "home"}}, "more": [], "columns": [], "children": null}], "short": []});
+    app.servers.push(stub(0, "wifi", section_stub("wifi", tools, rows, 0, |_, _| {}), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    // as a step found by what the words mean comes: spark read the name, and the password is the person's to type
+    app.run(spark_dialog::app::Step {
+        prov: 0,
+        call: spark_dialog::model::Call {
+            name: "wifi_connect".into(),
+            arguments: json!({"name": "home"}).as_object().unwrap().clone(),
+            ask: vec!["password".into()],
+            said: None,
+            pick: None,
+            value: None,
+            children: None,
+        },
+        who: spark_dialog::app::Who::Model,
+        line: "wifi connect home".into(),
+        typed: false,
+    });
+    assert!(
+        matches!(app.mode, Mode::Ask { masked: true, .. }),
+        "the password is asked for, masked: {:?} {:?} {:?} {:?}",
+        app.mode,
+        app.input,
+        app.reply,
+        app.exchange
+    );
+    for c in "hunter2".chars() {
+        app.typed(c);
+    }
+    app.enter();
+    let shown = format!("{} {:?} {:?}", app.input, app.reply, app.exchange);
+    assert!(
+        !shown.contains("hunter2"),
+        "the password is nowhere in the box, the reply or the exchange: {shown}"
+    );
+    assert!(app.input.contains("password: hidden"), "it is named, its value kept back: {:?}", app.input);
 }

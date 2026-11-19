@@ -1309,7 +1309,9 @@ impl App {
     }
 
     fn clear_pair(&mut self, idx: usize) {
-        if matches!(&self.mode, Mode::Pair { prov, .. } if *prov == idx) {
+        // its question of the other kind too (a When, a name): left up after its call ended, it held the queue and
+        // sent the answer to a request nobody waited on
+        if matches!(&self.mode, Mode::Pair { prov, .. } | Mode::Elicit { prov, .. } if *prov == idx) {
             self.mode = Mode::Normal;
             self.input.clear();
             self.cursor = 0;
@@ -1328,6 +1330,13 @@ impl App {
         self.providers[idx].rows = Rows::default();
         self.providers[idx].tools.clear();
         self.providers[idx].reading = false;
+        // a value it was setting in place gets no answer: the set ends now and the next one waiting is sent. Left to
+        // its deadline, it held the switches of every other section for two minutes. What waited for it goes too
+        self.set_next.retain(|(np, _, _)| *np != idx);
+        if let Some(n) = self.setting.as_ref().filter(|(_, p, _, _)| *p == idx).map(|(n, ..)| *n) {
+            self.set_done(idx, n, true, "not changed: the part of the desktop that does it stopped", false);
+        }
+        self.held.retain(|(hp, _, _, _)| *hp != idx);
         if self.target.as_ref().is_some_and(|t| t.provider == idx) || was_shown {
             self.want_cancel();
         }
@@ -1462,8 +1471,7 @@ impl App {
             return;
         }
         self.asks_this_call += 1;
-        self.input.clear();
-        self.cursor = 0;
+        self.stash_draft(); // what was being typed comes back after the answer
         self.mode = Mode::Pair {
             prov: idx,
             id,
@@ -1499,7 +1507,7 @@ impl App {
             .map(|(k, v)| (k.clone(), scrub(v.get("title").and_then(Value::as_str).unwrap_or(k))))
             .collect();
         let message = scrub(p.get("message").and_then(Value::as_str).unwrap_or(""));
-        self.input.clear();
+        self.stash_draft(); // what was being typed comes back after the answer, and the cursor starts at the start
         self.mode = Mode::Elicit {
             prov: idx,
             id,
@@ -1754,6 +1762,15 @@ impl App {
                 Kind::Read => {
                     if self.providers[idx].read_id == Some(id) {
                         self.providers[idx].reading = false;
+                        // asked again in its turn: a provider slow at its start left its section empty for good,
+                        // since only a section that had come once was ever read again
+                        self.providers[idx].dirty = true;
+                    }
+                }
+                Kind::Tools => {
+                    // its tools asked for again too: without them every step there said it is not offered
+                    if let Some(s) = self.server(idx) {
+                        s.request("tools/list", json!({}), Kind::Tools, mcp::T_LIST);
                     }
                 }
                 Kind::Folder => {
@@ -5859,6 +5876,9 @@ impl App {
         } else if let Some(r) = result {
             let text = r.pointer("/content/0/text").and_then(Value::as_str).unwrap_or("");
             if refused {
+                // as when its result does not read: with `opened` left from an earlier step of the plan, the dialog
+                // closed as though a window had come, and the refusal was never seen
+                self.opened = false;
                 self.hidden = false;
                 outcome = Err(if text.is_empty() || !privacy.text_safe(text) {
                     "the action did not complete".to_string()
@@ -6751,10 +6771,16 @@ impl App {
             .filter(|w| !w.bytes().all(|c| c.is_ascii_uppercase()))
             .collect::<Vec<_>>()
             .join(" ");
+        // a credential is named, never written out: this line goes to the box, the reply and the conversation, and
+        // step_line keeps such a value out of all three
+        let schema = self.providers[p].tools.iter().find(|t| t.name == call.name).map(|t| &t.schema);
         let args = call
             .arguments
             .iter()
-            .map(|(k, v)| format!("{}: {}", k.replace('_', " "), v))
+            .map(|(k, v)| {
+                let secret = gate::secret(k, schema.and_then(|s| s.pointer(&format!("/properties/{}", k))));
+                format!("{}: {}", k.replace('_', " "), if secret { "hidden".to_string() } else { v.to_string() })
+            })
             .collect::<Vec<_>>()
             .join("\n");
         format!("{}\n{}", label, args)
@@ -6800,6 +6826,12 @@ impl App {
     fn flip_or_keep(&mut self, item: &Item) -> bool {
         let Some(row) = self.row_ref(item).cloned() else { return false };
         let Some(p) = self.prov_of(item) else { return false };
+        // set in place only by a tool that asks nothing: one that is destructive goes the way of every step, with
+        // its question. No row of spark-shell's has such a switch; a row that came with one ran it unasked
+        let asks = |app: &Self, call: &Call| app.providers[p].tools.iter().find(|t| t.name == call.name).is_some_and(|t| app.risky(t));
+        if row.switch.as_ref().is_some_and(|sw| asks(self, &sw.flip())) || (row.quiet && row.tool.as_ref().is_some_and(|c| asks(self, c))) {
+            return false;
+        }
         if let Some(sw) = &row.switch {
             self.keep_lit = Some(row.id.clone());
             self.set_value(p, &row.id, Held::On(!sw.on), sw.flip());
@@ -7309,8 +7341,8 @@ impl App {
             line: String::new(),
             typed: false,
         };
-        if self.tool_of(&step).is_none() {
-            return self.refuse("this is not offered here now");
+        if self.tool_of(&step).is_none_or(|t| self.risky(t)) {
+            return self.refuse("this is not offered here now"); // a preview's key runs no tool that needs its question
         }
         if let Err(e) = self.checked(&step) {
             return self.refuse(&e);

@@ -69,7 +69,7 @@ fn home() -> App {
             {"id": "bar:text", "sign": "blank", "text": "text size", "columns": [], "more": [],
              "step": {"values": [{"shown": "auto", "sent": "auto"}, {"shown": "12", "sent": "12"}], "at": 0, "set": {"name": "bar_text", "arguments": {}}, "key": "size"}}
         ], "short": []}),
-        json!([{"name": "bar_tray"}, {"name": "bar_text"}]),
+        json!([{"name": "bar_tray", "annotations": {"destructiveHint": false}}, {"name": "bar_text", "annotations": {"destructiveHint": false}}]), // as the bar's provider says them: a tool with no hint counts as destructive
     );
     app.providers = vec![window, bar];
     app.model_name = Some("gemma4-26b-a4b".into());
@@ -571,6 +571,16 @@ fn an_objects_row_is_selected_by_a_click_and_acts_on_a_second_while_a_menus_row_
         .expect("the tray's switch is a pick");
     app.clicked(tray, t0);
     assert!(app.providers[1].rows.rows[1].switch.as_ref().unwrap().on, "a control acts at once");
+    // a switch whose tool is destructive is not set in place: such a tool takes its question, as every step does
+    let mut app = home();
+    app.view = View::Section(1);
+    app.came_from.push(View::Home);
+    app.providers[1].tools.iter_mut().for_each(|t| t.destructive = true);
+    app.clicked(tray, t0);
+    assert!(
+        !app.providers[1].rows.rows[1].switch.as_ref().unwrap().on,
+        "no flip in place for a tool that asks"
+    );
     // a window is an object: the first click selects it and the status row says what it is; a second click acts
     let mut app = home();
     app.view = View::Section(0);

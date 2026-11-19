@@ -232,7 +232,9 @@ pub fn result_privacy(schema: Option<&Value>, result: &Value) -> ResultPrivacy {
         }
     }
     let mut found = ResultPrivacy::default();
-    let mut left = 4096;
+    // every value a line the host takes can hold: a result carries its section's rows, and at 4096 a section of
+    // some 240 notes ran the walk out, so every result there read as withheld and lost its undo. Depth still ends it
+    let mut left = crate::mcp::LINE_MAX / 2;
     scan(result, schema, false, 0, &mut left, &mut found);
     found
 }
@@ -621,6 +623,23 @@ mod tests {
 
 #[cfg(test)]
 mod path_tests {
+    #[test]
+    fn a_result_with_a_long_section_is_read_whole() {
+        // a result carries its section's rows: some 240 notes ran the walk out at 4096 values, and every receipt
+        // there read as withheld and lost its undo
+        let rows: Vec<Value> = (0..400)
+            .map(|i| json!({"id": format!("notes:{i}"), "sign": "blank", "text": format!("note {i}"), "tool": {"name": "notes_open", "arguments": {"name": format!("note {i}")}}, "more": [], "columns": [], "children": null}))
+            .collect();
+        let result = json!({"content": [{"type": "text", "text": "{\"receipt\":\"note 3 deleted\"}"}], "structuredContent": {"receipt": "note 3 deleted", "rows": {"title": "notes", "rows": rows}}, "isError": false});
+        let privacy = result_privacy(None, &result);
+        assert!(!privacy.private && privacy.text_safe("note 3 deleted"));
+        // a credential far down the rows is still found, and what says it is kept back
+        let mut far = result.clone();
+        far["structuredContent"]["rows"]["rows"][399]["password"] = json!("hunter2");
+        let privacy = result_privacy(None, &far);
+        assert!(privacy.private && !privacy.text_safe("the key is hunter2"));
+    }
+
     use super::*;
     use crate::model::{Call, Row, Tool};
     use serde_json::json;
