@@ -42,6 +42,15 @@
   by the cells it takes on its band. Counted as one cell each, such a
   name pushed the voice meter off the band's end. The pad counts with
   the unicode-width crate, which the dialog has already.
+- A click on the bar shows a workspace whose name holds a quote or a
+  backslash. The bar sent the name without them, and sway showed a
+  new, empty workspace of that other name.
+- The bar's state names the clock and the notifications as dropped on
+  a screen too narrow for them.
+- On the pad, the windows of the last cell, where several apps fold
+  together on the bar, are listed oldest first.
+- The pad is laid out again when the bar comes, goes or moves, and no
+  longer each time the pointer crosses the bar.
 
 ## v0.153
 
