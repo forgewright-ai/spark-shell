@@ -4,6 +4,7 @@
 use crate::pad::Rect;
 use crate::tree::{kids, num, rect_of};
 use serde_json::Value;
+use unicode_width::UnicodeWidthChar;
 
 /// A window's title band in sight, where sway draws the buttons and the pad takes the pointer: its rect in
 /// its screen's own pixels, the window's whole rect for what lies over it, its app, the name the window
@@ -189,12 +190,20 @@ pub fn meter(mic: Option<&Mic>) -> String {
     }
 }
 
+/// The cells one character takes in the band's face: two for a wide one (an ideograph, most emoji), none for a
+/// mark that joins the character before it. Counted as one each, a name of wide characters was cut too late and
+/// pushed the meter off the band's end.
+fn wide(c: char) -> usize {
+    UnicodeWidthChar::width(c).unwrap_or(0)
+}
+
 /// The cells a title takes on screen: a tag takes none, a character reference or an escaped character one,
-/// and a character in a span with a size of its own half of one: the half spaces at a button's sides.
+/// a wide character two, and a character in a span with a size of its own half of its cells: the half spaces
+/// at a button's sides.
 pub fn cells(s: &str) -> usize {
     let (mut halves, mut small, mut it) = (0usize, false, s.chars());
     while let Some(c) = it.next() {
-        match c {
+        let w = match c {
             '<' => {
                 let tag: String = it.by_ref().take_while(|&d| d != '>').collect();
                 small = tag.starts_with("span size=");
@@ -202,13 +211,15 @@ pub fn cells(s: &str) -> usize {
             }
             '&' => {
                 it.by_ref().find(|&d| d == ';');
+                1
             }
             '\\' => {
                 it.next();
+                1
             }
-            _ => {}
-        }
-        halves += if small { 1 } else { 2 };
+            c => wide(c),
+        };
+        halves += if small { w } else { 2 * w };
     }
     halves.div_ceil(2)
 }
@@ -232,16 +243,24 @@ fn safe(name: &str) -> String {
         .collect()
 }
 
-/// A name cut to the cells it has, the cut marked with an ellipsis.
+/// A name cut to the cells it has, the cut marked with an ellipsis. Cut by cells, not by characters: a wide
+/// character that would cross the end is left out whole.
 fn clip(name: &str, room: usize) -> String {
     let kept: String = name.chars().filter(|c| !c.is_control()).collect();
-    if kept.chars().count() <= room {
+    if kept.chars().map(wide).sum::<usize>() <= room {
         return safe(&kept);
     }
     if room == 0 {
         return String::new();
     }
-    let cut: String = kept.chars().take(room - 1).collect();
+    let (mut cut, mut used) = (String::new(), 0);
+    for c in kept.chars() {
+        if used + wide(c) > room - 1 {
+            break;
+        }
+        used += wide(c);
+        cut.push(c);
+    }
     format!("{}{ELLIPSIS}", safe(cut.trim_end()))
 }
 
@@ -701,6 +720,18 @@ mod tests {
         assert_eq!(cells(&title(40, btn, "  %title", "notes", &m)), 40);
         assert_eq!(cells(&title(40, btn, "  terminal   %title", "notes", &m)), 40);
         assert!(title(40, btn, "  %title", "notes", &m).ends_with(&m));
+        // a wide character takes two cells: a name of them is cut by cells and the line stays as wide, and a short
+        // one is whole and padded to the same end (v0.153.1). Fifteen ideographs are thirty cells
+        let ideographs = "\u{65e5}\u{672c}\u{8a9e}\u{306e}\u{30bf}\u{30a4}\u{30c8}\u{30eb}\u{3068}\u{9577}\u{3044}\u{540d}\u{524d}\u{306e}\u{7a93}";
+        assert_eq!(cells(ideographs), 30);
+        let cut = title(40, btn, "  %title", ideographs, "");
+        assert_eq!(cells(&cut), 40 - METER, "{cut}");
+        assert!(cut.contains(ELLIPSIS) && !cut.contains(ideographs), "{cut}");
+        let two = title(40, btn, "  %title", "\u{65e5}\u{672c}", &m);
+        assert_eq!(cells(&two), 40, "{two}");
+        assert!(two.contains("\u{65e5}\u{672c} ") && two.ends_with(&m), "{two}");
+        // a mark that joins the letter before it takes no cell: e and an acute are one
+        assert_eq!(cells("e\u{301}"), 1);
         // a band too narrow for a name keeps the buttons and the meter's room
         assert_eq!(title(14, btn, "  %title", "notes", &m), format!("{btn}  {m}"));
         // no window's name can carry markup or a command out of sway's quotes
