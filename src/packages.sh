@@ -11,7 +11,11 @@ pm_detect() {
     for w in $(sed -n 's/^ID=//p; s/^ID_LIKE=//p' "$_f" 2>/dev/null | tr -d '"'); do
         case " $FAMILIES " in *" $w "*) DISTRO=$w; break ;; esac
     done
-    [ -z "$DISTRO" ] || load_env "$REPO/distro/$DISTRO.env" env || exit 1
+    # the family's file decides, whole, and a Linux of no family has no list: a desktop keeps the lists the release it
+    # started under exported, and they outranked the file of the release that runs now (after an update a package the
+    # new one added was never asked for until the next login; another family's fixture got this machine's lists)
+    unset PM PKG_SHELL PKG_CLI PKG_CONSOLE PKG_DESKTOP PKG_SOUND PKG_LOGIN LOGIN_ACCOUNT
+    [ -z "$DISTRO" ] || load_env "$REPO/distro/$DISTRO.env" || exit 1
     : "${PM:=}" "${PKG_SHELL:=}" "${PKG_CLI:=}" "${PKG_CONSOLE:=}" "${PKG_DESKTOP:=}" "${PKG_SOUND:=}" "${PKG_LOGIN:=}" "${LOGIN_ACCOUNT:=}"
 }
 # the families, one distro/NAME.env each: ID first, then each ID_LIKE

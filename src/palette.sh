@@ -199,7 +199,7 @@ theme_files() {   # the three files, as THEME says
         if [ -f "$_d" ] && cmp -s "$TMP/$_f" "$_d"; then ok theme "$THEME ($_d)"; continue; fi
         changes=$((changes + 1))
         need theme "$THEME: write $_d" || continue
-        mkdir -p "$(dirname "$_d")"; cp "$TMP/$_f" "$_d"
+        mkdir -p "$(dirname "$_d")"; put_whole "$TMP/$_f" "$_d" || { row todo theme "$THEME: $_d could not be written"; continue; }   # in one step: a shell that starts now reads the old palette or the new one, never an emptied file
         [ "$_f" != console-colors ] || CONSOLE_NOW=$_d
         ok theme "$THEME: $_d written"
     done

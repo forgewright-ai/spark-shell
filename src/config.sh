@@ -186,11 +186,12 @@ config_renames() {   # spark-shell on: the pad's settings a config from v0.142 o
         { print }' "$CONFIG" "$CONFIG" > "$TMP/config" && config_put "$TMP/config"
     ok config "$_crn settings of the pad are WINPAD_ now ($CONFIG)"
 }
-config_put() {   # config_put FILE -- FILE's lines become the config in one step: written beside it and moved onto it, so whoever reads the config meets the old file or the new one. cp emptied it before it wrote it, and a spark-shell that started in that moment ran on the defaults: a bar started again by a drag came back in the default text's size
-    if [ -L "$CONFIG" ]; then cp "$1" "$CONFIG"; return; fi   # a config that is a link stays a link: written through it, as before
-    _cpn=$CONFIG.new.$$
-    cp "$CONFIG" "$_cpn" && cat "$1" > "$_cpn" && mv "$_cpn" "$CONFIG" || { rm -f "$_cpn"; return 1; }   # the copy first: the new file keeps the old one's mode
+put_whole() {   # put_whole SRC DST -- SRC's bytes become DST in one step: written beside it and moved onto it, so whoever reads DST meets the old file or the new one. cp emptied a file before it wrote it, and a reader in that moment met no setting at all. A DST that is a link stays a link: written through it, as before
+    if [ -L "$2" ]; then cp "$1" "$2"; return; fi
+    _pwn=$2.new.$$
+    { [ ! -f "$2" ] || cp "$2" "$_pwn"; } && cat "$1" > "$_pwn" && mv "$_pwn" "$2" || { rm -f "$_pwn"; return 1; }   # the copy first: the new file keeps the old one's mode
 }
+config_put() { put_whole "$1" "$CONFIG"; }   # config_put FILE -- FILE's lines become the config in one step
 config_set() {   # config_set KEY VALUE -- one line replaced or added; a value load_env would refuse is refused first
     case $2 in *[';`$()|&<>']*) printf 'spark-shell: %s=%s cannot be kept: a value holds none of ; ` $ ( ) | & < >\n' "$1" "$2" >&2; exit 1 ;; esac
     [ "$(printf '%s' "$2" | tr -d '\001-\037\177')" = "$2" ] || { printf 'spark-shell: %s cannot be kept: a value holds no control character, a new line included\n' "$1" >&2; exit 1; }   # a new line would be a second line of the config
@@ -203,8 +204,11 @@ config_set() {   # config_set KEY VALUE -- one line replaced or added; a value l
         sed "s|^$1=.*|$1=$(esc "$2")|" "$CONFIG" > "$TMP/config"
         config_put "$TMP/config"
     else
-        [ -f "$CONFIG" ] || printf '# spark-shell config -- KEY=value (config.example shows the keys)\n' > "$CONFIG"
-        printf '%s=%s\n' "$1" "$2" >> "$CONFIG"
+        # the lines there, the last one ended if it was not (a key added after it was glued onto it: FONT=...LOGIN=yes), then the new one
+        if [ -f "$CONFIG" ]; then { cat "$CONFIG"; [ -z "$(tail -c 1 "$CONFIG")" ] || echo; } > "$TMP/config"
+        else printf '# spark-shell config -- KEY=value (config.example shows the keys)\n' > "$TMP/config"; fi
+        printf '%s=%s\n' "$1" "$2" >> "$TMP/config"
+        config_put "$TMP/config"
     fi
     row ok config "$1=$2 ($CONFIG)"
 }

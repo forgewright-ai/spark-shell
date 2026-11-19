@@ -4609,9 +4609,14 @@ rm -rf "$HOME/.config/spark/sv"
 pk=$(sed -n 's/^PKG_DESKTOP=//p' "$REPO/distro/void.env")
 if [ -n "$pk" ]; then printf '%s\n' "$out" | grep -q "^  packages     ${pk%% *} " && ok "warning: Void's PKG_DESKTOP named" || bad "warning void packages" "$out"
 else printf '%s\n' "$out" | grep -q '^  packages' && bad "warning: a packages row with no PKG_DESKTOP" "$out" || ok "warning: no PKG_DESKTOP, no packages row"; fi
-rc=0; out=$(printf 'n\n' | PKG_DESKTOP="$(printf 'pkg%s ' 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17)" PKG_SOUND=pkg18 SPARK_SHELL_TEST_TTY=1 PATH=$H/lx:$PATH sh "$SH" on desktop 2>&1) || rc=$?
-[ "$(printf '%s\n' "$out" | awk 'length > 79' | wc -l | tr -d ' ')" = 0 ] && [ "$(printf '%s\n' "$out" | grep -c '^               pkg')" -ge 1 ] && printf '%s\n' "$out" | grep -q 'pkg18 (sudo)$' \
-    && ok "warning: a long package list wraps under its column, within 80" || bad "warning wrap" "$out"
+# the family's file decides, whole: a list the desktop exported when it started, under the release before an update, does
+# not outrank the file of the release that runs now
+rc=0; out3=$(printf 'n\n' | PKG_DESKTOP='stale-one stale-two' A on desktop 2>&1) || rc=$?
+[ -z "$pk" ] || { printf '%s\n' "$out3" | grep -q "^  packages     ${pk%% *} " && ! printf '%s\n' "$out3" | grep -q 'stale-one' && ok "packages: the family's file decides, not a list the session exported before an update" || bad "stale package list" "$out3"; }
+ps=$(sed -n 's/^PKG_SOUND=//p' "$REPO/distro/void.env")
+rc=0; out=$(printf 'n\n' | A on desktop 2>&1) || rc=$?
+[ "$(printf '%s\n' "$out" | awk 'length > 79' | wc -l | tr -d ' ')" = 0 ] && [ "$(printf '%s\n' "$out" | grep -c '^               [a-z]')" -ge 1 ] && printf '%s\n' "$out" | grep -q "${ps##* } (sudo)\$" \
+    && ok "warning: a long package list (Void's own) wraps under its column, within 80" || bad "warning wrap" "$out"
 # y and --yes go ahead; --dry-run never asks
 printf 'ID=fixture\n' > "$H/os-release"
 rc=0; out=$(printf 'y\n' | A on 2>&1) || rc=$?
@@ -9238,6 +9243,14 @@ out=$(L desktop time)
 printf '%s' "$out" | grep -qx 'format 12' && printf '%s' "$out" | grep -qx 'week monday' && grep -qx 'CLOCK_FORMAT=12' "$HOME/.config/spark-shell/config"     && ok "time: clock format and first weekday are saved and read together" || bad "time preferences" "$out"
 rc=0; out=$(L desktop time format 13 2>&1) || rc=$?
 [ "$rc" = 1 ] && grep -qx 'CLOCK_FORMAT=12' "$HOME/.config/spark-shell/config" && ok "time: invalid presentation values leave preferences alone" || bad "time invalid format" "$out"
+# a config whose last line has no new line: a key added after it stands on a line of its own (it was glued onto the
+# last one: CLOCK_FORMAT=12WEEK_START=sunday), and the file is replaced in one step, as when a key is changed
+printf 'DESKTOP=sway\nCLOCK_FORMAT=12' > "$HOME/.config/spark-shell/config"; _ci=$(ls -i "$HOME/.config/spark-shell/config" | awk '{ print $1 }')
+L desktop time week sunday >/dev/null
+[ "$(cat "$HOME/.config/spark-shell/config")" = "$(printf 'DESKTOP=sway\nCLOCK_FORMAT=12\nWEEK_START=sunday')" ] && [ "$(ls -i "$HOME/.config/spark-shell/config" | awk '{ print $1 }')" != "$_ci" ] \
+    && [ -z "$(find "$HOME/.config/spark-shell" -name '*.new.*')" ] \
+    && ok "config: a key added after a last line with no new line stands on its own line, and the file is replaced in one step" || bad "config last line" "$(cat "$HOME/.config/spark-shell/config")"
+printf 'DESKTOP=sway\nCLOCK_FORMAT=12\nWEEK_START=monday\n' > "$HOME/.config/spark-shell/config"
 rc=0; out=$(L desktop time zone Etc/GMT </dev/null 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$(readlink "$H/root/etc/localtime")" = "$H/root/usr/share/zoneinfo/Etc/UTC" ]     && ok "time: a native zone change needs confirmation" || bad "time confirmation" "$out"
 # No systemd tools here: the native link is the contract on runit.
@@ -9272,6 +9285,22 @@ L on desktop --dry-run >/dev/null
 [ ! -e "$H/root/var/service/dbus" ] && [ ! -e "$H/bt.service.log" ] && [ ! -e "$H/bt.group.log" ]     && ok "bluetooth: service and group dry-run writes nothing" || bad "bluetooth dry-run"
 L on desktop --yes >/dev/null 2>&1
 [ "$(readlink "$H/root/var/service/dbus")" = "$H/root/etc/sv/dbus" ] && [ "$(readlink "$H/root/var/service/bluetoothd")" = "$H/root/etc/sv/bluetoothd" ]     && grep -q 'bluetoothd' "$H/bt.service.log" && grep -q -- '-aG bluetooth' "$H/bt.group.log"     && ok "bluetooth: native runit services and group are enabled" || bad "bluetooth native setup"
+# a service already enabled is left as it is: on started both again on every run, a root command each time
+_bn=$(grep -c '' "$H/bt.service.log")
+# the palette's files are replaced in one step, as the config is: a shell that starts while the theme changes reads the
+# old palette or the new one, never an emptied file
+_te=$HOME/.config/spark/theme.env; chmod 600 "$_te"; _ti=$(ls -i "$_te" | awk '{ print $1 }'); _tw=$(cat "$_te")
+printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
+L on desktop --yes >/dev/null 2>&1
+[ "$(grep -c '' "$H/bt.service.log")" = "$_bn" ] && ok "bluetooth: services already enabled are not started again by the next on: no root command each time" || bad "bluetooth again" "$(cat "$H/bt.service.log")"
+[ "$(cat "$_te")" != "$_tw" ] && [ "$(ls -i "$_te" | awk '{ print $1 }')" != "$_ti" ] && [ "$(ls -l "$_te" | cut -c1-10)" = '-rw-------' ] && [ -z "$(find "$HOME/.config/spark" -name '*.new.*')" ] \
+    && ok "theme: theme.env is replaced in one step, with the mode it had, and nothing is left beside it" || bad "theme.env write" "$(ls -la "$HOME/.config/spark")"
+# a service that will not start at once does not end on: it is enabled, and runit starts what it finds
+rm -f "$H/root/var/service/dbus" "$H/root/var/service/bluetoothd"; printf '#!/bin/sh\nexit 1\n' > "$H/lx/sv"
+rc=0; out=$(L on desktop --yes 2>&1) || rc=$?
+[ -L "$H/root/var/service/dbus" ] && [ -L "$H/root/var/service/bluetoothd" ] && printf '%s\n' "$out" | grep -q '^ok     bluetooth    the native services are enabled' \
+    && ok "bluetooth: a service that does not start at once does not end on: both are enabled and the row is said" || bad "bluetooth sv refuses" "rc=$rc $(printf '%s\n' "$out" | grep -e bluetooth -e FAIL)"
+printf '#!/bin/sh\necho "$*" >> "$HOME/bt.service.log"\n' > "$H/lx/sv"
 out=$(L check || :)
 printf '%s' "$out" | grep -q '^warn *bluetooth *bluetoothd is not running'     && ok "bluetooth: check names a stopped daemon" || bad "bluetooth check stopped" "$out"
 rm -rf "$H"

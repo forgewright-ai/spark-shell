@@ -243,15 +243,18 @@ bt_apply() {   # the distribution's bluetooth service enabled and started
     elif [ "$(init_shape)" = runit ]; then
         for _svc in dbus bluetoothd; do
             [ -d "$ROOT/etc/sv/$_svc" ] || { row todo bluetooth "the native $_svc service is missing"; continue; }
+            # a service already enabled is left as it is: started on every on, it asked for root each time, and a
+            # refusal ended on there with no row. One enabled here is started once; runit starts it by itself too
             if [ ! -e "$ROOT/var/service/$_svc" ]; then
                 need bluetooth "enable the native $_svc service (sudo)" && seat_root on bluetooth || continue
-                root_do mkdir -p "$ROOT/var/service" && root_do ln -s "$ROOT/etc/sv/$_svc" "$ROOT/var/service/$_svc" || return 1
+                root_do mkdir -p "$ROOT/var/service" && root_do ln -s "$ROOT/etc/sv/$_svc" "$ROOT/var/service/$_svc" \
+                    || { row todo bluetooth "the native $_svc service could not be enabled"; acting=0; return 0; }
+                root_do sv up "$ROOT/var/service/$_svc" >/dev/null 2>&1 || :
             fi
-            [ "$MODE" = dry ] || root_do sv up "$ROOT/var/service/$_svc" || return 1
         done
         if grep -q '^bluetooth:' "$ROOT/etc/group" 2>/dev/null && ! in_group bluetooth "$(id -un)"; then
             need bluetooth "add $(id -un) to the native bluetooth group (sudo; next login)" && seat_root on bluetooth || return 0
-            root_do usermod -aG bluetooth "$(id -un)" || return 1
+            root_do usermod -aG bluetooth "$(id -un)" || { row todo bluetooth "$(id -un) could not be added to the native bluetooth group"; acting=0; return 0; }
         fi
     else skip bluetooth "enable bluetoothd with the system service manager"; return; fi
     ok bluetooth "the native services are enabled; shared services stay when the desktop is off"
