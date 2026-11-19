@@ -25,6 +25,23 @@
 - `off desktop` keeps its record of the groups it added for the
   brightness while one of them could not be removed, so off desktop
   again finds it.
+- The package lists are read from the release that runs. A desktop
+  kept the lists of the release it started under, and they outranked
+  the file: after an update, a package the new release added was not
+  asked for until the next login.
+- A key added to a config whose last line had no new line was glued
+  onto that line. It stands on a line of its own, and the config is
+  replaced in one step when a key is added, as when one is changed.
+- The palette's files, `theme.env` among them, are replaced in one
+  step. A shell that started while the theme changed could read an
+  emptied file.
+- On a system with runit, `on` started the bluetooth services again on
+  every run, with a root command each time, and a refusal ended `on`
+  with no row. A service already enabled is left as it is.
+- A window's name with wide characters (ideographs, most emoji) is cut
+  by the cells it takes on its band. Counted as one cell each, such a
+  name pushed the voice meter off the band's end. The pad counts with
+  the unicode-width crate, which the dialog has already.
 
 ## v0.153
 
