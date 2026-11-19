@@ -51,6 +51,21 @@
   together on the bar, are listed oldest first.
 - The pad is laid out again when the bar comes, goes or moves, and no
   longer each time the pointer crosses the bar.
+- In the dialog, a section whose first answer came late is asked
+  again. It stayed empty until the dialog was opened again.
+- With some 240 notes or more, every action there said "private
+  details withheld" in place of its receipt and lost its undo. The
+  check reads the whole result.
+- A plan whose step is refused after an earlier step opened a window
+  keeps the dialog open, with the refusal. It closed.
+- A password typed for a step spark proposed is not written back into
+  the prompt: the step names it and keeps its value back.
+- A switch, a quiet row or a preview's key runs no tool that needs its
+  question.
+- A question from a part of the desktop keeps what was being typed,
+  and ends with its call.
+- A part of the desktop that stops while it sets a value no longer
+  holds every other switch for two minutes.
 
 ## v0.153
 
