@@ -895,6 +895,7 @@ fn the_view_of_a_file_names_it_where_you_are() {
     assert!(long.1 + long.0.chars().count() as f64 * M.sw <= 576.0, "inside the frame");
 }
 
+#[cfg(target_os = "linux")] // the painter is Linux's alone (src/lib.rs): elsewhere the dialog runs in a terminal
 #[test]
 fn the_scenes_are_painted_with_cairo_and_pango() {
     use spark_dialog::paint::{png, Font, Lib};

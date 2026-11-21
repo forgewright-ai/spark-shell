@@ -33,6 +33,7 @@ const USAGE: &str = "spark-dialog -- the spark dialog, one window for every doma
   spark-dialog login ...   the login screen on tty1 (spark-dialog login -h)
 ";
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))] // Drawn, Px and At come from the window, Linux's alone
 enum Ev {
     Term(Event),
     /// The terminal is gone (its window closed): the dialog goes with it, and its providers.
@@ -181,6 +182,7 @@ impl Window {
         1
     }
     fn paste(&self, _: bool) {}
+    fn when_drawn(&self) {}
 }
 
 #[cfg(not(target_os = "linux"))]

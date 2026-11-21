@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.158.2
+
+- The dialog builds on a Mac again, so the checks before a push pass
+  there. Its window is Linux's alone, and since v0.153 the dialog asked
+  that window when its frame was drawn, a question the Mac's stand-in
+  could not answer; the painter's test used cairo, which only Linux
+  builds. Only the build changed: the dialog runs as before. The
+  dialog is 0.158.2.
+
 ## v0.158.1
 
 - After an update home opens the new dialog. Home stays running while
