@@ -41,6 +41,11 @@
   whether the connection was confirmed too.
 - On a dhcpcd system every wired network step failed since v0.137:
   the helper was asked for by a name its file no longer has.
+- Two settings changed at once both stay (#31). A change read the
+  config, then wrote all of it, so the later of two dropped the
+  other's line and both said ok. A change now holds a lock from its
+  read to its write; one that waits 3 seconds for it says so and
+  writes nothing.
 - The dialog is 0.160.0.
 
 ## v0.159
