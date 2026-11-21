@@ -9,8 +9,8 @@ set -eu
 cd "$(dirname "$0")/../component/dialog"
 target=x86_64-unknown-linux-gnu
 export CARGO_INCREMENTAL=0
-RUSTFLAGS="--remap-path-prefix=$(pwd)=/build/dialog --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=${RUSTUP_HOME:-$HOME/.rustup}=/rustup -C link-arg=-Wl,--build-id=none"
+RUSTFLAGS="--remap-path-prefix=$(cd .. && pwd)=/build/component --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=${RUSTUP_HOME:-$HOME/.rustup}=/rustup -C link-arg=-Wl,--build-id=none"
 export RUSTFLAGS
 cargo build --release --locked --target "$target" --bin spark-dialog >&2
-bin=${CARGO_TARGET_DIR:-target}/$target/release/spark-dialog
+bin=${CARGO_TARGET_DIR:-../target}/$target/release/spark-dialog
 printf '%s %s\n' "$(sha256sum "$bin" | cut -d' ' -f1)" "$bin"

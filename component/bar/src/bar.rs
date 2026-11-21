@@ -290,19 +290,7 @@ impl Module {
     }
 }
 
-/// A color as spark-shell says it: red, green and blue, a byte each.
-pub type Color = [u8; 3];
-
-/// A color said as rrggbb (or #rrggbb), the blanks around it dropped; None for anything else. The
-/// environment's colors (BAR_FG and the rest) and a status line's look are both read by this.
-pub fn hex(s: &str) -> Option<Color> {
-    let s = s.trim().trim_start_matches('#');
-    if s.len() != 6 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return None;
-    }
-    let v = u32::from_str_radix(s, 16).ok()?;
-    Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
-}
+pub use spark_theme::{dark_ground, hex, Rgb as Color};
 
 /// The ground's alpha said as a number, kept within 0 to 1; None for anything else. BAR_ALPHA and a
 /// status line's look are both read by this.
@@ -1872,11 +1860,6 @@ pub fn steady(seconds: u64) -> bool {
 
 /// The sizes spark's mark comes drawn at, as PNGs in the assets.
 pub const MARK_PNGS: [i32; 4] = [16, 19, 22, 26];
-
-/// Whether a ground is dark, spark-shell's rule (theme_is_dark): its luminance under half, in whole numbers.
-pub fn dark_ground(r: u8, g: u8, b: u8) -> bool {
-    (r as u32 * 299 + g as u32 * 587 + b as u32 * 114) / 1000 < 128
-}
 
 /// Spark's mark at `px` pixels on a ground: its file in the assets, favicon for a dark ground and
 /// favicon-light for a light one, never recolored. The PNG nearest the size at or above it; above the

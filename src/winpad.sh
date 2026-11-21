@@ -5,10 +5,10 @@
 WINPAD_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-winpad
 winpad_lock() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-winpad.pid"; }   # the pad's lock, its pid inside
 winpad_state() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-winpad.state"; }   # what the pad says of itself: hidden 0|1, count N
-winpad_release_tag() {   # -> clone_tag when it pins a pad and component/winpad/ is unchanged since; false otherwise
+winpad_release_tag() {   # -> clone_tag when it pins a pad and its sources, including the shared theme, match; false otherwise
     _pdr=$(clone_tag) || return 1
     git -C "$REPO" cat-file -e "$_pdr:component/winpad/winpad.env" 2>/dev/null || return 1
-    git -C "$REPO" diff --quiet "$_pdr" -- component/winpad 2>/dev/null || return 1
+    git -C "$REPO" diff --quiet "$_pdr" -- component/winpad component/theme component/Cargo.toml component/Cargo.lock 2>/dev/null || return 1
     printf '%s\n' "$_pdr"
 }
 winpad_want_sha() {   # -> the sha256 the release tag's tree pins for this machine, or nothing

@@ -9,8 +9,8 @@ set -eu
 cd "$(dirname "$0")/../component/winpad"
 target=x86_64-unknown-linux-gnu
 export CARGO_INCREMENTAL=0
-RUSTFLAGS="--remap-path-prefix=$(pwd)=/build/pad --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=${RUSTUP_HOME:-$HOME/.rustup}=/rustup -C link-arg=-Wl,--build-id=none"
+RUSTFLAGS="--remap-path-prefix=$(cd .. && pwd)=/build/component --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=${RUSTUP_HOME:-$HOME/.rustup}=/rustup -C link-arg=-Wl,--build-id=none"
 export RUSTFLAGS
 cargo build --release --locked --target "$target" --bin spark-winpad >&2
-bin=${CARGO_TARGET_DIR:-target}/$target/release/spark-winpad
+bin=${CARGO_TARGET_DIR:-../target}/$target/release/spark-winpad
 printf '%s %s\n' "$(sha256sum "$bin" | cut -d' ' -f1)" "$bin"

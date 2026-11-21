@@ -2,7 +2,7 @@
 """The glyph families' font check (#248): every glyph of every family is in each curated font and is
 one cell wide, or this fails, and with it the build.
 
-The families are read where they live: the dialog's share in component/dialog/src/glyphs.rs (the model's sign,
+The families are read where they live: the native components' share in component/theme/src/glyphs.rs (the model's sign,
 a choice's on and off, the branch, the bullet, thinking's sign, the gauge pair, the dots) and the
 shell's in spark-shell's family_set (the gauge pair, thinking's sign, the dots and the key frame, the
 pair around a workspace's number and a key). The two must agree where they share a
@@ -39,14 +39,14 @@ def rust_text(s):
 
 
 def dialog_families():
-    src = open(os.path.join(REPO, "component/dialog/src/glyphs.rs"), encoding="utf-8").read()
+    src = open(os.path.join(REPO, "component/theme/src/glyphs.rs"), encoding="utf-8").read()
     track = re.search(r'pub const TRACK: &str = "((?:\\u\{[0-9a-f]+\}|[^"\\])*)";', src)
     out = {}
     for name, body in re.findall(r"pub const (STONE|STAR|BANNER): Glyphs = Glyphs \{(.*?)\};", src, re.S):
         fields = dict((k, rust_text(v)) for k, v in re.findall(r'(\w+): "((?:\\u\{[0-9a-f]+\}|[^"\\])*)"', body))
         out[fields.pop("name")] = fields
     if set(out) != {"stone", "star", "banner"} or not track:
-        sys.exit("glyph check: component/dialog/src/glyphs.rs does not hold STONE, STAR, BANNER and TRACK as this check reads them")
+        sys.exit("glyph check: component/theme/src/glyphs.rs does not hold STONE, STAR, BANNER and TRACK as this check reads them")
     return out, rust_text(track.group(1))
 
 

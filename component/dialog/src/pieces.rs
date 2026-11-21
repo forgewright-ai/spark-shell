@@ -10,6 +10,7 @@
 
 use crate::animation::{Film, Films, FRAME_MIN_MS};
 use crate::sixel::{show, Image, Viewport};
+use spark_theme::animation::Colors;
 use std::f64::consts::PI;
 
 /// The pieces, in the order the theme's row steps through them (spark-shell's ANIMATION_NAMES).
@@ -17,53 +18,13 @@ pub const NAMES: [&str; 6] = ["moon", "ripple", "tide", "embers", "sun", "flight
 pub const W: usize = 180;
 pub const H: usize = 120;
 const INK_MIN: f64 = 1.0 / 48.0;
-/// foot's defaults, as spark-shell's FOOT_HEX: a palette's missing ANSI color.
-const FOOT_HEX: [&str; 16] = [
-    "242424", "f62b5a", "47b413", "e3c401", "24acd4", "f2affd", "13c299", "e6e6e6", "616161", "ff4d51", "35d450", "e9e836", "5dc5f8", "feabf2", "24dfc4",
-    "ffffff",
-];
 const WHITE: Rgb = [255.0, 255.0, 255.0];
 const BLACK: Rgb = [0.0, 0.0, 0.0];
 
 type Rgb = [f64; 3];
 
-fn rgb(h: &str) -> Option<Rgb> {
-    let h = h.trim().trim_start_matches('#');
-    if h.len() != 6 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return None;
-    }
-    let v = u32::from_str_radix(h, 16).ok()?;
-    Some([(v >> 16) as f64, ((v >> 8) & 255) as f64, (v & 255) as f64])
-}
-
 fn mix(a: Rgb, b: Rgb, k: f64) -> Rgb {
     [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]
-}
-
-/// spark-shell's hex_mix to the bit: shell arithmetic truncates toward zero.
-fn hex_mix(a: Rgb, b: Rgb, pct: i64) -> Rgb {
-    let m = |x: f64, y: f64| {
-        let d = (y as i64 - x as i64) * pct;
-        (x as i64 + d.signum() * (d.abs() / 100)) as f64
-    };
-    [m(a[0], b[0]), m(a[1], b[1]), m(a[2], b[2])]
-}
-
-/// spark-shell's hex_contrast: the WCAG contrast of the two, times 100.
-fn hex_contrast(a: Rgb, b: Rgb) -> i64 {
-    let lum = |c: Rgb| {
-        let ch = c.map(|v| {
-            let v = v / 255.0;
-            if v <= 0.03928 {
-                v / 12.92
-            } else {
-                ((v + 0.055) / 1.055).powf(2.4)
-            }
-        });
-        0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
-    };
-    let (x, y) = (lum(a).max(lum(b)), lum(a).min(lum(b)));
-    ((x + 0.05) / (y + 0.05) * 100.0) as i64
 }
 
 /// A palette as the pieces take it: the dialog's surface, its text, accent and quiet text, and the 16 colors.
@@ -79,59 +40,31 @@ pub struct Roles {
 }
 
 impl Roles {
-    fn with(surface: Rgb, fg: Rgb, muted: Rgb, accent: Rgb, ansi: [Rgb; 16]) -> Roles {
-        let dark = (299.0 * surface[0] + 587.0 * surface[1] + 114.0 * surface[2]) / 1000.0 < 128.0;
-        // a warm yellow that reads on the ground: on dark the palette's yellow lifted a little
+    fn with(colors: Colors) -> Roles {
+        let [r, g, b] = colors.surface;
+        let dark = spark_theme::dark_ground(r, g, b);
+        let floats = |rgb: spark_theme::Rgb| rgb.map(f64::from);
+        let ansi = colors.ansi.map(floats);
         let yellow = if dark { mix(ansi[3], WHITE, 0.25) } else { ansi[3] };
         Roles {
-            surface,
+            surface: floats(colors.surface),
             dark,
-            fg,
-            muted,
-            accent,
+            fg: floats(colors.fg),
+            muted: floats(colors.muted),
+            accent: floats(colors.accent),
             ansi,
             yellow,
         }
     }
 
-    /// From the dialog's own keys, as spark-shell hands them: PANEL_BG (the surface), HEX_FG, PANEL_MUTED,
-    /// HEX_ACCENT and HEX_ANSI_0 to 15 (foot's own where one is missing). None without the first four.
+    /// The colors the launcher supplied, ready for drawing.
     pub fn from(get: impl Fn(&str) -> Option<String>) -> Option<Roles> {
-        let c = |k: &str| get(k).and_then(|v| rgb(&v));
-        let ansi: [Rgb; 16] = std::array::from_fn(|i| c(&format!("HEX_ANSI_{}", i)).unwrap_or_else(|| rgb(FOOT_HEX[i]).unwrap()));
-        Some(Roles::with(c("PANEL_BG")?, c("HEX_FG")?, c("PANEL_MUTED")?, c("HEX_ACCENT")?, ansi))
+        Colors::from_panel(get).map(Roles::with)
     }
 
-    /// From a palette file's THEME_* keys, worked out as lib/animation.py and spark-shell's panel_load do: the surface the
-    /// ground 9% of the way to the text, the quiet text lifted until it reads on it.
+    /// A gallery palette, ready for drawing.
     pub fn from_theme(get: impl Fn(&str) -> Option<String>) -> Roles {
-        let c = |k: &str, d: &str| {
-            get(k)
-                .and_then(|v| rgb(v.trim_matches(|ch| ch == '"' || ch == '\'')))
-                .unwrap_or_else(|| rgb(d).unwrap())
-        };
-        let ansi: [Rgb; 16] = std::array::from_fn(|i| c(&format!("THEME_ANSI_{}", i), FOOT_HEX[i]));
-        let (bg, fg) = (c("THEME_BG", "242424"), c("THEME_FG", "ffffff"));
-        let muted = get("THEME_MUTED")
-            .and_then(|v| rgb(v.trim_matches(|ch| ch == '"' || ch == '\'')))
-            .unwrap_or(ansi[8]);
-        let surface = hex_mix(bg, fg, 9);
-        let mut pl = 35;
-        let mut m = hex_mix(muted, fg, pl);
-        while pl < 100 && hex_contrast(m, surface) < 450 {
-            pl += 5;
-            m = hex_mix(muted, fg, pl);
-        }
-        Roles::with(
-            surface,
-            fg,
-            m,
-            c(
-                "THEME_ACCENT",
-                &format!("{:02x}{:02x}{:02x}", ansi[4][0] as u8, ansi[4][1] as u8, ansi[4][2] as u8),
-            ),
-            ansi,
-        )
+        Roles::with(Colors::from_theme(get))
     }
 }
 

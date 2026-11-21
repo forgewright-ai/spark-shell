@@ -655,10 +655,7 @@ pub const DIALOG: &str = "spark-dialog";
 /// The heights spark's mark comes in as a PNG next to spark-shell (asset/favicon-N.png and its -light twin).
 pub const MARK_PNGS: [i32; 4] = [16, 19, 22, 26];
 
-/// Whether a ground is dark, spark-shell's rule (theme_is_dark): its luminance under half, in whole numbers.
-pub fn dark_ground(r: u8, g: u8, b: u8) -> bool {
-    (r as u32 * 299 + g as u32 * 587 + b as u32 * 114) / 1000 < 128
-}
+pub use spark_theme::dark_ground;
 
 /// Spark's mark for an icon of `px` pixels on a ground: its file in the assets, favicon for a dark ground and
 /// favicon-light for a light one, never recolored. The PNG nearest the size at or above it; above the largest,

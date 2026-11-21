@@ -62,7 +62,7 @@ is off the bar and not while it is on it, by the same status loop; a click on a 
 
 BAR_PROOF_FONT names a face for the proof's config and hides the Monaspace faces from the proof's home: this
 machine as one of the rows that have DejaVu Sans Mono alone. BAR_PROOF_TIMES says how long each gate took.
-spark-bar is SPARK_SHELL_BAR, else component/bar/target's release build. Needs sway, swaymsg, foot, grim, wtype,
+spark-bar is SPARK_SHELL_BAR, else component/target's release build. Needs sway, swaymsg, foot, grim, wtype,
 jq and python3; fc-list where there is one."""
 import atexit
 import collections
@@ -782,7 +782,7 @@ def bar_binary():
         if not os.access(named, os.X_OK):
             raise SystemExit("SPARK_SHELL_BAR names no spark-bar build: " + named)
         return Path(named).resolve()
-    for candidate in (REPO / "component/bar/target/release/spark-bar", REPO / "component/bar/target/x86_64-unknown-linux-gnu/release/spark-bar"):
+    for candidate in (REPO / "component/target/release/spark-bar", REPO / "component/target/x86_64-unknown-linux-gnu/release/spark-bar"):
         if candidate.is_file():
             return candidate
     raise SystemExit("no spark-bar: build component/bar/ (cargo build --release) or name it in SPARK_SHELL_BAR")

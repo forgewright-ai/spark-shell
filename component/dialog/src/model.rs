@@ -160,13 +160,7 @@ pub struct Pick {
 
 /// A swatch is "#rrggbb", nothing else.
 fn swatch(v: Option<&Value>) -> Option<[u8; 3]> {
-    let s = v?.as_str()?;
-    let h = s.strip_prefix('#')?;
-    if h.len() != 6 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return None;
-    }
-    let n = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok();
-    Some([n(0)?, n(2)?, n(4)?])
+    spark_theme::hex_digits(v?.as_str()?.strip_prefix('#')?)
 }
 
 /// A chip is a list of "#rrggbb", nine at most (the ground, the text, the accent, six hues); anything else ends it.

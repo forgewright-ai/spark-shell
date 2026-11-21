@@ -40,7 +40,7 @@ evidence directory.
 Nothing here rests on a number read at the start: a bar in a fallback font grows a pixel once its line is
 drawn, so every length is read from the edge the bar does not touch, or as the pad's own.
 
-spark-winpad is SPARK_SHELL_WINPAD, else component/winpad/target's release build; spark-shell starts it through a script of
+spark-winpad is SPARK_SHELL_WINPAD, else component/target's release build; spark-shell starts it through a script of
 the proof's that writes what spark-winpad was handed and what it asks of spark-shell, and runs both as they
 are. Needs sway, swaymsg, foot, grim, wtype and python3; swaybar where the family has it."""
 import json
@@ -159,7 +159,7 @@ def pad_binary():
     named = os.environ.get("SPARK_SHELL_WINPAD")
     if named:
         return Path(named)
-    for candidate in (REPO / "component/winpad/target/release/spark-winpad", REPO / "component/winpad/target/x86_64-unknown-linux-gnu/release/spark-winpad"):
+    for candidate in (REPO / "component/target/release/spark-winpad", REPO / "component/target/x86_64-unknown-linux-gnu/release/spark-winpad"):
         if candidate.is_file():
             return candidate
     raise SystemExit("no spark-winpad: build component/winpad/ (cargo build --release) or name it in SPARK_SHELL_WINPAD")

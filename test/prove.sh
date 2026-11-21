@@ -94,7 +94,7 @@ while not os.path.exists(sys.argv[1]): time.sleep(0.5)" "$0/suite-root.done"' "$
     tail -1 "$out/suite-root.log"; suite_said "$out/suite-root.log"
 }
 proof() {   # proof NAME -- one of the desktop job's proofs, on a headless sway of its own
-    d=$out/proof-$1; pad=$REPO/component/winpad/target/release/spark-winpad; bar=$REPO/component/bar/target/release/spark-bar
+    d=$out/proof-$1; pad=$REPO/component/target/release/spark-winpad; bar=$REPO/component/target/release/spark-bar
     mkdir -p "$d/evidence" "$d/home"
     (   # from its own home, as the desktop job's user starts it
         cd "$d/home"
