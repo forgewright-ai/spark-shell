@@ -103,13 +103,18 @@ class Recovery(unittest.TestCase):
         return native.transaction('eth0', self.before, self.after, '', self.new,
                                   native.DEFAULT, 123, 1000)
 
+    def recovery(self):
+        """The failed apply's record: is the file restored, is it live."""
+        self.assertFalse(any(r['ready'] for r in self.records))
+        return self.records[-1]['restored'], self.records[-1]['live']
+
     def test_native_failure_restores_prior_config_and_confirms_recovery(self):
         with patch.object(native, 'await_live', side_effect=[native.Refused('failed'), None]):
-            with self.assertRaisesRegex(native.Refused, 'prior native network settings restored'):
+            with self.assertRaisesRegex(native.Refused, 'prior native network settings restored and confirmed'):
                 self.apply()
         self.assertEqual(self.current, self.before)
         self.assertEqual(len(self.rebinds), 2)
-        self.assertFalse(any(r['ready'] for r in self.records))
+        self.assertEqual(self.recovery(), (True, True))
 
     def test_later_edit_wins_during_failure(self):
         def external(*args):
@@ -120,7 +125,60 @@ class Recovery(unittest.TestCase):
                 self.apply()
         self.assertEqual(self.current, self.after + '# native editor\n')
         self.assertEqual(len(self.rebinds), 1)
-        self.assertFalse(any(r['ready'] for r in self.records))
+        self.assertEqual(self.recovery(), (False, False))
+
+    def test_daemon_exit_after_the_write_restores_prior_config(self):
+        def gone(*args):
+            self.rebinds.append(args)
+            raise ConnectionRefusedError('dhcpcd is gone')
+        def owner(*args):
+            if self.rebinds:
+                raise ConnectionRefusedError('dhcpcd is gone')
+            return 123, []
+        with patch.object(native, 'rebind', gone), patch.object(native, 'owner', owner):
+            with self.assertRaisesRegex(native.Refused, 'prior config restored; native connection recovery is not confirmed'):
+                self.apply()
+        self.assertEqual(self.current, self.before)
+        self.assertEqual(len(self.rebinds), 1)
+        self.assertEqual(self.recovery(), (True, False))
+
+    def test_restarted_daemon_is_checked_again_before_recovery(self):
+        pids = [123]
+        def owner(device, expected=None):
+            if expected not in (None, pids[0]):
+                raise native.Refused('the native network owner or config changed')
+            return pids[0], []
+        def rebind(device, pid):
+            if not self.rebinds:
+                pids[0] = 456  # dhcpcd restarted after the write
+            self.rebinds.append((device, pid))
+            owner(device, pid)
+        with patch.object(native, 'rebind', rebind), patch.object(native, 'owner', owner), \
+                patch.object(native, 'await_live', return_value=None) as live:
+            with self.assertRaisesRegex(native.Refused, 'prior native network settings restored and confirmed'):
+                self.apply()
+        self.assertEqual(self.current, self.before)
+        self.assertEqual(self.rebinds, [('eth0', 123), ('eth0', 456)])
+        live.assert_called_once_with('eth0', 456, native.DEFAULT, self.before, None)
+        self.assertEqual(self.recovery(), (True, True))
+
+    def test_failed_restore_write_never_claims_restoration(self):
+        full = OSError(28, 'No space left on device')
+        def write(before, after, info):
+            if after == self.before:
+                raise full
+            self.current = after
+        def record(token, record):
+            self.records.append(record.copy())
+            if 'restored' in record:
+                raise full
+        with patch.object(native, 'replace_config', write), patch.object(native, 'write_record', record), \
+                patch.object(native, 'await_live', side_effect=native.Refused('failed')):
+            with self.assertRaisesRegex(native.Refused, 'settings could not be restored'):
+                self.apply()
+        self.assertEqual(self.current, self.after)
+        self.assertEqual(len(self.rebinds), 1)
+        self.assertEqual(self.recovery(), (False, False))
 
     def test_success_records_only_target_section_and_config_digest(self):
         with patch.object(native, 'await_live', return_value=None):

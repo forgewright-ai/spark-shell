@@ -285,6 +285,23 @@ def write_record(token, record):
         Path(name).unlink(missing_ok=True)
 
 
+def restore_config(before, after):
+    """Put the prior bytes back while the file is still this apply's write.
+
+    dhcpcd is not asked: it may be gone. A later edit stays.
+    """
+    try:
+        current, info = read_config()
+        if current == after:
+            replace_config(after, before, info)
+            return
+    except OSError as disk:
+        raise Refused('apply failed; prior native network settings could not be restored') from disk
+    except Refused:
+        pass  # the file changed under the write, or needs review
+    raise Refused('native network settings changed; inspect them before recovery')
+
+
 def transaction(device, before, after, old, new, settings, pid, uid):
     if before == after:
         return {'receipt': 'network settings already match'}
@@ -301,17 +318,27 @@ def transaction(device, before, after, old, new, settings, pid, uid):
         listener = rebind(device, pid)
         await_live(device, pid, settings, after, listener)
     except (OSError, Refused) as exc:
-        current, info = read_config()
-        if current != after:
-            raise Refused('native network settings changed; inspect them before recovery') from exc
-        owner(device, pid)
-        replace_config(after, before, info)
+        # The record keeps how far recovery got: restored is the file,
+        # live is dhcpcd confirming it.
+        record.update(restored=False, live=False)
         try:
-            listener = rebind(device, pid)
-            await_live(device, pid, section(before, device)[3], before, listener)
-        except (OSError, Refused) as recovery:
-            raise Refused('prior config restored; native connection recovery is not confirmed') from recovery
-        raise Refused('apply failed; prior native network settings restored') from exc
+            restore_config(before, after)
+            record['restored'] = True
+            try:
+                # dhcpcd may have exited or restarted: take the owner again,
+                # with the checks of a first run.
+                pid, _ = owner(device)
+                listener = rebind(device, pid)
+                await_live(device, pid, section(before, device)[3], before, listener)
+            except (OSError, Refused) as recovery:
+                raise Refused('prior config restored; native connection recovery is not confirmed') from recovery
+            record['live'] = True
+            raise Refused('apply failed; prior native network settings restored and confirmed') from exc
+        finally:
+            try:
+                write_record(token, record)
+            except OSError:
+                pass  # the error above still says how far recovery got
     record['ready'] = True
     write_record(token, record)
     receipt = 'native network settings applied to ' + device
