@@ -983,16 +983,16 @@ fn main() {
                             h: g.clip.3,
                         });
                         let rows = spark_dialog::draw::rows_steps(&b, w.cell, &tones, first, first + g.rows);
-                        // a bar across the grid's whole row is the lit row's: it fills the line from the window's edge
-                        // to its other edge, as a row of the layout in pixels does
-                        let across = b.area.width as f64 * w.cell.w;
+                        // a bar that starts at the grid's first column is a lit row's, of the list or of the left of two
+                        // panes: it starts at the window's edge, as a row of the layout in pixels does. Its other end is
+                        // the grid's, which reaches the window's other edge
                         let rows = rows
                             .into_iter()
                             .map(|st| match st {
-                                Step::Fill { x, y, w: fw, h, color } if x == 0.0 && fw == across => Step::Fill {
+                                Step::Fill { x, y, w: fw, h, color } if x <= 0.0 => Step::Fill {
                                     x: -g.x,
                                     y,
-                                    w: window_px.0,
+                                    w: fw + g.x,
                                     h,
                                     color,
                                 },

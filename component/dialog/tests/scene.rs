@@ -215,6 +215,12 @@ fn the_grid_keeps_its_rows_inside_the_frame_for_a_place_not_drawn_yet() {
     // the rows' first text column stands on the frame's edge; the rows are kept inside the body's height, and
     // their lit row's bar has the window's width
     assert_eq!(g.x + 2.0 * M.cw, 24.0);
+    // at the window's start size the rows have the 60 columns the grid had there: two panes of files need them
+    assert_eq!(g.cols, 60);
+    assert!(a.col_w() >= spark_dialog::app::WIDTH, "two panes fit: {}", a.col_w());
+    let narrow = scene(&mut a, 420.0, 800.0).grid.unwrap();
+    assert_eq!(narrow.cols, 42, "every column that starts inside the window");
+    let s = scene(&mut a, 600.0, 800.0);
     assert_eq!((g.clip.0, g.clip.2), (0.0, 600.0));
     assert_eq!(
         a.size,

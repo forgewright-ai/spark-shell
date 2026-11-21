@@ -297,8 +297,10 @@ impl Geo {
     fn grid_x(&self, m: &Metrics) -> f64 {
         self.inset - 2.0 * m.cw
     }
+    /// Every column that starts inside the window: 60 at the window's start size, as the grid had there, which
+    /// two panes of files need. The last one may hang past the window's edge: it is the rows' own air.
     fn grid_cols(&self, m: &Metrics) -> u16 {
-        (((self.w - self.inset - self.grid_x(m)) / m.cw).floor() + 2.0).max(1.0) as u16
+        ((self.w - self.grid_x(m)) / m.cw).ceil().max(1.0) as u16
     }
     fn grid_top(&self, m: &Metrics) -> f64 {
         self.top + m.px(4.0)
