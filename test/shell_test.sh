@@ -6802,7 +6802,7 @@ echo "$*" >> "$HOME/swaymsg.log"
 case "$*" in
     "-t get_version") echo '{"human_readable":"sway-stub"}' ;;
     "-t get_outputs") echo '[{"name":"HDMI-A-1","scale":1,"rect":{"x":0,"y":0,"width":1920,"height":1080}}]' ;;
-    "-t get_tree") printf '{"nodes":[{"type":"output","name":"HDMI-A-1","nodes":[{"app_id":"spark-dialog","id":42,"focused":true,"fullscreen_mode":%s,"rect":{"x":100,"y":50},"window_rect":{"x":0,"y":0},"geometry":{"width":600,"height":800}},{"app_id":"spark-preview"}]}]}\n' "${FULL:-0}" ;;
+    "-t get_tree") printf '{"nodes":[{"type":"output","name":"HDMI-A-1","nodes":[{"app_id":"spark-dialog","id":42,"focused":true,"fullscreen_mode":%s,"border":"normal","current_border_width":1,"rect":{"x":100,"y":50},"window_rect":{"x":0,"y":0},"geometry":{"width":600,"height":800}},{"app_id":"spark-preview"},{"app_id":"foot","deco_rect":{"height":28}}]}]}\n' "${FULL:-0}" ;;
 esac
 STUB
 chmod +x "$H/pvsw/swaymsg"
@@ -6828,14 +6828,17 @@ grep -qxF '[app_id="spark-preview"] floating enable, border none, resize set 640
     || bad "preview video own window" "$(cat "$F2/swaymsg.log" 2>&1)"
 rm -f "$F2/swaymsg.log"
 # #158: full screen, the dialog trades sway's full screen for a floating window on the same pixels while the video plays,
-# the bar out of sight, in one command; when the play ends it takes full screen back at its own size first, in one command
+# the bar out of sight, in one command; when the play ends it takes full screen back at its own size first, in one command.
+# The window's band and border go for the play and come back after: with them the content is smaller than the screen,
+# the dialog sees a new size, and it stops a video on a new size. The way back sizes the window's whole box: its
+# content of 600 by 800, a border of 1 at each side and under it, and the band of 28 another window wears (v0.158)
 rm -f "$F2/swaymsg.log"
 ( FULL=1 mcpw "$(call 5 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" ); full_back
 [ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'playing clip.webm' ] \
-    && [ "$(grep -n -e '^bar mode invisible$' -e 'fullscreen disable' "$F2/swaymsg.log" | cut -d: -f2- | head -2 | paste -sd '|' -)" = 'bar mode invisible|[con_id=42] fullscreen disable, resize set 1920 1080, move absolute position 0 0' ] \
-    && [ "$(grep -n -e 'fullscreen enable' -e '^bar mode' "$F2/swaymsg.log" | cut -d: -f2- | tail -2 | paste -sd '|' -)" = '[con_id=42] resize set 600 800, move position center, fullscreen enable|bar mode dock' ] \
+    && [ "$(grep -n -e '^bar mode invisible$' -e 'fullscreen disable' "$F2/swaymsg.log" | cut -d: -f2- | head -2 | paste -sd '|' -)" = 'bar mode invisible|[con_id=42] fullscreen disable, border none, resize set 1920 1080, move absolute position 0 0' ] \
+    && [ "$(grep -n -e 'fullscreen enable' -e '^bar mode' "$F2/swaymsg.log" | cut -d: -f2- | tail -2 | paste -sd '|' -)" = '[con_id=42] border normal 1, resize set 602 829, move position center, fullscreen enable|bar mode dock' ] \
     && [ "$(grep -n 'fullscreen disable' "$F2/swaymsg.log" | cut -d: -f1)" -lt "$(grep -n 'spark-preview' "$F2/swaymsg.log" | tail -1 | cut -d: -f1)" ] \
-    && ok "provide files: full screen, a video plays in its frame too: the dialog floats on the same pixels for the play and is full screen again at its own size after (#158)" \
+    && ok "provide files: full screen, a video plays in its frame too: the dialog floats on the same pixels for the play, its band and border off, and is full screen again with them, its box sized for its content, its border and its band (#158)" \
     || bad "preview video full screen" "$(ans 5) | $(cat "$F2/swaymsg.log" 2>&1)"
 # #172: a full screen play's way back is a job of its own: a video that plays on never holds the step's answer, bash or dash
 rm -f "$F2/swaymsg.log"; _t0=$(date +%s)

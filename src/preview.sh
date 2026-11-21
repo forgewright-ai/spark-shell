@@ -333,19 +333,22 @@ files_play_video() {   # files_play_video PATH AT X Y W H -- X Y W H in terminal
     [ -n "$_fvd" ] || { echo "the dialog's window is not found"; return 1; }
     _fvo=$(printf '%s' "$_fvt" | jq -r 'first(.nodes[] | select(.type == "output") | select(any(.. | objects; .app_id? == "spark-dialog" and .focused? == true)) | .name) // empty')
     _fvs=$(wm_outputs | jq -r --arg o "$_fvo" 'first(.[] | select(.name == $o) | .scale) // 1')
-    # sway stacks full screen over floating: the dialog goes floating for the play
+    # sway stacks full screen over floating: the dialog goes floating for the play, with no band and no border. With
+    # them its content would be smaller than the screen, and the dialog stops a video when its size changes
     _fvsw=''
     if [ -f "$TMP/play.swap" ]; then _fvsw=$(cat "$TMP/play.swap")
     else
         case $_fvd in *' 0') ;; *)
-            _fvsw=$(printf '%s' "$_fvt" | jq -r 'first(.. | objects | select(.app_id? == "spark-dialog" and .focused? == true) | "\(.id) \(.geometry.width // 0) \(.geometry.height // 0)") // empty')
+            _fvsw=$(printf '%s' "$_fvt" | jq -r 'first(.. | objects | select(.app_id? == "spark-dialog" and .focused? == true) | "\(.id) \(.geometry.width // 0) \(.geometry.height // 0) \(.border // "none") \(.current_border_width // 0)") // empty')
             _fvr=$(wm_outputs | jq -r --arg o "$_fvo" 'first(.[] | select(.name == $o) | "\(.rect.width) \(.rect.height) \(.rect.x) \(.rect.y)") // empty')
             [ -n "$_fvsw" ] && [ -n "$_fvr" ] || { echo "the dialog's window is not found"; return 1; }
+            # the height of a band, for the way back: full screen wears none, so any window that wears one says it
+            _fvsw="$_fvsw $(printf '%s' "$_fvt" | jq -r '[.. | objects | .deco_rect?.height // 0] | max // 0')"
             # shellcheck disable=SC2086   # four numbers
             set -- "$1" "$2" "$3" "$4" "$5" "$6" $_fvr
             # the bar apart: a sway with no bar refuses it
             wm_cmd "bar mode invisible" >/dev/null 2>&1 || :
-            wm_act "con_id=${_fvsw%% *}" "fullscreen disable, resize set $7 $8, move absolute position $9 ${10}" >/dev/null 2>&1 \
+            wm_act "con_id=${_fvsw%% *}" "fullscreen disable, border none, resize set $7 $8, move absolute position $9 ${10}" >/dev/null 2>&1 \
                 || { wm_cmd "bar mode $(bar_mode)" >/dev/null 2>&1 || :; echo "full screen could not make room for the video"; return 1; }
             printf '%s\n' "$_fvsw" > "$TMP/play.swap" ;;
         esac
@@ -373,10 +376,28 @@ files_play_video() {   # files_play_video PATH AT X Y W H -- X Y W H in terminal
     wm_act "app_id=\"spark-preview\"" "floating enable, border none, resize set $3 $4, move absolute position $1 $2, opacity 1" >/dev/null 2>&1 || :
 }
 pid_running() { kill -0 "$1" 2>/dev/null && ! grep -qs '^State:[[:space:]]*Z' "/proc/$1/status"; }   # pid_running PID -- a zombie is ended; a container may never reap
-files_full_back() {   # files_full_back "ID W H" -- full screen again, sized first for leaving
-    # shellcheck disable=SC2086   # three numbers
+files_full_back() {   # files_full_back "ID W H BORDER WIDTH BAND" -- full screen again, its border back and sized first for leaving
+    # W and H are the window's content as it was before full screen; sway sizes a window's whole box, its band and
+    # its border with it, so they are added: a box of the content's size alone came back a band shorter
+    # shellcheck disable=SC2086   # the six words
     set -- $1
-    _ffb=''; [ "${2:-0}" -gt 0 ] && [ "${3:-0}" -gt 0 ] && _ffb="resize set $2 $3, move position center, "
+    set -- "$1" "${2:-0}" "${3:-0}" "${4:-none}" "${5:-0}" "${6:-0}"
+    _ffb=''
+    case $4 in
+        normal)
+            if [ "$6" -le 0 ]; then   # no window wore a band to measure: its own, once it wears it again
+                wm_act "con_id=$1" "border normal $5" >/dev/null 2>&1 || :
+                set -- "$1" "$2" "$3" "$4" "$5" "$(wm_tree | jq -r --argjson id "$1" 'first(.. | objects | select(.id? == $id) | .deco_rect.height // 0) // 0' 2>/dev/null || echo 0)"
+            fi
+            [ "$2" -gt 0 ] && [ "$3" -gt 0 ] && _ffb="resize set $(($2 + 2 * $5)) $(($3 + ${6:-0} + $5)), move position center, "
+            _ffb="border normal $5, $_ffb" ;;
+        pixel)
+            [ "$2" -gt 0 ] && [ "$3" -gt 0 ] && _ffb="resize set $(($2 + 2 * $5)) $(($3 + 2 * $5)), move position center, "
+            _ffb="border pixel $5, $_ffb" ;;
+        *)
+            [ "$2" -gt 0 ] && [ "$3" -gt 0 ] && _ffb="resize set $2 $3, move position center, "
+            [ "$4" != csd ] || _ffb="border csd, $_ffb" ;;
+    esac
     wm_act "con_id=$1" "${_ffb}fullscreen enable" >/dev/null 2>&1 || :
     wm_cmd "bar mode $(bar_mode)" >/dev/null 2>&1 || :
 }
