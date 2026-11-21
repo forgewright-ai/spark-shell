@@ -1312,23 +1312,31 @@ fn a_long_sound_says_its_waveform_is_being_drawn() {
     render(&app, "preview-sound-drawing");
 }
 
-/// The wait plays while a page is slow to come, and ends when it did not come (#124): never under the words.
+/// While a page is slow to come the message's row says so with the march, as an app opening has it, and no
+/// animation plays in the view; a page that did not come ends the wait (#124), and a quick one never shows it.
 #[test]
-fn a_page_that_did_not_come_ends_the_wait() {
+fn a_page_slow_to_come_says_loading_with_the_march() {
     let mut app = sound_app(false);
-    app.films = true;
     let pv = app.preview.as_mut().unwrap();
     pv.shown = None;
     pv.asked = std::time::Instant::now() - std::time::Duration::from_secs(2);
+    let name = pv.row().text.clone();
+    assert_eq!(app.view_wait(), Some(format!("loading {name}")));
+    assert!(app.busy(), "the march moves while the view waits");
     let p = palette("tokyonight-night");
     let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
-    assert!(spark_dialog::ui::draw(&app, &p, CLOCK, &mut b).film.is_some(), "a slow page: the wait");
-    app.preview.as_mut().unwrap().failed = true;
-    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
-    assert!(
-        spark_dialog::ui::draw(&app, &p, CLOCK, &mut b).film.is_none(),
-        "a page that did not come: no wait"
-    );
+    assert!(spark_dialog::ui::draw(&app, &p, CLOCK, &mut b).film.is_none(), "no animation in the view");
+    let status: String = (0..WIDTH).map(|x| b[(x, HEIGHT - 5)].symbol().to_string()).collect();
+    assert!(status.contains(&format!("loading {name}")), "on the message's row: {status:?}");
+    assert!(!status.trim_start().starts_with("loading"), "after the march's cells: {status:?}");
+    // a page just asked for says nothing yet
+    app.preview.as_mut().unwrap().asked = std::time::Instant::now();
+    assert_eq!(app.view_wait(), None, "a quick page never flashes the wait");
+    // one that did not come: the wait ends
+    let pv = app.preview.as_mut().unwrap();
+    pv.asked = std::time::Instant::now() - std::time::Duration::from_secs(2);
+    pv.failed = true;
+    assert_eq!(app.view_wait(), None, "a page that did not come: no wait");
 }
 
 /// A video plays over the frame where it was drawn (#125): Space sends the box with the play (#151).
@@ -1575,23 +1583,27 @@ fn a_filtered_file_shows_its_preview_after_the_down_arrow() {
     assert_eq!(app.preview.as_ref().unwrap().row().text, "invoice-0412.pdf");
 }
 
-/// A long sound whose waveform is still being drawn (#164): the animation that began while the page came plays
-/// on under the title, no words over it, until the picture is there.
+/// A long sound whose waveform is still being drawn (#164): the message's row says so with the march until the
+/// picture is there, its title stays, and no animation plays.
 #[test]
-fn a_long_sound_plays_the_wait_until_its_waveform_is_there() {
+fn a_long_sound_says_drawing_the_waveform_with_the_march() {
     let mut app = sound_app(false);
     app.films = true;
     app.preview.as_mut().unwrap().heard = None;
+    assert_eq!(app.view_wait().as_deref(), Some("drawing the waveform"));
+    assert!(app.busy(), "the march moves while the waveform is drawn");
     let p = palette("tokyonight-night");
     let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
     let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
-    assert!(drawn.film.is_some(), "the wait plays");
+    assert!(drawn.film.is_none(), "no animation in the view, though the theme has one");
+    let status: String = (0..WIDTH).map(|x| b[(x, HEIGHT - 5)].symbol().to_string()).collect();
+    assert!(status.contains("drawing the waveform"), "on the message's row: {status:?}");
     let all: String = (0..HEIGHT)
         .flat_map(|y| (0..WIDTH).map(move |x| (x, y)))
         .map(|c| b[c].symbol().to_string())
         .collect();
-    assert!(!all.contains("drawing the waveform"), "no words over the animation");
-    assert!(all.contains("Evening sketch"), "the title stays above it");
+    assert_eq!(all.matches("drawing the waveform").count(), 1, "said once");
+    assert!(all.contains("Evening sketch"), "the title stays");
 }
 
 /// The preview's chip takes a click as the other chips do (#150): it sends P (v0.125.1).

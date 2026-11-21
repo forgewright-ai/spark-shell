@@ -19,8 +19,6 @@ pub enum Reel {
     Open,
     Wait,
     Close,
-    /// A page being read (#142): the open, then the wait looped until it comes.
-    Load,
 }
 
 /// A GIF as frames, each with how long it stays, at the GIF's own size in pixels: as sixel for a terminal, or,
@@ -68,7 +66,6 @@ impl Films {
             Reel::Open => &self.open,
             Reel::Wait => &self.wait,
             Reel::Close => &self.close,
-            Reel::Load => &self.open,
         }
     }
 }

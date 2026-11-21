@@ -806,6 +806,96 @@ fn a_files_details_stand_beside_the_list_follow_the_lit_file_and_tab_goes_betwee
 }
 
 #[test]
+fn the_wheel_moves_the_lit_row_a_row_a_notch_and_the_list_follows() {
+    // a list of files: a notch down lights the first row, the next ones move the bar, a notch up moves it back
+    let mut a = files();
+    a.wheel(1);
+    assert!(a.in_list && a.sel == 0, "a notch down lights the first row");
+    a.wheel(1);
+    a.wheel(1);
+    assert_eq!(a.sel, 2);
+    a.wheel(-1);
+    assert_eq!(a.sel, 1);
+    let s = scene(&mut a, 600.0, 800.0);
+    assert!(
+        fills(&s, LIT).contains(&(0.0, 97.0 + 44.0, 600.0, 44.0)),
+        "the bar is on the row the wheel chose"
+    );
+    // a list longer than the window: the wheel walks to its last app, and the list has followed the bar there
+    let mut long = apps();
+    for _ in 0..40 {
+        long.wheel(1);
+    }
+    let s = scene(&mut long, 600.0, 500.0);
+    let list = &s.lists[0];
+    assert!(list.at.off > 0.0, "the list scrolled with its lit row: {:?}", list.at);
+    let lit: Vec<_> = fills(&s, LIT).into_iter().filter(|f| f.0 == 0.0 && f.2 == 600.0 && f.3 > 30.0).collect();
+    assert_eq!(lit.len(), 1, "one lit row: {lit:?}");
+    assert!(
+        lit[0].1 >= list.y && lit[0].1 + lit[0].3 <= list.y + list.h,
+        "and it is in view: {lit:?} in {list:?}"
+    );
+    let _ = std::fs::remove_dir_all(long.apps.path.parent().unwrap());
+    // an app's details are rows in the layout in pixels: the wheel moves their lit row too, and keeps one lit
+    let mut d = apps();
+    d.down();
+    d.down();
+    assert!(d.apps_details());
+    let (serial, _) = d.apps.pending.clone().expect("its facts are asked for");
+    d.apps
+        .receive(
+            serial,
+            json!({"id": "foot.desktop", "version": "1.28.0_1", "installed": "XBPS / System", "source": "XBPS", "fields": []}),
+        )
+        .unwrap();
+    assert!(d.in_list && d.sel == 0);
+    d.wheel(1);
+    assert!(d.in_list && d.sel == 1, "the next row of the details: lit {} in_list {}", d.sel, d.in_list);
+    d.wheel(-1);
+    assert!(d.in_list && d.sel == 0);
+    let _ = std::fs::remove_dir_all(d.apps.path.parent().unwrap());
+}
+
+#[test]
+fn the_view_of_a_file_names_it_where_you_are() {
+    let mut a = files();
+    (a.in_list, a.sel, a.list_keys) = (true, 3, true); // diagram.png
+    let rows = a.folder.as_ref().unwrap().2.clone();
+    a.preview = spark_dialog::preview::Preview::new(0, &rows.title, &rows.rows, "files:file:diagram.png");
+    assert!(a.preview.is_some());
+    a.came_from.push(a.view.clone());
+    a.view = View::Preview;
+    assert_eq!(kind(&a), Kind::Grid, "the view keeps its grid rows");
+    let s = scene(&mut a, 600.0, 800.0);
+    // home, the view, the file's folder, then the file's own name: the last is where you are
+    let (x, y, size, _) = word(&s, "diagram.png");
+    assert_eq!((y, size), (82.0 - M.sup, Size::Small));
+    let (fx, ..) = word(&s, "~/documents/research");
+    assert!(fx < x, "the folder stands before its file");
+    assert_eq!(s.hit(fx + 4.0, 78.0), Some(&Target::Back), "the folder goes back to its list");
+    assert_eq!(s.hit(x + 4.0, 78.0), None, "the file is where you are");
+    // while its page is on its way the line over the keys says so beside the moving bar, as an app opening has it
+    a.preview.as_mut().unwrap().asked = std::time::Instant::now() - std::time::Duration::from_secs(2);
+    assert_eq!(a.view_wait().as_deref(), Some("loading diagram.png"));
+    let s = scene(&mut a, 600.0, 800.0);
+    let (lx, ly, size, _) = word(&s, "loading diagram.png");
+    assert_eq!((ly, size), (752.0 - 10.0 - M.sup, Size::Small), "on the message's line");
+    let bar = words(&s).into_iter().find(|w| w.1 == 24.0 && w.2 == ly).expect("the bar at the frame's edge");
+    assert!(lx > bar.1 + M.sw * bar.0.chars().count() as f64, "the words after the bar: {bar:?}");
+    // a name too long for the line is cut in its middle: its type stays
+    a.preview = spark_dialog::preview::Preview::new(
+        0,
+        &rows.title,
+        &rows.rows,
+        "files:file:a-very-long-file-name-for-the-quarterly-research-summary-2026.txt",
+    );
+    let s = scene(&mut a, 600.0, 800.0);
+    let long = words(&s).into_iter().find(|w| w.0.starts_with("a-very-long")).expect("the long name");
+    assert!(long.0.contains('\u{2026}') && long.0.ends_with("2026.txt"), "{}", long.0);
+    assert!(long.1 + long.0.chars().count() as f64 * M.sw <= 576.0, "inside the frame");
+}
+
+#[test]
 fn the_scenes_are_painted_with_cairo_and_pango() {
     use spark_dialog::paint::{png, Font, Lib};
     let Ok(lib) = Lib::open() else {

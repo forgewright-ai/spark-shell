@@ -893,6 +893,12 @@ fn reply_row(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
             return;
         }
     }
+    // the view waits for a file's page, or for a long sound's waveform: the march with the words, as an app opening
+    if let Some(words) = app.view_wait() {
+        let x = pen.put(2, y, &progress::bar(progress::Work::March, &app.glyphs, app.frame), pen.pal.muted, false, false);
+        pen.put(x + 1, y, &cut_words(&words, pen.w.saturating_sub(x + 3) as usize), pen.pal.muted, false, false);
+        return;
+    }
     let Some(r) = &app.reply else {
         // nothing said: the note of the row the words are for, else the selected object's line, Norton Commander's
         // mini-status (the dialog design notes), muted, moving only with the bar
@@ -1284,24 +1290,8 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
     let pal = pen.pal.clone();
     let Some(pv) = app.preview.as_ref() else { return (picks, None, 1) };
     let Some(pg) = pv.shown.as_ref() else {
-        // a page slow to come: the wait, after a moment, so a quick one never flashes it (#122)
-        if app.films && !pv.failed && pv.asked.elapsed() >= std::time::Duration::from_millis(300) && y + 4 < bottom {
-            let (x, w, h) = (2, pen.w.saturating_sub(4), bottom - y);
-            skip(
-                pen,
-                Picture {
-                    x,
-                    y,
-                    w,
-                    h,
-                    file: String::new(),
-                    view: Viewport::FIT,
-                    spectrogram: false,
-                },
-            );
-            // the opening from its first frame, as it shows, then the wait while the page is still on its way (#142)
-            drawn.film = Some((x, y, w, h, Reel::Load, pv.asked + std::time::Duration::from_millis(300)));
-        }
+        // a page slow to come: the message's row says the wait with the march, as an app opening has it
+        // (App::view_wait); the page's place stays empty
         return (picks, None, 1);
     };
     let (x0, w) = (2u16, pen.w.saturating_sub(4));
@@ -1343,27 +1333,8 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         for (k, l) in pg.lines.iter().take(said).enumerate() {
             pen.put(x0, y + k as u16, &cut_words(l, w as usize), pal.fg, pg.bold.contains(&k), false);
         }
-        // the animation that began while the page was on its way plays on under the title, the wait looped,
-        // until the picture is there; words only where no animation plays (#164)
-        let (fy, fh) = (y + said as u16 + 1, rows.saturating_sub(said as u16 + 1));
-        if app.films && fh > 4 {
-            skip(
-                pen,
-                Picture {
-                    x: x0,
-                    y: fy,
-                    w,
-                    h: fh,
-                    file: String::new(),
-                    view: Viewport::FIT,
-                    spectrogram: false,
-                },
-            );
-            drawn.film = Some((x0, fy, w, fh, Reel::Load, pv.asked + std::time::Duration::from_millis(300)));
-        } else {
-            let t = "drawing the waveform";
-            pen.put(x0 + w.saturating_sub(cells(t) as u16) / 2, y + rows / 2, t, pal.muted, false, false);
-        }
+        // the message's row says the waveform is being drawn, with the march (App::view_wait): the picture's place
+        // stays empty until it is there
     } else if let Some(say) = &pg.say {
         // no preview: why, in the middle of the area
         let t = cut_words(say, w as usize);

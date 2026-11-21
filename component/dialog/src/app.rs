@@ -1203,6 +1203,7 @@ impl App {
             || matches!(self.mode, Mode::Listening)
             || self.shown().iter().any(|&p| self.providers[p].reading && !self.providers[p].ready)
             || self.servers.iter().any(|s| s.pending.values().any(|p| p.kind == Kind::Page))
+            || self.view_wait().is_some()
     }
 
     /// spark works on words: the header's march says so and nothing else does (#139). A step, a page, a place's
@@ -5038,7 +5039,8 @@ impl App {
     /// Apps that scrolls (the dialog design notes).
     pub fn wheel(&mut self, d: i32) {
         let step = |s: usize| if d < 0 { s.saturating_sub(3) } else { s + 3 };
-        if self.view == View::Apps && matches!(self.apps.page, crate::apps::Page::Details(_) | crate::apps::Page::Technical(_)) {
+        // the layout in pixels draws an app's page as rows: the wheel moves its lit row, as in every list
+        if !self.pixels && self.view == View::Apps && matches!(self.apps.page, crate::apps::Page::Details(_) | crate::apps::Page::Technical(_)) {
             self.scroll = step(crate::ui::body_scroll(self));
             self.in_list = false;
             self.list_keys = false;
@@ -7433,6 +7435,18 @@ impl App {
     fn preview_pan(&mut self, dx: f64, dy: f64) {
         if let Some(pv) = self.preview.as_mut() {
             pv.pan(dx * preview::PAN, dy * preview::PAN);
+        }
+    }
+
+    /// What the view waits for, said on the message's row with the march, as an app opening is: a file's page on its
+    /// way, once the wait is felt, so a quick one never flashes it (#122); a long sound's waveform still being drawn
+    /// aside (#124). None where nothing is waited for, and for a page that did not come.
+    pub fn view_wait(&self) -> Option<String> {
+        let pv = self.preview.as_ref().filter(|_| self.view == View::Preview)?;
+        match &pv.shown {
+            None if !pv.failed && pv.asked.elapsed() >= crate::ui::LAUNCH_FELT => Some(format!("loading {}", pv.row().text)),
+            Some(pg) if pg.sound.is_some() && pv.heard.is_none() => Some("drawing the waveform".to_string()),
+            _ => None,
         }
     }
 

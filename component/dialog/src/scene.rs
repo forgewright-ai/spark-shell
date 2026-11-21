@@ -680,7 +680,18 @@ fn path(app: &App, pen: &mut Pen, g: &Geo, items: &[Item], k: Kind) {
     let end = right - pen.text_end(right, base, &count, Size::Small, t.muted, false) - if count.is_empty() { 0.0 } else { m.px(16.0) };
     let (place, sub) = (app.title(), if beside { String::new() } else { app.subtitle() });
     let mut names = vec![("home".to_string(), Some(Target::Home))];
-    if let Some(folders) = crumbs {
+    // the view of a file: its folder, then the file's own name, which is where you are
+    let viewed = (app.view == View::Preview)
+        .then(|| app.preview.as_ref().map(|pv| pv.row().text.clone()))
+        .flatten()
+        .filter(|n| !n.trim().is_empty());
+    if let Some(file) = &viewed {
+        names.push((place, Some(Target::Back)));
+        if !sub.trim().is_empty() {
+            names.push((sub, Some(Target::Back)));
+        }
+        names.push((file.clone(), None));
+    } else if let Some(folders) = crumbs {
         names.extend(folders);
         // a path too long for the line loses its middle: the place and the folders nearest stay
         let width =
@@ -703,8 +714,13 @@ fn path(app: &App, pen: &mut Pen, g: &Geo, items: &[Item], k: Kind) {
     let mut x = g.inset;
     let last = names.len() - 1;
     for (k, (name, target)) in names.into_iter().enumerate() {
-        // the last name is cut where the count starts; an earlier one is short
-        let name = pen.fit(&name, Size::Small, (end - x).max(0.0));
+        // the last name is cut where the count starts; an earlier one is short. A file's name is cut in its
+        // middle: its type stays
+        let name = if k == last && viewed.is_some() {
+            cut_middle(&name, (((end - x) / m.sw).floor().max(4.0)) as usize)
+        } else {
+            pen.fit(&name, Size::Small, (end - x).max(0.0))
+        };
         // a folder's name goes to that folder whatever the way back holds
         let live = matches!(target, Some(Target::Crumb(_))) || (target.is_some() && app.can_go_back());
         let color = if live {
@@ -768,6 +784,9 @@ fn message(app: &App, k: Kind) -> Option<Message> {
         if app.running.is_some() && b.current.is_some() && b.since.elapsed() >= crate::ui::LAUNCH_FELT {
             return Some(Message::march(b.march()));
         }
+    }
+    if let Some(words) = app.view_wait() {
+        return Some(Message::march(words));
     }
     let Some(r) = &app.reply else {
         // a list of files says the lit file in its row and in its details: the line says the selection alone

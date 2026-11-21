@@ -386,13 +386,15 @@ fn cell_px() -> Option<(u32, u32)> {
         .map(|w| ((w.width / w.columns) as u32, (w.height / w.rows) as u32))
 }
 
-/// The picture a row brings, or a preview's page, as sixel for a box of `bw` by `bh` pixels, with its
-/// size in pixels: a regular PNG of 8 MB at most, made once for its file, its time and the box (the
-/// cache), None while it is not there yet.
-/// A picture's file decoded once for its file and its time: a regular PNG of 8 MB at most, None while
+/// The most a picture's file may weigh: what 4096 by 4096 pixels, the most the dialog decodes, take with no
+/// compression at all. A photo's full picture, asked for by a zoom past the page's pixels, is a PNG of 25 MB and
+/// more: a cap under that left the view empty at the zoom step that asked for it.
+const PICTURE_MOST: u64 = 64 << 20;
+
+/// A picture's file decoded once for its file and its time: a regular PNG of PICTURE_MOST at most, None while
 /// it is not there yet. The preview zooms, moves and turns the one kept (#120).
 fn image<'a>(file: &str, cache: &'a mut Option<(String, std::time::SystemTime, Image)>) -> Option<&'a Image> {
-    let meta = std::fs::metadata(file).ok().filter(|m| m.is_file() && m.len() <= 8 << 20)?;
+    let meta = std::fs::metadata(file).ok().filter(|m| m.is_file() && m.len() <= PICTURE_MOST)?;
     let when = meta.modified().ok()?;
     if !cache.as_ref().is_some_and(|(f, t, _)| f == file && *t == when) {
         *cache = Some((file.to_string(), when, sixel::decode(&std::fs::read(file).ok()?)?));
@@ -484,6 +486,19 @@ const DRAG_COLORS: usize = 48;
 /// nothing (#196). `was` and `now` say whether work was under way.
 fn frame_for_tick(was: bool, now: bool, march: bool) -> bool {
     march || was != now
+}
+
+/// The pointer in a window of the dialog's own: where it is, where it was, the screen's scale.
+type Moved = ((f64, f64), (f64, f64), f64);
+
+/// How far a drag moved a zoomed picture, in the screen's pixels. A window of the dialog's own says the pointer
+/// by the pixel (`at`, where it was before, the screen's scale): the picture follows it by the pixel. A terminal
+/// says cells: the cells moved, at a cell's size.
+fn drag_by(window: Option<Moved>, cells: (f64, f64), cell: (u32, u32)) -> (f64, f64) {
+    match window {
+        Some((at, was, scale)) => ((at.0 - was.0) * scale, (at.1 - was.1) * scale),
+        None => (cells.0 * cell.0 as f64, cells.1 * cell.1 as f64),
+    }
 }
 
 /// A mouse event wants a frame when it can change what is drawn: a press, a drag, the wheel, or the end of a drag;
@@ -865,8 +880,10 @@ fn main() {
     let mut peek_images = None;
     let mut win_peek: Option<(PeekKey, Arc<Pic>, (u32, u32))> = None;
     let mut peek_tried = Instant::now();
-    // a drag on a picture: where the pointer was
+    // a drag on a picture: where the pointer was, in the event's cells and, for a window of the dialog's own, in
+    // its pixels
     let mut drag: Option<(u16, u16)> = None;
+    let mut drag_px = (0.0, 0.0);
     let mut drawn = ui::Drawn::default();
     // the apps' icons (#230): the ones on screen now, each file decoded once for its time, each sixel made once for
     // its file, ground and box; the frame as last drawn, for the cells an icon leaves
@@ -1113,16 +1130,10 @@ fn main() {
                 film_due = None;
                 match (drawn.film, &films) {
                     (Some((x, y, fw, fh, reel, since)), Some(f)) => {
-                        // a page being read plays the open from its start, then the wait looped while it is still on its way (#142)
                         let ms = Instant::now().saturating_duration_since(since).as_millis();
-                        let (film, k, left, shown) = if reel == Reel::Load && ms >= f.open.length() {
-                            let (k, left) = f.wait.at(ms - f.open.length(), true);
-                            (&f.wait, k, left, k + f.open.frames.len())
-                        } else {
-                            let film = f.of(reel);
-                            let (k, left) = film.at(ms, reel == Reel::Wait);
-                            (film, k, left, k)
-                        };
+                        let film = f.of(reel);
+                        let (k, left) = film.at(ms, reel == Reel::Wait);
+                        let shown = k;
                         let (dx, dy) = (
                             ((fw as u32 * cw).saturating_sub(film.w) / 2 / cw) as u16,
                             ((fh as u32 * chh).saturating_sub(film.h) / 2 / chh) as u16,
@@ -1368,16 +1379,10 @@ fn main() {
             }
             match (drawn.film, &films, cell_size(&window)) {
                 (Some((x, y, w, h, reel, since)), Some(f), Some((cw, chh))) if sixel_ok => {
-                    // a page being read plays the open from its start, then the wait looped while it is still on its way (#142)
                     let ms = Instant::now().saturating_duration_since(since).as_millis();
-                    let (film, k, left, shown) = if reel == Reel::Load && ms >= f.open.length() {
-                        let (k, left) = f.wait.at(ms - f.open.length(), true);
-                        (&f.wait, k, left, k + f.open.frames.len())
-                    } else {
-                        let film = f.of(reel);
-                        let (k, left) = film.at(ms, reel == Reel::Wait);
-                        (film, k, left, k)
-                    };
+                    let film = f.of(reel);
+                    let (k, left) = film.at(ms, reel == Reel::Wait);
+                    let shown = k;
                     let at = ((x, y, w, h), reel, shown);
                     if shown_film != Some(at) {
                         // its cells cleared and the frame drawn in one synchronized update: the ground is
@@ -1484,12 +1489,10 @@ fn main() {
                 }
                 let was = app.busy();
                 app.tick(Instant::now());
-                // a frame for the march while it shows, and when the work starts or ends; none for work nothing shows (#196)
-                dirty |= frame_for_tick(
-                    was,
-                    app.busy(),
-                    app.cfg.progress && (app.thinking() || app.view == View::Apps && app.apps.pending.is_some() || app.files.batch.is_some()),
-                );
+                // a frame for the march while it shows, and when the work starts or ends; none for work nothing shows (#196).
+                // The view's wait shows it on the message's row from the moment the wait is felt
+                let march = app.cfg.progress && (app.thinking() || app.view == View::Apps && app.apps.pending.is_some() || app.files.batch.is_some());
+                dirty |= frame_for_tick(was, app.busy(), march || app.view_wait().is_some());
                 // a window still unseen after a moment is shown whatever is drawn: never a dialog that cannot be seen
                 if unseen && started.elapsed() >= Duration::from_millis(1500) {
                     reveal();
@@ -1696,7 +1699,9 @@ fn main() {
                             .as_ref()
                             .is_some_and(|p| app.zoomed() && row >= p.y && row < p.y + p.h && col >= p.x && col < p.x + p.w)
                         {
-                            drag = Some((col, row));
+                            // kept as the motion says it: the event's own cells, never the place's rows'
+                            drag = Some((m.column, m.row));
+                            drag_px = at_px;
                         } else if let Some((_, _, _, n, up)) = drawn.steps.iter().find(|(a, b, y, _, _)| row == *y && col >= *a && col < *b) {
                             app.step_at(*n, *up); // a value's arrow steps it, as left and right do (#175)
                         } else if row >= drawn.prompt.0 && row <= drawn.prompt.1 {
@@ -1729,9 +1734,12 @@ fn main() {
                                     dirty = true;
                                 }
                             }
-                        } else if let (Some((c0, r0)), Some((cw, chh))) = (drag, cell_size(&window)) {
-                            app.preview_drag((m.column as f64 - c0 as f64) * cw as f64, (m.row as f64 - r0 as f64) * chh as f64);
+                        } else if let (Some((c0, r0)), Some(cell)) = (drag, cell_size(&window)) {
+                            let own = window.as_ref().map(|w| (at_px, drag_px, w.scale() as f64));
+                            let (dx, dy) = drag_by(own, (m.column as f64 - c0 as f64, m.row as f64 - r0 as f64), cell);
+                            app.preview_drag(dx, dy);
                             drag = Some((m.column, m.row));
+                            drag_px = at_px;
                             // the picture follows at most every DRAG_GAP, and no sooner than the last took to draw, at the
                             // latest place: never a picture a motion (#129, #148)
                             if drag_drawn.elapsed() < DRAG_GAP.max(drag_cost) {
@@ -1759,20 +1767,8 @@ fn main() {
                     }
                     MouseEventKind::ScrollUp if app.view == View::Preview => app.preview_wheel(-1, m.modifiers.contains(KeyModifiers::CONTROL)),
                     MouseEventKind::ScrollDown if app.view == View::Preview => app.preview_wheel(1, m.modifiers.contains(KeyModifiers::CONTROL)),
-                    // over a list of the layout in pixels the wheel scrolls the list, about a row a notch, and the lit
-                    // row stays where it is: the list has a place of its own there, as under a drag
-                    MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
-                        if shown.as_ref().is_some_and(|sc| sc.lists.iter().any(|l| l.holds(at_px.0, at_px.1))) =>
-                    {
-                        let over = shown.as_ref().and_then(|sc| sc.lists.iter().find(|l| l.holds(at_px.0, at_px.1)));
-                        if let (Some(l), Some(w)) = (over, &window) {
-                            let step = metrics(w).px(44.0) * if m.kind == MouseEventKind::ScrollDown { 1.0 } else { -1.0 };
-                            if let Some(sc) = scrolls.iter_mut().find(|sc| sc.key == l.at.key) {
-                                sc.off = (sc.off + step).clamp(0.0, l.most);
-                            }
-                        }
-                    }
-                    // the wheel moves the bar a row in a list, as the arrows do; three lines in text (the dialog design notes)
+                    // the wheel moves the bar a row in a list, as the arrows do; three lines in text (the dialog design
+                    // notes). In the layout in pixels too: the list follows its lit row, and a drag scrolls it freely
                     MouseEventKind::ScrollUp => app.wheel(-1),
                     MouseEventKind::ScrollDown => app.wheel(1),
                     _ => {}
@@ -1813,6 +1809,51 @@ fn main() {
 mod tests {
     use super::*;
     use ratatui::crossterm::event::{MouseButton, MouseEventKind};
+
+    #[test]
+    fn a_photos_full_picture_is_read_though_its_file_is_large() {
+        // a zoom past the page's pixels asks for the picture at 4096 pixels a side: of a photo, a PNG of 25 MB and
+        // more. Noise stands in for a photo: 2048 by 2048 of it will not compress under 8 MB, the old cap
+        let (w, h) = (2048u32, 2048u32);
+        let mut seed = 0x2545_f491u32;
+        let raw: Vec<u8> = (0..w * h * 3)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                seed as u8
+            })
+            .collect();
+        let mut bytes = Vec::new();
+        {
+            let mut e = png::Encoder::new(&mut bytes, w, h);
+            e.set_color(png::ColorType::Rgb);
+            e.set_depth(png::BitDepth::Eight);
+            e.write_header().unwrap().write_image_data(&raw).unwrap();
+        }
+        assert!(bytes.len() > 8 << 20, "the test's picture is over the old cap: {} bytes", bytes.len());
+        assert!((bytes.len() as u64) < PICTURE_MOST);
+        let file = std::env::temp_dir().join(format!("spark-dialog-photo-{}.png", std::process::id()));
+        std::fs::write(&file, &bytes).unwrap();
+        let mut cache = None;
+        let read = image(file.to_str().unwrap(), &mut cache).map(|i| (i.w, i.h));
+        let _ = std::fs::remove_file(&file);
+        assert_eq!(read, Some((w, h)), "the view draws it");
+    }
+
+    #[test]
+    fn a_drag_moves_a_picture_by_the_pixel_in_the_dialogs_window_and_by_the_cell_in_a_terminal() {
+        // a window of the dialog's own: the pointer's pixels, at the screen's scale; the cells of the event say nothing
+        assert_eq!(drag_by(Some(((310.0, 452.0), (300.0, 450.0), 1.0)), (9.0, 9.0), (10, 20)), (10.0, 2.0));
+        assert_eq!(drag_by(Some(((310.0, 452.0), (300.0, 450.0), 2.0)), (0.0, 0.0), (20, 40)), (20.0, 4.0));
+        assert_eq!(
+            drag_by(Some(((300.0, 450.0), (300.0, 450.0), 1.0)), (0.0, 2.0), (10, 20)),
+            (0.0, 0.0),
+            "the press moves nothing"
+        );
+        // a terminal: the cells moved, at a cell's size
+        assert_eq!(drag_by(None, (-2.0, 1.0), (9, 18)), (-18.0, 18.0));
+    }
 
     #[test]
     fn a_click_is_one_frame_and_a_motion_none() {
