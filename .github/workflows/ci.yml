@@ -572,7 +572,7 @@ jobs:
           chmod 755 dialog-build/spark-dialog
           sudo unshare -n sudo -u "$(id -un)" env PATH="$PATH" python3 test/dialog_pty.py dialog-build/spark-dialog
       - name: cargo-deny (advisories, licences, no network crate)
-        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
+        uses: EmbarkStudios/cargo-deny-action@70f81531115945ba6eb6b941ec9d39d063438eb9   # v2.1.2
         with:
           manifest-path: component/dialog/Cargo.toml
   wallpaper:
@@ -626,7 +626,7 @@ jobs:
         with:
           persist-credentials: false
       - name: cargo-deny (advisories, licences, no network crate)
-        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
+        uses: EmbarkStudios/cargo-deny-action@70f81531115945ba6eb6b941ec9d39d063438eb9   # v2.1.2
         with:
           manifest-path: component/wallpaper/Cargo.toml
   winpad:
@@ -680,7 +680,7 @@ jobs:
         with:
           persist-credentials: false
       - name: cargo-deny (advisories, licences, no network crate)
-        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
+        uses: EmbarkStudios/cargo-deny-action@70f81531115945ba6eb6b941ec9d39d063438eb9   # v2.1.2
         with:
           manifest-path: component/winpad/Cargo.toml
   ear:
@@ -734,7 +734,7 @@ jobs:
         with:
           persist-credentials: false
       - name: cargo-deny (advisories, licences, no network crate)
-        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
+        uses: EmbarkStudios/cargo-deny-action@70f81531115945ba6eb6b941ec9d39d063438eb9   # v2.1.2
         with:
           manifest-path: component/ear/Cargo.toml
   bar:
@@ -788,7 +788,7 @@ jobs:
         with:
           persist-credentials: false
       - name: cargo-deny (advisories, licences, no network crate)
-        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
+        uses: EmbarkStudios/cargo-deny-action@70f81531115945ba6eb6b941ec9d39d063438eb9   # v2.1.2
         with:
           manifest-path: component/bar/Cargo.toml
   pins:
