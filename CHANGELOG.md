@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.156
+
+- In files the second pane opens again at the size home starts at.
+  v0.155 refused it there and said two panes need a window 60 cells
+  wide: inside the new frame the rows of a place had 59 columns.
+- The lit row of the left pane starts at the edge of the window, as
+  every other lit row does.
+- Right goes in a level where the lit row opens one: a place of home,
+  the details of an app, a list or a page a row opens. Left goes back
+  a level, as before. A row that acts stays for Enter: Right opens no
+  app and runs no step. Typed words keep both arrows, and in files
+  they still change the pane.
+- While a list is dragged the pointer is the holding hand.
+
 ## v0.155
 
 - Home in its own window is laid out by the pixel: two sizes of text,
