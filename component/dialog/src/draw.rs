@@ -76,11 +76,39 @@ impl Pic {
     }
 }
 
-/// A text's size: the text's own, or the smaller one a row's second words are set in.
+/// A text's size: the text's own, the smaller one a row's second words are set in, or one of the large ones a
+/// heading and a name are set in (v0.160): a group's heading, the line under a name, and a name at three sizes,
+/// the largest for a short one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Size {
     Main,
     Small,
+    Head,
+    Lead,
+    Title,
+    Title2,
+    Title3,
+}
+
+impl Size {
+    /// The large sizes, in the order every table of them keeps.
+    pub const BIG: [Size; 5] = [Size::Head, Size::Lead, Size::Title, Size::Title2, Size::Title3];
+    /// A large size's place in BIG; none for the text's own two.
+    pub fn big(self) -> Option<usize> {
+        Size::BIG.iter().position(|s| *s == self)
+    }
+    /// How many times the text's own size this one is: 28, 22, 72, 48 and 32 pixels beside its 16.
+    pub fn times(self) -> f64 {
+        match self {
+            Size::Main => 1.0,
+            Size::Small => 0.75,
+            Size::Head => 1.75,
+            Size::Lead => 1.375,
+            Size::Title => 4.5,
+            Size::Title2 => 3.0,
+            Size::Title3 => 2.0,
+        }
+    }
 }
 
 /// One thing to draw, in pixels from the window's top left corner.

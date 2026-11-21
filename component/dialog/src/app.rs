@@ -969,6 +969,10 @@ pub struct App {
     pub pixels: bool,
     /// The window is wide enough for an app's details beside the list. main.rs sets it.
     pub pane_fits: bool,
+    /// The window is wide (scene::wide): the lit app or file stands beside its list without being asked for.
+    pub wide: bool,
+    /// The details beside the list of apps were opened by the window being wide: they close when it is no longer.
+    pub pane_wide: bool,
     /// The preview shown (View::Preview): the list it came from, the file, its page (#120).
     pub preview: Option<Preview>,
     /// A sound's play or stop on its way: its request and its call, audited when it answers.
@@ -1119,6 +1123,8 @@ impl App {
             list_keys: false,
             pixels: false,
             pane_fits: false,
+            wide: false,
+            pane_wide: false,
             preview: None,
             quiet: vec![],
             setting: None,
@@ -4210,7 +4216,8 @@ impl App {
             // a category filter on the list: Esc shows all apps first (the dialog design notes, v0.124.4)
             let listing = |a: &crate::apps::State| matches!(a.page, crate::apps::Page::List | crate::apps::Page::Hidden);
             // an app's details beside the list (the layout in pixels) close first
-            if self.apps.pane && listing(&self.apps) && self.input.is_empty() {
+            // (a wide window keeps them: they are part of the list there, and Esc goes back)
+            if self.apps.pane && !self.wide && listing(&self.apps) && self.input.is_empty() {
                 self.apps.pane = false;
                 self.reply = None;
                 return;

@@ -146,6 +146,10 @@ pub struct Font {
     bold: *mut FontDesc,
     small: *mut FontDesc,
     small_bold: *mut FontDesc,
+    /// The large sizes (Size::BIG), regular alone.
+    big: [*mut FontDesc; 5],
+    /// Each large size's letter width and where its baseline stands under its line's top.
+    pub big_cells: [(f64, f64); 5],
     pub cell: Cell,
     pub small_cell: Cell,
     /// The baseline under the line's top: the text's own face, the smaller one.
@@ -158,27 +162,30 @@ impl Font {
     pub fn new(lib: &Lib, spec: &str) -> Option<Font> {
         let spec = CString::new(spec.replace('\0', "")).ok()?;
         unsafe {
-            let make = |bold: bool, small: bool| {
+            let scaled = |bold: bool, times: f64| {
                 let d = (lib.font_description_from_string)(spec.as_ptr());
                 if bold {
                     (lib.font_description_set_weight)(d, PANGO_WEIGHT_BOLD);
                 }
                 let size = (lib.font_description_get_size)(d);
-                if small && size > 0 {
+                if times != 1.0 && size > 0 {
                     // the size in the unit it was said in: points, or pixels
                     if (lib.font_description_get_size_is_absolute)(d) != 0 {
-                        (lib.font_description_set_absolute_size)(d, size as f64 * SMALL);
+                        (lib.font_description_set_absolute_size)(d, size as f64 * times);
                     } else {
-                        (lib.font_description_set_size)(d, (size as f64 * SMALL).round() as c_int);
+                        (lib.font_description_set_size)(d, (size as f64 * times).round() as c_int);
                     }
                 }
                 d
             };
+            let make = |bold: bool, small: bool| scaled(bold, if small { SMALL } else { 1.0 });
             let mut font = Font {
                 regular: make(false, false),
                 bold: make(true, false),
                 small: make(false, true),
                 small_bold: make(true, true),
+                big: Size::BIG.map(|s| scaled(false, s.times())),
+                big_cells: [(0.0, 0.0); 5],
                 cell: Cell { w: 0.0, h: 0.0 },
                 small_cell: Cell { w: 0.0, h: 0.0 },
                 ascent: (0.0, 0.0),
@@ -195,6 +202,10 @@ impl Font {
             };
             let (w, h, up) = measure(font.regular);
             let (sw, sh, sup) = measure(font.small);
+            let big = font.big.map(|d| {
+                let (bw, _, bup) = measure(d);
+                (bw as f64, bup)
+            });
             (lib.object_unref)(l as *mut c_void);
             (lib.destroy)(cr);
             (lib.surface_destroy)(surface);
@@ -204,6 +215,7 @@ impl Font {
             }
             font.cell = Cell { w: w as f64, h: h as f64 };
             font.small_cell = Cell { w: sw as f64, h: sh as f64 };
+            font.big_cells = big;
             font.ascent = (up, sup);
             Some(font)
         }
@@ -211,7 +223,7 @@ impl Font {
 
     pub fn free(&self, lib: &Lib) {
         unsafe {
-            for d in [self.regular, self.bold, self.small, self.small_bold] {
+            for d in [self.regular, self.bold, self.small, self.small_bold].into_iter().chain(self.big) {
                 (lib.font_description_free)(d);
             }
         }
@@ -223,6 +235,8 @@ impl Font {
             (Size::Main, true) => self.bold,
             (Size::Small, false) => self.small,
             (Size::Small, true) => self.small_bold,
+            // a large size has one weight: its size says what bold would
+            (big, _) => self.big[big.big().unwrap_or(0)],
         }
     }
 }

@@ -104,6 +104,8 @@ pub struct Handle {
     /// smaller one): the layout in pixels places its words by them.
     pub small: Cell,
     pub ascent: (f64, f64),
+    /// The large sizes' measures (draw::Size::BIG): a letter's width, and the baseline under the line's top.
+    pub big: [(f64, f64); 5],
     /// The size asked for, in cells: the window's until it says another.
     pub size: (u16, u16),
     /// The size asked for, in pixels.
@@ -145,7 +147,7 @@ impl Handle {
 /// The window opened on a thread of its own. The error says what is missing: a library, the compositor, the font.
 pub fn open(setup: Setup, send: impl Fn(Out) + Send + Sync + 'static) -> Result<Handle, String> {
     let (tx, rx) = channel::<Cmd>();
-    let (ready_tx, ready_rx) = mpsc::channel::<Result<(Cell, Cell, (f64, f64), (u32, u32)), String>>();
+    let (ready_tx, ready_rx) = mpsc::channel::<Result<(Cell, Cell, (f64, f64), [(f64, f64); 5], (u32, u32)), String>>();
     let size = (setup.cols, setup.rows);
     let scale = Arc::new(AtomicI32::new(1));
     let shared = scale.clone();
@@ -160,7 +162,13 @@ pub fn open(setup: Setup, send: impl Fn(Out) + Send + Sync + 'static) -> Result<
                     return;
                 }
             };
-            let _ = ready_tx.send(Ok((state.font.cell, state.font.small_cell, state.font.ascent, state.want)));
+            let _ = ready_tx.send(Ok((
+                state.font.cell,
+                state.font.small_cell,
+                state.font.ascent,
+                state.font.big_cells,
+                state.want,
+            )));
             let signal = event_loop.get_signal();
             let _ = event_loop.run(None, &mut state, |s| {
                 // the frames that came in one turn are one paint: the last of them
@@ -179,11 +187,12 @@ pub fn open(setup: Setup, send: impl Fn(Out) + Send + Sync + 'static) -> Result<
             (state.send)(Out::Gone);
         })
         .map_err(|e| format!("the window's thread: {e}"))?;
-    let (cell, small, ascent, px) = ready_rx.recv().map_err(|_| "the window's thread ended".to_string())??;
+    let (cell, small, ascent, big, px) = ready_rx.recv().map_err(|_| "the window's thread ended".to_string())??;
     Ok(Handle {
         cell,
         small,
         ascent,
+        big,
         size,
         px,
         scale,

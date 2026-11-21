@@ -26,6 +26,9 @@ pub struct Metrics {
     pub sw: f64,
     pub sh: f64,
     pub sup: f64,
+    /// The large sizes (Size::BIG: a heading, the line under a name, a name at its three sizes): a letter's width,
+    /// and the baseline under the line's top.
+    pub big: [(f64, f64); 5],
 }
 
 impl Metrics {
@@ -37,7 +40,22 @@ impl Metrics {
         sw: 7.0,
         sh: 15.0,
         sup: 12.0,
+        big: Metrics::big_of(10.0, 16.0),
     };
+    /// The large sizes of a face whose own letter is `cw` wide with its baseline `up` under its line's top: each
+    /// as many times those as the size is, on whole pixels. For a face nothing measured (a test's).
+    pub const fn big_of(cw: f64, up: f64) -> [(f64, f64); 5] {
+        const fn whole(v: f64) -> f64 {
+            (v + 0.5) as i64 as f64
+        }
+        [
+            (whole(cw * 1.75), whole(up * 1.75)),
+            (whole(cw * 1.375), whole(up * 1.375)),
+            (whole(cw * 4.5), whole(up * 4.5)),
+            (whole(cw * 3.0), whole(up * 3.0)),
+            (whole(cw * 2.0), whole(up * 2.0)),
+        ]
+    }
     /// A length of the sheets, at this text's size, on a whole pixel.
     pub fn px(&self, v: f64) -> f64 {
         (v * self.ch / 20.0).round()
@@ -46,12 +64,14 @@ impl Metrics {
         match size {
             Size::Main => self.cw,
             Size::Small => self.sw,
+            big => self.big[big.big().unwrap_or(0)].0,
         }
     }
     fn rise(&self, size: Size) -> f64 {
         match size {
             Size::Main => self.up,
             Size::Small => self.sup,
+            big => self.big[big.big().unwrap_or(0)].1,
         }
     }
 }
@@ -268,6 +288,17 @@ pub fn fits(m: &Metrics, w: f64, h: f64) -> bool {
 /// Whether a window this wide holds an app's details beside the list.
 pub fn splits(m: &Metrics, w: f64) -> bool {
     w >= m.px(SPLIT_MIN)
+}
+
+/// A window this wide shows the lit app or file beside the list at once, in large type (v0.160): the list keeps
+/// a column at the left, WIDE_LIST wide, and the page starts WIDE_PAGE from the window's edge.
+const WIDE_MIN: f64 = 1280.0;
+const WIDE_LIST: f64 = 696.0;
+const WIDE_PAGE: f64 = 780.0;
+
+/// Whether a window is wide: the lit thing's page stands beside the list without being asked for.
+pub fn wide(m: &Metrics, w: f64) -> bool {
+    w >= m.px(WIDE_MIN)
 }
 
 /// The size in cells the app is told, so its own counts fit what is drawn: the columns the grid rows have, and a
@@ -973,8 +1004,9 @@ enum End {
 enum K {
     Gap(f64),
     Rule,
-    /// A group's heading; its count; the category a click on it shows alone.
-    Head(String, Option<String>, Option<String>),
+    /// A group's heading; whether it is set large (a group of apps, of files: v0.160, where a count stood beside
+    /// it before); the category a click on it shows alone.
+    Head(String, bool, Option<String>),
     /// A place of home: its name, and what it holds now.
     Dest(String, String),
     /// An app in the list of apps: its name over what it is.
@@ -998,6 +1030,15 @@ enum K {
     Fact(String, String),
     /// The app a page is about: its picture, its name, what it is.
     Identity(Option<Icon>, String, Vec<String>),
+    /// What a page in a wide window is about, in large type: its name as large as its length allows, and one line
+    /// of what it is under it.
+    Name {
+        icon: Option<Icon>,
+        name: String,
+        what: String,
+    },
+    /// Facts side by side: each one's word in the smaller face, its value under it.
+    Facts(Vec<(String, String)>),
     /// A file or a folder in a list of files: its name leads, its size and its date step back beside it.
     File {
         name: String,
@@ -1169,7 +1210,7 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
                 gap(&mut out, m.px(16.0));
                 None
             }
-            Item::Heading(h) => Some((m.px(36.0), K::Head(h.clone(), None, None))),
+            Item::Heading(h) => Some((m.px(36.0), K::Head(h.clone(), false, None))),
             Item::Dest(d) => {
                 let words = app.dest_state(*d).unwrap_or_else(|| DESTS[*d].purpose.to_string());
                 Some((m.px(44.0), K::Dest(DESTS[*d].name.to_string(), words)))
@@ -1217,7 +1258,7 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
                     None
                 } else if l.heading {
                     let click = (!shape.narrow && app.view == View::Apps && app.apps.page == Page::List).then(|| l.label.clone());
-                    Some((m.px(36.0), K::Head(l.label.clone(), None, click)))
+                    Some((m.px(if shape.two { 44.0 } else { 36.0 }), K::Head(l.label.clone(), shape.two, click)))
                 } else if let Some(a) = launch {
                     let name = a.name.to_lowercase();
                     if shape.two {
@@ -1330,27 +1371,12 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
     while matches!(out.last(), Some(Row { k: K::Gap(_), .. })) {
         out.pop();
     }
-    // a category says how many apps stand under it
-    if shape.two && !shape.narrow {
-        for at in 0..out.len() {
-            if matches!(out[at].k, K::Head(..)) {
-                let n = out[at + 1..]
-                    .iter()
-                    .take_while(|r| !matches!(r.k, K::Head(..)))
-                    .filter(|r| matches!(r.k, K::App(..)))
-                    .count();
-                if let (K::Head(_, count, _), true) = (&mut out[at].k, n > 0) {
-                    *count = Some(n.to_string());
-                }
-            }
-        }
-    }
     out
 }
 
 /// The rows of a page about one app, as its details are drawn: who it is first, what you do with it, a rule,
 /// its facts, a rule, then its preferences. The rows keep the order the app counts its picks in.
-fn about_app(app: &App, pen: &Pen, id: &str, rows: Vec<Row>, room: f64) -> Vec<Row> {
+fn about_app(app: &App, pen: &Pen, id: &str, rows: Vec<Row>, room: f64, wide: bool) -> Vec<Row> {
     let m = pen.m;
     let Some(a) = app.apps.entry(id) else { return rows };
     // the page's own title and its note stand in the identity: the rows up to the first air go
@@ -1372,6 +1398,52 @@ fn about_app(app: &App, pen: &Pen, id: &str, rows: Vec<Row>, room: f64) -> Vec<R
     } else {
         a.description.trim_end_matches('.').to_lowercase()
     };
+    // a wide window (v0.160): the name in large type and what it is on one line, what you do with it, its facts
+    // side by side, its preferences. No rule and no box: the sizes say what leads
+    if wide {
+        let air = |h: f64| Row {
+            h: m.px(h),
+            pick: None,
+            k: K::Gap(m.px(h)),
+        };
+        let mut out = vec![Row {
+            h: m.px(220.0),
+            pick: None,
+            k: K::Name {
+                icon: app.apps.icon_of(a),
+                name: a.name.to_lowercase(),
+                what,
+            },
+        }];
+        if !matches!(app.apps.page, Page::Details(_) | Page::List | Page::Hidden) {
+            out.extend(body);
+            return out;
+        }
+        let head = body.iter().position(|r| matches!(r.k, K::Head(..))).unwrap_or(body.len());
+        let (first, rest) = body.split_at(head);
+        out.extend(first.iter().filter(|r| matches!(r.k, K::One { .. })).cloned());
+        let pairs: Vec<(String, String)> = first
+            .iter()
+            .filter_map(|r| match &r.k {
+                K::Fact(label, value) => Some((label.clone(), value.clone())),
+                _ => None,
+            })
+            .collect();
+        if !pairs.is_empty() {
+            out.push(air(12.0));
+            out.push(Row {
+                h: m.px(72.0),
+                pick: None,
+                k: K::Facts(pairs),
+            });
+        }
+        out.extend(first.iter().filter(|r| matches!(r.k, K::Words(..))).cloned());
+        if !rest.is_empty() {
+            out.push(air(8.0));
+            out.extend(rest.iter().cloned());
+        }
+        return out;
+    }
     let side = m.px(48.0);
     // three lines at most, the third cut: the identity keeps one height, so the rows under it stand still from
     // one app to the next
@@ -1527,12 +1599,13 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
         match &row.k {
             K::Gap(_) => {}
             K::Rule => pen.fill(area.left, top + m.px(8.0), right - area.left, 1.0, t.lit),
-            K::Head(text, count, click) => {
-                let base = top + m.px(24.0);
-                let w = pen.text(x, base, text, Size::Small, t.accent, true);
-                if let Some(c) = count.as_ref().filter(|_| !shape.narrow) {
-                    pen.text_end(end, base, c, Size::Small, t.muted, false);
-                }
+            K::Head(text, big, click) => {
+                // a group of apps or of files is named in large type, and the name is all there is: no count, no rule
+                let w = if *big {
+                    pen.text(x, top + m.px(32.0), text, Size::Head, t.accent, false)
+                } else {
+                    pen.text(x, top + m.px(24.0), text, Size::Small, t.accent, true)
+                };
                 if let Some(label) = click {
                     pen.hit(x - m.px(6.0), top + m.px(6.0), w + m.px(12.0), h - m.px(8.0), Target::Head(label.clone()));
                 }
@@ -1681,6 +1754,36 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                 // a value longer than its room is cut in its middle: both its ends are kept
                 let n = ((end - x - w - m.px(16.0)) / m.sw).floor().max(4.0) as usize;
                 pen.text_end(end, base, &cut_middle(value, n), Size::Small, t.ink, false);
+            }
+            K::Name { icon, name, what } => {
+                let mut nx = x;
+                if let Some(icon) = icon {
+                    let side = m.px(64.0);
+                    pen.icon(icon, nx, top + m.px(58.0), side);
+                    nx += side + m.px(20.0);
+                }
+                // 72 pixels, then 48, then 32, each on the same line; a name too long for the last is cut in its middle
+                let room = right - nx;
+                let size = [Size::Title, Size::Title2, Size::Title3]
+                    .into_iter()
+                    .find(|s| pen.width(name, *s) <= room)
+                    .unwrap_or(Size::Title3);
+                let n = (room / m.adv(size)).floor().max(4.0) as usize;
+                pen.text(nx, top + m.px(115.0), &cut_middle(name, n), size, t.ink, false);
+                let what = pen.fit(what, Size::Lead, room);
+                pen.text(nx, top + m.px(165.0), &what, Size::Lead, t.muted, false);
+            }
+            K::Facts(pairs) => {
+                let mut fx = x;
+                for (label, value) in pairs {
+                    if right - fx < 6.0 * m.cw {
+                        break;
+                    }
+                    pen.text(fx, top + m.px(28.0), label, Size::Small, t.muted, false);
+                    let value = pen.fit(value, Size::Main, right - fx);
+                    let w = pen.text(fx, top + m.px(54.0), &value, Size::Main, t.ink, false);
+                    fx += w.max(pen.width(label, Size::Small)).max(m.px(96.0)) + m.px(56.0);
+                }
             }
             K::Identity(icon, name, lines) => {
                 let side = m.px(48.0);
@@ -1837,18 +1940,25 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         },
         _ => None,
     };
+    // a wide window: the list keeps its column, the lit app has the rest, in large type, and no line stands between
+    let wide = wide(&m, g.w);
     let pane_w = ((g.w - 2.0 * g.inset) * 0.5).round().clamp(m.px(280.0), m.px(440.0));
-    let divide = whole.right - pane_w - m.px(16.0);
+    let divide = if wide { m.px(WIDE_LIST) } else { whole.right - pane_w - m.px(16.0) };
     // beside each other, a bar ends at the line between them
     let left = Area {
-        right: divide - m.px(16.0),
+        right: divide - m.px(if wide { 24.0 } else { 16.0 }),
         to: divide,
         ..whole
     };
     let right = Area {
-        left: divide + m.px(16.0),
-        from: divide + 1.0,
+        left: if wide { m.px(WIDE_PAGE) } else { divide + m.px(16.0) },
+        from: if wide { m.px(WIDE_PAGE) - m.px(12.0) } else { divide + 1.0 },
         ..whole
+    };
+    let between = |pen: &mut Pen| {
+        if !wide {
+            pen.fill(divide, whole.top + m.px(8.0), 1.0, whole.bottom - whole.top - m.px(16.0), pen.t.lit);
+        }
     };
     let narrow = Shape {
         two: true,
@@ -1875,13 +1985,19 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             let id = lit_app().unwrap_or_default();
             let rows = rows_of(app, pen, items, narrow, room(left));
             list(app, pen, &rows, left, lit(app), list_focus(app), narrow, app.scroll, own);
-            pen.fill(divide, whole.top + m.px(8.0), 1.0, whole.bottom - whole.top - m.px(16.0), pen.t.lit);
+            between(pen);
             let about = Page::Details(id.clone());
             let lines: Vec<Item> = app.apps.lines_of(&about, 60, "", 0).into_iter().map(Item::Apps).collect();
             let still = Shape { still: true, ..page };
-            let rows = about_app(app, pen, &id, rows_of(app, pen, &lines, still, room(right)), room(right));
+            let rows = about_app(app, pen, &id, rows_of(app, pen, &lines, still, room(right)), room(right), wide);
             let off = list(app, pen, &rows, right, None, false, still, 0, named(&about, ""));
             pane_targets(pen, &rows, right, off);
+        }
+        // a wide window with no app lit (the line holds the keys, or a row that is no app): the list keeps its
+        // column, so nothing moves when an app is lit
+        (true, true, _) if wide => {
+            let rows = rows_of(app, pen, items, narrow, room(left));
+            list(app, pen, &rows, left, lit(app), list_focus(app), narrow, app.scroll, own);
         }
         // the details hold the keys, the list stands beside them with their app lit
         (true, false, Some(id)) if app.apps.root_lists() => {
@@ -1901,13 +2017,13 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             }
             list(app, pen, &rows, left, Some(usize::MAX), false, still, 0, named(&root, &query));
             pen.hits.retain(|h| h.target != Target::Pick(usize::MAX));
-            pen.fill(divide, whole.top + m.px(8.0), 1.0, whole.bottom - whole.top - m.px(16.0), pen.t.lit);
-            let rows = about_app(app, pen, &id, rows_of(app, pen, items, page, room(right)), room(right));
+            between(pen);
+            let rows = about_app(app, pen, &id, rows_of(app, pen, items, page, room(right)), room(right), wide);
             list(app, pen, &rows, right, lit(app), list_focus(app), page, app.scroll, own);
         }
         // a page about an app, alone: who it is first
         (_, false, Some(id)) => {
-            let rows = about_app(app, pen, &id, rows_of(app, pen, items, full, room(whole)), room(whole));
+            let rows = about_app(app, pen, &id, rows_of(app, pen, items, full, room(whole)), room(whole), false);
             list(app, pen, &rows, whole, lit(app), list_focus(app), full, app.scroll, own);
         }
         _ => {
@@ -1959,7 +2075,7 @@ fn pane_rows(app: &App, m: &Metrics, pane: &files::Pane) -> Vec<Row> {
                 out.push(Row {
                     h: m.px(36.0),
                     pick: None,
-                    k: K::Head(h, None, None),
+                    k: K::Head(h, false, None),
                 });
             }
             Item::Folder(i) => {

@@ -305,7 +305,7 @@ fn the_grid_keeps_its_rows_inside_the_frame_for_a_place_not_drawn_yet() {
 }
 
 #[test]
-fn apps_are_rows_of_two_lines_under_their_categories_with_a_count() {
+fn apps_are_rows_of_two_lines_under_their_categories_named_in_large_type() {
     let mut a = apps();
     assert_eq!(kind(&a), Kind::Apps);
     let s = scene(&mut a, 600.0, 800.0);
@@ -314,12 +314,17 @@ fn apps_are_rows_of_two_lines_under_their_categories_with_a_count() {
     let (x, _, size, _) = word(&s, "10 apps");
     assert_eq!((x + 7.0 * M.sw, size), (576.0, Size::Small));
     assert!(fills(&s, LIT).contains(&(24.0, 96.0, 552.0, 1.0)), "the rule under it");
-    // A1: a category is 36 pixels, an app 52: its name over what it is
-    assert_eq!(word(&s, "system"), (48.0, 97.0 + 24.0 - M.sup, Size::Small, true));
-    assert_eq!(word(&s, "btop++"), (96.0, 97.0 + 36.0 + 21.0 - M.up, Size::Main, false));
-    assert_eq!(word(&s, "system monitor"), (96.0, 97.0 + 36.0 + 42.0 - M.sup, Size::Small, false));
-    assert_eq!(word(&s, "foot").1, 97.0 + 36.0 + 52.0 + 21.0 - M.up);
-    assert_eq!(word(&s, "web").1, 97.0 + 36.0 + 4.0 * 52.0 + 24.0 - M.sup);
+    // A2 (v0.160): a category is 44 pixels, its name at 28 pixels in the accent, and no count stands beside it
+    // (the total is on the line that says where you are); an app is 52: its name over what it is
+    assert_eq!(word(&s, "system"), (48.0, 97.0 + 32.0 - M.big[0].1, Size::Head, false));
+    assert!(
+        !s.steps.iter().any(|st| matches!(st, Step::Text { text, .. } if text == "4")),
+        "no count per group"
+    );
+    assert_eq!(word(&s, "btop++"), (96.0, 97.0 + 44.0 + 21.0 - M.up, Size::Main, false));
+    assert_eq!(word(&s, "system monitor"), (96.0, 97.0 + 44.0 + 42.0 - M.sup, Size::Small, false));
+    assert_eq!(word(&s, "foot").1, 97.0 + 44.0 + 52.0 + 21.0 - M.up);
+    assert_eq!(word(&s, "web"), (48.0, 97.0 + 44.0 + 4.0 * 52.0 + 32.0 - M.big[0].1, Size::Head, false));
     // a description has the row's width: never cut by a column
     word(&s, "application for managing and playing games on steam");
     // the list runs past its box, and no bar says so: nothing is drawn at its edge, and the fills reach it
@@ -328,7 +333,7 @@ fn apps_are_rows_of_two_lines_under_their_categories_with_a_count() {
     assert!(s.lists[0].most > 0.0, "it scrolls");
     // a click on a heading shows the category alone; on a row, the row
     assert_eq!(s.hit(60.0, 115.0), Some(&Target::Head("system".into())));
-    assert_eq!(s.hit(300.0, 140.0), Some(&Target::Pick(0)));
+    assert_eq!(s.hit(300.0, 150.0), Some(&Target::Pick(0)));
     // the keys of a list with nothing lit: back and details
     let keys: Vec<&Target> = s.hits.iter().map(|h| &h.target).filter(|t| matches!(t, Target::Key(_))).collect();
     assert_eq!(keys, [&Target::Key(HintKey::Escape), &Target::Key(HintKey::Actions)]);
@@ -428,6 +433,65 @@ fn the_app_spacing_setting_sets_an_apps_row() {
     }
 }
 
+/// A2 (v0.160): a wide window shows the lit app beside the list at once. The list keeps a column 696 pixels wide,
+/// the app's name stands at 72 pixels with what it is under it, its facts side by side, and no line or box
+/// stands between the two. Esc goes back: the page is part of the list there.
+#[test]
+fn a_wide_window_shows_the_lit_app_in_large_type_beside_the_list() {
+    let mut a = apps();
+    (a.wide, a.pane_fits) = (true, true);
+    a.apps_follow();
+    assert!(a.apps.pane, "the details open by themselves");
+    // nothing lit yet: the list already keeps its column, so nothing moves when an app is lit
+    let s = scene(&mut a, 1920.0, 1080.0);
+    assert_eq!(word(&s, "system"), (48.0, 97.0 + 32.0 - M.big[0].1, Size::Head, false));
+    assert!(!words(&s).iter().any(|w| w.3 == Size::Title), "no page with no app lit");
+    a.down();
+    a.down();
+    a.apps_follow();
+    let (serial, _) = a.apps.pending.clone().expect("the lit app's facts are asked for");
+    a.apps
+        .receive(
+            serial,
+            json!({"id": "foot.desktop", "version": "1.28.0_1", "installed": "XBPS / System", "source": "XBPS", "fields": []}),
+        )
+        .unwrap();
+    let s = scene(&mut a, 1920.0, 1080.0);
+    // the lit row's bar ends where the list's column does; no line stands between the list and the page
+    assert!(fills(&s, LIT).contains(&(0.0, 97.0 + 44.0 + 52.0, 696.0, 52.0)), "{:?}", fills(&s, LIT));
+    assert!(
+        !fills(&s, LIT).iter().any(|f| f.2 == 1.0 && f.3 > 100.0),
+        "no line between them: {:?}",
+        fills(&s, LIT)
+    );
+    // the name at 72 pixels, what it is at 22 under it
+    let big: Vec<_> = words(&s).into_iter().filter(|w| w.3 == Size::Title).collect();
+    assert_eq!(big.len(), 1, "{big:?}");
+    // (the fixture's apps have pictures: the app's own stands at the page's edge, 64 pixels, and the name after it)
+    assert_eq!((big[0].0.as_str(), big[0].1, big[0].2), ("foot", 792.0 + 84.0, 97.0 + 115.0 - M.big[2].1));
+    let lead: Vec<_> = words(&s).into_iter().filter(|w| w.3 == Size::Lead).collect();
+    assert_eq!((lead.len(), lead[0].1, lead[0].2), (1, 792.0 + 84.0, 97.0 + 165.0 - M.big[1].1), "{lead:?}");
+    // what you do with it, then its facts side by side: the word small, its value under it
+    let open = words(&s).into_iter().find(|w| w.0 == "open" && w.1 == 792.0).expect("open, a row of the page");
+    assert_eq!(open.2, 97.0 + 220.0 + 24.0 - M.up);
+    let (vx, vy, vs, _) = word(&s, "version");
+    let (wx, wy, ws, _) = word(&s, "1.28.0_1");
+    assert_eq!((vx, vs, wx, ws), (792.0, Size::Small, 792.0, Size::Main));
+    assert_eq!(wy - vy, 54.0 - 28.0 - M.up + M.sup, "the value under its word");
+    assert!(word(&s, "installed via").0 > 792.0 && word(&s, "installed via").1 == vy, "side by side");
+    // a longer name steps down a size and stays whole
+    assert_eq!(Size::Title.times(), 4.5);
+    // the window made smaller: the details the width opened close with it
+    a.wide = false;
+    a.apps_follow();
+    assert!(!a.apps.pane, "no longer wide, no details beside the list");
+    (a.wide, a.pane_fits) = (true, true);
+    a.apps_follow();
+    // Esc goes back to home: the page is no thing to close in a wide window
+    a.escape();
+    assert_eq!(a.view, View::Home);
+}
+
 #[test]
 fn an_apps_details_stand_beside_the_list_and_tab_goes_between_them() {
     let mut a = apps();
@@ -448,7 +512,7 @@ fn an_apps_details_stand_beside_the_list_and_tab_goes_between_them() {
     // P1: the list a column of names with foot lit, its bar from the window's edge to the line between; the details
     // at the right
     assert!(
-        fills(&s, LIT).contains(&(0.0, 97.0 + 36.0 + 52.0, 280.0, 52.0)),
+        fills(&s, LIT).contains(&(0.0, 97.0 + 44.0 + 52.0, 280.0, 52.0)),
         "foot lit in the list: {:?}",
         fills(&s, LIT)
     );
@@ -525,6 +589,7 @@ fn a_larger_text_grows_every_length() {
         sw: 12.0,
         sh: 24.0,
         sup: 19.0,
+        big: Metrics::big_of(15.0, 24.0),
     };
     a.size = size(&a, &big, 900.0, 1200.0);
     let s = build(&a, &nord(), &big, 900.0, 1200.0, &[]);
@@ -915,6 +980,7 @@ fn the_scenes_are_painted_with_cairo_and_pango() {
         sw: font.small_cell.w,
         sh: font.small_cell.h,
         sup: font.ascent.1,
+        big: font.big_cells,
     };
     assert!(m.sw < m.cw && m.sup < m.up, "the smaller face is smaller: {m:?}");
     let dir = std::env::var("NATIVE_PNG").unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());

@@ -152,6 +152,15 @@ impl App {
     /// The layout in pixels: the details beside the list kept true to the place shown, and the lit app's facts
     /// asked for, once an app, while the list holds the keys beside them. main.rs calls it every turn of its loop.
     pub fn apps_follow(&mut self) {
+        // a wide window shows the lit app beside the list at once (v0.160): the details open by themselves, and
+        // close by themselves when the window is no longer wide
+        if self.pixels && self.view == View::Apps && matches!(self.apps.page, Page::List | Page::Hidden) {
+            if self.wide && self.pane_fits {
+                (self.apps.pane, self.pane_wide) = (true, true);
+            } else if self.pane_wide {
+                (self.apps.pane, self.pane_wide) = (false, false);
+            }
+        }
         if !self.pixels || !self.apps.pane {
             return;
         }
@@ -301,7 +310,7 @@ impl App {
         let gap = || ("   ".to_string(), false);
         let listing = matches!(self.apps.page, Page::List | Page::Hidden);
         let beside = self.apps.pane && self.pane_fits;
-        let mut keys = if listing && beside {
+        let mut keys = if listing && beside && !self.wide {
             pair("Close details", "Esc")
         } else if (self.apps.page == Page::List && self.apps.filter.is_some()) || self.apps.page == Page::Hidden {
             pair("All apps", "Esc")

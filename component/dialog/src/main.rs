@@ -169,6 +169,7 @@ struct Window {
     cell: spark_dialog::draw::Cell,
     small: spark_dialog::draw::Cell,
     ascent: (f64, f64),
+    big: [(f64, f64); 5],
     size: (u16, u16),
     px: (u32, u32),
 }
@@ -603,6 +604,7 @@ fn metrics(w: &Window) -> scene::Metrics {
         sw: w.small.w,
         sh: w.small.h,
         sup: w.ascent.1,
+        big: w.big,
     }
 }
 
@@ -1002,6 +1004,7 @@ fn main() {
                     shown = None;
                 } else {
                     app.pane_fits = scene::splits(&m, window_px.0);
+                    app.wide = scene::wide(&m, window_px.0);
                     app.size = scene::size(&app, &m, window_px.0, window_px.1);
                     let sc = scene::build(&app, &pal, &m, window_px.0, window_px.1, &scrolls);
                     scrolls = sc.lists.iter().map(|l| l.at.clone()).collect();
