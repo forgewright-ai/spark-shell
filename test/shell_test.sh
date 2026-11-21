@@ -5563,7 +5563,7 @@ STUB
     # the bar's place (top or bottom), its text size and the tray, from the panel
     rm -f "$journal/undo"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar bottom 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'bar at the bottom of the screen' ] && grep -q '^BAR_POSITION=bottom$' "$HOME/.config/spark-shell/config" && grep -q '^    position bottom$' "$sway" && grep -qx 'anchor=bottom-right' "$HOME/.config/mako/config" \
-        && [ "$(sh "$SH" panel bar --list | sed -n 3p)" = "$TICK bar        at the bottom of the screen	bar show" ] && [ "$(sh "$SH" panel bar --list | sed -n 1p)" = "bar        shown at the bottom of the screen" ] && sh "$SH" panel --list | grep -q "^  undo       bar at the top of the screen	undo all$" \
+        && [ "$(sh "$SH" panel bar --list | sed -n 3p)" = "$TICK bar        bottom	bar show" ] && [ "$(sh "$SH" panel bar --list | sed -n 1p)" = "bar        shown at the bottom of the screen" ] && sh "$SH" panel --list | grep -q "^  undo       bar at the top of the screen	undo all$" \
         && ok "panel bar bottom: BAR_POSITION=bottom, the bar at the bottom in the render and the notifications in the bottom corner, the row checked, the undo names the top" || bad "bar bottom" "st=$st $out $(grep -n 'position' "$sway"; sh "$SH" panel bar --list)"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar off 2>&1 && SWAYSOCK=/tmp/x sh "$SH" panel bar on 2>&1) || st=$?
     [ "$st" -eq 0 ] && grep -q '^    position bottom$' "$sway" && grep -q '^    mode dock$' "$sway" && ok "panel bar off, then on: back at the bottom, where it was" || bad "bar on bottom" "st=$st $out $(grep -n 'position\|mode' "$sway")"

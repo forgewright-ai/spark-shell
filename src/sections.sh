@@ -353,13 +353,14 @@ panel_rows_reminders() {   # a new reminder, the ones due (the first with done a
         elif [ -n "$_next" ]; then printf '%s\t%s\tmore\t|%s|\n' "$PANEL_RING" "$_t" "$(rem_said "$_s")"; _next=''; fi   # short: the next one ahead; Enter opens the rest
     done < "$TMP/rem.rows"
 }
-panel_rows_bar() {   # the place, a check; then the text size and the tray
+panel_rows_bar() {   # the place, a check; then the text size and the tray. A place is one word under its group, so
+    # the dialog sets the three side by side on one row (v0.161); the state line keeps the words of a sentence
     _bpn=$(bar_place)
     for _bp in top bottom hidden; do
         _bpa=$_bp; [ "$_bp" != hidden ] || _bpa=off
-        if [ "$_bp" = "$_bpn" ]; then printf '%s\t%s\tshow\tplace\n' "$PANEL_TICK" "$(bar_place_words "$_bp")"; else printf -- '-\t%s\t%s\tplace\n' "$(bar_place_words "$_bp")" "$_bpa"; fi
+        if [ "$_bp" = "$_bpn" ]; then printf '%s\t%s\tshow\tplace\n' "$PANEL_TICK" "$_bp"; else printf -- '-\t%s\t%s\tplace\n' "$_bp" "$_bpa"; fi
     done
-    printf -- '-\tText size\tshow\tlook\n-\tApp icons (the tray)\tshow\tlook\n'
+    printf -- '-\tText size\tshow\tappearance\n-\tApp icons (the tray)\tshow\tappearance\n'
 }
 panel_rows_layout() {   # the saved layouts with a rename each, what spark also suggested last, the recent ones not saved, then save
     if [ -d "$LAYOUTS_DIR" ] && [ -n "$(ls -A "$LAYOUTS_DIR" 2>/dev/null)" ]; then

@@ -442,6 +442,41 @@ fn the_app_spacing_setting_sets_an_apps_row() {
     }
 }
 
+/// Settings (v0.161): its groups named at 28 pixels, as apps' and files' are; a setting two lines, its name over
+/// what it is set to now. Look is named appearance, and notifications is a group of its own.
+#[test]
+fn settings_are_rows_of_two_lines_under_their_groups() {
+    let mut a = home();
+    a.providers = ["out", "wifi", "theme", "notifications", "power"]
+        .iter()
+        .map(|l| {
+            let mut p = Provider::new(l);
+            p.ready = true;
+            p
+        })
+        .collect();
+    a.view = View::Dest(spark_dialog::app::SETTINGS_DEST);
+    a.came_from = vec![View::Home];
+    (a.in_list, a.sel) = (true, 0);
+    assert_eq!(kind(&a), Kind::Settings);
+    let s = scene(&mut a, 600.0, 800.0);
+    assert!(s.grid.is_none(), "settings are drawn in pixels");
+    let heads: Vec<_> = words(&s).into_iter().filter(|w| w.3 == Size::Head).map(|w| w.0).collect();
+    assert_eq!(heads, ["sound", "network", "appearance", "notifications", "power", "spark"]);
+    assert_eq!(heading(&s, "sound"), (48.0, 97.0 + 32.0 - M.big[0].1));
+    // the first setting under its group: its name, then what it is set to in the smaller text under it
+    let name = words(&s).into_iter().find(|w| w.0 == "sound" && w.3 == Size::Main).expect("the sound setting");
+    assert_eq!((name.1, name.2), (48.0, 97.0 + 44.0 + 21.0 - M.up));
+    assert!(name.4, "the lit setting's name is bold");
+    assert!(fills(&s, LIT).contains(&(0.0, 97.0 + 44.0, 600.0, 52.0)), "{:?}", fills(&s, LIT));
+    assert!(
+        words(&s).iter().any(|w| w.3 == Size::Small && w.1 == 48.0 && w.2 == 97.0 + 44.0 + 42.0 - M.sup),
+        "its state under it"
+    );
+    // a click on a setting is that setting
+    assert_eq!(s.hit(300.0, 97.0 + 44.0 + 10.0), Some(&Target::Pick(0)));
+}
+
 /// A2 (v0.160): a wide window shows the lit app beside the list at once. The list keeps a column 696 pixels wide,
 /// the app's name stands at 72 pixels with what it is under it, its facts side by side, and no line or box
 /// stands between the two. Esc goes back: the page is part of the list there.

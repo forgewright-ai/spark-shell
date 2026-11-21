@@ -215,6 +215,8 @@ pub enum Kind {
     Home,
     Apps,
     Files,
+    /// Settings' list (v0.161): its groups named large, a setting two lines, its name over what it is set to.
+    Settings,
     /// The place's grid rows, inside the frame.
     Grid,
 }
@@ -225,6 +227,7 @@ pub fn kind(app: &App) -> Kind {
     match app.view {
         View::Home | View::Apps => kind_of(app, &app.list_items()),
         View::Folder(..) if app.files_pane_view().is_some() => kind_of(app, &app.list_items()),
+        View::Dest(d) if d == crate::app::SETTINGS_DEST => kind_of(app, &app.list_items()),
         _ => Kind::Grid,
     }
 }
@@ -238,6 +241,7 @@ fn kind_of(app: &App, items: &[Item]) -> Kind {
         View::Home if items.iter().all(known) => Kind::Home,
         View::Apps if items.iter().all(known) => Kind::Apps,
         View::Folder(..) if app.files_pane_view().is_some() && items.iter().all(known) => Kind::Files,
+        View::Dest(d) if d == crate::app::SETTINGS_DEST && items.iter().all(known) => Kind::Settings,
         _ => Kind::Grid,
     }
 }
@@ -322,6 +326,7 @@ pub fn size(app: &App, m: &Metrics, w: f64, h: f64) -> (u16, u16) {
         Kind::Grid => g.grid_rows(m),
         Kind::Home | Kind::Files => ((g.bottom - g.top) / m.px(44.0)) as u16,
         Kind::Apps => ((g.bottom - g.top) / app_row(m, app.apps.spacing)) as u16,
+        Kind::Settings => ((g.bottom - g.top) / m.px(52.0)) as u16,
     };
     (g.grid_cols(m), rows.max(1) + crate::ui::head(app).content + crate::ui::BOTTOM)
 }
@@ -531,6 +536,7 @@ pub fn build(app: &App, pal: &Palette, m: &Metrics, w: f64, h: f64, was: &[Scrol
         Kind::Home => home(app, &mut pen, &g, &items),
         Kind::Apps => apps(app, &mut pen, &g, &items),
         Kind::Files => files_body(app, &mut pen, &g, &items),
+        Kind::Settings => settings(app, &mut pen, &g, &items),
     }
     if g.status {
         status(app, &mut pen, &g, k);
@@ -1243,7 +1249,13 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
             }
             Item::Setting(i) => {
                 let (label, name, purpose) = SETTINGS[*i];
-                Some((one, plain(name, crate::ui::setting_words(app, label, purpose), false)))
+                let words = crate::ui::setting_words(app, label, purpose);
+                // settings' own list (v0.161): two lines, as an app's row, its state under its name
+                if shape.two {
+                    Some((m.px(52.0), K::App(name.to_string(), words, None, String::new())))
+                } else {
+                    Some((one, plain(name, words, false)))
+                }
             }
             Item::Step(p, name) => app
                 .providers
@@ -2084,6 +2096,41 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             list(app, pen, &rows, whole, lit(app), list_focus(app), full, app.scroll, own);
         }
     }
+}
+
+/// Settings (v0.161): its groups named at 28 pixels, a setting two lines, its name over what it is set to now. What
+/// was typed finds settings with no headings, in the same rows.
+fn settings(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
+    let m = *pen.m;
+    let whole = Area {
+        left: g.inset,
+        right: g.w - g.inset,
+        top: g.top,
+        bottom: g.bottom,
+        from: 0.0,
+        to: g.w,
+    };
+    let shape = Shape {
+        two: true,
+        one: 44.0,
+        narrow: false,
+        still: false,
+        pad: 24.0,
+        heads: true,
+        bare: false,
+    };
+    let rows = rows_of(app, pen, items, shape, whole.right - whole.left - m.px(36.0));
+    list(
+        app,
+        pen,
+        &rows,
+        whole,
+        lit(app),
+        list_focus(app),
+        shape,
+        app.scroll,
+        format!("settings\u{1f}{}", app.input),
+    );
 }
 
 /// The other pane's rows: its own folder under its own words, the picks counted as its bar walks them.

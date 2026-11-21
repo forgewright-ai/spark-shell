@@ -220,7 +220,9 @@ pub fn setting_group(label: &str) -> &'static str {
         "out" | "mic" => "sound",
         "wifi" | "bt" | "lan" => "network",
         "storage" | "display" | "keyboard" | "pointer" => "devices",
-        "theme" | "wallpaper" | "bar" | "notifications" => "look",
+        // appearance, the word people search for (v0.161: look before); notifications is no part of it
+        "theme" | "wallpaper" | "bar" => "appearance",
+        "notifications" => "notifications",
         // power and spark since v0.153: system is a place of the home now, and no group of settings shares its name
         "power" | "bat" => "power",
         _ => "spark",
