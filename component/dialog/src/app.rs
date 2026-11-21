@@ -55,6 +55,8 @@ use std::time::{Duration, Instant};
 /// The size, a design token: 60 by 40 cells, 3:4 in a 9 by 18 pixel cell. The window may be smaller:
 /// the drawing takes the terminal's own size, MIN_WIDTH by MIN_HEIGHT at least.
 pub const WIDTH: u16 = 60;
+/// How long a receipt stays on the message's row.
+pub const RECEIPT_STAYS: std::time::Duration = std::time::Duration::from_secs(8);
 pub const HEIGHT: u16 = 40;
 pub const MIN_WIDTH: u16 = 36;
 pub const MIN_HEIGHT: u16 = 20;
@@ -901,6 +903,8 @@ pub struct App {
     pub exchange: Vec<Line>,
     /// The reply row under the key row: the last receipt, refusal or note (#196).
     pub reply: Option<Reply>,
+    /// The reply as the clock last saw it, and since when: a receipt leaves after RECEIPT_STAYS.
+    reply_seen: Option<(Reply, Instant)>,
     pub undo: Option<Step>,
     pub queue: VecDeque<Step>,
     /// The commands spark planned, waiting in the input box for Enter (#53).
@@ -1078,6 +1082,7 @@ impl App {
             sel: 0,
             exchange: vec![],
             reply: None,
+            reply_seen: None,
             undo: None,
             queue: VecDeque::new(),
             staged: None,
@@ -1751,6 +1756,18 @@ impl App {
             if pv.playing.is_some() && !pv.plays(now) {
                 pv.playing = None;
             }
+        }
+        // a receipt has said its step is done: it leaves after a while, and its undo stays for the word undo. A
+        // refusal and a note say why nothing happened: they stay until the next key
+        match (&self.reply, &self.reply_seen) {
+            (Some(r), Some((seen, since))) if r == seen => {
+                if r.mark == Mark::Done && now.saturating_duration_since(*since) >= RECEIPT_STAYS {
+                    self.reply = None;
+                    self.reply_seen = None;
+                }
+            }
+            (Some(r), _) => self.reply_seen = Some((r.clone(), now)),
+            (None, _) => self.reply_seen = None,
         }
         self.follow_view(now);
         self.search_now(now);

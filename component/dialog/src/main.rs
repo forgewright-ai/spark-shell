@@ -1489,8 +1489,10 @@ fn main() {
                     shown_icons.clear();
                     dirty = true;
                 }
-                let was = app.busy();
+                let (was, said) = (app.busy(), app.reply.is_some());
                 app.tick(Instant::now());
+                // a receipt left the message's row: a frame without it
+                dirty |= said != app.reply.is_some();
                 // a frame for the march while it shows, and when the work starts or ends; none for work nothing shows (#196).
                 // The view's wait shows it on the message's row from the moment the wait is felt
                 let march = app.cfg.progress && (app.thinking() || app.view == View::Apps && app.apps.pending.is_some() || app.files.batch.is_some());

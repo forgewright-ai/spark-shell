@@ -488,3 +488,39 @@ fn ctrl_c_is_the_way_out_with_a_signals_code() {
     app.hint_key(HintKey::Quit);
     assert_eq!(app.quit, Some(130));
 }
+
+/// A receipt has said its step is done: it leaves the message's row after a while, and its undo stays for the word
+/// undo. A refusal and a note say why nothing happened: they stay until the next key.
+#[test]
+fn a_receipt_leaves_after_a_while_and_a_refusal_stays() {
+    use spark_dialog::app::RECEIPT_STAYS;
+    use spark_dialog::reply::Mark;
+    use std::time::{Duration, Instant};
+    let t0 = Instant::now();
+    let mut app = app();
+    app.reply(Mark::Done, "out at 10%");
+    app.reply.as_mut().unwrap().undo = true;
+    app.tick(t0);
+    app.tick(t0 + RECEIPT_STAYS - Duration::from_millis(200));
+    assert!(app.reply.is_some(), "it stays its time");
+    app.tick(t0 + RECEIPT_STAYS);
+    assert!(app.reply.is_none(), "then it leaves");
+    // a receipt that takes another's place starts its own time
+    app.reply(Mark::Done, "out at 10%");
+    app.tick(t0 + RECEIPT_STAYS + Duration::from_secs(1));
+    app.reply(Mark::Done, "out at 20%");
+    app.tick(t0 + RECEIPT_STAYS + Duration::from_secs(5));
+    app.tick(t0 + RECEIPT_STAYS + Duration::from_secs(10));
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("out at 20%"), "five seconds old: it stays");
+    app.tick(t0 + RECEIPT_STAYS + Duration::from_secs(5) + RECEIPT_STAYS);
+    assert!(app.reply.is_none());
+    // a refusal and a note stay
+    for mark in [Mark::Refused, Mark::Note] {
+        app.reply(mark, "nothing to copy here");
+        app.tick(t0 + Duration::from_secs(100));
+        app.tick(t0 + Duration::from_secs(1000));
+        assert!(app.reply.is_some(), "{mark:?} stays until the next key");
+        app.reply = None;
+        app.tick(t0 + Duration::from_secs(1001));
+    }
+}
