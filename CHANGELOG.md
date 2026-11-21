@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.155
+
+- Home in its own window is laid out by the pixel: two sizes of text,
+  rows a finger can hit, and the keys of the part that holds them. The
+  terminal and the login screen draw as before.
+- A row of home is 44 pixels high: the place, and what it holds now,
+  on one line. A row stays lit while the line is empty: Enter opens it,
+  and Down hands the list the keys. What you type finds as before, in
+  the same rows.
+- An app is a row of two lines: its icon at 32 pixels, its name, and
+  under it what the app is, never cut by a column. A category says how
+  many apps it has. The app spacing setting sets the row: 40, 46 or 52
+  pixels.
+- A line under the input says where you are: `home / apps`. A click on
+  a name before the last goes there. In apps the count of the list
+  stands at its end. The band of the window names the place alone.
+- The details of an app (F9) open beside the list where the window is
+  600 pixels wide or more: the list becomes a column of names with the
+  app lit. Tab goes to the list and back, and the details follow the
+  app lit. Esc closes them. A narrower window shows them as a page.
+- A list longer than the window shows is cut at its edge, a part of
+  the next row in view: no scrollbar says it. Drag the list to scroll
+  it; a press let go where it began is the click. Over a list the
+  wheel scrolls it, and the lit row stays where it is.
+- In a wide window home and apps take the width of the window.
+- A draft longer than the line shows the row you are typing, with a
+  sign where more of it stands above or under.
+- Every other place keeps its rows as they were, inside the new frame.
+
 ## v0.154
 
 - A second kind of key may sign a release: a patch key, kept on a
