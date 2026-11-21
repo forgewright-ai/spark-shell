@@ -545,6 +545,47 @@ fn a_setting_is_one_row_its_options_side_by_side() {
     assert!(a.reply.as_ref().is_some_and(|r| r.text.contains("stopped")), "{:?}", a.reply);
 }
 
+/// Settings in a wide window (v0.161): the list keeps its column and the lit setting's page stands beside it, its name
+/// at 72 pixels, what it is set to under it, then its rows a setting each; a click on the page opens the setting.
+#[test]
+fn a_wide_window_shows_the_lit_setting_beside_the_list() {
+    let mut a = home();
+    let mut p = Provider::new("bar");
+    p.ready = true;
+    p.rows = spark_dialog::model::rows(
+        &json!({"title": "bar", "rows": [
+            {"id": "bar:show:top", "sign": "check", "text": "top", "tool": null, "group": "place"},
+            {"id": "bar:bottom", "sign": "blank", "text": "bottom", "tool": {"name": "bar_bottom", "arguments": {}}, "group": "place"},
+            {"id": "bar:off", "sign": "blank", "text": "hidden", "tool": {"name": "bar_off", "arguments": {}}, "group": "place"}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    a.providers = vec![p];
+    a.view = View::Dest(spark_dialog::app::SETTINGS_DEST);
+    a.came_from = vec![View::Home];
+    (a.in_list, a.sel) = (true, 0);
+    let s = scene(&mut a, 1920.0, 1080.0);
+    let big: Vec<_> = words(&s).into_iter().filter(|w| w.3 == Size::Title).collect();
+    assert_eq!((big.len(), big[0].0.as_str(), big[0].1), (1, "bar", 792.0), "{big:?}");
+    assert!(
+        fills(&s, LIT).iter().any(|f| f.0 == 0.0 && f.2 == 696.0 && f.3 == 52.0),
+        "the list keeps its column: {:?}",
+        fills(&s, LIT)
+    );
+    // its page: the place one row, its picks side by side, taking no click of their own here
+    let place = words(&s)
+        .into_iter()
+        .find(|w| w.0 == "place" && w.1 == 792.0)
+        .expect("the place row on the page");
+    assert!(words(&s).iter().any(|w| w.0 == "bottom" && w.1 > place.1 && w.2 == place.2));
+    assert!(
+        !s.hits.iter().any(|h| matches!(h.target, Target::Option(..))),
+        "no option takes a click beside the list"
+    );
+    assert_eq!(s.hit(1200.0, 500.0), Some(&Target::Pick(0)), "a click on the page opens the setting");
+}
+
 /// A2 (v0.160): a wide window shows the lit app beside the list at once. The list keeps a column 696 pixels wide,
 /// the app's name stands at 72 pixels with what it is under it, its facts side by side, and no line or box
 /// stands between the two. Esc goes back: the page is part of the list there.

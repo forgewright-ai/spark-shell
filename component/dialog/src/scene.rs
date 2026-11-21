@@ -2305,18 +2305,62 @@ fn settings(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         bare: false,
         c3: false,
     };
-    let rows = rows_of(app, pen, items, shape, whole.right - whole.left - m.px(36.0));
-    list(
-        app,
-        pen,
-        &rows,
-        whole,
-        lit(app),
-        list_focus(app),
-        shape,
-        app.scroll,
-        format!("settings\u{1f}{}", app.input),
-    );
+    // a wide window (v0.161): the list keeps its column, the lit setting's page stands beside it in large type, as an
+    // app's and a file's do; a click on it opens the setting
+    let lit_setting = match app.picks().get(app.sel).filter(|_| app.in_list && app.input.is_empty()) {
+        Some(Item::Setting(i)) => Some(*i),
+        _ => None,
+    };
+    let key = format!("settings\u{1f}{}", app.input);
+    let Some(i) = lit_setting.filter(|_| wide(&m, g.w)) else {
+        let rows = rows_of(app, pen, items, shape, whole.right - whole.left - m.px(36.0));
+        list(app, pen, &rows, whole, lit(app), list_focus(app), shape, app.scroll, key);
+        return;
+    };
+    let divide = m.px(WIDE_LIST);
+    let left = Area {
+        right: divide - m.px(24.0),
+        to: divide,
+        ..whole
+    };
+    let rows = rows_of(app, pen, items, shape, left.right - left.left - m.px(36.0));
+    list(app, pen, &rows, left, lit(app), list_focus(app), shape, app.scroll, key);
+    let page = Area {
+        left: m.px(WIDE_PAGE),
+        from: m.px(WIDE_PAGE) - m.px(12.0),
+        right: (m.px(WIDE_PAGE) + m.px(640.0)).min(whole.right),
+        ..whole
+    };
+    let (label, name, purpose) = SETTINGS[i];
+    let mut out = vec![Row {
+        h: m.px(220.0),
+        pick: None,
+        k: K::Name {
+            icon: None,
+            name: name.to_string(),
+            what: crate::ui::setting_words(app, label, purpose),
+        },
+    }];
+    let still = Shape {
+        two: false,
+        one: 44.0,
+        narrow: false,
+        still: true,
+        pad: 12.0,
+        heads: true,
+        bare: true,
+        c3: true,
+    };
+    if let Some(p) = app.providers.iter().position(|p| p.label == label && p.dead.is_none()) {
+        out.extend(rows_of(app, pen, &app.section_items(p), still, page.right - page.left));
+    }
+    let mark = pen.hits.len();
+    list(app, pen, &out, page, None, false, still, 0, format!("settings\u{1f}page\u{1f}{label}"));
+    // the page is no list of its own: its options take no click here, the whole of it opens the setting
+    pen.hits.truncate(mark);
+    if let Some(n) = lit(app) {
+        pen.hit(page.from, page.top, g.w - page.from, page.bottom - page.top, Target::Pick(n));
+    }
 }
 
 /// The other pane's rows: its own folder under its own words, the picks counted as its bar walks them.

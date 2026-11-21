@@ -7079,6 +7079,13 @@ impl App {
         false
     }
 
+    /// A section's rows as its page lists them, nothing typed: what a wide window shows beside settings (v0.161).
+    pub fn section_items(&self, p: usize) -> Vec<Item> {
+        let mut v = vec![];
+        self.section_rows(p, &mut v, false);
+        v
+    }
+
     /// The rows of a group of picks that a page shows as one row (C3, v0.161): two to five rows of one group, each a
     /// pick of no list and no value of its own, one of them in use, the rest with a tool, and words short enough to
     /// stand side by side. Only in the layout in pixels; none for any other row.
