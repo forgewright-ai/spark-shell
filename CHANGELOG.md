@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.161
+
+- CI checks the crates with cargo-deny-action 2.1.2: its five steps
+  are pinned at the sha the upstream v2.1.2 tag names (#34).
+
 ## v0.160
 
 - A wide window shows the lit app or file beside the list at once,
