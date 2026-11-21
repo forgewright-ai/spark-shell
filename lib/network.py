@@ -147,8 +147,14 @@ def apply(folder, device, uuid, before, after):
     return {"receipt": "native network settings applied to " + device, "undo": token}
 
 
+def dhcpcd_helper():
+    # the file beside this one that talks to dhcpcd. It was renamed once (v0.137) and its old name stayed here:
+    # every network step on a dhcpcd machine then found no helper. The tests ask that this names a file
+    return Path(__file__).with_name("dhcp.py")
+
+
 def dhcpcd(folder, action, device, values):
-    helper = Path(__file__).with_name("network_dhcpcd.py")
+    helper = dhcpcd_helper()
     command = [sys.executable, "-I", str(helper), action, device, *values]
     if action != "show" and os.geteuid() != 0:
         command = ["sudo", "-n", *command]

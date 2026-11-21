@@ -144,6 +144,16 @@ class Network(unittest.TestCase):
             network.run(self.folder, "restore", address["undo"], [])
         self.assertEqual(self.settings, self.original)
 
+    def test_the_dhcpcd_helper_named_is_a_file_of_the_tree(self):
+        # a rename left the old name behind once: the dhcpcd path asked python for a file that was not there
+        helper = network.dhcpcd_helper()
+        self.assertTrue(helper.is_file(), helper)
+        self.assertEqual(helper.parent, (REPO / "lib").resolve())
+        with patch.object(network.subprocess, "run") as run:
+            run.return_value = subprocess.CompletedProcess([], 0, '{"receipt": "ok"}', "")
+            network.dhcpcd(self.folder, "show", "eth0", [])
+        self.assertEqual(run.call_args.args[0][2], str(helper))
+
     def test_invalid_values_and_unmanaged_interfaces_never_write(self):
         for action, values in [("address", ["192.0.2.8", "192.0.2.1"]), ("address", ["192.0.2.8/24", "198.51.100.1"]), ("dns", ["192.0.2.53;exec"]), ("dns", ["224.0.0.1"]), ("auto", ["extra"])]:
             with self.subTest(action=action, values=values), self.assertRaises(network.Refused):
