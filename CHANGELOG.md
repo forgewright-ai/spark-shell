@@ -1,5 +1,48 @@
 # Changelog
 
+## v0.160
+
+- A wide window shows the lit app or file beside the list at once,
+  in large type: its name at 72 pixels, one line of what it is, its
+  facts side by side, and what you do with it. No line and no box
+  stand between the list and it. A window is wide from 1280 pixels;
+  there Esc goes back and Tab moves the keys into the page.
+- A file's page shows what the file holds in the form that suits
+  it: a folder's newest names, a text's first lines, a picture at
+  its own size, a PDF's first page, a sound's waveform, a video's
+  frame. A sound that says its title is named by it. Two panes keep
+  the page as a third column from 1900 pixels.
+- The groups of apps are named at 28 pixels, and no count stands
+  beside a group: the total stays on the line that says where you
+  are.
+- A file's row is two lines, as an app's: its name, and under it
+  what it is, its size and its date. A folder's own folders and
+  files stand under those two names. A long name keeps more of its
+  letters, in a pane most of all, and two panes have no line
+  between them.
+- A sound's bars stay a cell wide at full screen, where 28 of them
+  stretched to five cells each: there are as many as the window
+  holds.
+- The trash is used only when it is yours (#27). A trash that came
+  with a drive, its files a link to a folder elsewhere, sent
+  `delete for good` to that folder. A link at the trash's top, its
+  files or its info, a trash of another user, or one the others can
+  write is refused, and a path changed after the check leads
+  nowhere else.
+- Home no longer freezes when a provider stops reading (#28). What
+  it sends a provider waits in a queue of 2 MiB at most, a step's
+  time limit covers the wait, and a provider that never reads is
+  said to have stopped.
+- A wired network step keeps a change another editor made right
+  after its own write (#29): it was taken for the step's own, and
+  undo erased it.
+- On a dhcpcd system a failed network step puts the settings file
+  back even when dhcpcd is gone or was restarted (#30), and says
+  whether the connection was confirmed too.
+- On a dhcpcd system every wired network step failed since v0.137:
+  the helper was asked for by a name its file no longer has.
+- The dialog is 0.160.0.
+
 ## v0.159
 
 - A receipt leaves the line over the keys after eight seconds: `out
