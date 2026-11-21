@@ -1953,14 +1953,20 @@ impl App {
             if !self.query().is_empty() && !self.matches(p, r) {
                 continue;
             }
+            // a group of a few short picks is one row in the layout in pixels (v0.161): the one in use stands for it,
+            // its group's name is the row's, and no heading stands over it
+            let choice = self.query().is_empty() && self.choice_group(p, i).is_some();
             if r.group != group {
                 if !rows.is_empty() {
                     rows.push(Item::Blank);
                 }
-                if let Some(g) = &r.group {
+                if let Some(g) = r.group.as_ref().filter(|_| !choice) {
                     rows.push(Item::Heading(g.clone()));
                 }
                 group = r.group.clone();
+            }
+            if choice && r.sign != "check" {
+                continue;
             }
             rows.push(Item::Row(p, i));
         }
@@ -3165,7 +3171,8 @@ impl App {
         match i {
             Item::Apps(line) => line.action.is_some(),
             Item::Files(line) => line.action.is_some(),
-            Item::Row(p, r) => Self::pickable(&self.providers[*p].rows.rows[*r]),
+            // a group of picks shown as one row is lit by the one in use, which has no tool of its own (v0.161)
+            Item::Row(p, r) => Self::pickable(&self.providers[*p].rows.rows[*r]) || self.choice_group(*p, *r).is_some(),
             Item::Folder(i) => self
                 .folder
                 .as_ref()
@@ -4004,7 +4011,7 @@ impl App {
             }
             return self.preview_page(-1);
         }
-        if self.step_value(false) {
+        if self.step_value(false) || self.choose_side(false) {
             return;
         }
         // nothing typed, outside the Calendar: Left goes back a level (the dialog design notes)
@@ -4047,7 +4054,7 @@ impl App {
                 self.preview_page(1)
             };
         }
-        if self.step_value(true) {
+        if self.step_value(true) || self.choose_side(true) {
             return;
         }
         // nothing typed and a row lit: Right goes in a level where the lit row opens one, as Left goes back one. A
@@ -7070,6 +7077,101 @@ impl App {
             return true;
         }
         false
+    }
+
+    /// The rows of a group of picks that a page shows as one row (C3, v0.161): two to five rows of one group, each a
+    /// pick of no list and no value of its own, one of them in use, the rest with a tool, and words short enough to
+    /// stand side by side. Only in the layout in pixels; none for any other row.
+    pub fn choice_group(&self, p: usize, r: usize) -> Option<Vec<usize>> {
+        if !self.pixels {
+            return None;
+        }
+        let rows = &self.providers.get(p)?.rows.rows;
+        let g = rows.get(r)?.group.clone()?;
+        let (mut start, mut end) = (r, r);
+        while start > 0 && rows[start - 1].group.as_ref() == Some(&g) {
+            start -= 1;
+        }
+        while end + 1 < rows.len() && rows[end + 1].group.as_ref() == Some(&g) {
+            end += 1;
+        }
+        let run: Vec<usize> = (start..=end).collect();
+        let pick = |x: &model::Row| {
+            x.children.is_none()
+                && x.step.is_none()
+                && x.switch.is_none()
+                && !x.muted
+                && crate::scrub::cells(&x.text) <= 14
+                && (x.sign == "check" || (matches!(x.sign.as_str(), "" | "blank" | "-") && x.tool.is_some()))
+        };
+        let checked = run.iter().filter(|i| rows[**i].sign == "check").count();
+        let chars: usize = run.iter().map(|i| crate::scrub::cells(&rows[*i].text)).sum();
+        (run.len() >= 2 && run.len() <= 5 && checked == 1 && chars <= 24 && run.iter().all(|i| pick(&rows[*i]))).then_some(run)
+    }
+
+    /// Left or right on a row of one setting (C3, v0.161): a group of picks takes the one beside the one in use, a
+    /// switch its side (on at the left, off at the right). False for any other row: a value's step is step_value's.
+    fn choose_side(&mut self, up: bool) -> bool {
+        if !self.pixels || !self.in_list || !self.input.is_empty() || self.mode != Mode::Normal {
+            return false;
+        }
+        let Some(Item::Row(p, r)) = self.picks().get(self.sel).cloned() else {
+            return false;
+        };
+        if let Some(run) = self.choice_group(p, r) {
+            let at = run.iter().position(|i| *i == r).unwrap_or(0);
+            let next = if up { at + 1 } else { at.wrapping_sub(1) };
+            if let Some(k) = run.get(next).copied() {
+                self.choose(p, k);
+            }
+            return true;
+        }
+        let row = self.providers[p].rows.rows[r].clone();
+        if let Some(sw) = &row.switch {
+            if sw.on == up {
+                self.flip_or_keep(&Item::Row(p, r));
+            }
+            return true;
+        }
+        false
+    }
+
+    /// A pick of a group shown as one row: its tool runs as Enter on its own row would, and the light stays on the row.
+    fn choose(&mut self, p: usize, k: usize) {
+        let row = self.providers[p].rows.rows[k].clone();
+        if row.sign == "check" {
+            return;
+        }
+        self.keep_lit = Some(row.id.clone());
+        if let Some(call) = row.tool {
+            self.pick_step(p, call, &row.text);
+        }
+    }
+
+    /// A click on an option of a row of one setting (C3, v0.161), the row `n` among the picks: a group's pick `k`
+    /// (its place in the group), a switch's side (0 on, 1 off), a value's index among its values.
+    pub fn option_at(&mut self, n: usize, k: usize) {
+        self.light(n);
+        let Some(Item::Row(p, r)) = self.picks().get(n).cloned() else { return };
+        if let Some(run) = self.choice_group(p, r) {
+            if let Some(i) = run.get(k).copied() {
+                self.choose(p, i);
+            }
+            return;
+        }
+        let row = self.providers[p].rows.rows[r].clone();
+        if let Some(sw) = &row.switch {
+            if sw.on != (k == 0) {
+                self.flip_or_keep(&Item::Row(p, r));
+            }
+        } else if let Some(st) = &row.step {
+            if k != st.at {
+                if let Some(call) = st.call_at(k) {
+                    self.keep_lit = Some(row.id.clone());
+                    self.set_value(p, &row.id, Held::At(k), call);
+                }
+            }
+        }
     }
 
     /// A value set in place (#183): held to its tool as every step is, shown on its row at once, then

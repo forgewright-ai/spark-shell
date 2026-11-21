@@ -101,6 +101,8 @@ pub enum Target {
     PaneRow(usize),
     /// A value's arrow: the row, and whether it steps the value up.
     Step(usize, bool),
+    /// An option of a row of one setting (C3, v0.161): the row, and the option (App::option_at says which).
+    Option(usize, usize),
     /// A folder's name on the location line: its uri.
     Crumb(String),
     /// A row of the other pane of files, by its place among that pane's rows.
@@ -217,6 +219,8 @@ pub enum Kind {
     Files,
     /// Settings' list (v0.161): its groups named large, a setting two lines, its name over what it is set to.
     Settings,
+    /// A section's page (v0.161): a setting one row, its options side by side.
+    Page,
     /// The place's grid rows, inside the frame.
     Grid,
 }
@@ -228,6 +232,7 @@ pub fn kind(app: &App) -> Kind {
         View::Home | View::Apps => kind_of(app, &app.list_items()),
         View::Folder(..) if app.files_pane_view().is_some() => kind_of(app, &app.list_items()),
         View::Dest(d) if d == crate::app::SETTINGS_DEST => kind_of(app, &app.list_items()),
+        View::Section(_) => kind_of(app, &app.list_items()),
         _ => Kind::Grid,
     }
 }
@@ -242,6 +247,7 @@ fn kind_of(app: &App, items: &[Item]) -> Kind {
         View::Apps if items.iter().all(known) => Kind::Apps,
         View::Folder(..) if app.files_pane_view().is_some() && items.iter().all(known) => Kind::Files,
         View::Dest(d) if d == crate::app::SETTINGS_DEST && items.iter().all(known) => Kind::Settings,
+        View::Section(_) if items.iter().all(known) => Kind::Page,
         _ => Kind::Grid,
     }
 }
@@ -327,6 +333,7 @@ pub fn size(app: &App, m: &Metrics, w: f64, h: f64) -> (u16, u16) {
         Kind::Home | Kind::Files => ((g.bottom - g.top) / m.px(44.0)) as u16,
         Kind::Apps => ((g.bottom - g.top) / app_row(m, app.apps.spacing)) as u16,
         Kind::Settings => ((g.bottom - g.top) / m.px(52.0)) as u16,
+        Kind::Page => ((g.bottom - g.top) / m.px(44.0)) as u16,
     };
     (g.grid_cols(m), rows.max(1) + crate::ui::head(app).content + crate::ui::BOTTOM)
 }
@@ -537,6 +544,7 @@ pub fn build(app: &App, pal: &Palette, m: &Metrics, w: f64, h: f64, was: &[Scrol
         Kind::Apps => apps(app, &mut pen, &g, &items),
         Kind::Files => files_body(app, &mut pen, &g, &items),
         Kind::Settings => settings(app, &mut pen, &g, &items),
+        Kind::Page => page(app, &mut pen, &g, &items),
     }
     if g.status {
         status(app, &mut pen, &g, k);
@@ -1057,6 +1065,13 @@ enum K {
     },
     /// Facts side by side: each one's word in the smaller face, its value under it.
     Facts(Vec<(String, String)>),
+    /// A setting in one row (C3, v0.161): its name, then its options side by side; then a word after them (a size's
+    /// number).
+    Choice {
+        name: String,
+        opts: Vec<Opt>,
+        after: String,
+    },
     /// A file or a folder in a list of files, as an app's row is (v0.160): its name leads, and under it what it
     /// is, its size, its date and, where the row carries one, its own folder.
     File {
@@ -1077,6 +1092,17 @@ enum K {
         /// a sound's waveform as a strip, the lines in the text's own size.
         large: bool,
     },
+}
+
+/// An option of a row of one setting: its words, their size, the option App::option_at takes, whether it is the one in
+/// use, and whether it is a word of the step (less, more) rather than a value.
+#[derive(Clone, Debug, PartialEq)]
+struct Opt {
+    word: String,
+    size: Size,
+    k: usize,
+    on: bool,
+    verb: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1105,6 +1131,8 @@ struct Shape {
     heads: bool,
     /// A row's key stands in the smaller text with no box around it: a page in large type.
     bare: bool,
+    /// A setting is one row, its options side by side (C3, v0.161): a page of settings.
+    c3: bool,
 }
 
 /// What an app is, beside or under its name: the entry's own word for its kind, else its comment.
@@ -1267,6 +1295,7 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
                 let words: String = app.input.split_whitespace().collect::<Vec<_>>().join(" ");
                 Some((one, plain("ask spark", words, false)))
             }
+            Item::Row(p, r) if shape.c3 => app.row_ref(it).map(|row| (one, choice_of(app, m, *p, *r, room).unwrap_or_else(|| of_row(row)))),
             Item::Hit(_) | Item::Row(..) => app.row_ref(it).map(|r| (one, of_row(r))),
             Item::Folder(_) => app.row_ref(it).map(|r| {
                 let k = file_row(r, app.files_checks_any() && app.files.checked(&r.id));
@@ -1795,6 +1824,45 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                 let n = ((end - x - w - m.px(16.0)) / m.sw).floor().max(4.0) as usize;
                 pen.text_end(end, base, &cut_middle(value, n), Size::Small, t.ink, false);
             }
+            K::Choice { name, opts, after } => {
+                let base = mid + m.px(6.0);
+                let w = pen.text(x, base, name, Size::Main, t.ink, on);
+                if on && focus {
+                    pen.fill(x, base + m.px(5.0), w, 2.0, t.accent);
+                }
+                // the options from a column of their own, each a target a finger hits: 44 pixels at least
+                let mut ox = (x + w + m.px(24.0)).max(x + m.px(200.0));
+                for o in opts {
+                    let ow = pen.width(&o.word, o.size);
+                    let tw = (ow + m.px(16.0)).max(m.px(44.0));
+                    let tx = ox + ((tw - m.px(16.0) - ow) / 2.0).max(0.0);
+                    let color = if o.on && !o.verb {
+                        t.accent
+                    } else if o.verb || o.size != Size::Main {
+                        t.ink
+                    } else {
+                        t.muted
+                    };
+                    let ob = if o.size == Size::Main { base } else { base + m.px(2.0) };
+                    let drawn = pen.text(tx, ob, &o.word, o.size, color, false);
+                    if o.on && !o.verb {
+                        pen.fill(tx, ob + m.px(5.0), drawn, 2.0, t.accent);
+                    }
+                    if let Some(n) = row.pick {
+                        pen.hit(
+                            ox - m.px(8.0),
+                            top.max(area.top),
+                            tw,
+                            (top + h).min(area.bottom) - top.max(area.top),
+                            Target::Option(n, o.k),
+                        );
+                    }
+                    ox += tw + m.px(8.0);
+                }
+                if !after.is_empty() {
+                    pen.text(ox + m.px(4.0), base, after, Size::Small, t.muted, false);
+                }
+            }
             K::Name { icon, name, what } => {
                 let mut nx = x;
                 if let Some(icon) = icon {
@@ -1955,6 +2023,7 @@ fn home(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         pad: 24.0,
         heads: false,
         bare: false,
+        c3: false,
     };
     let rows = rows_of(app, pen, items, shape, area.right - area.left - pen.m.px(48.0));
     list(
@@ -1990,6 +2059,7 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         pad: 24.0,
         heads: false,
         bare: false,
+        c3: false,
     };
     // the details beside the list: the list a narrow column of names, the details the rest
     let beside = app.apps.pane && splits(&m, g.w);
@@ -2029,6 +2099,7 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         pad: 24.0,
         heads: false,
         bare: false,
+        c3: false,
     };
     let page = Shape {
         two: false,
@@ -2038,6 +2109,7 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         pad: 12.0,
         heads: false,
         bare: false,
+        c3: false,
     };
     let room = |a: Area| a.right - a.left - m.px(36.0);
     // a list by its name: the page, the words that search it, the category shown alone. The list beside the
@@ -2098,6 +2170,119 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     }
 }
 
+/// A row of one setting (C3, v0.161), where the row is one: a group of picks (its name, its picks side by side), a
+/// switch (on, off), a size (auto, then an A at each size around the one in use: T3), a value of a few short
+/// choices (side by side), else a value between its two words (less 35% more). None for any other row.
+fn choice_of(app: &App, m: &Metrics, p: usize, r: usize, room: f64) -> Option<K> {
+    let rows = &app.providers.get(p)?.rows.rows;
+    let row = rows.get(r)?;
+    let opt = |word: &str, k: usize, on: bool| Opt {
+        word: word.to_string(),
+        size: Size::Main,
+        k,
+        on,
+        verb: false,
+    };
+    if let Some(run) = app.choice_group(p, r) {
+        let opts = run.iter().enumerate().map(|(k, i)| opt(&rows[*i].text, k, rows[*i].sign == "check")).collect();
+        return Some(K::Choice {
+            name: row.group.clone().unwrap_or_default(),
+            opts,
+            after: String::new(),
+        });
+    }
+    if let Some(sw) = &row.switch {
+        return Some(K::Choice {
+            name: row.text.clone(),
+            opts: vec![opt("on", 0, sw.on), opt("off", 1, !sw.on)],
+            after: String::new(),
+        });
+    }
+    let st = row.step.as_ref()?;
+    let n = st.values.len();
+    if st.words.0 == "smaller" {
+        // a size: auto where it is one, then four sizes from the one before the one in use, an A each, larger and larger
+        let auto = st.values.iter().position(|v| v.1 == "auto");
+        let sizes: Vec<usize> = (0..n).filter(|i| Some(*i) != auto).collect();
+        let now = st.values.get(st.at).map(|v| v.0.trim_start_matches("auto ").to_string()).unwrap_or_default();
+        let here = sizes.iter().position(|i| st.values[*i].0 == now).unwrap_or(0);
+        let from = here.saturating_sub(1).min(sizes.len().saturating_sub(4));
+        let mut opts: Vec<Opt> = auto.map(|a| vec![opt("auto", a, st.at == a)]).unwrap_or_default();
+        for (j, i) in sizes.iter().skip(from).take(4).enumerate() {
+            opts.push(Opt {
+                word: "A".to_string(),
+                size: [Size::Small, Size::Main, Size::Lead, Size::Head][j],
+                k: *i,
+                on: *i == st.at,
+                verb: false,
+            });
+        }
+        return Some(K::Choice {
+            name: row.text.clone(),
+            opts,
+            after: now,
+        });
+    }
+    // side by side where they fit the row after its name, each a target of 44 pixels at least; else its two words
+    let name_w = cells(&row.text) as f64 * m.cw;
+    let need: f64 = st
+        .values
+        .iter()
+        .map(|v| (cells(&v.0) as f64 * m.cw + m.px(16.0)).max(m.px(44.0)) + m.px(8.0))
+        .sum();
+    if n <= 6 && need <= room - (name_w + m.px(24.0)).max(m.px(200.0)) {
+        let opts = st.values.iter().enumerate().map(|(k, v)| opt(&v.0, k, k == st.at)).collect();
+        return Some(K::Choice {
+            name: row.text.clone(),
+            opts,
+            after: String::new(),
+        });
+    }
+    let verb = |word: &str, k: usize| Opt {
+        word: word.to_string(),
+        size: Size::Main,
+        k,
+        on: false,
+        verb: true,
+    };
+    Some(K::Choice {
+        name: row.text.clone(),
+        opts: vec![
+            verb(&st.words.0, st.at.saturating_sub(1)),
+            opt(st.value(), st.at, true),
+            verb(&st.words.1, (st.at + 1).min(n.saturating_sub(1))),
+        ],
+        after: String::new(),
+    })
+}
+
+/// A section's page (v0.161): a setting one row, its options side by side, the one in use in the accent; the
+/// groups named large, as settings' are.
+fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
+    let m = *pen.m;
+    let whole = Area {
+        left: g.inset,
+        right: g.w - g.inset,
+        top: g.top,
+        bottom: g.bottom,
+        from: 0.0,
+        to: g.w,
+    };
+    let shape = Shape {
+        two: false,
+        one: 44.0,
+        narrow: false,
+        still: false,
+        pad: 24.0,
+        heads: true,
+        bare: true,
+        c3: true,
+    };
+    let rows = rows_of(app, pen, items, shape, whole.right - whole.left - m.px(36.0));
+    let key = format!("page\u{1f}{:?}\u{1f}{}", app.view, app.input);
+    list(app, pen, &rows, whole, lit(app), list_focus(app), shape, app.scroll, key);
+}
+
 /// Settings (v0.161): its groups named at 28 pixels, a setting two lines, its name over what it is set to now. What
 /// was typed finds settings with no headings, in the same rows.
 fn settings(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
@@ -2118,6 +2303,7 @@ fn settings(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         pad: 24.0,
         heads: true,
         bare: false,
+        c3: false,
     };
     let rows = rows_of(app, pen, items, shape, whole.right - whole.left - m.px(36.0));
     list(
@@ -2361,6 +2547,7 @@ fn file_page(app: &App, pen: &mut Pen, g: &Geo, area: Area, items: &[Item]) {
         pad: 12.0,
         heads: false,
         bare: true,
+        c3: false,
     };
     let lines: Vec<Item> = if details {
         items.to_vec()
@@ -2514,6 +2701,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         pad: 24.0,
         heads: true,
         bare: false,
+        c3: false,
     };
     let room = |a: Area, s: Shape| a.right - a.left - m.px(s.pad) - m.px(12.0);
     // a page over the list (the actions, a conflict): the items are its lines, and the list stands as it stood
@@ -2599,6 +2787,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
                 pad: 24.0,
                 heads: false,
                 bare: false,
+                c3: false,
             };
             let rows = page_rows(pen, shape, act);
             list(
@@ -2694,6 +2883,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             pad: 12.0,
             heads: false,
             bare: false,
+            c3: false,
         };
         let lines: Vec<Item> = if details {
             items.to_vec()
@@ -2720,6 +2910,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             pad: 24.0,
             heads: false,
             bare: false,
+            c3: false,
         };
         let rows = page_rows(pen, shape, whole);
         list(

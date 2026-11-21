@@ -477,6 +477,74 @@ fn settings_are_rows_of_two_lines_under_their_groups() {
     assert_eq!(s.hit(300.0, 97.0 + 44.0 + 10.0), Some(&Target::Pick(0)));
 }
 
+/// C3 and T3 (v0.161): a setting is one row on its page, its options side by side, the one in use in the accent, a
+/// target each a finger hits. A group of short picks is one row named by its group; a switch is on and off; a size is
+/// auto and an A at each size; Left and Right change the row in place, and a click on an option takes it.
+#[test]
+fn a_setting_is_one_row_its_options_side_by_side() {
+    let mut a = home();
+    let mut p = Provider::new("bar");
+    p.ready = true;
+    let sizes: Vec<serde_json::Value> = (6..11)
+        .map(|n| json!({"shown": n.to_string(), "sent": n.to_string()}))
+        .chain([json!({"shown": "auto 11", "sent": "auto"})])
+        .chain((11..15).map(|n| json!({"shown": n.to_string(), "sent": n.to_string()})))
+        .collect();
+    p.rows = spark_dialog::model::rows(
+        &json!({"title": "bar", "rows": [
+            {"id": "bar:show:top", "sign": "check", "text": "top", "tool": null, "group": "place"},
+            {"id": "bar:bottom", "sign": "blank", "text": "bottom", "tool": {"name": "bar_bottom", "arguments": {}}, "group": "place"},
+            {"id": "bar:off", "sign": "blank", "text": "hidden", "tool": {"name": "bar_off", "arguments": {}}, "group": "place"},
+            {"id": "bar:show:Text size", "sign": "blank", "text": "Text size", "tool": null, "group": "appearance",
+             "step": {"values": sizes, "at": 5, "set": {"name": "bar_text", "arguments": {}}, "key": "size", "words": ["smaller", "bigger"]}},
+            {"id": "bar:show:App icons", "sign": "blank", "text": "App icons", "tool": null, "group": "appearance",
+             "switch": {"on": false, "turn_on": {"name": "bar_tray", "arguments": {"state": "on"}}, "turn_off": {"name": "bar_tray", "arguments": {"state": "off"}}}}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let tool = |n: &str| json!({"name": n, "title": n, "description": n, "inputSchema": {"type": "object", "properties": {}}, "annotations": {"destructiveHint": false}});
+    p.tools = spark_dialog::model::tools(&json!({"tools": [tool("bar_bottom"), tool("bar_off"), tool("bar_text"), tool("bar_tray")]}));
+    a.providers = vec![p];
+    a.view = View::Section(0);
+    a.came_from = vec![View::Home];
+    (a.in_list, a.sel) = (true, 0);
+    assert_eq!(kind(&a), Kind::Page);
+    let s = scene(&mut a, 600.0, 800.0);
+    assert!(s.grid.is_none(), "a section's page is drawn in pixels");
+    // the place: one row named by its group, no heading over it, its three picks side by side from a column
+    assert!(!words(&s).iter().any(|w| w.0 == "place" && w.3 == Size::Head), "no heading over the one row");
+    let place = word(&s, "place");
+    assert_eq!((place.0, place.2), (48.0, Size::Main));
+    let top = word(&s, "top");
+    let bottom = word(&s, "bottom");
+    assert!(
+        top.0 >= 248.0 && bottom.0 > top.0 && top.1 == place.1,
+        "side by side on the row's line: {top:?} {bottom:?}"
+    );
+    assert!(
+        fills(&s, ACCENT).iter().any(|f| f.0 == top.0 && f.3 == 2.0),
+        "the one in use underlined in the accent"
+    );
+    // a target a finger hits: 44 pixels at least each way
+    let hits: Vec<_> = s.hits.iter().filter(|h| matches!(h.target, Target::Option(0, _))).collect();
+    assert_eq!(hits.len(), 3);
+    assert!(hits.iter().all(|h| h.w >= 44.0 && h.h >= 44.0), "{hits:?}");
+    // the size: auto, then an A at each size, larger and larger, and the size in use after them
+    let aa: Vec<_> = words(&s).into_iter().filter(|w| w.0 == "A").map(|w| w.3).collect();
+    assert_eq!(aa, [Size::Small, Size::Main, Size::Lead, Size::Head]);
+    word(&s, "auto");
+    word(&s, "11");
+    // the switch: on and off
+    assert!(word(&s, "on").0 < word(&s, "off").0);
+    // Right on the place takes the pick beside the one in use; the light stays on the row
+    a.right();
+    assert_eq!(a.keep_lit.as_deref(), Some("bar:bottom"));
+    // its step goes to the provider (none runs here, so the dialog says the part that does it stopped)
+    assert_eq!(a.mode, spark_dialog::app::Mode::Normal, "no question for a setting");
+    assert!(a.reply.as_ref().is_some_and(|r| r.text.contains("stopped")), "{:?}", a.reply);
+}
+
 /// A2 (v0.160): a wide window shows the lit app beside the list at once. The list keeps a column 696 pixels wide,
 /// the app's name stands at 72 pixels with what it is under it, its facts side by side, and no line or box
 /// stands between the two. Esc goes back: the page is part of the list there.

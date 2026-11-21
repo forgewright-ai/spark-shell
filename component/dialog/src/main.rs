@@ -645,6 +645,7 @@ fn act(app: &mut App, target: scene::Target) {
         scene::Target::PaneRow(n) if app.view == View::Apps => app.apps_pane_row(n, Instant::now()),
         scene::Target::PaneRow(n) => app.files_pane_row(n, Instant::now()),
         scene::Target::Step(n, up) => app.step_at(n, up),
+        scene::Target::Option(n, k) => app.option_at(n, k),
         scene::Target::Crumb(uri) => app.files_go_to(&uri),
         scene::Target::OtherRow(n) => app.pane_clicked(n, Instant::now()),
         scene::Target::OtherPane => {
