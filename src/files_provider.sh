@@ -55,11 +55,30 @@ provide_files_rows() {   # provide_files_rows [URI] -> the rows the uri names: t
 }
 files_urlenc() { printf '%s' "$1" | od -An -tx1 -v | tr -s ' \n' ' ' | awk '{ o = ""; for (i = 1; i <= NF; i++) { h = tolower($i); d = (index("0123456789abcdef", substr(h, 1, 1)) - 1) * 16 + index("0123456789abcdef", substr(h, 2, 1)) - 1; if ((d >= 48 && d <= 57) || (d >= 65 && d <= 90) || (d >= 97 && d <= 122) || d == 45 || d == 46 || d == 95 || d == 126 || d == 47) o = o sprintf("%c", d); else o = o "%" toupper(h) } printf "%s", o }'; }   # files_urlenc PATH -> the path as a.trashinfo writes it (RFC 2396: the unreserved and the slash as they are, every other byte %XX)
 files_urldec() { printf '%s' "$1" | awk '{ o = ""; s = $0; while (match(s, /%[0-9A-Fa-f][0-9A-Fa-f]/)) { o = o substr(s, 1, RSTART - 1) "\\" sprintf("%03o", (index("0123456789abcdef", tolower(substr(s, RSTART + 1, 1))) - 1) * 16 + index("0123456789abcdef", tolower(substr(s, RSTART + 2, 1))) - 1); s = substr(s, RSTART + 3) } printf "%s", o s }' | { IFS= read -r _fud || :; printf "$_fud"; }; }   # files_urldec TEXT -> the path a.trashinfo holds (%XX bytes back, through octal escapes: awk's %c is a character, not a byte, under gawk)
-files_trash_dir() {   # files_trash_dir PATH -> the spec's trash for PATH: XDG_DATA_HOME/Trash under your home, .Trash-UID at a drive's top; false when it cannot be made
+files_trash_safe() {   # files_trash_safe DIR -> true when DIR is a folder of yours alone: no link, yours, no write for the others
+    [ ! -L "$1" ] && [ -d "$1" ] && [ -O "$1" ] && [ -z "$(find "$1" -prune -perm -002 2>/dev/null)" ]
+}
+# The trash is used only when it is yours (#27): a trash that came with a drive, its files a link to a folder outside,
+# once sent "delete for good" to that folder. Its top, its files and its info are each made one at a time, never
+# through a link, and checked; what is then moved or deleted is named from inside the checked folder (files_trash_in)
+files_trash_dir() {   # files_trash_dir PATH -> the spec's trash for PATH: XDG_DATA_HOME/Trash under your home, .Trash-UID at a drive's top; false when it cannot be made or is not yours alone
     _ftr=$(files_root_of "$1") || return 1
-    if [ "$_ftr" = "$(files_home_root)" ]; then _ftd=${XDG_DATA_HOME:-$HOME/.local/share}/Trash; else _ftd=$_ftr/.Trash-$(id -u); fi
-    (umask 077 && mkdir -p "$_ftd/files" "$_ftd/info") 2>/dev/null || return 1
+    if [ "$_ftr" = "$(files_home_root)" ]; then
+        _ftd=${XDG_DATA_HOME:-$HOME/.local/share}/Trash
+        mkdir -p "${_ftd%/*}" 2>/dev/null || return 1
+    else
+        _ftd=$_ftr/.Trash-$(id -u)
+    fi
+    for _ftc in "$_ftd" "$_ftd/files" "$_ftd/info"; do
+        [ ! -L "$_ftc" ] || return 1
+        [ -d "$_ftc" ] || (umask 077 && mkdir "$_ftc") 2>/dev/null || return 1
+        files_trash_safe "$_ftc" || return 1
+    done
     printf '%s\n' "$_ftd"
+}
+files_trash_in() {   # files_trash_in files|info -- the shell stands in that folder of the trash $_ftd, the checked one, or false. For a subshell: a path changed after the check leads nowhere else, and what the folder holds is named ./NAME
+    _fti=$(cd -P -- "${_ftd%/*}" 2>/dev/null && pwd -P) || return 1
+    cd -P -- "$_ftd/$1" 2>/dev/null && [ "$(pwd -P)" = "${_fti%/}/${_ftd##*/}/$1" ] && files_trash_safe .
 }
 files_trash() {   # files_trash PATH -> one line: PATH in the trash, by gio where it is, else by the spec by hand
     _ftd=$(files_trash_dir "$1") || { echo "no trash can be made for ${1##*/}"; return 1; }
@@ -69,8 +88,8 @@ files_trash() {   # files_trash PATH -> one line: PATH in the trash, by gio wher
         _ftn=${1##*/}; _ftk=2
         while [ -e "$_ftd/files/$_ftn" ] || [ -L "$_ftd/files/$_ftn" ] || [ -e "$_ftd/info/$_ftn.trashinfo" ]; do _ftn="${1##*/}.$_ftk"; _ftk=$((_ftk + 1)); done
         _ftp=$1; [ "$_ftd" = "${XDG_DATA_HOME:-$HOME/.local/share}/Trash" ] || _ftp=${1#"${_ftd%/.Trash-*}"/}   # on a drive the spec keeps the path from the drive's top
-        printf '[Trash Info]\nPath=%s\nDeletionDate=%s\n' "$(files_urlenc "$_ftp")" "$(date +%Y-%m-%dT%H:%M:%S)" > "$_ftd/info/$_ftn.trashinfo" && mv "$1" "$_ftd/files/$_ftn" \
-            || { rm -f "$_ftd/info/$_ftn.trashinfo"; echo "could not trash ${1##*/}"; return 1; }
+        ( files_trash_in info && printf '[Trash Info]\nPath=%s\nDeletionDate=%s\n' "$(files_urlenc "$_ftp")" "$(date +%Y-%m-%dT%H:%M:%S)" > "./$_ftn.trashinfo" ) && ( files_trash_in files && mv -- "$1" "./$_ftn" ) \
+            || { ( files_trash_in info && rm -f -- "./$_ftn.trashinfo" ) 2>/dev/null || :; echo "could not trash ${1##*/}"; return 1; }
     fi
     echo "${1##*/} is in the trash"
 }
@@ -95,21 +114,22 @@ files_restore() {   # files_restore PATH [ITEM] -> one line: ITEM, else the newe
     _ftd=$(files_trash_dir "$1") || { echo "no trash holds ${1##*/}"; return 1; }
     [ ! -e "$1" ] && [ ! -L "$1" ] || { echo "${1##*/} already exists"; return 1; }
     _frn=$(files_trashed "$1" "${2:-}"); [ -n "$_frn" ] || { echo "the trash holds nothing from ${1##*/}"; return 1; }
-    mv "$_ftd/files/$_frn" "$1" || { echo "could not bring ${1##*/} back"; return 1; }
-    rm -f "$_ftd/info/$_frn.trashinfo"
+    ( files_trash_in files && mv -- "./$_frn" "$1" ) || { echo "could not bring ${1##*/} back"; return 1; }
+    ( files_trash_in info && rm -f -- "./$_frn.trashinfo" ) || :
     echo "${1##*/} is back"
 }
 files_purge() {   # files_purge PATH [ITEM] -> one line: ITEM, else the newest file the trash holds from PATH, deleted for good, its record with it
     _ftd=$(files_trash_dir "$1") || { echo "no trash holds ${1##*/}"; return 1; }
     _frn=$(files_trashed "$1" "${2:-}"); [ -n "$_frn" ] || { echo "the trash holds nothing from ${1##*/}"; return 1; }
-    rm -rf -- "$_ftd/files/$_frn" && rm -f -- "$_ftd/info/$_frn.trashinfo" || { echo "could not delete ${1##*/}"; return 1; }
+    ( files_trash_in files && rm -rf -- "./$_frn" ) && ( files_trash_in info && rm -f -- "./$_frn.trashinfo" ) || { echo "could not delete ${1##*/}"; return 1; }
     echo "${1##*/} is deleted for good"
 }
 files_empty() {   # -> one line: your home's trash emptied; a drive's own stays
     _ftd=${XDG_DATA_HOME:-$HOME/.local/share}/Trash
     _fen=$(find "$_ftd/files" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')
     [ "${_fen:-0}" -gt 0 ] || { echo "the trash is empty already"; return 0; }
-    find "$_ftd/files" "$_ftd/info" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + 2>/dev/null || { echo "could not empty the trash"; return 1; }
+    ( files_trash_safe "$_ftd" && files_trash_in files && find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + ) 2>/dev/null || { echo "could not empty the trash"; return 1; }
+    [ ! -e "$_ftd/info" ] && [ ! -L "$_ftd/info" ] || ( files_trash_in info && find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + ) 2>/dev/null || { echo "could not empty the trash"; return 1; }
     rm -f -- "$_ftd/directorysizes"
     echo "the trash is empty: $(files_num "$_fen") deleted for good"
 }

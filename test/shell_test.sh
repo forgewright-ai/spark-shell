@@ -9026,6 +9026,40 @@ JSON
         && [ "$(ans 4 | jq -r '.result.structuredContent.receipt')" = 'trip.txt is in the trash' ] && [ -n "$_tin" ] \
         && [ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'trip.txt is back' ] && [ -f "$H/stick/photos/trip.txt" ] && [ ! -e "$H/stick/.Trash-$(id -u)/files/trip.txt" ] \
         && ok "provide files: a drive mounted is a root beside your home: its row under drives opens it (no .. at its top), a file on it is trashed into the drive's own .Trash-UID with the path from the drive's top, as the spec says, and comes back" || bad "files drive root" "$(ans 2 | head -c 300) $(ans 3 | head -c 300) $(ans 4) $(ans 5) $(ls -R "$H/stick" 2>&1)"
+    # a trash that is not yours alone is never used (#27). A drive came with .Trash-UID/files as a link to a folder outside
+    # the roots, and "delete for good" on a record in it deleted that folder's file: a link at the trash's top, at its files
+    # or at its info is refused, and so is a trash the others can write. Nothing outside is touched
+    _tu=$H/stick/.Trash-$(id -u); _trec='[Trash Info]\nPath=report.txt\nDeletionDate=2026-11-21T10:00:00\n'
+    _tpurge=$(call 6 files_purge "$(jq -cn --arg p "$SR/report.txt" '{path: $p, item: "report.txt"}')")
+    _ttrash=$(call 7 files_trash "$(jq -cn --arg p "$SR/photos/trip.txt" '{path: $p}')")
+    _tkept() { [ "$(cat "$H/outside/$1" 2>/dev/null)" = keep ] && [ -f "$H/stick/photos/trip.txt" ]; }   # the file outside as it was, the drive's file not moved
+    mkdir -p "$H/outside"; printf 'keep\n' > "$H/outside/report.txt"
+    rm -rf "$_tu/files"; ln -s "$H/outside" "$_tu/files"; printf "$_trec" > "$_tu/info/report.txt.trashinfo"
+    files2 "$_tpurge" "$_ttrash" > "$H/mcp.out"
+    _t1=''; [ "$(ans 6 | jq -r .result.isError)" = true ] && [ "$(ans 7 | jq -r .result.isError)" = true ] && _tkept report.txt && [ "$(ls "$H/outside")" = report.txt ] && _t1=1
+    rm -rf "$_tu"; mkdir -p "$H/outside/files" "$H/outside/info"; printf 'keep\n' > "$H/outside/files/report.txt"; printf "$_trec" > "$H/outside/info/report.txt.trashinfo"
+    ln -s "$H/outside" "$_tu"
+    files2 "$_tpurge" "$_ttrash" > "$H/mcp.out"
+    _t2=''; [ "$(ans 6 | jq -r .result.isError)" = true ] && [ "$(ans 7 | jq -r .result.isError)" = true ] && _tkept files/report.txt && _t2=1
+    rm -f "$_tu"; mkdir -p "$_tu/files" "$_tu/info"; chmod 700 "$_tu" "$_tu/info"; chmod 777 "$_tu/files"
+    files2 "$_ttrash" > "$H/mcp.out"
+    _t3=''; [ "$(ans 7 | jq -r .result.isError)" = true ] && [ -f "$H/stick/photos/trip.txt" ] && [ -z "$(ls "$_tu/files")" ] && _t3=1
+    [ -n "$_t1" ] && [ -n "$_t2" ] && [ -n "$_t3" ] \
+        && ok "provide files: a trash that is not yours alone is refused (#27): its files a link, its top a link, its files open to the others; delete for good and trash both stop, and the folder outside keeps its file" || bad "trash not yours" "files link:${_t1:-no} top link:${_t2:-no} others write:${_t3:-no} $(ans 6) $(ans 7)"
+    # the trash changed after it was checked (#27): the record is a FIFO, so the provider waits on it with the check behind it;
+    # the files folder becomes a link to the folder outside, then the record arrives. What is deleted is named from inside the
+    # folder that was checked, so the link leads nowhere
+    chmod 700 "$_tu/files"; mkfifo "$_tu/info/report.txt.trashinfo"; printf 'keep\n' > "$H/outside/report.txt"
+    files2 "$_tpurge" > "$H/mcp.out" & _tp=$!
+    _tw=0; timeout 20 sh -c 'exec 3> "$1/info/report.txt.trashinfo"; rmdir "$1/files" && ln -s "$2" "$1/files"; printf "$3" >&3' sh "$_tu" "$H/outside" "$_trec" || _tw=$?
+    wait "$_tp" 2>/dev/null || :
+    [ "$_tw" -eq 0 ] && [ -L "$_tu/files" ] && [ "$(ans 6 | jq -r .result.isError)" = true ] && _tkept report.txt \
+        && ok "provide files: a trash whose files folder becomes a link after the check deletes nothing outside (#27)" || bad "trash changed after the check" "writer:$_tw $(ans 6) $(ls -la "$_tu" "$H/outside" 2>&1)"
+    rm -rf "$_tu" "$H/outside"
+    # and the drive's trash still works once it is a folder of yours again
+    files2 "$_ttrash" "$(call 8 files_purge "$(jq -cn --arg p "$SR/photos/trip.txt" '{path: $p}')")" > "$H/mcp.out"
+    [ "$(ans 7 | jq -r '.result.structuredContent.receipt')" = 'trip.txt is in the trash' ] && [ "$(ans 8 | jq -r '.result.structuredContent.receipt')" = 'trip.txt is deleted for good' ] && [ ! -e "$H/stick/photos/trip.txt" ] && [ -z "$(ls "$_tu/files")" ] \
+        && ok "provide files: the drive's own trash is made again and works: trash, then delete for good" || bad "trash made again" "$(ans 7) $(ans 8) $(ls -R "$_tu" 2>&1)"
     blk /run/media/ada/BACKUP; rm -rf "$H/stick"   # the fixture as the eject test below expects it: the stick mounted
     rm -f "$HOME/udisks.log"; out=$(sh "$SH" desktop storage eject SanDisk Ultra 2>&1 || :)
     [ "$out" = 'SanDisk Ultra can be taken out' ] && [ "$(cat "$HOME/udisks.log")" = "$(printf 'unmount -b /dev/sdb1 --no-user-interaction\npower-off -b /dev/sdb --no-user-interaction')" ] \
