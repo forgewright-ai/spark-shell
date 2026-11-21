@@ -1,12 +1,14 @@
 //! The layout in pixels, for a window of the dialog's own: the line, where you are, the list and the keys placed
 //! by the pixel in two sizes of text, where the grid (ui.rs) places every symbol in a cell. It draws the frame of
 //! every place, and the body of the places redesigned so far: home, what home finds, apps and an app's details
-//! beside its list. Any other place keeps its grid rows, laid inside this frame. Pure: the app's state in, drawing
+//! beside its list, files in one pane and in two and a file's details beside its list. Any other place keeps its
+//! grid rows, laid inside this frame. Pure: the app's state in, drawing
 //! steps and the places a click acts out; a painter (paint.rs) draws them, a test reads them.
 
-use crate::app::{App, HintKey, Item, Mode, Talk, View, DESTS, SETTINGS};
+use crate::app::{App, FolderShape, HintKey, Item, Mode, Talk, View, DESTS, SETTINGS};
 use crate::apps::{Action, Page};
 use crate::draw::{Rgb, Size, Step};
+use crate::files::{self, Side};
 use crate::grid::Color;
 use crate::page::Icon;
 use crate::palette::Palette;
@@ -79,6 +81,14 @@ pub enum Target {
     PaneRow(usize),
     /// A value's arrow: the row, and whether it steps the value up.
     Step(usize, bool),
+    /// A folder's name on the location line: its uri.
+    Crumb(String),
+    /// A row of the other pane of files, by its place among that pane's rows.
+    OtherRow(usize),
+    /// The other pane of files, off its rows: it takes the keys.
+    OtherPane,
+    /// A row of the list of files while a file's details hold the keys: the list takes them, on that row.
+    ListRow(usize),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -97,6 +107,18 @@ pub struct IconAt {
     pub y: f64,
     pub side: f64,
     pub file: String,
+}
+
+/// What a file shows, where its details draw it: the box it is fitted in, its file, and for a sound's picture the
+/// height of the waveform in it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PictureAt {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+    pub file: String,
+    pub wave: Option<u32>,
 }
 
 /// The grid rows of a place the layout has not drawn yet: where they are laid, how many cells they are, and the
@@ -150,6 +172,8 @@ pub struct Scene {
     pub grid: Option<GridBody>,
     /// The lists drawn in pixels: a drag scrolls the one it starts on.
     pub lists: Vec<ListBox>,
+    /// What a file shows in its details: kept inside the list's box, as an icon is.
+    pub pictures: Vec<PictureAt>,
 }
 
 impl Scene {
@@ -168,6 +192,7 @@ impl Scene {
 pub enum Kind {
     Home,
     Apps,
+    Files,
     /// The place's grid rows, inside the frame.
     Grid,
 }
@@ -177,6 +202,7 @@ pub enum Kind {
 pub fn kind(app: &App) -> Kind {
     match app.view {
         View::Home | View::Apps => kind_of(app, &app.list_items()),
+        View::Folder(..) if app.files_pane_view().is_some() => kind_of(app, &app.list_items()),
         _ => Kind::Grid,
     }
 }
@@ -189,6 +215,7 @@ fn kind_of(app: &App, items: &[Item]) -> Kind {
     match app.view {
         View::Home if items.iter().all(known) => Kind::Home,
         View::Apps if items.iter().all(known) => Kind::Apps,
+        View::Folder(..) if app.files_pane_view().is_some() && items.iter().all(known) => Kind::Files,
         _ => Kind::Grid,
     }
 }
@@ -209,6 +236,9 @@ fn known(it: &Item) -> bool {
             | Item::Title(_)
             | Item::Text(..)
             | Item::Note(_)
+            | Item::Folder(_)
+            | Item::Files(_)
+            | Item::Here
     )
 }
 
@@ -225,6 +255,9 @@ const FOOT_LINE: f64 = 26.0;
 const STATUS: f64 = 28.0;
 /// A window narrower than this shows an app's details as a page, not beside the list.
 const SPLIT_MIN: f64 = 600.0;
+/// A row's value, its control and its key stand this far from the list's edge at most: beside its name in a wide
+/// window, never across it.
+const ROW_MAX: f64 = 640.0;
 
 /// Whether a window holds the frame at all: the line, a list and the keys. A smaller one is the grid's, which says
 /// to make the window larger.
@@ -244,7 +277,7 @@ pub fn size(app: &App, m: &Metrics, w: f64, h: f64) -> (u16, u16) {
     let g = Geo::new(app, m, w, h, k);
     let rows = match k {
         Kind::Grid => g.grid_rows(m),
-        Kind::Home => ((g.bottom - g.top) / m.px(44.0)) as u16,
+        Kind::Home | Kind::Files => ((g.bottom - g.top) / m.px(44.0)) as u16,
         Kind::Apps => ((g.bottom - g.top) / app_row(m, app.apps.spacing)) as u16,
     };
     (g.grid_cols(m), rows.max(1) + crate::ui::head(app).content + crate::ui::BOTTOM)
@@ -338,6 +371,7 @@ struct Pen<'a> {
     /// How the lists were scrolled in the frame before, and the lists of this one.
     was: &'a [Scrolled],
     lists: Vec<ListBox>,
+    pictures: Vec<PictureAt>,
 }
 
 impl Pen<'_> {
@@ -431,10 +465,11 @@ pub fn build(app: &App, pal: &Palette, m: &Metrics, w: f64, h: f64, was: &[Scrol
         icons: vec![],
         was,
         lists: vec![],
+        pictures: vec![],
     };
     line(app, &mut pen, &g);
     if g.path {
-        path(app, &mut pen, &g, &items);
+        path(app, &mut pen, &g, &items, k);
     }
     let mut scene = Scene {
         icon_clip: (g.inset, g.top, w - 2.0 * g.inset, g.bottom - g.top),
@@ -452,6 +487,7 @@ pub fn build(app: &App, pal: &Palette, m: &Metrics, w: f64, h: f64, was: &[Scrol
         }
         Kind::Home => home(app, &mut pen, &g, &items),
         Kind::Apps => apps(app, &mut pen, &g, &items),
+        Kind::Files => files_body(app, &mut pen, &g, &items),
     }
     if g.status {
         status(app, &mut pen, &g, k);
@@ -461,6 +497,7 @@ pub fn build(app: &App, pal: &Palette, m: &Metrics, w: f64, h: f64, was: &[Scrol
     scene.hits = pen.hits;
     scene.icons = pen.icons;
     scene.lists = pen.lists;
+    scene.pictures = pen.pictures;
     scene
 }
 
@@ -610,10 +647,11 @@ fn symbols(pen: &mut Pen, x: f64, y: f64, text: &str, color: Rgb) {
 
 /// Where you are, under the line: home, the place, and what the place shows now. Home and the place above are
 /// targets; the last name is where you are. The count of the list stands at the line's end.
-fn path(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
+fn path(app: &App, pen: &mut Pen, g: &Geo, items: &[Item], k: Kind) {
     let m = *pen.m;
     let t = pen.t;
     let base = m.px(PATH_BASE);
+    let crumbs = if k == Kind::Files { crumbs(app) } else { None };
     let apps = |n: usize| format!("{} {}", n, if n == 1 { "app" } else { "apps" });
     let launches = |l: &crate::apps::Line| matches!(l.action, Some(Action::Launch(_)));
     // an app's details beside the list: the list is the place still, and its count stands
@@ -628,13 +666,35 @@ fn path(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
                 .unwrap_or((Page::List, String::new()));
             apps(app.apps.lines_of(&root, 60, &query, 0).iter().filter(|l| launches(l)).count())
         }
+        // a folder of files: how much it holds, which its summary row said in the grid. A page alone over the
+        // list says what it is of, and no count
+        _ if k == Kind::Files && !(app.files_page_open() && !app.files.form() && !app.files_details_beside()) => app
+            .folder
+            .as_ref()
+            .and_then(|(_, _, rows)| rows.rows.iter().find(|r| files::is_summary(r)))
+            .and_then(|r| files::short_summary(&r.text))
+            .unwrap_or_default(),
         _ => String::new(),
     };
     let right = g.w - g.inset;
     let end = right - pen.text_end(right, base, &count, Size::Small, t.muted, false) - if count.is_empty() { 0.0 } else { m.px(16.0) };
     let (place, sub) = (app.title(), if beside { String::new() } else { app.subtitle() });
     let mut names = vec![("home".to_string(), Some(Target::Home))];
-    if sub.trim().is_empty() {
+    if let Some(folders) = crumbs {
+        names.extend(folders);
+        // a path too long for the line loses its middle: the place and the folders nearest stay
+        let width =
+            |names: &[(String, Option<Target>)]| names.iter().map(|(n, _)| pen.width(n, Size::Small)).sum::<f64>() + (names.len() - 1) as f64 * 3.0 * m.sw;
+        let mut cut = false;
+        while names.len() > 4 && g.inset + width(&names) > end {
+            if cut {
+                names.remove(3);
+            } else {
+                names[2] = ("\u{2026}".to_string(), None);
+                cut = true;
+            }
+        }
+    } else if sub.trim().is_empty() {
         names.push((place, None));
     } else {
         names.push((place, Some(Target::Back)));
@@ -645,9 +705,17 @@ fn path(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     for (k, (name, target)) in names.into_iter().enumerate() {
         // the last name is cut where the count starts; an earlier one is short
         let name = pen.fit(&name, Size::Small, (end - x).max(0.0));
-        let color = if target.is_some() && app.can_go_back() { t.accent } else { t.ink };
+        // a folder's name goes to that folder whatever the way back holds
+        let live = matches!(target, Some(Target::Crumb(_))) || (target.is_some() && app.can_go_back());
+        let color = if live {
+            t.accent
+        } else if k < last && name == "\u{2026}" {
+            t.muted
+        } else {
+            t.ink
+        };
         let w = pen.text(x, base, &name, Size::Small, color, false);
-        if let Some(target) = target.filter(|_| app.can_go_back()) {
+        if let Some(target) = target.filter(|_| live) {
             pen.hit(x - m.px(4.0), base - m.sup - m.px(6.0), w + m.px(8.0), m.sh + m.px(10.0), target);
         }
         x += w;
@@ -656,6 +724,32 @@ fn path(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         }
     }
     pen.fill(g.inset, m.px(PATH_RULE), g.w - 2.0 * g.inset, 1.0, t.lit);
+}
+
+/// A folder of files as the location line names it: the place, then each folder from your home down, each a
+/// target but the last, which is where you are. None where the place is no folder under your home (a drive, the
+/// trash, what a search found) or a page stands alone over the list: the place and its words say that.
+fn crumbs(app: &App) -> Option<Vec<(String, Option<Target>)>> {
+    use crate::search::b64;
+    app.files_pane_view()?;
+    let page = app.files_page_open() && !app.files_details_beside();
+    let (_, _, rows) = app.folder.as_ref().filter(|_| !page)?;
+    let here = rows.here.as_deref()?;
+    let under = if rows.title == "~" { "" } else { rows.title.strip_prefix("~/")? };
+    let home = if under.is_empty() {
+        here
+    } else {
+        here.strip_suffix(under)?.strip_suffix('/')?
+    };
+    let uri = |path: &str| format!("spark-shell://files/rows/{}", b64(path));
+    let parts: Vec<&str> = under.split('/').filter(|s| !s.is_empty()).collect();
+    let mut names = vec![(app.title(), (!parts.is_empty()).then(|| Target::Crumb(uri(home))))];
+    let mut at = home.to_string();
+    for (k, part) in parts.iter().enumerate() {
+        at = format!("{}/{}", at, part);
+        names.push((part.to_string(), (k + 1 < parts.len()).then(|| Target::Crumb(uri(&at)))));
+    }
+    Some(names)
 }
 
 // ---------------------------------------------------------------- the message and the keys
@@ -676,7 +770,12 @@ fn message(app: &App, k: Kind) -> Option<Message> {
         }
     }
     let Some(r) = &app.reply else {
-        let note = app.target_label().or_else(|| if k == Kind::Apps { None } else { app.selected_line() })?;
+        // a list of files says the lit file in its row and in its details: the line says the selection alone
+        let note = app.target_label().or_else(|| match k {
+            Kind::Apps => None,
+            Kind::Files => app.files_checked_line(),
+            _ => app.selected_line(),
+        })?;
         return Some(Message {
             sign: Sign::None,
             text: note,
@@ -880,6 +979,25 @@ enum K {
     Fact(String, String),
     /// The app a page is about: its picture, its name, what it is.
     Identity(Option<Icon>, String, Vec<String>),
+    /// A file or a folder in a list of files: its name leads, its size and its date step back beside it.
+    File {
+        name: String,
+        /// A folder: its name ends in a slash.
+        dir: bool,
+        size: String,
+        date: String,
+        /// Its own folder, where the row carries one: a recent file, a file found.
+        place: String,
+        check: bool,
+        muted: bool,
+    },
+    /// What a file shows, in a box over its details: its picture, a sound's picture with the waveform's height in
+    /// it, its first lines, or the words that say why nothing is shown.
+    Shown {
+        picture: Option<(String, Option<u32>)>,
+        lines: Vec<String>,
+        say: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -961,6 +1079,44 @@ fn of_row(r: &crate::model::Row) -> K {
     }
 }
 
+/// A provider's row of a list of files as the row its list draws.
+fn file_row(r: &crate::model::Row, check: bool) -> K {
+    let col = |k: usize| r.columns.get(k).cloned().unwrap_or_default();
+    K::File {
+        name: r.text.clone(),
+        dir: r.id.starts_with("files:dir:"),
+        size: col(0),
+        date: col(1),
+        place: col(2),
+        check,
+        muted: r.muted,
+    }
+}
+
+/// A line of a page of files as a row: an action with its key, air, or words.
+fn files_line(m: &Metrics, l: &files::Line) -> Option<(f64, K)> {
+    if l.label.is_empty() && l.value.is_empty() && l.action.is_none() {
+        return None;
+    }
+    if l.action.is_none() {
+        return Some((m.px(22.0), K::Words(l.label.clone(), Size::Small, true, false)));
+    }
+    Some((
+        m.px(36.0),
+        K::One {
+            icon: None,
+            sign: "",
+            swatch: vec![],
+            name: l.label.clone(),
+            muted: l.disabled,
+            words: String::new(),
+            end: End::None,
+            tail: false,
+            key: l.key.clone(),
+        },
+    ))
+}
+
 /// The rows of a list of items: each item the row its kind has, the picks counted as the app counts them.
 fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec<Row> {
     let m = pen.m;
@@ -1014,6 +1170,18 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
                 Some((one, plain("ask spark", words, false)))
             }
             Item::Hit(_) | Item::Row(..) => app.row_ref(it).map(|r| (one, of_row(r))),
+            Item::Folder(_) => app
+                .row_ref(it)
+                .map(|r| (m.px(44.0), file_row(r, app.files_checks_any() && app.files.checked(&r.id)))),
+            Item::Files(l) => {
+                let made = files_line(m, l);
+                if made.is_none() {
+                    gap(&mut out, m.px(12.0));
+                }
+                made
+            }
+            // the row that lands a step in the folder shown
+            Item::Here => app.picking.as_ref().map(|pk| (one, plain(&pk.what, String::new(), false))),
             Item::Title(t) => Some((m.px(28.0), K::Words(t.clone(), Size::Main, false, false))),
             Item::Text(t, muted) => Some((m.px(22.0), K::Words(t.clone(), Size::Small, *muted, false))),
             Item::Note(t) => Some((m.px(22.0), K::Words(t.clone(), Size::Small, true, false))),
@@ -1297,6 +1465,7 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
     });
     // each group lines its second words up: past its longest name
     let mut column = m.px(176.0);
+    let (file_names, file_cols) = file_columns(&m, area.right - area.left - m.px(shape.pad), shape.narrow);
     let mut y = area.top - off;
     for (at, row) in rows.iter().enumerate() {
         if matches!(row.k, K::Head(..)) || at == 0 {
@@ -1332,8 +1501,8 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
             );
         }
         let x = area.left + m.px(shape.pad);
-        // a column of names keeps its room for the names
-        let end = right - m.px(if shape.two && shape.narrow { 4.0 } else { 12.0 });
+        // a column of names keeps its room for the names; in a wide window what ends a row stays beside its name
+        let end = (right - m.px(if shape.two && shape.narrow { 4.0 } else { 12.0 })).min(area.left + m.px(ROW_MAX));
         // on a whole pixel: a row of an odd height would set its words half a pixel down, blurred
         let mid = (top + h / 2.0).floor();
         match &row.k {
@@ -1489,8 +1658,10 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
             }
             K::Fact(label, value) => {
                 let base = mid + m.px(5.0);
-                pen.text(x, base, label, Size::Small, t.muted, false);
-                pen.text_end(end, base, value, Size::Small, t.ink, false);
+                let w = pen.text(x, base, label, Size::Small, t.muted, false);
+                // a value longer than its room is cut in its middle: both its ends are kept
+                let n = ((end - x - w - m.px(16.0)) / m.sw).floor().max(4.0) as usize;
+                pen.text_end(end, base, &cut_middle(value, n), Size::Small, t.ink, false);
             }
             K::Identity(icon, name, lines) => {
                 let side = m.px(48.0);
@@ -1503,6 +1674,68 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                 pen.text(nx, top + m.px(36.0), &name, Size::Main, t.ink, true);
                 for (i, l) in lines.iter().enumerate() {
                     pen.text(nx, top + m.px(56.0) + i as f64 * m.px(17.0), l, Size::Small, t.muted, false);
+                }
+            }
+            K::File {
+                name,
+                dir,
+                size,
+                date,
+                place,
+                check,
+                muted,
+            } => {
+                let base = mid + m.px(6.0);
+                if *check {
+                    pen.text(x - 2.0 * m.cw, base, crate::ui::CHECK, Size::Main, t.accent, false);
+                }
+                // the name in its column, cut in its middle so its type stays; a folder's slash after it, muted
+                let slash = if *dir { m.cw } else { 0.0 };
+                let cells_wide = ((file_names - m.px(16.0) - slash) / m.cw).floor().max(4.0) as usize;
+                let w = pen.text(x, base, &cut_middle(name, cells_wide), Size::Main, if *muted { t.muted } else { t.ink }, on);
+                if *dir {
+                    pen.text(x + w, base, "/", Size::Main, t.muted, false);
+                }
+                if file_cols >= 1 {
+                    pen.text_end(x + file_names + m.px(64.0), base, size, Size::Small, t.muted, false);
+                }
+                if file_cols >= 2 {
+                    pen.text_end(x + file_names + m.px(150.0), base, date, Size::Small, t.muted, false);
+                    // a file's own folder, where its row carries one and the window has the room
+                    let px = x + file_names + m.px(174.0);
+                    if !place.is_empty() && right - px >= 8.0 * m.sw {
+                        let place = pen.fit(place, Size::Small, right - px);
+                        pen.text(px, base, &place, Size::Small, t.muted, false);
+                    }
+                }
+                if on && focus {
+                    pen.fill(x, base + m.px(5.0), w, 2.0, t.accent);
+                }
+            }
+            K::Shown { picture, lines, say } => {
+                let (bx, by, bw, bh) = (area.left, top + m.px(16.0), right - area.left, h - m.px(16.0));
+                pen.fill(bx, by, bw, bh, t.lit);
+                if let Some((file, wave)) = picture {
+                    pen.pictures.push(PictureAt {
+                        x: bx,
+                        y: by,
+                        w: bw,
+                        h: bh,
+                        file: file.clone(),
+                        wave: *wave,
+                    });
+                } else if !lines.is_empty() {
+                    let n = ((bh - m.px(16.0)) / m.sh).floor().max(0.0) as usize;
+                    for (i, l) in lines.iter().take(n).enumerate() {
+                        let l = pen.fit(l, Size::Small, bw - m.px(24.0));
+                        pen.text(bx + m.px(12.0), by + m.px(8.0) + m.sup + i as f64 * m.sh, &l, Size::Small, t.ink, false);
+                    }
+                } else if !say.is_empty() {
+                    let said = crate::ui::wrap(say, ((bw - m.px(24.0)) / m.sw).floor().max(8.0) as usize);
+                    let first = by + ((bh - said.len() as f64 * m.sh) / 2.0).round().max(m.px(8.0)) + m.sup;
+                    for (i, l) in said.iter().enumerate() {
+                        pen.text(bx + m.px(12.0), first + i as f64 * m.sh, l, Size::Small, t.muted, false);
+                    }
                 }
             }
         }
@@ -1663,6 +1896,437 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             list(app, pen, &rows, whole, lit(app), list_focus(app), full, app.scroll, own);
         }
     }
+}
+
+/// A list of files' columns in a room: how wide the names are, and how many columns stand after them, the size
+/// then the date. They stand beside the names, never across a wide window. Beside a file's details the names
+/// stand alone until the room holds all three.
+fn file_columns(m: &Metrics, room: f64, beside: bool) -> (f64, u8) {
+    let cols: u8 = if room >= m.px(350.0) {
+        2
+    } else if !beside && room >= m.px(184.0) {
+        1
+    } else {
+        0
+    };
+    let after = [0.0, 64.0, 150.0][cols as usize];
+    ((room - m.px(after)).min(m.px(420.0)), cols)
+}
+
+/// The other pane's rows: its own folder under its own words, the picks counted as its bar walks them.
+fn pane_rows(app: &App, m: &Metrics, pane: &files::Pane) -> Vec<Row> {
+    let (Some(rows), Some(p)) = (&pane.rows, app.files()) else {
+        return vec![];
+    };
+    let words = app.prompts.restore(&View::Folder(p, pane.uri.clone()));
+    let shape = FolderShape {
+        own: true,
+        ..FolderShape::default()
+    };
+    let mut out: Vec<Row> = vec![];
+    let mut n = 0;
+    for it in app.folder_items(p, rows, &words, &shape) {
+        let gap = matches!(out.last(), Some(Row { k: K::Gap(_), .. }));
+        match it {
+            Item::Blank if !out.is_empty() && !gap => out.push(Row {
+                h: m.px(16.0),
+                pick: None,
+                k: K::Gap(m.px(16.0)),
+            }),
+            Item::Heading(h) => {
+                if gap {
+                    out.pop();
+                }
+                out.push(Row {
+                    h: m.px(36.0),
+                    pick: None,
+                    k: K::Head(h, None, None),
+                });
+            }
+            Item::Folder(i) => {
+                if let Some(r) = rows.rows.get(i) {
+                    let pick = App::pickable(r).then(|| {
+                        n += 1;
+                        n - 1
+                    });
+                    out.push(Row {
+                        h: m.px(44.0),
+                        pick,
+                        k: file_row(r, pane.checks.contains(&r.id)),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The rows of a file's details: what it shows, its name, its facts, a rule, then what you do with it (`body`,
+/// the actions' rows). The folder alone and a selected set have their name and what they hold.
+fn about_file(app: &App, pen: &Pen, a: &files::Actions, body: Vec<Row>, room: f64, tall: f64, shows: bool) -> Vec<Row> {
+    let m = pen.m;
+    let sep = crate::ui::SEP;
+    let mut out: Vec<Row> = vec![];
+    let mut facts: Vec<(&str, String)> = vec![];
+    if !a.checked.is_empty() {
+        let size: u64 = a.checked.iter().map(files::row_size).sum();
+        if size > 0 {
+            facts.push(("size", files::size_words(size)));
+        }
+    } else if let Some(r) = &a.row {
+        let page = app
+            .files
+            .peek
+            .as_ref()
+            .filter(|pk| Some(&pk.uri) == r.page.as_ref())
+            .and_then(|pk| pk.page.as_ref());
+        if shows && r.page.is_some() {
+            let none = || K::Shown {
+                picture: None,
+                lines: vec![],
+                say: String::new(),
+            };
+            let k = match page {
+                Some(pg) if pg.picture.is_some() => K::Shown {
+                    picture: pg.picture.clone().map(|f| (f, None)),
+                    lines: vec![],
+                    say: String::new(),
+                },
+                Some(pg) if pg.sound.is_some() => K::Shown {
+                    picture: pg.sound.clone().map(|(f, wave)| (f, Some(wave))),
+                    lines: vec![],
+                    say: String::new(),
+                },
+                Some(pg) if !pg.lines.is_empty() => K::Shown {
+                    picture: None,
+                    lines: pg.lines.clone(),
+                    say: String::new(),
+                },
+                // a page that came with nothing on it says so; one on its way leaves the box empty
+                Some(pg) => K::Shown {
+                    picture: None,
+                    lines: vec![],
+                    say: pg.say.clone().unwrap_or_else(|| "nothing to show".to_string()),
+                },
+                None => none(),
+            };
+            // one height whatever the file shows, so the rows under it stand still from one file to the next
+            let h = (room * 0.625).round().min((tall * 0.4).round()).max(m.px(60.0));
+            out.push(Row {
+                h: h + m.px(16.0),
+                pick: None,
+                k,
+            });
+        }
+        let wide = r.wide.clone().unwrap_or_default();
+        let or = |w: usize, c: usize| {
+            wide.get(w)
+                .filter(|s| !s.is_empty())
+                .or_else(|| r.columns.get(c).filter(|s| !s.is_empty()))
+                .cloned()
+                .unwrap_or_default()
+        };
+        let (kind, size, when) = (wide.first().cloned().unwrap_or_default(), or(1, 0), or(2, 1));
+        // what its page says of it and its row does not: a picture's size, how many pages, a sound's length. A
+        // path is where it is, which the list says
+        let said = |f: &String| f.contains('/') || [&kind, &size, &when].into_iter().chain(r.columns.iter()).any(|v| v.eq_ignore_ascii_case(f));
+        let mut more: Vec<String> = page.map(|pg| pg.facts.iter().filter(|f| !said(f)).cloned().collect()).unwrap_or_default();
+        if let Some(pg) = page {
+            if pg.pages > 1 {
+                more.push(format!("{} pages", pg.pages));
+            }
+            if pg.seconds >= 1.0 {
+                let s = pg.seconds.round() as u64;
+                more.push(format!("{}:{:02}", s / 60, s % 60));
+            }
+        }
+        // as many on the kind's row as it holds, the rest on rows under it
+        let fits = ((room - m.px(24.0) - 4.0 * m.sw - m.px(16.0)) / m.sw).floor().max(12.0) as usize;
+        let mut line = String::new();
+        let mut first = true;
+        for part in [kind.clone()].into_iter().filter(|k| !k.is_empty()).chain(more) {
+            if !line.is_empty() && cells(&line) + cells(sep) + cells(&part) > fits {
+                facts.push((if first { "kind" } else { "" }, std::mem::take(&mut line)));
+                first = false;
+            }
+            line = if line.is_empty() { part } else { format!("{}{}{}", line, sep, part) };
+        }
+        if !line.is_empty() {
+            facts.push((if first { "kind" } else { "" }, line));
+        }
+        if !size.is_empty() {
+            facts.push((if r.children.is_some() { "holds" } else { "size" }, size));
+        }
+        if !when.is_empty() {
+            facts.push(("changed", when));
+        }
+        if let Some(place) = files::place_of(r) {
+            facts.push(("in", place));
+        }
+    } else if let Some(r) = app.folder.as_ref().and_then(|(_, _, rows)| rows.rows.iter().find(|r| files::is_summary(r))) {
+        // the folder itself: what its summary counts, and its size
+        let (sizes, counts): (Vec<&str>, Vec<&str>) = r.text.split(sep).skip(1).partition(|part| files::bytes(part).is_some());
+        if !counts.is_empty() {
+            facts.push(("holds", counts.join(sep)));
+        }
+        if let Some(size) = sizes.first() {
+            facts.push(("size", size.to_string()));
+        }
+    }
+    if out.is_empty() {
+        out.push(Row {
+            h: m.px(8.0),
+            pick: None,
+            k: K::Gap(m.px(8.0)),
+        });
+    }
+    let cells_wide = ((room - m.px(24.0)) / m.cw).floor().max(8.0) as usize;
+    out.push(Row {
+        h: m.px(44.0),
+        pick: None,
+        k: K::Words(cut_middle(&a.title, cells_wide), Size::Main, false, true),
+    });
+    out.extend(facts.into_iter().map(|(label, value)| Row {
+        h: m.px(28.0),
+        pick: None,
+        k: K::Fact(label.to_string(), value),
+    }));
+    if !body.is_empty() {
+        out.push(Row {
+            h: m.px(17.0),
+            pick: None,
+            k: K::Rule,
+        });
+        out.extend(body);
+    }
+    out
+}
+
+/// A pane's folder over its rows, where two stand: bright over the pane that holds the keys, muted over the other.
+fn pane_head(pen: &mut Pen, a: Area, top: f64, title: &str, active: bool) {
+    let m = *pen.m;
+    let x = a.left + m.px(24.0);
+    let n = ((a.right - x) / m.sw).floor().max(4.0) as usize;
+    let color = if active { pen.t.ink } else { pen.t.muted };
+    pen.text(x, top + m.px(24.0), &cut_middle(title, n), Size::Small, color, active);
+}
+
+/// The clicks of the list drawn since `mark` given another meaning: a row of the other pane, or of the list
+/// beside the details that hold the keys.
+fn retarget(pen: &mut Pen, mark: usize, to: fn(usize) -> Target) {
+    for h in pen.hits[mark..].iter_mut() {
+        if let Target::Pick(n) = h.target {
+            h.target = to(n);
+        }
+    }
+}
+
+/// Files: a folder's list, two panes each its own folder, a file's details beside the list where the window
+/// holds both, or a page of files alone.
+fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
+    let m = *pen.m;
+    let Some((_, uri)) = app.files_pane_view() else { return };
+    let whole = Area {
+        left: g.inset,
+        right: g.w - g.inset,
+        top: g.top,
+        bottom: g.bottom,
+        from: 0.0,
+        to: g.w,
+    };
+    let rows_shape = Shape {
+        two: false,
+        one: 44.0,
+        narrow: false,
+        still: false,
+        pad: 24.0,
+    };
+    let room = |a: Area, s: Shape| a.right - a.left - m.px(s.pad) - m.px(12.0);
+    // a page over the list (the actions, a conflict): the items are its lines, and the list stands as it stood
+    // when the page opened. A form keeps the list as the items
+    let over = app.files_page_open() && !app.files.form();
+    let nav = app.files.list_nav();
+    let panes = app.panes_drawn();
+    let list_items: Vec<Item> = match (&app.folder, nav) {
+        (Some((p, _, rows)), Some(nav)) if over => app.folder_items(
+            *p,
+            rows,
+            &nav.query,
+            &FolderShape {
+                own: panes,
+                ..FolderShape::default()
+            },
+        ),
+        _ if over => vec![],
+        _ => items.to_vec(),
+    };
+    let (list_lit, list_scroll, list_words) = match nav {
+        Some(n) => (n.in_list.then_some(n.selected), n.scroll, n.query.clone()),
+        None => (lit(app), app.scroll, app.input.clone()),
+    };
+    let focus = nav.is_none() && list_focus(app);
+    // a pane keeps its place by its side: both may show one folder
+    let active_left = app.files.other.is_none() || app.files.other_side == Side::Right;
+    let named = |left: bool, uri: &str, words: &str| format!("files\u{1f}{}\u{1f}{}\u{1f}{}", if left { "left" } else { "right" }, uri, words);
+    let own = named(active_left, &uri, &list_words);
+    let page_rows = |pen: &Pen, shape: Shape, a: Area| match &app.files.page {
+        files::Page::Actions(act) => about_file(
+            app,
+            pen,
+            act,
+            rows_of(app, pen, items, shape, room(a, shape)),
+            a.right - a.left,
+            a.bottom - a.top,
+            false,
+        ),
+        _ => rows_of(app, pen, items, shape, room(a, shape)),
+    };
+    if let (true, Some(other)) = (panes, app.files.other.as_ref()) {
+        let divide = (g.w / 2.0).round();
+        let head = m.px(40.0);
+        let left = Area {
+            right: divide - m.px(12.0),
+            top: g.top + head,
+            to: divide,
+            ..whole
+        };
+        let right = Area {
+            left: divide,
+            top: g.top + head,
+            from: divide + 1.0,
+            ..whole
+        };
+        let (act, oth) = if active_left { (left, right) } else { (right, left) };
+        let title = app.folder.as_ref().map(|(_, _, r)| r.title.clone()).unwrap_or_default();
+        // anywhere on the other pane takes the keys there; its rows, drawn after, take their own click
+        pen.hit(oth.from, g.top, oth.to - oth.from, g.bottom - g.top, Target::OtherPane);
+        pane_head(pen, act, g.top, &title, true);
+        pane_head(pen, oth, g.top, &other.title(), false);
+        if over {
+            let shape = Shape {
+                two: false,
+                one: 36.0,
+                narrow: true,
+                still: false,
+                pad: 24.0,
+            };
+            let rows = page_rows(pen, shape, act);
+            list(
+                app,
+                pen,
+                &rows,
+                act,
+                lit(app),
+                list_focus(app),
+                shape,
+                app.scroll,
+                "files\u{1f}page".to_string(),
+            );
+        } else {
+            let rows = rows_of(app, pen, &list_items, rows_shape, room(act, rows_shape));
+            list(app, pen, &rows, act, list_lit, focus, rows_shape, list_scroll, own);
+        }
+        let rows = pane_rows(app, &m, other);
+        let words = app
+            .files()
+            .map(|p| app.prompts.restore(&View::Folder(p, other.uri.clone())))
+            .unwrap_or_default();
+        let mark = pen.hits.len();
+        list(
+            app,
+            pen,
+            &rows,
+            oth,
+            None,
+            false,
+            rows_shape,
+            other.scroll,
+            named(!active_left, &other.uri, &words),
+        );
+        retarget(pen, mark, Target::OtherRow);
+        pen.fill(divide, g.top + m.px(8.0), 1.0, g.bottom - g.top - m.px(16.0), pen.t.lit);
+        return;
+    }
+    if app.files_details_beside() {
+        // the details take a third of the window: the list a column of names until the window is wide
+        let pane_w = (g.w / 3.0).round().clamp(m.px(280.0), m.px(640.0));
+        let divide = whole.right - pane_w - m.px(16.0);
+        let left = Area {
+            right: divide - m.px(12.0),
+            to: divide,
+            ..whole
+        };
+        let right = Area {
+            left: divide + m.px(16.0),
+            from: divide + 1.0,
+            ..whole
+        };
+        let narrow = Shape { narrow: true, ..rows_shape };
+        // the details hold the keys while their page is open; else the list does, and they follow its lit file
+        let details = matches!(app.files.page, files::Page::Actions(_));
+        let rows = rows_of(app, pen, &list_items, narrow, room(left, narrow));
+        let mark = pen.hits.len();
+        list(app, pen, &rows, left, list_lit, focus, narrow, list_scroll, own);
+        if details {
+            retarget(pen, mark, Target::ListRow);
+        }
+        pen.fill(divide, whole.top + m.px(8.0), 1.0, whole.bottom - whole.top - m.px(16.0), pen.t.lit);
+        let Some(about) = app.files_about() else { return };
+        let shape = Shape {
+            two: false,
+            one: 36.0,
+            narrow: true,
+            still: !details,
+            pad: 12.0,
+        };
+        let lines: Vec<Item> = if details {
+            items.to_vec()
+        } else {
+            app.files_about_lines(&about).into_iter().map(Item::Files).collect()
+        };
+        let body = rows_of(app, pen, &lines, shape, room(right, shape));
+        let rows = about_file(app, pen, &about, body, right.right - right.left, right.bottom - right.top, true);
+        let key = format!("files\u{1f}about\u{1f}{}", about.title);
+        if details {
+            list(app, pen, &rows, right, lit(app), list_focus(app), shape, app.scroll, key);
+        } else {
+            let off = list(app, pen, &rows, right, None, false, shape, 0, key);
+            pane_targets(pen, &rows, right, off);
+        }
+        return;
+    }
+    if over {
+        let shape = Shape {
+            two: false,
+            one: 36.0,
+            narrow: false,
+            still: false,
+            pad: 24.0,
+        };
+        let rows = page_rows(pen, shape, whole);
+        list(
+            app,
+            pen,
+            &rows,
+            whole,
+            lit(app),
+            list_focus(app),
+            shape,
+            app.scroll,
+            "files\u{1f}page".to_string(),
+        );
+        return;
+    }
+    let mut rows = rows_of(app, pen, &list_items, rows_shape, room(whole, rows_shape));
+    if rows.is_empty() && app.folder.is_some() && list_words.is_empty() {
+        rows.push(Row {
+            h: m.px(44.0),
+            pick: None,
+            k: K::Words("empty".to_string(), Size::Small, true, false),
+        });
+    }
+    list(app, pen, &rows, whole, list_lit, focus, rows_shape, list_scroll, own);
 }
 
 /// The details beside a list that holds the keys: a click on one of their rows takes the keys there, on that row.

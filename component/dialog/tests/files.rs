@@ -306,8 +306,19 @@ fn row(app: &App, name: &str) -> usize {
 
 /// The second pane open beside the first, the bar back in the first.
 fn two_panes(app: &mut App) {
-    app.right();
-    app.left();
+    pane_at(app, Side::Right);
+    pane_at(app, Side::Left);
+}
+
+/// The pane at this side takes the keys, by Ctrl+Tab: the second opens at the right where there is none.
+fn pane_at(app: &mut App, side: Side) {
+    match (app.files.other.is_some(), side) {
+        (false, Side::Left) => {}
+        (false, Side::Right) => app.hint_key(HintKey::Pane),
+        // the other pane stands at the side asked for: it takes the keys
+        (true, _) if app.files.other_side == side => app.hint_key(HintKey::Pane),
+        (true, _) => {}
+    }
 }
 
 fn light_row(app: &mut App, name: &str) {
@@ -501,9 +512,10 @@ fn f9_opens_the_rows_actions_then_the_folders_and_every_door_goes_back_with_the_
             "",
             "new folder",
             "new file",
-            "open in the system file manager"
+            "open in the system file manager",
+            "second pane"
         ],
-        "one order whatever the provider's, a blank row, the folder's; close pane only while two stand"
+        "one order whatever the provider's, a blank row, the folder's; the second pane's row, close pane while two stand"
     );
     let keys: Vec<(String, String)> = app
         .items()
@@ -527,6 +539,7 @@ fn f9_opens_the_rows_actions_then_the_folders_and_every_door_goes_back_with_the_
         ("new folder", "F7"),
         ("new file", ""),
         ("open in the system file manager", ""),
+        ("second pane", "Ctrl+Tab"),
     ];
     assert_eq!(keys, want.map(|(a, b)| (a.to_string(), b.to_string())), "each row's key beside it");
     let check = app
@@ -544,10 +557,9 @@ fn f9_opens_the_rows_actions_then_the_folders_and_every_door_goes_back_with_the_
     app.escape();
     for door in ["esc", "backspace", "f9"] {
         app.hint_key(HintKey::Actions);
-        // the arrows stay put on a page: back in files is Esc, Backspace and the header's
-        app.left();
+        // Right stays put on a page: no level stands under an action
         app.right();
-        assert!(app.files_page_open() && app.files.other.is_none(), "{}: the arrows stayed put", door);
+        assert!(app.files_page_open() && app.files.other.is_none(), "{}: Right stayed put", door);
         match door {
             "esc" => app.escape(),
             "backspace" => app.backspace(),
@@ -601,7 +613,7 @@ fn a_folders_page_the_summary_rows_and_the_checked_sets() {
     app.enter();
     assert!(app.files_page_open());
     assert_eq!(app.subtitle(), "~");
-    assert_eq!(labels(&app), ["new folder", "new file", "open in the system file manager"]);
+    assert_eq!(labels(&app), ["new folder", "new file", "open in the system file manager", "second pane"]);
     app.escape();
     app.hint_key(HintKey::Actions);
     assert_eq!(labels(&app)[0], "new folder");
@@ -639,7 +651,8 @@ fn a_folders_page_the_summary_rows_and_the_checked_sets() {
             "",
             "new folder",
             "new file",
-            "open in the system file manager"
+            "open in the system file manager",
+            "second pane"
         ]
     );
     page_row(&mut app, "deselect all");
@@ -742,7 +755,7 @@ fn two_panes_open_beside_the_first_switch_with_ctrl_tab_and_keep_each_panes_stat
     assert_eq!(hint(&app), BAR);
     // a narrow window refuses
     app.size = (50, 40);
-    app.right();
+    app.hint_key(HintKey::Pane);
     assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("two panes need a window 60 cells wide"));
     assert!(app.files.other.is_none());
 }
@@ -2062,33 +2075,75 @@ fn the_key_bar_is_two_lines_at_60_cells_and_one_at_120_in_one_pane_and_in_two() 
 }
 
 #[test]
-fn right_goes_to_the_right_pane_left_to_the_left_and_the_edges_stay_put() {
+fn right_goes_in_a_level_left_goes_back_one_and_tab_changes_the_pane() {
     let mut app = files_app();
-    // one pane: Left does nothing, Right opens the second pane and goes to it
-    app.left();
-    assert!(app.files.other.is_none() && matches!(app.view, View::Folder(..)), "Left is no back in files");
-    assert!(app.reply.is_none());
+    // Right on a folder opens it, and opens no second pane
+    light_row(&mut app, "documents");
     app.right();
+    assert!(matches!(&app.view, View::Folder(_, u) if u == DOCS), "Right opened the folder: {:?}", app.view);
+    assert!(app.files.other.is_none());
+    // Left goes back a level: the folder it came from, its row lit as it was
+    at(&mut app, DOCS, docs_rows());
+    app.left();
+    assert!(matches!(&app.view, View::Folder(_, u) if u == HOME), "Left went back: {:?}", app.view);
+    app.folder = Some((0, HOME.into(), model::rows(&home_rows().to_string()).unwrap()));
+    assert_eq!(lit(&app).as_deref(), Some("documents"));
+    // Right on a file opens its details, the level under it; Left goes back to the list
+    light_row(&mut app, "notes.md");
+    app.right();
+    assert!(matches!(app.files.page, Page::Actions(_)), "a file's details");
+    assert_eq!(app.subtitle(), "notes.md");
+    app.right();
+    assert!(matches!(app.files.page, Page::Actions(_)), "no level under an action");
+    app.left();
+    assert_eq!(app.files.page, Page::List);
+    assert_eq!(lit(&app).as_deref(), Some("notes.md"));
+    // the folder above is Left's: Right on `..` stays put
+    at(&mut app, DOCS, docs_rows());
+    light_row(&mut app, "..");
+    app.right();
+    assert!(matches!(&app.view, View::Folder(_, u) if u == DOCS) && app.files.page == Page::List);
+    // from the place's first folder Left goes back to where files was opened from
+    let mut app = files_app();
+    app.left();
+    assert_eq!(app.view, View::Home, "Left is back in files as everywhere");
+    // Ctrl+Tab opens the second pane at the right on the same folder, and the bar goes to it
+    let mut app = files_app();
+    app.hint_key(HintKey::Pane);
     assert_eq!(app.files.other_side, Side::Left, "the bar is in the right pane");
     assert!(app.files.other.as_ref().is_some_and(|o| o.uri == HOME), "on the same folder");
     assert_eq!(app.sel, 0, "its first row lit");
-    // the edge: Right stays put
-    let at = (app.view.clone(), app.sel);
-    app.right();
-    assert_eq!((app.view.clone(), app.sel, app.files.other_side), (at.0.clone(), at.1, Side::Left));
-    // Left goes to the left pane, its row lit as it was
-    app.left();
-    assert_eq!(app.files.other_side, Side::Right);
+    // Tab changes the pane, and back: each pane's row lit as it was
+    app.tab(false);
+    assert_eq!(
+        (app.files.other_side, app.chip_focus),
+        (Side::Right, None),
+        "Tab from the right pane: the left one"
+    );
     assert_eq!(lit(&app).as_deref(), Some("notes.md"));
-    // and at the edge Left stays put
-    app.left();
-    assert_eq!(app.files.other_side, Side::Right);
-    assert!(app.reply.is_none());
-    // Right again, Ctrl+Tab both ways
-    app.right();
-    assert_eq!(app.files.other_side, Side::Left);
-    app.hint_key(HintKey::Pane);
-    assert_eq!(app.files.other_side, Side::Right);
+    app.tab(false);
+    assert_eq!((app.files.other_side, app.chip_focus), (Side::Left, None), "Tab again: the right pane");
+    app.tab(true);
+    assert_eq!(
+        (app.files.other_side, app.chip_focus),
+        (Side::Right, None),
+        "Shift+Tab from the right pane: the left one"
+    );
+    // the line's controls are Shift+Tab's from the left pane; Tab walks them, and past the last is the pane again
+    app.tab(true);
+    assert!(app.chip_focus.is_some(), "the line's last control");
+    for _ in 0..8 {
+        if app.chip_focus.is_none() {
+            break;
+        }
+        app.tab(false);
+    }
+    assert_eq!(
+        (app.files.other_side, app.chip_focus),
+        (Side::Right, None),
+        "past the last control: the left pane again"
+    );
+    assert!(app.in_list && app.reply.is_none());
     // with words typed the arrows are the cursor's
     app.typed('n');
     app.typed('o');
@@ -2099,7 +2154,7 @@ fn right_goes_to_the_right_pane_left_to_the_left_and_the_edges_stay_put() {
     app.escape();
     light_row(&mut app, "notes.md");
     // close pane closes the second pane, from either side
-    app.right();
+    pane_at(&mut app, Side::Right);
     app.hint_key(HintKey::Actions);
     page_row(&mut app, "close pane");
     app.enter();
@@ -2107,37 +2162,29 @@ fn right_goes_to_the_right_pane_left_to_the_left_and_the_edges_stay_put() {
     assert_eq!(lit(&app).as_deref(), Some("notes.md"), "the first pane, as it stood");
     // a row under the groups a pane leaves out keeps the bar when the pane closes
     light_row(&mut app, "STICK");
-    app.right();
-    app.left();
+    two_panes(&mut app);
     assert_eq!(lit(&app).as_deref(), Some("STICK"));
     app.files_activate(Action::ClosePane);
     assert_eq!(lit(&app).as_deref(), Some("STICK"), "kept by its id: the recent rows came back above it");
-    // Ctrl+Tab opens the second if there is none
-    app.hint_key(HintKey::Pane);
-    assert!(app.files.other.is_some() && app.files.other_side == Side::Left);
-    app.left();
-    app.hint_key(HintKey::Actions);
-    page_row(&mut app, "close pane");
-    app.enter();
-    assert!(app.files.other.is_none());
-    // a pick holds the arrows
+    // with one pane and nothing beside the list, Tab is the line's controls'
+    app.tab(false);
+    assert!(app.chip_focus.is_some() && app.files.other.is_none());
+    // a pick holds the pane key
     let mut app = files_app();
     app.hint_key(HintKey::Copy);
     assert!(app.picking.is_some());
-    app.right();
+    app.hint_key(HintKey::Pane);
     assert!(app.files.other.is_none(), "a pick is no place for a pane");
-    // below 60 cells one pane: Right says why, Left stays put
+    // below 60 cells one pane: the pane key says why
     let mut app = files_app();
     app.size = (50, 40);
-    app.left();
-    assert!(app.reply.is_none());
-    app.right();
+    app.hint_key(HintKey::Pane);
     assert_eq!(said(&app).as_deref(), Some("two panes need a window 60 cells wide"));
     assert!(app.files.other.is_none());
 }
 
 #[test]
-fn back_in_files_is_esc_backspace_and_the_header_and_left_stays_back_outside() {
+fn back_in_files_is_esc_backspace_left_and_the_header() {
     let mut app = files_app();
     assert!(app.can_go_back());
     app.backspace();
@@ -2526,7 +2573,7 @@ fn the_system_file_manager_stands_in_the_menu_where_the_provider_offers_it() {
     at(&mut app, HOME, folder);
     light_row(&mut app, "this folder \u{b7} 3 folders \u{b7} 3 files \u{b7} 4.5 MB");
     app.hint_key(HintKey::Actions);
-    assert_eq!(labels(&app), ["new file", "new folder", "open in the system file manager"]);
+    assert_eq!(labels(&app), ["new file", "new folder", "open in the system file manager", "second pane"]);
     // a file's reveal: after attach, wherever the provider wrote it, its row running the file's step
     let mut folder = home_rows();
     let step = json!({"name": "files_reveal", "said": "reveal in the system file manager"});
@@ -2548,7 +2595,7 @@ fn the_system_file_manager_stands_in_the_menu_where_the_provider_offers_it() {
     app.hint_key(HintKey::Actions);
     let rows = labels(&app);
     assert!(
-        !rows.iter().any(|l| l.contains("system file manager")) && rows.last().map(String::as_str) == Some("new file"),
+        !rows.iter().any(|l| l.contains("system file manager")) && rows.iter().rev().nth(1).map(String::as_str) == Some("new file"),
         "{:?}",
         rows
     );
@@ -3152,7 +3199,7 @@ fn the_passive_panes_bar_keeps_its_row_by_id() {
     let aside = || {
         let (mut app, rx, _, gone) = started_gone(vec![], vec![]);
         light_row(&mut app, "todo.txt");
-        app.right();
+        pane_at(&mut app, Side::Right);
         light_row(&mut app, "documents");
         app.enter();
         assert!(pump(&mut app, &rx, |a| a.folder.as_ref().is_some_and(|(_, u, _)| u == DOCS)));
@@ -3260,10 +3307,10 @@ fn f2_starts_from_the_rows_words_never_its_file() {
 fn a_batch_lets_go_of_the_sources_selection_when_it_starts_and_of_no_other() {
     let (mut app, rx, calls) = started(vec![], vec![]);
     light_row(&mut app, "report.pdf");
-    app.right();
+    pane_at(&mut app, Side::Right);
     light_row(&mut app, "report.pdf");
     app.typed(' ');
-    app.left();
+    pane_at(&mut app, Side::Left);
     app.typed(' ');
     app.typed(' ');
     assert_eq!(app.files.checks.len(), 2);
@@ -3363,7 +3410,7 @@ fn the_menu_and_the_conflict_draw_in_the_pane_that_is_active() {
     at(&mut app, DOCS, docs_rows());
     app.files.other = Some(pane(PICS, Some(pics_rows(&[]))));
     light_row(&mut app, "notes.md");
-    app.right(); // the pictures, in the right pane
+    pane_at(&mut app, Side::Right); // the pictures, in the right pane
     light_row(&mut app, "holiday.jpg");
     app.hint_key(HintKey::Actions);
     let rows = screen(&app);

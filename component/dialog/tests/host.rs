@@ -2535,7 +2535,8 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
             "select",
             "show the first lines",
             "new folder",
-            "open in the system file manager"
+            "open in the system file manager",
+            "second pane"
         ]
     );
     app.sel = 7;

@@ -136,6 +136,8 @@ pub enum Action {
     CopyPath,
     /// The second pane closes.
     ClosePane,
+    /// The second pane opens beside the first, as its key opens it.
+    OpenPane,
     /// Copy, move or trash: the lit row to the other pane, or the selected set.
     Transfer(Verb),
     /// The conflict page's choice, for this file or for all.
@@ -162,6 +164,14 @@ impl Pane {
     pub fn here(&self) -> Option<String> {
         self.rows.as_ref().and_then(|r| r.here.clone())
     }
+}
+
+/// What a file shows, beside the list with its details (the layout in pixels): the provider's page of it, asked
+/// for once it is lit. None while it is on its way.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Peek {
+    pub uri: String,
+    pub page: Option<crate::preview::Page>,
 }
 
 /// Which side the other pane stands on.
@@ -284,6 +294,11 @@ pub struct State {
     pub folder_reads: Vec<(usize, u64, Landing)>,
     /// A copy or a move of several files waiting for the folder the picker lands in (one pane).
     pub pending: Option<(Verb, Vec<Transfer>)>,
+    /// The details stand beside the list (the layout in pixels): of the lit file, following it.
+    pub pane: bool,
+    /// What the file the details are of shows, and the request for it on its way: the provider, the request.
+    pub peek: Option<Peek>,
+    pub peek_asked: Option<(usize, u64)>,
 }
 
 impl Default for State {
@@ -299,6 +314,9 @@ impl Default for State {
             undo_more: vec![],
             folder_reads: vec![],
             pending: None,
+            pane: false,
+            peek: None,
+            peek_asked: None,
         }
     }
 }

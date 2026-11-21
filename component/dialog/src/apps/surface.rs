@@ -189,25 +189,24 @@ impl App {
         let c = self.chips();
         let at = self.chip_focus.and_then(|f| c.iter().position(|x| *x == f));
         match (details, at, back) {
-            // the details: on to the list, or back to the last control
-            (true, _, false) => self.apps_pane_leave(),
-            (true, _, true) => {
-                self.apps_pane_leave();
-                self.chip_focus = c.last().copied();
-            }
-            // the list: on to the first control, or to the details where there is none; back to the details
-            (false, None, false) if !c.is_empty() => self.chip_focus = Some(c[0]),
+            // the details: the list, either way
+            (true, _, _) => self.apps_pane_leave(),
+            // the list: Tab is the details beside it; Shift+Tab the line's last control, the details where there is none
+            (false, None, true) if !c.is_empty() => self.chip_focus = c.last().copied(),
             (false, None, _) => {
                 self.apps_details();
             }
-            // a control: the next one, and past the last the details; back, the one before, and before the first the list
+            // a control: the next one, and past the last the list; back, the one before, and before the first the list
             (false, Some(i), false) => {
                 self.chip_focus = c.get(i + 1).copied();
                 if self.chip_focus.is_none() {
-                    self.apps_details();
+                    (self.in_list, self.list_keys) = (true, true);
                 }
             }
-            (false, Some(0), true) => self.chip_focus = None,
+            (false, Some(0), true) => {
+                self.chip_focus = None;
+                (self.in_list, self.list_keys) = (true, true);
+            }
             (false, Some(i), true) => self.chip_focus = c.get(i - 1).copied(),
         }
         true

@@ -23,7 +23,7 @@
     new folder                                        F7    
     move to trash                                     F8    
     copy path                                     Ctrl+C    
-    switch pane                                 Ctrl+Tab    
+    open the second pane, or go to the other    Ctrl+Tab    
                                                             
   view                                                      
     zoom in, zoom out, fit                       +  -  0    

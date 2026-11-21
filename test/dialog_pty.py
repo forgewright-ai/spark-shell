@@ -521,9 +521,9 @@ def files(binary, env, home):
         seen.clear()
         os.write(fd, b"\x1b[20~")     # F9: its actions
         # read from the screen, not the bytes: a cell the row before held too is not sent again ("rename" over "hello.txt" keeps its e)
-        assert wait_for(lambda: all(w in shown() for w in ("openinappF4", "renameF2", "copypathCtrl+C", "selectSpace", "newfolderF7", "newfile", "back"))), "the actions did not draw: " + screen.text()[-900:]
-        assert "closepane" not in shown() and "twopanes" not in shown(), "one pane has no pane row: " + screen.text()[-900:]
-        ok(True, "Down lights the file with its keys on the bar; F9 opens the actions, each row with its key at the right, and no pane row in one pane")
+        assert wait_for(lambda: all(w in shown() for w in ("openinappF4", "renameF2", "copypathCtrl+C", "selectSpace", "newfolderF7", "newfile", "secondpaneCtrl+Tab", "back"))), "the actions did not draw: " + screen.text()[-900:]
+        assert "closepane" not in shown(), "one pane has no pane to close: " + screen.text()[-900:]
+        ok(True, "Down lights the file with its keys on the bar; F9 opens the actions, each row with its key at the right, the second pane's among them")
         seen.clear()
         os.write(fd, b"\x1b")          # back to the folder
         assert wait_for(lambda: "hello.txt" in shown() and "thisfolder" in shown() and "renameF2" not in shown()), "Esc did not come back: " + screen.text()[-900:]
@@ -545,9 +545,9 @@ def files(binary, env, home):
         time.sleep(0.3)
         os.write(fd, b"\x1b[B")
         assert wait_for(lambda: "hello.txt" in re.sub(r"\s+", "", "".join(screen.cells[35]))), "the file was not lit again: " + screen.text()[-900:]
-        # the rework of 2026-11-05 (the dialog design notes, Files): a selection, the second pane by Right and the actions'
-        # close pane. The status row is h-5, row 35 of 40; read with no spaces, as the rest. Ctrl+Tab is the kitty
-        # protocol's and a legacy pty cannot send it, so the desktop proof alone presses it
+        # a selection, the second pane by its row of the actions and the actions' close pane. The status row is h-5,
+        # row 35 of 40; read with no spaces, as the rest. Ctrl+Tab is the kitty protocol's and a legacy pty cannot
+        # send it, so the desktop proof alone presses it; Tab changes the pane
         status = lambda: re.sub(r"\s+", "", "".join(screen.cells[35]))
         prompt = lambda: re.sub(r"\s+", "", "".join(screen.cells[2]))
         CONTENT = 4   # the content's first row: the band, air, the prompt's one line, air
@@ -562,23 +562,21 @@ def files(binary, env, home):
             os.write(fd, b"\x1b[A")    # Up: Space moved the bar a row down, so the file's line is a row up
         assert wait_for(lambda: "hello.txt" in status()), "the file's line is not back on the status row: " + screen.text()[-900:]
         ok(True, "Esc clears the selection first: hello.txt's line is back on the status row")
-        os.write(fd, b"\x1b[C")        # Right: the second pane, the same folder, the bar on its first row
-        assert wait_for(lambda: line() and twice("hello.txt") and "".join(screen.cells[CONTENT]).count("~") >= 2 and "docs" in status()), "Right did not open the second pane: " + screen.text()[-900:]
+        os.write(fd, b"\x1b[20~")      # F9, then the second pane's row, typed: the same folder, the bar on its first row
+        assert wait_for(lambda: "secondpaneCtrl+Tab" in shown()), "F9 did not open the actions: " + screen.text()[-900:]
+        os.write(fd, b"second pane")
+        assert wait_for(lambda: "newfolderF7" not in shown()), "typing did not narrow the actions: " + screen.text()[-900:]
+        os.write(fd, b"\r")
+        assert wait_for(lambda: line() and twice("hello.txt") and "".join(screen.cells[CONTENT]).count("~") >= 2 and "docs" in status()), "the row did not open the second pane: " + screen.text()[-900:]
         assert wait_for(lambda: not re.search(r"\b(home|recent)\b", screen.text())), "two panes at home keep a heading: " + screen.text()[-900:]
-        ok(True, "Right opens the second pane: the line between them, each pane's path on its first row, the bar on the second's first row, no home heading and no recent")
-        wait_for(lambda: False, 0.3)
-        drawn = screen.text()
-        os.write(fd, b"\x1b[C")        # Right again: the edge
-        wait_for(lambda: False, 0.4)
-        assert screen.text() == drawn, "Right at the edge moved: " + screen.text()[-900:]
-        os.write(fd, b"\x1b[D")        # Left: the left pane, its bar where it was
-        assert wait_for(lambda: "hello.txt" in status()), "Left did not go to the left pane: " + screen.text()[-900:]
-        wait_for(lambda: False, 0.3)
-        drawn = screen.text()
-        os.write(fd, b"\x1b[D")        # Left again: the edge
-        wait_for(lambda: False, 0.4)
-        assert screen.text() == drawn, "Left at the edge moved: " + screen.text()[-900:]
-        ok(True, "Left and Right move between the panes and stay put at the edge")
+        ok(True, "second pane, typed in the actions, opens it: the line between them, each pane's path on its first row, the bar on the second's first row, no home heading and no recent")
+        os.write(fd, b"\t")            # Tab: the left pane, its bar where it was
+        assert wait_for(lambda: "hello.txt" in status()), "Tab did not go to the left pane: " + screen.text()[-900:]
+        os.write(fd, b"\t")            # Tab again: the right pane
+        assert wait_for(lambda: "docs" in status()), "Tab did not go to the right pane: " + screen.text()[-900:]
+        os.write(fd, b"\x1b[Z")        # Shift+Tab: the left pane again
+        assert wait_for(lambda: "hello.txt" in status()), "Shift+Tab did not come back to the left pane: " + screen.text()[-900:]
+        ok(True, "Tab changes the pane and Shift+Tab comes back, each pane's bar where it was")
         os.write(fd, b"\x1bOQ")        # F2: the form in the prompt, the name as it is, both panes on screen
         assert wait_for(lambda: "hello.txt" in prompt() and "cancelEsc" in shown() and "saveEnter" in shown() and line()), "F2 did not open the form: " + screen.text()[-900:]
         os.write(fd, b"\x1b")
@@ -594,12 +592,12 @@ def files(binary, env, home):
         assert wait_for(lambda: "closepane" in shown()), "F9 did not open the actions: " + screen.text()[-900:]
         os.write(fd, b"\x1b")
         assert wait_for(lambda: "closepane" not in shown() and "hello.txt" in status()), "Esc did not come back to the file: " + screen.text()[-900:]
-        os.write(fd, b"\x1b[C")        # the right pane, on docs, its first row
-        assert wait_for(lambda: "docs" in status()), "Right did not go to the right pane: " + screen.text()[-900:]
-        os.write(fd, b"\r")
-        assert wait_for(lambda: "~/docs" in "".join(screen.cells[CONTENT])), "Enter did not open docs in the right pane: " + screen.text()[-900:]
-        os.write(fd, b"\x1b[D")
-        assert wait_for(lambda: "hello.txt" in status()), "Left did not come back: " + screen.text()[-900:]
+        os.write(fd, b"\t")            # the right pane, on docs, its first row
+        assert wait_for(lambda: "docs" in status()), "Tab did not go to the right pane: " + screen.text()[-900:]
+        os.write(fd, b"\x1b[C")        # Right opens the lit folder, in its pane
+        assert wait_for(lambda: "~/docs" in "".join(screen.cells[CONTENT])), "Right did not open docs in the right pane: " + screen.text()[-900:]
+        os.write(fd, b"\t")
+        assert wait_for(lambda: "hello.txt" in status()), "Tab did not come back: " + screen.text()[-900:]
         os.write(fd, b"\x1b[15~")      # F5: at once, to the other pane's folder
         assert wait_for(lambda: "hello.txtcopiedto~/docs" in status() and "undo" in status()), "F5 did not copy: " + screen.text()[-900:]
         ok(os.path.exists(os.path.join(home, "docs", "hello.txt")) and "\u276fsearch" in prompt() and line(),

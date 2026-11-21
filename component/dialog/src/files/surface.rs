@@ -114,12 +114,28 @@ impl App {
         {
             return false;
         }
-        let Some((_, _, rows)) = self.folder.clone() else {
+        let Some(actions) = self.files_actions_of(row) else {
             self.refuse(NOT_COME);
             return true;
         };
-        let checked: Vec<Row> = if self.files_checks_any() { self.files_checked_rows(&rows) } else { vec![] };
-        let folder = folder_actions(&rows);
+        if !self.files.offers(&actions, &self.cfg.keys) {
+            self.refuse("no actions here");
+            return true;
+        }
+        // the layout in pixels shows them beside the list where the window holds both, with what the file shows
+        if self.pixels && self.pane_fits && !self.two_panes() {
+            self.files.pane = true;
+        }
+        self.files_open(Page::Actions(Box::new(actions)));
+        true
+    }
+
+    /// What an actions page of this row would be of: the selected set while a selection stands, else the row, the
+    /// folder alone on `..`, the summary row and no row. None while the folder's rows have not come.
+    fn files_actions_of(&self, row: Option<Row>) -> Option<Actions> {
+        let (_, _, rows) = self.folder.as_ref()?;
+        let checked: Vec<Row> = if self.files_checks_any() { self.files_checked_rows(rows) } else { vec![] };
+        let folder = folder_actions(rows);
         let row = row.filter(|r| !is_summary(r) && !is_up(r));
         let title = if !checked.is_empty() {
             format!("{} selected", checked.len())
@@ -128,42 +144,187 @@ impl App {
         } else {
             rows.title.clone()
         };
-        let actions = Actions {
+        Some(Actions {
             row: if checked.is_empty() { row } else { None },
             checked,
             folder,
             title,
-        };
-        if !self.files.offers(&actions, &self.cfg.keys) {
-            self.refuse("no actions here");
-            return true;
-        }
-        self.files_open(Page::Actions(Box::new(actions)));
-        true
+        })
     }
 
-    /// Left and Right in a files folder (the dialog design notes): Right goes to the right pane and in one pane opens it,
-    /// Left goes to the left pane; at the edge, on a page, in a pick both stay put. False where the arrow is the
-    /// cursor's: with words typed, while the prompt takes an answer, outside files.
-    pub(crate) fn files_arrow(&mut self, side: Side) -> bool {
-        if self.files_pane_view().is_none() || self.mode != Mode::Normal || !self.input.is_empty() {
-            return false;
+    /// The file or the folder lit in the list, while the list is the folder's own and a row of it is lit.
+    fn files_lit_file(&self) -> Option<Row> {
+        match self.picks().get(self.sel).filter(|_| self.in_list && self.files.page == Page::List) {
+            Some(Item::Folder(i)) => self.folder.as_ref().and_then(|(_, _, r)| r.rows.get(*i)).cloned(),
+            _ => None,
         }
-        if self.files.page != Page::List || self.picking.is_some() || self.attaching.is_some() || self.chip_focus.is_some() {
-            return true;
+    }
+
+    /// The details stand beside the list (the layout in pixels): asked for, one pane, a window that holds both, and
+    /// the list or the details holding the keys, or a form typed over them.
+    pub fn files_details_beside(&self) -> bool {
+        self.pixels
+            && self.pane_fits
+            && self.files.pane
+            && self.files_pane_view().is_some()
+            && !self.two_panes()
+            && self.picking.is_none()
+            && self.attaching.is_none()
+            && !matches!(self.files.page, Page::Conflict(_))
+            && !matches!(self.mode, Mode::Confirm(_))
+    }
+
+    /// What the details beside the list are of: the page's own row or set while the details hold the keys, else
+    /// the row lit in the list, which they follow.
+    pub fn files_about(&self) -> Option<Actions> {
+        match &self.files.page {
+            Page::Actions(a) => Some((**a).clone()),
+            Page::Conflict(_) => None,
+            Page::List => self.files_actions_of(self.files_lit_file()),
+            Page::Form(_) => {
+                let (_, _, rows) = self.folder.as_ref()?;
+                let lit = self.files_lit_id().and_then(|id| rows.rows.iter().find(|r| r.id == id).cloned());
+                self.files_actions_of(lit)
+            }
         }
-        match (self.files.other.is_some(), side) {
-            (false, Side::Left) => {}
-            (false, Side::Right) => self.files_second_pane(),
-            (true, _) if self.col_w() < WIDTH => {
-                if side == Side::Right {
-                    self.refuse("two panes need a window 60 cells wide");
+    }
+
+    /// The lines the details say of what they are of, the list holding the keys: the actions page's own, not open.
+    pub fn files_about_lines(&self, a: &Actions) -> Vec<Line> {
+        self.files.actions_lines(a, 60, &self.cfg.keys)
+    }
+
+    /// Before a frame of the layout in pixels: what the file the details are of shows is asked of its provider, once,
+    /// and one at a time, so a list walked fast asks for the file it rests on.
+    pub fn files_follow(&mut self) {
+        let want = if self.files_details_beside() {
+            self.files_about().and_then(|a| a.row).and_then(|r| r.page)
+        } else {
+            None
+        };
+        let (Some(uri), Some(p)) = (want, self.files()) else {
+            self.files.peek = None;
+            return;
+        };
+        if self.files.peek.as_ref().is_none_or(|pk| pk.uri != uri) {
+            self.files.peek = Some(Peek { uri: uri.clone(), page: None });
+        }
+        if self.files.peek.as_ref().is_some_and(|pk| pk.page.is_none()) && self.files.peek_asked.is_none() {
+            let id = self
+                .server(p)
+                .and_then(|s| s.request("resources/read", json!({"uri": uri}), Kind::Peek, mcp::T_READ));
+            match id {
+                Some(id) => self.files.peek_asked = Some((p, id)),
+                // no provider to ask: nothing is shown
+                None => {
+                    self.files.peek = Some(Peek {
+                        uri,
+                        page: Some(Default::default()),
+                    })
                 }
             }
-            (true, _) if self.files.other_side == side => {
-                self.files_pane();
+        }
+    }
+
+    /// A click on a row of the details while the list holds the keys: the details take them, on that row.
+    pub fn files_pane_row(&mut self, n: usize, now: std::time::Instant) {
+        if self.files.page == Page::List && self.files_actions(self.files_lit_file()) && self.files.page != Page::List {
+            self.clicked(n, now);
+        }
+    }
+
+    /// A click on a row of the list while the file's details hold the keys: the list takes them, on that row.
+    pub fn files_list_row(&mut self, n: usize, now: std::time::Instant) {
+        if matches!(self.files.page, Page::Actions(_)) {
+            self.files_back();
+        }
+        if self.files.page == Page::List {
+            self.clicked(n, now);
+        }
+    }
+
+    /// A folder's name on the location line: that folder, back through the folders you came by where it is one of
+    /// them, else opened from here.
+    pub fn files_go_to(&mut self, uri: &str) {
+        let Some((p, here)) = self.files_pane_view() else { return };
+        // a file's details give the keys back to the list first, and stay open
+        if matches!(self.files.page, Page::Actions(_)) {
+            self.files_back();
+        }
+        if self.mode != Mode::Normal || self.files.page != Page::List || here == uri {
+            return;
+        }
+        let to = View::Folder(p, uri.to_string());
+        // a folder being picked keeps its way back: Esc cancels the pick, it never walks the folders
+        let picking = self.picking.is_some() || self.attaching.is_some();
+        // the details beside the list stay open for the folder come to, as they do through a folder opened
+        let pane = self.files.pane;
+        if !picking && self.came_from.contains(&to) {
+            for _ in 0..64 {
+                if self.view == to || !self.can_go_back() {
+                    break;
+                }
+                self.back_key();
             }
-            (true, _) => {}
+        }
+        if self.view != to {
+            self.go(to);
+        }
+        self.files.pane = pane && self.files_pane_view().is_some();
+    }
+
+    /// Tab in a list of files with something beside it: the other pane, or the file's details, and back. The line's
+    /// controls are Shift+Tab's from the list, each Tab then the next one and the list after the last. False where
+    /// one list stands alone: Tab is the controls' there.
+    pub(crate) fn files_tab(&mut self, back: bool) -> bool {
+        if self.files_pane_view().is_none() || self.mode != Mode::Normal || self.picking.is_some() || self.attaching.is_some() {
+            return false;
+        }
+        let panes = self.panes_drawn() && self.files.page == Page::List;
+        let details = self.files_details_beside() && matches!(self.files.page, Page::List | Page::Actions(_));
+        if !panes && !details {
+            return false;
+        }
+        // the two stops beside each other: the first is the left pane or the list, the second what stands at its right
+        let second = if panes {
+            self.files.other_side == Side::Left
+        } else {
+            self.files.page != Page::List
+        };
+        let c = self.chips();
+        let at = self.chip_focus.and_then(|f| c.iter().position(|x| *x == f));
+        // where the keys go: Ok(false) the first stop, Ok(true) the second, Err(i) a control
+        let to = match (at, second, back) {
+            (None, _, false) => Ok(!second),
+            (None, false, true) => c.len().checked_sub(1).map(Err).unwrap_or(Ok(true)),
+            (None, true, true) => Ok(false),
+            (Some(i), _, false) if i + 1 < c.len() => Err(i + 1),
+            (Some(0), _, true) | (Some(_), _, false) => Ok(second),
+            (Some(i), _, true) => Err(i - 1),
+        };
+        match to {
+            Err(i) => {
+                // a control of the line: the details give the keys back to the list first, and stay open
+                if !panes && self.files.page != Page::List {
+                    self.files_back();
+                }
+                self.chip_focus = Some(c[i]);
+            }
+            Ok(side) => {
+                self.chip_focus = None;
+                if side != second {
+                    if panes {
+                        self.files_pane();
+                    } else if side {
+                        let row = self.files_lit_file();
+                        self.files_actions(row);
+                    } else {
+                        // the list again, the details left open beside it
+                        self.files_back();
+                    }
+                }
+                (self.in_list, self.list_keys) = (true, true);
+            }
         }
         true
     }
@@ -194,7 +355,7 @@ impl App {
             Action::View | Action::CopyPath | Action::Transfer(_) | Action::Check(_) => true,
             Action::Open(uri) => a.row.as_ref().is_some_and(|r| r.children.as_ref() == Some(uri)),
             Action::Step(call) | Action::Ask(call, _) => on_row(call),
-            Action::UncheckAll | Action::ClosePane | Action::Answer(..) => false,
+            Action::UncheckAll | Action::ClosePane | Action::OpenPane | Action::Answer(..) => false,
         };
         if !aimed {
             return true;
@@ -277,6 +438,10 @@ impl App {
             Action::ClosePane => {
                 self.files_to_list();
                 self.files_close_pane();
+            }
+            Action::OpenPane => {
+                self.files_to_list();
+                self.files_pane_key();
             }
             Action::Transfer(verb) => {
                 self.files_to_list();
@@ -417,11 +582,15 @@ impl App {
             View::Preview | View::Conversation => {}
             _ => self.files.clear_checks(),
         }
+        // the details beside the list stay through the folders, and go with the place
+        if !matches!(self.view, View::Folder(..) | View::Preview | View::Conversation) {
+            self.files.pane = false;
+        }
     }
 
     // ---- two panes
 
-    /// Right in one pane, Ctrl+Tab: the second pane opens at the right on the same folder, and the bar goes to it. The
+    /// Ctrl+Tab in one pane: the second pane opens at the right on the same folder, and the bar goes to it. The
     /// first pane drops what is not its folder's own (your home's recent files), its lit row kept by its id, and the
     /// selection on those rows goes with them.
     fn files_second_pane(&mut self) {
@@ -444,6 +613,8 @@ impl App {
             came_from: self.came_from.clone(),
         });
         self.files.other_side = Side::Right;
+        // two panes take the room the details had
+        self.files.pane = false;
         self.files_relight(lit);
         self.files_refresh_other(p);
         self.reply = None;
@@ -733,12 +904,52 @@ impl App {
     pub fn files_hint(&self) -> Option<Vec<(String, bool)>> {
         self.files_pane_view()?;
         let pair = |w: &str, k: &str| vec![(format!("{w} "), false), (k.to_string(), true)];
+        let add = |k: &mut Vec<(String, bool)>, w: &str, key: &str| {
+            k.push(("   ".into(), false));
+            k.extend(pair(w, key));
+        };
+        let beside = self.files_details_beside();
         match &self.files.page {
+            // the layout in pixels: four keys, the rest on the details' rows and in help
+            Page::List if self.pixels => {
+                let back = if beside {
+                    "Close details"
+                } else if self.came_from.is_empty() {
+                    "Close"
+                } else {
+                    "Back"
+                };
+                let mut k = pair(back, "Esc");
+                if self.in_list {
+                    add(&mut k, "Open", "Enter");
+                }
+                add(&mut k, "View", "F3");
+                add(&mut k, "Details", if beside { "Tab" } else { "F9" });
+                if self.panes_drawn() {
+                    add(&mut k, "Pane", "Tab");
+                }
+                Some(k)
+            }
             Page::List => None,
             Page::Form(_) => {
                 let mut k = pair("Cancel", "Esc");
                 k.push(("   ".into(), false));
                 k.extend(pair("Save", "Enter"));
+                Some(k)
+            }
+            // the details beside the list: Enter does the row lit, which says what; Tab is the list's
+            Page::Actions(_) if beside => {
+                let mut k = pair("Back to list", "Esc");
+                let lit = match self.picks().get(self.sel).filter(|_| self.in_list) {
+                    Some(Item::Files(l)) if l.action.is_some() && crate::scrub::cells(&l.label) <= 12 => Some(l.label.clone()),
+                    _ => None,
+                };
+                if let Some(label) = lit {
+                    let mut c = label.chars();
+                    let word: String = c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default();
+                    add(&mut k, &word, "Enter");
+                }
+                add(&mut k, "List", "Tab");
                 Some(k)
             }
             Page::Actions(_) => Some(pair("Back", "Esc")),

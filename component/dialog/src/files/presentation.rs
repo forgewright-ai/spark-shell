@@ -81,6 +81,13 @@ impl State {
         narrowed(self.page_lines(width, keys), query)
     }
 
+    /// The lines of an actions page that is not open: what the details beside the list say of the lit file.
+    pub fn actions_lines(&self, a: &Actions, width: u16, keys: &Bindings) -> Vec<Line> {
+        let mut l = Lines { rows: vec![], width };
+        self.actions(&mut l, a, keys);
+        l.rows
+    }
+
     /// Whether an actions page would hold a row to act on.
     pub fn offers(&self, a: &Actions, keys: &Bindings) -> bool {
         let mut l = Lines { rows: vec![], width: 60 };
@@ -148,8 +155,11 @@ impl State {
             };
             l.row(&word, action, &key);
         }
+        // the second pane has no key on the bar: its row says the key, and closes it again
         if self.other.is_some() {
             l.row("close pane", Action::ClosePane, "");
+        } else {
+            l.row("second pane", Action::OpenPane, &k(HintKey::Pane));
         }
         if start > 0 && l.rows.len() > start {
             l.rows.insert(start, Line::default());

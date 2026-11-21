@@ -1667,6 +1667,21 @@ impl App {
                     }
                 }
             }
+            Kind::Peek => {
+                // what the file lit shows, for its details beside the list: the answer for the file lit now alone
+                self.files.peek_asked = None;
+                let text = result
+                    .as_ref()
+                    .and_then(|r| r.pointer("/contents/0/text"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let of = result.as_ref().and_then(|r| r.pointer("/contents/0/uri")).and_then(Value::as_str).map(scrub);
+                if let Some(pk) = self.files.peek.as_mut().filter(|pk| of.as_deref().is_none_or(|u| u == pk.uri)) {
+                    // a page that did not come says nothing, and is not asked for again
+                    let page = preview::page(&pk.uri, text).filter(|_| text.len() <= mcp::RESOURCE_MAX);
+                    pk.page = Some(page.unwrap_or_default());
+                }
+            }
             Kind::Quiet => {
                 // a play and a stop may both be on their way: each answer finds its own, and both are audited (the review's H)
                 let Some(k) = self.quiet.iter().position(|(q, p, _)| *q == n && *p == idx) else {
@@ -1790,6 +1805,15 @@ impl App {
                         pv.failed = true; // the wait ends with the words (#124)
                     }
                     self.refuse("the view did not come in time: Enter opens the file")
+                }
+                Kind::Peek => {
+                    // the details say nothing of what the file shows, and ask no more
+                    if self.files.peek_asked == Some((idx, id)) {
+                        self.files.peek_asked = None;
+                        if let Some(pk) = self.files.peek.as_mut() {
+                            pk.page = Some(preview::Page::default());
+                        }
+                    }
                 }
                 Kind::Set => self.set_done(idx, id, true, "it did not answer in time", false),
                 Kind::Quiet => {
@@ -1997,7 +2021,7 @@ impl App {
             ("files", "new folder", k(HintKey::New)),
             ("files", "move to trash", k(HintKey::Trash)),
             ("files", "copy path", k(HintKey::CopyPath)),
-            ("files", "switch pane", k(HintKey::Pane)),
+            ("files", "open the second pane, or go to the other", k(HintKey::Pane)),
             (
                 "view",
                 "zoom in, zoom out, fit",
@@ -2491,7 +2515,13 @@ impl App {
     /// A folder's rows as items, filtered by the words: a group under its heading with air above it (and above the
     /// first where a row leads the list), the summary row apart at the end.
     pub fn folder_items(&self, p: usize, rows: &Rows, words: &str, shape: &FolderShape) -> Vec<Item> {
-        let shown = |r: &model::Row| !(shape.own && r.group.as_deref() == Some("recent")) && (words.is_empty() || self.row_matches(p, r, words));
+        // the layout in pixels says a folder's count where you are, on the location line: its summary row goes
+        let counted = self.pixels && self.providers.get(p).is_some_and(|x| x.label == "files");
+        let shown = |r: &model::Row| {
+            !(shape.own && r.group.as_deref() == Some("recent"))
+                && !(counted && crate::files::is_summary(r))
+                && (words.is_empty() || self.row_matches(p, r, words))
+        };
         let mut list = vec![];
         for (i, r) in rows.rows.iter().enumerate() {
             if !shown(r) {
@@ -3702,7 +3732,11 @@ impl App {
     fn actions_key(&mut self) {
         if self.files_pane_view().is_some() {
             return match self.files.page {
-                crate::files::Page::Actions(_) => self.files_back(), // the menu again: it closes
+                crate::files::Page::Actions(_) => {
+                    // the menu again: it closes, and the details beside the list with it
+                    self.files_back();
+                    self.files.pane = false;
+                }
                 crate::files::Page::Conflict(_) => {
                     self.files_page_key(HintKey::Actions);
                 }
@@ -3925,10 +3959,6 @@ impl App {
         if self.step_value(false) {
             return;
         }
-        // in files Left is the left pane; back there is Esc, Backspace and the header's (the dialog design notes)
-        if self.files_arrow(crate::files::Side::Left) {
-            return;
-        }
         // nothing typed, outside the Calendar: Left goes back a level (the dialog design notes)
         if !self.is_calendar() && self.can_go_back() {
             return self.back_key();
@@ -3972,10 +4002,6 @@ impl App {
         if self.step_value(true) {
             return;
         }
-        // in files Right is the right pane, and opens it in one pane
-        if self.files_arrow(crate::files::Side::Right) {
-            return;
-        }
         // nothing typed and a row lit: Right goes in a level where the lit row opens one, as Left goes back one. A
         // row that acts (an app that opens, a step that runs) stays Enter's
         if self.input.is_empty() && self.in_list && !self.is_calendar() && self.mode == Mode::Normal && self.chip_focus.is_none() && self.go_in() {
@@ -4011,6 +4037,18 @@ impl App {
                 .as_ref()
                 .and_then(|r| r.tool.iter().chain(r.more.iter()).nth(*k))
                 .is_some_and(|c| c.children.is_some()),
+            // a list of files: a folder opens, and a file's details are the level under it. The folder above is
+            // Left's, never Right's
+            Item::Folder(_) if self.files_pane_view().is_some() => {
+                let Some(row) = self.row_ref(&it).cloned() else { return false };
+                if crate::files::is_up(&row) {
+                    return false;
+                }
+                if row.children.is_none() {
+                    return self.files_actions(Some(row));
+                }
+                true
+            }
             _ => self
                 .row_ref(&it)
                 .is_some_and(|r| r.children.is_some() && r.step.is_none() && r.switch.is_none()),
@@ -4130,7 +4168,13 @@ impl App {
         self.name_lit = None;
         // a page of files: the actions or a conflict go back, a form is let go (the dialog design notes); the words first
         if self.files_page_open() && self.mode == Mode::Normal && self.chip_focus.is_none() && (self.input.is_empty() || self.files.form()) {
-            return self.files_back();
+            // back at the list from a file's details: the details beside it close with the step, as an app's do
+            let details = matches!(self.files.page, crate::files::Page::Actions(_));
+            self.files_back();
+            if details && self.files.page == crate::files::Page::List {
+                self.files.pane = false;
+            }
+            return;
         }
         // a heading shown alone in the workspace place: Esc shows all first, as apps' filter does (the dialog design notes)
         if self.view == View::Dest(WORKSPACE_DEST)
@@ -4226,6 +4270,9 @@ impl App {
                     self.set_input(String::new());
                     self.in_list = false;
                     self.sel = 0;
+                } else if self.files.pane && self.files_details_beside() {
+                    // a file's details beside the list close first
+                    self.files.pane = false;
                 } else if self.files_checks_clear() {
                     // the checks go first; the next Esc goes back (the dialog design notes)
                 } else if self.zoomed() {
@@ -5035,7 +5082,7 @@ impl App {
 
     /// Tab: the next control; after the last, the prompt again. Shift+Tab goes the other way.
     pub fn tab(&mut self, back: bool) {
-        if self.apps_pane_tab(back) {
+        if self.apps_pane_tab(back) || self.files_tab(back) {
             return;
         }
         let c = self.chips();

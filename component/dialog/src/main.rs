@@ -410,6 +410,9 @@ struct WinPreview {
     source: (u32, u32),
 }
 
+/// What a file shows in its details, made: its file, its box in the screen's pixels, a sound's waveform height.
+type PeekKey = (String, u32, u32, Option<u32>);
+
 /// A transition drawn: its box, which one, its frame.
 type ShownFilm = ((u16, u16, u16, u16), Reel, usize);
 /// A piece beside a list drawn (#132): its box, its folder, the wait or the open, its frame.
@@ -620,8 +623,15 @@ fn act(app: &mut App, target: scene::Target) {
         scene::Target::Home => app.go_home(),
         scene::Target::Back => app.back_key(),
         scene::Target::ListApp(id) => app.apps_show(&id),
-        scene::Target::PaneRow(n) => app.apps_pane_row(n, Instant::now()),
+        scene::Target::PaneRow(n) if app.view == View::Apps => app.apps_pane_row(n, Instant::now()),
+        scene::Target::PaneRow(n) => app.files_pane_row(n, Instant::now()),
         scene::Target::Step(n, up) => app.step_at(n, up),
+        scene::Target::Crumb(uri) => app.files_go_to(&uri),
+        scene::Target::OtherRow(n) => app.pane_clicked(n, Instant::now()),
+        scene::Target::OtherPane => {
+            app.files_pane();
+        }
+        scene::Target::ListRow(n) => app.files_list_row(n, Instant::now()),
     }
 }
 
@@ -850,6 +860,11 @@ fn main() {
     let mut images = None;
     // a sound's spectrogram in the palette's colors, filling its box: made once a sound, a palette and a box
     let mut tinted: Option<Tinted> = None;
+    // what a file shows in its details beside the list (the layout in pixels): its picture's file read once, and
+    // the picture made once for its file, its box and the screen's scale
+    let mut peek_images = None;
+    let mut win_peek: Option<(PeekKey, Arc<Pic>, (u32, u32))> = None;
+    let mut peek_tried = Instant::now();
     // a drag on a picture: where the pointer was
     let mut drag: Option<(u16, u16)> = None;
     let mut drawn = ui::Drawn::default();
@@ -935,6 +950,8 @@ fn main() {
         let was = (app.in_list, app.apps.pane, app.apps.pending.is_some());
         app.rest_light();
         app.apps_follow();
+        // what the file lit shows, for its details beside the list: asked for here, drawn when it comes
+        app.files_follow();
         dirty |= was != (app.in_list, app.apps.pane, app.apps.pending.is_some());
         if dirty {
             // the window's frame set a picture's size the layout reads: drawn once more
@@ -1150,6 +1167,38 @@ fn main() {
                         }
                     }
                     steps.push(Step::Unclip);
+                }
+                // what a file shows in its details: fitted in its box with its shape kept, a sound's picture in the
+                // palette's tones over the whole of it; in the middle of the box, kept inside the list
+                if let Some(sc) = shown.as_ref().filter(|sc| !sc.pictures.is_empty()) {
+                    let (x, y, bw, bh) = sc.icon_clip;
+                    steps.push(Step::Clip { x, y, w: bw, h: bh });
+                    for p in &sc.pictures {
+                        let (pw, ph) = ((p.w * scale as f64) as u32, (p.h * scale as f64) as u32);
+                        let key: PeekKey = (p.file.clone(), pw, ph, p.wave);
+                        if win_peek.as_ref().is_none_or(|(k, ..)| *k != key) {
+                            let made = image(&p.file, &mut peek_images).and_then(|img| match p.wave {
+                                Some(wave) => {
+                                    let ramp = colors.ramp().unwrap_or([[0x1f; 3], [0x7f; 3], [0x55, 0x55, 0xff], [0xaa; 3]]);
+                                    preview::sound(img, wave).map(|s| s.spectrogram.tinted(&ramp).resized(pw.max(8), ph.max(8)))
+                                }
+                                None => sixel::fit(img, pw, ph, &sixel::Viewport::FIT),
+                            });
+                            win_peek = made.map(|img| (key, Arc::new(Pic::of(&img)), (img.w, img.h)));
+                            peek_tried = Instant::now();
+                        }
+                        if let Some((_, pic, (iw, ih))) = &win_peek {
+                            steps.push(Step::Picture {
+                                x: (p.x + (p.w - *iw as f64 / scale as f64) / 2.0).round(),
+                                y: (p.y + (p.h - *ih as f64 / scale as f64) / 2.0).round(),
+                                scale: scale as f64,
+                                pic: pic.clone(),
+                            });
+                        }
+                    }
+                    steps.push(Step::Unclip);
+                } else {
+                    win_peek = None;
                 }
                 w.frame(steps, tones.ground);
                 true
@@ -1460,6 +1509,8 @@ fn main() {
                 }
                 // a picture not drawn yet (its small picture is still being made): tried again now and then
                 dirty |= drawn.preview.is_some() && shown_preview.is_none() && preview_tried.elapsed() >= Duration::from_millis(400);
+                // what a file shows in its details, the same: a sound's picture is drawn aside and comes a moment later
+                dirty |= shown.as_ref().is_some_and(|sc| !sc.pictures.is_empty()) && win_peek.is_none() && peek_tried.elapsed() >= Duration::from_millis(400);
                 // a sound playing: its waveform and its spectrum move
                 dirty |= app.preview.as_ref().is_some_and(|pv| pv.playing.is_some());
                 // a long sound's waveform drawn aside: read the moment it is there (#124)
