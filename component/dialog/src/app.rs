@@ -973,6 +973,11 @@ pub struct App {
     pub wide: bool,
     /// The details beside the list of apps were opened by the window being wide: they close when it is no longer.
     pub pane_wide: bool,
+    /// The window holds two panes of files and the lit file's page beside them (scene::wide3).
+    pub wide3: bool,
+    /// The details beside the list of files were opened by the window's width: they close when it no longer holds
+    /// them.
+    pub files_pane_wide: bool,
     /// The preview shown (View::Preview): the list it came from, the file, its page (#120).
     pub preview: Option<Preview>,
     /// A sound's play or stop on its way: its request and its call, audited when it answers.
@@ -1125,6 +1130,8 @@ impl App {
             pane_fits: false,
             wide: false,
             pane_wide: false,
+            wide3: false,
+            files_pane_wide: false,
             preview: None,
             quiet: vec![],
             setting: None,
@@ -4310,8 +4317,8 @@ impl App {
                     self.set_input(String::new());
                     self.in_list = false;
                     self.sel = 0;
-                } else if self.files.pane && self.files_details_beside() {
-                    // a file's details beside the list close first
+                } else if self.files.pane && !self.files_pane_wide && self.files_details_beside() {
+                    // a file's details beside the list close first (a wide window keeps them: Esc goes back there)
                     self.files.pane = false;
                 } else if self.files_checks_clear() {
                     // the checks go first; the next Esc goes back (the dialog design notes)

@@ -416,7 +416,7 @@ struct WinPreview {
 }
 
 /// What a file shows in its details, made: its file, its box in the screen's pixels, a sound's waveform height.
-type PeekKey = (String, u32, u32, Option<u32>);
+type PeekKey = (String, u32, u32, Option<u32>, bool);
 
 /// A transition drawn: its box, which one, its frame.
 type ShownFilm = ((u16, u16, u16, u16), Reel, usize);
@@ -1005,6 +1005,7 @@ fn main() {
                 } else {
                     app.pane_fits = scene::splits(&m, window_px.0);
                     app.wide = scene::wide(&m, window_px.0);
+                    app.wide3 = scene::wide3(&m, window_px.0);
                     app.size = scene::size(&app, &m, window_px.0, window_px.1);
                     let sc = scene::build(&app, &pal, &m, window_px.0, window_px.1, &scrolls);
                     scrolls = sc.lists.iter().map(|l| l.at.clone()).collect();
@@ -1191,12 +1192,17 @@ fn main() {
                     steps.push(Step::Clip { x, y, w: bw, h: bh });
                     for p in &sc.pictures {
                         let (pw, ph) = ((p.w * scale as f64) as u32, (p.h * scale as f64) as u32);
-                        let key: PeekKey = (p.file.clone(), pw, ph, p.wave);
+                        let key: PeekKey = (p.file.clone(), pw, ph, p.wave, p.corner);
                         if win_peek.as_ref().is_none_or(|(k, ..)| *k != key) {
                             let made = image(&p.file, &mut peek_images).and_then(|img| match p.wave {
                                 Some(wave) => {
                                     let ramp = colors.ramp().unwrap_or([[0x1f; 3], [0x7f; 3], [0x55, 0x55, 0xff], [0xaa; 3]]);
-                                    preview::sound(img, wave).map(|s| s.spectrogram.tinted(&ramp).resized(pw.max(8), ph.max(8)))
+                                    // a page in large type shows a sound's waveform, a strip; the details its spectrogram
+                                    if p.corner {
+                                        (wave > 0 && wave < img.h).then(|| img.rows(0, wave).tinted(&ramp).resized(pw.max(8), ph.max(8)))
+                                    } else {
+                                        preview::sound(img, wave).map(|s| s.spectrogram.tinted(&ramp).resized(pw.max(8), ph.max(8)))
+                                    }
                                 }
                                 None => sixel::fit(img, pw, ph, &sixel::Viewport::FIT),
                             });
@@ -1205,8 +1211,16 @@ fn main() {
                         }
                         if let Some((_, pic, (iw, ih))) = &win_peek {
                             steps.push(Step::Picture {
-                                x: (p.x + (p.w - *iw as f64 / scale as f64) / 2.0).round(),
-                                y: (p.y + (p.h - *ih as f64 / scale as f64) / 2.0).round(),
+                                x: if p.corner {
+                                    p.x
+                                } else {
+                                    (p.x + (p.w - *iw as f64 / scale as f64) / 2.0).round()
+                                },
+                                y: if p.corner {
+                                    p.y
+                                } else {
+                                    (p.y + (p.h - *ih as f64 / scale as f64) / 2.0).round()
+                                },
                                 scale: scale as f64,
                                 pic: pic.clone(),
                             });

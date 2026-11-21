@@ -139,6 +139,8 @@ pub struct PictureAt {
     pub h: f64,
     pub file: String,
     pub wave: Option<u32>,
+    /// It stands at the box's corner, not in its middle: a page in large type. A sound's is then its waveform.
+    pub corner: bool,
 }
 
 /// The grid rows of a place the layout has not drawn yet: where they are laid, how many cells they are, and the
@@ -299,6 +301,16 @@ const WIDE_PAGE: f64 = 780.0;
 /// Whether a window is wide: the lit thing's page stands beside the list without being asked for.
 pub fn wide(m: &Metrics, w: f64) -> bool {
     w >= m.px(WIDE_MIN)
+}
+
+/// Two panes of files keep the lit file's page beside them in a window this wide: three columns, the page the
+/// last, PAGE3 wide.
+const WIDE3_MIN: f64 = 1900.0;
+const PAGE3: f64 = 640.0;
+
+/// Whether a window holds two panes of files and the lit file's page.
+pub fn wide3(m: &Metrics, w: f64) -> bool {
+    w >= m.px(WIDE3_MIN)
 }
 
 /// The size in cells the app is told, so its own counts fit what is drawn: the columns the grid rows have, and a
@@ -1055,6 +1067,9 @@ enum K {
         picture: Option<(String, Option<u32>)>,
         lines: Vec<String>,
         say: String,
+        /// A page in large type (v0.160): no box, the picture at the corner and never larger than its own pixels,
+        /// a sound's waveform as a strip, the lines in the text's own size.
+        large: bool,
     },
 }
 
@@ -1082,6 +1097,8 @@ struct Shape {
     pad: f64,
     /// A heading of the list is set large, as a group of apps is: a list of files.
     heads: bool,
+    /// A row's key stands in the smaller text with no box around it: a page in large type.
+    bare: bool,
 }
 
 /// What an app is, beside or under its name: the entry's own word for its kind, else its comment.
@@ -1701,7 +1718,9 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                 if *tail {
                     e -= pen.text_end(e, base, crate::ui::MORE, Size::Main, t.muted, false) + m.px(8.0);
                 }
-                if !key.is_empty() {
+                if !key.is_empty() && shape.bare {
+                    e -= pen.text_end(e, base, key, Size::Small, t.muted, false) + m.px(8.0);
+                } else if !key.is_empty() {
                     let w = pen.width(key, Size::Small) + m.px(16.0);
                     pen.fill(e - w, base - m.px(15.0), w, m.px(21.0), if on { t.ground } else { t.lit });
                     pen.text(e - w + m.px(8.0), base, key, Size::Small, t.ink, false);
@@ -1831,7 +1850,35 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                     pen.fill(x, nb + m.px(4.0), w, 2.0, t.accent);
                 }
             }
-            K::Shown { picture, lines, say } => {
+            K::Shown {
+                picture,
+                lines,
+                say,
+                large: true,
+            } => {
+                let (bw, bh) = (right - x, (top + h).min(area.bottom) - top);
+                if let Some((file, wave)) = picture {
+                    pen.pictures.push(PictureAt {
+                        x,
+                        y: top,
+                        w: bw,
+                        h: if wave.is_some() { bh.min(m.px(140.0)) } else { bh },
+                        file: file.clone(),
+                        wave: *wave,
+                        corner: true,
+                    });
+                } else if !lines.is_empty() {
+                    let pitch = m.px(26.0);
+                    for (i, l) in lines.iter().take((bh / pitch).floor().max(0.0) as usize).enumerate() {
+                        let l = pen.fit(l, Size::Main, bw);
+                        pen.text(x, top + m.up + i as f64 * pitch, &l, Size::Main, t.ink, false);
+                    }
+                } else if !say.is_empty() {
+                    let say = pen.fit(say, Size::Main, bw);
+                    pen.text(x, top + m.up, &say, Size::Main, t.muted, false);
+                }
+            }
+            K::Shown { picture, lines, say, .. } => {
                 let (bx, by, bw, bh) = (area.left, top + m.px(16.0), right - area.left, h - m.px(16.0));
                 pen.fill(bx, by, bw, bh, t.lit);
                 if let Some((file, wave)) = picture {
@@ -1842,6 +1889,7 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                         h: bh,
                         file: file.clone(),
                         wave: *wave,
+                        corner: false,
                     });
                 } else if !lines.is_empty() {
                     let n = ((bh - m.px(16.0)) / m.sh).floor().max(0.0) as usize;
@@ -1894,6 +1942,7 @@ fn home(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         still: false,
         pad: 24.0,
         heads: false,
+        bare: false,
     };
     let rows = rows_of(app, pen, items, shape, area.right - area.left - pen.m.px(48.0));
     list(
@@ -1928,6 +1977,7 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         still: false,
         pad: 24.0,
         heads: false,
+        bare: false,
     };
     // the details beside the list: the list a narrow column of names, the details the rest
     let beside = app.apps.pane && splits(&m, g.w);
@@ -1966,6 +2016,7 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         still: false,
         pad: 24.0,
         heads: false,
+        bare: false,
     };
     let page = Shape {
         two: false,
@@ -1974,6 +2025,7 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         still: false,
         pad: 12.0,
         heads: false,
+        bare: false,
     };
     let room = |a: Area| a.right - a.left - m.px(36.0);
     // a list by its name: the page, the words that search it, the category shown alone. The list beside the
@@ -2104,28 +2156,33 @@ fn about_file(app: &App, pen: &Pen, a: &files::Actions, body: Vec<Row>, room: f6
                 picture: None,
                 lines: vec![],
                 say: String::new(),
+                large: false,
             };
             let k = match page {
                 Some(pg) if pg.picture.is_some() => K::Shown {
                     picture: pg.picture.clone().map(|f| (f, None)),
                     lines: vec![],
                     say: String::new(),
+                    large: false,
                 },
                 Some(pg) if pg.sound.is_some() => K::Shown {
                     picture: pg.sound.clone().map(|(f, wave)| (f, Some(wave))),
                     lines: vec![],
                     say: String::new(),
+                    large: false,
                 },
                 Some(pg) if !pg.lines.is_empty() => K::Shown {
                     picture: None,
                     lines: pg.lines.clone(),
                     say: String::new(),
+                    large: false,
                 },
                 // a page that came with nothing on it says so; one on its way leaves the box empty
                 Some(pg) => K::Shown {
                     picture: None,
                     lines: vec![],
                     say: pg.say.clone().unwrap_or_else(|| "nothing to show".to_string()),
+                    large: false,
                 },
                 None => none(),
             };
@@ -2240,6 +2297,155 @@ fn retarget(pen: &mut Pen, mark: usize, to: fn(usize) -> Target) {
     }
 }
 
+/// The lit file's page in large type (v0.160), in a wide window: its name as large as its length allows, one line of
+/// what it is, its facts side by side, then what it holds in the form that suits it (a folder's names, a text's
+/// first lines, a picture, a sound's waveform, or the words that say there is nothing to show) with what you do
+/// with it beside that, always in one place; under each other where the page is too narrow for the two. No line
+/// and no box. `area` is the page; the details hold the keys while their own page is open.
+fn file_page(app: &App, pen: &mut Pen, g: &Geo, area: Area, items: &[Item]) {
+    let m = *pen.m;
+    let Some(about) = app.files_about() else { return };
+    let details = matches!(app.files.page, files::Page::Actions(_));
+    let shape = Shape {
+        two: false,
+        one: 36.0,
+        narrow: true,
+        still: !details,
+        pad: 12.0,
+        heads: false,
+        bare: true,
+    };
+    let lines: Vec<Item> = if details {
+        items.to_vec()
+    } else {
+        app.files_about_lines(&about).into_iter().map(Item::Files).collect()
+    };
+    let body = rows_of(app, pen, &lines, shape, area.right - area.left);
+    // the details' own rows, told apart: what it shows, its name, the kind's line, its facts, what you do with it
+    let (mut name, mut what, mut pairs, mut content, mut steps) = (about.title.clone(), vec![], vec![], None, vec![]);
+    let mut acts = false;
+    for r in about_file(app, pen, &about, body, 1e6, 0.0, true) {
+        match r.k {
+            K::Rule => acts = true,
+            _ if acts => steps.push(r),
+            K::Shown { picture, lines, say, .. } => {
+                content = Some(K::Shown {
+                    picture,
+                    lines,
+                    say,
+                    large: true,
+                })
+            }
+            K::Words(title, Size::Main, _, true) => name = title,
+            K::Fact(label, value) if label == "kind" || label.is_empty() => what.push(value),
+            K::Fact(label, value) => pairs.push((label, value)),
+            _ => {}
+        }
+    }
+    let page = about
+        .row
+        .as_ref()
+        .and_then(|r| app.files.peek.as_ref().filter(|pk| Some(&pk.uri) == r.page.as_ref()))
+        .and_then(|pk| pk.page.as_ref());
+    match page {
+        // a sound that says its title is named by it, its file among the facts; who it is by follows
+        Some(pg) if pg.sound.is_some() && pg.bold.contains(&0) && !pg.lines.is_empty() => {
+            pairs.insert(0, ("file".to_string(), std::mem::replace(&mut name, pg.lines[0].clone())));
+            if let Some(by) = pg.lines.get(1).filter(|l| !l.is_empty()) {
+                pairs.push(("by".to_string(), by.clone()));
+            }
+        }
+        // a folder: its name is said once, so its page's own first line goes
+        Some(pg) if about.row.as_ref().is_some_and(|r| r.children.is_some()) && pg.lines.first() == Some(&name) => {
+            if let Some(K::Shown { lines, .. }) = content.as_mut() {
+                lines.remove(0);
+            }
+        }
+        _ => {}
+    }
+    // a set of files selected: their names are what it holds
+    if !about.checked.is_empty() {
+        content = Some(K::Shown {
+            picture: None,
+            lines: about.checked.iter().map(|r| r.text.clone()).collect(),
+            say: String::new(),
+            large: true,
+        });
+    }
+    let fixed = |h: f64, k: K| Row { h: m.px(h), pick: None, k };
+    let mut rows = vec![fixed(
+        193.0,
+        K::Name {
+            icon: None,
+            name,
+            what: what.join(crate::ui::SEP),
+        },
+    )];
+    if !pairs.is_empty() {
+        rows.push(fixed(72.0, K::Facts(pairs)));
+    }
+    rows.push(fixed(30.0, K::Gap(m.px(30.0))));
+    let head: f64 = rows.iter().map(|r| r.h).sum();
+    let key = format!("files\u{1f}about\u{1f}{}", about.title);
+    // what it holds and what you do with it side by side, where the page has the room for the two
+    let beside = area.right - area.left >= m.px(1000.0);
+    if beside {
+        let cut = area.left + m.px(736.0);
+        let still = Shape { still: true, ..shape };
+        // the name has the page's whole width; what the file holds stands under it, at the left
+        let over = Area {
+            bottom: area.top + head,
+            ..area
+        };
+        list(app, pen, &rows, over, None, false, still, 0, format!("{key}\u{1f}head"));
+        if let Some(k) = content {
+            let left = Area {
+                right: cut - m.px(24.0),
+                to: cut,
+                top: area.top + head,
+                ..area
+            };
+            let holds = [Row {
+                h: (area.bottom - area.top - head).max(m.px(160.0)),
+                pick: None,
+                k,
+            }];
+            list(app, pen, &holds, left, None, false, still, 0, format!("{key}\u{1f}holds"));
+        }
+        let right = Area {
+            left: cut,
+            right: (cut + m.px(344.0)).min(area.right),
+            top: area.top + head - m.px(6.0),
+            from: cut,
+            to: g.w,
+            ..area
+        };
+        if details {
+            list(app, pen, &steps, right, lit(app), list_focus(app), shape, app.scroll, key);
+        } else {
+            let off = list(app, pen, &steps, right, None, false, shape, 0, key);
+            pane_targets(pen, &steps, right, off);
+        }
+        return;
+    }
+    let acts_h: f64 = steps.iter().map(|r| r.h).sum();
+    rows.extend(steps);
+    if let Some(k) = content {
+        rows.push(fixed(16.0, K::Gap(m.px(16.0))));
+        rows.push(Row {
+            h: (area.bottom - area.top - head - acts_h - m.px(16.0)).max(m.px(200.0)),
+            pick: None,
+            k,
+        });
+    }
+    if details {
+        list(app, pen, &rows, area, lit(app), list_focus(app), shape, app.scroll, key);
+    } else {
+        let off = list(app, pen, &rows, area, None, false, shape, 0, key);
+        pane_targets(pen, &rows, area, off);
+    }
+}
+
 /// Files: a folder's list, two panes each its own folder, a file's details beside the list where the window
 /// holds both, or a page of files alone.
 fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
@@ -2260,6 +2466,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         still: false,
         pad: 24.0,
         heads: true,
+        bare: false,
     };
     let room = |a: Area, s: Shape| a.right - a.left - m.px(s.pad) - m.px(12.0);
     // a page over the list (the actions, a conflict): the items are its lines, and the list stands as it stood
@@ -2302,7 +2509,10 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         _ => rows_of(app, pen, items, shape, room(a, shape)),
     };
     if let (true, Some(other)) = (panes, app.files.other.as_ref()) {
-        let divide = (g.w / 2.0).round();
+        // P2 (v0.160): a window that holds them keeps the lit file's page beside the two panes, a third column
+        let paged = app.files_details_beside() && wide3(&m, g.w);
+        let end = if paged { g.w - m.px(PAGE3) } else { g.w };
+        let divide = (end / 2.0).round();
         let head = m.px(40.0);
         let left = Area {
             right: divide - m.px(12.0),
@@ -2312,10 +2522,21 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         };
         let right = Area {
             left: divide,
+            right: if paged { end - m.px(12.0) } else { whole.right },
             top: g.top + head,
             from: divide + 1.0,
+            to: end,
             ..whole
         };
+        if paged {
+            let page = Area {
+                left: end + m.px(12.0),
+                from: end,
+                ..whole
+            };
+            file_page(app, pen, g, page, items);
+        }
+        let over = over && !paged;
         let (act, oth) = if active_left { (left, right) } else { (right, left) };
         let title = app.folder.as_ref().map(|(_, _, r)| r.title.clone()).unwrap_or_default();
         // anywhere on the other pane takes the keys there; its rows, drawn after, take their own click
@@ -2330,6 +2551,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
                 still: false,
                 pad: 24.0,
                 heads: false,
+                bare: false,
             };
             let rows = page_rows(pen, shape, act);
             list(
@@ -2368,6 +2590,30 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         retarget(pen, mark, Target::OtherRow);
         return;
     }
+    if app.files_details_beside() && wide(&m, g.w) {
+        // a wide window (v0.160): the list keeps its column, the lit file has the rest, in large type
+        let divide = m.px(WIDE_LIST);
+        let left = Area {
+            right: divide - m.px(24.0),
+            to: divide,
+            ..whole
+        };
+        let narrow = Shape { narrow: true, ..rows_shape };
+        let details = matches!(app.files.page, files::Page::Actions(_));
+        let rows = rows_of(app, pen, &list_items, narrow, room(left, narrow));
+        let mark = pen.hits.len();
+        list(app, pen, &rows, left, list_lit, focus, narrow, list_scroll, own);
+        if details {
+            retarget(pen, mark, Target::ListRow);
+        }
+        let page = Area {
+            left: m.px(WIDE_PAGE),
+            from: m.px(WIDE_PAGE) - m.px(12.0),
+            ..whole
+        };
+        file_page(app, pen, g, page, items);
+        return;
+    }
     if app.files_details_beside() {
         // the details take a third of the window: the list a column of names until the window is wide
         let pane_w = (g.w / 3.0).round().clamp(m.px(280.0), m.px(640.0));
@@ -2400,6 +2646,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             still: !details,
             pad: 12.0,
             heads: false,
+            bare: false,
         };
         let lines: Vec<Item> = if details {
             items.to_vec()
@@ -2425,6 +2672,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             still: false,
             pad: 24.0,
             heads: false,
+            bare: false,
         };
         let rows = page_rows(pen, shape, whole);
         list(

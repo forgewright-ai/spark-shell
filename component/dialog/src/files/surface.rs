@@ -167,7 +167,7 @@ impl App {
             && self.pane_fits
             && self.files.pane
             && self.files_pane_view().is_some()
-            && !self.two_panes()
+            && (!self.two_panes() || self.wide3)
             && self.picking.is_none()
             && self.attaching.is_none()
             && !matches!(self.files.page, Page::Conflict(_))
@@ -197,6 +197,16 @@ impl App {
     /// Before a frame of the layout in pixels: what the file the details are of shows is asked of its provider, once,
     /// and one at a time, so a list walked fast asks for the file it rests on.
     pub fn files_follow(&mut self) {
+        // a wide window shows the lit file beside the list at once (v0.160): its details open by themselves, beside
+        // two panes too where the window holds the three, and close by themselves when it no longer does
+        if self.pixels && self.files_pane_view().is_some() && self.files.page == Page::List && self.picking.is_none() && self.attaching.is_none() {
+            let room = self.pane_fits && if self.two_panes() { self.wide3 } else { self.wide };
+            if room {
+                (self.files.pane, self.files_pane_wide) = (true, true);
+            } else if self.files_pane_wide {
+                (self.files.pane, self.files_pane_wide) = (false, false);
+            }
+        }
         let want = if self.files_details_beside() {
             self.files_about().and_then(|a| a.row).and_then(|r| r.page)
         } else {
@@ -912,7 +922,7 @@ impl App {
         match &self.files.page {
             // the layout in pixels: four keys, the rest on the details' rows and in help
             Page::List if self.pixels => {
-                let back = if beside {
+                let back = if beside && !self.files_pane_wide {
                     "Close details"
                 } else if self.came_from.is_empty() {
                     "Close"
@@ -924,7 +934,8 @@ impl App {
                     add(&mut k, "Open", "Enter");
                 }
                 add(&mut k, "View", "F3");
-                add(&mut k, "Details", if beside { "Tab" } else { "F9" });
+                // beside two panes Tab is the other pane's: the details keep their own key
+                add(&mut k, "Details", if beside && !self.panes_drawn() { "Tab" } else { "F9" });
                 if self.panes_drawn() {
                     add(&mut k, "Pane", "Tab");
                 }

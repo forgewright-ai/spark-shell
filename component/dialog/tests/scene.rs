@@ -674,6 +674,96 @@ fn a_wide_window_keeps_a_files_words_under_its_name() {
     assert_eq!(long.0.chars().count(), 61, "cut to the row's 616 pixels");
 }
 
+/// v0.160: a wide window shows the lit file beside the list at once, in large type: its name, one line of what it
+/// is, its facts side by side, what it holds at the corner under them and what you do with it beside that, the
+/// keys in small type with no box. Two panes keep the page as a third column where the window holds the three.
+#[test]
+fn a_wide_window_shows_the_lit_file_in_large_type_beside_the_list() {
+    let mut a = files();
+    (a.wide, a.pane_fits) = (true, true);
+    (a.in_list, a.sel, a.list_keys) = (true, 3, true); // diagram.png
+    a.files_follow();
+    assert!(a.files.pane && a.files_pane_wide, "the details open by themselves");
+    a.files.peek = Some(Peek {
+        uri: "spark-shell://files/preview/diagram.png".into(),
+        page: Some(spark_dialog::preview::Page {
+            picture: Some("/run/pages/diagram.png".into()),
+            facts: vec!["1 KB".into(), "today".into(), "640 \u{d7} 400".into()],
+            ..Default::default()
+        }),
+    });
+    let s = scene(&mut a, 1920.0, 1080.0);
+    // the list keeps its column: the lit row's bar ends where it does, and no line stands between the two
+    assert!(fills(&s, LIT).contains(&(0.0, 333.0, 696.0, 52.0)), "{:?}", fills(&s, LIT));
+    assert!(!fills(&s, LIT).iter().any(|f| f.2 == 1.0 && f.3 > 100.0), "no line: {:?}", fills(&s, LIT));
+    // the name at 72 pixels at the page's edge, what it is at 22 under it
+    let big: Vec<_> = words(&s).into_iter().filter(|w| w.3 == Size::Title).collect();
+    assert_eq!(big.len(), 1, "{big:?}");
+    assert_eq!((big[0].0.as_str(), big[0].1, big[0].2), ("diagram.png", 792.0, 97.0 + 115.0 - M.big[2].1));
+    let lead: Vec<_> = words(&s).into_iter().filter(|w| w.3 == Size::Lead).collect();
+    assert_eq!((lead[0].0.as_str(), lead[0].1), ("picture \u{b7} 640 \u{d7} 400", 792.0), "{lead:?}");
+    // its facts side by side, the word small over its value
+    let size = words(&s).into_iter().find(|w| w.0 == "size").expect("the size's word");
+    let value = words(&s).into_iter().find(|w| w.0 == "1 KB" && w.3 == Size::Main).expect("its value");
+    assert_eq!((size.1, size.3, value.1), (792.0, Size::Small, 792.0));
+    assert!(words(&s).iter().any(|w| w.0 == "changed" && w.2 == size.2 && w.1 > 792.0), "side by side");
+    // the picture at the corner under them, never in the middle of a box, and no box behind it
+    assert_eq!(s.pictures.len(), 1);
+    let p = &s.pictures[0];
+    assert!(p.corner && (p.x, p.y) == (792.0, 97.0 + 295.0), "{p:?}");
+    assert!(!fills(&s, LIT).iter().any(|f| f.0 >= 780.0 && f.3 > 60.0), "no box: {:?}", fills(&s, LIT));
+    // what you do with it stands beside that, in one place whatever the file; a key is small type, no box
+    let open = words(&s).into_iter().find(|w| w.0 == "open" && w.3 == Size::Main).expect("open");
+    assert_eq!(open.1, 780.0 + 736.0 + 12.0);
+    assert!(!fills(&s, LIT).iter().any(|f| f.3 == 21.0 && f.0 > 1500.0), "no box around a key");
+    assert!(
+        words(&s).iter().any(|w| w.0 == "F3" && w.3 == Size::Small && w.1 > 1700.0),
+        "the key in small type"
+    );
+    // a name too long for 72 pixels steps down and has the page's whole width
+    (a.in_list, a.sel) = (true, 2);
+    a.files_follow();
+    let s = scene(&mut a, 1920.0, 1080.0);
+    let long = words(&s).into_iter().find(|w| w.3 == Size::Title3).expect("the long name at 32 pixels");
+    assert!(
+        long.0.starts_with("a-very-long") && long.0.ends_with("2026.txt") && long.0.chars().count() > 50,
+        "{}",
+        long.0
+    );
+    // two panes: the page is a third column, 640 pixels, where the window holds the three
+    a.files.other = Some(Pane {
+        uri: folder_uri("/data/me/documents"),
+        rows: spark_dialog::model::rows(&documents().to_string()),
+        came_from: vec![View::Home],
+        ..Pane::default()
+    });
+    a.files.other_side = Side::Right;
+    a.files_follow();
+    assert!(!a.files.pane, "two panes in a window that does not hold the three: no page");
+    a.wide3 = true;
+    a.files_follow();
+    assert!(a.files.pane && a.files_details_beside());
+    let s = scene(&mut a, 1920.0, 1080.0);
+    assert!(
+        fills(&s, LIT).iter().any(|f| f.0 == 0.0 && f.2 == 640.0 && f.3 == 52.0),
+        "the lit row in a pane of 640: {:?}",
+        fills(&s, LIT)
+    );
+    assert!(
+        words(&s).iter().any(|w| w.3 == Size::Title3 && w.1 == 1280.0 + 24.0),
+        "the page after the two panes"
+    );
+    assert!(
+        words(&s).iter().any(|w| w.0 == "~/documents" && w.1 == 640.0 + 24.0),
+        "the other pane in the middle"
+    );
+    // Esc goes back, never closes the page: it is part of the list in a wide window
+    a.files.other = None;
+    a.files_follow();
+    a.escape();
+    assert_eq!(a.view, View::Home);
+}
+
 #[test]
 fn two_panes_of_files_stand_side_by_side_each_under_its_folder() {
     let mut a = files();
@@ -758,6 +848,7 @@ fn a_files_details_stand_beside_the_list_follow_the_lit_file_and_tab_goes_betwee
         h: 175.0,
         file: "/run/pages/diagram.png".into(),
         wave: None,
+        corner: false,
     };
     assert_eq!(s.pictures, [shown]);
     assert!(fills(&s, LIT).contains(&(296.0, 113.0, 280.0, 175.0)), "the box's ground");
