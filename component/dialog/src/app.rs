@@ -3972,14 +3972,53 @@ impl App {
         if self.step_value(true) {
             return;
         }
-        // in files Right is the right pane, and opens it in one pane; elsewhere it opens nothing: F9 does
+        // in files Right is the right pane, and opens it in one pane
         if self.files_arrow(crate::files::Side::Right) {
+            return;
+        }
+        // nothing typed and a row lit: Right goes in a level where the lit row opens one, as Left goes back one. A
+        // row that acts (an app that opens, a step that runs) stays Enter's
+        if self.input.is_empty() && self.in_list && !self.is_calendar() && self.mode == Mode::Normal && self.chip_focus.is_none() && self.go_in() {
             return;
         }
         if self.input.is_empty() && (!self.in_list || self.is_calendar()) {
             return self.month(1);
         }
         self.cursor = (self.cursor + 1).min(self.input.chars().count());
+    }
+
+    /// Right on the lit row: in a level, where the row opens one: a place of home, a setting's section, the rest
+    /// of a kind found, a list or a page a row opens, an app's details. False for a row that acts: Right never
+    /// opens an app and never runs a step.
+    fn go_in(&mut self) -> bool {
+        use crate::apps::{Action, Page};
+        let Some(it) = self.picks().get(self.sel).cloned() else {
+            return false;
+        };
+        let opens = match &it {
+            Item::Dest(_) | Item::Setting(_) | Item::More(..) | Item::OpenModels => true,
+            Item::Apps(l) => match &l.action {
+                // an app in a list of apps: its details are the level under it
+                Some(Action::Launch(_)) if self.view == View::Apps && matches!(self.apps.page, Page::List | Page::Hidden) => {
+                    return self.apps_details();
+                }
+                Some(Action::Launch(_)) | None => false,
+                // a row with an arrow opens a page
+                Some(_) => !l.tail.is_empty(),
+            },
+            Item::StepOf(k) => self
+                .steps_row
+                .as_ref()
+                .and_then(|r| r.tool.iter().chain(r.more.iter()).nth(*k))
+                .is_some_and(|c| c.children.is_some()),
+            _ => self
+                .row_ref(&it)
+                .is_some_and(|r| r.children.is_some() && r.step.is_none() && r.switch.is_none()),
+        };
+        if opens {
+            self.enter();
+        }
+        opens
     }
 
     /// Home and End: in a list, its first and its last row (a folder of a thousand, #123); else the

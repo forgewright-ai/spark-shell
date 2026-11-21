@@ -1188,7 +1188,8 @@ fn main() {
                     (Some(sc), Some(w)) => pointer_in(&app, sc, &drawn, at_px, grid_cell(grid_at, at_px, w.cell), false),
                     _ => pointer_at(&app, &drawn, c, r, false),
                 };
-                if want != pointer && drag.is_none() {
+                // not while a picture is moved or a list dragged: the holding hand stays for the whole of the drag
+                if want != pointer && drag.is_none() && !press.as_ref().is_some_and(|p| p.moved) {
                     pointer = want;
                     point(&window, &mut out, want);
                 }
@@ -1575,7 +1576,8 @@ fn main() {
                 // a drag of nothing draws nothing: the window says the pointer a pixel at a time
                 dirty |= frame_for_mouse(m.kind, drag.is_some()) && !(drag.is_none() && matches!(m.kind, MouseEventKind::Drag(_)));
                 // the pointer says what a click does where it is (#129)
-                let dragging = drag.is_some() && matches!(m.kind, MouseEventKind::Drag(_));
+                // a picture being moved, or a list being dragged: the holding hand
+                let dragging = (drag.is_some() && matches!(m.kind, MouseEventKind::Drag(_))) || press.as_ref().is_some_and(|p| p.moved);
                 mouse_at = Some((m.column, m.row));
                 // in a frame of the layout in pixels the grid's cell is the one of the place's rows under the pointer,
                 // and no cell at all outside them
@@ -1665,6 +1667,11 @@ fn main() {
                             let dy = at_px.1 - p.y0;
                             if p.moved || dy.abs() > DRAG_SLOP {
                                 p.moved = true;
+                                // the holding hand from the drag's first pixel
+                                if pointer != "grabbing" {
+                                    pointer = "grabbing";
+                                    point(&window, &mut out, pointer);
+                                }
                                 let off = (p.off0 - dy).clamp(0.0, p.most);
                                 if let Some(sc) = scrolls.iter_mut().find(|sc| sc.key == p.key).filter(|sc| sc.off != off) {
                                     sc.off = off;
@@ -1792,6 +1799,14 @@ mod tests {
         assert_eq!(at(576.0, 110.0), None, "the frame's right edge is outside");
         assert_eq!(at(100.0, 724.0), None, "under the body");
         assert_eq!(grid_cell(None, (100.0, 200.0), cell), None, "a body in pixels has no cells");
+    }
+
+    #[test]
+    fn a_drag_shows_the_holding_hand_whatever_is_under_the_pointer() {
+        let app = App::new(Config::default(), &[]);
+        let (sc, drawn) = (scene::Scene::default(), ui::Drawn::default());
+        assert_eq!(pointer_in(&app, &sc, &drawn, (10.0, 10.0), None, true), "grabbing");
+        assert_eq!(pointer_in(&app, &sc, &drawn, (10.0, 10.0), None, false), "default");
     }
 
     #[test]

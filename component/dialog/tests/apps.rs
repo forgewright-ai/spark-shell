@@ -1120,13 +1120,21 @@ fn f9_on_an_app_found_from_home_opens_its_details_and_esc_brings_the_words_back(
 }
 
 #[test]
-fn right_opens_no_details_and_f9_does() {
+fn right_goes_in_to_an_apps_details_as_f9_does_and_left_goes_back() {
+    // the owner, 2026-11-20: Right goes in one level, Left goes back one. An app's details are the level under it:
+    // Right shows them and opens no app
     let mut a = app();
     pick(&mut a, Action::Launch(ID.into()));
     a.right();
-    assert_eq!(a.apps.page, Page::List, "Right opens nothing outside files");
+    assert_eq!(a.apps.page, Page::Details(ID.into()), "Right goes in to the details");
+    assert!(a.apps.pending.as_ref().is_some_and(|(_, op)| op == "details"), "and opens no app");
+    a.apps.pending = None;
+    a.left();
+    assert_eq!(a.apps.page, Page::List, "Left goes back");
+    pick(&mut a, Action::Launch(ID.into()));
     a.hint_key(HintKey::Actions);
-    assert_eq!(a.apps.page, Page::Details(ID.into()), "F9 is the details");
+    assert_eq!(a.apps.page, Page::Details(ID.into()), "F9 is the details too");
+    a.apps.pending = None;
     a.left();
     assert_eq!(a.apps.page, Page::List, "Left stays back outside files");
     pick(&mut a, Action::Categories);

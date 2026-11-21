@@ -310,6 +310,44 @@ fn a_list_keeps_its_place_a_drag_moves_it_and_the_lit_row_comes_into_view_when_i
 }
 
 #[test]
+fn right_goes_in_a_level_and_left_goes_back_one() {
+    // home's row lit at the empty line: Right opens the place, Left comes back
+    let mut a = home();
+    a.right();
+    assert_eq!(a.view, View::Apps, "Right on a place opens it");
+    a.left();
+    assert_eq!(a.view, View::Home, "Left goes back a level");
+    // an app lit in the list: Right shows its details, never opens the app; Left is the list again
+    let mut a = apps();
+    a.down();
+    a.down();
+    a.right();
+    assert_eq!(a.apps.page, Page::Details("foot.desktop".into()), "the details are the level under an app");
+    let (serial, op) = a.apps.pending.clone().expect("its facts are asked for");
+    assert_eq!(op, "details", "the app is not opened");
+    a.apps
+        .receive(
+            serial,
+            json!({"id": "foot.desktop", "version": "1.28.0_1", "installed": "XBPS / System", "source": "XBPS", "fields": []}),
+        )
+        .unwrap();
+    // on the details, open acts: Right leaves it alone; a row with an arrow opens its page
+    a.right();
+    assert_eq!(a.apps.page, Page::Details("foot.desktop".into()), "Right on a row that acts does nothing");
+    a.down();
+    a.right();
+    assert_eq!(a.apps.page, Page::Technical("foot.desktop".into()), "technical details has an arrow: a level");
+    a.left();
+    a.left();
+    assert!(a.apps.page == Page::List && !a.apps.pane, "two levels back: the list");
+    // words typed: the arrows are the line's
+    a.set_draft("fo");
+    a.right();
+    assert!(a.apps.page == Page::List && a.view == View::Apps);
+    let _ = std::fs::remove_dir_all(a.apps.path.parent().unwrap());
+}
+
+#[test]
 fn the_app_spacing_setting_sets_an_apps_row() {
     use spark_dialog::preferences::Spacing;
     let mut a = apps();
