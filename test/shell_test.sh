@@ -5555,10 +5555,10 @@ STUB
     sh "$SH" panel --list | grep -q "^  undo       transparency 50%	undo all$" && ok "undo: the transparency step's inverse names the percent it was" || bad "transparency undo" "$(sh "$SH" panel --list | grep undo)"
     # the bar: hide and show from the panel, remembered in the config and the render
     rm -f "$journal/undo"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar off 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = "bar hidden $SEP Super+space opens the dialog" ] && grep -q '^DESKTOP_BAR=no$' "$HOME/.config/spark-shell/config" && grep -q '^    mode invisible$' "$sway" && [ "$(sh "$SH" panel bar --list | sed -n 2,4p)" = "$(printf '  bar        at the top of the screen\tbar top\n  bar        at the bottom of the screen\tbar bottom\n%s bar        hidden\tbar show' "$TICK")" ] && sh "$SH" panel --list | grep -q "^  undo       bar shown	undo all$" \
+    [ "$st" -eq 0 ] && [ "$out" = "bar hidden $SEP Super+space opens the dialog" ] && grep -q '^DESKTOP_BAR=no$' "$HOME/.config/spark-shell/config" && grep -q '^    mode invisible$' "$sway" && [ "$(sh "$SH" panel bar --list | sed -n 2,4p)" = "$(printf '  bar        top\tbar top\n  bar        bottom\tbar bottom\n%s bar        hidden\tbar show' "$TICK")" ] && sh "$SH" panel --list | grep -q "^  undo       bar shown	undo all$" \
         && ok "panel bar off (the hidden row): DESKTOP_BAR=no, the bar invisible in the render, hidden the place checked, the undo says shown" || bad "bar off" "st=$st $out $(grep -n 'mode ' "$sway"; sh "$SH" panel bar --list)"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar on 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = 'bar shown' ] && grep -q '^DESKTOP_BAR=yes$' "$HOME/.config/spark-shell/config" && grep -q '^    mode dock$' "$sway" && [ "$(sh "$SH" panel bar --list | sed -n 2p)" = "$TICK bar        at the top of the screen	bar show" ] && [ "$(sh "$SH" panel bar --list | sed -n 4p)" = "  bar        hidden	bar off" ] \
+    [ "$st" -eq 0 ] && [ "$out" = 'bar shown' ] && grep -q '^DESKTOP_BAR=yes$' "$HOME/.config/spark-shell/config" && grep -q '^    mode dock$' "$sway" && [ "$(sh "$SH" panel bar --list | sed -n 2p)" = "$TICK bar        top	bar show" ] && [ "$(sh "$SH" panel bar --list | sed -n 4p)" = "  bar        hidden	bar off" ] \
         && ok "panel bar on: back where it was, the top checked and hidden a step again" || bad "bar on" "st=$st $out $(sh "$SH" panel bar --list)"
     # the bar's place (top or bottom), its text size and the tray, from the panel
     rm -f "$journal/undo"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar bottom 2>&1) || st=$?
@@ -8352,7 +8352,7 @@ if [ "$(uname -s)" != Darwin ]; then
     # the bar's own section: where it sits, a check on the place it has; its text size a value left and right change,
     # auto standing where its size is; the tray a switch, off
     mcp bar "$(rq 1 resources/read '{"uri":"spark-shell://bar/rows"}')"; ans 1 | jq -r '.result.contents[0].text' > "$H/brows.json"
-    jq -e '(.rows[0] | .id == "bar:show:at the top of the screen" and .sign == "check" and .group == "place")
+    jq -e '(.rows[0] | .id == "bar:show:top" and .text == "top" and .sign == "check" and .group == "place")
         and (.rows[1] | .tool == {name: "bar_bottom", arguments: {}} and .group == "place") and (.rows[2] | .text == "hidden" and .tool == {name: "bar_off", arguments: {}})
         and (.rows[] | select(.id == "bar:show:Text size") | (.step.values | length) == 36 and .step.values[.step.at].sent == "auto" and (.step.values[.step.at].shown | test("^auto [0-9]+$"))
             and .step.values[.step.at - 1].sent == ((.step.values[.step.at].shown | ltrimstr("auto ") | tonumber) - 1 | tostring) and .step.set == {name: "bar_text", arguments: {}} and .step.key == "size")
