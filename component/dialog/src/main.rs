@@ -16,7 +16,7 @@ use spark_dialog::grid::{Buffer, Color, Modifier, Rect};
 use spark_dialog::mcp::{Incoming, Server};
 use spark_dialog::palette::{slots_here, Palette};
 use spark_dialog::sixel::Image;
-use spark_dialog::{preview, sixel, ui};
+use spark_dialog::{preview, scene, sixel, ui};
 use std::io::Write;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -39,6 +39,9 @@ enum Ev {
     Gone,
     /// The dialog's own window has its frames with the compositor: it is mapped, and can be shown.
     Drawn,
+    /// The dialog's own window says its size in pixels, and where the pointer is, before the event it belongs to.
+    Px(u32, u32),
+    At(f64, f64),
     Mcp(Incoming),
     Tick,
     Helper(Helper, Result<String, String>),
@@ -151,6 +154,8 @@ fn open_window(font: &str, title: &str, tx: mpsc::Sender<Ev>) -> Result<Window, 
     open(setup, move |o| {
         let _ = tx.send(match o {
             Out::Event(e) => Ev::Term(e),
+            Out::Pixels(w, h) => Ev::Px(w, h),
+            Out::At(x, y) => Ev::At(x, y),
             Out::Drawn => Ev::Drawn,
             Out::Gone => Ev::Gone,
         });
@@ -161,7 +166,10 @@ fn open_window(font: &str, title: &str, tx: mpsc::Sender<Ev>) -> Result<Window, 
 #[cfg(not(target_os = "linux"))]
 struct Window {
     cell: spark_dialog::draw::Cell,
+    small: spark_dialog::draw::Cell,
+    ascent: (f64, f64),
     size: (u16, u16),
+    px: (u32, u32),
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -566,6 +574,71 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
     }
 }
 
+/// The text's measures the layout in pixels places by: the window's font says them.
+fn metrics(w: &Window) -> scene::Metrics {
+    scene::Metrics {
+        cw: w.cell.w,
+        ch: w.cell.h,
+        up: w.ascent.0,
+        sw: w.small.w,
+        sh: w.small.h,
+        sup: w.ascent.1,
+    }
+}
+
+/// The cell of the grid's rows the pointer is over, where a frame of the layout in pixels holds a place's grid
+/// rows: the rows' own columns and rows, as the grid counted them.
+fn grid_cell(at: Option<(scene::GridBody, u16)>, (x, y): (f64, f64), cell: spark_dialog::draw::Cell) -> Option<(u16, u16)> {
+    let (g, first) = at?;
+    let inside = x >= g.clip.0.max(g.x) && x < g.clip.0 + g.clip.2 && y >= g.clip.1.max(g.y) && y < g.clip.1 + g.clip.3;
+    inside.then(|| (((x - g.x) / cell.w) as u16, ((y - g.y) / cell.h) as u16 + first))
+}
+
+/// A press on a list of the layout in pixels, not let go yet: the list, where the press began and how far the list
+/// was scrolled then, what a click there does, and whether the pointer has since moved far enough to be a drag.
+struct Press {
+    key: String,
+    y0: f64,
+    off0: f64,
+    most: f64,
+    target: Option<scene::Target>,
+    moved: bool,
+}
+
+/// How far a press may move and still be a click, in pixels: a finger is never still.
+const DRAG_SLOP: f64 = 8.0;
+
+/// What a click on a place of the layout in pixels does.
+fn act(app: &mut App, target: scene::Target) {
+    match target {
+        scene::Target::Pick(n) => app.clicked(n, Instant::now()),
+        scene::Target::Key(key) => app.hint_key(key),
+        scene::Target::Chip(c) => app.chip(c),
+        scene::Target::Prompt => app.focus_prompt(),
+        scene::Target::Undo => app.undo_now(),
+        scene::Target::Head(label) => app.apps_heading(&label),
+        scene::Target::Home => app.go_home(),
+        scene::Target::Back => app.back_key(),
+        scene::Target::ListApp(id) => app.apps_show(&id),
+        scene::Target::PaneRow(n) => app.apps_pane_row(n, Instant::now()),
+        scene::Target::Step(n, up) => app.step_at(n, up),
+    }
+}
+
+/// The pointer's shape over a frame of the layout in pixels: the text's on the line, a hand where a click acts,
+/// and over a place's grid rows what the grid says of the cell.
+fn pointer_in(app: &App, sc: &scene::Scene, drawn: &ui::Drawn, at: (f64, f64), cell: Option<(u16, u16)>, dragging: bool) -> &'static str {
+    if dragging {
+        return "grabbing";
+    }
+    match (sc.hit(at.0, at.1), cell) {
+        (Some(scene::Target::Prompt), _) => "text",
+        (Some(_), _) => "pointer",
+        (None, Some((c, r))) => pointer_at(app, drawn, c, r, false),
+        (None, None) => "default",
+    }
+}
+
 /// Force a full repaint without querying the cursor. Terminal::clear asks the
 /// input reader for a cursor report; with event::read on another thread that
 /// can block resize until the next key. A fullscreen resize only writes output.
@@ -650,6 +723,17 @@ fn main() {
     });
     // the window's size in cells: the one asked for until the window says another
     let mut window_size = window.as_ref().map_or((0, 0), |w| w.size);
+    // and in pixels, where the pointer is in them, the frame of the layout in pixels last drawn, and where a
+    // place's grid rows stand in it with the first of them
+    let mut window_px = window.as_ref().map_or((0.0, 0.0), |w| (w.px.0 as f64, w.px.1 as f64));
+    let mut at_px = (-1.0, -1.0);
+    let mut shown: Option<scene::Scene> = None;
+    let mut grid_at: Option<(scene::GridBody, u16)> = None;
+    // how the lists of the last frame were scrolled: a list keeps its place by it, and a drag moves it there; and
+    // a press on a list that is not let go yet
+    let mut scrolls: Vec<scene::Scrolled> = vec![];
+    let mut press: Option<Press> = None;
+    app.pixels = window.is_some();
     let mut kitty = false;
     if window.is_none() {
         let _ = terminal::enable_raw_mode();
@@ -806,9 +890,14 @@ fn main() {
             let prefs = spark_dialog::preferences::read();
             // icons before the apps' names (#230): DIALOG_ICONS on, in a terminal that draws sixel, drawn at the cell's
             // size; turned on, or the cell's size changed, the catalog is read again for icons drawn at it
-            let px = cell_size(&window)
-                .map(|(cw, chh)| chh.min(cw * spark_dialog::page::ICON_CELLS as u32))
-                .unwrap_or(0);
+            // a window of the dialog's own draws them larger, and the one of an app's details larger still: asked for
+            // at that size, in the screen's pixels, and drawn smaller in a row
+            let px = match &window {
+                Some(w) => ((metrics(w).px(48.0) * w.scale() as f64) as u32).min(256),
+                None => cell_size(&window)
+                    .map(|(cw, chh)| chh.min(cw * spark_dialog::page::ICON_CELLS as u32))
+                    .unwrap_or(0),
+            };
             let icons = !prefs.icons_off && pictures && px >= 8;
             if prefs.spacing != app.apps.spacing {
                 app.apps.spacing = prefs.spacing;
@@ -842,6 +931,11 @@ fn main() {
             app.follow_motion(Instant::now(), f.open.length(), f.close.length());
             dirty |= app.motion.is_some() || shown_film.is_some();
         }
+        // the layout in pixels: home's row lit at the empty line, an app's details beside the list
+        let was = (app.in_list, app.apps.pane, app.apps.pending.is_some());
+        app.rest_light();
+        app.apps_follow();
+        dirty |= was != (app.in_list, app.apps.pane, app.apps.pending.is_some());
         if dirty {
             // the window's frame set a picture's size the layout reads: drawn once more
             let mut window_again = false;
@@ -852,27 +946,78 @@ fn main() {
                 }
             }
             let frame_drawn = if let Some(w) = &window {
-                // the grid drawn as steps and handed to the window, the text cursor with it
-                app.size = window_size;
-                let mut b = Buffer::empty(Rect::new(0, 0, window_size.0, window_size.1));
-                drawn = ui::draw(&app, &pal, &last_clock, &mut b);
                 let tones = spark_dialog::draw::tones(&pal);
-                let mut steps = spark_dialog::draw::steps(&b, w.cell, &tones);
-                // the opening alone has no cursor: nothing is there to type into yet (#142)
-                if !drawn.alone && !app.list_keys && app.chip_focus.is_none() {
-                    steps.extend(spark_dialog::draw::cursor(&b, w.cell, &tones, drawn.cursor, app.window_focused));
+                let m = metrics(w);
+                // the opening plays alone on the whole window, as the grid has it (#142). Every other frame is the
+                // layout in pixels: its own steps, and inside it the grid's rows of a place it has not drawn yet,
+                // laid at the body's corner and kept inside the body's box
+                // a window too small for the frame is the grid's too: it says to make the window larger
+                let alone = matches!(app.motion, Some((Reel::Open | Reel::Wait, _))) || !scene::fits(&m, window_px.0, window_px.1);
+                let mut steps;
+                let (mut ox, mut oy) = (0.0, 0.0);
+                let mut boxed = false;
+                grid_at = None;
+                if alone {
+                    app.size = window_size;
+                    let mut b = Buffer::empty(Rect::new(0, 0, window_size.0, window_size.1));
+                    drawn = ui::draw(&app, &pal, &last_clock, &mut b);
+                    steps = spark_dialog::draw::steps(&b, w.cell, &tones);
+                    frame_buf = b;
+                    shown = None;
+                } else {
+                    app.pane_fits = scene::splits(&m, window_px.0);
+                    app.size = scene::size(&app, &m, window_px.0, window_px.1);
+                    let sc = scene::build(&app, &pal, &m, window_px.0, window_px.1, &scrolls);
+                    scrolls = sc.lists.iter().map(|l| l.at.clone()).collect();
+                    steps = sc.steps.clone();
+                    drawn = ui::Drawn::default();
+                    if let Some(g) = sc.grid {
+                        let mut b = Buffer::empty(Rect::new(0, 0, app.size.0, app.size.1));
+                        drawn = ui::draw(&app, &pal, &last_clock, &mut b);
+                        let first = ui::head(&app).content;
+                        (ox, oy) = (g.x, g.y - first as f64 * w.cell.h);
+                        steps.push(Step::Clip {
+                            x: g.clip.0,
+                            y: g.clip.1,
+                            w: g.clip.2,
+                            h: g.clip.3,
+                        });
+                        let rows = spark_dialog::draw::rows_steps(&b, w.cell, &tones, first, first + g.rows);
+                        // a bar across the grid's whole row is the lit row's: it fills the line from the window's edge
+                        // to its other edge, as a row of the layout in pixels does
+                        let across = b.area.width as f64 * w.cell.w;
+                        let rows = rows
+                            .into_iter()
+                            .map(|st| match st {
+                                Step::Fill { x, y, w: fw, h, color } if x == 0.0 && fw == across => Step::Fill {
+                                    x: -g.x,
+                                    y,
+                                    w: window_px.0,
+                                    h,
+                                    color,
+                                },
+                                st => st,
+                            })
+                            .collect();
+                        steps.extend(spark_dialog::draw::moved(rows, g.x, g.y));
+                        boxed = true;
+                        frame_buf = b;
+                        grid_at = Some((g, first));
+                    }
+                    shown = Some(sc);
                 }
-                frame_buf = b;
                 // the pictures, each a step over the cells the grid left for it. A frame is drawn whole, so a picture
                 // that is gone is simply not drawn; each is made for the screen's pixels
                 let scale = w.scale();
                 let (cw, chh) = (((w.cell.w * scale as f64) as u32).max(1), ((w.cell.h * scale as f64) as u32).max(1));
                 let place = |x: u16, y: u16, pic: &Arc<Pic>| Step::Picture {
-                    x: x as f64 * w.cell.w,
-                    y: y as f64 * w.cell.h,
+                    x: ox + x as f64 * w.cell.w,
+                    y: oy + y as f64 * w.cell.h,
                     scale: scale as f64,
                     pic: pic.clone(),
                 };
+                // the grid's corner in the screen's pixels: a video plays over the picture, placed by them
+                let (dox, doy) = ((ox * scale as f64) as u32, (oy * scale as f64) as u32);
                 // the picture beside a list, or the preview's: made again when its place, its file or its view changed
                 match drawn.preview.clone() {
                     Some(p) => {
@@ -911,7 +1056,7 @@ fn main() {
                                     (pv.px, pv.src) = ((bw, bh), kept.source);
                                     window_again = true;
                                 }
-                                pv.frame = Some(((p.x + dx) as u32 * cw, (p.y + dy) as u32 * chh, pw, ph));
+                                pv.frame = Some((dox + (p.x + dx) as u32 * cw, doy + (p.y + dy) as u32 * chh, pw, ph));
                             }
                             steps.push(place(p.x + dx, p.y + dy, &kept.pic));
                         }
@@ -937,8 +1082,8 @@ fn main() {
                     if let Some(pic) = win_icons.get(&key) {
                         if let (true, Some(lit)) = (icon.lit, rgb_of(pal.lit)) {
                             steps.push(Step::Fill {
-                                x: icon.x as f64 * w.cell.w,
-                                y: icon.y as f64 * w.cell.h,
+                                x: ox + icon.x as f64 * w.cell.w,
+                                y: oy + icon.y as f64 * w.cell.h,
                                 w: cells as f64 * w.cell.w,
                                 h: w.cell.h,
                                 color: lit,
@@ -978,6 +1123,34 @@ fn main() {
                     }
                     _ => shown_film = None,
                 }
+                if boxed {
+                    steps.push(Step::Unclip);
+                }
+                // the apps' pictures of the layout in pixels, each made once for its file and its box, kept inside
+                // the list they stand in
+                if let Some(sc) = shown.as_ref().filter(|sc| !sc.icons.is_empty()) {
+                    let (x, y, bw, bh) = sc.icon_clip;
+                    steps.push(Step::Clip { x, y, w: bw, h: bh });
+                    for icon in &sc.icons {
+                        let side = ((icon.side * scale as f64) as u32).max(1);
+                        let key = (icon.file.clone(), side, side);
+                        if !win_icons.contains_key(&key) {
+                            let made = icon_image(&icon.file, &mut icon_images).and_then(|img| sixel::icon_box(img, side, side, None));
+                            if let Some(made) = made {
+                                win_icons.insert(key.clone(), Arc::new(Pic::of(&made)));
+                            }
+                        }
+                        if let Some(pic) = win_icons.get(&key) {
+                            steps.push(Step::Picture {
+                                x: icon.x,
+                                y: icon.y,
+                                scale: scale as f64,
+                                pic: pic.clone(),
+                            });
+                        }
+                    }
+                    steps.push(Step::Unclip);
+                }
                 w.frame(steps, tones.ground);
                 true
             } else if let Some(term) = term.as_mut() {
@@ -1011,7 +1184,10 @@ fn main() {
             }
             // the mouse still and the frame new: the pointer's shape asked again where it rests
             if let Some((c, r)) = mouse_at {
-                let want = pointer_at(&app, &drawn, c, r, false);
+                let want = match (&shown, &window) {
+                    (Some(sc), Some(w)) => pointer_in(&app, sc, &drawn, at_px, grid_cell(grid_at, at_px, w.cell), false),
+                    _ => pointer_at(&app, &drawn, c, r, false),
+                };
                 if want != pointer && drag.is_none() {
                     pointer = want;
                     point(&window, &mut out, want);
@@ -1316,6 +1492,15 @@ fn main() {
                 app.helper(h, r);
                 dirty = true;
             }
+            Ev::At(x, y) => at_px = (x, y),
+            Ev::Px(w, h) => {
+                // the layout in pixels places by them: a frame at the new size, the pictures made again for it
+                window_px = (w as f64, h as f64);
+                mouse_at = None;
+                app.stop_video();
+                shown_preview = None;
+                dirty = true;
+            }
             Ev::Term(Event::Resize(cols, rows)) => {
                 // the window says its size in cells; a terminal's is read as the frame is drawn
                 if window.is_some() {
@@ -1387,11 +1572,21 @@ fn main() {
                 dirty = true;
             }
             Ev::Term(Event::Mouse(m)) => {
-                dirty |= frame_for_mouse(m.kind, drag.is_some());
+                // a drag of nothing draws nothing: the window says the pointer a pixel at a time
+                dirty |= frame_for_mouse(m.kind, drag.is_some()) && !(drag.is_none() && matches!(m.kind, MouseEventKind::Drag(_)));
                 // the pointer says what a click does where it is (#129)
                 let dragging = drag.is_some() && matches!(m.kind, MouseEventKind::Drag(_));
                 mouse_at = Some((m.column, m.row));
-                let want = pointer_at(&app, &drawn, m.column, m.row, dragging);
+                // in a frame of the layout in pixels the grid's cell is the one of the place's rows under the pointer,
+                // and no cell at all outside them
+                let (col, row) = match (&shown, &window) {
+                    (Some(_), Some(w)) => grid_cell(grid_at, at_px, w.cell).unwrap_or((u16::MAX, u16::MAX)),
+                    _ => (m.column, m.row),
+                };
+                let want = match &shown {
+                    Some(sc) => pointer_in(&app, sc, &drawn, at_px, (col != u16::MAX).then_some((col, row)), dragging),
+                    None => pointer_at(&app, &drawn, col, row, dragging),
+                };
                 if want != pointer {
                     pointer = want;
                     point(&window, &mut out, want);
@@ -1399,60 +1594,84 @@ fn main() {
                 match m.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
                         app.cut_motion();
+                        // the layout's own places: the line, the keys, a row, a name on the location line
+                        let target = shown.as_ref().and_then(|sc| sc.hit(at_px.0, at_px.1)).cloned();
                         // a click raises the dialog over a video's player: it stops, unless the click is the key that pauses it (#125)
-                        if !drawn.keys.iter().any(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
+                        if !matches!(target, Some(scene::Target::Key(_))) && !drawn.keys.iter().any(|(a, b, y, _)| row == *y && col >= *a && col < *b) {
                             app.stop_video();
                         }
-                        if m.row == 0 && drawn.close.is_some_and(|(a, b)| m.column >= a && m.column < b) {
+                        // a press on a list waits: let go where it began it is the click, dragged it scrolls the list,
+                        // with the pointer or with a finger
+                        let on = shown.as_ref().and_then(|sc| sc.lists.iter().find(|l| l.holds(at_px.0, at_px.1)));
+                        if let Some(l) = on {
+                            press = Some(Press {
+                                key: l.at.key.clone(),
+                                y0: at_px.1,
+                                off0: l.at.off,
+                                most: l.most,
+                                target,
+                                moved: false,
+                            });
+                        } else if let Some(target) = target {
+                            press = None;
+                            act(&mut app, target);
+                        } else if row == 0 && drawn.close.is_some_and(|(a, b)| col >= a && col < b) {
                             if matches!(app.motion, Some((Reel::Close, _))) {
                                 app.quit = Some(0);
                             } else {
                                 app.close_window();
                             }
-                        } else if m.row == 0 && drawn.minimize.is_some_and(|(a, b)| m.column >= a && m.column < b) {
+                        } else if row == 0 && drawn.minimize.is_some_and(|(a, b)| col >= a && col < b) {
                             app.minimize(); // the header's minimize: the dialog to the pad, as it is (v0.134.3)
-                        } else if m.row == 0
+                        } else if row == 0
                             && app.can_go_back()
-                            && (drawn.back.is_some_and(|(a, b)| m.column >= a && m.column < b)
-                                || drawn.title.is_some_and(|(a, b)| m.column >= a && m.column < b))
+                            && (drawn.back.is_some_and(|(a, b)| col >= a && col < b) || drawn.title.is_some_and(|(a, b)| col >= a && col < b))
                         {
                             app.back_key(); // the header's back, or its place name: back a level (the dialog design notes)
-                        } else if let Some((_, _, _, label)) = drawn.heads.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
+                        } else if let Some((_, _, _, label)) = drawn.heads.iter().find(|(a, b, y, _)| row == *y && col >= *a && col < *b) {
                             app.apps_heading(&label.clone()); // a category's heading: the list narrowed to it, or widened
-                        } else if drawn.reply_undo.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {
+                        } else if drawn.reply_undo.is_some_and(|(a, b, y)| row == y && col >= a && col < b) {
                             app.undo_now();
-                        } else if let Some((_, _, _, c)) = drawn.chips.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
+                        } else if let Some((_, _, _, c)) = drawn.chips.iter().find(|(a, b, y, _)| row == *y && col >= *a && col < *b) {
                             app.chip(*c);
-                        } else if let Some((_, _, _, key)) = drawn.keys.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
+                        } else if let Some((_, _, _, key)) = drawn.keys.iter().find(|(a, b, y, _)| row == *y && col >= *a && col < *b) {
                             app.hint_key(*key);
-                        } else if let Some((x, _, w, _)) = drawn
-                            .wave
-                            .filter(|(x, y, w, h)| m.row >= *y && m.row < y + h && m.column >= *x && m.column < x + w)
-                        {
-                            app.preview_seek((m.column - x) as f64 / w as f64);
+                        } else if let Some((x, _, w, _)) = drawn.wave.filter(|(x, y, w, h)| row >= *y && row < y + h && col >= *x && col < x + w) {
+                            app.preview_seek((col - x) as f64 / w as f64);
                         } else if drawn
                             .preview
                             .as_ref()
-                            .is_some_and(|p| app.zoomed() && m.row >= p.y && m.row < p.y + p.h && m.column >= p.x && m.column < p.x + p.w)
+                            .is_some_and(|p| app.zoomed() && row >= p.y && row < p.y + p.h && col >= p.x && col < p.x + p.w)
                         {
-                            drag = Some((m.column, m.row));
-                        } else if let Some((_, _, _, n, up)) = drawn.steps.iter().find(|(a, b, y, _, _)| m.row == *y && m.column >= *a && m.column < *b) {
+                            drag = Some((col, row));
+                        } else if let Some((_, _, _, n, up)) = drawn.steps.iter().find(|(a, b, y, _, _)| row == *y && col >= *a && col < *b) {
                             app.step_at(*n, *up); // a value's arrow steps it, as left and right do (#175)
-                        } else if m.row >= drawn.prompt.0 && m.row <= drawn.prompt.1 {
+                        } else if row >= drawn.prompt.0 && row <= drawn.prompt.1 {
                             app.focus_prompt();
-                        } else if let Some(n) = drawn.pick_at(m.column, m.row) {
+                        } else if let Some(n) = drawn.pick_at(col, row) {
                             // a menu's row acts on one click; an object's row is selected first and acts on a second
                             // click, as a file does on every desktop (the dialog design notes)
                             app.clicked(n, Instant::now());
-                        } else if let Some(n) = drawn.other_pick_at(m.column, m.row) {
+                        } else if let Some(n) = drawn.other_pick_at(col, row) {
                             // a row of the other pane: that pane becomes active and the row is selected (the dialog design notes)
                             app.pane_clicked(n, Instant::now());
-                        } else if drawn.other_path.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {
+                        } else if drawn.other_path.is_some_and(|(a, b, y)| row == y && col >= a && col < b) {
                             app.files_pane(); // its path: the pane becomes active
                         }
                     }
                     MouseEventKind::Drag(MouseButton::Left) => {
-                        if let (Some((c0, r0)), Some((cw, chh))) = (drag, cell_size(&window)) {
+                        if let Some(p) = press.as_mut() {
+                            // past a few pixels it is a drag: the list follows the pointer, as far as it scrolls
+                            let dy = at_px.1 - p.y0;
+                            if p.moved || dy.abs() > DRAG_SLOP {
+                                p.moved = true;
+                                let off = (p.off0 - dy).clamp(0.0, p.most);
+                                if let Some(sc) = scrolls.iter_mut().find(|sc| sc.key == p.key).filter(|sc| sc.off != off) {
+                                    sc.off = off;
+                                    dirty = true;
+                                }
+                            }
+                        } else if let (Some((c0, r0)), Some((cw, chh))) = (drag, cell_size(&window)) {
                             app.preview_drag((m.column as f64 - c0 as f64) * cw as f64, (m.row as f64 - r0 as f64) * chh as f64);
                             drag = Some((m.column, m.row));
                             // the picture follows at most every DRAG_GAP, and no sooner than the last took to draw, at the
@@ -1465,7 +1684,14 @@ fn main() {
                             }
                         }
                     }
-                    MouseEventKind::Up(_) => {
+                    MouseEventKind::Up(button) => {
+                        // a press on a list let go: where it began, it is the click
+                        if let Some(p) = press.take().filter(|_| button == MouseButton::Left) {
+                            if let Some(target) = p.target.filter(|_| !p.moved) {
+                                act(&mut app, target);
+                            }
+                            dirty = true;
+                        }
                         // the pointer let go: the picture drawn whole again, in all its colors (#148)
                         if drag.take().is_some() {
                             shown_preview = None;
@@ -1475,6 +1701,19 @@ fn main() {
                     }
                     MouseEventKind::ScrollUp if app.view == View::Preview => app.preview_wheel(-1, m.modifiers.contains(KeyModifiers::CONTROL)),
                     MouseEventKind::ScrollDown if app.view == View::Preview => app.preview_wheel(1, m.modifiers.contains(KeyModifiers::CONTROL)),
+                    // over a list of the layout in pixels the wheel scrolls the list, about a row a notch, and the lit
+                    // row stays where it is: the list has a place of its own there, as under a drag
+                    MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+                        if shown.as_ref().is_some_and(|sc| sc.lists.iter().any(|l| l.holds(at_px.0, at_px.1))) =>
+                    {
+                        let over = shown.as_ref().and_then(|sc| sc.lists.iter().find(|l| l.holds(at_px.0, at_px.1)));
+                        if let (Some(l), Some(w)) = (over, &window) {
+                            let step = metrics(w).px(44.0) * if m.kind == MouseEventKind::ScrollDown { 1.0 } else { -1.0 };
+                            if let Some(sc) = scrolls.iter_mut().find(|sc| sc.key == l.at.key) {
+                                sc.off = (sc.off + step).clamp(0.0, l.most);
+                            }
+                        }
+                    }
                     // the wheel moves the bar a row in a list, as the arrows do; three lines in text (the dialog design notes)
                     MouseEventKind::ScrollUp => app.wheel(-1),
                     MouseEventKind::ScrollDown => app.wheel(1),
@@ -1531,6 +1770,28 @@ mod tests {
             "a drag let go draws the picture whole"
         );
         assert!(frame_for_mouse(MouseEventKind::ScrollDown, false), "the wheel");
+    }
+
+    #[test]
+    fn the_pointer_over_a_places_grid_rows_is_on_their_own_cell() {
+        // the rows laid at (4, 101), kept between the frame's edges, the first of them the grid's row 3
+        let g = scene::GridBody {
+            x: 4.0,
+            y: 101.0,
+            cols: 59,
+            rows: 31,
+            clip: (24.0, 97.0, 552.0, 627.0),
+        };
+        let cell = spark_dialog::draw::Cell { w: 10.0, h: 20.0 };
+        let at = |x: f64, y: f64| grid_cell(Some((g, 3)), (x, y), cell);
+        assert_eq!(at(24.0, 101.0), Some((2, 3)), "the first text column of the first row");
+        assert_eq!(at(33.9, 120.9), Some((2, 3)), "to that cell's last pixel");
+        assert_eq!(at(34.0, 121.0), Some((3, 4)));
+        assert_eq!(at(23.0, 110.0), None, "left of the frame's edge");
+        assert_eq!(at(100.0, 99.0), None, "the air over the first row is no row");
+        assert_eq!(at(576.0, 110.0), None, "the frame's right edge is outside");
+        assert_eq!(at(100.0, 724.0), None, "under the body");
+        assert_eq!(grid_cell(None, (100.0, 200.0), cell), None, "a body in pixels has no cells");
     }
 
     #[test]

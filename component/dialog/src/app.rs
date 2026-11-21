@@ -959,6 +959,12 @@ pub struct App {
     pub question_back: Option<(usize, bool)>,
     /// Words typed, then the down arrow or a click: the keys are the list's, so Space checks the lit file (#163).
     pub list_keys: bool,
+    /// The dialog is drawn by the layout in pixels (scene.rs), in a window of its own: the lists are single
+    /// spaced, since the layout spaces its rows itself; home keeps a row lit at the empty line; an app's details
+    /// can stand beside the list. main.rs sets it.
+    pub pixels: bool,
+    /// The window is wide enough for an app's details beside the list. main.rs sets it.
+    pub pane_fits: bool,
     /// The preview shown (View::Preview): the list it came from, the file, its page (#120).
     pub preview: Option<Preview>,
     /// A sound's play or stop on its way: its request and its call, audited when it answers.
@@ -1106,6 +1112,8 @@ impl App {
             keep_lit: None,
             question_back: None,
             list_keys: false,
+            pixels: false,
+            pane_fits: false,
             preview: None,
             quiet: vec![],
             setting: None,
@@ -1178,7 +1186,7 @@ impl App {
     }
 
     /// What the list is searched by: the words typed, never the commands spark put in the box.
-    fn query(&self) -> &str {
+    pub(crate) fn query(&self) -> &str {
         if self.staged_now() {
             ""
         } else {
@@ -2204,8 +2212,9 @@ impl App {
             return self.question_items(step);
         }
         if self.view == View::Apps {
-            // the list's rows: with icons the apps breathe where the window holds it (#232)
-            let room = self.list_room() as usize;
+            // the list's rows: with icons the apps breathe where the window holds it (#232); the layout in pixels
+            // spaces them itself
+            let room = if self.pixels { 0 } else { self.list_room() as usize };
             // searched by the words typed, never by a step that waits in the box (#250)
             let mut list: Vec<Item> = self
                 .apps
@@ -2411,7 +2420,7 @@ impl App {
                     // its groups; the minimum window single spaces, a row of air between the groups, and scrolls
                     let dests = self.dests();
                     let room = self.list_room() as usize;
-                    let airy = room > dests.len() * 2;
+                    let airy = !self.pixels && room > dests.len() * 2;
                     for (k, d) in dests.iter().enumerate() {
                         let group = *d == SETTINGS_DEST;
                         if k > 0 && (airy || group) {
@@ -2769,7 +2778,7 @@ impl App {
     /// holds it, as the list of apps breathes (#232); every other kind of row as found.
     fn found_rows(&self, k: Found, rows: Vec<Item>) -> Vec<Item> {
         let room = self.list_room() as usize;
-        if k != Found::Apps || !self.apps.icons || self.apps.spacing != crate::preferences::Spacing::Rows || room < crate::apps::AIRY_ROOM {
+        if self.pixels || k != Found::Apps || !self.apps.icons || self.apps.spacing != crate::preferences::Spacing::Rows || room < crate::apps::AIRY_ROOM {
             return rows;
         }
         let mut out = vec![];
@@ -3366,6 +3375,35 @@ impl App {
         self.input.matches('\n').count() + 1
     }
 
+    /// Home's row lit at the empty line (the layout in pixels): the line still holds the keys, as it does while
+    /// words light their best match. Enter opens the row; Up is the line's, and a letter is typed.
+    fn at_rest(&self) -> bool {
+        self.pixels && self.view == View::Home && self.in_list && !self.list_keys && self.input.is_empty()
+    }
+
+    /// The layout in pixels keeps a row of home lit while the line is empty and holds the keys, as the words
+    /// typed light the row they name best: Enter opens it. main.rs calls it before a frame.
+    pub fn rest_light(&mut self) {
+        if self.pixels
+            && self.view == View::Home
+            && self.mode == Mode::Normal
+            && !self.in_list
+            && self.input.is_empty()
+            && self.chip_focus.is_none()
+            && self.scroll == 0
+            && self.motion.is_none()
+            && self.pending.is_none()
+            && self.staged.is_none()
+        {
+            let n = self.picks().len();
+            if n > 0 {
+                self.in_list = true;
+                self.list_keys = false;
+                self.sel = self.sel.min(n - 1);
+            }
+        }
+    }
+
     pub fn up(&mut self) {
         self.name_lit = None;
         if self.preview_key() {
@@ -3376,7 +3414,7 @@ impl App {
             return;
         }
         self.keep_lit = None;
-        if self.in_list {
+        if self.in_list && !self.at_rest() {
             if self.sel == 0 {
                 self.in_list = false; // above the first row is the prompt
                 self.list_keys = false;
@@ -3400,6 +3438,9 @@ impl App {
             return if self.zoomed() { self.preview_pan(0.0, 1.0) } else { self.preview_file(1) };
         }
         self.keep_lit = None;
+        if self.at_rest() {
+            self.list_keys = true; // the row lit at the empty line: Down hands the list the keys and moves on
+        }
         if self.in_list {
             // words typed lit a file: the first Down hands the keys to the list and keeps it lit, so Space
             // checks it (#163)
@@ -3575,7 +3616,12 @@ impl App {
     /// Whether the list holds the keys: a row lit, no word being typed, nothing asked, no control in focus. A row key
     /// set on a letter or Delete acts only then.
     fn list_holds_keys(&self) -> bool {
-        self.in_list && (self.input.is_empty() || self.list_keys) && self.mode == Mode::Normal && self.chip_focus.is_none() && self.pending.is_none()
+        self.in_list
+            && !self.at_rest()
+            && (self.input.is_empty() || self.list_keys)
+            && self.mode == Mode::Normal
+            && self.chip_focus.is_none()
+            && self.pending.is_none()
     }
 
     /// The prompt's own use of a key: the letter typed, Delete and Backspace at the cursor.
@@ -3950,6 +3996,7 @@ impl App {
         }
         if self.in_list && !self.preview_key() {
             self.keep_lit = None;
+            self.list_keys |= self.at_rest();
             self.sel = 0;
             return;
         }
@@ -3966,6 +4013,7 @@ impl App {
         }
         if self.in_list && !self.preview_key() {
             self.keep_lit = None;
+            self.list_keys |= self.at_rest();
             self.sel = self.picks().len().saturating_sub(1);
             return;
         }
@@ -3987,6 +4035,7 @@ impl App {
         }
         if self.in_list && !self.preview_key() {
             self.keep_lit = None;
+            self.list_keys |= self.at_rest();
             let last = self.picks().len().saturating_sub(1);
             if d > 0 && self.sel == last {
                 self.scroll = crate::ui::body_scroll(self) + step; // past the last row: the lines under it
@@ -4025,6 +4074,17 @@ impl App {
         self.back_key();
     }
 
+    /// Home, from wherever (the location line's first name): back a level at a time until home shows, as far as
+    /// back goes without closing anything asked.
+    pub fn go_home(&mut self) {
+        for _ in 0..32 {
+            if self.view == View::Home || !self.can_go_back() {
+                break;
+            }
+            self.back_key();
+        }
+    }
+
     /// Back, whichever key or click means it: a question waiting is answered no (the draft comes back); the focus on a
     /// control or the draft goes first; then back one view; from the first view the dialog closes.
     pub fn back_key(&mut self) {
@@ -4047,6 +4107,13 @@ impl App {
         // a form of Apps: Esc lets it go, words typed or none, and asks nothing; a page: back, once the words are cleared
         if self.view == View::Apps && self.mode == Mode::Normal && self.chip_focus.is_none() && (self.input.is_empty() || self.apps.form()) {
             // a category filter on the list: Esc shows all apps first (the dialog design notes, v0.124.4)
+            let listing = |a: &crate::apps::State| matches!(a.page, crate::apps::Page::List | crate::apps::Page::Hidden);
+            // an app's details beside the list (the layout in pixels) close first
+            if self.apps.pane && listing(&self.apps) && self.input.is_empty() {
+                self.apps.pane = false;
+                self.reply = None;
+                return;
+            }
             if self.apps.page == crate::apps::Page::List && self.apps.filter.is_some() && self.input.is_empty() {
                 self.reply = None;
                 return self.apps_activate(crate::apps::Action::SetFilter(None));
@@ -4054,6 +4121,10 @@ impl App {
             if let Some(nav) = self.apps.back() {
                 self.apps_restore(nav);
                 self.reply = None;
+                // back at the list from an app's details: the details beside it close with the step
+                if listing(&self.apps) {
+                    self.apps.pane = false;
+                }
                 return;
             }
         }
@@ -4925,6 +4996,9 @@ impl App {
 
     /// Tab: the next control; after the last, the prompt again. Shift+Tab goes the other way.
     pub fn tab(&mut self, back: bool) {
+        if self.apps_pane_tab(back) {
+            return;
+        }
         let c = self.chips();
         if c.is_empty() {
             return;
@@ -6347,6 +6421,10 @@ impl App {
     /// now, as the dialog's own band says them. It is written to the terminal as it is, and a place's words come
     /// from its provider (a folder's path, a file's name), so the whole is scrubbed and cut.
     pub fn window_title(&self) -> String {
+        // the layout in pixels says where you are under the line: the band names the place alone
+        if self.pixels {
+            return crate::scrub::cut(&scrub(&self.title()), WINDOW_TITLE_MAX);
+        }
         let (name, place) = match (&self.cfg.title, &self.view) {
             (Some(t), _) => (t.clone(), String::new()),
             (None, View::Home) => ("home".to_string(), String::new()),
@@ -6625,6 +6703,16 @@ impl App {
         };
         match &self.view {
             View::Conversation => add(&mut v, "History", "\u{2191}"),
+            // the layout in pixels says what Enter opens and that Down hands the list the keys: the keys of the
+            // part that holds them
+            View::Home if self.pixels => {
+                if self.in_list {
+                    add(&mut v, "Open", "Enter");
+                }
+                if !self.list_keys && !self.picks().is_empty() {
+                    add(&mut v, "List", "\u{2193}");
+                }
+            }
             View::Models | View::Talk | View::Steps(_) | View::Help | View::About | View::Preview | View::Apps | View::Home | View::Connections => {}
             // files: one bar in one pane and in two, whatever row is lit (the dialog design notes); it wraps at 60 cells
             View::Folder(..) if self.files_pane_view().is_some() => {

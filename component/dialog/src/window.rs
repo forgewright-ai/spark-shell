@@ -67,6 +67,10 @@ pub struct Setup {
 pub enum Out {
     /// A key, the pointer, the size in cells, the focus: as a terminal says them.
     Event(Event),
+    /// The window's size in pixels, said before its size in cells: the layout in pixels places by them.
+    Pixels(u32, u32),
+    /// Where the pointer is, in pixels, said before the pointer's event it belongs to.
+    At(f64, f64),
     /// The frames handed over before `when_drawn` are with the compositor: the window is mapped with them on it.
     Drawn,
     /// The window is gone: closed, or the compositor left.
@@ -96,8 +100,14 @@ fn text_kind(kinds: &[String]) -> Option<String> {
 pub struct Handle {
     /// A cell's size in pixels, the font's.
     pub cell: Cell,
+    /// The smaller face's cell, and where each face's baseline stands under its line's top (the text's own, the
+    /// smaller one): the layout in pixels places its words by them.
+    pub small: Cell,
+    pub ascent: (f64, f64),
     /// The size asked for, in cells: the window's until it says another.
     pub size: (u16, u16),
+    /// The size asked for, in pixels.
+    pub px: (u32, u32),
     scale: Arc<AtomicI32>,
     tx: Sender<Cmd>,
 }
@@ -135,7 +145,7 @@ impl Handle {
 /// The window opened on a thread of its own. The error says what is missing: a library, the compositor, the font.
 pub fn open(setup: Setup, send: impl Fn(Out) + Send + Sync + 'static) -> Result<Handle, String> {
     let (tx, rx) = channel::<Cmd>();
-    let (ready_tx, ready_rx) = mpsc::channel::<Result<Cell, String>>();
+    let (ready_tx, ready_rx) = mpsc::channel::<Result<(Cell, Cell, (f64, f64), (u32, u32)), String>>();
     let size = (setup.cols, setup.rows);
     let scale = Arc::new(AtomicI32::new(1));
     let shared = scale.clone();
@@ -150,7 +160,7 @@ pub fn open(setup: Setup, send: impl Fn(Out) + Send + Sync + 'static) -> Result<
                     return;
                 }
             };
-            let _ = ready_tx.send(Ok(state.font.cell));
+            let _ = ready_tx.send(Ok((state.font.cell, state.font.small_cell, state.font.ascent, state.want)));
             let signal = event_loop.get_signal();
             let _ = event_loop.run(None, &mut state, |s| {
                 // the frames that came in one turn are one paint: the last of them
@@ -169,8 +179,16 @@ pub fn open(setup: Setup, send: impl Fn(Out) + Send + Sync + 'static) -> Result<
             (state.send)(Out::Gone);
         })
         .map_err(|e| format!("the window's thread: {e}"))?;
-    let cell = ready_rx.recv().map_err(|_| "the window's thread ended".to_string())??;
-    Ok(Handle { cell, size, scale, tx })
+    let (cell, small, ascent, px) = ready_rx.recv().map_err(|_| "the window's thread ended".to_string())??;
+    Ok(Handle {
+        cell,
+        small,
+        ascent,
+        size,
+        px,
+        scale,
+        tx,
+    })
 }
 
 /// How the window says something to the dialog's loop, from its own thread or from one that reads a paste.
@@ -231,6 +249,8 @@ struct State {
     shape: Shape,
     /// The cell the pointer was last said at, the left button held, the wheel's scroll not yet a step.
     at: Option<(u16, u16)>,
+    /// The pixel the pointer was last said at.
+    at_px: (f64, f64),
     held: Held,
     wheel: Wheel,
     /// A paste is being read: one at a time, so a held Ctrl+V starts no second reader.
@@ -329,6 +349,7 @@ impl State {
             pointer: None,
             shape: Shape::Default,
             at: None,
+            at_px: (-1.0, -1.0),
             held: Held::default(),
             wheel: Wheel::default(),
             pasting: Arc::new(AtomicBool::new(false)),
@@ -519,6 +540,9 @@ impl WindowHandler for State {
         if px == self.px && grid == self.grid && !first {
             return;
         }
+        if px != self.px || first {
+            (self.send)(Out::Pixels(px.0, px.1));
+        }
         self.px = px;
         if grid != self.grid {
             self.grid = grid;
@@ -615,6 +639,13 @@ impl PointerHandler for State {
             }
             let cell = self.font.cell;
             let at = input::cell(ev.position.0, ev.position.1, (cell.w, cell.h), self.grid);
+            // the pixel first, then the event it belongs to
+            let px = (ev.position.0, ev.position.1);
+            let moved = (px.0 - self.at_px.0).abs() >= 1.0 || (px.1 - self.at_px.1).abs() >= 1.0;
+            if !matches!(ev.kind, PointerEventKind::Leave { .. } | PointerEventKind::Motion { .. }) || moved {
+                self.at_px = px;
+                (self.send)(Out::At(px.0, px.1));
+            }
             match ev.kind {
                 PointerEventKind::Enter { serial } => {
                     if let Some(p) = self.pointer.as_mut() {
@@ -633,8 +664,8 @@ impl PointerHandler for State {
                     self.at = None;
                     self.held.leave();
                 }
-                // a motion is said when it reaches another cell, as a terminal says it
-                PointerEventKind::Motion { .. } if self.at != Some(at) => {
+                // a motion is said when it reaches another pixel: the layout in pixels has places smaller than a cell
+                PointerEventKind::Motion { .. } if moved || self.at != Some(at) => {
                     self.at = Some(at);
                     let kind = if self.held.dragging() {
                         MouseEventKind::Drag(MouseButton::Left)

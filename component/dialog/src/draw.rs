@@ -76,11 +76,24 @@ impl Pic {
     }
 }
 
+/// A text's size: the text's own, or the smaller one a row's second words are set in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Size {
+    Main,
+    Small,
+}
+
 /// One thing to draw, in pixels from the window's top left corner.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Step {
     /// A box of one color.
-    Fill { x: f64, y: f64, w: f64, h: f64, color: Rgb },
+    Fill {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        color: Rgb,
+    },
     /// A symbol at its cell's corner; `cells` is how many cells it takes, one or two.
     Symbol {
         x: f64,
@@ -91,10 +104,91 @@ pub enum Step {
         bold: bool,
     },
     /// A line along the foot of a symbol's cells.
-    Under { x: f64, y: f64, w: f64, color: Rgb },
+    Under {
+        x: f64,
+        y: f64,
+        w: f64,
+        color: Rgb,
+    },
     /// A picture with its corner there, drawn over what is under it. `scale` is how many of its pixels stand on one
     /// of the window's: a picture made for a screen of twice the pixels is drawn at half its size, pixel for pixel.
-    Picture { x: f64, y: f64, scale: f64, pic: Arc<Pic> },
+    Picture {
+        x: f64,
+        y: f64,
+        scale: f64,
+        pic: Arc<Pic>,
+    },
+    /// Words as one run, their line's top left corner there, in the face's own advances: the layout in pixels
+    /// (scene.rs) places a run, never a symbol a cell.
+    Text {
+        x: f64,
+        y: f64,
+        text: String,
+        size: Size,
+        color: Rgb,
+        bold: bool,
+    },
+    /// What follows is drawn inside this box alone, until Unclip: a list that scrolls under its frame.
+    Clip {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+    },
+    Unclip,
+}
+
+/// The steps moved by (dx, dy): a part drawn at its own corner, laid at its place in the window.
+pub fn moved(steps: Vec<Step>, dx: f64, dy: f64) -> Vec<Step> {
+    steps
+        .into_iter()
+        .map(|s| match s {
+            Step::Fill { x, y, w, h, color } => Step::Fill {
+                x: x + dx,
+                y: y + dy,
+                w,
+                h,
+                color,
+            },
+            Step::Symbol {
+                x,
+                y,
+                cells,
+                text,
+                color,
+                bold,
+            } => Step::Symbol {
+                x: x + dx,
+                y: y + dy,
+                cells,
+                text,
+                color,
+                bold,
+            },
+            Step::Under { x, y, w, color } => Step::Under {
+                x: x + dx,
+                y: y + dy,
+                w,
+                color,
+            },
+            Step::Picture { x, y, scale, pic } => Step::Picture {
+                x: x + dx,
+                y: y + dy,
+                scale,
+                pic,
+            },
+            Step::Text { x, y, text, size, color, bold } => Step::Text {
+                x: x + dx,
+                y: y + dy,
+                text,
+                size,
+                color,
+                bold,
+            },
+            Step::Clip { x, y, w, h } => Step::Clip { x: x + dx, y: y + dy, w, h },
+            Step::Unclip => Step::Unclip,
+        })
+        .collect()
 }
 
 /// The steps that draw a grid: the ground over the whole of it first, then row by row a box behind each run of
@@ -109,8 +203,17 @@ pub fn steps(buf: &Buffer, cell: Cell, tones: &Tones) -> Vec<Step> {
         h: rows as f64 * cell.h,
         color: tones.ground,
     }];
-    for y in 0..rows {
-        let top = y as f64 * cell.h;
+    out.extend(rows_steps(buf, cell, tones, 0, rows));
+    out
+}
+
+/// The steps of the grid's rows `from` up to `to`, the first of them at the top: no ground under them, the boxes
+/// and the symbols alone. The layout in pixels lays a place's rows inside its own frame with them.
+pub fn rows_steps(buf: &Buffer, cell: Cell, tones: &Tones, from: u16, to: u16) -> Vec<Step> {
+    let (cols, rows) = (buf.area.width, buf.area.height);
+    let mut out = vec![];
+    for y in from..to.min(rows) {
+        let top = (y - from) as f64 * cell.h;
         // the boxes: a run of cells of one color behind them, where it is not the ground's
         let mut x = 0;
         while x < cols {

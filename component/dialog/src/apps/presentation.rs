@@ -226,6 +226,12 @@ impl State {
 
     /// The page's lines for a list of `room` rows: with icons, the apps breathe when the room holds it (#232).
     pub fn lines_in(&self, width: u16, query: &str, _frame: Option<u64>, room: usize) -> Vec<Line> {
+        self.lines_of(&self.page, width, query, room)
+    }
+
+    /// The lines of a page, the one shown or another: an app's details beside the list, the list beside the
+    /// details (the layout in pixels).
+    pub fn lines_of(&self, page: &Page, width: u16, query: &str, room: usize) -> Vec<Line> {
         let mut l = Lines::new(width);
         l.icons = self.icons;
         use crate::preferences::Spacing;
@@ -234,7 +240,7 @@ impl State {
             heads: roomy && self.spacing != Spacing::None,
             rows: roomy && self.spacing == Spacing::Rows,
         };
-        match &self.page {
+        match page {
             Page::List => {
                 if self.preference_error.is_some() {
                     l.note("the preferences could not be read: a change is refused, the file left as it is");

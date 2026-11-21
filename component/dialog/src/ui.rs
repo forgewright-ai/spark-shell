@@ -691,45 +691,13 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: 
 /// (v0.124.5: no air of foot's own), so a bar that wraps takes the row of air above it, h-3 and h-2, and the last
 /// row stays empty at every size.
 fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
-    let mut groups: Vec<Vec<(String, bool)>> = vec![vec![]];
-    for (text, key) in app.hint_with(drawn.pages.max(1)) {
-        if !key && text.trim().is_empty() {
-            groups.push(vec![]);
-        } else {
-            groups.last_mut().unwrap().push((text, key));
-        }
-    }
-    groups.retain(|g| !g.is_empty());
-    if let Some(i) = groups.iter().position(|g| g.iter().any(|(t, k)| *k && t == "Esc")) {
-        let back = groups.remove(i);
-        groups.insert(0, back);
-    }
     let right = pen.w.saturating_sub(2);
     // the cells a group's words and keys take; a chip's closing cell of air may stand on the margin
     let span = |parts: &[(String, bool, Vec<HintKey>)]| {
         let width = parts.iter().map(|(t, k, _)| cells(t) + if *k { 2 } else { 0 }).sum::<usize>() as u16;
         width - parts.last().is_some_and(|(_, k, _)| *k) as u16
     };
-    let groups: Vec<Vec<(String, bool, Vec<HintKey>)>> = groups
-        .into_iter()
-        .map(|group| {
-            group
-                .into_iter()
-                .map(|(t, key)| {
-                    let named: Vec<_> = if key { t.split(' ').filter_map(key_of).collect() } else { vec![] };
-                    // an action a person's own keys left with no key has no chip: its label goes with it
-                    let actions: Vec<_> = named.iter().copied().filter(|a| !app.cfg.keys.label(*a).is_empty()).collect();
-                    let label = if named.is_empty() {
-                        t
-                    } else {
-                        actions.iter().map(|a| app.cfg.keys.label(*a)).collect::<Vec<_>>().join(" ")
-                    };
-                    (label, key, actions)
-                })
-                .collect()
-        })
-        .filter(|group: &Vec<(String, bool, Vec<HintKey>)>| group.iter().all(|(t, k, _)| !*k || !t.is_empty()))
-        .collect();
+    let groups = key_groups(app, drawn.pages.max(1));
     // does the bar need its second line: the first group that does not fit the first line, and would fit a line
     let wraps = {
         let mut x = 2u16;
@@ -778,6 +746,47 @@ fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
         }
         x += 2;
     }
+}
+
+/// One group of the key bar: its parts, each its words, whether they name a key, and the actions a click does.
+pub(crate) type KeyGroup = Vec<(String, bool, Vec<HintKey>)>;
+
+/// The key bar's groups, Esc's first, each key under the words a person's own keys give it: what the grid draws a
+/// cell a symbol and the layout in pixels (scene.rs) draws in chips.
+pub(crate) fn key_groups(app: &App, pages: usize) -> Vec<KeyGroup> {
+    let mut groups: Vec<Vec<(String, bool)>> = vec![vec![]];
+    for (text, key) in app.hint_with(pages) {
+        if !key && text.trim().is_empty() {
+            groups.push(vec![]);
+        } else {
+            groups.last_mut().unwrap().push((text, key));
+        }
+    }
+    groups.retain(|g| !g.is_empty());
+    if let Some(i) = groups.iter().position(|g| g.iter().any(|(t, k)| *k && t == "Esc")) {
+        let back = groups.remove(i);
+        groups.insert(0, back);
+    }
+    groups
+        .into_iter()
+        .map(|group| {
+            group
+                .into_iter()
+                .map(|(t, key)| {
+                    let named: Vec<_> = if key { t.split(' ').filter_map(key_of).collect() } else { vec![] };
+                    // an action a person's own keys left with no key has no chip: its label goes with it
+                    let actions: Vec<_> = named.iter().copied().filter(|a| !app.cfg.keys.label(*a).is_empty()).collect();
+                    let label = if named.is_empty() {
+                        t
+                    } else {
+                        actions.iter().map(|a| app.cfg.keys.label(*a)).collect::<Vec<_>>().join(" ")
+                    };
+                    (label, key, actions)
+                })
+                .collect()
+        })
+        .filter(|group: &KeyGroup| group.iter().all(|(t, k, _)| !*k || !t.is_empty()))
+        .collect()
 }
 
 /// The action of a key named on a chip.
@@ -1908,7 +1917,7 @@ fn pane_row(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, base: u16
 
 /// A setting's words: its section's own state, which reads better than its purpose where it has one (on, a level, a
 /// name).
-fn setting_words(app: &App, label: &str, purpose: &str) -> String {
+pub(crate) fn setting_words(app: &App, label: &str, purpose: &str) -> String {
     let state = if label == "talk" {
         Some(if app.talk == Talk::Off { "off" } else { "click the mic" }.to_string())
     } else {

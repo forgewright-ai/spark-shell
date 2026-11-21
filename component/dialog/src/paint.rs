@@ -3,7 +3,7 @@
 //! family's own. Only the functions used are typed, each under its name in cairo.h, pango-layout.h and
 //! pangocairo.h.
 
-use crate::draw::{Cell, Rgb, Step};
+use crate::draw::{Cell, Rgb, Size, Step};
 use libloading::Library;
 use std::ffi::{c_char, c_int, c_void, CString};
 
@@ -26,6 +26,11 @@ struct PangoLayout {
 
 const CAIRO_FORMAT_ARGB32: c_int = 0;
 const PANGO_WEIGHT_BOLD: c_int = 700;
+/// Pango's units a point (and a pixel, for a size given in pixels).
+const PANGO_SCALE: f64 = 1024.0;
+/// The smaller text beside the text's own: three quarters of it, 12 px beside 16. A step a reader sees without
+/// being told, so a row's name leads and the words under it step back (the owner's T2, 2026-11-21).
+pub const SMALL: f64 = 12.0 / 16.0;
 
 /// The functions of libcairo.so.2, libpango-1.0.so.0, libpangocairo-1.0.so.0 and libgobject-2.0.so.0. The four
 /// stay open for the life of the process: GLib registers its types once and cannot be closed under them.
@@ -42,6 +47,7 @@ pub struct Lib {
     set_source_rgba: unsafe extern "C" fn(*mut Cairo, f64, f64, f64, f64),
     rectangle: unsafe extern "C" fn(*mut Cairo, f64, f64, f64, f64),
     fill: unsafe extern "C" fn(*mut Cairo),
+    clip: unsafe extern "C" fn(*mut Cairo),
     move_to: unsafe extern "C" fn(*mut Cairo, f64, f64),
     save: unsafe extern "C" fn(*mut Cairo),
     restore: unsafe extern "C" fn(*mut Cairo),
@@ -51,9 +57,14 @@ pub struct Lib {
     font_description_from_string: unsafe extern "C" fn(*const c_char) -> *mut FontDesc,
     font_description_free: unsafe extern "C" fn(*mut FontDesc),
     font_description_set_weight: unsafe extern "C" fn(*mut FontDesc, c_int),
+    font_description_get_size: unsafe extern "C" fn(*const FontDesc) -> c_int,
+    font_description_get_size_is_absolute: unsafe extern "C" fn(*const FontDesc) -> c_int,
+    font_description_set_size: unsafe extern "C" fn(*mut FontDesc, c_int),
+    font_description_set_absolute_size: unsafe extern "C" fn(*mut FontDesc, f64),
     layout_set_font_description: unsafe extern "C" fn(*mut PangoLayout, *mut FontDesc),
     layout_set_text: unsafe extern "C" fn(*mut PangoLayout, *const c_char, c_int),
     layout_get_pixel_size: unsafe extern "C" fn(*mut PangoLayout, *mut c_int, *mut c_int),
+    layout_get_baseline: unsafe extern "C" fn(*mut PangoLayout) -> c_int,
     cairo_create_layout: unsafe extern "C" fn(*mut Cairo) -> *mut PangoLayout,
     cairo_show_layout: unsafe extern "C" fn(*mut Cairo, *mut PangoLayout),
     object_unref: unsafe extern "C" fn(*mut c_void),
@@ -97,6 +108,7 @@ impl Lib {
             set_source_rgba: sym!(cairo, c, "cairo_set_source_rgba"),
             rectangle: sym!(cairo, c, "cairo_rectangle"),
             fill: sym!(cairo, c, "cairo_fill"),
+            clip: sym!(cairo, c, "cairo_clip"),
             move_to: sym!(cairo, c, "cairo_move_to"),
             save: sym!(cairo, c, "cairo_save"),
             restore: sym!(cairo, c, "cairo_restore"),
@@ -106,9 +118,14 @@ impl Lib {
             font_description_from_string: sym!(pango, p, "pango_font_description_from_string"),
             font_description_free: sym!(pango, p, "pango_font_description_free"),
             font_description_set_weight: sym!(pango, p, "pango_font_description_set_weight"),
+            font_description_get_size: sym!(pango, p, "pango_font_description_get_size"),
+            font_description_get_size_is_absolute: sym!(pango, p, "pango_font_description_get_size_is_absolute"),
+            font_description_set_size: sym!(pango, p, "pango_font_description_set_size"),
+            font_description_set_absolute_size: sym!(pango, p, "pango_font_description_set_absolute_size"),
             layout_set_font_description: sym!(pango, p, "pango_layout_set_font_description"),
             layout_set_text: sym!(pango, p, "pango_layout_set_text"),
             layout_get_pixel_size: sym!(pango, p, "pango_layout_get_pixel_size"),
+            layout_get_baseline: sym!(pango, p, "pango_layout_get_baseline"),
             cairo_create_layout: sym!(pc, q, "pango_cairo_create_layout"),
             cairo_show_layout: sym!(pc, q, "pango_cairo_show_layout"),
             object_unref: sym!(gobject, g, "g_object_unref"),
@@ -122,11 +139,17 @@ impl Lib {
 }
 
 /// The text's face, regular and bold, and the cell it makes: every symbol stands in a cell as wide as one of
-/// its letters and as tall as one of its lines.
+/// its letters and as tall as one of its lines. The smaller face beside it (SMALL of its size), for the layout
+/// in pixels: its own cell, and where each face's baseline stands under its line's top.
 pub struct Font {
     regular: *mut FontDesc,
     bold: *mut FontDesc,
+    small: *mut FontDesc,
+    small_bold: *mut FontDesc,
     pub cell: Cell,
+    pub small_cell: Cell,
+    /// The baseline under the line's top: the text's own face, the smaller one.
+    pub ascent: (f64, f64),
 }
 
 impl Font {
@@ -135,39 +158,71 @@ impl Font {
     pub fn new(lib: &Lib, spec: &str) -> Option<Font> {
         let spec = CString::new(spec.replace('\0', "")).ok()?;
         unsafe {
-            let regular = (lib.font_description_from_string)(spec.as_ptr());
-            let bold = (lib.font_description_from_string)(spec.as_ptr());
-            (lib.font_description_set_weight)(bold, PANGO_WEIGHT_BOLD);
-            let font = Font {
-                regular,
-                bold,
+            let make = |bold: bool, small: bool| {
+                let d = (lib.font_description_from_string)(spec.as_ptr());
+                if bold {
+                    (lib.font_description_set_weight)(d, PANGO_WEIGHT_BOLD);
+                }
+                let size = (lib.font_description_get_size)(d);
+                if small && size > 0 {
+                    // the size in the unit it was said in: points, or pixels
+                    if (lib.font_description_get_size_is_absolute)(d) != 0 {
+                        (lib.font_description_set_absolute_size)(d, size as f64 * SMALL);
+                    } else {
+                        (lib.font_description_set_size)(d, (size as f64 * SMALL).round() as c_int);
+                    }
+                }
+                d
+            };
+            let mut font = Font {
+                regular: make(false, false),
+                bold: make(true, false),
+                small: make(false, true),
+                small_bold: make(true, true),
                 cell: Cell { w: 0.0, h: 0.0 },
+                small_cell: Cell { w: 0.0, h: 0.0 },
+                ascent: (0.0, 0.0),
             };
             let surface = (lib.image_surface_create)(CAIRO_FORMAT_ARGB32, 1, 1);
             let cr = (lib.create)(surface);
             let l = (lib.cairo_create_layout)(cr);
-            (lib.layout_set_font_description)(l, regular);
-            (lib.layout_set_text)(l, c"M".as_ptr(), -1);
-            let (mut w, mut h) = (0, 0);
-            (lib.layout_get_pixel_size)(l, &mut w, &mut h);
+            let measure = |desc: *mut FontDesc| {
+                (lib.layout_set_font_description)(l, desc);
+                (lib.layout_set_text)(l, c"M".as_ptr(), -1);
+                let (mut w, mut h) = (0, 0);
+                (lib.layout_get_pixel_size)(l, &mut w, &mut h);
+                (w, h, (lib.layout_get_baseline)(l) as f64 / PANGO_SCALE)
+            };
+            let (w, h, up) = measure(font.regular);
+            let (sw, sh, sup) = measure(font.small);
             (lib.object_unref)(l as *mut c_void);
             (lib.destroy)(cr);
             (lib.surface_destroy)(surface);
-            if w <= 0 || h <= 0 {
+            if w <= 0 || h <= 0 || sw <= 0 || sh <= 0 {
                 font.free(lib);
                 return None;
             }
-            Some(Font {
-                cell: Cell { w: w as f64, h: h as f64 },
-                ..font
-            })
+            font.cell = Cell { w: w as f64, h: h as f64 };
+            font.small_cell = Cell { w: sw as f64, h: sh as f64 };
+            font.ascent = (up, sup);
+            Some(font)
         }
     }
 
     pub fn free(&self, lib: &Lib) {
         unsafe {
-            (lib.font_description_free)(self.regular);
-            (lib.font_description_free)(self.bold);
+            for d in [self.regular, self.bold, self.small, self.small_bold] {
+                (lib.font_description_free)(d);
+            }
+        }
+    }
+
+    fn face(&self, size: Size, bold: bool) -> *mut FontDesc {
+        match (size, bold) {
+            (Size::Main, false) => self.regular,
+            (Size::Main, true) => self.bold,
+            (Size::Small, false) => self.small,
+            (Size::Small, true) => self.small_bold,
         }
     }
 }
@@ -182,6 +237,8 @@ unsafe fn run(lib: &Lib, font: &Font, surface: *mut CairoSurface, scale: f64, st
     (lib.scale)(cr, scale, scale);
     let layout = (lib.cairo_create_layout)(cr);
     let ink = |c: Rgb| (lib.set_source_rgba)(cr, channel(c[0]), channel(c[1]), channel(c[2]), 1.0);
+    // the boxes drawing is kept inside, each a save to give back
+    let mut clips = 0;
     for step in steps {
         match step {
             Step::Fill { x, y, w, h, color } => {
@@ -201,6 +258,26 @@ unsafe fn run(lib: &Lib, font: &Font, surface: *mut CairoSurface, scale: f64, st
                 ink(*color);
                 (lib.move_to)(cr, *x, *y);
                 (lib.cairo_show_layout)(cr, layout);
+            }
+            Step::Text { x, y, text, size, color, bold } => {
+                let Ok(t) = CString::new(text.replace('\0', "")) else { continue };
+                (lib.layout_set_font_description)(layout, font.face(*size, *bold));
+                (lib.layout_set_text)(layout, t.as_ptr(), -1);
+                ink(*color);
+                (lib.move_to)(cr, *x, *y);
+                (lib.cairo_show_layout)(cr, layout);
+            }
+            Step::Clip { x, y, w, h } => {
+                (lib.save)(cr);
+                (lib.rectangle)(cr, *x, *y, *w, *h);
+                (lib.clip)(cr);
+                clips += 1;
+            }
+            Step::Unclip => {
+                if clips > 0 {
+                    (lib.restore)(cr);
+                    clips -= 1;
+                }
             }
             Step::Picture { x, y, scale, pic } => {
                 let (w, h) = (pic.w as c_int, pic.h as c_int);
@@ -223,6 +300,9 @@ unsafe fn run(lib: &Lib, font: &Font, surface: *mut CairoSurface, scale: f64, st
                 }
             }
         }
+    }
+    for _ in 0..clips {
+        (lib.restore)(cr);
     }
     (lib.object_unref)(layout as *mut c_void);
     (lib.surface_flush)(surface);

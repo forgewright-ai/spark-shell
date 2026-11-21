@@ -23,7 +23,11 @@ impl App {
     }
 
     pub fn apps_request(&mut self, mut request: Value) {
-        if self.apps.pending.is_some() {
+        // an app opens over its details still being read
+        let over = request["op"] == "launch" && self.apps.pending.as_ref().is_some_and(|(_, op)| op == "details");
+        if over {
+            self.apps.asked = None;
+        } else if self.apps.pending.is_some() {
             return self.refuse("the apps are busy: a moment");
         }
         // with icons shown, a catalog read asks for each app's icon drawn at the cell's size (#230)
@@ -124,11 +128,122 @@ impl App {
         }
         if let Some(Item::Apps(line)) = self.picks().get(self.sel) {
             if let Some(Action::Launch(id)) = &line.action {
-                self.apps_activate(Action::Details(id.clone()));
+                let id = id.clone();
+                // the layout in pixels shows them beside the list where the window holds both, the keys on their
+                // first row
+                self.apps.pane = self.pixels && self.pane_fits;
+                if self.apps.pane && self.apps.details.contains_key(&id) && self.apps.asked.as_deref() == Some(id.as_str()) {
+                    // read a moment ago, while the list held the keys beside them
+                    let nav = self.apps_navigation();
+                    let nav = self.apps.show_details(&id, nav);
+                    self.apps_restore(nav);
+                } else {
+                    self.apps_activate(Action::Details(id.clone()));
+                }
+                if self.pixels && self.apps.page == Page::Details(id) {
+                    (self.in_list, self.sel, self.list_keys) = (true, 0, true);
+                }
                 return true;
             }
         }
         false
+    }
+
+    /// The layout in pixels: the details beside the list kept true to the place shown, and the lit app's facts
+    /// asked for, once an app, while the list holds the keys beside them. main.rs calls it every turn of its loop.
+    pub fn apps_follow(&mut self) {
+        if !self.pixels || !self.apps.pane {
+            return;
+        }
+        let listing = matches!(self.apps.page, Page::List | Page::Hidden);
+        let about = self.apps.subject().is_some() && self.apps.root_lists();
+        if self.view != View::Apps || !self.pane_fits || !(listing || about) {
+            self.apps.pane = false;
+            return;
+        }
+        if !listing || !self.in_list || self.apps.pending.is_some() || self.mode != Mode::Normal {
+            return;
+        }
+        if let Some(Item::Apps(line)) = self.picks().get(self.sel) {
+            if let Some(Action::Launch(id)) = &line.action {
+                if self.apps.asked.as_deref() != Some(id.as_str()) {
+                    self.apps.asked = Some(id.clone());
+                    self.apps_request(json!({"op":"details","id":id}));
+                }
+            }
+        }
+    }
+
+    /// Tab while an app's details stand beside the list: from the details to the list, from the list to the
+    /// line's controls, from the last of them to the details again; Shift+Tab the other way. False where the
+    /// details do not stand beside a list: Tab is the controls' alone.
+    pub(crate) fn apps_pane_tab(&mut self, back: bool) -> bool {
+        if !self.pixels || self.view != View::Apps || !self.apps.pane || self.mode != Mode::Normal {
+            return false;
+        }
+        let listing = matches!(self.apps.page, Page::List | Page::Hidden);
+        let details = matches!(self.apps.page, Page::Details(_)) && self.apps.root_lists();
+        if !listing && !details {
+            return false;
+        }
+        let c = self.chips();
+        let at = self.chip_focus.and_then(|f| c.iter().position(|x| *x == f));
+        match (details, at, back) {
+            // the details: on to the list, or back to the last control
+            (true, _, false) => self.apps_pane_leave(),
+            (true, _, true) => {
+                self.apps_pane_leave();
+                self.chip_focus = c.last().copied();
+            }
+            // the list: on to the first control, or to the details where there is none; back to the details
+            (false, None, false) if !c.is_empty() => self.chip_focus = Some(c[0]),
+            (false, None, _) => {
+                self.apps_details();
+            }
+            // a control: the next one, and past the last the details; back, the one before, and before the first the list
+            (false, Some(i), false) => {
+                self.chip_focus = c.get(i + 1).copied();
+                if self.chip_focus.is_none() {
+                    self.apps_details();
+                }
+            }
+            (false, Some(0), true) => self.chip_focus = None,
+            (false, Some(i), true) => self.chip_focus = c.get(i - 1).copied(),
+        }
+        true
+    }
+
+    /// From an app's details to the list beside them, the details left open: the list holds the keys, its app lit.
+    fn apps_pane_leave(&mut self) {
+        if let Some(nav) = self.apps.back() {
+            self.apps_restore(nav);
+            (self.in_list, self.list_keys) = (true, true);
+            self.reply = None;
+        }
+    }
+
+    /// A click on an app in the list beside the details: that app's details.
+    pub fn apps_show(&mut self, id: &str) {
+        while self.apps.subject().is_some() {
+            let Some(nav) = self.apps.back() else { break };
+            self.apps_restore(nav);
+        }
+        let at = self
+            .picks()
+            .iter()
+            .position(|it| matches!(it, Item::Apps(l) if l.action == Some(Action::Launch(id.to_string()))));
+        if let Some(n) = at {
+            self.light(n);
+            self.apps_details();
+        }
+    }
+
+    /// A click on a row of the details shown beside the list while the list holds the keys: the keys go to the
+    /// details, and the row acts as a click on it does.
+    pub fn apps_pane_row(&mut self, n: usize, now: std::time::Instant) {
+        if self.apps_details() {
+            self.clicked(n, now);
+        }
     }
 
     pub fn apps_enter(&mut self) {
@@ -157,6 +272,9 @@ impl App {
     /// has no chip: it opens the app the bar is on, saves a form, as it does everywhere.
     pub fn apps_hint(&self) -> Vec<(String, bool)> {
         let pair = |w: &str, k: &str| vec![(format!("{w} "), false), (k.to_string(), true)];
+        if self.pixels && !self.apps.form() {
+            return self.apps_hint_pixels();
+        }
         // what Esc does here: a form let go, the category filter cleared, else back
         let mut keys = if self.apps.form() {
             // a form waits on Enter for the name typed, so Enter has its chip here (the dialog design notes)
@@ -172,6 +290,38 @@ impl App {
         if matches!(self.apps.page, Page::List | Page::Hidden) {
             keys.push(("   ".into(), false));
             keys.extend(pair("Details", "F9"));
+        }
+        keys
+    }
+
+    /// The key bar of the layout in pixels: the keys of the part that holds them. Esc's step by its name; Enter
+    /// where the lit row opens an app; the details key on a list; Tab between the details and the list while
+    /// both stand.
+    fn apps_hint_pixels(&self) -> Vec<(String, bool)> {
+        let pair = |w: &str, k: &str| vec![(format!("{w} "), false), (k.to_string(), true)];
+        let gap = || ("   ".to_string(), false);
+        let listing = matches!(self.apps.page, Page::List | Page::Hidden);
+        let beside = self.apps.pane && self.pane_fits;
+        let mut keys = if listing && beside {
+            pair("Close details", "Esc")
+        } else if (self.apps.page == Page::List && self.apps.filter.is_some()) || self.apps.page == Page::Hidden {
+            pair("All apps", "Esc")
+        } else if beside && matches!(self.apps.page, Page::Details(_)) {
+            pair("Back to list", "Esc")
+        } else {
+            pair("Back", "Esc")
+        };
+        let opens = self.in_list && matches!(self.picks().get(self.sel), Some(Item::Apps(l)) if matches!(l.action, Some(Action::Launch(_))));
+        if opens {
+            keys.push(gap());
+            keys.extend(pair("Open", "Enter"));
+        }
+        if listing {
+            keys.push(gap());
+            keys.extend(pair("Details", if beside { "Tab" } else { "F9" }));
+        } else if beside && matches!(self.apps.page, Page::Details(_)) {
+            keys.push(gap());
+            keys.extend(pair("List", "Tab"));
         }
         keys
     }

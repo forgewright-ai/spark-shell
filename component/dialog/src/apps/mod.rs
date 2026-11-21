@@ -179,6 +179,10 @@ pub struct State {
     pub icon_px: u32,
     /// The room around the apps where they wear their icons (#232): DIALOG_SPACING. main.rs sets it.
     pub spacing: crate::preferences::Spacing,
+    /// An app's details stand beside the list (the layout in pixels): opened by the details key, closed by Esc.
+    pub pane: bool,
+    /// The app whose details were last asked for while the list holds the keys beside them: asked once.
+    pub asked: Option<String>,
     stack: Vec<(Page, Navigation)>,
 }
 
@@ -207,6 +211,8 @@ impl Default for State {
             icons: false,
             icon_px: 0,
             spacing: crate::preferences::Spacing::default(),
+            pane: false,
+            asked: None,
             stack: vec![],
         }
     }
@@ -296,6 +302,12 @@ impl State {
         Navigation::default()
     }
 
+    /// An app's details shown with nothing read: the facts are the ones read while the list held the keys beside
+    /// them (the layout in pixels).
+    pub fn show_details(&mut self, id: &str, nav: Navigation) -> Navigation {
+        self.navigate(Page::Details(id.to_string()), nav)
+    }
+
     pub fn back(&mut self) -> Option<Navigation> {
         self.stack.pop().map(|(page, nav)| {
             self.page = page;
@@ -306,6 +318,24 @@ impl State {
     /// Whether a page stands under this one to go back to.
     pub fn has_back(&self) -> bool {
         !self.stack.is_empty()
+    }
+
+    /// The app the page shown is about: its details, its technical details, a choice of its own.
+    pub fn subject(&self) -> Option<&str> {
+        match &self.page {
+            Page::Details(id) | Page::Technical(id) | Page::CategoryPicker(id) | Page::LaunchPicker(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// The first page under the one shown, and how it was left: the list an app's pages were opened from.
+    pub fn root(&self) -> Option<(&Page, &Navigation)> {
+        self.stack.first().map(|(p, n)| (p, n))
+    }
+
+    /// Whether the pages shown were opened from a list of apps: the list can stand beside them.
+    pub fn root_lists(&self) -> bool {
+        matches!(self.stack.first(), Some((Page::List | Page::Hidden, _)))
     }
 
     fn save(&mut self, prefs: Preferences) -> Result<(), String> {
@@ -341,7 +371,8 @@ impl State {
         let name = |s: &Self, id: &str| s.entry(id).map(|a| a.name.to_lowercase()).unwrap_or_else(|| id.to_string());
         match action {
             Action::Launch(id) => {
-                if self.pending.is_some() {
+                // an app opens over its details still being read: they are asked again when they are next shown
+                if self.pending.as_ref().is_some_and(|(_, op)| op != "details") {
                     return Err("the apps are busy: a moment".into());
                 }
                 let app = self.entry(&id).ok_or("this app is no longer installed")?;

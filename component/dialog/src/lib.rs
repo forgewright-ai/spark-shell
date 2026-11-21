@@ -29,6 +29,7 @@ pub mod preferences;
 pub mod preview;
 pub mod progress;
 pub mod reply;
+pub mod scene;
 pub mod scrub;
 pub mod search;
 pub mod semantic;
