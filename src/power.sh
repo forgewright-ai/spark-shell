@@ -187,7 +187,7 @@ panel_act_wifi() {   # the wifi steps: setup, hidden, connect (a password asked 
         *) echo "$_a is not something wifi does"; return 1 ;;
     esac
 }
-panel_act_sound() {   # the out and mic steps: the device, the level, mute and unmute
+panel_act_sound() {   # the out and mic steps: the device, the level, mute and unmute; the bar's next line says the change at once
     case $_a in
         use) snd_use "$_p" "$_arg" ;;
         level) snd_apply "$_p" "$_arg" ;;
@@ -195,7 +195,8 @@ panel_act_sound() {   # the out and mic steps: the device, the level, mute and u
         mute) snd_apply "$_p" muted ;;
         unmute) snd_apply "$_p" unmuted ;;
         *) echo "$_a is not something $_p does"; return 1 ;;
-    esac
+    esac || return 1
+    bar_redraw   # as after the bar's own keys: without it the bar showed the level at its next line, up to 15 s later
 }
 panel_act_theme() {   # the theme steps: the text, the wallpaper, save, delete, back, a picture, words, the settings, else a palette's name
     case $_a in

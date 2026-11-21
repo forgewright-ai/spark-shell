@@ -4845,6 +4845,19 @@ else
         && ok "bar volume up|mute|mic: the key's change, and the running bar redrawn after each" || bad "volume keys" "$(cat "$amlog" 2>&1); $(grep -c '^\[{' "$H/bar.out") lines"
     st=0; out=$(sh "$SH" bar volume louder 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell bar: volume takes up, down, mute or mic' ] && ok "bar volume: a wrong word is refused in one line" || bad "volume refuse" "st=$st $out"
+    # a sound step of the dialog asks the running bar for a line at once, as the bar's own keys do: without it the bar
+    # showed the new level at its next line, up to 15 s later (v0.159)
+    rm -f "$amlog"
+    sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
+    # the first line is waited for, never counted after a sleep: a busy runner takes over a second to draw it, and a
+    # count of none ends the suite here under set -e (grep -c says 1)
+    for _i in 1 2 3 4 5 6 7 8 9 10; do grep -q '^\[{' "$H/bar.out" && break; sleep 1; done
+    _bl0=$(grep -c '^\[{' "$H/bar.out" || :); _bl1=$_bl0
+    st=0; sh "$SH" bar panel out level 35 > /dev/null 2>&1 || st=$?
+    for _i in 1 2 3 4 5 6; do _bl1=$(grep -c '^\[{' "$H/bar.out" || :); [ "$_bl1" -gt "$_bl0" ] && break; sleep 1; done
+    kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
+    [ "$st" -eq 0 ] && [ "$(cat "$amlog" 2>/dev/null)" = '-c 0 sset Master 35%' ] && [ "$_bl0" -ge 1 ] && [ "$_bl1" -gt "$_bl0" ] \
+        && ok "panel out level: the running bar is drawn again at once, not at its next line 15 s later" || bad "panel sound redraw" "st=$st $(cat "$amlog" 2>&1); $_bl0 then $_bl1 lines"
     rm -f "$HOME/level" "$HOME/clevel"   # restore this fixture's baseline after the volume-key tests
     # one command, two readers (v0.148). Sway's bar has its blocks as before spark-bar: every block says the cells it keeps,
     # the widest it gets, and its label in plain text, and no block's text, its markup gone, is wider than its cells: in
