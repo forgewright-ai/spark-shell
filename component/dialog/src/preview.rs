@@ -17,8 +17,6 @@ pub const FACTS_MAX: usize = 8;
 pub const STOPS: [u32; 10] = [25, 33, 50, 67, 100, 150, 200, 300, 400, 800];
 /// An arrow moves a zoomed picture by this share of the part shown.
 pub const PAN: f64 = 0.25;
-/// A sound's spectrum: this many bands, low to high.
-pub const BANDS: usize = 28;
 
 /// What a provider answers for a file: its name, its facts, and lines or a picture.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -58,12 +56,53 @@ pub struct Page {
 }
 
 /// A sound as the dialog draws it, read once from its picture: the waveform's loudness at each of
-/// its columns (0 to 1), the spectrum's bands at each column (0 to 255), and the spectrogram itself.
+/// its columns (0 to 1), the whole sound's light at each row of the spectrogram, and the spectrogram
+/// itself. The spectrum is read from the spectrogram in as many bands as the view has bars (v0.160).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sound {
     pub wave: Vec<f32>,
-    pub bands: Vec<[u8; BANDS]>,
+    /// The spectrogram's rows, its top (the high end) first: each one's light over the whole sound.
+    mean: Vec<f32>,
     pub spectrogram: Image,
+}
+
+impl Sound {
+    /// The rows of the spectrogram band `k` of `n` holds, low first: the picture is high at its top,
+    /// so the low band is its last rows. A band holds a row at least.
+    fn band(&self, k: usize, n: usize) -> std::ops::Range<u32> {
+        let (rows, n, k) = (self.spectrogram.h as u64, n.max(1) as u64, k as u64);
+        let (y0, y1) = (rows * (n - 1 - k.min(n - 1)) / n, rows * (n - k.min(n - 1)) / n);
+        y0 as u32..(y1.max(y0 + 1).min(rows.max(1))) as u32
+    }
+
+    /// The spectrum at a column of the sound in `n` bands, low to high, each 0 to 255.
+    pub fn bands_at(&self, col: usize, n: usize) -> Vec<f32> {
+        let x = (col as u32).min(self.spectrogram.w.saturating_sub(1));
+        (0..n)
+            .map(|k| {
+                let rows = self.band(k, n);
+                let len = rows.len().max(1) as u32;
+                let lit: u32 = rows
+                    .map(|y| {
+                        let p = self.spectrogram.pixel(x, y);
+                        (p[0] as u32 + p[1] as u32 + p[2] as u32) / 3
+                    })
+                    .sum();
+                (lit / len) as f32
+            })
+            .collect()
+    }
+
+    /// The whole sound's spectrum in `n` bands, low to high, each 0 to 255.
+    pub fn bands(&self, n: usize) -> Vec<f32> {
+        (0..n)
+            .map(|k| {
+                let rows = self.band(k, n);
+                let len = rows.len().max(1) as f32;
+                rows.map(|y| self.mean.get(y as usize).copied().unwrap_or(0.0)).sum::<f32>() / len
+            })
+            .collect()
+    }
 }
 
 /// The preview's place: the provider, the list it came from (its files, in its order), the file
@@ -322,8 +361,8 @@ impl Preview {
 }
 
 /// A sound read from its picture (the provider's waveform over its spectrogram, `wave` rows of it the
-/// waveform): the loudness of each column, the spectrum's bands at each column (low first), and the
-/// spectrogram for its picture.
+/// waveform): the loudness of each column, each spectrogram row's light over the whole sound, and
+/// the spectrogram for its picture.
 pub fn sound(img: &Image, wave: u32) -> Option<Sound> {
     if wave == 0 || wave >= img.h || img.w == 0 {
         return None;
@@ -342,22 +381,13 @@ pub fn sound(img: &Image, wave: u32) -> Option<Sound> {
             }
         })
         .collect();
-    // the spectrogram, high at its top: its rows cut into BANDS, the low band last
-    let rows = img.h - wave;
-    let bands: Vec<[u8; BANDS]> = (0..img.w)
-        .map(|x| {
-            let mut b = [0u8; BANDS];
-            for (k, slot) in b.iter_mut().enumerate() {
-                let (y0, y1) = (rows * (BANDS - 1 - k) as u32 / BANDS as u32, rows * (BANDS - k) as u32 / BANDS as u32);
-                let n = (y1 - y0).max(1);
-                *slot = ((y0..y1).map(|y| lit(x, wave + y)).sum::<u32>() / n) as u8;
-            }
-            b
-        })
+    // the spectrogram, high at its top: what each row holds over the whole sound, for its spectrum stopped
+    let mean: Vec<f32> = (wave..img.h)
+        .map(|y| (0..img.w).map(|x| lit(x, y)).sum::<u32>() as f32 / img.w as f32)
         .collect();
     Some(Sound {
         wave: wave_at,
-        bands,
+        mean,
         spectrogram: img.rows(wave, img.h),
     })
 }
@@ -531,7 +561,15 @@ mod tests {
         }
         let s = sound(&crate::sixel::decode(&raw).unwrap(), 4).unwrap();
         assert_eq!(s.wave, vec![0.5, 0.0]);
-        assert_eq!((s.bands[0][0], s.bands[0][BANDS - 1], s.bands[1][0]), (255, 0, 0));
+        let (first, second) = (s.bands_at(0, 28), s.bands_at(1, 28));
+        assert_eq!((first[0], first[27], second[0]), (255.0, 0.0, 0.0));
+        // the whole sound's: the low band lit in one column of two; in fewer or more bands the low end leads
+        assert_eq!((s.bands(28)[0], s.bands(28)[27]), (127.5, 0.0));
+        assert_eq!((s.bands(7)[0], s.bands(7)[6], s.bands(7).len()), (127.5 / 4.0, 0.0, 7));
+        assert_eq!(
+            (s.bands_at(0, 56)[0], s.bands_at(0, 56)[1], s.bands_at(0, 56)[2], s.bands_at(0, 56).len()),
+            (255.0, 255.0, 0.0, 56)
+        );
         assert_eq!((s.spectrogram.w, s.spectrogram.h), (2, 28));
     }
 

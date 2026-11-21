@@ -1404,6 +1404,8 @@ const EIGHTHS: [&str; 9] = [
 /// A sound's waveform, its spectrum and the rows between them, in cells.
 const WAVE_ROWS: u16 = 4;
 const BAND_ROWS: u16 = 6;
+/// The spectrum's bars: a cell each, a cell between two.
+const BAR_STEP: usize = 2;
 
 /// A sound (#120): its lines (the title bold), its waveform (the part played in the accent, the rest
 /// muted), its spectrum at the time played (or the whole sound's, stopped), and its spectrogram where
@@ -1447,30 +1449,24 @@ fn sound(
     }
     // the spectrum: its bands at the time played while it plays, else the whole sound's, low to high
     if y + BAND_ROWS < end {
+        // a bar is a cell wide and a cell from the next at any width, as many as the row holds (v0.160): in a wide
+        // window 28 bars stretched to five cells each. The spectrum is read from the spectrogram in that many bands
+        let count = (w as usize / BAR_STEP).max(1);
         let bands: Vec<f32> = if pv.playing.is_some() {
             // between the two columns the time played falls in, blended, so the bars move and never jump (#152)
-            let last = heard.bands.len().saturating_sub(1);
+            let last = n.saturating_sub(1);
             let pos = (played * n as f64).min(last as f64);
             let (col, f) = (pos as usize, (pos - pos.floor()) as f32);
-            match (heard.bands.get(col), heard.bands.get((col + 1).min(last))) {
-                (Some(a), Some(b)) => a.iter().zip(b.iter()).map(|(x, y)| *x as f32 * (1.0 - f) + *y as f32 * f).collect(),
-                _ => vec![],
-            }
+            let (a, b) = (heard.bands_at(col, count), heard.bands_at((col + 1).min(last), count));
+            a.iter().zip(b.iter()).map(|(x, y)| x * (1.0 - f) + y * f).collect()
         } else {
-            (0..crate::preview::BANDS)
-                .map(|k| heard.bands.iter().map(|b| b[k] as f32).sum::<f32>() / heard.bands.len().max(1) as f32)
-                .collect()
+            heard.bands(count)
         };
-        let step = (w as usize / crate::preview::BANDS).max(1);
-        let bar = step.saturating_sub(1).max(1);
-        let left = x0 + (w as usize - (step * crate::preview::BANDS).min(w as usize)) as u16 / 2;
         for (k, v) in bands.iter().enumerate() {
             let level = (v / 255.0 * (BAND_ROWS * 8) as f32).round() as u16;
             for r in 0..BAND_ROWS {
                 let fill = level.saturating_sub(r * 8).min(8) as usize;
-                for dx in 0..bar {
-                    pen.put(left + (k * step + dx) as u16, y + BAND_ROWS - 1 - r, EIGHTHS[fill], pal.accent, false, false);
-                }
+                pen.put(x0 + (k * BAR_STEP) as u16, y + BAND_ROWS - 1 - r, EIGHTHS[fill], pal.accent, false, false);
             }
         }
         y += BAND_ROWS + 1;

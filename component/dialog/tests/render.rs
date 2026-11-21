@@ -1303,6 +1303,15 @@ fn a_sound_is_its_waveform_its_spectrum_and_its_spectrogram() {
     render(&sound_app(false), "preview-sound");
 }
 
+/// A wide window (v0.160): a bar of the spectrum stays a cell wide and a cell from the next, and there are as many
+/// as the row holds, read from the same spectrogram. 28 bars stretched to five cells each before.
+#[test]
+fn a_sounds_bars_stay_a_cell_wide_in_a_wide_window() {
+    let mut app = sound_app(false);
+    app.size = (120, 42);
+    render_at(&app, "preview-sound-wide", 120, 42);
+}
+
 /// A long sound whose waveform is still being drawn aside (#124): its facts, its tags, its length, the words
 /// that say the picture comes; Play works meanwhile.
 #[test]
