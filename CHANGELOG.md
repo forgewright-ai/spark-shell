@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.159
+
+- A receipt leaves the line over the keys after eight seconds: `out
+  at 10%` with its undo stayed there until the next key. The undo
+  itself stays: type `undo`. A refusal and a note stay until the
+  next key, as before.
+- The bar shows at once a sound level set from home. The steps for
+  the output and the microphone never asked the bar for a new line,
+  so it showed the change at its next one, up to 15 seconds later.
+
 ## v0.158.2
 
 - The dialog builds on a Mac again, so the checks before a push pass
