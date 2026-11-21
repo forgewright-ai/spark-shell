@@ -111,6 +111,19 @@ dialog_install() {   # the dialog's row of on: in place as pinned, or fetched fo
     mkdir -p "$(dirname "$DIALOG_BIN")" && cp "$_df" "$DIALOG_BIN.new" && chmod 755 "$DIALOG_BIN.new" && mv "$DIALOG_BIN.new" "$DIALOG_BIN"
     row ok dialog "installed for $_rt ($DIALOG_BIN), sha256 checked"
 }
+home_stale() {   # on desktop, after the dialog's row: a home put away (in the scratchpad) whose process runs a build an
+    # update replaced is closed, so the next Super+Space opens this one; a home on screen is left as it is. Home stays
+    # running while it is put away, and the opener brings that window back, so an update never reached it before a logout
+    wm_up || return 0
+    _hs=$(wm_tree | jq -r 'first(.. | objects | select(.app_id? == "spark-dialog" and (.scratchpad_state // "none") != "none") | "\(.id) \(.pid)")' 2>/dev/null) || return 0
+    _hsi=${_hs% *}; _hsp=${_hs#* }
+    case $_hsi in ''|*[!0-9]*) return 0 ;; esac
+    case $_hsp in ''|*[!0-9]*) return 0 ;; esac
+    case $(readlink "/proc/$_hsp/exe" 2>/dev/null) in *' (deleted)') ;; *) return 0 ;; esac
+    need dialog "close home, put away with the build before, so the next one opens this build" || return 0
+    if wm_act "con_id=$_hsi" kill > /dev/null 2>&1; then ok dialog "home, put away with the build before, is closed: the next one opens this build"
+    else row todo dialog "home put away runs the build before, and the compositor did not close it: close home, then open it again"; acting=0; fi
+}
 # --- the wallpaper loop
 WALLPAPER_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-wallpaper
 wallpaper_target() { case $(uname -m) in x86_64|amd64) echo x86_64-linux-gnu ;; *) return 1 ;; esac; }   # -> the release's build for this machine, or false

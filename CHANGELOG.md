@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.158.1
+
+- After an update home opens the new dialog. Home stays running while
+  it is put away, and Super+Space brings that window back, so a home
+  put away before `spark-shell update` kept the dialog it started with
+  until a logout: on the owner's box v0.158's fixes did not show. on
+  now closes a home that is put away and runs the build the update
+  replaced; a home on screen is left as it is.
+
 ## v0.158
 
 - A video plays again with home full screen. It started and stopped

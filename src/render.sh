@@ -250,6 +250,7 @@ desktop_apply() {
     storage_apply
     power_apply
     dialog_install
+    home_stale
     semantic_install
     wallpaper_install
     sparkbar_install

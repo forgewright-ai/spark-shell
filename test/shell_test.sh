@@ -1137,6 +1137,26 @@ else
     out=$(padon --dry-run || :)
     printf '%s\n' "$out" | grep -qx 'would  pad          start the pad for this session, through sway as at login' && ! padasked \
         && ok "on --dry-run: the pad it would start is said, sway not asked" || bad "pad session dry" "$out | $(cat "$pslog" 2>&1)"
+    # a home put away (in the scratchpad) whose process runs a build an update replaced is closed by on, so the next
+    # Super+Space opens the new one; a home on screen, or one on the build in place, is left (v0.158: the owner's box kept
+    # v0.157's home after its update). The stand-in home is a copy of sh at the dialog's path, so /proc says its build
+    # was replaced once a new file is moved over it; it ends its sleep when it is stopped
+    hsd=$H/homesway; mkdir -p "$hsd" "$H/homerun"; hslog=$H/homesway.log; hbin=$H/.local/share/spark-shell/spark-dialog
+    mkdir -p "$(dirname "$hbin")"; cp "$(command -v sh)" "$hbin"; chmod +x "$hbin"
+    printf '#!/bin/sh\ncase "$*" in "-t get_version") echo "{\\"human_readable\\":\\"1.10\\"}" ;; "-t get_tree") cat "%s" ;; *) echo "$*" >> "%s" ;; esac\n' "$H/hometree.json" "$hslog" > "$hsd/swaymsg"; chmod +x "$hsd/swaymsg"
+    htree() { printf '{"nodes":[{"type":"workspace","name":"__i3_scratch","floating_nodes":[{"id":77,"app_id":"spark-dialog","pid":%s,"scratchpad_state":"%s"}]}]}\n' "$1" "$2" > "$H/hometree.json"; }
+    hstart() { "$hbin" -c 'trap "kill \$s 2>/dev/null; exit 0" TERM; sleep 120 & s=$!; wait $s' & hp=$!; i=0; while [ "$(readlink "/proc/$hp/exe" 2>/dev/null)" != "$hbin" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done; }
+    homeon() { rm -f "$hslog"; XDG_RUNTIME_DIR=$H/homerun SWAYSOCK=/nonexistent PATH="$hsd:$PATH" sh "$SH" on --yes 2>&1; }
+    hstart; cp "$hbin" "$hbin.new"; mv "$hbin.new" "$hbin"   # the update's new build moved over it
+    htree "$hp" fresh; out=$(homeon || :)
+    printf '%s\n' "$out" | grep -qx 'ok     dialog       home, put away with the build before, is closed: the next one opens this build' && grep -qxF '[con_id=77] kill' "$hslog" \
+        && ok "on: a home put away on the build an update replaced is closed, so the next one opens the new build" || bad "home stale" "$out | $(cat "$hslog" 2>&1)"
+    htree "$hp" none; out=$(homeon || :)
+    ! grep -qF 'kill' "$hslog" 2>/dev/null && ok "on: a home on screen is left as it is, whatever build it runs" || bad "home on screen" "$(cat "$hslog" 2>&1)"
+    kill "$hp" 2>/dev/null || :; wait "$hp" 2>/dev/null || :
+    hstart; htree "$hp" fresh; out=$(homeon || :)
+    ! grep -qF 'kill' "$hslog" 2>/dev/null && ok "on: a home put away on the build in place is left" || bad "home fresh" "$(cat "$hslog" 2>&1)"
+    kill "$hp" 2>/dev/null || :; wait "$hp" 2>/dev/null || :; rm -f "$hbin" "$H/hometree.json"
     # the pad's settings as a config from v0.142 or before names them, PAD_*: on says what it would do, then writes them
     # once under their WINPAD_ names; a setting the config holds under both keeps its new line (v0.143)
     _pc=$HOME/.config/spark-shell/config; cp "$_pc" "$H/cfg.renames"
