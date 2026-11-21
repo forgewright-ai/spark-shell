@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.158
+
+- A video plays again with home full screen. It started and stopped
+  at once, and the screen flickered: to show the video the window
+  left full screen with its band on, so its size changed, and a video
+  stops when the window changes size. The window now leaves full
+  screen with no band and no border, at the size of the screen, and
+  takes them back after.
+- A photo stays in view when it is zoomed in. Past the zoom where the
+  first picture of it runs out of pixels, home asks for a larger one.
+  Of a photo that file is 25 MB and more, and home read no picture
+  over 8 MB, so the view went empty. It reads up to 64 MB now, what
+  4096 by 4096 pixels can take.
+- A zoomed picture follows the pointer by the pixel while it is
+  dragged, and no longer jumps at the first motion.
+- The view names its file: `home / view / ~/pictures / photo.jpg` on
+  the line that says where you are. The name was nowhere on screen.
+- While the view waits for a large file, the line over the keys says
+  `loading NAME` beside the moving bar, as an app that opens has it.
+  The animation of the theme no longer plays in the view. A long
+  sound says `drawing the waveform` the same way.
+- The wheel moves the lit row again, a row a notch, in every list.
+  Since v0.155 it scrolled the list in home's own window and left the
+  lit row where it was. A drag still scrolls the list.
+
 ## v0.157
 
 - Files in its own window is laid out by the pixel, as home and apps
