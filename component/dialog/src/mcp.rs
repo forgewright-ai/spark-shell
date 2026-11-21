@@ -1,14 +1,16 @@
 //! The MCP client: one provider is one child on stdio, JSON-RPC a line
 //! (MCP 2025-06-18). No shell starts it, its environment is a named
 //! list, every line it writes is capped, and every request it is sent
-//! has a deadline.
+//! has a deadline. Its lines are queued and written by a thread of its
+//! own, so a provider that stops reading never blocks the dialog.
 
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::process::CommandExt;
-use std::process::{ChildStdin, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::mpsc::SyncSender;
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 pub const PROTOCOL: &str = "2025-06-18";
@@ -18,6 +20,13 @@ pub const LINE_MAX: usize = 1048576;
 /// A resource's text longer than this is not drawn, and the provider is closed: a folder's page of a
 /// thousand rows fits (#123).
 pub const RESOURCE_MAX: usize = 524288;
+/// The most bytes queued for a provider, the line being written included: the longest line and as much again
+/// behind it. A provider with more than this unread has stopped reading, and is closed (#28).
+pub const QUEUE_MAX: usize = 2 * LINE_MAX;
+/// A line is written in pieces this long, and a close is seen between two, so it cuts a long line short.
+const PIECE: usize = libc::PIPE_BUF;
+/// Why a provider is gone when its queue is full or a write to it fails.
+const DEAF: &str = "it stopped reading";
 pub const T_INIT: Duration = Duration::from_secs(5);
 pub const T_LIST: Duration = Duration::from_secs(5);
 pub const T_READ: Duration = Duration::from_secs(10);
@@ -107,14 +116,91 @@ pub struct Pending {
     pub token: Option<String>,
 }
 
+/// The lines queued for one provider. The dialog's thread only queues a line and never waits. The provider's
+/// writer thread writes them, so a provider that stops reading blocks that thread, not the dialog (#28).
+#[derive(Default)]
+struct Outbox {
+    state: Mutex<Waiting>,
+    more: Condvar,
+}
+
+#[derive(Default)]
+struct Waiting {
+    /// The lines not started yet, each with the id of the request it carries.
+    lines: VecDeque<(Option<u64>, Vec<u8>)>,
+    /// The bytes of `lines` plus the line being written.
+    bytes: usize,
+    closed: bool,
+}
+
+/// Why a line was not queued.
+enum Refused {
+    Closed,
+    Full,
+}
+
+impl Outbox {
+    fn state(&self) -> MutexGuard<'_, Waiting> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn put(&self, id: Option<u64>, line: Vec<u8>) -> Result<(), Refused> {
+        let mut q = self.state();
+        if q.closed {
+            return Err(Refused::Closed);
+        }
+        if q.bytes + line.len() > QUEUE_MAX {
+            return Err(Refused::Full);
+        }
+        q.bytes += line.len();
+        q.lines.push_back((id, line));
+        drop(q);
+        self.more.notify_one();
+        Ok(())
+    }
+
+    /// Removes a request that is still queued, so it is never sent. False when its line was already started.
+    fn withdraw(&self, id: u64) -> bool {
+        let mut q = self.state();
+        let Some(at) = q.lines.iter().position(|(i, _)| *i == Some(id)) else {
+            return false;
+        };
+        if let Some((_, line)) = q.lines.remove(at) {
+            q.bytes -= line.len();
+        }
+        true
+    }
+
+    /// Stops sending: the queued lines are dropped, the line being written stops at its next piece, and the
+    /// writer thread closes the provider's input. True when the queue was open.
+    fn close(&self) -> bool {
+        let mut q = self.state();
+        let open = !q.closed;
+        q.closed = true;
+        let dropped: usize = q.lines.drain(..).map(|(_, line)| line.len()).sum();
+        q.bytes -= dropped;
+        drop(q);
+        self.more.notify_one();
+        open
+    }
+}
+
 pub struct Server {
     pub argv: Vec<String>,
     pub idx: usize,
     pub label: String,
-    stdin: Option<Box<dyn Write + Send>>,
+    outbox: Arc<Outbox>,
+    tx: SyncSender<Incoming>,
     next: u64,
     pub pending: HashMap<u64, Pending>,
     pub alive: bool,
+}
+
+/// Dropping a server closes its provider's input, as `close_stdin` does: the writer thread holds the pipe.
+impl Drop for Server {
+    fn drop(&mut self) {
+        self.outbox.close();
+    }
 }
 
 /// argv words, the first an absolute path: never a shell string.
@@ -150,46 +236,59 @@ impl Server {
         // the child's pipes are kept, the handle itself is not: nothing waits for a provider (#60)
         let mut child = cmd.spawn().map_err(|e| format!("{}: {}", label, e))?;
         let out = child.stdout.take().ok_or("no stdout")?;
-        let stdin: Option<Box<dyn Write + Send>> = child.stdin.take().map(|w: ChildStdin| Box::new(w) as Box<dyn Write + Send>);
-        std::thread::spawn(move || read_lines(idx, out, tx));
-        Ok(Server {
-            argv: argv.to_vec(),
-            idx,
-            label: label.to_string(),
-            stdin,
-            next: 1,
-            pending: HashMap::new(),
-            alive: true,
-        })
+        let to = child.stdin.take().ok_or("no stdin")?;
+        let mut server = Server::on_pipes(idx, label, out, to, tx);
+        server.argv = argv.to_vec();
+        Ok(server)
     }
 
     /// A provider on a pair of pipes already open (the tests' stub servers).
     pub fn on_pipes(idx: usize, label: &str, from: impl Read + Send + 'static, to: impl Write + Send + 'static, tx: SyncSender<Incoming>) -> Server {
-        std::thread::spawn(move || read_lines(idx, from, tx));
+        let outbox = Arc::new(Outbox::default());
+        std::thread::spawn({
+            let tx = tx.clone();
+            move || read_lines(idx, from, tx)
+        });
+        std::thread::spawn({
+            let (outbox, tx) = (outbox.clone(), tx.clone());
+            move || write_lines(idx, to, outbox, tx)
+        });
         Server {
             argv: vec![],
             idx,
             label: label.to_string(),
-            stdin: Some(Box::new(to)),
+            outbox,
+            tx,
             next: 1,
             pending: HashMap::new(),
             alive: true,
         }
     }
 
-    fn write(&mut self, v: &Value) -> bool {
+    /// Queues a line for the provider and never waits. False when the line is not queued: it is over LINE_MAX,
+    /// the provider is closed, or the queue is full. A full queue closes the provider and reports it gone.
+    fn write(&mut self, id: Option<u64>, v: &Value) -> bool {
         let mut line = v.to_string();
         if line.len() > LINE_MAX {
             return false;
         }
         line.push('\n');
-        match self.stdin.as_mut() {
-            Some(w) => w.write_all(line.as_bytes()).and_then(|_| w.flush()).is_ok(),
-            None => false,
+        match self.outbox.put(id, line.into_bytes()) {
+            Ok(()) => true,
+            Err(Refused::Closed) => false,
+            Err(Refused::Full) => {
+                self.outbox.close();
+                // reported from a thread of its own: the channel is bounded, and the dialog's thread never waits on it
+                let (tx, idx) = (self.tx.clone(), self.idx);
+                std::thread::spawn(move || tx.send(Incoming::Gone(idx, DEAF.into())));
+                false
+            }
         }
     }
 
-    /// A request with its deadline; the id, or None when the provider is gone.
+    /// A request with its deadline; the id, or None when the provider is gone. The deadline covers the time in
+    /// the queue and the write (#28). A request queued and only partly sent keeps its id: it ends at its deadline
+    /// or with its provider, and its outcome is unknown.
     pub fn request(&mut self, method: &str, params: Value, kind: Kind, timeout: Duration) -> Option<u64> {
         if !self.alive {
             return None;
@@ -205,41 +304,38 @@ impl Server {
             }
             token = Some(t);
         }
-        let ok = self.write(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}));
+        let deadline = Instant::now() + timeout;
+        let ok = self.write(Some(id), &json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}));
         if !ok {
             self.alive = false;
             return None;
         }
-        self.pending.insert(
-            id,
-            Pending {
-                kind,
-                deadline: Instant::now() + timeout,
-                token,
-            },
-        );
+        self.pending.insert(id, Pending { kind, deadline, token });
         Some(id)
     }
 
     pub fn notify(&mut self, method: &str, params: Value) {
-        let _ = self.write(&json!({"jsonrpc": "2.0", "method": method, "params": params}));
+        let _ = self.write(None, &json!({"jsonrpc": "2.0", "method": method, "params": params}));
     }
 
     pub fn answer(&mut self, id: &Value, result: Value) {
-        let _ = self.write(&json!({"jsonrpc": "2.0", "id": id, "result": result}));
+        let _ = self.write(None, &json!({"jsonrpc": "2.0", "id": id, "result": result}));
     }
 
     pub fn refuse(&mut self, id: &Value, code: i64, message: &str) {
-        let _ = self.write(&json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}}));
+        let _ = self.write(None, &json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}}));
     }
 
-    /// The requests whose deadline passed: each gets a cancellation, and is dead.
+    /// The requests whose deadline passed: each is dead. One still queued is never sent; one sent, or partly
+    /// sent, gets a cancellation.
     pub fn expired(&mut self, now: Instant) -> Vec<(u64, Pending)> {
         let late: Vec<u64> = self.pending.iter().filter(|(_, p)| p.deadline <= now).map(|(k, _)| *k).collect();
         let mut out = Vec::new();
         for id in late {
             if let Some(p) = self.pending.remove(&id) {
-                self.notify("notifications/cancelled", json!({"requestId": id, "reason": "the dialog stopped waiting"}));
+                if !self.outbox.withdraw(id) {
+                    self.notify("notifications/cancelled", json!({"requestId": id, "reason": "the dialog stopped waiting"}));
+                }
                 out.push((id, p));
             }
         }
@@ -253,9 +349,47 @@ impl Server {
 
     /// Its input closed: the provider ends the request it is answering, reads the end of its input
     /// and leaves through its own EXIT trap, its temporary folder with it. Nothing waits for it (#60).
+    /// What is still queued is never sent. A provider that had stopped reading sees the end of its input
+    /// when it reads again (#28).
     pub fn close_stdin(&mut self) {
-        self.stdin = None;
+        self.outbox.close();
         self.alive = false;
+    }
+}
+
+/// A provider's writer thread: it writes the queued lines in order, a piece at a time. It ends when the queue
+/// closes or a write fails, and the provider's input closes with it. A failed write reports the provider gone.
+fn write_lines(idx: usize, mut to: impl Write, outbox: Arc<Outbox>, tx: SyncSender<Incoming>) {
+    loop {
+        let line = {
+            let mut q = outbox.state();
+            loop {
+                if q.closed {
+                    return;
+                }
+                if let Some((_, line)) = q.lines.pop_front() {
+                    break line;
+                }
+                q = outbox.more.wait(q).unwrap_or_else(PoisonError::into_inner);
+            }
+        };
+        let mut sent = Ok(());
+        for piece in line.chunks(PIECE) {
+            if outbox.state().closed {
+                return;
+            }
+            sent = to.write_all(piece);
+            if sent.is_err() {
+                break;
+            }
+        }
+        outbox.state().bytes -= line.len();
+        if sent.and_then(|_| to.flush()).is_err() {
+            if outbox.close() {
+                let _ = tx.send(Incoming::Gone(idx, DEAF.into()));
+            }
+            return;
+        }
     }
 }
 
@@ -324,5 +458,117 @@ mod tests {
         for k in ["SSH_AUTH_SOCK", "SPARK_API_KEY_FILE", "GITHUB_TOKEN", "LD_PRELOAD", "AWS_SECRET_ACCESS_KEY"] {
             assert!(!env_kept(k), "{}", k);
         }
+    }
+
+    /// A guard, so a call that blocks on a provider's pipe fails the test and does not hang it. It is not a
+    /// guess at how long a call takes.
+    const GUARD: Duration = Duration::from_secs(10);
+
+    /// Runs `run` on a thread of its own, as the dialog's thread would: a call that blocks fails here.
+    fn in_time<T: Send + 'static>(run: impl FnOnce() -> T + Send + 'static) -> T {
+        let (done, back) = std::sync::mpsc::channel();
+        std::thread::spawn(move || done.send(run()));
+        back.recv_timeout(GUARD).expect("the call blocked on a provider that does not read")
+    }
+
+    /// A provider that does not read: the reader of its input is held open and not read, its output is silent.
+    fn deaf() -> (Server, std::io::PipeReader, std::io::PipeWriter, std::sync::mpsc::Receiver<Incoming>) {
+        let (input, to) = std::io::pipe().unwrap();
+        let (from, output) = std::io::pipe().unwrap();
+        let (tx, said) = std::sync::mpsc::sync_channel(8);
+        (Server::on_pipes(0, "deaf", from, to, tx), input, output, said)
+    }
+
+    /// Params that make a line of half LINE_MAX: more than a pipe holds.
+    fn long() -> Value {
+        json!({"uri": "a".repeat(LINE_MAX / 2)})
+    }
+
+    #[test]
+    fn a_provider_that_never_reads_blocks_no_request_deadline_or_close() {
+        // #28: the write blocked the dialog's thread on the full pipe, and the deadline started after the write
+        let (mut s, mut input, _output, _said) = deaf();
+        let soon = Duration::from_millis(25);
+        let before = Instant::now();
+        let (mut s, first) = in_time(move || {
+            let id = s.request("resources/read", long(), Kind::Read, soon);
+            (s, id)
+        });
+        let first = first.expect("the request is queued");
+        // the writer thread takes the first line and blocks on the pipe; the second request stays queued
+        let end = Instant::now() + GUARD;
+        while !s.outbox.state().lines.is_empty() && Instant::now() < end {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(s.outbox.state().lines.is_empty(), "the writer thread took the first line");
+        let second = s.request("tools/list", json!({}), Kind::Tools, soon).expect("the second is queued");
+        assert!(s.expired(before).is_empty(), "nothing expires early");
+        // both expire on time: the deadline covers the time in the queue and the write
+        let last = s.pending.values().map(|p| p.deadline).max().unwrap();
+        std::thread::sleep(last.saturating_duration_since(Instant::now()));
+        let (mut s, late) = in_time(move || {
+            let late = s.expired(Instant::now());
+            (s, late)
+        });
+        let mut ids: Vec<u64> = late.iter().map(|(id, _)| *id).collect();
+        ids.sort();
+        assert_eq!(ids, vec![first, second]);
+        // the queued request is never sent; the partly sent one gets a cancellation
+        let queued: Vec<Value> = s.outbox.state().lines.iter().map(|(_, line)| serde_json::from_slice(line).unwrap()).collect();
+        assert_eq!(queued.len(), 1, "{:?}", queued);
+        assert_eq!(queued[0]["method"], "notifications/cancelled");
+        assert_eq!(queued[0]["params"]["requestId"], first);
+        // a close does not block, and the input does close: a provider that reads now gets the start of the
+        // first line, then the end of its input, and nothing that was queued
+        let mut s = in_time(move || {
+            s.close_stdin();
+            s
+        });
+        assert!(!s.alive && s.request("tools/list", json!({}), Kind::Tools, soon).is_none());
+        let read = in_time(move || {
+            let mut read = Vec::new();
+            input.read_to_end(&mut read).map(|_| read)
+        })
+        .unwrap();
+        let line = json!({"jsonrpc": "2.0", "id": first, "method": "resources/read", "params": long()}).to_string();
+        assert!(read.len() < line.len() && line.as_bytes().starts_with(&read), "{} bytes", read.len());
+    }
+
+    #[test]
+    fn a_full_queue_closes_the_provider_and_reports_it_gone() {
+        let (mut s, _input, _output, said) = deaf();
+        // three lines of half LINE_MAX fit under QUEUE_MAX; the fourth is refused and closes the provider
+        let (mut s, queued) = in_time(move || {
+            let queued: Vec<Option<u64>> = (0..5).map(|_| s.request("resources/read", long(), Kind::Read, T_READ)).collect();
+            (s, queued)
+        });
+        assert_eq!(queued, vec![Some(1), Some(2), Some(3), None, None]);
+        assert!(!s.alive && s.request("tools/list", json!({}), Kind::Tools, T_LIST).is_none());
+        assert!(s.outbox.state().lines.is_empty(), "a closed queue holds nothing");
+        match said.recv_timeout(GUARD) {
+            Ok(Incoming::Gone(0, why)) => assert_eq!(why, "it stopped reading"),
+            other => panic!("{:?}", other),
+        }
+        // the three queued are still pending: the app ends them with the provider, their outcome unknown
+        assert!(queued.iter().flatten().all(|id| s.pending.contains_key(id)));
+    }
+
+    #[test]
+    fn a_failed_write_reports_the_provider_gone_and_keeps_the_request_pending() {
+        // the provider reads the start of a call, then closes its input: the call is partly sent
+        let (mut s, mut input, _output, said) = deaf();
+        let id = s.request("tools/call", long(), Kind::Call(0), T_CALL).expect("the call is queued");
+        let input = in_time(move || {
+            input.read_exact(&mut [0; 64]).unwrap();
+            input
+        });
+        drop(input);
+        match said.recv_timeout(GUARD) {
+            Ok(Incoming::Gone(0, why)) => assert_eq!(why, "it stopped reading"),
+            other => panic!("{:?}", other),
+        }
+        // the call is still pending, not refused: the app ends it as one that may or may not have happened
+        assert!(s.pending.contains_key(&id));
+        assert!(s.request("tools/list", json!({}), Kind::Tools, T_LIST).is_none() && !s.alive);
     }
 }
