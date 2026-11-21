@@ -1,5 +1,43 @@
 # Changelog
 
+## v0.157
+
+- Files in its own window is laid out by the pixel, as home and apps
+  are. A file is a row of 44 pixels: its name leads, its size and its
+  date stand beside it in the smaller text, and the name of a folder
+  ends in a slash. In a wide window the size and the date stay beside
+  the names. A name too long for its column is cut in its middle.
+- The line that says where you are names each folder from your home
+  down: `home / files / documents / research`. A click on a folder
+  goes there. What the folder holds stands at the end of that line:
+  the row that said it is gone, and so is the line of the lit file
+  over the keys.
+- Four keys stand under a list of files: back, open, view, details.
+  Every other key works as before; the details of a file list them.
+- The details of a file (F9, or Right on the file) open beside the
+  list where the window is 600 pixels wide or more: what the file
+  shows (a picture, a page of a PDF, the first lines of a text, the
+  picture of a sound), its name, its kind, its size, when it changed,
+  and what you do with it, each row with its key. Tab goes to the list
+  and back, and the details follow the lit file. Esc closes them. A
+  narrower window shows them as a page.
+- Two panes stand side by side in the new rows, each under the name
+  of its folder. A click on the other pane takes the keys there.
+  `second pane` in the details of a file opens the second pane, as
+  Ctrl+Tab does.
+- In files Right opens the lit folder, Left goes back a level and Tab
+  changes the pane. Until now the two arrows changed the pane there.
+- Beside a list, Tab goes to what stands beside it and back: the
+  details of an app, the details of a file, the other pane. The
+  controls at the end of the input (attach, talk) are Shift+Tab from
+  the list.
+- In a wide window what ends a row (a value, a switch, a key) stays
+  within 640 pixels of the start of the row.
+- The view of a sound or a video shows again with mpv 0.42: it came
+  empty there, with no waveform and no frame. mpv 0.42 prints a
+  control character as `?`, and the files provider parted what it
+  asked of mpv with one. It asks for a line each now.
+
 ## v0.156
 
 - In files the second pane opens again at the size home starts at.
