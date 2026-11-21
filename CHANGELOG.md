@@ -2,8 +2,26 @@
 
 ## v0.161
 
+- Settings reads as apps and files do: its groups named at 28
+  pixels, a setting two lines, its name over what it is set to now.
+  The group look is named appearance, and notifications is a group
+  of its own.
+- A setting is one row on its page: its options side by side, the
+  one in use in the accent, and Left and Right change it in place.
+  A switch is on and off; a value of a few choices shows them all;
+  a longer one stands between its two words (less 35% more). Every
+  option is a target a finger hits, 44 pixels at least.
+- A text size is auto and an A at each size around the one in use,
+  the size after them.
+- The bar's place is one row: top, bottom, hidden.
+- A wide window shows the lit setting's page beside settings, as
+  it does an app's and a file's.
+- The dialog, the bar and the pad share one theme library,
+  spark-theme: one rule for colors, light and dark, and the glyphs.
+  Nothing changes on screen; the bar and the pad are new builds.
 - CI checks the crates with cargo-deny-action 2.1.2: its five steps
   are pinned at the sha the upstream v2.1.2 tag names (#34).
+- The dialog is 0.161.0.
 
 ## v0.160
 
