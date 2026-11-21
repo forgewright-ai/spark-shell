@@ -31,14 +31,7 @@ impl Rect {
     }
 }
 
-/// A color: the surface's own (Reset), one of the palette's slots by its number, or a red, green and blue.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum Color {
-    #[default]
-    Reset,
-    Indexed(u8),
-    Rgb(u8, u8, u8),
-}
+pub use spark_theme::palette::Color;
 
 /// How a symbol is written: bold, underlined, both or neither.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]

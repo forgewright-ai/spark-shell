@@ -5,10 +5,10 @@
 SPARKBAR_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-bar
 SPARKBAR_TRAY_SLOTS=4   # the apps' icons the strip at the bar's end holds
 sparkbar_file() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-bar.$1"; }   # sparkbar_file pid|state|log|font|tray -> the bar's file of that kind, in the runtime folder
-sparkbar_release_tag() {   # -> clone_tag when it pins a bar and component/bar/ is unchanged since; false otherwise
+sparkbar_release_tag() {   # -> clone_tag when it pins a bar and its sources, including the shared theme, match; false otherwise
     _sbr=$(clone_tag) || return 1
     git -C "$REPO" cat-file -e "$_sbr:component/bar/bar.env" 2>/dev/null || return 1
-    git -C "$REPO" diff --quiet "$_sbr" -- component/bar 2>/dev/null || return 1
+    git -C "$REPO" diff --quiet "$_sbr" -- component/bar component/theme component/Cargo.toml component/Cargo.lock 2>/dev/null || return 1
     printf '%s\n' "$_sbr"
 }
 sparkbar_want_sha() {   # -> the sha256 the release tag's tree pins for this machine, or nothing

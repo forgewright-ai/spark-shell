@@ -123,7 +123,7 @@ jobs:
       - name: ascii docs
         run: |
           tab=$(printf '\t')
-          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell src/*.sh test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/bar_build.sh test/desktop_proof.sh test/lane.sh test/prove.sh test/tag.sh test/dialog_pty.py lib/terminal.py test/terminal_test.py lib/saver.py test/saver_test.py lib/office.py test/office_test.py $(find template distro gallery/theme component/dialog/src component/dialog/tests component/wallpaper/src component/winpad/src component/bar/src -type f ! -name '*.txt' | sort) component/dialog/Cargo.toml component/dialog/deny.toml component/dialog/dialog.env component/dialog/rust-toolchain.toml component/wallpaper/Cargo.toml component/wallpaper/deny.toml component/wallpaper/wallpaper.env component/wallpaper/rust-toolchain.toml component/winpad/Cargo.toml component/winpad/deny.toml component/winpad/winpad.env component/winpad/rust-toolchain.toml component/bar/Cargo.toml component/bar/deny.toml component/bar/bar.env component/bar/rust-toolchain.toml; do
+          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell src/*.sh test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/bar_build.sh test/desktop_proof.sh test/lane.sh test/prove.sh test/tag.sh test/dialog_pty.py lib/terminal.py test/terminal_test.py lib/saver.py test/saver_test.py lib/office.py test/office_test.py $(find template distro gallery/theme component/theme/src component/theme/tests component/dialog/src component/dialog/tests component/wallpaper/src component/winpad/src component/bar/src -type f ! -name '*.txt' | sort) component/Cargo.toml component/theme/Cargo.toml component/theme/rust-toolchain.toml component/dialog/Cargo.toml component/dialog/deny.toml component/dialog/dialog.env component/dialog/rust-toolchain.toml component/wallpaper/Cargo.toml component/wallpaper/deny.toml component/wallpaper/wallpaper.env component/wallpaper/rust-toolchain.toml component/winpad/Cargo.toml component/winpad/deny.toml component/winpad/winpad.env component/winpad/rust-toolchain.toml component/bar/Cargo.toml component/bar/deny.toml component/bar/bar.env component/bar/rust-toolchain.toml; do
             if LC_ALL=C grep -n "[^ -~${tab}]" "$f"; then
               echo "non-ASCII in $f"; exit 1; fi; done
       - name: no hex color in a template (the look is the 16 slots)
@@ -529,12 +529,12 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
         with:
           name: spark-dialog-x86_64-linux-gnu
-          path: component/dialog/target/x86_64-unknown-linux-gnu/release/spark-dialog
+          path: component/target/x86_64-unknown-linux-gnu/release/spark-dialog
           retention-days: 14
       - name: the sha256 component/dialog/dialog.env pins
         run: |
           set -eu
-          got=$(sha256sum component/dialog/target/x86_64-unknown-linux-gnu/release/spark-dialog | cut -d' ' -f1)
+          got=$(sha256sum component/target/x86_64-unknown-linux-gnu/release/spark-dialog | cut -d' ' -f1)
           want=$(sed -n 's/^DIALOG_SHA256_X86_64_LINUX_GNU=//p' component/dialog/dialog.env)
           if [ "$got" != "$want" ]; then echo "the build is not the binary component/dialog/dialog.env pins -- DIALOG_SHA256_X86_64_LINUX_GNU=$got"; exit 1; fi
   dialog:
@@ -554,6 +554,9 @@ jobs:
       - name: the toolchain component/dialog/rust-toolchain.toml pins
         working-directory: component/dialog
         run: rustup show active-toolchain || rustup toolchain install
+      - name: the shared theme crate
+        working-directory: component/theme
+        run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
       - name: the format and clippy
         working-directory: component/dialog
         run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings
@@ -657,12 +660,12 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
         with:
           name: spark-winpad-x86_64-linux-gnu
-          path: component/winpad/target/x86_64-unknown-linux-gnu/release/spark-winpad
+          path: component/target/x86_64-unknown-linux-gnu/release/spark-winpad
           retention-days: 14
       - name: the sha256 component/winpad/winpad.env pins
         run: |
           set -eu
-          got=$(sha256sum component/winpad/target/x86_64-unknown-linux-gnu/release/spark-winpad | cut -d' ' -f1)
+          got=$(sha256sum component/target/x86_64-unknown-linux-gnu/release/spark-winpad | cut -d' ' -f1)
           want=$(sed -n 's/^WINPAD_SHA256_X86_64_LINUX_GNU=//p' component/winpad/winpad.env)
           if [ "$got" != "$want" ]; then echo "the build is not the binary component/winpad/winpad.env pins -- WINPAD_SHA256_X86_64_LINUX_GNU=$got"; exit 1; fi
   winpad-deny:
@@ -765,12 +768,12 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
         with:
           name: spark-bar-x86_64-linux-gnu
-          path: component/bar/target/x86_64-unknown-linux-gnu/release/spark-bar
+          path: component/target/x86_64-unknown-linux-gnu/release/spark-bar
           retention-days: 14
       - name: the sha256 component/bar/bar.env pins
         run: |
           set -eu
-          got=$(sha256sum component/bar/target/x86_64-unknown-linux-gnu/release/spark-bar | cut -d' ' -f1)
+          got=$(sha256sum component/target/x86_64-unknown-linux-gnu/release/spark-bar | cut -d' ' -f1)
           want=$(sed -n 's/^BAR_SHA256_X86_64_LINUX_GNU=//p' component/bar/bar.env)
           if [ "$got" != "$want" ]; then echo "the build is not the binary component/bar/bar.env pins -- BAR_SHA256_X86_64_LINUX_GNU=$got"; exit 1; fi
   bar-deny:

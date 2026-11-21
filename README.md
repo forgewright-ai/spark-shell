@@ -107,6 +107,12 @@ lists every key with its default, and the commands write them.
 
 ## Contributing
 
+The dialog, bar and winpad share the Rust library in `component/theme`.
+It defines native palette colors, terminal slots and glyph families.
+The shell reads the palette files in `gallery/theme`, manages saved looks
+and applies them through `spark-shell theme`. From `component/theme`,
+`cargo test --locked` compares every shipped palette with the shell.
+
     git config core.hooksPath .githooks
     sh test/gate.sh
 

@@ -15,9 +15,7 @@ updates:
   # each component took five rounds of pins and runs
   - package-ecosystem: cargo
     directories:
-      - /component/dialog
-      - /component/winpad
-      - /component/bar
+      - /component
       - /component/ear
       - /component/wallpaper
     schedule:

@@ -25,10 +25,10 @@ tag_floor() {   # -> the newest signed tag at or behind HEAD; false when none
     return 1
 }
 clone_tag() { tag_floor || git -C "$REPO" describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*' 2>/dev/null; }   # -> the release this clone is at: the signed tag, else the nearest
-release_tag() {   # -> clone_tag when it pins a dialog and component/dialog/ is unchanged since; false otherwise
+release_tag() {   # -> clone_tag when it pins a dialog and its sources, including the shared theme, match; false otherwise
     _rt=$(clone_tag) || return 1
     git -C "$REPO" cat-file -e "$_rt:component/dialog/dialog.env" 2>/dev/null || return 1
-    git -C "$REPO" diff --quiet "$_rt" -- component/dialog 2>/dev/null || return 1
+    git -C "$REPO" diff --quiet "$_rt" -- component/dialog component/theme component/Cargo.toml component/Cargo.lock 2>/dev/null || return 1
     printf '%s\n' "$_rt"
 }
 # Two kinds of key in allowed-signers, by the principal that starts a line. A release key signs any release. A patch

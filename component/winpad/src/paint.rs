@@ -160,13 +160,7 @@ pub struct Rgb(pub f64, pub f64, pub f64);
 impl Rgb {
     /// rrggbb (or #rrggbb); None for anything else.
     pub fn hex(s: &str) -> Option<Rgb> {
-        let s = s.trim().trim_start_matches('#');
-        if s.len() != 6 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return None;
-        }
-        let v = u32::from_str_radix(s, 16).ok()?;
-        let c = |sh: u32| ((v >> sh) & 0xff) as f64 / 255.0;
-        Some(Rgb(c(16), c(8), c(0)))
+        spark_theme::hex(s).map(|[r, g, b]| Rgb(f64::from(r) / 255.0, f64::from(g) / 255.0, f64::from(b) / 255.0))
     }
 }
 

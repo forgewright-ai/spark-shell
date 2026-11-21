@@ -128,8 +128,7 @@ impl Style {
 /// A color as pango's markup takes one, its six digits in lower case. Anything else stays out of the
 /// title, as a half space's size does.
 fn hex(v: Option<&str>) -> Option<String> {
-    let v = v?.trim().trim_start_matches('#');
-    (v.len() == 6 && v.bytes().all(|b| b.is_ascii_hexdigit())).then(|| v.to_lowercase())
+    spark_theme::hex(v?).map(|[r, g, b]| format!("{r:02x}{g:02x}{b:02x}"))
 }
 
 /// A size for the half space as pango's markup takes one, in 1024ths of a point: digits alone, more than

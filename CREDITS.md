@@ -62,7 +62,7 @@ repositories; the fonts and the model are pinned to one release.
 
 ## The dialog
 
-Built with crates from crates.io, each pinned by `component/dialog/Cargo.lock`;
+Built with crates from crates.io, each pinned by `component/Cargo.lock`;
 the release's `spark-dialog.cdx.json` lists every one with its license.
 
 - ratatui -- https://github.com/ratatui/ratatui -- MIT.

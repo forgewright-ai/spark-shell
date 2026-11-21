@@ -7372,6 +7372,11 @@ with tarfile.open(h + "/assets/rewrite.tar.bz2", "w:bz2") as t:
     printf '%s\n' "$out" | grep -q '^todo   dialog       this clone is past its release: the dialog comes with the next tag$' && ok "on: a dialog.env edited in the working copy is no release: the tag's own tree decides" || bad "dialog env edited" "$(printf '%s\n' "$out" | grep dialog)"
     out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --dry-run 2>&1 || :)
     printf '%s\n' "$out" | grep -q '^ok     dialog       ' && ok "on --dry-run: the dialog in place is ok" || bad "dialog ok" "$(printf '%s\n' "$out" | grep dialog)"
+    printf '\n' >> "$C/component/theme/src/lib.rs"
+    out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --dry-run 2>&1 || :)
+    g checkout -q -- component/theme/src/lib.rs
+    [ "$(printf '%s\n' "$out" | grep -cE '^todo +(dialog|bar|pad) +this clone is past its release:')" = 3 ] \
+        && ok "on: changing only the shared theme puts the dialog, bar and pad past their release" || bad "theme crate past" "$out"
     # a file that is not the pinned one, a tag no key here signed, a tree past its release: nothing installed
     rm -f "$bin"; printf 'x' >> "$H/assets/v9.9/spark-dialog-x86_64-linux-gnu"
     out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes 2>&1 || :)

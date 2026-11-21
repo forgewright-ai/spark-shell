@@ -28,7 +28,7 @@ export SPARK_SHELL_NO_APPLY=1   # a test never touches this machine's terminal p
 py_tests() { grep -oE 'python3( -I)? test/[A-Za-z0-9_]+\.py' "$ci" | awk '!seen[$0]++'; }
 
 checks() {
-    printf '%s\n' privacy ascii templates shellcheck 'cargo fmt --check' 'cargo clippy' 'cargo test' 'cargo build --release'
+    printf '%s\n' privacy ascii templates shellcheck 'theme crate' 'cargo fmt --check' 'cargo clippy' 'cargo test' 'cargo build --release'
     py_tests
     [ -n "$quick" ] || printf '%s\n' 'suite: this machine'
 }
@@ -73,6 +73,9 @@ _name=templates; step templates
 # user's package, and CI runs it on every push
 if command -v shellcheck >/dev/null 2>&1; then _name=shellcheck; step shellcheck_ci; else printf 'skip  shellcheck (not found here; CI runs it)\n'; fi
 
+# --- the shared theme
+_name='theme crate'; step sh -c 'cd component/theme && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked'
+
 # --- the dialog
 _name='cargo fmt --check'; step sh -c 'cd component/dialog && cargo fmt --check'
 _name='cargo clippy'; step sh -c 'cd component/dialog && cargo clippy --locked --all-targets -- -D warnings'
@@ -94,7 +97,7 @@ py_tests > "$logs/py"
 while IFS= read -r t; do
     _name=$t
     # shellcheck disable=SC2086   # the line as ci.yml writes it: python3, -I maybe, the file
-    case $t in *dialog_pty.py) step $t component/dialog/target/release/spark-dialog ;; *) step $t ;; esac
+    case $t in *dialog_pty.py) step $t component/target/release/spark-dialog ;; *) step $t ;; esac
 done < "$logs/py"
 
 [ -z "$quick" ] || { echo "gate: $n checks passed (the suites are not run with --quick)"; exit 0; }
