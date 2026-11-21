@@ -180,19 +180,59 @@ KB_RE='^[a-z]{2,10}(\+[a-z0-9_-]{1,24})?( [a-z]{2,10}(\+[a-z0-9_-]{1,24})?){0,7}
 config_renames() {   # spark-shell on: the pad's settings a config from v0.142 or before names PAD_*, written once under their WINPAD_* names
     [ -f "$CONFIG" ] && _crn=$(grep -cE '^PAD_(PLACE|WIDTH|SIDE_WIDTH|HEIGHT|VIEW|BAND)=' "$CONFIG") || return 0
     need config "$_crn settings of the pad take their WINPAD_ names, PAD_ before ($CONFIG)" || return 0
-    # a setting the config already holds under its new name keeps that line; the old one goes
+    config_locked config_rename || exit 1
+    ok config "$_crn settings of the pad are WINPAD_ now ($CONFIG)"
+}
+config_rename() {   # under the lock: a setting the config already holds under its new name keeps that line; the old one goes
     awk 'NR == FNR { if ($0 ~ /^WINPAD_[A-Z_]*=/) { k = $0; sub(/=.*/, "", k); have[k] = 1 }; next }
         /^PAD_(PLACE|WIDTH|SIDE_WIDTH|HEIGHT|VIEW|BAND)=/ { k = $0; sub(/=.*/, "", k); if (!(("WIN" k) in have)) print "WIN" $0; next }
         { print }' "$CONFIG" "$CONFIG" > "$TMP/config" && config_put "$TMP/config"
-    ok config "$_crn settings of the pad are WINPAD_ now ($CONFIG)"
 }
 put_whole() {   # put_whole SRC DST -- SRC's bytes become DST in one step: written beside it and moved onto it, so whoever reads DST meets the old file or the new one. cp emptied a file before it wrote it, and a reader in that moment met no setting at all. A DST that is a link stays a link: written through it, as before
     if [ -L "$2" ]; then cp "$1" "$2"; return; fi
     _pwn=$2.new.$$
     { [ ! -f "$2" ] || cp "$2" "$_pwn"; } && cat "$1" > "$_pwn" && mv "$_pwn" "$2" || { rm -f "$_pwn"; return 1; }   # the copy first: the new file keeps the old one's mode
 }
-config_put() { put_whole "$1" "$CONFIG"; }   # config_put FILE -- FILE's lines become the config in one step
-config_set() {   # config_set KEY VALUE -- one line replaced or added; a value load_env would refuse is refused first
+config_put() {   # config_put FILE -- FILE's lines become the config in one step; the caller holds the lock (config_locked). SPARK_SHELL_CONFIG_HOLD=PATH (tests only) pauses before that step: PATH.here gets the lines, PATH.go ends the pause, and so do 10 seconds
+    if [ -n "${SPARK_SHELL_CONFIG_HOLD:-}" ]; then
+        cp "$1" "$SPARK_SHELL_CONFIG_HOLD.new" && mv "$SPARK_SHELL_CONFIG_HOLD.new" "$SPARK_SHELL_CONFIG_HOLD.here"; _cph=0
+        until [ -e "$SPARK_SHELL_CONFIG_HOLD.go" ] || [ "$_cph" -ge 200 ]; do sleep 0.05; _cph=$((_cph + 1)); done
+    fi
+    put_whole "$1" "$CONFIG"
+}
+# the config's lock (#31). A change reads the config, writes the new lines to a file and moves it onto the config. Two
+# changes at once read the same lines, so the second one's file dropped the first one's key, and both said ok. A writer
+# now holds $CONFIG.lock from its read to the move. The lock is a file made with O_EXCL (set -C; console.sh says why not
+# mkdir) and holds its holder's pid. A writer that finds it held tries for 3 seconds, then refuses in one line. The next
+# writer clears a lock whose holder is gone (kill -9, a crash)
+config_lock_gone() {   # config_lock_gone LOCK -> 0 when its holder is gone: no process has the pid in it, or it is over a minute old (a writer holds it for milliseconds; after a restart another process can have the pid)
+    _clg=''; read -r _clg 2>/dev/null < "$1" || :
+    case $_clg in ''|*[!0-9]*) ;; *) kill -0 "$_clg" 2>/dev/null || return 0 ;; esac
+    [ -n "$(find "$1" -mmin +1 2>/dev/null)" ]
+}
+config_locked() (   # config_locked CMD ARG... -- CMD run while holding the lock; 1 and one line when the lock is not free within 3 seconds. A subshell: its own traps release the lock on every exit, a signal included, and the caller's traps stay as they are
+    _clk=$CONFIG.lock; _clp=$(exec sh -c 'echo "$PPID"'); _clw=0; _cld=''   # the subshell's pid, not $$: the caller can die while this one still writes
+    trap 'read -r _cld 2>/dev/null < "$_clk" || :; [ "$_cld" != "$_clp" ] || rm -f "$_clk"' EXIT   # release only a lock that holds this pid
+    trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 141' PIPE
+    until set -C; { printf '%s\n' "$_clp" > "$_clk"; } 2>/dev/null; do   # created and written by one command of this process: no trap runs in between
+        set +C
+        if [ "$_clw" -ge 60 ]; then   # 60 tries, 50 ms apart
+            if [ -e "$_clk" ]; then printf 'spark-shell: another change holds the config, so nothing was written. Try again (%s)\n' "$_clk" >&2
+            else printf "spark-shell: the config's lock could not be made, so nothing was written (%s)\n" "$_clk" >&2; fi
+            exit 1
+        fi
+        _clw=$((_clw + 1))
+        [ -z "${SPARK_SHELL_CONFIG_HOLD:-}" ] || : > "$SPARK_SHELL_CONFIG_HOLD.waits"   # tests only: this writer waits for the lock
+        if config_lock_gone "$_clk"; then   # one writer clears at a time (.clear) and checks again once it holds .clear: a lock taken meanwhile is never removed
+            ! config_lock_gone "$_clk.clear" || lock_drop "$_clk.clear"   # a clearer that died left .clear behind
+            ( trap '' HUP INT TERM PIPE; lock_take "$_clk.clear" || exit 1; ! config_lock_gone "$_clk" || lock_drop "$_clk"; lock_drop "$_clk.clear" ) && continue
+        fi
+        sleep 0.05
+    done
+    set +C
+    "$@"
+)
+config_set() {   # config_set KEY VALUE -- one line replaced or added, under the lock; a value load_env would refuse is refused first
     case $2 in *[';`$()|&<>']*) printf 'spark-shell: %s=%s cannot be kept: a value holds none of ; ` $ ( ) | & < >\n' "$1" "$2" >&2; exit 1 ;; esac
     [ "$(printf '%s' "$2" | tr -d '\001-\037\177')" = "$2" ] || { printf 'spark-shell: %s cannot be kept: a value holds no control character, a new line included\n' "$1" >&2; exit 1; }   # a new line would be a second line of the config
     case $1 in
@@ -200,17 +240,19 @@ config_set() {   # config_set KEY VALUE -- one line replaced or added; a value l
         WALLPAPER) wall_value_ok "$2" || { printf 'spark-shell: WALLPAPER=%s cannot be kept: %s\n' "$2" "$PATH_SAID" >&2; exit 1; } ;;
     esac
     mkdir -p "$CONFIG_DIR"
+    config_locked config_edit "$1" "$2" || exit 1
+    row ok config "$1=$2 ($CONFIG)"
+}
+config_edit() {   # config_edit KEY VALUE -- under the lock: the config as it is now, KEY's line replaced or added, the result moved onto it
     if [ -f "$CONFIG" ] && grep -q "^$1=" "$CONFIG"; then
-        sed "s|^$1=.*|$1=$(esc "$2")|" "$CONFIG" > "$TMP/config"
-        config_put "$TMP/config"
+        sed "s|^$1=.*|$1=$(esc "$2")|" "$CONFIG" > "$TMP/config" || return 1
     else
         # the lines there, the last one ended if it was not (a key added after it was glued onto it: FONT=...LOGIN=yes), then the new one
-        if [ -f "$CONFIG" ]; then { cat "$CONFIG"; [ -z "$(tail -c 1 "$CONFIG")" ] || echo; } > "$TMP/config"
+        if [ -f "$CONFIG" ]; then { cat "$CONFIG"; [ -z "$(tail -c 1 "$CONFIG")" ] || echo; } > "$TMP/config" || return 1
         else printf '# spark-shell config -- KEY=value (config.example shows the keys)\n' > "$TMP/config"; fi
         printf '%s=%s\n' "$1" "$2" >> "$TMP/config"
-        config_put "$TMP/config"
     fi
-    row ok config "$1=$2 ($CONFIG)"
+    config_put "$TMP/config"
 }
 
 THEME_KEYS="THEME_BG THEME_FG THEME_ACCENT THEME_MUTED THEME_ANSI_0 THEME_ANSI_1 THEME_ANSI_2 THEME_ANSI_3 THEME_ANSI_4 THEME_ANSI_5 THEME_ANSI_6 THEME_ANSI_7 THEME_ANSI_8 THEME_ANSI_9 THEME_ANSI_10 THEME_ANSI_11 THEME_ANSI_12 THEME_ANSI_13 THEME_ANSI_14 THEME_ANSI_15"

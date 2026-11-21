@@ -1170,6 +1170,18 @@ else
         && ok "on: the pad's settings named PAD_ are written under their WINPAD_ names, once; one held under both keeps its new line (v0.143)" || bad "config renames" "$out | $(grep 'PAD_' "$_pc")"
     out=$(padon || :)
     ! printf '%s\n' "$out" | grep -q ' config .*WINPAD_' && ok "on again: no setting is left to rename" || bad "config renames twice" "$out"
+    # the renaming holds the config's lock as any change does (#31): paused before its move (SPARK_SHELL_CONFIG_HOLD,
+    # its lines in .here), a change started then waits for the lock (.waits), and both stay
+    printf 'PAD_HEIGHT=40\n' >> "$_pc"; rm -f "$H"/hold-r.* "$H"/hold-s.*; : > "$H/hold-s.go"
+    SPARK_SHELL_CONFIG_HOLD=$H/hold-r padon > "$H/hold-r.out" 2>&1 & _crp=$!
+    _cri=0; until [ -e "$H/hold-r.here" ] || [ "$_cri" -ge 200 ]; do sleep 0.05; _cri=$((_cri + 1)); done
+    _crh=$(cat "$H/hold-r.here" 2>/dev/null || :)
+    SPARK_SHELL_CONFIG_HOLD=$H/hold-s XDG_RUNTIME_DIR=$H/padrun SWAYSOCK=/nonexistent PATH="$psd:$PATH" sh "$SH" desktop time week monday > "$H/hold-s.out" 2>&1 & _crq=$!
+    _cri=0; until [ -e "$H/hold-s.waits" ] || [ -e "$H/hold-s.here" ] || [ "$_cri" -ge 100 ]; do sleep 0.05; _cri=$((_cri + 1)); done
+    _crw=no; [ ! -e "$H/hold-s.waits" ] || _crw=waits
+    : > "$H/hold-r.go"; wait "$_crq" || :; wait "$_crp" || :
+    printf '%s\n' "$_crh" | grep -qx 'WINPAD_HEIGHT=40' && ! printf '%s\n' "$_crh" | grep -q '^PAD_' && [ "$_crw" = waits ] && grep -qx 'WINPAD_HEIGHT=40' "$_pc" && ! grep -q '^PAD_' "$_pc" && grep -qx 'WEEK_START=monday' "$_pc" && [ ! -e "$_pc.lock" ] \
+        && ok "on: the renaming holds the config's lock: a change started while it is paused before its move waits, and both stay (#31)" || bad "config renames lock" "$_crw | $_crh | $(cat "$_pc" "$H/hold-r.out" "$H/hold-s.out" 2>&1)"
     cp "$H/cfg.renames" "$_pc"
     # the voice row (v0.144): VOICE=no leaves it out; your own engine is taken as it is; the check says the same
     printf 'VOICE=no\n' >> "$_pc"; out=$(padon --dry-run || :)
@@ -9451,6 +9463,47 @@ L desktop time week sunday >/dev/null
 [ "$(cat "$HOME/.config/spark-shell/config")" = "$(printf 'DESKTOP=sway\nCLOCK_FORMAT=12\nWEEK_START=sunday')" ] && [ "$(ls -i "$HOME/.config/spark-shell/config" | awk '{ print $1 }')" != "$_ci" ] \
     && [ -z "$(find "$HOME/.config/spark-shell" -name '*.new.*')" ] \
     && ok "config: a key added after a last line with no new line stands on its own line, and the file is replaced in one step" || bad "config last line" "$(cat "$HOME/.config/spark-shell/config")"
+# two changes of the config at once both stay (#31). With no lock both read the same lines, and the second one's file
+# dropped the first one's key while both said ok. SPARK_SHELL_CONFIG_HOLD pauses a change before its move, so the test
+# sets the order: the first pauses there, the second starts and waits for the lock (.waits; with no lock it reads the
+# old lines and pauses too, .here), the first goes on, then the second
+cfg=$HOME/.config/spark-shell/config
+config_wait() { _cwi=0; until [ -e "$1" ] || [ -e "${2:-$1}" ] || [ "$_cwi" -ge 100 ]; do sleep 0.05; _cwi=$((_cwi + 1)); done; }   # config_wait FILE [FILE] -- until one of them is there, 5 s at most
+config_held() { rm -f "$H"/hold-a.*; SPARK_SHELL_CONFIG_HOLD=$H/hold-a L desktop time format 12 > "$H/hold-a.out" 2>&1 & _cpp=$!; config_wait "$H/hold-a.here"; }   # time format 12 started and paused before its move, holding the lock; _cpp its pid
+config_pair() {   # time format 12 and time week monday at once; _cpa and _cpb their statuses, _cpo the config while the first was paused
+    rm -f "$H"/hold-b.*; _cpa=0; _cpb=0
+    config_held; _cpo=$(cat "$cfg")
+    SPARK_SHELL_CONFIG_HOLD=$H/hold-b L desktop time week monday > "$H/hold-b.out" 2>&1 & _cpq=$!
+    config_wait "$H/hold-b.waits" "$H/hold-b.here"
+    : > "$H/hold-a.go"; wait "$_cpp" || _cpa=$?
+    : > "$H/hold-b.go"; wait "$_cpq" || _cpb=$?
+}
+config_end() {   # config_end SIGNAL -- time format 12 paused before its move, then SIGNAL to the process that holds the lock; _cpa its status, _cpl whether its lock is left
+    _cpa=0; config_held; _cph=''; read -r _cph 2>/dev/null < "$cfg.lock" || :
+    [ -z "$_cph" ] || kill "-$1" "$_cph" 2>/dev/null || :
+    wait "$_cpp" || _cpa=$?
+    _cpl=gone; [ ! -e "$cfg.lock" ] || _cpl=left
+}
+# a lock held by a live process, this one: the change waits its 3 seconds beside the tests below, in a config of its own
+mkdir -p "$H/held/spark-shell"; printf 'DESKTOP=sway\nCLOCK_FORMAT=24\n' > "$H/held/spark-shell/config"; echo "$$" > "$H/held/spark-shell/config.lock"
+XDG_CONFIG_HOME=$H/held L desktop time format 12 > "$H/held.out" 2>&1 & _chp=$!
+printf 'DESKTOP=sway\nCLOCK_FORMAT=24\nWEEK_START=sunday\n' > "$cfg"; config_pair
+[ "$_cpa$_cpb" = 00 ] && [ "$(cat "$cfg")" = "$(printf 'DESKTOP=sway\nCLOCK_FORMAT=12\nWEEK_START=monday')" ] && [ "$_cpo" = "$(printf 'DESKTOP=sway\nCLOCK_FORMAT=24\nWEEK_START=sunday')" ] && [ -z "$(find "$HOME/.config/spark-shell" -name 'config.*')" ] \
+    && ok "config: two changes at once to two keys the config holds both stay; a reader meets the old config whole while the first is paused before its move; no lock is left (#31)" || bad "config two changes" "$_cpa $_cpb $_cpo | $(cat "$cfg" "$H/hold-a.out" "$H/hold-b.out" 2>&1)"
+printf 'DESKTOP=sway\n' > "$cfg"; config_pair
+[ "$_cpa$_cpb" = 00 ] && [ "$(cat "$cfg")" = "$(printf 'DESKTOP=sway\nCLOCK_FORMAT=12\nWEEK_START=monday')" ] \
+    && ok "config: two changes at once that each add a key both stay, each key on one line (#31)" || bad "config two new keys" "$_cpa $_cpb $(cat "$cfg" "$H/hold-a.out" "$H/hold-b.out" 2>&1)"
+# a change that dies holding the lock does not block the next one: a signal makes it release the lock; after kill -9 the
+# lock stays with a dead pid in it, and the next change clears it. Neither wrote a line
+printf 'DESKTOP=sway\nCLOCK_FORMAT=24\nWEEK_START=monday\n' > "$cfg"
+config_end TERM; _cta=$_cpa; _ctl=$_cpl
+config_end KILL
+rc=0; out=$(L desktop time week sunday 2>&1) || rc=$?
+[ "$_cta" != 0 ] && [ "$_ctl" = gone ] && [ "$_cpa" != 0 ] && [ "$_cpl" = left ] && [ "$rc" = 0 ] && [ "$(cat "$cfg")" = "$(printf 'DESKTOP=sway\nCLOCK_FORMAT=24\nWEEK_START=sunday')" ] && [ ! -e "$cfg.lock" ] \
+    && ok "config: a change ended by a signal releases its lock; one killed with kill -9 leaves a lock the next change clears; neither wrote a line (#31)" || bad "config lock left" "TERM $_cta $_ctl KILL $_cpa $_cpl rc=$rc $out | $(cat "$cfg" "$H/hold-a.out" 2>&1)"
+_chr=0; wait "$_chp" || _chr=$?
+[ "$_chr" = 1 ] && [ "$(cat "$H/held.out")" = "spark-shell: another change holds the config, so nothing was written. Try again ($H/held/spark-shell/config.lock)" ] && [ "$(cat "$H/held/spark-shell/config")" = "$(printf 'DESKTOP=sway\nCLOCK_FORMAT=24')" ] && [ "$(cat "$H/held/spark-shell/config.lock")" = "$$" ] \
+    && ok "config: a change waits 3 seconds for a lock another one holds, then refuses in one line; the config and the lock stay as they were (#31)" || bad "config lock held" "$_chr $(cat "$H/held.out" "$H/held/spark-shell/config" 2>&1)"
 printf 'DESKTOP=sway\nCLOCK_FORMAT=12\nWEEK_START=monday\n' > "$HOME/.config/spark-shell/config"
 rc=0; out=$(L desktop time zone Etc/GMT </dev/null 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$(readlink "$H/root/etc/localtime")" = "$H/root/usr/share/zoneinfo/Etc/UTC" ]     && ok "time: a native zone change needs confirmation" || bad "time confirmation" "$out"
