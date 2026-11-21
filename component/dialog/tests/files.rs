@@ -3533,3 +3533,28 @@ fn the_name_a_rename_offers_is_drawn_on_the_selections_background() {
     app.left();
     assert_eq!(cell(&app, 4), ("n".to_string(), false), "kept to edit: only words again");
 }
+
+/// The list's word for what a file is knows every ending the provider's own table of kinds does (src/preview.sh,
+/// FILES_KINDS): a kind the provider learns to view gets its word here too.
+#[test]
+fn a_files_kind_word_knows_every_ending_the_provider_views() {
+    use spark_dialog::files::kind_word;
+    let sh = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../src/preview.sh")).expect("the provider's source");
+    let table = sh.split("FILES_KINDS='").nth(1).and_then(|t| t.split('\'').next()).expect("its table of kinds");
+    let mut seen = 0;
+    for line in table.lines() {
+        let mut words = line.split_whitespace();
+        let kind = words.next().expect("a kind");
+        for ext in words {
+            assert!(!kind_word(&format!("a.{ext}")).is_empty(), "{ext} ({kind}) has no word");
+            seen += 1;
+        }
+    }
+    assert!(seen > 100, "the table was read: {seen} endings");
+    // by the ending alone, whatever its case; a name with none, or a hidden file's, says nothing
+    assert_eq!(
+        (kind_word("notes.MD"), kind_word("photo.jpeg"), kind_word("talk.odp")),
+        ("markdown", "picture", "slides")
+    );
+    assert_eq!((kind_word("README"), kind_word(".bashrc"), kind_word("data.xyz")), ("", "", ""));
+}

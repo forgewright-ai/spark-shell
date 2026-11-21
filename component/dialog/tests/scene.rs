@@ -177,6 +177,15 @@ fn word(s: &Scene, text: &str) -> (f64, f64, Size, bool) {
         .unwrap_or_else(|| panic!("no words {text:?} among {:?}", words(s).iter().map(|w| &w.0).collect::<Vec<_>>()))
 }
 
+/// A group's name in large type: where it stands.
+fn heading(s: &Scene, text: &str) -> (f64, f64) {
+    words(s)
+        .into_iter()
+        .find(|w| w.0 == text && w.3 == Size::Head)
+        .map(|w| (w.1, w.2))
+        .unwrap_or_else(|| panic!("no heading {text:?}"))
+}
+
 fn fills(s: &Scene, color: [u8; 3]) -> Vec<(f64, f64, f64, f64)> {
     s.steps
         .iter()
@@ -601,31 +610,32 @@ fn a_larger_text_grows_every_length() {
 /// steps; NATIVE_PNG=DIR keeps the pictures for a look.
 #[cfg(target_os = "linux")]
 #[test]
-fn files_are_rows_of_44_pixels_the_name_leading_its_size_and_its_date_beside_it() {
+fn files_are_rows_of_two_lines_under_folders_and_files() {
     let mut a = files();
     assert_eq!(kind(&a), Kind::Files);
     let s = scene(&mut a, 600.0, 800.0);
     assert!(s.grid.is_none(), "files are drawn in pixels");
-    // L1: a row is 44 pixels, the name at the text's edge; a folder's name ends in a slash
+    // the folder above is a bare name: a row of 44 pixels, the name at the text's edge
     assert_eq!(word(&s, ".."), (48.0, 97.0 + 28.0 - M.up, Size::Main, false));
+    // FL2 (v0.160): the folders, then the files, each group named at 28 pixels as a group of apps is
+    assert_eq!(heading(&s, "folders"), (48.0, 141.0 + 32.0 - M.big[0].1));
+    assert_eq!(heading(&s, "files"), (48.0, 237.0 + 32.0 - M.big[0].1));
+    // a row is 52 pixels, as an app's: the name (a folder's ends in a slash), and under it what it is, its size
+    // and its date in the smaller text
     let (x, y, size, _) = word(&s, "figures");
-    assert_eq!((x, y, size), (48.0, 97.0 + 44.0 + 28.0 - M.up, Size::Main));
+    assert_eq!((x, y, size), (48.0, 185.0 + 21.0 - M.up, Size::Main));
     assert!(
         words(&s).iter().any(|w| w.0 == "/" && (w.1, w.2, w.3) == (48.0 + 7.0 * M.cw, y, Size::Main)),
         "the slash after the folder's name"
     );
-    // the size and the date in the smaller text, each on its right edge: the date at the frame's, the size
-    // 86 pixels before it, the names the rest
-    let small = 97.0 + 44.0 + 28.0 - M.sup;
-    assert_eq!(word(&s, "2 items"), (490.0 - 7.0 * M.sw, small, Size::Small, false));
-    assert_eq!(word(&s, "1 KB"), (490.0 - 4.0 * M.sw, small + 2.0 * 44.0, Size::Small, false));
-    let dates: Vec<_> = words(&s).into_iter().filter(|w| w.0 == "today").collect();
-    assert_eq!(dates.len(), 3, "a date beside each file, none beside a folder");
-    assert!(dates.iter().all(|w| w.1 == 576.0 - 5.0 * M.sw && w.3 == Size::Small));
-    // a name longer than its column is cut in its middle: its type stays
+    assert_eq!(word(&s, "2 items"), (48.0, 185.0 + 42.0 - M.sup, Size::Small, false));
+    assert_eq!(word(&s, "picture \u{b7} 1 KB \u{b7} today"), (48.0, 333.0 + 42.0 - M.sup, Size::Small, false));
+    word(&s, "text \u{b7} 8 B \u{b7} today");
+    word(&s, "PDF \u{b7} 11 KB \u{b7} today");
+    // a name has the row: a long one is cut in its middle, its type kept, and more of it stays than a column gave
     let long = words(&s).into_iter().find(|w| w.0.starts_with("a-very-long")).expect("the long name");
     assert!(long.0.contains('\u{2026}') && long.0.ends_with("2026.txt"), "{}", long.0);
-    assert_eq!(long.0.chars().count(), 36, "the 378 pixels of the names, less their air");
+    assert_eq!(long.0.chars().count(), 51, "the 516 pixels of the row");
     // the folder's summary is no row: what it counts stands where you are, at the line's end
     assert!(!words(&s).iter().any(|w| w.0.starts_with("this folder")));
     assert_eq!(word(&s, "4 items \u{b7} 12 KB"), (576.0 - 15.0 * M.sw, 82.0 - M.sup, Size::Small, false));
@@ -636,15 +646,16 @@ fn files_are_rows_of_44_pixels_the_name_leading_its_size_and_its_date_beside_it(
     assert_eq!(s.hit(230.0, 78.0), None, "research is where you are");
     // K1: back, view and details; open once a row is lit
     assert_eq!(keys(&s), [HintKey::Escape, HintKey::View, HintKey::Actions]);
-    assert_eq!(s.hit(300.0, 97.0 + 44.0 + 10.0), Some(&Target::Pick(1)));
+    assert_eq!(s.hit(300.0, 185.0 + 10.0), Some(&Target::Pick(1)));
+    assert_eq!(s.hit(300.0, 141.0 + 10.0), None, "a heading takes no click");
     a.down();
     a.down();
     let s = scene(&mut a, 600.0, 800.0);
     assert_eq!(keys(&s), [HintKey::Escape, HintKey::Enter, HintKey::View, HintKey::Actions]);
     // the lit row's bar from the window's edge to its other edge, its name bold with the line under it
-    assert!(fills(&s, LIT).contains(&(0.0, 97.0 + 44.0, 600.0, 44.0)), "{:?}", fills(&s, LIT));
+    assert!(fills(&s, LIT).contains(&(0.0, 185.0, 600.0, 52.0)), "{:?}", fills(&s, LIT));
     assert!(word(&s, "figures").3, "the lit name is bold");
-    assert!(fills(&s, ACCENT).contains(&(48.0, y + M.up + 5.0, 70.0, 2.0)), "{:?}", fills(&s, ACCENT));
+    assert!(fills(&s, ACCENT).contains(&(48.0, y + M.up + 4.0, 70.0, 2.0)), "{:?}", fills(&s, ACCENT));
     // the lit file's line is no message: its row says it
     assert!(!words(&s).iter().any(|w| w.0.starts_with("figures \u{b7}")));
     // the app counts the rows the body holds
@@ -652,14 +663,15 @@ fn files_are_rows_of_44_pixels_the_name_leading_its_size_and_its_date_beside_it(
 }
 
 #[test]
-fn a_wide_window_keeps_a_files_size_and_date_beside_its_name() {
+fn a_wide_window_keeps_a_files_words_under_its_name() {
     let mut a = files();
     let s = scene(&mut a, 1920.0, 1080.0);
-    // the names take 420 pixels at most: the size and the date stand after them, never across the window
-    assert_eq!(word(&s, "2 items").0, 48.0 + 420.0 + 64.0 - 7.0 * M.sw);
-    assert!(words(&s).iter().filter(|w| w.0 == "today").all(|w| w.1 == 48.0 + 420.0 + 150.0 - 5.0 * M.sw));
+    // what a file is stands under its name at the text's edge, never across the window; a name has 640 pixels
+    // from the list's edge at most
+    assert_eq!(word(&s, "2 items").0, 48.0);
+    assert_eq!(word(&s, "picture \u{b7} 1 KB \u{b7} today").0, 48.0);
     let long = words(&s).into_iter().find(|w| w.0.starts_with("a-very-long")).expect("the long name");
-    assert_eq!(long.0.chars().count(), 40, "cut to its column still");
+    assert_eq!(long.0.chars().count(), 61, "cut to the row's 616 pixels");
 }
 
 #[test]
@@ -679,24 +691,27 @@ fn two_panes_of_files_stand_side_by_side_each_under_its_folder() {
     // each pane under its folder: bright over the one that holds the keys, muted over the other
     assert_eq!(word(&s, "~/documents/research"), (48.0, 97.0 + 24.0 - M.sup, Size::Small, true));
     assert_eq!(word(&s, "~/documents"), (324.0, 97.0 + 24.0 - M.sup, Size::Small, false));
-    // the rows 40 pixels under the frame's rule; a pane has the room for the size alone
+    // the rows 40 pixels under the frame's rule, in each pane the folder above, then its groups under their names
     let dots: Vec<_> = words(&s).into_iter().filter(|w| w.0 == "..").collect();
     assert_eq!(dots.len(), 2);
     assert!(dots.iter().all(|w| w.2 == 137.0 + 28.0 - M.up) && dots[0].1 == 48.0 && dots[1].1 == 324.0);
-    assert_eq!(
-        word(&s, "2 items").0,
-        288.0 - 7.0 * M.sw,
-        "the left pane's sizes end 12 pixels before the line between"
+    let heads: Vec<_> = words(&s).into_iter().filter(|w| w.0 == "folders" && w.3 == Size::Head).collect();
+    assert_eq!(heads.iter().map(|w| w.1).collect::<Vec<_>>(), [48.0, 324.0], "each pane names its folders");
+    // what a row is stands under its name, so a pane this narrow keeps the size and the date too
+    assert_eq!(word(&s, "2 items").0, 48.0);
+    assert_eq!(word(&s, "4 items").0, 324.0, "the right pane's, at its own edge");
+    assert_eq!(word(&s, "picture \u{b7} 1 KB \u{b7} today").0, 48.0);
+    // the lit row's bar ends where its pane does; the other pane has none, and no line stands between the two
+    assert!(fills(&s, LIT).contains(&(0.0, 137.0 + 88.0, 300.0, 52.0)), "{:?}", fills(&s, LIT));
+    assert!(
+        !fills(&s, LIT).iter().any(|f| f.2 == 1.0 && f.3 > 100.0),
+        "no line between them: {:?}",
+        fills(&s, LIT)
     );
-    assert_eq!(word(&s, "4 items").0, 576.0 - 7.0 * M.sw, "the right pane's at the frame's edge");
-    assert!(!words(&s).iter().any(|w| w.0 == "today"), "no date in a pane this narrow");
-    // the lit row's bar ends at the line between the panes; the other pane has none
-    assert!(fills(&s, LIT).contains(&(0.0, 137.0 + 44.0, 300.0, 44.0)), "{:?}", fills(&s, LIT));
-    assert!(fills(&s, LIT).iter().any(|f| f.0 == 300.0 && f.2 == 1.0), "the line between them");
-    assert_eq!(fills(&s, LIT).iter().filter(|f| f.3 == 44.0).count(), 1);
+    assert_eq!(fills(&s, LIT).iter().filter(|f| f.3 == 52.0).count(), 1);
     // a click: a row of this pane, a row of the other, the other pane off its rows
     assert_eq!(s.hit(150.0, 137.0 + 10.0), Some(&Target::Pick(0)));
-    assert_eq!(s.hit(450.0, 137.0 + 44.0 + 10.0), Some(&Target::OtherRow(1)));
+    assert_eq!(s.hit(450.0, 137.0 + 88.0 + 10.0), Some(&Target::OtherRow(1)));
     assert_eq!(s.hit(450.0, 600.0), Some(&Target::OtherPane));
     assert_eq!(s.hit(450.0, 110.0), Some(&Target::OtherPane), "its folder's name too");
     // the keys say Tab is the other pane
@@ -733,9 +748,8 @@ fn a_files_details_stand_beside_the_list_follow_the_lit_file_and_tab_goes_betwee
     let s = scene(&mut a, 600.0, 800.0);
     // D1: the list a column of names with the file lit, its bar to the line between; the details a third of the
     // window, 280 pixels at least
-    assert!(fills(&s, LIT).contains(&(0.0, 97.0 + 3.0 * 44.0, 280.0, 44.0)), "{:?}", fills(&s, LIT));
+    assert!(fills(&s, LIT).contains(&(0.0, 333.0, 280.0, 52.0)), "{:?}", fills(&s, LIT));
     assert!(fills(&s, LIT).iter().any(|f| f.0 == 280.0 && f.2 == 1.0), "the line between them");
-    assert!(!words(&s).iter().any(|w| w.0 == "today" || w.0 == "2 items"), "names alone in the list");
     // what it shows, in a box of one height whatever the file; then its name, its facts, what you do with it
     let shown = PictureAt {
         x: 296.0,
@@ -756,7 +770,10 @@ fn a_files_details_stand_beside_the_list_follow_the_lit_file_and_tab_goes_betwee
     let (kx, ..) = word(&s, "picture \u{b7} 640 \u{d7} 400");
     assert_eq!(kx, 564.0 - 19.0 * M.sw, "what the page adds to the row's kind, at the row's end");
     word(&s, "today 20:44");
-    assert!(!words(&s).iter().any(|w| w.0.contains("1 KB \u{b7}")), "what the row says already is said once");
+    assert!(
+        !words(&s).iter().any(|w| w.1 >= 296.0 && w.0.contains("1 KB \u{b7}")),
+        "what the row says already is said once in the details"
+    );
     let (x, y, _, bold) = word(&s, "open");
     assert!(x == 308.0 && bold, "open is the lit row of the details");
     assert!(fills(&s, ACCENT).contains(&(x, y + M.up + 5.0, 40.0, 2.0)), "and wears the line");
@@ -768,7 +785,7 @@ fn a_files_details_stand_beside_the_list_follow_the_lit_file_and_tab_goes_betwee
     word(&tall, "Ctrl+Tab");
     // a click on a row of the details is that row; on a row of the list, the list's, which takes the keys
     assert_eq!(s.hit(400.0, y + 8.0), Some(&Target::Pick(0)));
-    assert_eq!(s.hit(100.0, 97.0 + 44.0 + 10.0), Some(&Target::ListRow(1)));
+    assert_eq!(s.hit(100.0, 185.0 + 10.0), Some(&Target::ListRow(1)));
     assert_eq!(keys(&s), [HintKey::Escape, HintKey::Enter, HintKey::Tab], "back to list, open, list");
     // where you are is the folder still, with what it holds
     word(&s, "4 items \u{b7} 12 KB");
@@ -801,7 +818,7 @@ fn a_files_details_stand_beside_the_list_follow_the_lit_file_and_tab_goes_betwee
     a.tab(false);
     assert!(a.files.pane && !a.files_page_open() && a.in_list && a.sel == 3 && a.list_keys);
     let s = scene(&mut a, 600.0, 800.0);
-    assert_eq!(s.hit(100.0, 97.0 + 44.0 + 10.0), Some(&Target::Pick(1)), "the list's rows are picks again");
+    assert_eq!(s.hit(100.0, 185.0 + 10.0), Some(&Target::Pick(1)), "the list's rows are picks again");
     assert!(
         matches!(s.hit(400.0, y + 8.0), Some(Target::PaneRow(0))),
         "a click on a details row takes the keys there"
@@ -882,10 +899,7 @@ fn the_wheel_moves_the_lit_row_a_row_a_notch_and_the_list_follows() {
     a.wheel(-1);
     assert_eq!(a.sel, 1);
     let s = scene(&mut a, 600.0, 800.0);
-    assert!(
-        fills(&s, LIT).contains(&(0.0, 97.0 + 44.0, 600.0, 44.0)),
-        "the bar is on the row the wheel chose"
-    );
+    assert!(fills(&s, LIT).contains(&(0.0, 185.0, 600.0, 52.0)), "the bar is on the row the wheel chose");
     // a list longer than the window: the wheel walks to its last app, and the list has followed the bar there
     let mut long = apps();
     for _ in 0..40 {

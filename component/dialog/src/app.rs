@@ -2547,6 +2547,8 @@ impl App {
                 && (words.is_empty() || self.row_matches(p, r, words))
         };
         let mut list = vec![];
+        // the layout in pixels names a folder's own two groups (v0.160): its folders, then its files
+        let mut named: Option<&str> = None;
         for (i, r) in rows.rows.iter().enumerate() {
             if !shown(r) {
                 continue;
@@ -2576,6 +2578,19 @@ impl App {
                     list.push(Item::Blank);
                 }
                 list.push(Item::Heading(r.group.clone().unwrap_or_default()));
+            }
+            if counted && r.group.is_none() {
+                let part = if r.id.starts_with("files:dir:") {
+                    Some("folders")
+                } else if r.id.starts_with("files:file:") || r.id.starts_with("files:link:") {
+                    Some("files")
+                } else {
+                    None
+                };
+                if let Some(word) = part.filter(|_| part != named) {
+                    list.push(Item::Heading(word.to_string()));
+                    named = part;
+                }
             }
             list.push(Item::Folder(i));
         }

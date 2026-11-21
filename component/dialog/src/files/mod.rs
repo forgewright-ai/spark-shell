@@ -374,6 +374,33 @@ pub fn is_recent(row: &Row) -> bool {
     row.group.as_deref() == Some("recent")
 }
 
+/// What a file is, in a word, by its name's ending: the provider's own kinds (src/preview.sh, FILES_KINDS), an
+/// office file by what it is, and the archives. Nothing for an ending it does not know: the row then says the
+/// size and the date alone.
+pub fn kind_word(name: &str) -> &'static str {
+    let Some((stem, ext)) = name.rsplit_once('.') else { return "" };
+    if stem.is_empty() {
+        return "";
+    }
+    match ext.to_ascii_lowercase().as_str() {
+        "md" | "markdown" => "markdown",
+        "json" => "JSON",
+        "sh" | "bash" | "zsh" | "fish" | "py" | "rb" | "pl" | "lua" | "js" | "mjs" | "cjs" | "ts" | "tsx" | "jsx" | "c" | "h" | "cc" | "cpp" | "hpp" | "cs"
+        | "java" | "kt" | "go" | "rs" | "swift" | "sql" | "html" | "htm" | "css" | "scss" | "xml" | "yaml" | "yml" | "toml" | "ini" | "cfg" | "conf"
+        | "env" | "diff" | "patch" => "code",
+        "txt" | "text" | "log" | "csv" | "tsv" | "jsonl" | "ndjson" | "rst" | "org" | "tex" | "srt" | "vtt" => "text",
+        "png" | "jpg" | "jpeg" | "webp" | "gif" | "svg" | "bmp" | "tif" | "tiff" => "picture",
+        "pdf" => "PDF",
+        "mp3" | "wav" | "flac" | "ogg" | "oga" | "opus" | "m4a" | "aac" | "aif" | "aiff" | "aifc" | "ac3" | "eac3" | "dts" | "caf" | "mka" | "wv" => "sound",
+        "mp4" | "m4v" | "mov" | "webm" | "mkv" | "avi" | "mpg" | "mpeg" | "mts" | "m2ts" | "wmv" | "ogv" | "mxf" | "3gp" => "video",
+        "docx" | "odt" => "document",
+        "pptx" | "odp" => "slides",
+        "xlsx" | "ods" => "spreadsheet",
+        "zip" | "tar" | "gz" | "tgz" | "xz" | "bz2" | "zst" | "7z" | "rar" => "archive",
+        _ => "",
+    }
+}
+
 /// The row that is the folder's own: its summary, which opens the folder's actions.
 pub fn is_summary(row: &Row) -> bool {
     row.tool.is_none() && row.children.is_none() && (row.id == "files:here" || row.id == "files:total")

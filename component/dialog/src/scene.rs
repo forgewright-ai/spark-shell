@@ -1039,15 +1039,13 @@ enum K {
     },
     /// Facts side by side: each one's word in the smaller face, its value under it.
     Facts(Vec<(String, String)>),
-    /// A file or a folder in a list of files: its name leads, its size and its date step back beside it.
+    /// A file or a folder in a list of files, as an app's row is (v0.160): its name leads, and under it what it
+    /// is, its size, its date and, where the row carries one, its own folder.
     File {
         name: String,
         /// A folder: its name ends in a slash.
         dir: bool,
-        size: String,
-        date: String,
-        /// Its own folder, where the row carries one: a recent file, a file found.
-        place: String,
+        what: String,
         check: bool,
         muted: bool,
     },
@@ -1082,6 +1080,8 @@ struct Shape {
     /// A row's words start this far inside its fill, in the sheets' pixels: 24 in a list, 12 in the details
     /// beside one.
     pad: f64,
+    /// A heading of the list is set large, as a group of apps is: a list of files.
+    heads: bool,
 }
 
 /// What an app is, beside or under its name: the entry's own word for its kind, else its comment.
@@ -1141,16 +1141,25 @@ fn of_row(r: &crate::model::Row) -> K {
 
 /// A provider's row of a list of files as the row its list draws.
 fn file_row(r: &crate::model::Row, check: bool) -> K {
-    let col = |k: usize| r.columns.get(k).cloned().unwrap_or_default();
+    let dir = r.id.starts_with("files:dir:");
+    // what it is by its name, then the row's own columns: its size (a folder's count), its date, its folder
+    let kind = if dir { "" } else { files::kind_word(&r.text) };
+    let what: Vec<&str> = std::iter::once(kind)
+        .chain(r.columns.iter().take(3).map(String::as_str))
+        .filter(|w| !w.is_empty())
+        .collect();
     K::File {
         name: r.text.clone(),
-        dir: r.id.starts_with("files:dir:"),
-        size: col(0),
-        date: col(1),
-        place: col(2),
+        dir,
+        what: what.join(crate::ui::SEP),
         check,
         muted: r.muted,
     }
+}
+
+/// A file's row: two lines where it says what it is, one for a bare name (the folder above).
+fn file_row_h(m: &Metrics, k: &K) -> f64 {
+    m.px(if matches!(k, K::File { what, .. } if what.is_empty()) { 44.0 } else { 52.0 })
 }
 
 /// A line of a page of files as a row: an action with its key, air, or words.
@@ -1210,7 +1219,7 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
                 gap(&mut out, m.px(16.0));
                 None
             }
-            Item::Heading(h) => Some((m.px(36.0), K::Head(h.clone(), false, None))),
+            Item::Heading(h) => Some((m.px(if shape.heads { 44.0 } else { 36.0 }), K::Head(h.clone(), shape.heads, None))),
             Item::Dest(d) => {
                 let words = app.dest_state(*d).unwrap_or_else(|| DESTS[*d].purpose.to_string());
                 Some((m.px(44.0), K::Dest(DESTS[*d].name.to_string(), words)))
@@ -1230,9 +1239,10 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
                 Some((one, plain("ask spark", words, false)))
             }
             Item::Hit(_) | Item::Row(..) => app.row_ref(it).map(|r| (one, of_row(r))),
-            Item::Folder(_) => app
-                .row_ref(it)
-                .map(|r| (m.px(44.0), file_row(r, app.files_checks_any() && app.files.checked(&r.id)))),
+            Item::Folder(_) => app.row_ref(it).map(|r| {
+                let k = file_row(r, app.files_checks_any() && app.files.checked(&r.id));
+                (file_row_h(m, &k), k)
+            }),
             Item::Files(l) => {
                 let made = files_line(m, l);
                 if made.is_none() {
@@ -1556,7 +1566,6 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
     });
     // each group lines its second words up: past its longest name
     let mut column = m.px(176.0);
-    let (file_names, file_cols) = file_columns(&m, area.right - area.left - m.px(shape.pad), shape.narrow);
     let mut y = area.top - off;
     for (at, row) in rows.iter().enumerate() {
         if matches!(row.k, K::Head(..)) || at == 0 {
@@ -1798,40 +1807,28 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                     pen.text(nx, top + m.px(56.0) + i as f64 * m.px(17.0), l, Size::Small, t.muted, false);
                 }
             }
-            K::File {
-                name,
-                dir,
-                size,
-                date,
-                place,
-                check,
-                muted,
-            } => {
-                let base = mid + m.px(6.0);
+            K::File { name, dir, what, check, muted } => {
+                let (nb, wb) = if what.is_empty() {
+                    (mid + m.px(6.0), 0.0)
+                } else {
+                    (mid - m.px(5.0), mid + m.px(16.0))
+                };
                 if *check {
-                    pen.text(x - 2.0 * m.cw, base, crate::ui::CHECK, Size::Main, t.accent, false);
+                    pen.text(x - 2.0 * m.cw, nb, crate::ui::CHECK, Size::Main, t.accent, false);
                 }
-                // the name in its column, cut in its middle so its type stays; a folder's slash after it, muted
+                // the name has the row, cut in its middle so its type stays; a folder's slash after it, muted
                 let slash = if *dir { m.cw } else { 0.0 };
-                let cells_wide = ((file_names - m.px(16.0) - slash) / m.cw).floor().max(4.0) as usize;
-                let w = pen.text(x, base, &cut_middle(name, cells_wide), Size::Main, if *muted { t.muted } else { t.ink }, on);
+                let cells_wide = ((end - x - slash) / m.cw).floor().max(4.0) as usize;
+                let w = pen.text(x, nb, &cut_middle(name, cells_wide), Size::Main, if *muted { t.muted } else { t.ink }, on);
                 if *dir {
-                    pen.text(x + w, base, "/", Size::Main, t.muted, false);
+                    pen.text(x + w, nb, "/", Size::Main, t.muted, false);
                 }
-                if file_cols >= 1 {
-                    pen.text_end(x + file_names + m.px(64.0), base, size, Size::Small, t.muted, false);
-                }
-                if file_cols >= 2 {
-                    pen.text_end(x + file_names + m.px(150.0), base, date, Size::Small, t.muted, false);
-                    // a file's own folder, where its row carries one and the window has the room
-                    let px = x + file_names + m.px(174.0);
-                    if !place.is_empty() && right - px >= 8.0 * m.sw {
-                        let place = pen.fit(place, Size::Small, right - px);
-                        pen.text(px, base, &place, Size::Small, t.muted, false);
-                    }
+                if !what.is_empty() {
+                    let what = pen.fit(what, Size::Small, end - x);
+                    pen.text(x, wb, &what, Size::Small, t.muted, false);
                 }
                 if on && focus {
-                    pen.fill(x, base + m.px(5.0), w, 2.0, t.accent);
+                    pen.fill(x, nb + m.px(4.0), w, 2.0, t.accent);
                 }
             }
             K::Shown { picture, lines, say } => {
@@ -1896,6 +1893,7 @@ fn home(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         narrow: false,
         still: false,
         pad: 24.0,
+        heads: false,
     };
     let rows = rows_of(app, pen, items, shape, area.right - area.left - pen.m.px(48.0));
     list(
@@ -1929,6 +1927,7 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         narrow: false,
         still: false,
         pad: 24.0,
+        heads: false,
     };
     // the details beside the list: the list a narrow column of names, the details the rest
     let beside = app.apps.pane && splits(&m, g.w);
@@ -1966,6 +1965,7 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         narrow: true,
         still: false,
         pad: 24.0,
+        heads: false,
     };
     let page = Shape {
         two: false,
@@ -1973,6 +1973,7 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         narrow: true,
         still: false,
         pad: 12.0,
+        heads: false,
     };
     let room = |a: Area| a.right - a.left - m.px(36.0);
     // a list by its name: the page, the words that search it, the category shown alone. The list beside the
@@ -2033,21 +2034,6 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     }
 }
 
-/// A list of files' columns in a room: how wide the names are, and how many columns stand after them, the size
-/// then the date. They stand beside the names, never across a wide window. Beside a file's details the names
-/// stand alone until the room holds all three.
-fn file_columns(m: &Metrics, room: f64, beside: bool) -> (f64, u8) {
-    let cols: u8 = if room >= m.px(350.0) {
-        2
-    } else if !beside && room >= m.px(184.0) {
-        1
-    } else {
-        0
-    };
-    let after = [0.0, 64.0, 150.0][cols as usize];
-    ((room - m.px(after)).min(m.px(420.0)), cols)
-}
-
 /// The other pane's rows: its own folder under its own words, the picks counted as its bar walks them.
 fn pane_rows(app: &App, m: &Metrics, pane: &files::Pane) -> Vec<Row> {
     let (Some(rows), Some(p)) = (&pane.rows, app.files()) else {
@@ -2073,9 +2059,9 @@ fn pane_rows(app: &App, m: &Metrics, pane: &files::Pane) -> Vec<Row> {
                     out.pop();
                 }
                 out.push(Row {
-                    h: m.px(36.0),
+                    h: m.px(44.0),
                     pick: None,
-                    k: K::Head(h, false, None),
+                    k: K::Head(h, true, None),
                 });
             }
             Item::Folder(i) => {
@@ -2084,11 +2070,8 @@ fn pane_rows(app: &App, m: &Metrics, pane: &files::Pane) -> Vec<Row> {
                         n += 1;
                         n - 1
                     });
-                    out.push(Row {
-                        h: m.px(44.0),
-                        pick,
-                        k: file_row(r, pane.checks.contains(&r.id)),
-                    });
+                    let k = file_row(r, pane.checks.contains(&r.id));
+                    out.push(Row { h: file_row_h(m, &k), pick, k });
                 }
             }
             _ => {}
@@ -2276,6 +2259,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         narrow: false,
         still: false,
         pad: 24.0,
+        heads: true,
     };
     let room = |a: Area, s: Shape| a.right - a.left - m.px(s.pad) - m.px(12.0);
     // a page over the list (the actions, a conflict): the items are its lines, and the list stands as it stood
@@ -2345,6 +2329,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
                 narrow: true,
                 still: false,
                 pad: 24.0,
+                heads: false,
             };
             let rows = page_rows(pen, shape, act);
             list(
@@ -2379,8 +2364,8 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             other.scroll,
             named(!active_left, &other.uri, &words),
         );
+        // no line between the panes (v0.160): the lit row's bar and the space say where a pane ends
         retarget(pen, mark, Target::OtherRow);
-        pen.fill(divide, g.top + m.px(8.0), 1.0, g.bottom - g.top - m.px(16.0), pen.t.lit);
         return;
     }
     if app.files_details_beside() {
@@ -2414,6 +2399,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             narrow: true,
             still: !details,
             pad: 12.0,
+            heads: false,
         };
         let lines: Vec<Item> = if details {
             items.to_vec()
@@ -2438,6 +2424,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             narrow: false,
             still: false,
             pad: 24.0,
+            heads: false,
         };
         let rows = page_rows(pen, shape, whole);
         list(
