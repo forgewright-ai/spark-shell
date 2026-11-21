@@ -6724,13 +6724,16 @@ case $* in *--lavfi-complex=*) [ -z "${SLOW_WAVE:-}" ] || sleep 8 ;; esac   # a 
 for a; do case $a in --vo-image-outdir=*) cp "$REPO_PNG" "${a#*=}/00000001.png" ;; --no-video) exec sleep 41 ;; esac; done
 for a; do f=$a; done
 case $* in *--wayland-app-id=spark-preview*) [ -z "${VIDEO_PLAYS:-}" ] || sleep "$VIDEO_PLAYS" ;; esac   # a video that plays on (#172)
+# what mpv says of a file, a field a line as the provider asks: length, width, height, rate, channels, format, codec, turn,
+# title, artist, album. A control character in the words asked for comes back a question mark, as mpv 0.42 prints it
+case $* in *--term-playing-msg=*"$us"*) echo '0?0?0'; exit 0 ;; esac
 case $* in *--term-playing-msg=*) case $f in
-    *.flac) printf '20.5%s%s%s44100%s2%ss16%sflac%sEvening%sAda%sProofs\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
-    *.webm) printf '4.5%s1280%s720%s%s%s%svp8%s%s%s\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
-    *.mov) printf '12%s1920%s1080%s%s%s%sh264%s%s%s%s270\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
-    *.mp4) printf '15%s1080%s1920%s%s%s%sh264%s%s%s%s0\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
-    *.wav) printf '3%s%s%s96000%s2%ss32%spcm_s24le%s%s%s\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
-    *.aif) printf '3%s%s%s48000%s2%ss32%spcm_s24be%s%s%s\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
+    *.flac) printf '20.5\n\n\n44100\n2\ns16\nflac\n\nEvening\nAda\nProofs\n' ;;
+    *.webm) printf '4.5\n1280\n720\n\n\n\nvp8\n\n\n\n\n' ;;
+    *.mov) printf '12\n1920\n1080\n\n\n\nh264\n270\n\n\n\n' ;;
+    *.mp4) printf '15\n1080\n1920\n\n\n\nh264\n0\n\n\n\n' ;;
+    *.wav) printf '3\n\n\n96000\n2\ns32\npcm_s24le\n\n\n\n\n' ;;
+    *.aif) printf '3\n\n\n48000\n2\ns32\npcm_s24be\n\n\n\n\n' ;;
     *.tif) echo '5400 2700' ;; esac ;; esac
 STUB
 chmod +x "$H/pvb/"*

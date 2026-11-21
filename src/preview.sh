@@ -263,18 +263,20 @@ files_sound_stop() {
 files_time() { awk -v s="$1" 'BEGIN { s = int(s + 0.5); h = int(s / 3600); m = int(s % 3600 / 60); if (h > 0) printf "%d:%02d:%02d", h, m, s % 60; else printf "%d:%02d", m, s % 60 }'; }   # files_time SECONDS -> 3:45, 1:02:03
 files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.json
     command -v mpv >/dev/null 2>&1 || { files_say "cannot view: mpv is not installed, Enter opens it"; return 0; }
+    # a field a line, the tags last: mpv 0.42 prints a control character as a question mark, so no separator but its own
+    # line break comes through, and a tag that holds one moves the tags alone
     # shellcheck disable=SC2086   # MPV_SAFE is options, split on purpose
     _fmf=$(files_tool mpv $MPV_SAFE --untimed --vo=null --ao=null --length=0.05 --msg-level=all=no,term-msg=info \
-        --term-playing-msg="\${=duration:0}$US\${width:}$US\${height:}$US\${audio-params/samplerate:}$US\${audio-params/channel-count:}$US\${audio-params/format:}$US\${audio-codec-name:}$US\${metadata/by-key/title:}$US\${metadata/by-key/artist:}$US\${metadata/by-key/album:}$US\${video-params/rotate:}" -- "$1" </dev/null 2>/dev/null | head -1)
+        --term-playing-msg="\${=duration:0}\\n\${width:}\\n\${height:}\\n\${audio-params/samplerate:}\\n\${audio-params/channel-count:}\\n\${audio-params/format:}\\n\${audio-codec-name:}\\n\${video-params/rotate:}\\n\${metadata/by-key/title:}\\n\${metadata/by-key/artist:}\\n\${metadata/by-key/album:}" -- "$1" </dev/null 2>/dev/null | head -11)
     [ -n "$_fmf" ] || { files_say "cannot view: mpv could not read this file, Enter opens it"; return 0; }
-    printf '%s\n' "$_fmf" | tr "$US" '\n' > "$TMP/page.media"
+    printf '%s\n' "$_fmf" > "$TMP/page.media"
     { read -r _fms; read -r _fmw; read -r _fmh; read -r _fmr; read -r _fmc; read -r _fmb; read -r _fmk; } < "$TMP/page.media"
     _fma=$(jq -cn --arg p "$1" '{path: $p}')
     if [ "$2" = video ]; then
         files_time "${_fms:-0}" >> "$TMP/page.lead"; echo >> "$TMP/page.lead"
         _fmx=${4:-$FILES_PAGE_PX}; _fmz=null; _fmu=true
         # the size shown, turned by rotation
-        _fmv=''; _fmo=$(sed -n 11p "$TMP/page.media")
+        _fmv=''; _fmo=$(sed -n 8p "$TMP/page.media")
         if [ -n "$_fmw" ] && [ -n "$_fmh" ]; then
             if [ "$_fmw" -ge "$_fmh" ]; then _fml=$_fmw; [ "$_fmw" -le "$_fmx" ] || _fmv=--vf=scale=w=$_fmx:h=-2
             else _fml=$_fmh; [ "$_fmh" -le "$_fmx" ] || _fmv=--vf=scale=w=-2:h=$_fmx; fi
@@ -305,7 +307,7 @@ files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.jso
     # the dialog polls for it
     [ -f "$3-sound.png" ] || files_sound_draw "$1" "$3"
     _fmp=$3-sound.png
-    sed -n '8p' "$TMP/page.media" > "$TMP/page.tags"; sed -n '9,10p' "$TMP/page.media" | awk 'NF { s = s (s == "" ? "" : " \302\267 ") $0 } END { if (s != "") print s }' >> "$TMP/page.tags"
+    sed -n '9p' "$TMP/page.media" > "$TMP/page.tags"; sed -n '10,11p' "$TMP/page.media" | awk 'NF { s = s (s == "" ? "" : " \302\267 ") $0 } END { if (s != "") print s }' >> "$TMP/page.tags"
     jq -Rn --argjson a "$_fma" --argjson n "${_fms:-0}" --arg p "$_fmp" --argjson h "$FILES_WAVE_PX" '[inputs | select(. != "")] as $l
         | {lines: $l, bold: (if ($l | length) > 0 then [0] else [] end), seconds: $n,
            play: {name: "files_play", arguments: $a, said: "play"}, stop: {name: "files_stop", arguments: {}, said: "stop"}}
