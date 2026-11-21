@@ -101,6 +101,49 @@ class Network(unittest.TestCase):
         self.assertEqual(self.settings["ipv4.dns"], "198.51.100.53")
         self.assertFalse(any(json.loads(p.read_text())["ready"] for p in self.folder.glob("*.json")))
 
+    def test_native_edit_after_our_write_is_refused_and_kept(self):
+        # Another editor moves or clears the gateway right after our write, before our next read, or while a
+        # reapply fails. Our DNS change never set the gateway, so each is theirs.
+        manual = dict(zip(network.FIELDS, ("manual", "192.0.2.8/24", "192.0.2.1", "", "no")))
+        original_native = self.native
+        for window, fail_reapply, gateway, said in (
+                (("connection", "modify"), False, "192.0.2.254", "changed during apply"),
+                (("connection", "modify"), True, "192.0.2.254", "changed during apply"),
+                (("connection", "modify"), False, "", "changed during apply"),
+                (("device", "reapply"), True, "192.0.2.254", "reapply failed; the connection changed again")):
+            def changed(*args):
+                try:
+                    return original_native(*args)
+                finally:
+                    if args[:2] == window:
+                        self.settings["ipv4.gateway"] = gateway
+            self.settings, self.calls, self.fail_reapply = manual.copy(), [], fail_reapply
+            with self.subTest(window=window, fail_reapply=fail_reapply, gateway=gateway), patch.object(network, "native", changed):
+                with self.assertRaisesRegex(network.Refused, said):
+                    network.run(self.folder, "dns", "eth0", ["192.0.2.53"])
+                self.assertEqual(self.settings["ipv4.gateway"], gateway)
+                self.assertEqual(sum(call[:3] == ("connection", "modify", "uuid") for call in self.calls), 1)
+        self.assertFalse(any(json.loads(p.read_text())["ready"] for p in self.folder.glob("*.json")))
+
+    def test_native_normal_form_still_gives_a_receipt_and_exact_undo(self):
+        original_native = self.native
+        def normal(*args):  # a never-default profile: each list entry once with ", " between, no gateway kept
+            result = original_native(*args)
+            if args[:3] == ("connection", "modify", "uuid"):
+                for key in ("ipv4.addresses", "ipv4.dns"):
+                    self.settings[key] = ", ".join(dict.fromkeys(self.settings[key].replace(",", " ").split()))
+                self.settings["ipv4.gateway"] = ""
+            return result
+        with patch.object(network, "native", normal):
+            address = network.run(self.folder, "address", "eth0", ["192.0.2.8/24", "192.0.2.1"])
+            self.assertEqual(self.settings["ipv4.gateway"], "")
+            dns = network.run(self.folder, "dns", "eth0", ["192.0.2.53,192.0.2.53,198.51.100.53"])
+            self.assertEqual(self.settings["ipv4.dns"], "192.0.2.53, 198.51.100.53")
+            self.assertEqual(json.loads((self.folder / (dns["undo"] + ".json")).read_text())["after"], self.settings)
+            network.run(self.folder, "restore", dns["undo"], [])
+            network.run(self.folder, "restore", address["undo"], [])
+        self.assertEqual(self.settings, self.original)
+
     def test_invalid_values_and_unmanaged_interfaces_never_write(self):
         for action, values in [("address", ["192.0.2.8", "192.0.2.1"]), ("address", ["192.0.2.8/24", "198.51.100.1"]), ("dns", ["192.0.2.53;exec"]), ("dns", ["224.0.0.1"]), ("auto", ["extra"])]:
             with self.subTest(action=action, values=values), self.assertRaises(network.Refused):

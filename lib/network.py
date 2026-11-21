@@ -89,6 +89,15 @@ def changes(action, values):
     raise Refused("network settings take address, auto or dns with their values")
 
 
+def ours(found, before, after):
+    # What the native manager may do to our write: give a list back with each entry once and its own separator,
+    # and drop a new gateway from a profile that is never the default route. Anything else is another editor's.
+    def entries(value):
+        return list(dict.fromkeys(value.replace(",", " ").split()))
+    return all(entries(found[key]) == entries(after[key])
+               or key == "ipv4.gateway" and not found[key] and after[key] != before[key] for key in FIELDS)
+
+
 def save(folder, token, record):
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(folder, 0o700)
@@ -112,7 +121,10 @@ def apply(folder, device, uuid, before, after):
         if profile(device) != uuid or read(uuid) != before:
             raise Refused("the native connection changed; read its settings again")
         write(uuid, after)
-        attempted = read(uuid)  # native serialization may normalize address lists
+        written = read(uuid)
+        if not ours(written, before, after):  # another editor's change is never taken for our write
+            raise Refused("the native connection changed during apply")
+        attempted = written  # our write in its native form; undo compares with it
         native("device", "reapply", device)
         if profile(device) != uuid or read(uuid) != attempted:
             raise Refused("the native connection changed during apply")
@@ -122,7 +134,7 @@ def apply(folder, device, uuid, before, after):
             current = read(uuid)
             if current == before:
                 raise Refused(str(exc) + "; previous profile settings remain") from exc
-            if current != attempted or profile(device) != uuid:
+            if not ours(current, before, attempted) or profile(device) != uuid:
                 raise Refused(str(exc) + "; the connection changed again, so inspect it in the native manager") from exc
             write(uuid, before)
             native("device", "reapply", device)
