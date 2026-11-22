@@ -2420,7 +2420,7 @@ fn heading_words(text: &str) -> String {
     out.join(" ")
 }
 
-/// The time the header's clock says ("Sat 21 Nov · 19:21", "... · 7:21 pm"): its figures and its half of the day.
+/// The time the header's clock says (the day, a middle dot, then 19:21 or 7:21 pm): its figures and its half of the day.
 fn clock_time(clock: &str) -> Option<(String, Option<String>)> {
     let t = clock.rsplit('\u{b7}').next()?.trim();
     let (hm, half) = match t.split_once(' ') {
