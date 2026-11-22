@@ -31,6 +31,8 @@
 #   spark-shell theme "WORDS"         a whole theme from words, read by spark
 #   spark-shell theme gallery         the themes and wallpapers in the gallery
 #   spark-shell theme install NAME    one from the gallery, checked as a release
+#   spark-shell theme variant dark|light  the theme's other variant
+#   spark-shell theme screens         what each screen shows, from the left
 #   spark-shell font FACE SIZE|none   set the console font, or use its own
 #   spark-shell font list             list the fonts you can use
 #   spark-shell quiet login on|off    hide the notice before the login (Linux)
