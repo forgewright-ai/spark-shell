@@ -188,6 +188,10 @@ provide_resource_special() {   # provide_resource_special ID METHOD URI -- one s
             else rpc_error "$1" -32002 "no palette at that uri"; fi ;;
         theme:resources/read:spark-shell://theme/rows/gallery)
             rpc_result "$1" "$(appearance_gallery | jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}')" ;;
+        theme:resources/read:spark-shell://theme/rows/gallery/collection/*)
+            if appearance_gallery_collection "${3#spark-shell://theme/rows/gallery/collection/}" > "$TMP/theme.room"; then
+                rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.room")"
+            else rpc_error "$1" -32002 "no collection at that uri"; fi ;;
         theme:resources/read:spark-shell://theme/rows/gallery/*)
             if appearance_detail "${3#spark-shell://theme/rows/gallery/}" > "$TMP/theme.detail"; then
                 rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.detail")"
