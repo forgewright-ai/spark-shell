@@ -2019,6 +2019,71 @@ fn a_glyph_family_step_changes_the_dialogs_signs_at_once() {
 }
 
 #[test]
+fn theme_subpage_taps_and_keys_use_the_same_provider_values() {
+    let (mut app, rx, calls) = theme_app("");
+    app.pixels = true;
+    let uri = "spark-shell://theme/rows/settings/type";
+    let mut rows = spark_dialog::model::rows(&theme_rows(0, false).to_string()).unwrap();
+    rows.rows.retain(|r| r.step.is_some() || r.switch.is_some());
+    for r in &mut rows.rows {
+        r.group = None;
+    }
+    app.view = View::Folder(0, uri.into());
+    app.folder = Some((0, uri.into(), rows));
+    let pick = |app: &App, id: &str| {
+        app.picks()
+            .iter()
+            .position(|it| matches!(it,Item::Folder(i) if app.folder.as_ref().unwrap().2.rows[*i].id==id))
+            .unwrap()
+    };
+    let family = pick(&app, "theme:show:Glyph family");
+    app.option_at(family, 2);
+    assert_eq!(
+        app.folder
+            .as_ref()
+            .unwrap()
+            .2
+            .rows
+            .iter()
+            .find(|r| r.text == "Glyph family")
+            .unwrap()
+            .step
+            .as_ref()
+            .unwrap()
+            .at,
+        2
+    );
+    assert!(pump(&mut app, &rx, |a| a.glyphs == spark_dialog::glyphs::BANNER));
+    app.option_at(family, 2);
+    app.left();
+    assert!(pump(&mut app, &rx, |a| a.glyphs == spark_dialog::glyphs::STAR));
+    let toggle = pick(&app, "theme:show:Words on the bar");
+    app.option_at(toggle, 0);
+    assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().len() == 3));
+    assert!(
+        app.folder
+            .as_ref()
+            .unwrap()
+            .2
+            .rows
+            .iter()
+            .find(|r| r.switch.is_some())
+            .unwrap()
+            .switch
+            .as_ref()
+            .unwrap()
+            .on
+    );
+    app.right();
+    assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().len() == 4));
+    let sent = calls.lock().unwrap();
+    assert_eq!(
+        sent.iter().map(|v| v["arguments"]["to"].as_str().unwrap()).collect::<Vec<_>>(),
+        ["banner", "star", "words", "signs"]
+    );
+}
+
+#[test]
 fn a_value_changes_in_place_says_nothing_and_holds_over_an_old_read() {
     // the value on the screen the moment the key is pressed, set behind it; no line runs above the list and no
     // receipt comes below it; a read that left before the change does not bring the old value back (#183)

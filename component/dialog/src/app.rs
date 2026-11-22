@@ -7188,21 +7188,20 @@ impl App {
         if !self.pixels || !self.in_list || !self.input.is_empty() || self.mode != Mode::Normal {
             return false;
         }
-        let Some(Item::Row(p, r)) = self.picks().get(self.sel).cloned() else {
-            return false;
-        };
-        if let Some(run) = self.choice_group(p, r) {
-            let at = run.iter().position(|i| *i == r).unwrap_or(0);
-            let next = if up { at + 1 } else { at.wrapping_sub(1) };
-            if let Some(k) = run.get(next).copied() {
-                self.choose(p, k);
+        let Some(item) = self.picks().get(self.sel).cloned() else { return false };
+        if let Item::Row(p, r) = item {
+            if let Some(run) = self.choice_group(p, r) {
+                let at = run.iter().position(|i| *i == r).unwrap_or(0);
+                let next = if up { at + 1 } else { at.wrapping_sub(1) };
+                if let Some(k) = run.get(next).copied() {
+                    self.choose(p, k);
+                }
+                return true;
             }
-            return true;
         }
-        let row = self.providers[p].rows.rows[r].clone();
-        if let Some(sw) = &row.switch {
+        if let Some(sw) = self.row_ref(&item).and_then(|row| row.switch.as_ref()) {
             if sw.on == up {
-                self.flip_or_keep(&Item::Row(p, r));
+                self.flip_or_keep(&item);
             }
             return true;
         }
@@ -7225,17 +7224,19 @@ impl App {
     /// (its place in the group), a switch's side (0 on, 1 off), a value's index among its values.
     pub fn option_at(&mut self, n: usize, k: usize) {
         self.light(n);
-        let Some(Item::Row(p, r)) = self.picks().get(n).cloned() else { return };
-        if let Some(run) = self.choice_group(p, r) {
-            if let Some(i) = run.get(k).copied() {
-                self.choose(p, i);
+        let Some(item) = self.picks().get(n).cloned() else { return };
+        if let Item::Row(p, r) = item {
+            if let Some(run) = self.choice_group(p, r) {
+                if let Some(i) = run.get(k).copied() {
+                    self.choose(p, i);
+                }
+                return;
             }
-            return;
         }
-        let row = self.providers[p].rows.rows[r].clone();
+        let Some((p, row)) = self.lit_row() else { return };
         if let Some(sw) = &row.switch {
             if sw.on != (k == 0) {
-                self.flip_or_keep(&Item::Row(p, r));
+                self.flip_or_keep(&item);
             }
         } else if let Some(st) = &row.step {
             if k != st.at {
@@ -7364,14 +7365,18 @@ impl App {
         let held: Vec<(String, Held)> = self.held.iter().filter(|h| h.0 == p).map(|h| (h.1.clone(), h.2.clone())).collect();
         for (id, h) in held {
             let rows = &mut self.providers[p].rows.rows;
+            let folder = self.folder.as_mut().filter(|(fp, _, _)| *fp == p).map(|(_, _, f)| &mut f.rows);
+            let matches = std::iter::once(&mut *rows)
+                .chain(folder)
+                .filter_map(|list| list.iter_mut().find(|r| r.id == id));
             match h {
                 Held::At(i) => {
-                    if let Some(st) = rows.iter_mut().find(|r| r.id == id).and_then(|r| r.step.as_mut()) {
+                    for st in matches.filter_map(|r| r.step.as_mut()) {
                         st.at = i.min(st.values.len().saturating_sub(1));
                     }
                 }
                 Held::On(on) => {
-                    if let Some(sw) = rows.iter_mut().find(|r| r.id == id).and_then(|r| r.switch.as_mut()) {
+                    for sw in matches.filter_map(|r| r.switch.as_mut()) {
                         sw.on = on;
                     }
                 }

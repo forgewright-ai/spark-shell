@@ -605,6 +605,45 @@ fn a_setting_is_one_row_its_options_side_by_side() {
     assert!(a.reply.as_ref().is_some_and(|r| r.text.contains("stopped")), "{:?}", a.reply);
 }
 
+#[test]
+fn theme_subpages_show_every_short_choice_as_a_touch_target() {
+    let mut a = home();
+    let mut p = Provider::new("theme");
+    p.ready = true;
+    a.providers = vec![p];
+    let uri = "spark-shell://theme/rows/settings/type";
+    let row = |name: &str, values: &[&str], words: [&str; 2]| {
+        let values: Vec<_> = values.iter().map(|v| json!({"shown":v,"sent":v})).collect();
+        json!({"id":name, "text":name, "step":{"values":values, "at":0,
+               "set":{"name":"theme_face","arguments":{}}, "key":"to", "words":words}})
+    };
+    let rows = json!({"title":"Type and glyphs", "rows":[
+        row("Typeface", &["neon","argon","xenon","radon","krypton"], ["back","next"]),
+        row("Text size", &["10","11","12","13"], ["smaller","bigger"]),
+        row("Glyph family", &["stone","star","banner"], ["back","next"])
+    ]});
+    a.view = View::Folder(0, uri.into());
+    a.folder = Some((0, uri.into(), spark_dialog::model::rows(&rows.to_string()).unwrap()));
+    for width in [360.0, 600.0, 1060.0] {
+        let s = scene(&mut a, width, 860.0);
+        let hits: Vec<_> = s.hits.iter().filter(|h| matches!(h.target, Target::Option(..))).collect();
+        assert_eq!(hits.len(), 12);
+        for h in hits {
+            assert!(h.w >= 44.0 && h.h >= 44.0 && h.x >= 0.0 && h.x + h.w <= width);
+            assert_eq!(s.hit(h.x + 1.0, h.y + 1.0), Some(&h.target));
+            assert_eq!(s.hit(h.x + h.w - 1.0, h.y + h.h - 1.0), Some(&h.target));
+        }
+        assert!(!s.hits.iter().any(|h| matches!(h.target, Target::Step(..))));
+        assert_eq!(words(&s).into_iter().filter(|w| w.0 == "A").count(), 4);
+        for name in ["neon", "argon", "xenon", "radon", "krypton", "stone", "star", "banner"] {
+            word(&s, name);
+        }
+        if width == 360.0 {
+            assert!(word(&s, "krypton").1 > word(&s, "neon").1);
+        }
+    }
+}
+
 /// Settings in a wide window (v0.161): the list keeps its column and the lit setting's page stands beside it, its name
 /// at 72 pixels, what it is set to under it, then its rows a setting each; a click on the page opens the setting.
 #[test]
