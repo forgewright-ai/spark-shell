@@ -6916,6 +6916,8 @@ impl App {
             }
             View::Folder(_, uri) if crate::appearance::gallery(&self.view) && crate::appearance::candidate(self).is_some() => {
                 if uri == crate::appearance::GALLERY {
+                    add(&mut v, "Explore", "Enter");
+                } else if uri.strip_prefix(crate::appearance::GALLERY).is_some_and(|tail| tail.starts_with("/collection/")) {
                     add(&mut v, "Details", "Enter");
                 } else if self.lit_row().is_some_and(|(_, r)| r.children.is_some()) {
                     add(&mut v, "Open", "Enter");
@@ -6923,7 +6925,9 @@ impl App {
                     add(&mut v, "Apply", "Enter");
                 }
                 add(&mut v, "Wallpaper", "F3");
-                add(&mut v, "Palette", "F4");
+                if crate::appearance::terminal_palette(self).is_some() {
+                    add(&mut v, "Palette", "F4");
+                }
             }
             View::Folder(_, uri) if uri.starts_with(crate::appearance::PALETTES) => {
                 add(
