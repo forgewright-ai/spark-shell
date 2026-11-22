@@ -9301,7 +9301,7 @@ STUB
         && ! grep -qE '^- spark-shell (theme|font|layout|notes|reminders|desktop|bar|dialog) ' "$mf" && [ "$(grep -n '^- A change ' "$mf" | cut -d: -f1)" -lt "$(grep -n '^- Keys: ' "$mf" | cut -d: -f1)" ] \
         && ok "facts: how to read the state; spark-shell's own ways to read and list, from its help; a change is the setting's MCP tool, spark-shell's command only where no tool does it (the font, the dialog, the idle screen now); then the keys (#159)" || bad "facts commands" "$(cat "$mf")"
     mv "$HOME/.config/spark/mcp.env" "$H/mcp.env.kept"; rm -rf "$H/m2"; SPARK_MACHINE_DIR=$H/m2 SWAYSOCK=$H/sock sh "$SH" desktop --machine >/dev/null 2>&1
-    grep -qxF -- '- spark-shell theme [NAME|none|list|save [NAME]|delete NAME|back|wallpaper X|text N|transparency N|glyphs SET|icons on|off|spacing SET|family NAME|face NAME|motion on|off|picture PATH|"WORDS"|gallery|install NAME]' "$H/m2/spark-shell.facts" \
+    grep -qxF -- '- spark-shell theme [NAME|none|export NAME [FORMAT]|list|save [NAME]|delete NAME|back|wallpaper X|text N|transparency N|glyphs SET|icons on|off|spacing SET|family NAME|face NAME|motion on|off|picture PATH|"WORDS"|gallery|install NAME]' "$H/m2/spark-shell.facts" \
         && grep -qF -- '- spark-shell desktop lock; capture screen|area|window; display [idle|lock N|saver [NAME]|brightness N|up|down]; keyboard [' "$H/m2/spark-shell.facts" \
         && grep -qxF -- '- Reading state: swaymsg -t get_outputs|get_workspaces|get_tree|get_inputs, wpctl status, bluetoothctl show.' "$H/m2/spark-shell.facts" \
         && ! grep -q '^- A change ' "$H/m2/spark-shell.facts" && [ "$(wc -m < "$H/m2/spark-shell.facts" | tr -d ' ')" -le 3000 ] \
