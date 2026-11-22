@@ -5998,8 +5998,8 @@ for _mf in "$REPO"/lib/motion_*.py; do _mn=${_mf##*/motion_}; wall_n=${_mn%.py};
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps system about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 158 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-five sections hold the 158 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 160 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-five sections hold the 160 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -9618,7 +9618,7 @@ sh "$SH" -h > "$voice/help"
 grep '^ *#' "$REPO/template/.config/sway/config" > "$voice/sway-config-comments"
 out_words="colours?|desks?|rooms?|seat|login box|marks?|marked|player|this machine's cycles|the forge wallpaper|greeter|the box|stranger|newcomer|founder|inventory|the hands|shell layer|monitors?"
 contractions="[A-Za-z]*n't\b|\bit's\b|\byou'll\b|\bwe're\b|\bthat's\b|\bthere's\b|\blet's\b"
-caps_ok='CUPS|DAY|TIME|KEYBOARD|POINTER|VOICE|ASCII|ALSA|A2DP|POSIX|JSON|SGR|SBOM|PATH|NAME|WORDS|PAGE|SECTION|KEY|VALUE|FILE|DIR|PLACE|WIDTH|SIDE|HEIGHT|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|EUPL|GPL|LGPL|GNOME|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|LOGIN|WALLPAPER|ALPHA|WINDOWS|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
+caps_ok='CUPS|DAY|TIME|KEYBOARD|POINTER|VOICE|ASCII|ALSA|A2DP|POSIX|JSON|SGR|SBOM|PATH|NAME|FORMAT|WORDS|PAGE|SECTION|KEY|VALUE|FILE|DIR|PLACE|WIDTH|SIDE|HEIGHT|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|EUPL|GPL|LGPL|GNOME|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|LOGIN|WALLPAPER|ALPHA|WINDOWS|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
 for n in README.md CHANGELOG.md CREDITS.md config.example help sway-config-comments; do
     f=$voice/$n
     # (a) the words that are out, as whole words in any case

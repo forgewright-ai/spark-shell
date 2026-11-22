@@ -111,8 +111,8 @@ tool_spec_sound() {   # the out and mic tools
 tool_spec_theme() {   # the theme tools
     case $1 in
         theme_palette)     _ts=theme _ta='=' _tp=name _tk=${THEME_ENUM_NOW:-$(theme_enum)} _th=i _tt='theme NAME' _td='Use a palette everywhere, a saved theme, a look from the last ten, or none. A near name, heard or typed, is the nearest palette: groove box dark is gruvbox-dark.' ;;
-        theme_copy_color)  _ts=theme _ta=copy-color _tp=name _tk=string _te='key:name' _th=fp _tt='copy palette color' _td='Copy one hex color from a theme to the clipboard.' ;;
-        theme_export_palette) _ts=theme _ta=export-palette _tp=name _tk=string _te="format:$TERM_PALETTE_FORMATS" _th=fp _tt='export terminal palette' _td='Save a theme'"'"'s colors for the chosen terminal in the downloads folder.' ;;
+        theme_copy_color)  _ts=theme _ta=copy-color _tp=name _tk=string _te='key:name' _th=f _tt='copy palette color' _td='Copy one hex color from a theme to the clipboard.' ;;
+        theme_export_palette) _ts=theme _ta=export-palette _tp=name _tk=string _te="format:$TERM_PALETTE_FORMATS" _th=f _tt='export terminal palette' _td='Save a theme'"'"'s colors for the chosen terminal in the downloads folder.' ;;
         theme_save)        _ts=theme _ta=save _tp=name _tk=string _th=f _tt='theme save NAME' _td='Keep the look in use under a name: the palette, the wallpaper, the face and its size, the glyph family, the animation, the transparency. After the look is made, never before it.' ;;
         theme_delete)      _ts=theme _ta=delete _tp=name _tk=string _th=dif _tt='theme delete NAME' _td='Delete a saved theme.' ;;
         theme_back)        _ts=theme _ta=back _th=f _tt='theme back' _td='The look before this one.' ;;   # free: no row carries it, the gate asks the history
