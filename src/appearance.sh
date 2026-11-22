@@ -1,12 +1,12 @@
 # shellcheck extended-analysis=false
 # reads: CONFIG_DIR CORE_DIR OS PALETTE_DIR REPO SCENE_MAKE TAB TERM_NAME THEME_KEYS THUMB_DIR TMP
-appearance_gallery() {
+appearance_gallery_entries() {
     {
         for gallery in "$CONFIG_DIR"/galleries/*.list; do
             [ -f "$gallery" ] || continue
             group=${gallery##*/}; group=${group%.list}
             case $group in ''|core|first-gallery|*[!a-z0-9-]*) continue ;; esac
-            group=$(printf '%s' "$group" | tr '-' ' ')
+            
             while IFS= read -r name || [ -n "$name" ]; do
                 case $name in ''|.*|*[!A-Za-z0-9._-]*) continue ;; esac
                 printf 'local\t%s\t%s\t%s\n' "$group" "$name" "$name"
@@ -30,13 +30,66 @@ appearance_gallery() {
         | reduce $entries[] as [$kind,$group,$id,$label] ({seen:{}, labels:{}, rows:[]};
               if .seen[$id] or ($kind == "palette" and .labels[$label]) then . else
                   .seen[$id] = true | .labels[$label] = true |
-                  .rows += [{id: ("theme:entry:" + $id), text: $label,
-                      group: (if $kind == "core" and ($multiple | not) then null else $group end),
+                  .rows += [{id: ("theme:entry:" + $id), text: $label, _kind: $kind, _room: $group,
+                      group: (if $kind == "core" and ($multiple | not) then null elif $kind == "local" then ($group | gsub("-";" ")) else $group end),
                       children: ("spark-shell://theme/rows/gallery/" + $id), page: ("spark-shell://theme/preview/" + $id), chip: $chips[$id],
                       sign: (if $id == $current then "check" else "opens" end)}]
               end)
         | {title: "Theme gallery", state: ("\(.rows | length) themes"), rows: .rows, short: []}'
 }
+
+# A gallery is a set of rooms, not a scrolling list of every work. The first
+# theme in each section is its featured poster; it does not change the current look.
+appearance_gallery() {
+    appearance_gallery_entries | jq -c --slurpfile c "$CORE_DIR/curation.json" '
+        .rows as $all
+        | [$c[0].sections[] as $s
+            | [$s.works[] as $name | $all[] | select(.text == $name)] as $works
+            | {id:("theme:room:permanent:" + $s.id), text:$s.title, group:"The Permanent Collection",
+               columns:[(($works|length|tostring) + " works")], line:$s.description,
+               children:("spark-shell://theme/rows/gallery/collection/permanent/" + $s.id),
+               page:$works[0].page, chip:$works[0].chip, choice:true, sign:"opens"}] as $rooms
+        | [$all[] | select(._kind == "saved")] as $saved
+        | (if ($saved|length)>0 then
+            [{id:"theme:room:saved",text:"Saved themes",group:"Your Collection",choice:true,
+              columns:[(($saved|length|tostring)+" works")],
+              children:"spark-shell://theme/rows/gallery/collection/saved",sign:"opens",
+              page:$saved[0].page,chip:$saved[0].chip}]
+           else [] end) as $personal
+        | ([ $all[] | select(._kind == "local") | ._room ] | unique) as $locals
+        | [$locals[] as $slug
+            | [$all[] | select(._kind == "local" and ._room == $slug)] as $works
+            | {id:("theme:room:local:" + $slug),text:($slug|gsub("-";" ")),
+               group:"Your Collection",choice:true,columns:[(($works|length|tostring)+" works")],
+               children:("spark-shell://theme/rows/gallery/collection/local/" + $slug),
+               page:$works[0].page,chip:$works[0].chip,sign:"opens"}] as $custom
+        | {title:"The Gallery",state:($c[0].title + " / " + ($rooms|length|tostring) + " sections"),
+           rows:($rooms+$personal+$custom),short:[]}'
+}
+
+# Read one curatorial room. A work's ID, preview, F4 palette and apply action
+# are unchanged, including existing personal-theme precedence.
+appearance_gallery_collection() {
+    appearance_gallery_entries | jq -ec --arg room "$1" --slurpfile c "$CORE_DIR/curation.json" '
+        .rows as $all
+        | if ($room|startswith("permanent/")) then
+            ($c[0].sections[] | select(.id == ($room|ltrimstr("permanent/")))) as $s
+            | [$s.works[] as $name | $all[] | select(.text == $name)
+                | del(._kind,._room) | .group=null] as $works
+            | {title:$s.title,state:$s.description,rows:$works,short:[]}
+          elif $room == "saved" then
+            [$all[] | select(._kind == "saved") | del(._kind,._room) | .group=null] as $works
+            | {title:"Saved themes",state:(($works|length|tostring)+" works"),rows:$works,short:[]}
+          elif ($room|startswith("local/")) then
+            ($room|ltrimstr("local/")) as $slug
+            | [$all[] | select(._kind == "local" and ._room == $slug)
+                | del(._kind,._room) | .group=null] as $works
+            | if ($works|length)>0 then
+                {title:($slug|gsub("-";" ")),state:(($works|length|tostring)+" works"),rows:$works,short:[]}
+              else empty end
+          else empty end'
+}
+
 appearance_detail() {
     _ad_kind=$(theme_kind "$1")
     case $_ad_kind in shipped|bundled|yours|saved|look) ;; *) return 1 ;; esac
