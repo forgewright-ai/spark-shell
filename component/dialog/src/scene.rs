@@ -2444,10 +2444,13 @@ fn theme_poster(app: &App, pen: &mut Pen, whole: Area, row: &crate::model::Row) 
         let ink = row.chip.get(1).copied().unwrap_or(pen.t.ink);
         pen.text(left + m.px(12.0), top + h / 2.0 + m.sup / 2.0, &label, Size::Small, ink, false);
     }
-    let hues = row.chip.get(2..).unwrap_or_default();
-    for (i, color) in hues.iter().enumerate() {
-        let edge = |n: usize| (w * n as f64 / hues.len() as f64).round();
-        pen.fill(left + edge(i), top + h, edge(i + 1) - edge(i), m.px(4.0), *color);
+    // A collection has a featured poster, not an applied palette of its own.
+    if !row.id.starts_with("theme:room:") {
+        let hues = row.chip.get(2..).unwrap_or_default();
+        for (i, color) in hues.iter().enumerate() {
+            let edge = |n: usize| (w * n as f64 / hues.len() as f64).round();
+            pen.fill(left + edge(i), top + h, edge(i + 1) - edge(i), m.px(4.0), *color);
+        }
     }
     let name = if row.id == "theme:gallery:open" {
         row.columns.first().map(String::as_str).unwrap_or(&row.text)
