@@ -1702,9 +1702,22 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
             K::Gap(_) => {}
             K::Rule => pen.fill(area.left, top + m.px(8.0), right - area.left, 1.0, t.lit),
             K::Head(text, big, click) => {
-                // a group of apps or of files is named in large type, and the name is all there is: no count, no rule
+                // a group of apps or of files is named in large type, and the name is all there is: no count, no rule;
+                // what follows a workspace's name (this one, its screen) stands after it in the small type, both cut to
+                // the room
                 let w = if *big {
-                    pen.text(x, top + m.px(32.0), &heading_words(text), Size::Head, t.accent, false)
+                    let words = heading_words(text);
+                    let (name, rest) = heading_parts(&words);
+                    let base = top + m.px(32.0);
+                    let name = pen.fit(name, Size::Head, end - x);
+                    let w = pen.text(x, base, &name, Size::Head, t.accent, false);
+                    let rx = x + w + m.px(16.0);
+                    let rest = pen.fit(rest, Size::Small, end - rx);
+                    if cells(&rest) > 1 {
+                        w + m.px(16.0) + pen.text(rx, base, &rest, Size::Small, t.muted, false)
+                    } else {
+                        w
+                    }
                 } else {
                     pen.text(x, top + m.px(24.0), text, Size::Small, t.accent, true)
                 };
@@ -2418,6 +2431,12 @@ fn heading_words(text: &str) -> String {
         }
     }
     out.join(" ")
+}
+
+/// A large heading's name and what follows it, split at the first middle dot the provider joins them with:
+/// "workspace 1", then its label, "this one" and its screen (v0.162.1).
+fn heading_parts(words: &str) -> (&str, &str) {
+    words.split_once(" \u{b7} ").unwrap_or((words, ""))
 }
 
 /// The time the header's clock says (the day, a middle dot, then 19:21 or 7:21 pm): its figures and its half of the day.

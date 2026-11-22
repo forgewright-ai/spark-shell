@@ -6375,16 +6375,17 @@ cat > "$HOME/ls.tree" <<'EOF'
 EOF
 cat > "$H/ls/swaymsg" <<'EOF'
 #!/bin/sh
-case "$*" in "-t get_version") echo '{"human_readable":"sway-stub"}' ;; "-t get_tree") cat "$HOME/ls.tree" ;; *) echo "$*" >> "$HOME/ls.log"; echo '[{"success":true}]' ;; esac
+case "$*" in "-t get_version") echo '{"human_readable":"sway-stub"}' ;; "-t get_tree") cat "$HOME/ls.tree" ;; "-t get_outputs") cat "$HOME/ls.outputs" ;; *) echo "$*" >> "$HOME/ls.log"; echo '[{"success":true}]' ;; esac
 EOF
 printf '#!/bin/sh\necho Linux\n' > "$H/ls/uname"; chmod +x "$H/ls/uname"   # a window is placed on Linux alone
 _d=$(printf '\302\267'); : > "$HOME/ls.log"
+echo '[{"name":"HDMI-A-1","model":"U2723QE"},{"name":"eDP-1","model":"0x0BCA"}]' > "$HOME/ls.outputs"   # a screen by its model, a laptop's by built-in
 mcp window "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(rq 21 resources/read '{"uri":"spark-shell://window/rows"}')" "$(rq 22 resources/read '{"uri":"spark-shell://window/rows/arrange"}')" "$(rq 23 resources/read '{"uri":"spark-shell://window/rows/move/21"}')" "$(rq 24 resources/read '{"uri":"spark-shell://window/rows/place/22"}')" \
     "$(call 5 window_move '{"name":"21","to":"3"}')" "$(call 6 window_place '{"name":"21","how":"floating"}')" "$(call 7 window_stacked)" "$(call 8 window_restore '{"to":"split","now":"tabs"}')" "$(call 9 window_move '{"name":"77","to":"3"}')" "$(call 10 window_place '{"name":"21","how":"left"}')"
 _w=$(ans 21 | jq -r '.result.contents[0].text')
 [ "$(printf '%s' "$_w" | jq -r .state)" = '4 windows' ] \
     && [ "$(printf '%s' "$_w" | jq -c '[.rows[] | select(.tool.name == "window_focus") | [.text, .columns[0]]]')" = '[["firefox","Claude Code"],["foot","~/projects"],["foot","btop"],["chromium","invoice.pdf"]]' ] \
-    && [ "$(printf '%s' "$_w" | jq -r '[.rows[] | select(.group != null) | .group] | unique | join("/")')" = "workspace 1 s $_d HDMI-A-1/workspace 2 t $_d writing $_d this one $_d eDP-1" ] \
+    && [ "$(printf '%s' "$_w" | jq -r '[.rows[] | select(.group != null) | .group] | unique | join("/")')" = "workspace 1 s $_d U2723QE/workspace 2 t $_d writing $_d this one $_d built-in screen" ] \
     && [ "$(printf '%s' "$_w" | jq -r '.rows[] | select(.front == true) | .id')" = 'window:focus 21' ] \
     && [ "$(printf '%s' "$_w" | jq -r '.rows[] | select(.id == "window:focus 22") | .line')" = "chromium $_d invoice.pdf $_d workspace 2 $_d floating" ] \
     && [ "$(printf '%s' "$_w" | jq -c '.rows[] | select(.id == "window:focus 22") | .wide')" = '["invoice.pdf","floating"]' ] \
@@ -6392,7 +6393,7 @@ _w=$(ans 21 | jq -r '.result.contents[0].text')
     && [ "$(printf '%s' "$_w" | jq -c '.rows[] | select(.id == "window:arrange") | [.columns[0], .children, .choice]')" = '["tabs","spark-shell://window/rows/arrange",true]' ] \
     && [ "$(printf '%s' "$_w" | jq -c '[.rows[] | select(.id == "window:focus 21") | .tool.said, (.more[] | .said)]')" = '["put in front","move to workspace","placement","capture this window","close"]' ] \
     && [ "$(printf '%s' "$_w" | jq -c '.rows[] | select(.id == "window:focus 21") | [.more[0].value, .more[1].value]')" = '["2","tiled"]' ] \
-    && ok "provide window rows: a heading per workspace, the app and its title, the window in front marked, the status line, placement wide, the two captures, arrange with what this workspace has; the scratchpad and the dialog left out" || bad "workspace rows" "$_w"
+    && ok "provide window rows: a heading per workspace, its screen by the model or built-in (v0.162.1), the app and its title, the window in front marked, the status line, placement wide, the two captures, arrange with what this workspace has; the scratchpad and the dialog left out" || bad "workspace rows" "$_w"
 ans 22 | jq -r '.result.contents[0].text' > "$H/ws.arrange"; ans 23 | jq -r '.result.contents[0].text' > "$H/ws.move"; ans 24 | jq -r '.result.contents[0].text' > "$H/ws.place"
 [ "$(jq -c '[.rows[] | [.text, .sign, .key, (.tool.name // "")]]' "$H/ws.arrange")" = '[["side by side","blank","Super+e","window_split"],["tabs","check","Super+w",""],["stacked","blank","Super+Shift+s","window_stacked"],["this workspace now, and every new workspace","blank",null,""]]' ] \
     && [ "$(jq -r .title "$H/ws.move")" = foot ] && [ "$(jq -c '[.rows[] | select(.sign == "check") | .text]' "$H/ws.move")" = '["2 t"]' ] && [ "$(jq -c '.rows[0].columns' "$H/ws.move")" = '["firefox, foot"]' ] \
@@ -6442,6 +6443,14 @@ mv "$HOME/ls.tree.keep" "$HOME/ls.tree"
     && printf '%s' "$_n" | jq -e '.rows[] | select(.tool.arguments.name == "41") | (.line | test("workspace notes")) and (.more[0].value == "notes")' >/dev/null \
     && [ "$(printf '%s' "$_m" | jq -c '[.rows[] | select(.text | startswith("-"))] | length')" = 0 ] && [ "$(printf '%s' "$_m" | jq -c '[.rows[] | select(.sign == "check")] | length')" = 0 ] && [ "$_u" = null ] \
     && ok "provide window: a workspace with no number reads by its name, after the numbered ones; the move list holds no -1, and a move from it has no undo to refuse" || bad "workspace named" "$_n | $_m | undo=$_u"
+# two screens of one model: each by its port, as no model tells them apart (v0.162.1)
+cp "$HOME/ls.tree" "$HOME/ls.tree.keep"
+echo '[{"name":"DP-1","model":"U2723QE"},{"name":"DP-2","model":"U2723QE"}]' > "$HOME/ls.outputs"
+printf '{"type":"root","nodes":[{"type":"output","name":"DP-1","nodes":[{"type":"workspace","id":60,"name":"1","num":1,"nodes":[{"id":61,"type":"con","pid":7,"app_id":"foot","name":"a","nodes":[]}],"floating_nodes":[]}]},{"type":"output","name":"DP-2","nodes":[{"type":"workspace","id":70,"name":"2","num":2,"nodes":[{"id":71,"type":"con","pid":8,"app_id":"foot","name":"b","focused":true,"nodes":[]}],"floating_nodes":[]}]}]}\n' > "$HOME/ls.tree"
+mcp window "$(rq 51 resources/read '{"uri":"spark-shell://window/rows"}')"
+_g=$(ans 51 | jq -r '.result.contents[0].text' | jq -r '[.rows[] | select(.tool.name == "window_focus") | .group] | join("/")')
+mv "$HOME/ls.tree.keep" "$HOME/ls.tree"
+[ "$_g" = "workspace 1 $_d DP-1/workspace 2 $_d this one $_d DP-2" ] && ok "provide window: two screens of one model are named by their ports (v0.162.1)" || bad "workspace same model" "$_g"
 # no sway: the window section says so, and a layout says tmux
 unset SWAYSOCK; mkdir -p "$H/nosway"; printf '#!/bin/sh\nexit 1\n' > "$H/nosway/swaymsg"; chmod +x "$H/nosway/swaymsg"; PATH=$H/nosway:$_lp   # as swaymsg does with no socket
 mcp window "$(rq 1 resources/read '{"uri":"spark-shell://window/rows"}')"
@@ -6451,7 +6460,7 @@ _l=$(ans 1 | jq -r '.result.contents[0].text')
 PATH=$_lp
 [ "$(printf '%s' "$_w" | jq -c '[.state, (.rows | length)]')" = '["no desktop",0]' ] && printf '%s' "$_l" | jq -e '.rows[] | select(.text == "webdev") | .line | endswith("opens in tmux")' >/dev/null \
     && ok "provide with no sway: no desktop, no rows of windows, and a layout says it opens in tmux" || bad "workspace no desktop" "$_w $_l"
-rm -f "$HOME/ls.tree" "$HOME/ls.log" "$H/ls/ps" "$H/ls/uname"   # the layouts after it are webdev alone
+rm -f "$HOME/ls.tree" "$HOME/ls.log" "$HOME/ls.outputs" "$H/ls/ps" "$H/ls/uname"   # the layouts after it are webdev alone
 # every palette: the dialog's quiet words read at 4.5 to 1 on its surface, or as its author's own text where that reads lower (#18)
 _cw=''
 for env in "$REPO"/gallery/theme/*.env; do

@@ -662,6 +662,41 @@ fn a_places_row_of_words_is_two_lines() {
     assert!(fills(&s, LIT).contains(&(0.0, 97.0, 600.0, 52.0)), "{:?}", fills(&s, LIT));
 }
 
+/// v0.162.1: a workspace's heading says its name in large type and what follows (its label, this one, its screen)
+/// after it in the small type, muted; neither runs past the window, the small words cut where they would.
+#[test]
+fn a_workspaces_heading_is_its_name_large_and_the_rest_small_inside_the_window() {
+    let mut a = home();
+    let mut p = Provider::new("window");
+    p.ready = true;
+    let group = "workspace 1 \u{27e8}1\u{27e9} \u{b7} photo editing \u{b7} this one \u{b7} U2723QE";
+    p.rows = spark_dialog::model::rows(
+        &json!({"title": "window", "state": "1 window", "rows": [
+            {"id": "window:focus 11", "sign": "opens", "text": "firefox", "group": group, "columns": ["docs"], "children": null,
+             "tool": {"name": "window_focus", "arguments": {"name": "11"}}, "more": []}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    a.providers = vec![p];
+    assert!(a.go_to("window"));
+    let rest = "photo editing \u{b7} this one \u{b7} U2723QE";
+    for w in [480.0, 600.0, 1280.0] {
+        let s = scene(&mut a, w, 800.0);
+        let (x, y) = heading(&s, "workspace 1");
+        let line = y + M.big[0].1 - M.sup;
+        let small = words(&s)
+            .into_iter()
+            .find(|t| t.3 == Size::Small && t.2 == line && t.1 > x)
+            .expect("the rest on the heading's line");
+        assert!(small.0 == rest || small.0.ends_with('\u{2026}'), "the rest, whole or cut: {:?}", small.0);
+        let right = small.1 + small.0.chars().count() as f64 * M.sw;
+        assert!(right <= w, "{} ends at {right}, past the window's {w}", small.0);
+    }
+    let s = scene(&mut a, 1280.0, 800.0);
+    assert!(words(&s).iter().any(|t| t.0 == rest), "a wide window says it whole");
+}
+
 /// A2 (v0.160): a wide window shows the lit app beside the list at once. The list keeps a column 696 pixels wide,
 /// the app's name stands at 72 pixels with what it is under it, its facts side by side, and no line or box
 /// stands between the two. Esc goes back: the page is part of the list there.

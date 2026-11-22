@@ -423,15 +423,23 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
 }
 provide_rows_place() { case $1 in window) provide_rows_window ;; layout) provide_rows_layout ;; *) cat ;; esac; }   # stdin: a rows resource -> the same as the workspace place shows it
 provide_rows_window() {   # stdin: the window section's rows -> the same with the workspace facts in; no sway: no rows
-    jq -c --slurpfile facts "$TMP/win.facts" --arg sep "$PANEL_SEP" '
+    screens_json | jq -c 'if type == "array" then . else [] end' > "$TMP/win.screens" 2>/dev/null || echo '[]' > "$TMP/win.screens"   # the screens' models, for the headings
+    jq -c --slurpfile facts "$TMP/win.facts" --slurpfile screens "$TMP/win.screens" --arg sep "$PANEL_SEP" '
         def step($n; $a; $w): {name: $n, arguments: $a, said: $w};
+        def outs: $screens[0] // [] | map(select(type == "object" and (.name | type) == "string"));
+        def own: (.model // "") as $d | if ($d | type) != "string" or $d == "" or $d == "Unknown" or ($d | test("^0x[0-9A-Fa-f]+$")) then "" else $d | gsub("[|]"; "/") end;
+        def builtin: .name | test("^(eDP|LVDS|DSI)-");
+        def called: own as $d | if builtin and ([outs[] | select(builtin)] | length) == 1 then "built-in screen"
+            elif $d != "" and ([outs[] | select(own == $d)] | length) == 1 then $d else .name end;
+        def screened: . as $g | if ($g | type) != "string" then $g else (first(outs[] | {key: " \($sep) \(.name)", value: " \($sep) \(called)"} | select(.key as $k | $g | endswith($k))) // null) as $s
+            | if $s == null then $g else $g[0:($g | length) - ($s.key | length)] + $s.value end end;   # a screen by its model, as the display place shows it; the port where two share one or it has none (v0.162.1)
         ($facts[0] // null) as $f
         | if $f.here == null then .state = "no desktop" | .rows = []
           else (($f.windows | map({key: (.id | tostring), value: .})) | from_entries) as $by
             | ($f.windows | length) as $n
             | .state = (if $n == 0 then "no windows" elif $n == 1 then "1 window" else "\($n) windows" end)
             | ([.rows[] | select(.tool.name == "window_focus") | . as $r | $r.tool.arguments.name as $id | $by[$id] as $w | select($w != null)
-                | $r + {group: $w.group, ws: $w.ws, front: $w.front,
+                | $r + {group: ($w.group | screened), ws: $w.ws, front: $w.front,
                     wide: ([($r.columns[0] // ""), $w.placed]),
                     line: (([$r.text] + $r.columns + ["workspace \($w.place)", $w.placed]) | map(select(. != "")) | join(" \($sep) ")),
                     tool: ($r.tool + {said: "put in front"}),
@@ -439,7 +447,7 @@ provide_rows_window() {   # stdin: the window section's rows -> the same with th
                            step("window_place"; {name: $id}; "placement") + {value: $w.placed, children: ("spark-shell://window/rows/place/" + $id)},
                            step("window_capture"; {what: "window", name: $id}; "capture this window"),
                            step("window_close"; {name: $id}; "close")]}]
-               + (if ($f.here.empty // false) then [{id: "window:none", sign: "blank", text: "no windows here", tool: null, more: [], columns: [], children: null, group: $f.here.group, muted: true, ws: $f.here.ws}] else [] end)
+               + (if ($f.here.empty // false) then [{id: "window:none", sign: "blank", text: "no windows here", tool: null, more: [], columns: [], children: null, group: ($f.here.group | screened), muted: true, ws: $f.here.ws}] else [] end)
                | sort_by([.ws < 0, .ws]) | map(del(.ws))) as $wins
             | ([.rows[] | select(.tool.name == "window_capture" and .tool.arguments.what != "window")]) as $caps
             | ($f.here.arrange // "split") as $a

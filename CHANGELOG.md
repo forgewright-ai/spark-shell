@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.162.1
+
+- A workspace's heading fits its window. Its name stays at 28
+  pixels; what follows it (its label, this one, its screen) stands
+  after it in the smaller text, cut where the window ends. On two
+  screens the heading ran past the window's edge.
+- A workspace's screen is named by its model, as the display place
+  names it, and a laptop's own screen is the built-in screen. The
+  port (HDMI-A-1) stays where two screens share a model or one has
+  none.
+- The dialog is 0.162.1.
+
 ## v0.162
 
 - Workspaces, notes, the Calendar, system, help and power read as
