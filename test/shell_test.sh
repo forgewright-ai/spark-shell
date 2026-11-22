@@ -4277,8 +4277,9 @@ cp "$HOME/.config/spark-shell/config" "$H/cfg.mo"; printf 'DESKTOP=sway\nTHEME=d
 rm -f "$HOME/mpv.log" "$HOME/player.log"; _mdir=${XDG_CACHE_HOME:-$HOME/.cache}/spark-shell/motion
 mo() { TMPDIR=$H/motmp XDG_RUNTIME_DIR=$H/run SWAYSOCK=$H/sock SPARK_SHELL_WALLPAPER=$H/mo/spark-wallpaper PATH="$H/mo:$H/lx:$PATH" sh "$SH" "$@"; }
 mo_wait() { _i=0; while [ "$_i" -lt 50 ] && [ "$(grep -c '' "$HOME/player.log" 2>/dev/null || :)" != "$1" ]; do sleep 0.2; _i=$((_i + 1)); done; }
+mo_clean() { _i=0; while [ "$_i" -lt 50 ] && [ -n "$(ls "$H/motmp" 2>/dev/null)" ]; do sleep 0.2; _i=$((_i + 1)); done; }   # the maker's folders gone: it clears them after the player starts
 mo_stop() { for _mp in $(pgrep -u "$(id -u)" -f "$H/mo/spark-wallpaper" 2>/dev/null || :); do kill "$_mp" 2>/dev/null || :; done; }
-mo desktop --motion >/dev/null 2>&1; mo_wait 1
+mo desktop --motion >/dev/null 2>&1; mo_wait 1; mo_clean
 _ml=$(sed -n 1p "$HOME/player.log" 2>/dev/null || :)
 case $_ml in "--all $_mdir/orbit-"*.mp4) _mok=1 ;; *) _mok='' ;; esac
 [ -n "$_mok" ] && [ -f "${_ml##* }" ] && [ "$(grep -c '' "$HOME/mpv.log")" = 1 ] && grep -q 'mf://.* --mf-fps=30 .*--ovc=libx264' "$HOME/mpv.log" && [ -z "$(ls "$H/motmp")" ] \
@@ -4296,12 +4297,13 @@ mo_stop
 # made from make.py's raw frames by mpv; the portrait screen's still drawn in its own shape and given to that screen alone
 rm -f "$HOME/player.log" "$HOME/mpv.log" "$HOME/scene.log" "$HOME/mosway.log" "$H/run/spark-shell-motion.want"
 printf 'DESKTOP=sway\nTHEME=dracula\nWALLPAPER=watch\nWALLPAPER_MOTION=on\n' > "$HOME/.config/spark-shell/config"
-mo desktop --motion >/dev/null 2>&1; mo_wait 1; sleep 0.3
+mo desktop --motion >/dev/null 2>&1; mo_wait 1; mo_clean
 _ml=$(sed -n 1p "$HOME/player.log" 2>/dev/null || :)
 case $_ml in "--scale nearest --screen DP-3=$_mdir/watch-"*"-270x480.mp4 --screen HDMI-A-1=$_mdir/watch-"*"-480x270.mp4") _mok=1 ;; *) _mok='' ;; esac
 [ -n "$_mok" ] && [ "$(grep -c -- '--demuxer=rawvideo' "$HOME/mpv.log")" = 2 ] && grep -q -- '--demuxer-rawvideo-w=270 --demuxer-rawvideo-h=480 .*--vf=format=yuv444p' "$HOME/mpv.log" \
     && grep -q -- '--raw --scene watch --size 480x270 ' "$HOME/scene.log" && [ -z "$(ls "$H/motmp")" ] \
     && ok "desktop --motion, a scene: a loop a screen at its shape (a pixel scene at its grid, lossless), played with square pixels (#187, #188)" || bad "scene loops" "$_ml | $(cat "$HOME/mpv.log" "$HOME/scene.log" 2>&1)"
+_i=0; while [ "$_i" -lt 50 ] && ! grep -q '^-- output "DP-3" bg ".*/watch-dracula-1200x1920.png" fill$' "$HOME/mosway.log" 2>/dev/null; do sleep 0.2; _i=$((_i + 1)); done   # the still goes after the look's own output *, half a second on
 grep -q -- "--still poster --size 1200x1920 " "$HOME/scene.log" && grep -q '^-- output "DP-3" bg ".*/watch-dracula-1200x1920.png" fill$' "$HOME/mosway.log" && ! grep -q 'HDMI-A-1" bg' "$HOME/mosway.log" \
     && ok "desktop --motion, a scene: the portrait screen's still in its own shape, on that screen alone (#188)" || bad "scene portrait still" "$(cat "$HOME/scene.log" "$HOME/mosway.log" 2>&1)"
 mo_stop
@@ -8394,7 +8396,7 @@ if [ "$(uname -s)" != Darwin ]; then
 # one to three screens (#36): a family's panels go to the screens in their order from the left and by their turn; a work with no
 # panels gives each screen the art, a turned screen its portrait, its scene's portrait view or the art fitted; a screen that
 # comes, goes or moves draws them again, once; the lock shows the same stills
-mkdir -p "$H/scr" "$fam" "$th_dir/study-night" "$th_dir/study-day"
+mkdir -p "$H/scr" "$H/run" "$fam" "$th_dir/study-night" "$th_dir/study-day"
 cat > "$H/scr/swaymsg" <<'SCR'
 #!/bin/sh
 wide='{"name":"HDMI-A-1","make":"Test","model":"Wide","serial":"1","active":true,"scale":1,"transform":"normal","rect":{"x":0,"y":0,"width":1920,"height":1080}}'

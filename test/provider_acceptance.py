@@ -262,8 +262,12 @@ class Providers(unittest.TestCase):
                          ("vector", "Tokyo Night", "light"))
         other = next(r for r in detail["rows"] if r["id"] == "theme:variant:dark")
         self.assertEqual((other["children"], other.get("tool")), (base + "/tokyonight-night", None))
-        self.assertEqual(next(r for r in detail["rows"] if r["id"] == "theme:compositions")["children"], base + "/core-tokyonight-day/art")
-        self.assertEqual(facts["theme:detail:turned"], "the art fitted, never cropped")
+        compositions = [r for r in detail["rows"] if r["id"] == "theme:compositions"]
+        if sys.platform == "darwin":   # no desktop on a Mac: no screens to compose
+            self.assertEqual((compositions, facts.get("theme:detail:turned")), ([], None))
+        else:
+            self.assertEqual(compositions[0]["children"], base + "/core-tokyonight-day/art")
+            self.assertEqual(facts["theme:detail:turned"], "the art fitted, never cropped")
         self.assertEqual([r["id"] for r in art["rows"]], ["theme:art:landscape", "theme:art:portrait"])
         self.assertTrue(all(not r.get("tool") and not r.get("look") and r["page"].startswith("spark-shell://theme/preview/core-tokyonight-day")
                             for r in art["rows"]))
