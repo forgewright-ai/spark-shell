@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.164.1
+
+- Cinematic Worlds opens in the gallery with Atlas Awakening, its first
+  work: `spark-shell theme atlas-awakening`. A turned screen gets its own
+  portrait, and with two screens each gets a panel. With moving
+  wallpaper on, each screen plays the loop drawn for its picture.
+- The dialog's atlas animation is drawn by hand, in the colors of the
+  theme in use. `DIALOG_ANIMATION=atlas` picks it.
+- The dialog is 0.164.1.
+
 ## v0.164
 
 - The gallery leads each of its six sections with one work. Supporting
