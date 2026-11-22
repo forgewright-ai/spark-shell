@@ -1,7 +1,8 @@
 # shellcheck extended-analysis=false
 # --- the terminal: the one module that names it (foot)
-# sets: TERM_APP_PREFIX TERM_APP_RE TERM_CLIENT TERM_CONFIG_REL TERM_DIALOG_REL TERM_HEX TERM_LOGIN_CONF TERM_NAME TERM_OWN
+# sets: TERM_APP_PREFIX TERM_APP_RE TERM_CLIENT TERM_CONFIG_REL TERM_DIALOG_REL TERM_HEX TERM_LOGIN_CONF TERM_NAME TERM_OWN TERM_PALETTE_FORMATS
 TERM_NAME=foot
+TERM_PALETTE_FORMATS="env|$TERM_NAME|kitty|ghostty|alacritty"
 TERM_CLIENT=footclient            # its client's process name when it runs as a server
 TERM_OWN='foot footclient'        # its own processes: never apps
 TERM_CONFIG_REL=.config/foot/foot.ini

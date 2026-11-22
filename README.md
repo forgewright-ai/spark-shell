@@ -113,6 +113,18 @@ typeface and glyph settings. It works offline on a fresh install and
 after an update. Move through the list to see each wallpaper. Click the
 picture or press F3 for a larger view. Esc takes you back. Enter on a
 theme opens its details. Choose **apply theme** there to use it.
+The gallery names the source palette. Press F4 for **Terminal palette**.
+Select a color to copy its hex value,
+or choose **Export palette** to save the colors in your downloads folder.
+The same palette is available from the command line:
+
+```sh
+spark-shell theme export amber-drizzle kitty > amber-drizzle.conf
+```
+
+Formats are `env` (all 20 colors), `foot`, `kitty`, `ghostty`, and
+`alacritty`. With no format, the command prints `env`.
+
 Wallpaper and motion, type and glyphs, and interface settings can also
 be changed on their own.
 

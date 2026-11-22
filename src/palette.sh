@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # ------------------------------------------------------------ the palette
 # sets: CONSOLE_NOW CORE_DIR KEPT_LAYOUTS KEPT_MAX LOOKS_DIR LOOK_FORMAT PALETTE_DIR PTS_DIR VT_SYSFS WALL_CACHE WALL_COVER
-# reads: ANIMATION_NAMES CONFIG_DIR CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GLYPH_FAMILIES MODE OS PALETTE_MARK PATH_SAID REPO ROOT STATE_DIR TAB TERMINAL_SEEN TERM_NAME THEME_ENV THEME_KEYS TMP VGA_HEX WALL_TYPES
+# reads: ANIMATION_NAMES CONFIG_DIR CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GLYPH_FAMILIES MODE OS PALETTE_MARK PATH_SAID REPO ROOT STATE_DIR TAB TERMINAL_SEEN TERM_NAME TERM_PALETTE_FORMATS THEME_ENV THEME_KEYS TMP VGA_HEX WALL_TYPES
 PALETTE_DIR=$CONFIG_DIR/themes
 CORE_DIR=$REPO/gallery/core
 # theme.env, rendered from the palette, is what spark and every render read
@@ -151,6 +151,38 @@ palette_chip() {   # palette_chip NAME -> bg, fg, accent, ANSI 1 to 6; false whe
     _f=$(palette_file "$1") || return 1
     awk -F= '{ v[$1] = $2; gsub(/["\r]/, "", v[$1]) } END { printf "%s %s %s %s %s %s %s %s %s\n", v["THEME_BG"], v["THEME_FG"], v["THEME_ACCENT"], v["THEME_ANSI_1"], v["THEME_ANSI_2"], v["THEME_ANSI_3"], v["THEME_ANSI_4"], v["THEME_ANSI_5"], v["THEME_ANSI_6"] }' "$_f"
 }
+palette_reference() (
+    _pal=$(palette_file "$1") || return 1
+    _label=$(theme_label "$1"); _dir=$(theme_dir "$1"); _origin=''
+    [ -z "$_dir" ] || _origin=$(look_get "$_dir" PALETTE)
+    case $_origin in
+        handpicked) printf '%s (handpicked)\n' "$_label"; return ;;
+        words) printf '%s (from words)\n' "$_label"; return ;;
+        picture) printf '%s (from wallpaper)\n' "$_label"; return ;;
+    esac
+    _key=${_origin:-$_label}
+    case $_key in ''|.*|*[!A-Za-z0-9._-]*) _key='' ;; esac
+    _stock=$REPO/gallery/theme/$_key.env
+    if [ -n "$_key" ] && [ -f "$_stock" ]; then
+        _name=$(sed -n '1s/^# \(.*\) -- .*/\1/p' "$_stock")
+        if [ "$_pal" = "$_stock" ] || awk -F= -v keys="$THEME_KEYS" '
+            {v=$2; gsub(/["\r]/,"",v); values[FILENAME,$1]=tolower(v)}
+            END {n=split(keys,k," "); for(i=1;i<=n;i++) if (!((ARGV[1],k[i]) in values) ||
+                values[ARGV[1],k[i]]!=values[ARGV[2],k[i]]) exit 1}' "$_stock" "$_pal"; then
+            printf '%s\n' "${_name:-$_key}"; return
+        elif [ -n "$_origin" ]; then printf '%s (based on %s)\n' "$_label" "${_name:-$_key}"; return; fi
+    fi
+    printf '%s (custom)\n' "$_label"
+)
+palette_export() (
+    case ${2:-env} in env|"$TERM_NAME"|kitty|ghostty|alacritty) ;; *) echo "choose a palette format: $TERM_PALETTE_FORMATS" >&2; return 1 ;; esac
+    TMP=$TMP/terminal-palette
+    mkdir -p "$TMP" || return 1
+    palette_render "$1" || { cat "$TMP/palette.why" >&2; return 1; }
+    _section=''; [ "${2:-env}" != "$TERM_NAME" ] || _section=$(term_colors_section)
+    printf '# Palette reference: %s\n' "$(palette_reference "$1")"
+    awk -v format="${2:-env}" -v native="$TERM_NAME" -v section="$_section" -v theme="$(theme_label "$1")" -f "$REPO/lib/terminal-palette.awk" "$TMP/theme.env"
+)
 console_render() {   # console_render RRGGBB... (16) -> $TMP/console-colors and $TMP/console-colors.rgb
     _i=0; _esc=''; _r=''; _g=''; _b=''
     for _h in "$@"; do

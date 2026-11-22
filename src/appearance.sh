@@ -1,5 +1,5 @@
 # shellcheck extended-analysis=false
-# reads: CONFIG_DIR CORE_DIR OS PALETTE_DIR REPO SCENE_MAKE TAB THUMB_DIR TMP
+# reads: CONFIG_DIR CORE_DIR OS PALETTE_DIR REPO SCENE_MAKE TAB TERM_NAME THEME_KEYS THUMB_DIR TMP
 appearance_gallery() {
     {
         for gallery in "$CONFIG_DIR"/galleries/*.list; do
@@ -60,7 +60,7 @@ appearance_detail() {
     _ad_anim=$(theme_animation_for "$1" "$_ad_dir")
     [ "${DIALOG_ANIMATION:-}" != none ] || _ad_anim=none
     _ad_chip=$(palette_chip "$1") || return 1
-    jq -cn --arg name "$1" --arg label "$(theme_label "$1")" --arg current "${THEME:-none}" --arg chip "$_ad_chip" \
+    jq -cn --arg name "$1" --arg label "$(theme_label "$1")" --arg ref "$(palette_reference "$1")" --arg current "${THEME:-none}" --arg chip "$_ad_chip" \
         --arg wall "$_ad_wall" --arg motion "$_ad_motion" --arg anim "$_ad_anim" \
         --arg face "$_ad_face" --arg family "$_ad_family" --arg alpha "$_ad_alpha" --arg size "$_ad_size" \
         --argjson desktop "$([ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && echo true || echo false)" '
@@ -70,6 +70,7 @@ appearance_detail() {
             {id: ("theme:apply:" + $name), text: (if $name == $current then "in use" else "apply theme" end),
              sign: (if $name == $current then "check" else "blank" end), chip: ($chip | split(" ")),
              quiet: true, page: ("spark-shell://theme/preview/" + $name), tool: {name:"theme_palette",arguments:{name:$name}}}]
+            + [{id:"theme:terminal-palette", text:"Terminal palette", sign:"opens", columns:[$ref], children:("spark-shell://theme/rows/palette/"+$name)}]
             + (if $desktop then [fact("wallpaper and motion"; "wall"; "wallpaper"; $wall),
                                  fact("wallpaper and motion"; "motion"; "wallpaper motion"; $motion)] else [] end)
             + [fact("wallpaper and motion"; "animation"; "dialog motion"; $anim),
@@ -77,6 +78,61 @@ appearance_detail() {
                fact("type and glyphs"; "family"; "glyph family"; $family),
                fact("windows"; "alpha"; "opacity"; (if $alpha == "" then "" else (($alpha | tonumber) * 100 | round | tostring) + "%" end))])}'
 }
+
+appearance_palette() (
+    _colors=$(palette_export "$1" env) || return 1
+    printf '%s\n' "$_colors" | jq -Rn --arg name "$1" --arg label "$(theme_label "$1")" --arg ref "$(palette_reference "$1")" '
+        ["black","red","green","yellow","blue","magenta","cyan","white"] as $names
+        | {BG:"Background",FG:"Foreground",ACCENT:"Accent",MUTED:"Muted"} as $roles
+        | [inputs | select(startswith("THEME_")) | split("=") | (.[0] | ltrimstr("THEME_")) as $k | .[1] as $hex
+            | (if $roles[$k] then null else ($k|ltrimstr("ANSI_")|tonumber) end) as $i
+            | {id:("theme:color:"+$k), text:($roles[$k] // ("\($i)  "+$names[$i%8])),
+               group:(if $i==null then "theme colors" elif $i<8 then "ANSI regular" else "ANSI bright" end),
+               swatch:$hex, columns:[$hex], tool:{name:"theme_copy_color",arguments:{name:$name,key:$k}}}] as $colors
+        | {title:"Terminal palette",state:$label,reference:$ref,rows:([{id:"theme:palette:reference",text:"Palette reference",columns:[$ref]},
+           {id:"theme:palette:export",text:"Export palette",sign:"opens",
+           children:("spark-shell://theme/rows/exports/"+$name)}]+$colors)}'
+)
+
+appearance_exports() {
+    palette_file "$1" >/dev/null || return 1
+    jq -cn --arg name "$1" --arg label "$(theme_label "$1")" --arg native "$TERM_NAME" '
+        {title:"Export palette",state:$label,rows:([["env","spark-shell",".env"],[$native,$native,".ini"],["kitty","kitty",".conf"],
+          ["ghostty","Ghostty","theme file"],["alacritty","Alacritty",".toml"]] | map({
+          id:("theme:export:"+.[0]),text:.[1],columns:[.[2]],tool:{name:"theme_export_palette",arguments:{name:$name,format:.[0]}}}))}'
+}
+
+appearance_copy_color() (
+    case $2 in ''|*[!A-Z0-9_]*) return 1 ;; esac
+    case " $THEME_KEYS " in *" THEME_$2 "*) ;; *) return 1 ;; esac
+    _pal=$(palette_file "$1") || return 1
+    _color=$(palette_get "$_pal" "THEME_$2")
+    hex_rgb "$_color" >/dev/null || return 1
+    if [ "$OS" = Darwin ]; then printf '%s' "$_color" | pbcopy
+    else printf '%s' "$_color" | wm_copy; fi 2>/dev/null || { echo "clipboard unavailable: $_color"; return 1; }
+    printf 'copied %s\n' "$_color"
+)
+
+appearance_save_palette() (
+    case $2 in env) _ext=env ;; "$TERM_NAME") _ext=$TERM_NAME.ini ;; kitty) _ext=kitty.conf ;; ghostty) _ext=ghostty ;; alacritty) _ext=toml ;; *) return 1 ;; esac
+    _text=$(palette_export "$1" "$2") || return 1
+    _dir=$(xdg-user-dir DOWNLOAD 2>/dev/null) || _dir=''
+    case $_dir in /*) ;; *) _dir=$HOME/$(user_dir_of downloads) ;; esac
+    mkdir -p "$_dir" || return 1
+    _file=$(mktemp "$_dir/.spark-palette.XXXXXX") || return 1
+    trap 'rm -f "$_file"' EXIT
+    printf '%s\n' "$_text" > "$_file" || return 1
+    _base=$_dir/$(theme_label "$1"); _out=$_base.$_ext; _n=1
+    while :; do
+        if [ ! -e "$_out" ] && [ ! -L "$_out" ]; then
+            ln "$_file" "$_out" 2>/dev/null && break
+            { [ -e "$_out" ] || [ -L "$_out" ]; } || { echo "cannot save in $_dir"; return 1; }
+        fi
+        if [ -f "$_out" ] && [ ! -L "$_out" ] && cmp -s "$_file" "$_out"; then break; fi
+        _n=$((_n + 1)); _out=$_base-$_n.$_ext
+    done
+    printf 'saved %s\n' "$_out"
+)
 
 # A theme's own wallpaper, resolved without changing the active look.
 appearance_preview() (
@@ -126,8 +182,8 @@ appearance_preview() (
             [ -z "${_tmp:-}" ] || rm -f "$_tmp"
         fi
     fi
-    jq -cn --arg title "$(theme_label "$_key")" --arg wall "$_label" --arg picture "$_picture" --argjson full "$([ "$_width" = 1600 ] && echo true || echo false)" \
-        '{title:$title, facts:[$wall], full:$full} + (if $picture != "" then {picture:$picture} else {say:"Wallpaper preview unavailable"} end)'
+    jq -cn --arg title "$(theme_label "$_key")" --arg wall "$_label" --arg ref "$(palette_reference "$_key")" --arg picture "$_picture" --argjson full "$([ "$_width" = 1600 ] && echo true || echo false)" \
+        '{title:$title, facts:[$wall,$ref], full:$full} + (if $picture != "" then {picture:$picture} else {say:"Wallpaper preview unavailable"} end)'
 )
 
 appearance_sections() {

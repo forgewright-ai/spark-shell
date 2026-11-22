@@ -1476,4 +1476,9 @@ fn theme_wallpaper_follows_the_highlight_and_the_viewer_never_applies() {
     a.enter();
     assert_eq!(a.view, View::Folder(0, gallery.into()));
     assert!(!a.under_way());
+    a.folder = Some((0, gallery.into(), spark_dialog::model::rows(&rows.to_string()).unwrap()));
+    a.sel = 1;
+    a.hint_key(HintKey::Open);
+    assert_eq!(a.view, View::Folder(0, "spark-shell://theme/rows/palette/harbor".into()));
+    assert!(!a.under_way());
 }
