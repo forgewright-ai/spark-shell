@@ -105,6 +105,18 @@ help lists them by subject. The bindings are named actions in
 The settings live in `~/.config/spark-shell/config`. `config.example`
 lists every key with its default, and the commands write them.
 
+## Theme settings
+
+Open **settings > theme** to adjust the wallpaper, dialog motion, typeface
+and glyph family. **Browse themes** shows the palettes and saved looks on
+this machine. Open a theme to inspect its colors and settings. Choose
+**apply theme** to use it.
+
+A local collection is a list of installed theme names, one per line, in
+`~/.config/spark-shell/galleries/first-gallery.list` (or under
+`$XDG_CONFIG_HOME`). The filename supplies the group name. A palette
+can appear in the collection without a second copy of its colors.
+
 ## Contributing
 
 The dialog, bar and winpad share the Rust library in `component/theme`.

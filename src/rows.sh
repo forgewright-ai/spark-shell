@@ -385,21 +385,24 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                      | .step = {values: [$v[] | {shown: ., sent: .}], at: ($v | index($family) // 0), set: {name: "theme_family", arguments: {}}, key: "to", words: ["back", "next"]}
                    elif $s == "theme" and .id == "theme:show:Text face" and $face != "" then
                      (["neon", "argon", "xenon", "radon", "krypton"]) as $v
-                     | .step = {values: [$v[] | {shown: ., sent: .}], at: ($v | index($face)), set: {name: "theme_face", arguments: {}}, key: "to", words: ["back", "next"]}
-                   elif $s == "theme" and .id == "theme:show:Text face" then .columns = ["yours"]   # a face of your own: no step
-                   elif $s == "theme" and .id == "theme:show:Moving wallpaper" then .switch = {on: ($motion == "on"), turn_on: {name: "theme_motion", arguments: {to: "on"}}, turn_off: {name: "theme_motion", arguments: {to: "off"}}}
+                     | .text = "Typeface" | .step = {values: [$v[] | {shown: ., sent: .}], at: ($v | index($face)), set: {name: "theme_face", arguments: {}}, key: "to", words: ["back", "next"]}
+                   elif $s == "theme" and .id == "theme:show:Text face" then .text = "Typeface" | .columns = ["yours"]   # a face of your own: no step
+                   elif $s == "theme" and .id == "theme:show:Moving wallpaper" then .text = "Wallpaper motion" | .switch = {on: ($motion == "on"), turn_on: {name: "theme_motion", arguments: {to: "on"}}, turn_off: {name: "theme_motion", arguments: {to: "off"}}}
                    elif $s == "bar" and .id == "bar:show:Text size" then   # auto stands where its size is
                      (($barsize | tonumber? // 11) | if . < 6 then 6 elif . > 40 then 40 else . end) as $a
                      | ([range(6; $a) | tostring | {shown: ., sent: .}] + [{shown: "auto \($a)", sent: "auto"}] + [range($a; 41) | tostring | {shown: ., sent: .}]) as $v
                      | .step = {values: $v, at: (if $bartext == "auto" then $a - 6 else ($v | map(.sent) | index($bartext)) // ($a - 6) end), set: {name: "bar_text", arguments: {}}, key: "size", words: ["smaller", "bigger"]}
                    elif $s == "bar" and .id == "bar:show:App icons (the tray)" then .switch = {on: ($tray == "yes"), turn_on: {name: "bar_tray", arguments: {state: "on"}}, turn_off: {name: "bar_tray", arguments: {state: "off"}}}
                    else . end))
-            | (if $s == "theme" then .look_back = {name: "theme_preview", arguments: {name: "off"}} else . end)
+            | (if $s == "theme" then .look_back = {name: "theme_preview", arguments: {name: "off"}}
+                 | .rows += [{id:"theme:gallery:open", text:"browse themes", sign:"opens", choice:true, columns:[.state],
+                              children:"spark-shell://theme/rows/gallery", chip:($chips[.state] // [])}]
+               else . end)
             | .rows |= map(
                 if $s == "theme" and (.tool.name // "") == "theme_save" then .tool.ask = ["name"]
                 elif $s == "theme" and .id == "theme:picture" then .children = "spark-shell://files/rows" | .pick = {tool: "theme_picture", types: ($types | split(" "))}
                 elif $s == "theme" and .id == "theme:wallpaper" then .children = "spark-shell://theme/rows/wallpapers" | .tool = null
-                elif $s == "theme" and .id == "theme:show:Animation" then .children = "spark-shell://theme/rows/animations" | .tool = null | .columns = [$anim]
+                elif $s == "theme" and .id == "theme:show:Animation" then .children = "spark-shell://theme/rows/animations" | .tool = null | .columns = [$anim] | .text = "Dialog motion"
                 elif ($s == "lan" or $s == "wifi") and (.id | startswith($s + ":network-settings")) then .sign = "opens" | .children = ("spark-shell://" + $s + "/rows/network/" + (.id | split(":network-settings ")[1]))
                 elif $s == "display" and (.text | startswith("screen ")) then .sign = "opens" | .children = ("spark-shell://display/rows/screen/" + (.text | split(" ")[1]))
                 elif $s == "power" and (.columns | length) > 0 then .wide = .columns | .columns = []   # what each does: the status row while lit, a column in a wide list

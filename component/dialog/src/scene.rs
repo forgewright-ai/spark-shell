@@ -230,7 +230,7 @@ pub enum Kind {
 pub fn kind(app: &App) -> Kind {
     match app.view {
         View::Home | View::Apps => kind_of(app, &app.list_items()),
-        View::Folder(..) if app.files_pane_view().is_some() => kind_of(app, &app.list_items()),
+        View::Folder(..) if app.files_pane_view().is_some() || crate::appearance::gallery(&app.view) => kind_of(app, &app.list_items()),
         View::Dest(d) if d == crate::app::SETTINGS_DEST => kind_of(app, &app.list_items()),
         View::Section(_) => kind_of(app, &app.list_items()),
         _ => Kind::Grid,
@@ -247,6 +247,7 @@ fn kind_of(app: &App, items: &[Item]) -> Kind {
         View::Apps if items.iter().all(known) => Kind::Apps,
         View::Folder(..) if app.files_pane_view().is_some() && items.iter().all(known) => Kind::Files,
         View::Dest(d) if d == crate::app::SETTINGS_DEST && items.iter().all(known) => Kind::Settings,
+        View::Folder(..) if crate::appearance::gallery(&app.view) && items.iter().all(known) => Kind::Page,
         View::Section(_) if items.iter().all(known) => Kind::Page,
         _ => Kind::Grid,
     }
@@ -1030,6 +1031,7 @@ enum End {
 enum K {
     Gap(f64),
     Rule,
+    Palette(String, Vec<Rgb>),
     /// A group's heading; whether it is set large (a group of apps, of files: v0.160, where a count stood beside
     /// it before); the category a click on it shows alone.
     Head(String, bool, Option<String>),
@@ -1179,6 +1181,8 @@ fn of_row(r: &crate::model::Row) -> K {
         swatch: r.swatch.map(|c| vec![c]).unwrap_or_else(|| r.chip.clone()),
         name: if r.id.starts_with("files:") {
             cut_middle(&r.text, 28)
+        } else if r.id.starts_with("theme:apply:") && r.sign == "check" {
+            "in use".into()
         } else {
             r.text.clone()
         },
@@ -1297,6 +1301,13 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
             }
             Item::Row(p, r) if shape.c3 => app.row_ref(it).map(|row| (one, choice_of(app, m, *p, *r, room).unwrap_or_else(|| of_row(row)))),
             Item::Hit(_) | Item::Row(..) => app.row_ref(it).map(|r| (one, of_row(r))),
+            Item::Folder(_) if shape.c3 => app.row_ref(it).map(|r| {
+                if r.id.starts_with("theme:detail:") {
+                    (one, K::Fact(r.text.clone(), r.columns.join(crate::ui::SEP)))
+                } else {
+                    (one, of_row(r))
+                }
+            }),
             Item::Folder(_) => app.row_ref(it).map(|r| {
                 let k = file_row(r, app.files_checks_any() && app.files.checked(&r.id));
                 (file_row_h(m, &k), k)
@@ -1666,6 +1677,19 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
         match &row.k {
             K::Gap(_) => {}
             K::Rule => pen.fill(area.left, top + m.px(8.0), right - area.left, 1.0, t.lit),
+            K::Palette(name, colors) => {
+                let w = (right - x).max(0.0);
+                pen.fill(x, top, w, h - m.px(12.0), colors[0]);
+                let pad = m.px(12.0);
+                let prompt = pen.text(x + pad, mid, ">", Size::Lead, colors[2], true);
+                let sample = pen.fit(name, Size::Lead, w - prompt - 3.0 * pad);
+                pen.text(x + prompt + 2.0 * pad, mid, &sample, Size::Lead, colors[1], false);
+                let hues = &colors[2..];
+                for (i, c) in hues.iter().enumerate() {
+                    let edge = |n: usize| (w * n as f64 / hues.len() as f64).round();
+                    pen.fill(x + edge(i), top + h - m.px(20.0), edge(i + 1) - edge(i), m.px(8.0), *c);
+                }
+            }
             K::Head(text, big, click) => {
                 // a group of apps or of files is named in large type, and the name is all there is: no count, no rule
                 let w = if *big {
@@ -2278,7 +2302,21 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         bare: true,
         c3: true,
     };
-    let rows = rows_of(app, pen, items, shape, whole.right - whole.left - m.px(36.0));
+    let mut rows = rows_of(app, pen, items, shape, whole.right - whole.left - m.px(36.0));
+    if crate::appearance::gallery(&app.view) && app.input.is_empty() {
+        if let Some((_, _, folder)) = &app.folder {
+            if let Some(r) = folder.rows.first().filter(|r| r.id.starts_with("theme:apply:") && r.chip.len() >= 3) {
+                rows.insert(
+                    0,
+                    Row {
+                        h: m.px(84.0),
+                        pick: None,
+                        k: K::Palette(folder.title.clone(), r.chip.clone()),
+                    },
+                );
+            }
+        }
+    }
     let key = format!("page\u{1f}{:?}\u{1f}{}", app.view, app.input);
     list(app, pen, &rows, whole, lit(app), list_focus(app), shape, app.scroll, key);
 }

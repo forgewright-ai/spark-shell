@@ -1944,6 +1944,9 @@ impl App {
     /// A section's rows under their groups, as its own view shows them; under the section's name too
     /// where a view holds more than one section.
     fn section_rows(&self, p: usize, out: &mut Vec<Item>, heading: bool) {
+        if !heading && self.query().is_empty() && self.providers[p].label == "theme" && crate::appearance::overview(p, &self.providers[p].rows, out) {
+            return;
+        }
         let mut rows = vec![];
         let mut group: Option<String> = None;
         for (i, r) in self.providers[p].rows.rows.iter().enumerate() {

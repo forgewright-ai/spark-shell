@@ -62,6 +62,13 @@ anim_follow() {   # anim_follow PIECE -- the dialog's animation
     [ "$MODE" = dry ] || config_set DIALOG_ANIMATION "$1" >/dev/null
     DIALOG_ANIMATION=$1; export DIALOG_ANIMATION
 }
+theme_animation_for() {   # NAME DIRECTORY -> the transition the theme requests
+    if [ -n "$2" ]; then
+        _taf=$(look_get "$2" ANIMATION)
+        [ -z "$_taf" ] || { printf '%s' "$_taf"; return; }
+        anim_for_palette "$(look_get "$2" PALETTE)"
+    else anim_for_palette "$1"; fi
+}
 theme_apply() {   # theme_apply NAME|none [back] -- back keeps the history
     name=$1; _w=''
     _td=$(theme_dir "$name")
@@ -85,8 +92,6 @@ theme_apply() {   # theme_apply NAME|none [back] -- back keeps the history
             [ "$MODE" = dry ] || [ "$_cur" = "$_v" ] || config_set "$_k" "$_v" >/dev/null
             eval "$_k=\$_v"; export "${_k?}"
         done
-        _an=$(look_get "$_td" ANIMATION); case " $ANIMATION_NAMES " in *" $_an "*) ;; *) _an=$(anim_for_palette "$(look_get "$_td" PALETTE)") ;; esac
-        anim_follow "$_an"
         bar_look_follow "$(look_get "$_td" BAR_GLYPHS)" "$(look_get "$_td" GLYPH_FAMILY)"
         case $(look_get "$_td" DIALOG_ICONS) in on|off) _li=$(look_get "$_td" DIALOG_ICONS); [ "$_li" = "$DIALOG_ICONS" ] || { [ "$MODE" = dry ] || config_set DIALOG_ICONS "$_li" >/dev/null; DIALOG_ICONS=$_li; export DIALOG_ICONS; } ;; esac
         case $(look_get "$_td" DIALOG_SPACING) in none|groups|rows) _ls=$(look_get "$_td" DIALOG_SPACING); [ "$_ls" = "$DIALOG_SPACING" ] || { [ "$MODE" = dry ] || config_set DIALOG_SPACING "$_ls" >/dev/null; DIALOG_SPACING=$_ls; export DIALOG_SPACING; } ;; esac
@@ -95,7 +100,7 @@ theme_apply() {   # theme_apply NAME|none [back] -- back keeps the history
         [ "$MODE" = dry ] || config_set WALLPAPER "$_w" >/dev/null
         WALLPAPER=$_w; export WALLPAPER
     else _w=''; fi
-    [ -n "$_td" ] || [ "$name" = none ] || anim_follow "$(anim_for_palette "$name")"
+    [ "$name" = none ] || anim_follow "$(theme_animation_for "$name" "$_td")"
     [ "$MODE" = dry ] || [ "$THEME" = "$name" ] || config_set THEME "$name"
     THEME=$name; export THEME
     theme_files

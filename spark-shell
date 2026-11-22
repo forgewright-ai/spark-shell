@@ -230,6 +230,8 @@ REPO=$(cd "$(dirname "$SELF")" && pwd)
 . "$REPO/src/home.sh"
 # shellcheck source=src/theme.sh
 . "$REPO/src/theme.sh"
+# shellcheck source=src/appearance.sh
+. "$REPO/src/appearance.sh"
 # shellcheck source=src/gallery.sh
 . "$REPO/src/gallery.sh"
 # shellcheck source=src/layout.sh
