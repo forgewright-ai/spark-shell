@@ -270,7 +270,8 @@ art_screens_follow() {   # each screen output * does not suit gets its own still
     _asl=$(printf '%s\n' "$_asp" | awk -F '\t' '$6 != "landscape"'); [ -n "$_asl" ] || return 0
     _asd=$(theme_dir "${THEME:-}"); _asw=$(wall_path); [ -n "${HEX_BG:-}" ] || theme_load 2>/dev/null || :; _asg=$(wall_ground 2>/dev/null) || _asg='#000000'; _asf=$(palette_file "${THEME:-}" 2>/dev/null) || _asf=''
     # after a look change's own output * (wall_uncover sends it at 0.25 s), under its cover (gone at 0.85 s): no black frame, nothing overwritten
-    ( sleep 0.5; printf '%s\n' "$_asl" | while IFS="$TAB" read -r _asn _asi _asa _ast _ass _asr _asx _asm; do   # TMP dies with its step: the list in hand
+    ( TMP=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-art.XXXXXX") || exit 0; trap 'rm -rf "$TMP"' EXIT   # its own scratch: the step's TMP is gone by now, and a helper writing there would leave a folder behind
+      sleep 0.5; printf '%s\n' "$_asl" | while IFS="$TAB" read -r _asn _asi _asa _ast _ass _asr _asx _asm; do   # TMP dies with its step: the list in hand
           case $_asm in
               fill) [ -f "$_asd/$_asx" ] || continue
                   wm_send "output \"$_asn\" bg \"$_asd/$_asx\" fill" ;;
