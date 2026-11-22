@@ -40,15 +40,34 @@ class Providers(unittest.TestCase):
         for key in ("SWAYSOCK", "WAYLAND_DISPLAY", "DISPLAY", "SPARK_BASE_URL", "SPARK_FORGE_TOKEN"):
             self.env.pop(key, None)
 
-    def provider(self, section, *requests):
+    def provider(self, section, *requests, program=PROGRAM):
         packets = [rpc(0, "initialize", protocolVersion="2025-06-18", capabilities={})] + list(requests)
-        result = subprocess.run(["sh", str(PROGRAM), "provide", section], env=self.env,
+        result = subprocess.run(["sh", str(program), "provide", section], env=self.env,
                                 input="".join(json.dumps(p) + "\n" for p in packets),
                                 text=True, capture_output=True, timeout=45)
         self.assertEqual(result.returncode, 0, "provider process failed")
         replies = {p["id"]: p for p in map(json.loads, result.stdout.splitlines()) if "id" in p}
         self.assertTrue(all(p["id"] in replies for p in requests if "method" in p), "provider missed a reply")
         return replies
+
+    def curated(self, curation):
+        """The program in a tree of links to the repository, its curation the test's own."""
+        tree = self.home / "tree"
+        core = tree / "gallery" / "core"
+        core.mkdir(parents=True)
+        for entry in REPO.iterdir():
+            if entry.name == "spark-shell":
+                shutil.copy2(entry, tree / entry.name)   # the program resolves a link to itself
+            elif entry.name not in ("gallery", ".git"):
+                (tree / entry.name).symlink_to(entry)
+        for entry in (REPO / "gallery").iterdir():
+            if entry.name != "core":
+                (tree / "gallery" / entry.name).symlink_to(entry)
+        for entry in (REPO / "gallery" / "core").iterdir():
+            if entry.name != "curation.json":
+                (core / entry.name).symlink_to(entry)
+        (core / "curation.json").write_text(json.dumps(curation))
+        return tree / "spark-shell"
 
     def rows(self, section):
         reply = self.provider(section, rpc(1, "resources/read", uri=f"spark-shell://{section}/rows"))
@@ -61,7 +80,10 @@ class Providers(unittest.TestCase):
         before = "THEME=nord\nDESKTOP=sway\nWALLPAPER=fjord\n"
         config.write_text(before)
         base = "spark-shell://theme/rows/gallery"
-        sections = json.loads((REPO / "gallery/core/curation.json").read_text())["sections"]
+        curation = json.loads((REPO / "gallery/core/curation.json").read_text())
+        sections = curation["sections"]
+        dispositions = curation.get("dispositions", {})
+        on_view = lambda name: dispositions.get(name, {}).get("status", "exhibited") == "exhibited"
         names = [line.split("\t") for line in (REPO / "gallery/core/themes.tsv").read_text().splitlines()]
         ids = {parts[0]: parts[-1] for parts in names}
         works = [name for section in sections for name in section["works"]]
@@ -78,8 +100,7 @@ class Providers(unittest.TestCase):
         gallery = rendered[0]
         rooms = rendered[1:1+len(sections)]
         cards = rendered[1+len(sections):]
-        self.assertEqual((gallery["title"], gallery["state"]),
-                         ("The Gallery", "The Permanent Collection / 6 sections"))
+        self.assertEqual((gallery["title"], gallery["state"]), ("The Gallery", "34 works in 6 sections"))
         self.assertEqual([r["text"] for r in gallery["rows"]], [section["title"] for section in sections])
         self.assertTrue(all(r.get("group") == "The Permanent Collection"
                             and not r.get("tool") and not r.get("look") for r in gallery["rows"]))
@@ -88,10 +109,15 @@ class Providers(unittest.TestCase):
             self.assertEqual(entry["columns"], [str(len(section["works"])) + " works"])
             self.assertEqual(room["title"], section["title"])
             self.assertEqual(room["state"], section["description"])
-            self.assertEqual([r["text"] for r in room["rows"]], section["works"])
-            self.assertEqual([r["children"] for r in room["rows"]],
-                             [base + "/" + ids[name] for name in section["works"]])
-            self.assertTrue(all(r.get("group") is None for r in room["rows"]))
+            order = [w for w in section["works"] if on_view(w)] + [w for w in section["works"] if not on_view(w)]
+            self.assertEqual([r["text"] for r in room["rows"]], order, "on view first, then supporting")
+            self.assertEqual([r["children"] for r in room["rows"]], [base + "/" + ids[name] for name in order])
+            split = 0 < sum(map(on_view, section["works"])) < len(section["works"])
+            self.assertTrue(all(r.get("group") == (("on view" if on_view(r["text"]) else "supporting") if split else None)
+                                for r in room["rows"]))
+            self.assertTrue(all(r.get("line") for r in room["rows"]), "each work says its medium and variant")
+            lead = section.get("lead") or next(w for w in section["works"] if on_view(w))
+            self.assertEqual(entry["page"], "spark-shell://theme/preview/" + ids[lead])
         for parts, card in zip(names, cards):
             self.assertEqual(card["title"], parts[0])
             self.assertEqual(card["rows"][0]["tool"],
@@ -188,6 +214,64 @@ class Providers(unittest.TestCase):
         self.assertEqual(reference("my-dracula"), "# Palette reference: Dracula")
         (personal/"palette.env").write_text(palette.replace("#282a36", "#282a37"))
         self.assertEqual(reference("my-dracula"), "# Palette reference: my-dracula (based on Dracula)")
+
+    def test_exhibitions_variants_and_compositions_are_looked_at_and_change_nothing(self):
+        cfgdir = self.home / "config/spark-shell"
+        cfgdir.mkdir(parents=True)
+        config = cfgdir / "config"
+        before = "THEME=nord\nDESKTOP=sway\n"
+        config.write_text(before)
+        base = "spark-shell://theme/rows/gallery"
+        text = lambda reply: json.loads(reply["result"]["contents"][0]["text"])
+        curation = json.loads((REPO / "gallery/core/curation.json").read_text())
+        pending = [e["id"] for e in curation.get("exhibitions", []) if e["status"] != "open"]
+        replies = self.provider("theme", rpc(1, "resources/read", uri=base),
+                                *[rpc(i, "resources/read", uri=base + "/collection/exhibition/" + e) for i, e in enumerate(pending, 2)])
+        self.assertFalse(any(r.get("group") == "Exhibitions" for r in text(replies[1])["rows"]), "no exhibition before it opens")
+        self.assertTrue(all("error" in replies[i] for i in range(2, 2 + len(pending))))
+        # an open exhibition, a supporting work and a section's lead, from a curation of the test's own
+        curation["exhibitions"] = [{"id": "study", "title": "Study", "note": "A test exhibition.", "status": "open",
+                                    "works": ["nord", "absent", "dracula"]}]
+        curation["dispositions"] = {"dracula": {"status": "supporting", "reason": "a test"}}
+        section = next(s for s in curation["sections"] if "dracula" in s["works"])
+        section["lead"] = "nord"
+        program = self.curated(curation)
+        replies = self.provider("theme", rpc(1, "resources/read", uri=base),
+                                rpc(2, "resources/read", uri=base + "/collection/exhibition/study"),
+                                rpc(3, "resources/read", uri=base + "/collection/permanent/" + section["id"]), program=program)
+        home, show, room = text(replies[1]), text(replies[2]), text(replies[3])
+        self.assertEqual(home["state"], "34 works in 6 sections, 1 exhibition")
+        entry = next(r for r in home["rows"] if r["id"] == "theme:room:exhibition:study")
+        self.assertEqual((entry["group"], entry["columns"], entry["line"], entry["children"]),
+                         ("Exhibitions", ["2 works"], "A test exhibition.", base + "/collection/exhibition/study"))
+        self.assertEqual(entry["page"], "spark-shell://theme/preview/nord")
+        self.assertEqual([(r["text"], r["group"]) for r in show["rows"]], [("nord", "on view"), ("dracula", "supporting")])
+        lead = next(r for r in home["rows"] if r["id"] == "theme:room:permanent:" + section["id"])
+        self.assertEqual(lead["page"], "spark-shell://theme/preview/nord")
+        self.assertEqual(room["rows"][-1]["text"], "dracula")
+        self.assertEqual(room["rows"][-1]["group"], "supporting")
+        # a work's details: its family, its other variant as a link, its compositions; nothing applied
+        replies = self.provider("theme", rpc(1, "resources/read", uri=base + "/core-tokyonight-day"),
+                                rpc(2, "resources/read", uri=base + "/core-tokyonight-day/art"),
+                                rpc(3, "resources/read", uri="spark-shell://theme/preview/core-tokyonight-day/portrait"),
+                                rpc(4, "resources/read", uri="spark-shell://theme/preview/core-tokyonight-day/panels-3"),
+                                rpc(5, "resources/read", uri=base + "/../nord/art"))
+        detail, art, portrait = text(replies[1]), text(replies[2]), text(replies[3])
+        facts = {r["id"]: r.get("columns", [None])[0] for r in detail["rows"]}
+        self.assertEqual((facts["theme:detail:media"], facts["theme:detail:family-of"], facts["theme:detail:variant"]),
+                         ("vector", "Tokyo Night", "light"))
+        other = next(r for r in detail["rows"] if r["id"] == "theme:variant:dark")
+        self.assertEqual((other["children"], other.get("tool")), (base + "/tokyonight-night", None))
+        self.assertEqual(next(r for r in detail["rows"] if r["id"] == "theme:compositions")["children"], base + "/core-tokyonight-day/art")
+        self.assertEqual(facts["theme:detail:turned"], "the art fitted, never cropped")
+        self.assertEqual([r["id"] for r in art["rows"]], ["theme:art:landscape", "theme:art:portrait"])
+        self.assertTrue(all(not r.get("tool") and not r.get("look") and r["page"].startswith("spark-shell://theme/preview/core-tokyonight-day")
+                            for r in art["rows"]))
+        self.assertEqual(portrait["facts"][0], "the art fitted, never cropped")
+        self.assertIn("error", replies[4], "no panels are claimed for a work that has none")
+        self.assertIn("error", replies[5])
+        self.assertEqual(config.read_text(), before)
+        self.assertFalse((cfgdir / "themes").exists())
 
     def test_preview_install_and_personal_theme_take_precedence(self):
         cfgdir = self.home / "config/spark-shell"

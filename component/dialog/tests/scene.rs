@@ -1556,3 +1556,55 @@ fn theme_wallpaper_follows_the_highlight_and_the_viewer_never_applies() {
     assert_eq!(a.view, View::Folder(0, "spark-shell://theme/rows/palette/harbor".into()));
     assert!(!a.under_way());
 }
+
+#[test]
+fn a_works_compositions_are_looked_at_large_and_never_applied() {
+    use spark_dialog::app::HintKey;
+    use spark_dialog::files::Peek;
+    use spark_dialog::preview;
+    let mut a = home();
+    let mut theme = Provider::new("theme");
+    theme.ready = true;
+    a.providers = vec![theme];
+    let folder = "spark-shell://theme/rows/gallery/nord/art";
+    let portrait = "spark-shell://theme/preview/nord/portrait";
+    let chip = json!(["#2e3440", "#d8dee9", "#88c0d0"]);
+    let rows = json!({"title":"Compositions","state":"nord","rows":[
+        {"id":"theme:art:landscape","text":"one screen","columns":["landscape"],"page":"spark-shell://theme/preview/nord","chip":chip},
+        {"id":"theme:art:portrait","text":"turned screen","columns":["the art fitted"],"page":portrait,"chip":chip}]});
+    a.view = View::Folder(0, folder.into());
+    a.folder = Some((0, folder.into(), spark_dialog::model::rows(&rows.to_string()).unwrap()));
+    a.in_list = true;
+    a.sel = 1;
+    let pg = preview::page(
+        portrait,
+        &json!({"title":"nord","picture":"/tmp/nord-portrait.png","facts":["the art fitted, never cropped"]}).to_string(),
+    )
+    .unwrap();
+    a.files.peek = Some(Peek {
+        uri: portrait.into(),
+        page: Some(pg),
+    });
+    let s = scene(&mut a, 1060.0, 800.0);
+    assert_eq!(
+        s.pictures.first().map(|p| p.file.as_str()),
+        Some("/tmp/nord-portrait.png"),
+        "the lit composition is the poster"
+    );
+    assert!(words(&s).iter().any(|w| w.0.trim() == "view"), "Enter looks, it never applies");
+    assert!(!words(&s).iter().any(|w| w.0.trim() == "apply"));
+    a.hint_key(HintKey::Open);
+    assert_eq!(
+        a.view,
+        View::Folder(0, "spark-shell://theme/rows/palette/nord".into()),
+        "F4 is the work's own palette"
+    );
+    a.view = View::Folder(0, folder.into());
+    a.folder = Some((0, folder.into(), spark_dialog::model::rows(&rows.to_string()).unwrap()));
+    a.sel = 1;
+    a.enter();
+    assert_eq!(a.view, View::Preview);
+    a.enter();
+    assert_eq!(a.view, View::Folder(0, folder.into()));
+    assert!(!a.under_way(), "looking at a composition calls no tool");
+}

@@ -1,12 +1,12 @@
 # shellcheck extended-analysis=false
-# reads: CONFIG_DIR CORE_DIR OS PALETTE_DIR REPO SCENE_MAKE TAB TERM_NAME THEME_KEYS THUMB_DIR TMP
+# sets: APPEARANCE_CURATION
+# reads: CONFIG_DIR CORE_DIR OS PALETTE_DIR PANEL_SEP REPO SCENE_MAKE TAB TERM_NAME THEME_KEYS THUMB_DIR TMP
 appearance_gallery_entries() {
     {
         for gallery in "$CONFIG_DIR"/galleries/*.list; do
             [ -f "$gallery" ] || continue
             group=${gallery##*/}; group=${group%.list}
             case $group in ''|core|first-gallery|*[!a-z0-9-]*) continue ;; esac
-            
             while IFS= read -r name || [ -n "$name" ]; do
                 case $name in ''|.*|*[!A-Za-z0-9._-]*) continue ;; esac
                 printf 'local\t%s\t%s\t%s\n' "$group" "$name" "$name"
@@ -38,55 +38,67 @@ appearance_gallery_entries() {
         | {title: "Theme gallery", state: ("\(.rows | length) themes"), rows: .rows, short: []}'
 }
 
-# A gallery is a set of rooms, not a scrolling list of every work. The first
-# theme in each section is its featured poster; it does not change the current look.
+# The gallery: the sections of the permanent collection, the exhibitions that
+# are open, and your own. Each shows a lead work's picture, a note and its count;
+# looking changes nothing.
+APPEARANCE_CURATION='
+.rows as $all |
+def onview($name): (($c[0].dispositions // {})[$name].status // "exhibited") == "exhibited";
+def works($names): [$names[] as $name | $all[] | select(.text == $name)];
+def lead($lead; $works): ([$works[] | select(.text == ($lead // ""))] + [$works[] | select(onview(.text))] + $works)[0];
+def count($works): ($works | length | tostring) + (if ($works | length) == 1 then " work" else " works" end);
+def words($k): ($idx[$k] // null) as $a
+    | if $a == null then null
+      else ({vector: "vector", illustration: "illustrated scene", cinematic: "cinematic illustration", pixel: "pixel scene", picture: "picture", color: "plain ground"}[$a.media] // "plain ground")
+           + " " + $sep + " " + $a.variant + ([$a.variants | keys[] | select(. != $a.variant) | " " + $sep + " has a " + . + " variant"] | join(""))
+      end;
+def shown: del(._kind, ._room) | .group = null | words(.id | ltrimstr("theme:entry:")) as $w | if $w == null then del(.line) else .line = $w end;
+def collection($title; $state; $works):
+    ([$works[] | select(onview(.text))] | length) as $nv
+    | ($nv > 0 and $nv < ($works | length)) as $split
+    | {title: $title, state: $state, short: [],
+       rows: [$works[] | (onview(.text)) as $on | shown | .group = (if $split then (if $on then "on view" else "supporting" end) else null end)]
+             | sort_by(if .group == "supporting" then 1 else 0 end)};
+'
 appearance_gallery() {
-    appearance_gallery_entries | jq -c --slurpfile c "$CORE_DIR/curation.json" '
-        .rows as $all
-        | [$c[0].sections[] as $s
-            | [$s.works[] as $name | $all[] | select(.text == $name)] as $works
-            | {id:("theme:room:permanent:" + $s.id), text:$s.title, group:"The Permanent Collection",
-               columns:[(($works|length|tostring) + " works")], line:$s.description,
-               children:("spark-shell://theme/rows/gallery/collection/permanent/" + $s.id),
-               page:$works[0].page, chip:$works[0].chip, choice:true, sign:"opens"}] as $rooms
+    appearance_gallery_entries | jq -c --slurpfile c "$CORE_DIR/curation.json" --argjson idx "$(art_index)" --arg sep "$PANEL_SEP" "$APPEARANCE_CURATION"'
+        [$c[0].sections[] as $s | works($s.works) as $w | lead($s.lead; $w) as $l
+            | {id: ("theme:room:permanent:" + $s.id), text: $s.title, group: $c[0].title, columns: [count($w)], line: $s.description,
+               children: ("spark-shell://theme/rows/gallery/collection/permanent/" + $s.id), page: $l.page, chip: $l.chip, choice: true, sign: "opens", _n: ($w | length)}] as $sections
+        | [($c[0].exhibitions // [])[] | select(.status == "open") as $e | works($e.works) as $w | select(($w | length) > 0)
+            | {id: ("theme:room:exhibition:" + $e.id), text: $e.title, group: "Exhibitions", columns: [count($w)], line: $e.note,
+               children: ("spark-shell://theme/rows/gallery/collection/exhibition/" + $e.id), page: $w[0].page, chip: $w[0].chip, choice: true, sign: "opens"}] as $shows
         | [$all[] | select(._kind == "saved")] as $saved
-        | (if ($saved|length)>0 then
-            [{id:"theme:room:saved",text:"Saved themes",group:"Your Collection",choice:true,
-              columns:[(($saved|length|tostring)+" works")],
-              children:"spark-shell://theme/rows/gallery/collection/saved",sign:"opens",
-              page:$saved[0].page,chip:$saved[0].chip}]
+        | (if ($saved | length) > 0 then
+            [{id: "theme:room:saved", text: "Saved themes", group: "Your Collection", choice: true, columns: [count($saved)],
+              children: "spark-shell://theme/rows/gallery/collection/saved", sign: "opens", page: $saved[0].page, chip: $saved[0].chip}]
            else [] end) as $personal
-        | ([ $all[] | select(._kind == "local") | ._room ] | unique) as $locals
-        | [$locals[] as $slug
-            | [$all[] | select(._kind == "local" and ._room == $slug)] as $works
-            | {id:("theme:room:local:" + $slug),text:($slug|gsub("-";" ")),
-               group:"Your Collection",choice:true,columns:[(($works|length|tostring)+" works")],
-               children:("spark-shell://theme/rows/gallery/collection/local/" + $slug),
-               page:$works[0].page,chip:$works[0].chip,sign:"opens"}] as $custom
-        | {title:"The Gallery",state:($c[0].title + " / " + ($rooms|length|tostring) + " sections"),
-           rows:($rooms+$personal+$custom),short:[]}'
+        | ([$all[] | select(._kind == "local") | ._room] | unique) as $locals
+        | [$locals[] as $slug | [$all[] | select(._kind == "local" and ._room == $slug)] as $w
+            | {id: ("theme:room:local:" + $slug), text: ($slug | gsub("-"; " ")), group: "Your Collection", choice: true, columns: [count($w)],
+               children: ("spark-shell://theme/rows/gallery/collection/local/" + $slug), page: $w[0].page, chip: $w[0].chip, sign: "opens"}] as $custom
+        | {title: "The Gallery",
+           state: (([$sections[]._n] | add // 0 | tostring) + " works in " + ($sections | length | tostring) + " sections"
+                   + (if ($shows | length) > 0 then ", " + ($shows | length | tostring) + (if ($shows | length) == 1 then " exhibition" else " exhibitions" end) else "" end)),
+           rows: ([$sections[] | del(._n)] + $shows + $personal + $custom), short: []}'
 }
 
-# Read one curatorial room. A work's ID, preview, F4 palette and apply action
-# are unchanged, including existing personal-theme precedence.
+# One section, exhibition or collection of yours. A work keeps its id, preview,
+# palette and apply, and a theme of yours keeps its precedence by name.
 appearance_gallery_collection() {
-    appearance_gallery_entries | jq -ec --arg room "$1" --slurpfile c "$CORE_DIR/curation.json" '
-        .rows as $all
-        | if ($room|startswith("permanent/")) then
-            ($c[0].sections[] | select(.id == ($room|ltrimstr("permanent/")))) as $s
-            | [$s.works[] as $name | $all[] | select(.text == $name)
-                | del(._kind,._room) | .group=null] as $works
-            | {title:$s.title,state:$s.description,rows:$works,short:[]}
+    appearance_gallery_entries | jq -ec --arg room "$1" --slurpfile c "$CORE_DIR/curation.json" --argjson idx "$(art_index)" --arg sep "$PANEL_SEP" "$APPEARANCE_CURATION"'
+        if ($room | startswith("permanent/")) then
+            ($c[0].sections[] | select(.id == ($room | ltrimstr("permanent/")))) as $s
+            | collection($s.title; $s.description; works($s.works))
+          elif ($room | startswith("exhibition/")) then
+            ($c[0].exhibitions // [] | .[] | select(.status == "open" and .id == ($room | ltrimstr("exhibition/")))) as $e
+            | works($e.works) as $w | if ($w | length) > 0 then collection($e.title; $e.note; $w) else empty end
           elif $room == "saved" then
-            [$all[] | select(._kind == "saved") | del(._kind,._room) | .group=null] as $works
-            | {title:"Saved themes",state:(($works|length|tostring)+" works"),rows:$works,short:[]}
-          elif ($room|startswith("local/")) then
-            ($room|ltrimstr("local/")) as $slug
-            | [$all[] | select(._kind == "local" and ._room == $slug)
-                | del(._kind,._room) | .group=null] as $works
-            | if ($works|length)>0 then
-                {title:($slug|gsub("-";" ")),state:(($works|length|tostring)+" works"),rows:$works,short:[]}
-              else empty end
+            [$all[] | select(._kind == "saved")] as $w | collection("Saved themes"; count($w); $w)
+          elif ($room | startswith("local/")) then
+            ($room | ltrimstr("local/")) as $slug
+            | [$all[] | select(._kind == "local" and ._room == $slug)] as $w
+            | if ($w | length) > 0 then collection($slug | gsub("-"; " "); count($w); $w) else empty end
           else empty end'
 }
 
@@ -113,9 +125,12 @@ appearance_detail() {
     _ad_anim=$(theme_animation_for "$1" "$_ad_dir")
     [ "${DIALOG_ANIMATION:-}" != none ] || _ad_anim=none
     _ad_chip=$(palette_chip "$1") || return 1
+    _ad_bar=''; _ad_icons=''; _ad_spacing=''
+    [ -z "$_ad_dir" ] || { _ad_bar=$(look_get "$_ad_dir" BAR_GLYPHS); _ad_icons=$(look_get "$_ad_dir" DIALOG_ICONS); _ad_spacing=$(look_get "$_ad_dir" DIALOG_SPACING); }
     jq -cn --arg name "$1" --arg label "$(theme_label "$1")" --arg ref "$(palette_reference "$1")" --arg current "${THEME:-none}" --arg chip "$_ad_chip" \
         --arg wall "$_ad_wall" --arg motion "$_ad_motion" --arg anim "$_ad_anim" \
         --arg face "$_ad_face" --arg family "$_ad_family" --arg alpha "$_ad_alpha" --arg size "$_ad_size" \
+        --arg bar "$_ad_bar" --arg icons "$_ad_icons" --arg spacing "$_ad_spacing" --argjson art "$(art_of "$1")" \
         --argjson desktop "$([ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && echo true || echo false)" '
         def fact($g; $id; $label; $value):
             {id: ("theme:detail:" + $id), group: $g, text: $label, columns: [if $value == "" then "keep current" else $value end]};
@@ -124,12 +139,35 @@ appearance_detail() {
              sign: (if $name == $current then "check" else "blank" end), chip: ($chip | split(" ")),
              quiet: true, page: ("spark-shell://theme/preview/" + $name), tool: {name:"theme_palette",arguments:{name:$name}}}]
             + [{id:"theme:terminal-palette", text:"Terminal palette", sign:"opens", columns:[$ref], children:("spark-shell://theme/rows/palette/"+$name)}]
+            + [fact("art"; "media"; "medium"; ({vector: "vector", illustration: "illustrated scene", cinematic: "cinematic illustration", pixel: "pixel scene", picture: "picture", color: "plain ground"}[$art.media] // "plain ground"))]
+            + (if $art.source == "family" then [fact("art"; "family-of"; "family"; $art.title)] else [] end)
+            + [fact("art"; "variant"; "variant"; $art.variant)]
+            + [$art.variants | to_entries[] | select(.key != $art.variant)
+               | {id: ("theme:variant:" + .key), group: "art", text: (.key + " variant"), sign: "opens", columns: [.value | ltrimstr("core-")],
+                  children: ("spark-shell://theme/rows/gallery/" + .value)}]
             + (if $desktop then [fact("wallpaper and motion"; "wall"; "wallpaper"; $wall),
-                                 fact("wallpaper and motion"; "motion"; "wallpaper motion"; $motion)] else [] end)
+                                 fact("wallpaper and motion"; "moves"; "the art"; (if $art.motion == "ambient" then "moves with moving wallpaper on" else "still" end)),
+                                 fact("wallpaper and motion"; "motion"; "wallpaper motion"; $motion),
+                                 {id: "theme:compositions", group: "screens", text: "compositions", sign: "opens",
+                                  columns: [([1, 1] + $art.screens[1:] | length | tostring)], children: ("spark-shell://theme/rows/gallery/" + $name + "/art")},
+                                 fact("screens"; "turned"; "turned screen"; (if $art.portrait == "authored" then "its own composition" else "the art fitted, never cropped" end)),
+                                 fact("screens"; "panels"; "two and three screens"; (if ($art.screens | length) > 1 then "panels for " + ($art.screens[1:] | map(tostring) | join(" and ")) + " screens" else "the art on each screen" end)),
+                                 fact("idle and lock"; "rest"; "idle and lock"; (if $art.clock then "the art, the clock over it" else "the art alone" end))] else [] end)
             + [fact("wallpaper and motion"; "animation"; "dialog motion"; $anim),
                fact("type and glyphs"; "face"; "typeface"; $face), fact("type and glyphs"; "size"; "text size"; $size),
-               fact("type and glyphs"; "family"; "glyph family"; $family),
-               fact("windows"; "alpha"; "opacity"; (if $alpha == "" then "" else (($alpha | tonumber) * 100 | round | tostring) + "%" end))])}'
+               fact("type and glyphs"; "family"; "glyph family"; $family), fact("type and glyphs"; "bar"; "the bar"; $bar),
+               fact("windows"; "alpha"; "opacity"; (if $alpha == "" then "" else (($alpha | tonumber) * 100 | round | tostring) + "%" end)),
+               fact("windows"; "icons"; "app icons"; $icons), fact("windows"; "spacing"; "app spacing"; $spacing)])}'
+}
+appearance_art() {   # appearance_art THEME -> its compositions: one screen, a turned screen and the panels its family has; each a preview, none applied
+    case $(theme_kind "$1") in shipped|bundled|yours|saved|look) ;; *) return 1 ;; esac
+    _aac=$(palette_chip "$1") || return 1
+    art_of "$1" | jq -c --arg name "$1" --arg label "$(theme_label "$1")" --arg chip "$_aac" '
+        ("spark-shell://theme/preview/" + $name) as $p | ($chip | split(" ")) as $c
+        | {title: "Compositions", state: $label, short: [], rows: ([
+            {id: "theme:art:landscape", text: "one screen", columns: ["landscape"], page: $p, chip: $c},
+            {id: "theme:art:portrait", text: "turned screen", columns: [if .portrait == "authored" then "its own composition" else "the art fitted" end], page: ($p + "/portrait"), chip: $c}]
+          + [.screens[1:][] | tostring as $n | {id: ("theme:art:panels-" + $n), text: ({"2": "two screens", "3": "three screens"}[$n]), columns: ["panels"], page: ($p + "/panels-" + $n), chip: $c}])}'
 }
 
 appearance_palette() (
@@ -237,6 +275,46 @@ appearance_preview() (
     fi
     jq -cn --arg title "$(theme_label "$_key")" --arg wall "$_label" --arg ref "$(palette_reference "$_key")" --arg picture "$_picture" --argjson full "$([ "$_width" = 1600 ] && echo true || echo false)" \
         '{title:$title, facts:[$wall,$ref], full:$full} + (if $picture != "" then {picture:$picture} else {say:"Wallpaper preview unavailable"} end)'
+)
+
+# A composition's picture, made without changing the active look: a portrait
+# companion, a scene's own portrait view or the art fitted, and panels in a row.
+appearance_preview_art() (
+    _key=$1; _role=$2; _h=540; [ "${3:-}" != full ] || _h=1080
+    _pal=$(palette_file "$_key") || return 1
+    _art=$(art_of "$_key") || return 1
+    _dir=$(theme_dir "$_key"); _wall=$(printf '%s' "$_art" | jq -r .wallpaper)
+    HEX_BG=$(palette_get "$_pal" THEME_BG); HEX_BG=${HEX_BG#\#}; _ground=$(wall_ground)
+    case $_role in
+        portrait) _file=$(printf '%s' "$_art" | jq -r '.portrait_file // empty')
+            if [ -n "$_file" ]; then _say='its own portrait'; _how=file
+            elif wall_scene "$_wall"; then _say='the scene drawn for a turned screen'; _how=scene
+            else _say='the art fitted, never cropped'; _how=fit; fi ;;
+        panels-2|panels-3) _files=$(printf '%s' "$_art" | jq -r --arg n "${_role#panels-}" '.panels[$n] // [] | .[] | (.landscape // .portrait)')
+            [ -n "$_files" ] || return 1; _say="${_role#panels-} panels, left to right"; _how=strip ;;
+        *) return 1 ;;
+    esac
+    _stamp=$({ printf '%s\n' "$_role" "$_art"; cat "$_pal"; } | cksum | cut -d' ' -f1)
+    _out=$THUMB_DIR/themes/$_key-$_role-$_stamp-$_h.png; _picture=''
+    if [ -s "$_out" ]; then _picture=$_out
+    else
+        _made=$TMP/theme-art.png; rm -f "$_made"
+        case $_how in
+            file) pic_png "$_dir/$_file" "$_made" "$_h" || : ;;
+            scene) scene_still "$_wall" "$_pal" "$((_h * 9 / 32 * 2))x$_h" "$_made" || : ;;
+            fit) _land=$(appearance_preview "$_key" | jq -r '.picture // empty')
+                [ -z "$_land" ] || art_fit "$_land" "$((_h * 9 / 32 * 2))x$_h" "$(art_edges "$_land" "$_ground")" "$_made" || : ;;
+            strip) set --; for _f in $_files; do set -- "$@" "$_dir/$_f"; done; art_strip "$_made" "$((_h / 2))" "$_ground" "$@" || : ;;
+        esac
+        if [ -s "$_made" ]; then
+            mkdir_state "$THUMB_DIR/themes"
+            _tmp=$(mktemp "$THUMB_DIR/themes/.preview.XXXXXX") && cp "$_made" "$_tmp" && mv -f "$_tmp" "$_out" && _picture=$_out
+            [ -z "${_tmp:-}" ] || rm -f "$_tmp"
+        fi
+    fi
+    jq -cn --arg title "$(theme_label "$_key")" --arg say "$_say" --arg ref "$(palette_reference "$_key")" --arg picture "$_picture" \
+        --argjson full "$([ "${3:-}" = full ] && echo true || echo false)" \
+        '{title: $title, facts: [$say, $ref], full: $full} + (if $picture != "" then {picture: $picture} else {say: "Composition preview unavailable"} end)'
 )
 
 appearance_sections() {

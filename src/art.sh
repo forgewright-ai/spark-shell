@@ -75,6 +75,7 @@ family_why() {   # family_why FILE -> nothing and 0 for a family this spark-shel
 family_for() {   # family_for THEME -> the file of the family it is a variant of, or false
     _fl=$(theme_label "$1")
     family_files | while IFS= read -r _ff; do
+        grep -qF -e "\"$_fl\"" -e "\"core-$_fl\"" -e "\"$1\"" "$_ff" 2>/dev/null || continue   # no mention, no jq
         jq -e --arg t "$1" --arg l "$_fl" 'any(.variants[]?; (.theme? // "") as $k | $k == $t or $k == $l or ($k | ltrimstr("core-")) == $l)' "$_ff" >/dev/null 2>&1 || continue
         family_why "$_ff" >/dev/null || continue
         printf '%s\n' "$_ff"; break
@@ -142,4 +143,40 @@ theme_variant() {   # theme_variant [dark|light] -- the theme in use in its othe
     _tvt=$(printf '%s' "$_tva" | jq -r --arg v "$1" '.variants[$v] // empty')
     [ -n "$_tvt" ] || refuse_in theme "$(theme_label "$THEME") has no $1 variant"
     theme_apply "$_tvt"
+}
+art_index() { dirs_cached art.index "$(THEME_DIRS) $FAMILY_CORE $CONFIG_DIR/families" art_index_now; }   # -> {THEME: {family, title, media, variant, variants}} for every theme here, kept until a theme or family file changes
+art_index_now() {
+    family_files | while IFS= read -r _aif; do family_why "$_aif" >/dev/null && cat "$_aif"; done | jq -cs . > "$TMP/art.families"
+    theme_names | while IFS= read -r _aik; do
+        _aiw=$(art_wall "$_aik"); printf '%s\t%s\t%s\t%s\n' "$_aik" "$(theme_label "$_aik")" "$(art_media "$_aiw")" "$(art_variant "$_aik")"
+    done | jq -Rnc --slurpfile f "$TMP/art.families" '
+        ([$f[0][] | . as $x | .variants | to_entries[] | {key: .value.theme, value: {family: $x.id, title: $x.title, media: $x.media, variant: .key,
+            variants: ($x.variants | map_values(.theme))}}] | from_entries) as $fam
+        | reduce (inputs | split("\t")) as [$k, $l, $m, $v] ({};
+            .[$k] = ($fam[$k] // $fam[$l] // $fam["core-" + $l] // {family: null, title: $l, media: $m, variant: $v, variants: {($v): $k}}))'
+}
+art_mime() { case $(printf '%s' "${1##*.}" | tr 'A-Z' 'a-z') in jpg|jpeg) echo image/jpeg ;; *) echo image/png ;; esac; }   # art_mime FILE -> its data URI type
+art_edges() {   # art_edges PICTURE #GROUND -> "#TOP #BOTTOM": the colors along its top and bottom, else the ground twice
+    if pic_small "$1" "$TMP/edges.png" && _aeg=$(python3 -I "$REPO/lib/look.py" edges "$TMP/edges.png" 2>/dev/null); then printf '%s' "$_aeg"
+    else printf '%s %s' "$2" "$2"; fi
+}
+art_fit() {   # art_fit PICTURE WxH "#TOP #BOTTOM" OUT -> the picture whole inside WxH, its own top and bottom colors carried on above and below it, a PNG; never cropped
+    command -v base64 >/dev/null 2>&1 && command -v rsvg-convert >/dev/null 2>&1 && [ -f "$1" ] || return 1
+    _afw=${2%x*}; _afh=${2#*x}; _aft=${3%% *}; _afb=${3##* }
+    { printf '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="%s" height="%s">' "$_afw" "$_afh"
+      printf '<rect width="%s" height="%s" fill="%s"/><rect y="%s" width="%s" height="%s" fill="%s"/>' "$_afw" "$((_afh / 2))" "$_aft" "$((_afh / 2))" "$_afw" "$((_afh - _afh / 2))" "$_afb"
+      printf '<image width="%s" height="%s" preserveAspectRatio="xMidYMid meet" xlink:href="data:%s;base64,' "$_afw" "$_afh" "$(art_mime "$1")"
+      base64 < "$1" | tr -d '\n'; printf '"/></svg>\n'; } > "$4.svg" && rsvg-convert -w "$_afw" -h "$_afh" -o "$4.new" "$4.svg" 2>/dev/null && mv "$4.new" "$4"; _afr=$?
+    rm -f "$4.svg" "$4.new"; return "$_afr"
+}
+art_strip() {   # art_strip OUT HEIGHT #GROUND PICTURE... -> the pictures side by side, each 16:9 at HEIGHT with a gap of the ground: a preview of panels
+    command -v base64 >/dev/null 2>&1 && command -v rsvg-convert >/dev/null 2>&1 || return 1
+    _aso=$1; _ash=$2; _asg=$3; shift 3; _asw=$((_ash * 16 / 9)); _asn=$#; _asgap=$((_ash / 24))
+    _astw=$((_asn * _asw + (_asn - 1) * _asgap))
+    { printf '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="%s" height="%s"><rect width="100%%" height="100%%" fill="%s"/>' "$_astw" "$_ash" "$_asg"
+      _asx=0; for _asp; do
+          printf '<image x="%s" width="%s" height="%s" preserveAspectRatio="xMidYMid meet" xlink:href="data:%s;base64,' "$_asx" "$_asw" "$_ash" "$(art_mime "$_asp")"
+          base64 < "$_asp" | tr -d '\n'; printf '"/>'; _asx=$((_asx + _asw + _asgap))
+      done; printf '</svg>\n'; } > "$_aso.svg" && rsvg-convert -w "$_astw" -h "$_ash" -o "$_aso.new" "$_aso.svg" 2>/dev/null && mv "$_aso.new" "$_aso"; _asr=$?
+    rm -f "$_aso.svg" "$_aso.new"; return "$_asr"
 }

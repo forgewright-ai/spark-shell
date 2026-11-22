@@ -4591,6 +4591,15 @@ impl App {
             }
             return;
         }
+        // a composition is looked at large, as F3 does: a picture is never applied
+        if self.mode == Mode::Normal && self.input.is_empty() && matches!(&self.view, View::Folder(_, uri) if crate::appearance::compositions(uri)) {
+            if let Some(id) = crate::appearance::candidate(self).map(|(_, r)| r.id.clone()) {
+                self.light_row(&id);
+                if self.open_preview() {
+                    return;
+                }
+            }
+        }
         // a name left empty: the form stands, as files' does
         if self.prompt_form() && self.input.trim().is_empty() {
             return self.refuse("type a name, or Esc cancels");
@@ -6917,6 +6926,8 @@ impl App {
             View::Folder(_, uri) if crate::appearance::gallery(&self.view) && crate::appearance::candidate(self).is_some() => {
                 if uri == crate::appearance::GALLERY {
                     add(&mut v, "Explore", "Enter");
+                } else if crate::appearance::compositions(uri) {
+                    add(&mut v, "View", "Enter");
                 } else if uri
                     .strip_prefix(crate::appearance::GALLERY)
                     .is_some_and(|tail| tail.starts_with("/collection/"))

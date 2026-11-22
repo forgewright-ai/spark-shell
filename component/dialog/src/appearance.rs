@@ -9,6 +9,17 @@ pub(crate) fn gallery(view: &View) -> bool {
     matches!(view, View::Folder(_, uri) if uri == GALLERY || uri.strip_prefix(GALLERY).is_some_and(|tail| tail.starts_with('/')))
 }
 
+/// A work's compositions: each row a picture to look at, never applied.
+pub(crate) fn compositions(uri: &str) -> bool {
+    uri.strip_prefix(GALLERY)
+        .is_some_and(|tail| tail.len() > "/art".len() && tail.ends_with("/art"))
+}
+
+/// A folder whose lit row is the poster: the gallery, a collection, a work's compositions.
+fn browsing(uri: &str) -> bool {
+    uri == GALLERY || uri.strip_prefix(GALLERY).is_some_and(|tail| tail.starts_with("/collection/")) || compositions(uri)
+}
+
 pub(crate) fn section(view: &View) -> bool {
     matches!(view, View::Folder(_, uri) if uri.starts_with("spark-shell://theme/rows/settings/") || uri.starts_with(PALETTES) || uri.starts_with(EXPORTS))
 }
@@ -18,7 +29,8 @@ pub(crate) fn terminal_palette(app: &App) -> Option<(usize, String)> {
     if row.id.starts_with("theme:room:") {
         return None; // a collection poster is not a single palette
     }
-    let name = row.page.as_ref()?.strip_prefix("spark-shell://theme/preview/")?;
+    let page = row.page.as_ref()?.strip_prefix("spark-shell://theme/preview/")?;
+    let name = page.split('/').next().filter(|n| !n.is_empty())?; // a composition's page names its work first
     Some((p, format!("{PALETTES}{name}")))
 }
 
@@ -32,7 +44,7 @@ pub(crate) fn candidate(app: &App) -> Option<(usize, &Row)> {
             .map(|r| (*p, r)),
         View::Folder(p, uri) if gallery(&app.view) => {
             let rows = &app.folder.as_ref().filter(|(_, u, _)| u == uri)?.2.rows;
-            if uri == GALLERY || uri.strip_prefix(GALLERY).is_some_and(|tail| tail.starts_with("/collection/")) {
+            if browsing(uri) {
                 let id = match app.picks().get(app.sel)? {
                     Item::Folder(i) => *i,
                     _ => return None,

@@ -177,7 +177,7 @@ provide_resource_special() {   # provide_resource_special ID METHOD URI -- one s
         theme:resources/read:spark-shell://theme/preview/?*)
             _ap=${3#spark-shell://theme/preview/}; _af=''
             case $_ap in *'?full=1') _ap=${_ap%'?full=1'}; _af=full ;; esac
-            if appearance_preview "$_ap" "$_af" > "$TMP/theme.preview"; then
+            if case $_ap in */*) appearance_preview_art "${_ap%%/*}" "${_ap#*/}" "$_af" ;; *) appearance_preview "$_ap" "$_af" ;; esac > "$TMP/theme.preview"; then
                 rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.preview")"
             else rpc_error "$1" -32002 "no wallpaper at that uri"; fi ;;
         theme:resources/read:spark-shell://theme/rows/palette/?*|theme:resources/read:spark-shell://theme/rows/exports/?*)
@@ -192,6 +192,11 @@ provide_resource_special() {   # provide_resource_special ID METHOD URI -- one s
             if appearance_gallery_collection "${3#spark-shell://theme/rows/gallery/collection/}" > "$TMP/theme.room"; then
                 rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.room")"
             else rpc_error "$1" -32002 "no collection at that uri"; fi ;;
+        theme:resources/read:spark-shell://theme/rows/gallery/*/art)
+            _ak=${3#spark-shell://theme/rows/gallery/}
+            if appearance_art "${_ak%/art}" > "$TMP/theme.art"; then
+                rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.art")"
+            else rpc_error "$1" -32002 "no compositions at that uri"; fi ;;
         theme:resources/read:spark-shell://theme/rows/gallery/*)
             if appearance_detail "${3#spark-shell://theme/rows/gallery/}" > "$TMP/theme.detail"; then
                 rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.detail")"

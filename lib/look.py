@@ -4,6 +4,8 @@
   look.py palette PNG [--dark|--light]   the twenty palette keys from a picture's colors
   look.py words --hue HUE --accent HUE|same --warmth WARMTH --contrast CONTRAST --light dark|light
                                         the twenty keys from five words
+  look.py edges PNG                     "#TOP #BOTTOM": the colors along a small picture's top and bottom,
+                                        to extend it on a screen of another shape
   look.py picture FILE                  "png W H" or "jpeg W H": the kind and the size its header
                                         says, read before anything decodes it (the gallery's check)
   look.py --version
@@ -412,6 +414,23 @@ def picture_size(path):
 
 # --- the command
 
+def edge_colors(path):
+    """-> (top, bottom) as #rrggbb: the mean of the picture's top and bottom twentieth. Only a small,
+    opaque PNG is read, every pixel kept in its row (read_png keeps them all under sixty thousand)."""
+    head = open(path, "rb").read(24)
+    if head[:8] != b"\x89PNG\r\n\x1a\n" or head[12:16] != b"IHDR":
+        raise ValueError("not a PNG")
+    w, h = struct.unpack(">II", head[16:24])
+    if w * h > 60000:
+        raise ValueError("a picture of %dx%d is too large to read its edges; give a small one" % (w, h))
+    px = read_png(path)
+    if len(px) != w * h:
+        raise ValueError("the picture has clear pixels, so its rows are not whole")
+    band = max(1, h // 20)
+    mean = lambda ps: tuple(sum(c[i] for c in ps) / len(ps) for i in range(3))
+    return hexs(mean(px[:w * band])), hexs(mean(px[w * (h - band):]))
+
+
 def main(argv):
     if len(argv) < 2 or argv[1] in ("-h", "--help"):
         sys.stdout.write(__doc__)
@@ -431,6 +450,16 @@ def main(argv):
         try:
             sys.stdout.write(palette_from_picture(read_png(argv[2]), light))
         except (OSError, ValueError, zlib.error) as e:
+            sys.stderr.write("%s\n" % e)
+            return 1
+        return 0
+    if argv[1] == "edges":
+        if len(argv) != 3:
+            sys.stderr.write("edges takes a PNG\n")
+            return 1
+        try:
+            print("%s %s" % edge_colors(argv[2]))
+        except (OSError, ValueError, zlib.error, struct.error) as e:
             sys.stderr.write("%s\n" % e)
             return 1
         return 0
