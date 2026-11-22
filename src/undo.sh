@@ -300,7 +300,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         display:idle|display:lock) case $3 in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) echo "$3"; return 0 ;; *) echo "display: $2 takes minutes, 0 to 999"; return 1 ;; esac ;;
     esac
     if [ "$1" = theme ] && [ -z "${3:-}" ]; then   # a palette's step is its name alone
-        case $(theme_kind "$2") in shipped|yours|saved|none) echo ''; return 0 ;; look) [ "$2" != "${THEME:-}" ] || { echo ''; return 0; } ;; esac
+        case $(theme_kind "$2") in shipped|bundled|yours|saved|none) echo ''; return 0 ;; look) [ "$2" != "${THEME:-}" ] || { echo ''; return 0; } ;; esac
     fi
     [ -z "${PANEL_ROW_MATCHED:-}" ] || { printf '%s\n' "${3:-}"; return 0; }   # a host's call matched a row it was sent, exactly
     _want=$(panel_lower "$2 $3" | sed 's/ *$//')

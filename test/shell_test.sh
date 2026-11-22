@@ -8312,12 +8312,12 @@ jq -e --arg dw "$([ "$(uname -s)" = Darwin ] && echo default || echo fjord)" '(.
     and ([.rows[] | select(.text | test("^(text bigger|text smaller|more transparency|less transparency)"))] | length == 0) and (.short == ["theme:more"])' "$H/trows.json" >/dev/null \
     && ok "provide theme rows (#36, #183, #192): the palettes first, dark then light in one column, each its own step kept in place with a look, its chip and no drawing; custom: the saved theme, the save row that asks a name; then the settings: the text size and the transparency, each with every value it takes and the one in use; no back rows" || bad "theme rows" "$(head -c 900 "$H/trows.json")"
 mkdir -p "${cfg%/*}/galleries"
-printf 'desk\nnord\ndesk\nabsent\n' > "${cfg%/*}/galleries/first-gallery.list"
+printf 'desk\nnord\ndesk\nabsent\n' > "${cfg%/*}/galleries/studio.list"
 cp "$cfg" "$H/before-browse"
 mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows/gallery"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/gallery/desk"}')" "$(rq 3 resources/read '{"uri":"spark-shell://theme/rows/gallery/../desk"}')"
 ans 1 | jq -r '.result.contents[0].text' > "$H/theme-gallery.json"
 ans 2 | jq -r '.result.contents[0].text' > "$H/theme-card.json"
-jq -e '[.rows[] | select(.group == "first gallery") | .text] == ["desk","nord"] and all(.rows[]; .tool == null and .look == null and (.chip | length) > 0)' "$H/theme-gallery.json" >/dev/null \
+jq -e '[.rows[] | select(.group == "studio") | .text] == ["desk","nord"] and all(.rows[]; .tool == null and .look == null and (.chip | length) > 0)' "$H/theme-gallery.json" >/dev/null \
     && jq -e '.title == "desk" and .rows[0].tool == {name:"theme_palette",arguments:{name:"desk"}} and any(.rows[]; .id == "theme:detail:family")' "$H/theme-card.json" >/dev/null \
     && [ "$(ans 3 | jq -r .error.code)" = -32002 ] && cmp -s "$cfg" "$H/before-browse" \
     && ok "theme gallery: a local collection appears once, inspection keeps the current look, apply names the saved theme" || bad "theme gallery" "$(cat "$H/theme-card.json")"

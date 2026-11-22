@@ -1,35 +1,45 @@
 # shellcheck extended-analysis=false
-# reads: CONFIG_DIR OS
+# reads: CONFIG_DIR CORE_DIR OS PALETTE_DIR TAB
 appearance_gallery() {
-    _ag_dark=" $(palette_darks | tr '\n' ' ') "
     {
         for gallery in "$CONFIG_DIR"/galleries/*.list; do
             [ -f "$gallery" ] || continue
             group=${gallery##*/}; group=${group%.list}
-            case $group in ''|*[!a-z0-9-]*) continue ;; esac
+            case $group in ''|core|first-gallery|*[!a-z0-9-]*) continue ;; esac
             group=$(printf '%s' "$group" | tr '-' ' ')
             while IFS= read -r name || [ -n "$name" ]; do
                 case $name in ''|.*|*[!A-Za-z0-9._-]*) continue ;; esac
-                printf '%s\t%s\n' "$group" "$name"
+                printf 'local\t%s\t%s\t%s\n' "$group" "$name" "$name"
             done < "$gallery"
         done
-        theme_saved_names | while IFS= read -r name; do printf 'saved themes\t%s\n' "$name"; done
-        palette_names | while IFS= read -r name; do
-            case $_ag_dark in *" $name "*) tone=dark ;; *) tone=light ;; esac
-            printf '%s\t%s\n' "$tone" "$name"
-        done | LC_ALL=C sort
+        while IFS="$TAB" read -r label id; do
+            id=${id:-$label}
+            # The private preview installed these variants under first-* keys.
+            if [ "$id" != "$label" ]; then
+                if [ -f "$PALETTE_DIR/$label/palette.env" ] || [ -f "$PALETTE_DIR/$label.env" ]; then id=$label
+                elif [ -f "$PALETTE_DIR/first-$label/palette.env" ] &&
+                    grep -qxF "first-$label" "$CONFIG_DIR/galleries/first-gallery.list" 2>/dev/null; then id=first-$label; fi
+            fi
+            printf 'core\tcore\t%s\t%s\n' "$id" "$label"
+        done < "$CORE_DIR/themes.tsv"
+        theme_saved_names | while IFS= read -r name; do printf 'saved\tsaved themes\t%s\t%s\n' "$name" "$name"; done
+        palette_names | while IFS= read -r name; do printf 'palette\tpalettes\t%s\t%s\n' "$name" "$name"; done
     } | jq -Rn --arg current "${THEME:-none}" --argjson chips "$(theme_chips theme)" '
-        [inputs | split("\t") | select(.[1] | test("^[A-Za-z0-9_-][A-Za-z0-9._-]*$"))
-         | {group: .[0], text: .[1]}]
-        | reduce .[] as $r ({seen:{},rows:[]};
-              if .seen[$r.text] or $chips[$r.text] == null then . else .seen[$r.text] = true | .rows += [$r] end)
-        | .rows | map(.text as $n | . + {id: ("theme:entry:" + $n), children: ("spark-shell://theme/rows/gallery/" + $n),
-              chip: $chips[$n], sign: (if $n == $current then "check" else "opens" end)})
-        | {title: "theme gallery", state: ("\(length) themes"), rows: ., short: []}'
+        [inputs | split("\t") | select(length == 4 and $chips[.[2]] != null)] as $entries
+        | (any($entries[]; .[0] == "local")) as $multiple
+        | reduce $entries[] as [$kind,$group,$id,$label] ({seen:{}, labels:{}, rows:[]};
+              if .seen[$id] or ($kind == "palette" and .labels[$label]) then . else
+                  .seen[$id] = true | .labels[$label] = true |
+                  .rows += [{id: ("theme:entry:" + $id), text: $label,
+                      group: (if $kind == "core" and ($multiple | not) then null else $group end),
+                      children: ("spark-shell://theme/rows/gallery/" + $id), chip: $chips[$id],
+                      sign: (if $id == $current then "check" else "opens" end)}]
+              end)
+        | {title: "Theme gallery", state: ("\(.rows | length) themes"), rows: .rows, short: []}'
 }
 appearance_detail() {
     _ad_kind=$(theme_kind "$1")
-    case $_ad_kind in shipped|yours|saved|look) ;; *) return 1 ;; esac
+    case $_ad_kind in shipped|bundled|yours|saved|look) ;; *) return 1 ;; esac
     _ad_dir=$(theme_dir "$1")
     _ad_wall=''; _ad_motion=''; _ad_face=''; _ad_family=''; _ad_alpha=''; _ad_size=''; _ad_picture=''
     if [ -n "$_ad_dir" ]; then
@@ -50,13 +60,13 @@ appearance_detail() {
     _ad_anim=$(theme_animation_for "$1" "$_ad_dir")
     [ "${DIALOG_ANIMATION:-}" != none ] || _ad_anim=none
     _ad_chip=$(palette_chip "$1") || return 1
-    jq -cn --arg name "$1" --arg current "${THEME:-none}" --arg chip "$_ad_chip" \
+    jq -cn --arg name "$1" --arg label "$(theme_label "$1")" --arg current "${THEME:-none}" --arg chip "$_ad_chip" \
         --arg wall "$_ad_wall" --arg motion "$_ad_motion" --arg anim "$_ad_anim" \
         --arg face "$_ad_face" --arg family "$_ad_family" --arg alpha "$_ad_alpha" --arg size "$_ad_size" \
         --argjson desktop "$([ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && echo true || echo false)" '
         def fact($g; $id; $label; $value):
             {id: ("theme:detail:" + $id), group: $g, text: $label, columns: [if $value == "" then "keep current" else $value end]};
-        {title: $name, short: [], rows: ([
+        {title: $label, short: [], rows: ([
             {id: ("theme:apply:" + $name), text: (if $name == $current then "in use" else "apply theme" end),
              sign: (if $name == $current then "check" else "blank" end), chip: ($chip | split(" ")),
              quiet: true, tool: {name:"theme_palette",arguments:{name:$name}}}]

@@ -222,6 +222,12 @@ panel_rows_theme() {   # the look: the palettes, the saved themes, the custom ro
             if [ "$n" = "${THEME:-}" ]; then printf '%s\t%s\t%s\t%s\n' "$PANEL_TICK" "$n" "$n" "$_g"; else printf -- '-\t%s\t%s\t%s\n' "$n" "$n" "$_g"; fi
         done < "$TMP/pal.names"
     done
+    core_theme_ids | while IFS= read -r n; do
+        [ "$(theme_kind "$n")" = bundled ] || continue
+        _extra=themes
+        case $n in core-*) _extra="themes|$(look_get "$(theme_dir "$n")" ANIMATION)" ;; esac
+        printf -- '-\t%s\t%s\t%s\n' "$(theme_label "$n")" "$n" "$_extra"
+    done
     for n in $(theme_saved_names); do   # custom: the themes kept as folders, the one in use a check
         _td=$PALETTE_DIR/$n; _wl=$(look_get "$_td" WALLPAPER); [ "$_wl" != picture ] || _wl=$(look_get "$_td" PICTURE)
         if [ "$n" = "${THEME:-}" ]; then printf '%s\t%s\tshow\tcustom|%s %s %s\n' "$PANEL_TICK" "$n" "$(theme_source_of "$_td")" "$PANEL_SEP" "${_wl:-default}"

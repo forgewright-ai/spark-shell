@@ -395,7 +395,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                    elif $s == "bar" and .id == "bar:show:App icons (the tray)" then .switch = {on: ($tray == "yes"), turn_on: {name: "bar_tray", arguments: {state: "on"}}, turn_off: {name: "bar_tray", arguments: {state: "off"}}}
                    else . end))
             | (if $s == "theme" then .look_back = {name: "theme_preview", arguments: {name: "off"}}
-                 | .rows += [{id:"theme:gallery:open", text:"browse themes", sign:"opens", choice:true, columns:[.state],
+                 | .rows += [{id:"theme:gallery:open", text:"Browse themes", sign:"opens", choice:true, columns:[.state],
                               children:"spark-shell://theme/rows/gallery", chip:($chips[.state] // [])}]
                else . end)
             | .rows |= map(
@@ -574,7 +574,7 @@ theme_chips() {   # theme_chips SECTION -> {NAME: [nine colors]}, {} for any oth
     dirs_cached theme.chips "$(THEME_DIRS)" theme_chips_now
 }
 theme_chips_now() {
-    { palette_names; theme_saved_names; } | sort -u | while IFS= read -r _n; do _c=$(palette_chip "$_n") && printf '%s\t%s\n' "$_n" "$_c"; done \
+    theme_names | while IFS= read -r _n; do _c=$(palette_chip "$_n") && printf '%s\t%s\n' "$_n" "$_c"; done \
         | jq -Rn '[inputs | split("\t") | {(.[0]): (.[1] | split(" ") | map(select(test("^#[0-9A-Fa-f]{6}$"))))}] | add // {}'
 }
 provide_in_use() {   # provide_in_use SECTION TOOL ARG -> 0 when ARG names what is in use: choosing it again is a receipt, not a refusal

@@ -434,7 +434,7 @@ provide_call_answer() {   # provide_call_answer ID -- the result: the receipt, t
 provide_quick() {   # provide_quick SECTION TOOL VALUE -> 0 when the rows always list it
     [ "$1" = theme ] || return 1
     case $2 in
-        theme_palette) case $(theme_kind "$3") in shipped|yours|saved|none) return 0 ;; look) [ "$3" = "${THEME:-}" ] ;; *) return 1 ;; esac ;;
+        theme_palette) case $(theme_kind "$3") in shipped|bundled|yours|saved|none) return 0 ;; look) [ "$3" = "${THEME:-}" ] ;; *) return 1 ;; esac ;;
         theme_wallpaper) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && { wall_shipped "$3" || [ "$3" = default ]; } ;;
         theme_text) case $3 in bigger|smaller|[6-9]|[1-3][0-9]|40) [ -n "$(look_font_size)" ] ;; *) return 1 ;; esac ;;
         theme_transparency) case ${3%\%} in more|less|[0-9]|[1-4][0-9]|50) return 0 ;; *) return 1 ;; esac ;;

@@ -143,6 +143,11 @@ theme_list() {
             printf '  %-20s %s\n' "$n" "$note"
         done
     fi
+    echo "Bundled themes:"
+    core_theme_ids | while IFS= read -r n; do
+        [ "$(theme_kind "$n")" = bundled ] || continue
+        printf '  %-20s %s\n' "$n" "$(look_get "$(theme_dir "$n")" WALLPAPER)"
+    done
     echo "The palettes (yours in $PALETTE_DIR come first):"
     { echo none; palette_names; } | while IFS= read -r n; do
         note=''
@@ -206,6 +211,7 @@ theme_delete() {   # theme_delete NAME... -- its folder and history lines
     case $(theme_kind "$name") in
         saved|look) ;;
         shipped) refuse_in theme "$name is a palette spark-shell ships, not a saved theme" ;;
+        bundled) refuse_in theme "$name belongs to the bundled gallery" ;;
         yours) refuse_in theme "$name is a palette file of yours ($PALETTE_DIR/$name.env): remove the file to drop it" ;;
         *) refuse_in theme "no saved theme named $name -- spark-shell theme list shows them" ;;
     esac

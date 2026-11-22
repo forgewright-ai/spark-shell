@@ -107,15 +107,17 @@ lists every key with its default, and the commands write them.
 
 ## Theme settings
 
-Open **settings > theme** to adjust the wallpaper, dialog motion, typeface
-and glyph family. **Browse themes** shows the palettes and saved looks on
-this machine. Open a theme to inspect its colors and settings. Choose
-**apply theme** to use it.
+Open **settings > theme > Browse themes**. The **Theme gallery** opens
+directly on the 34 bundled themes, including their wallpaper, motion,
+typeface and glyph settings. It works offline on a fresh install and
+after an update. Open a theme to inspect it, then choose **apply theme**
+to use it. You can also adjust each setting individually.
 
-A local collection is a list of installed theme names, one per line, in
-`~/.config/spark-shell/galleries/first-gallery.list` (or under
-`$XDG_CONFIG_HOME`). The filename supplies the group name. A palette
-can appear in the collection without a second copy of its colors.
+The bundled collection lives in `gallery/core/`. Personal themes stay
+in `$XDG_CONFIG_HOME/spark-shell/themes/` (default `~/.config/spark-shell/themes/`)
+and take precedence when names match. To add a named collection, place a
+list of installed theme keys, one per line, in the adjacent `galleries/`
+directory, for example `studio.list`.
 
 ## Contributing
 

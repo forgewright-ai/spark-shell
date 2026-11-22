@@ -1,7 +1,7 @@
 use crate::app::{Item, View};
 use crate::model::Rows;
 
-const GALLERY: &str = "spark-shell://theme/rows/gallery";
+pub(crate) const GALLERY: &str = "spark-shell://theme/rows/gallery";
 
 pub(crate) fn gallery(view: &View) -> bool {
     matches!(view, View::Folder(_, uri) if uri == GALLERY || uri.strip_prefix(GALLERY).is_some_and(|tail| tail.starts_with('/')))

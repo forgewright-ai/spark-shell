@@ -724,6 +724,9 @@ fn path(app: &App, pen: &mut Pen, g: &Geo, items: &[Item], k: Kind) {
                 .unwrap_or((Page::List, String::new()));
             apps(app.apps.lines_of(&root, 60, &query, 0).iter().filter(|l| launches(l)).count())
         }
+        (View::Folder(_, uri), _) if uri == crate::appearance::GALLERY && app.input.is_empty() => {
+            app.folder.as_ref().and_then(|(_, _, rows)| rows.state.clone()).unwrap_or_default()
+        }
         // a folder of files: how much it holds, which its summary row said in the grid. A page alone over the
         // list says what it is of, and no count
         _ if k == Kind::Files && !(app.files_page_open() && !app.files.form() && !app.files_details_beside()) => app

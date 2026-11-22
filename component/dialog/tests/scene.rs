@@ -453,13 +453,13 @@ fn theme_browsing_keeps_search_and_separates_inspection_from_apply() {
     let tool = json!({"name":"theme_palette","arguments":{"name":"nord"}});
     theme.rows = parse(json!({"title":"theme","rows":[
         {"id":"theme:nord","text":"nord","tool":tool},
-        {"id":"theme:gallery:open","text":"browse themes","children":gallery},
+        {"id":"theme:gallery:open","text":"Browse themes","children":gallery},
         {"id":"theme:show:Animation","text":"Dialog motion","children":"spark-shell://theme/rows/animations"}
     ]}));
     a.providers = vec![theme];
     a.view = View::Section(0);
     let overview = scene(&mut a, 600.0, 800.0);
-    assert!(words(&overview).iter().any(|w| w.0 == "browse themes"));
+    assert!(words(&overview).iter().any(|w| w.0 == "Browse themes"));
     assert!(!words(&overview).iter().any(|w| w.0 == "nord"));
     for c in "nord".chars() {
         a.typed(c);
@@ -470,12 +470,13 @@ fn theme_browsing_keeps_search_and_separates_inspection_from_apply() {
     a.folder = Some((
         0,
         gallery.into(),
-        parse(json!({"title":"theme gallery","rows":[
+        parse(json!({"title":"Theme gallery","state":"1 theme","rows":[
             {"id":"theme:entry:nord","text":"nord","children":card,"chip":["#2e3440","#d8dee9","#88c0d0"]}
         ]})),
     ));
     (a.in_list, a.sel) = (true, 0);
     assert_eq!(kind(&a), Kind::Page);
+    assert!(words(&scene(&mut a, 600.0, 800.0)).iter().any(|w| w.0 == "1 theme"));
     a.enter();
     assert_eq!(a.view, View::Folder(0, card.clone()));
     assert!(!a.under_way());
