@@ -8410,7 +8410,7 @@ esac
 SCR
 chmod +x "$H/scr/swaymsg"
 scr() { SWAYSOCK=$H/sock PATH="$H/scr:$PATH" sh "$SH" "$@"; }
-scr_wait() { _i=0; while [ "$_i" -lt 50 ] && [ "$(grep -c "$1" "$HOME/scr.log" 2>/dev/null || :)" -lt "${2:-1}" ]; do sleep 0.2; _i=$((_i + 1)); done; }
+scr_wait() { _i=0; while [ "$_i" -lt 50 ] && [ "$(cat "$HOME/scr.log" 2>/dev/null | grep -c "$1" || :)" -lt "${2:-1}" ]; do sleep 0.2; _i=$((_i + 1)); done; }
 cp "$REPO/gallery/theme/nord.env" "$th_dir/study-night/palette.env"; cp "$REPO/gallery/theme/one-light.env" "$th_dir/study-day/palette.env"
 printf 'FORMAT=2\nPALETTE=nord\nWALLPAPER=fjord\nDRAWING=fjord\n' > "$th_dir/study-night/look.env"; printf 'FORMAT=2\nPALETTE=one-light\nWALLPAPER=shore\n' > "$th_dir/study-day/look.env"
 for p in wallpaper:64:36 test-wide-1:64:36 test-wide-2:64:36 test-wide-3:64:36 test-tall:36:64; do testpng "$(printf '%s' "$p" | cut -d: -f2)" "$(printf '%s' "$p" | cut -d: -f3)" "$th_dir/study-night/${p%%:*}.png"; done
@@ -8503,9 +8503,9 @@ printf '%s\n' '{"format": 1, "id": "still", "title": "Still", "media": "vector",
 printf 'DESKTOP=sway\nTHEME=still-night\nWALLPAPER=fjord\nDISPLAY_SAVER=art\n' > "$cfg"
 c2=$(PATH="$H/ia:$PATH" sh "$SH" desktop idle --clock 2>&1 || :)
 esc=$(printf '\033')
-printf '%s' "$c1" | grep -q "${esc}\[[0-9]*;2H${esc}\[48;2;46;52;64;38;5;16m " && printf '%s' "$c1" | grep -q "${esc}\[[0-9]*;2H${esc}\[48;2;46;52;64;38;5;20m " \
-    && ! printf '%s' "$c2" | grep -q '38;5;16m' \
-    && ok "desktop idle --clock, saver art: the time and the date each on a plate of the background, legible on any art; a family that rests without a clock shows the art alone" \
+printf '%s' "$c1" | grep -q "${esc}\[[0-9]*;2H${esc}\[48;2;46;52;64;38;2;136;192;208m " && printf '%s' "$c1" | grep -q "${esc}\[[0-9]*;2H${esc}\[48;2;46;52;64;38;2;216;222;233m " \
+    && ! printf '%s' "$c1" | grep -q '38;5;1[6-9]m\|38;5;20m' && ! printf '%s' "$c2" | grep -q '48;2;' \
+    && ok "desktop idle --clock, saver art: the time in the accent and the date in the text color, each on a plate of the background, the palette's own colors whatever the terminal's slots; a family that rests without a clock shows the art alone" \
     || bad "idle art clock" "$(printf '%s' "$c1" | od -c | head -5) | $(printf '%s' "$c2" | od -c | head -3)"
 rm -rf "$fam" "$th_dir/still-night"; cp "$H/cfg-before-rest" "$cfg"; rm -f "$HOME/swaymsg.log" "$HOME/mako.log" "$HOME/mako.mode" "$H/run/spark-shell-motion.want"
 fi

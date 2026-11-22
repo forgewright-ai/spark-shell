@@ -146,10 +146,10 @@ appearance_detail() {
                | {id: ("theme:variant:" + .key), group: "art", text: (.key + " variant"), sign: "opens", columns: [.value | ltrimstr("core-")],
                   children: ("spark-shell://theme/rows/gallery/" + .value)}]
             + (if $desktop then [fact("wallpaper and motion"; "wall"; "wallpaper"; $wall),
-                                 fact("wallpaper and motion"; "moves"; "the art"; (if $art.motion == "ambient" then "moves with moving wallpaper on" else "still" end)),
+                                 fact("wallpaper and motion"; "moves"; "art motion"; (if $art.motion == "ambient" then "moves with moving wallpaper on" else "still" end)),
                                  fact("wallpaper and motion"; "motion"; "wallpaper motion"; $motion),
                                  {id: "theme:compositions", group: "screens", text: "compositions", sign: "opens",
-                                  columns: [([1, 1] + $art.screens[1:] | length | tostring)], children: ("spark-shell://theme/rows/gallery/" + $name + "/art")},
+                                  columns: [if ($art.screens | length) > 1 then "panels for " + ($art.screens[1:] | map(tostring) | join(" and ")) + " screens too" else "landscape and portrait" end], children: ("spark-shell://theme/rows/gallery/" + $name + "/art")},
                                  fact("screens"; "turned"; "turned screen"; (if $art.portrait == "authored" then "its own composition" else "the art fitted, never cropped" end)),
                                  fact("screens"; "panels"; "two and three screens"; (if ($art.screens | length) > 1 then "panels for " + ($art.screens[1:] | map(tostring) | join(" and ")) + " screens" else "the art on each screen" end)),
                                  fact("idle and lock"; "rest"; "idle and lock"; (if $art.clock then "the art, the clock over it" else "the art alone" end))] else [] end)
@@ -306,6 +306,10 @@ appearance_preview_art() (
                 [ -z "$_land" ] || art_fit "$_land" "$((_h * 9 / 32 * 2))x$_h" "$(art_edges "$_land" "$_ground" "$TMP/edges.png")" "$_made" || : ;;
             strip) set --; for _f in $_files; do set -- "$@" "$_dir/$_f"; done; art_strip "$_made" "$((_h / 2))" "$_ground" "$@" || : ;;
         esac
+        # the poster is wide: a turned screen in it is drawn as a screen, its edge in the muted color, on the ground
+        if [ "$_role" = portrait ] && [ "${3:-}" != full ] && [ -s "$_made" ]; then
+            art_frame "$_made" 960x540 "$_ground" "$(palette_get "$_pal" THEME_MUTED)" "$TMP/theme-art-framed.png" && mv "$TMP/theme-art-framed.png" "$_made" || :
+        fi
         if [ -s "$_made" ]; then
             mkdir_state "$THUMB_DIR/themes"
             _tmp=$(mktemp "$THUMB_DIR/themes/.preview.XXXXXX") && cp "$_made" "$_tmp" && mv -f "$_tmp" "$_out" && _picture=$_out

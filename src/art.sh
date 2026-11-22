@@ -170,7 +170,7 @@ theme_screens() {   # theme_screens -- what each screen shows, from the left
     _tsn=$(printf '%s\n' "$_tsl" | grep -c '')
     printf '%s\n' "$_tsl" | while IFS="$TAB" read -r _tsa _tsi _tst _tso _tss _tsr _tsf _tsm; do
         case ${WALLPAPER:-default} in default|none) _tsw="the ground" ;; '#'*) _tsw="the color $WALLPAPER" ;; *) _tsw='' ;; esac
-        if [ -z "$_tsw" ] && { wall_yours || wall_color; }; then _tsw="your wallpaper as you set it"; fi
+        if [ -z "$_tsw" ] && art_wall_theirs; then _tsw="your wallpaper as you set it"; fi
         if [ -z "$_tsw" ]; then
             case $_tsr:$_tsm in
                 landscape:*) _tsw="the art" ;;
@@ -191,6 +191,18 @@ art_fit() {   # art_fit PICTURE WxH "#TOP #BOTTOM" OUT -> the picture whole insi
       printf '<image width="%s" height="%s" preserveAspectRatio="xMidYMid meet" xlink:href="data:%s;base64,' "$_afw" "$_afh" "$(art_mime "$1")"
       base64 < "$1" | tr -d '\n'; printf '"/></svg>\n'; } > "$4.svg" && rsvg-convert -w "$_afw" -h "$_afh" -o "$4.new" "$4.svg" 2>/dev/null && mv "$4.new" "$4"; _afr=$?
     rm -f "$4.svg" "$4.new"; return "$_afr"
+}
+art_frame() {   # art_frame PICTURE WxH #GROUND #EDGE OUT -> the picture whole, as a screen with a hairline edge, centered on the ground
+    command -v base64 >/dev/null 2>&1 && command -v rsvg-convert >/dev/null 2>&1 && [ -f "$1" ] || return 1
+    _arw=${2%x*}; _arh=${2#*x}; _arm=$((_arh / 18)); _ari=$((_arh - 2 * _arm))
+    set -- "$@" $(png_size "$1"); [ -n "${7:-}" ] || return 1
+    _arpw=$((${6} * _ari / ${7})); _arx=$(((_arw - _arpw) / 2))
+    { printf '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="%s" height="%s"><rect width="100%%" height="100%%" fill="%s"/>' "$_arw" "$_arh" "$3"
+      printf '<image x="%s" y="%s" width="%s" height="%s" preserveAspectRatio="xMidYMid meet" xlink:href="data:%s;base64,' "$_arx" "$_arm" "$_arpw" "$_ari" "$(art_mime "$1")"
+      base64 < "$1" | tr -d '\n'
+      printf '"/><rect x="%s" y="%s" width="%s" height="%s" fill="none" stroke="%s" stroke-width="2"/></svg>\n' "$((_arx - 1))" "$((_arm - 1))" "$((_arpw + 2))" "$((_ari + 2))" "$4"; } > "$5.svg" \
+        && rsvg-convert -w "$_arw" -h "$_arh" -o "$5.new" "$5.svg" 2>/dev/null && mv "$5.new" "$5"; _arr=$?
+    rm -f "$5.svg" "$5.new"; return "$_arr"
 }
 art_strip() {   # art_strip OUT HEIGHT #GROUND PICTURE... -> the pictures side by side, each 16:9 at HEIGHT with a gap of the ground: a preview of panels
     command -v base64 >/dev/null 2>&1 && command -v rsvg-convert >/dev/null 2>&1 || return 1
@@ -237,6 +249,11 @@ art_screens() {   # [OUTPUTS-JSON-FILE] -> NAME<tab>ID<tab>AT<tab>TURN<tab>WxH<t
     [ -n "$_asa" ] || { _asa='{"panels": {}, "portrait_file": null, "portrait": "fitted"}'; ! wall_scene "${WALLPAPER:-}" || _asa='{"panels": {}, "portrait_file": null, "portrait": "authored"}'; }
     if [ -n "${1:-}" ]; then cat "$1"; else wm_outputs; fi 2>/dev/null | jq -r --argjson art "$_asa" "$ART_SCREENS" 2>/dev/null || :
 }
+art_wall_theirs() {   # -> 0 when the wallpaper is a picture or a color of the person's own; a theme's own picture, in its folder, is the theme's
+    _awt=$(theme_dir "${THEME:-none}")
+    if [ -n "$_awt" ]; then case ${WALLPAPER:-} in "$_awt"/*) return 1 ;; esac; fi
+    wall_yours || wall_color
+}
 art_plan_file() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-screens.plan"; }   # -> the screens as last drawn
 art_screen_file() {   # art_screen_file FILE MODE WxH -> the still a screen of the plan shows, when it is made; the lock takes these, never a loop
     case $2 in
@@ -249,10 +266,11 @@ art_screens_follow() {   # each screen output * does not suit gets its own still
     [ "$OS" != Darwin ] && wm_up && command -v jq >/dev/null 2>&1 || return 0
     _asp=$(art_screens); { printf '%s\n' "$_asp"; printf '%s %s\n' "${THEME:-}" "${WALLPAPER:-}"; } > "$(art_plan_file)" 2>/dev/null || :
     case ${WALLPAPER:-default} in default|none|'#'*) return 0 ;; esac
-    ! wall_yours && ! wall_color || return 0   # a picture or a color of yours: on every screen as you set it
+    ! art_wall_theirs || return 0   # a picture or a color of yours: on every screen as you set it
     _asl=$(printf '%s\n' "$_asp" | awk -F '\t' '$6 != "landscape"'); [ -n "$_asl" ] || return 0
     _asd=$(theme_dir "${THEME:-}"); _asw=$(wall_path); [ -n "${HEX_BG:-}" ] || theme_load 2>/dev/null || :; _asg=$(wall_ground 2>/dev/null) || _asg='#000000'; _asf=$(palette_file "${THEME:-}" 2>/dev/null) || _asf=''
-    ( printf '%s\n' "$_asl" | while IFS="$TAB" read -r _asn _asi _asa _ast _ass _asr _asx _asm; do   # TMP dies with its step: the list in hand
+    # after a look change's own output * (wall_uncover sends it at 0.25 s), under its cover (gone at 0.85 s): no black frame, nothing overwritten
+    ( sleep 0.5; printf '%s\n' "$_asl" | while IFS="$TAB" read -r _asn _asi _asa _ast _ass _asr _asx _asm; do   # TMP dies with its step: the list in hand
           case $_asm in
               fill) [ -f "$_asd/$_asx" ] || continue
                   wm_send "output \"$_asn\" bg \"$_asd/$_asx\" fill" ;;

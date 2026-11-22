@@ -178,7 +178,10 @@ saver_problem() {   # saver_problem NAME -> why not, or nothing
 idle_clock() {   # the time and the date, each minute
     case " $SAVER_OWN " in *" ${DISPLAY_SAVER:-clock} "*) ;; *) if saver_can; then python3 "$REPO/lib/saver.py" "$DISPLAY_SAVER" && return 0; fi ;; esac   # a failure falls through to the clock
     [ "${DISPLAY_SAVER:-clock}" != art ] || [ "$(art_of "${THEME:-none}" | jq -r .clock 2>/dev/null)" != false ] || { idle_side; return 0; }   # a family that rests without a clock
-    _pl=''; if [ "${DISPLAY_SAVER:-clock}" = art ]; then theme_load 2>/dev/null || :; _pl=$(hex_rgb "#${HEX_BG:-242424}" | awk '{ printf "48;2;%d;%d;%d", $1, $2, $3 }'); fi   # the clock on a plate of the background: legible on any art
+    _pl=''; if [ "${DISPLAY_SAVER:-clock}" = art ]; then   # over the art: the palette's own colors, on a plate of its background, whatever the terminal's slots
+        theme_load 2>/dev/null || :
+        _pl=$(hex_rgb "#${HEX_BG:-242424}" | awk '{ printf "48;2;%d;%d;%d", $1, $2, $3 }'); _pa=$(hex_rgb "#${HEX_ACCENT:-24acd4}" | awk '{ printf "38;2;%d;%d;%d", $1, $2, $3 }'); _pd=$(hex_rgb "#${HEX_FG:-ffffff}" | awk '{ printf "38;2;%d;%d;%d", $1, $2, $3 }')
+    fi
     printf '\033[?25l'; trap 'idle_clock_end; idle_back; exit 0' INT TERM HUP
     _a='38;5;16'; _m='38;5;20'   # foot.ini's slots 16 and 20: accent and muted
     _ist=''   # a byte at a time, every mouse move reported
@@ -189,8 +192,8 @@ idle_clock() {   # the time and the date, each minute
         _h=${1:-24}; _d=$(date '+%A %e %B' | tr -s ' ')
         printf '\033[2J'
         if [ "$_h" -ge 9 ] && [ "${2:-80}" -ge 38 ] && [ -n "$_pl" ]; then   # over the art: each line on its plate, a cell of it either side
-            clock_rows | { _y=$((_h - 7)); while IFS= read -r _l; do printf '\033[%s;2H\033[%s;%sm %s ' "$_y" "$_pl" "$_a" "$_l"; _y=$((_y + 1)); done; }
-            printf '\033[0m\033[%s;2H\033[%s;%sm %s \033[0m' $((_h - 1)) "$_pl" "$_m" "$_d"
+            clock_rows | { _y=$((_h - 7)); while IFS= read -r _l; do printf '\033[%s;2H\033[%s;%sm %s ' "$_y" "$_pl" "$_pa" "$_l"; _y=$((_y + 1)); done; }
+            printf '\033[0m\033[%s;2H\033[%s;%sm %s \033[0m' $((_h - 1)) "$_pl" "$_pd" "$_d"
         elif [ "$_h" -ge 9 ] && [ "${2:-80}" -ge 38 ]; then
             clock_rows | { _y=$((_h - 7)); while IFS= read -r _l; do printf '\033[%s;3H\033[%sm%s' "$_y" "$_a" "$_l"; _y=$((_y + 1)); done; }
             printf '\033[0m\033[%s;3H\033[%sm%s\033[0m' $((_h - 1)) "$_m" "$_d"
