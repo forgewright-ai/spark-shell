@@ -11,7 +11,8 @@
         "phosphor-trace",
         "signal-crossing",
         "last-credit"
-      ]
+      ],
+      "lead": "amber-drizzle"
     },
     {
       "id": "surreal-imaginings",
@@ -23,7 +24,8 @@
         "pigeon-post",
         "last-ember",
         "coral-current"
-      ]
+      ],
+      "lead": "cattle-call"
     },
     {
       "id": "landscape-atmosphere",
@@ -37,7 +39,8 @@
         "nightswim",
         "ring-shadow",
         "yuzu-snow"
-      ]
+      ],
+      "lead": "ice-horizon"
     },
     {
       "id": "earth-pigment",
@@ -49,7 +52,8 @@
         "gruvbox-light",
         "rose-pine-dawn",
         "solarized-light"
-      ]
+      ],
+      "lead": "ink-atlas"
     },
     {
       "id": "chromatic-nocturnes",
@@ -63,7 +67,8 @@
         "rose-pine",
         "selenized-dark",
         "tokyonight-night"
-      ]
+      ],
+      "lead": "gruvbox-dark"
     },
     {
       "id": "light-color-studies",
@@ -75,7 +80,8 @@
         "one-light",
         "selenized-light",
         "tokyonight-day"
-      ]
+      ],
+      "lead": "everforest-light"
     }
   ],
   "exhibitions": [
@@ -86,5 +92,34 @@
       "status": "pending",
       "works": []
     }
-  ]
+  ],
+  "dispositions": {
+    "chalk-circuit": {
+      "status": "supporting"
+    },
+    "phosphor-trace": {
+      "status": "supporting"
+    },
+    "harbor": {
+      "status": "supporting"
+    },
+    "meadowlark": {
+      "status": "supporting"
+    },
+    "gruvbox-light": {
+      "status": "supporting"
+    },
+    "rose-pine": {
+      "status": "supporting"
+    },
+    "catppuccin-latte": {
+      "status": "supporting"
+    },
+    "one-light": {
+      "status": "supporting"
+    },
+    "tokyonight-day": {
+      "status": "supporting"
+    }
+  }
 }
