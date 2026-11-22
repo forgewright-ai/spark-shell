@@ -13,6 +13,7 @@
 #   spark-shell check                 test the setup (exit 0 when all is ok)
 #   spark-shell update                move to the newest signed release, then on
 #   spark-shell theme NAME|none       set the colors and the look, or none
+#   spark-shell theme export NAME [FORMAT]  print a palette for a terminal
 #   spark-shell theme [list]          show the look in use, or list them all
 #   spark-shell theme save [NAME]     keep the look in use as a saved theme
 #   spark-shell theme delete NAME     delete a saved theme

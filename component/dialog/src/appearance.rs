@@ -2,13 +2,21 @@ use crate::app::{App, Item, View};
 use crate::model::{Row, Rows};
 
 pub(crate) const GALLERY: &str = "spark-shell://theme/rows/gallery";
+pub(crate) const PALETTES: &str = "spark-shell://theme/rows/palette/";
+pub(crate) const EXPORTS: &str = "spark-shell://theme/rows/exports/";
 
 pub(crate) fn gallery(view: &View) -> bool {
     matches!(view, View::Folder(_, uri) if uri == GALLERY || uri.strip_prefix(GALLERY).is_some_and(|tail| tail.starts_with('/')))
 }
 
 pub(crate) fn section(view: &View) -> bool {
-    matches!(view, View::Folder(_, uri) if uri.starts_with("spark-shell://theme/rows/settings/"))
+    matches!(view, View::Folder(_, uri) if uri.starts_with("spark-shell://theme/rows/settings/") || uri.starts_with(PALETTES) || uri.starts_with(EXPORTS))
+}
+
+pub(crate) fn terminal_palette(app: &App) -> Option<(usize, String)> {
+    let (p, row) = candidate(app)?;
+    let name = row.page.as_ref()?.strip_prefix("spark-shell://theme/preview/")?;
+    Some((p, format!("{PALETTES}{name}")))
 }
 
 pub(crate) fn candidate(app: &App) -> Option<(usize, &Row)> {

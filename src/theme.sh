@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # ---------------------------------------------- verbs: theme, font, quiet
 # sets: MOTION_DIR MOTION_NOW THEME_WORDS WORDS_TAKE
-# reads: ANIMATION_NAMES CONFIG CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GLYPH_FAMILIES LOOKS_DIR LOOK_FORMAT MODE NEON NEON_OLD NL OS PALETTE_DIR PALETTE_MARK PANEL_SEP PATH_REFUSED PM RENDERED REPO ROOT SCENE_MAKE STATE_DIR TAB TERMINAL_SEEN THEME_ENV THEME_KEYS TMP WALL_CACHE WALL_NAMES WALL_SCENES WALL_SHIPPED
+# reads: ANIMATION_NAMES CONFIG CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GLYPH_FAMILIES LOOKS_DIR LOOK_FORMAT MODE NEON NEON_OLD NL OS PALETTE_DIR PALETTE_MARK PANEL_SEP PATH_REFUSED PM RENDERED REPO ROOT SCENE_MAKE STATE_DIR TAB TERMINAL_SEEN TERM_PALETTE_FORMATS THEME_ENV THEME_KEYS TMP WALL_CACHE WALL_NAMES WALL_SCENES WALL_SHIPPED
 refuse_in() { echo "spark-shell $1: $2"; exit 1; }   # refuse_in VERB SENTENCE
 seat_on() { _r=$(rc_files); _r=${_r%% *}; [ -L "$HOME/$_r" ] && [ "$(readlink "$HOME/$_r")" = "$(rc_tree)/$_r" ]; }
 look_now() {   # after a palette change
@@ -35,6 +35,10 @@ cmd_theme() {   # cmd_theme [NAME|none|show|list|WORD ARG...|"WORDS"]
     case ${1:-show} in
         show) [ $# -le 1 ] || refuse_in theme "show takes no word"; theme_show; return ;;
         list) [ $# -le 1 ] || refuse_in theme "list takes no word"; theme_list; return ;;
+        export) if [ $# -gt 1 ] || [ -z "$(theme_kind export)" ]; then
+                if [ $# -lt 2 ] || [ $# -gt 3 ]; then echo "usage: spark-shell theme export NAME [$TERM_PALETTE_FORMATS]" >&2; return 1; fi
+                palette_export "$2" "${3:-env}"; return
+            fi ;;
         save) shift; theme_save "$@"; return ;;
         delete) shift; theme_delete "$@"; return ;;
         back) [ $# -le 1 ] || refuse_in theme "back takes no word"; theme_back; return ;;

@@ -100,16 +100,69 @@ class Providers(unittest.TestCase):
         self.assertEqual(next(r["step"]["set"]["name"] for r in section["rows"] if r["text"]=="Glyph family"), "theme_family")
         self.assertTrue(all(r["page"] == base + "preview/" + r["id"].split(":")[-1] for r in gallery["rows"]))
         self.assertEqual(detail["rows"][0]["page"], base+"preview/nightswim")
-        self.assertEqual(nord["facts"], ["fjord"])
-        self.assertEqual(photo["facts"], ["nightswim.png"])
+        self.assertEqual(nord["facts"], ["fjord", "Nord"])
+        self.assertEqual(photo["facts"], ["nightswim.png", "nightswim (from wallpaper)"])
         if sys.platform != "darwin":
-            self.assertEqual(current["facts"], ["fjord"])
+            self.assertEqual(current["facts"], ["fjord", "Nord"])
         self.assertTrue(full["full"])
         for preview in (nord, photo, full):
             self.assertEqual(Path(preview["picture"]).read_bytes()[:8], bytes.fromhex("89504e470d0a1a0a"))
         bad = self.provider("theme", rpc(1, "resources/read", uri=base+"preview/../nord"))
         self.assertIn("error", bad[1])
         self.assertEqual(cfg.read_text(), before)
+
+    def test_terminal_palette_copies_colors_and_exports_without_applying(self):
+        cfg = self.home / "config/spark-shell/config"
+        cfg.parent.mkdir(parents=True)
+        before = "THEME=nord\nDESKTOP=sway\n"
+        cfg.write_text(before)
+        tools = self.home / "bin"
+        tools.mkdir()
+        for name, body in (("wl-copy", 'cat > "$HOME/clipboard"'), ("pbcopy", 'cat > "$HOME/clipboard"'),
+                           ("xdg-user-dir", 'printf "%s\\n" "$HOME/files"')):
+            exe = tools / name
+            exe.write_text("#!/bin/sh\n" + body + "\n")
+            exe.chmod(0o700)
+        self.env["PATH"] = str(tools) + os.pathsep + self.env["PATH"]
+        theme = "amber-drizzle"
+        uri = "spark-shell://theme/rows/"
+        req = [rpc(1, "resources/read", uri=uri+"gallery/"+theme),
+               rpc(2, "resources/read", uri=uri+"palette/"+theme),
+               rpc(3, "resources/read", uri=uri+"exports/"+theme),
+               call(4, "theme_copy_color", name=theme, key="ANSI_15"),
+               call(5, "theme_export_palette", name=theme, format="kitty")]
+        reply = self.provider("theme", *req)
+        detail, colors, formats = [json.loads(reply[i]["result"]["contents"][0]["text"])["rows"] for i in (1, 2, 3)]
+        self.assertEqual(detail[1]["children"], req[1]["params"]["uri"])
+        self.assertEqual(colors[0]["columns"], ["amber-drizzle (handpicked)"])
+        self.assertEqual(colors[1]["children"], req[2]["params"]["uri"])
+        self.assertEqual(len(colors[2:]), 20)
+        self.assertEqual([r["swatch"] for r in colors[2:]], [r["columns"][0] for r in colors[2:]])
+        self.assertEqual((self.home/"clipboard").read_text(), colors[-1]["swatch"])
+        self.assertEqual([r["tool"]["arguments"]["format"] for r in formats], ["env","foot","kitty","ghostty","alacritty"])
+        self.assertFalse(reply[5]["result"]["isError"])
+        destination = self.home/"files/amber-drizzle.kitty.conf"
+        exported = subprocess.check_output([PROGRAM, "theme", "export", theme, "kitty"], env=self.env, text=True)
+        self.assertEqual(destination.read_text(), exported)
+        self.assertIn("color15 " + colors[-1]["swatch"], exported)
+        destination.write_text("my file")
+        self.provider("theme", req[-1])
+        self.assertEqual(destination.read_text(), "my file")
+        self.assertEqual((destination.parent/"amber-drizzle-2.kitty.conf").read_text(), exported)
+        self.assertEqual(cfg.read_text(), before)
+        self.assertNotEqual(subprocess.run([PROGRAM, "theme", "export", "../nord", "env"], env=self.env, capture_output=True).returncode, 0)
+        def reference(name):
+            return subprocess.check_output([PROGRAM, "theme", "export", name], env=self.env, text=True).splitlines()[0]
+        self.assertEqual(reference("catppuccin-mocha"), "# Palette reference: Catppuccin Mocha")
+        self.assertEqual(reference("core-dracula"), "# Palette reference: Dracula")
+        personal = cfg.parent/"themes/my-dracula"
+        personal.mkdir(parents=True)
+        (personal/"look.env").write_text("FORMAT=2\nPALETTE=dracula\n")
+        palette = (REPO/"gallery/theme/dracula.env").read_text()
+        (personal/"palette.env").write_text(palette)
+        self.assertEqual(reference("my-dracula"), "# Palette reference: Dracula")
+        (personal/"palette.env").write_text(palette.replace("#282a36", "#282a37"))
+        self.assertEqual(reference("my-dracula"), "# Palette reference: my-dracula (based on Dracula)")
 
     def test_preview_install_and_personal_theme_take_precedence(self):
         cfgdir = self.home / "config/spark-shell"

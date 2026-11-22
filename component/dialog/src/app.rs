@@ -3749,7 +3749,9 @@ impl App {
             return false;
         }
         let Some(own) = self.cfg.keys.typed(key) else { return false };
-        if self.list_holds_keys() && (matches!(key, Rename | Actions) || self.files_pane_view().is_some()) {
+        if self.list_holds_keys()
+            && (matches!(key, Rename | Actions) || self.files_pane_view().is_some() || (key == Open && crate::appearance::terminal_palette(self).is_some()))
+        {
             return false;
         }
         self.prompt_takes(own);
@@ -3852,6 +3854,11 @@ impl App {
     fn row_key(&mut self, key: HintKey) {
         if self.key_held() {
             return;
+        }
+        if key == HintKey::Open {
+            if let Some((p, uri)) = crate::appearance::terminal_palette(self) {
+                return self.open_children(p, &uri);
+            }
         }
         match key {
             HintKey::Rename => self.rename_key(),
@@ -6910,10 +6917,27 @@ impl App {
             View::Folder(_, uri) if crate::appearance::gallery(&self.view) && crate::appearance::candidate(self).is_some() => {
                 if uri == crate::appearance::GALLERY {
                     add(&mut v, "Details", "Enter");
+                } else if self.lit_row().is_some_and(|(_, r)| r.children.is_some()) {
+                    add(&mut v, "Open", "Enter");
                 } else if crate::appearance::candidate(self).is_some_and(|(_, r)| r.sign != "check") {
                     add(&mut v, "Apply", "Enter");
                 }
                 add(&mut v, "Wallpaper", "F3");
+                add(&mut v, "Palette", "F4");
+            }
+            View::Folder(_, uri) if uri.starts_with(crate::appearance::PALETTES) => {
+                add(
+                    &mut v,
+                    if self.lit_row().is_some_and(|(_, r)| r.children.is_some()) {
+                        "Export"
+                    } else {
+                        "Copy hex"
+                    },
+                    "Enter",
+                );
+            }
+            View::Folder(_, uri) if uri.starts_with(crate::appearance::EXPORTS) => {
+                add(&mut v, "Save", "Enter");
             }
             View::Dest(_) | View::Section(_) | View::Folder(..) | View::Found(..) => {
                 let rows = self.view_rows();

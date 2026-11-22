@@ -742,7 +742,10 @@ fn path(app: &App, pen: &mut Pen, g: &Geo, items: &[Item], k: Kind) {
                 .unwrap_or((Page::List, String::new()));
             apps(app.apps.lines_of(&root, 60, &query, 0).iter().filter(|l| launches(l)).count())
         }
-        (View::Folder(_, uri), _) if uri == crate::appearance::GALLERY && app.input.is_empty() => {
+        (View::Folder(_, uri), _)
+            if app.input.is_empty()
+                && (uri == crate::appearance::GALLERY || uri.starts_with(crate::appearance::PALETTES) || uri.starts_with(crate::appearance::EXPORTS)) =>
+        {
             app.folder.as_ref().and_then(|(_, _, rows)| rows.state.clone()).unwrap_or_default()
         }
         // a folder of files: how much it holds, which its summary row said in the grid. A page alone over the
@@ -1053,6 +1056,7 @@ enum K {
     Gap(f64),
     Rule,
     Palette(String, Vec<Rgb>),
+    Color(String, String, Rgb),
     /// A group's heading; whether it is set large (a group of apps, of files: v0.160, where a count stood beside
     /// it before); the category a click on it shows alone.
     Head(String, bool, Option<String>),
@@ -1175,6 +1179,11 @@ fn role(a: &crate::apps::Entry) -> String {
 
 /// A provider's row as a row of one line.
 fn of_row(r: &crate::model::Row) -> K {
+    if r.id.starts_with("theme:color:") {
+        if let (Some(color), Some(hex)) = (r.swatch, r.columns.first()) {
+            return K::Color(r.text.clone(), hex.clone(), color);
+        }
+    }
     let sign: &'static str = match r.sign.as_str() {
         "dot" => "dot",
         "ring" => "ring",
@@ -1717,6 +1726,15 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
         match &row.k {
             K::Gap(_) => {}
             K::Rule => pen.fill(area.left, top + m.px(8.0), right - area.left, 1.0, t.lit),
+            K::Color(name, hex, color) => {
+                let chip = m.px(22.0);
+                pen.fill(x, mid - chip / 2.0, chip, chip, *color);
+                let label = x + chip + m.px(10.0);
+                let bound = right - m.px(8.0);
+                let word = pen.fit(name, Size::Main, bound - label - m.sw * 8.0);
+                pen.text(label, mid + m.up / 2.0, &word, Size::Main, t.ink, false);
+                pen.text_end(bound, mid + m.sup / 2.0, hex, Size::Small, t.muted, false);
+            }
             K::Palette(name, colors) => {
                 let w = (right - x).max(0.0);
                 pen.fill(x, top, w, h - m.px(12.0), colors[0]);
@@ -2411,12 +2429,25 @@ fn theme_poster(app: &App, pen: &mut Pen, whole: Area, row: &crate::model::Row) 
     pen.text(left, base, &label, Size::Lead, pen.t.ink, true);
     let caption = pen.fit(caption, Size::Small, w * 0.34);
     pen.text_end(right, base, &caption, Size::Small, pen.t.muted, false);
-    pen.hit(left, top, w, h, Target::Key(HintKey::View));
+    let mut bottom = base;
+    if !row.id.starts_with("theme:apply:") {
+        bottom += m.px(23.0);
+        if let Some(reference) = page.and_then(|pg| pg.facts.get(1)) {
+            let label = pen.fit(&format!("Palette  {reference}"), Size::Small, w);
+            pen.text(left, bottom, &label, Size::Small, pen.t.muted, false);
+        }
+    }
+    let palette = row.id.starts_with("theme:entry:") || row.id.starts_with("theme:apply:");
+    let strip = if palette { m.px(8.0) } else { 0.0 };
+    pen.hit(left, top, w, h - strip, Target::Key(HintKey::View));
+    if palette {
+        pen.hit(left, top + h - strip, w, strip, Target::Key(HintKey::Open));
+    }
     if side {
         list_area
     } else {
         Area {
-            top: base + m.px(16.0),
+            top: bottom + m.px(16.0),
             ..list_area
         }
     }
@@ -2444,6 +2475,13 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         bare: true,
         c3: true,
     };
+    if matches!(&app.view, View::Folder(_, uri) if uri.starts_with(crate::appearance::PALETTES))
+        && app.input.is_empty()
+        && whole.right - whole.left >= m.px(460.0)
+        && whole.bottom - whole.top >= m.px(562.0)
+    {
+        return terminal_colors(app, pen, whole, shape);
+    }
     let candidate = crate::appearance::candidate(app).map(|(_, row)| row);
     let area = candidate.map_or(whole, |r| theme_poster(app, pen, whole, r));
     let facts: Vec<Item>;
@@ -2452,7 +2490,9 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             .iter()
             .filter(|it| {
                 app.row_ref(it).is_some_and(|r| {
-                    r.id.starts_with("theme:apply:") || (r.id != "theme:detail:wall" && !r.columns.is_empty() && r.columns[0] != "keep current")
+                    r.children.is_some()
+                        || r.id.starts_with("theme:apply:")
+                        || (r.id != "theme:detail:wall" && !r.columns.is_empty() && r.columns[0] != "keep current")
                 })
             })
             .cloned()
@@ -2478,6 +2518,113 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     }
     let key = format!("page\u{1f}{:?}\u{1f}{}", app.view, app.input);
     list(app, pen, &rows, area, lit(app), list_focus(app), shape, app.scroll, key);
+}
+
+/// Pair normal and bright terminal colors so the same ANSI hue lines up across columns.
+fn terminal_colors(app: &App, pen: &mut Pen, whole: Area, shape: Shape) {
+    let m = *pen.m;
+    let shape = Shape {
+        one: 38.0,
+        pad: 8.0,
+        heads: false,
+        ..shape
+    };
+    let mid = ((whole.left + whole.right) / 2.0).round();
+    let head = |s: &str| Row {
+        h: m.px(36.0),
+        pick: None,
+        k: K::Head(s.into(), false, None),
+    };
+    let mut columns = [vec![head("Base colors")], vec![head("Accents")]];
+    let mut export = Vec::new();
+    for (i, it) in app.picks().iter().enumerate() {
+        let Some(r) = app.row_ref(it) else { continue };
+        let row = Row {
+            h: m.px(shape.one),
+            pick: Some(i),
+            k: of_row(r),
+        };
+        match r.id.as_str() {
+            "theme:palette:export" => export.push(row),
+            "theme:color:BG" | "theme:color:FG" => columns[0].push(row),
+            "theme:color:ACCENT" | "theme:color:MUTED" => columns[1].push(row),
+            id => {
+                let Some(n) = id.strip_prefix("theme:color:ANSI_").and_then(|s| s.parse::<usize>().ok()).filter(|n| *n < 16) else {
+                    continue;
+                };
+                let column = &mut columns[n / 8];
+                if n % 8 == 0 {
+                    column.push(head(if n == 0 { "ANSI regular" } else { "ANSI bright" }));
+                }
+                column.push(row);
+            }
+        }
+    }
+    let mut controls = whole;
+    if whole.bottom - whole.top >= m.px(642.0) {
+        let color = |id: &str| app.folder.as_ref()?.2.rows.iter().find(|r| r.id == id)?.swatch;
+        if let (Some(bg), Some(fg), Some(accent), Some(blue), Some(green)) = (
+            color("theme:color:BG"),
+            color("theme:color:FG"),
+            color("theme:color:ACCENT"),
+            color("theme:color:ANSI_4"),
+            color("theme:color:ANSI_2"),
+        ) {
+            let x = whole.left + m.px(14.0);
+            pen.fill(whole.left, whole.top, whole.right - whole.left, m.px(66.0), bg);
+            let prompt = pen.text(x, whole.top + m.px(24.0), "spark>", Size::Main, accent, true);
+            pen.text(x + prompt + m.cw, whole.top + m.px(24.0), "ls", Size::Main, fg, false);
+            let y = whole.top + m.px(50.0);
+            let src = pen.text(x, y, "src/", Size::Main, blue, false);
+            let readme = pen.text(x + src + 2.0 * m.cw, y, "README.md", Size::Main, fg, false);
+            pen.text(x + src + readme + 4.0 * m.cw, y, "build", Size::Main, green, false);
+            controls.top += m.px(74.0);
+        }
+    }
+    if let Some(reference) = app
+        .folder
+        .as_ref()
+        .and_then(|f| f.2.rows.iter().find(|r| r.id == "theme:palette:reference"))
+        .and_then(|r| r.columns.first())
+    {
+        let x = whole.left + m.px(8.0);
+        let y = controls.top + m.px(21.0);
+        let label = pen.text(x, y, "Palette reference", Size::Small, pen.t.muted, false);
+        let start = x + label + m.cw;
+        let value = pen.fit(reference, Size::Small, whole.right - start);
+        pen.text(start, y, &value, Size::Small, pen.t.ink, true);
+        controls.top += m.px(32.0);
+    }
+    let top = controls.top + m.px(shape.one);
+    list(
+        app,
+        pen,
+        &export,
+        Area { bottom: top, ..controls },
+        lit(app),
+        list_focus(app),
+        shape,
+        0,
+        "palette/export".into(),
+    );
+    for (i, rows) in columns.iter().enumerate() {
+        let area = if i == 0 {
+            Area {
+                top,
+                right: mid - m.px(8.0),
+                to: mid,
+                ..whole
+            }
+        } else {
+            Area {
+                top,
+                left: mid + m.px(8.0),
+                from: mid,
+                ..whole
+            }
+        };
+        list(app, pen, rows, area, lit(app), list_focus(app), shape, 0, format!("palette/{i}"));
+    }
 }
 
 /// A provider's row as a place's page has it (v0.162): a row of words that is no control is two lines, its name over

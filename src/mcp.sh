@@ -180,6 +180,12 @@ provide_resource_special() {   # provide_resource_special ID METHOD URI -- one s
             if appearance_preview "$_ap" "$_af" > "$TMP/theme.preview"; then
                 rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.preview")"
             else rpc_error "$1" -32002 "no wallpaper at that uri"; fi ;;
+        theme:resources/read:spark-shell://theme/rows/palette/?*|theme:resources/read:spark-shell://theme/rows/exports/?*)
+            _path=${3#spark-shell://theme/rows/}
+            case ${_path%%/*} in palette) _read=appearance_palette ;; exports) _read=appearance_exports ;; esac
+            if "$_read" "${_path#*/}" > "$TMP/terminal.rows"; then
+                rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/terminal.rows")"
+            else rpc_error "$1" -32002 "no palette at that uri"; fi ;;
         theme:resources/read:spark-shell://theme/rows/gallery)
             rpc_result "$1" "$(appearance_gallery | jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}')" ;;
         theme:resources/read:spark-shell://theme/rows/gallery/*)
@@ -304,6 +310,15 @@ EOF
     case $_name in notes_rename|notes_trash|notes_restore) provide_notes_step "$1" "$_name" "$_args"; return 0 ;; esac
     _bad=$(provide_args_bad "$_args")
     [ -z "$_bad" ] || { rpc_error "$1" -32602 "$_name: $_bad"; return 0; }
+    case $_name in theme_copy_color|theme_export_palette)
+        _theme=$(printf '%s' "$_args" | jq -r .name)
+        if [ "$_name" = theme_copy_color ]; then set -- "$1" appearance_copy_color "$(printf '%s' "$_args" | jq -r .key)"
+        else set -- "$1" appearance_save_palette "$(printf '%s' "$_args" | jq -r .format)"; fi
+        if _answer=$("$2" "$_theme" "$3" 2>&1); then
+            rpc_result "$1" "$(jq -cn --arg r "$_answer" '{receipt:$r}|{content:[{type:"text",text:tojson}],structuredContent:.,isError:false}')"
+        else provide_refuse "$1" "${_answer:-palette unavailable}"; fi
+        return 0 ;;
+    esac
     [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_args"; return 0; }   # files: not the panel's gate
     provide_call_value "$1" || return 0
     provide_call_listed "$1" || return 0
