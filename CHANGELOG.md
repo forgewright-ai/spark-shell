@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.164
+
+- The gallery leads each of its six sections with one work. Supporting
+  works follow, still listed.
+- A theme's page names its medium, its family and its other variant,
+  opens its compositions, and says how it rests. Looking never applies.
+- Six themes come in dark and light pairs: catppuccin, everforest,
+  gruvbox, rose-pine, selenized and tokyonight, each with its own
+  drawing. `spark-shell theme variant dark|light` switches.
+- With two or three screens, each shows its own picture. A turned screen
+  gets the theme's portrait picture, the scene drawn for it, or the
+  drawing fitted, never cropped. A family's panels go to the screens from
+  the left. `spark-shell theme screens` says what each one shows.
+- The lock shows each screen's own picture.
+- `DISPLAY_SAVER=art` shows the art on the idle screen with the clock
+  over it. Loops stop and notifications wait until you are back. On
+  battery any idle screen is still.
+- A family file in gallery/family/, or in families/ beside your config,
+  names a theme's variants and pictures. `spark-shell check` names one it
+  refuses.
+- The dialog is 0.164.0.
+
 ## v0.163
 
 - Theme settings are redesigned. Browse themes opens a gallery of the

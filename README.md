@@ -131,6 +131,9 @@ offline. Every theme keeps its name, settings and command. Wallpaper and
 motion, type and glyphs, and interface settings can also be changed on
 their own.
 
+`spark-shell theme variant dark|light` switches a theme that has both.
+`spark-shell theme screens` says what each screen shows.
+
 Saved themes have their own entry. Personal themes take precedence when
 names match; they live in `$XDG_CONFIG_HOME/spark-shell/themes/` (default
 `~/.config/spark-shell/themes/`). To add a collection of your own, put its
