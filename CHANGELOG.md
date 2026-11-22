@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.163
+
+- Theme settings are redesigned. Browse themes opens a gallery of the
+  34 themes that come with spark-shell, each with its wallpaper,
+  motion, typeface and glyphs, and it works offline. Moving through
+  the list shows each wallpaper; F3 or a click shows it larger, and
+  apply theme on a theme's page uses it.
+- A theme's page names its source palette. F4 shows its terminal
+  palette: select a color to copy its hex value, or export the
+  palette to the downloads folder.
+- `spark-shell theme export NAME [FORMAT]` prints a palette for a
+  terminal: env (all 20 colors), foot, kitty, ghostty or alacritty.
+- Wallpaper and motion, type and glyphs, and the interface settings
+  can each be changed on their own.
+- A personal theme in ~/.config/spark-shell/themes is used over a
+  bundled one of the same name, and a list in galleries/ names a
+  collection.
+- The dialog is 0.163.0.
+
 ## v0.162.1
 
 - A workspace's heading fits its window. Its name stays at 28

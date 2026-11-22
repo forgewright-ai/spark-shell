@@ -3,7 +3,7 @@
   ❯ search or ask                                     talk  
                                                             
     spark-shell  v0.90               released 5 Nov 2026    
-    spark-dialog v0.162.1                                   
+    spark-dialog v0.163.0                                   
                                                             
     a lightweight sway shell                                
                                                             
