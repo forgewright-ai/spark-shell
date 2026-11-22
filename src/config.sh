@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- the config: the readers of the settings and the theme
-# sets: ANIMATION_NAMES ANIM_PAIRED BAR_LEVELS BAR_MODULES CONFIG_UNSET GLYPH_FAMILIES KB_RE PATH_REFUSED PATH_SAID SAVER_NAMES THEME_KEYS
+# sets: ANIMATION_NAMES ANIM_PAIRED BAR_LEVELS BAR_MODULES CONFIG_UNSET GLYPH_FAMILIES KB_RE PATH_REFUSED PATH_SAID SAVER_NAMES SAVER_OWN THEME_KEYS
 # reads: CONFIG CONFIG_DIR OS REPO TERM_NAME TMP
 GLYPH_FAMILIES='stone star banner'
 BAR_MODULES='workspaces pad lan bt wifi out mic due light kb bat clock notifications'   # what the bar can show, in its order; the workspaces are the bar's own and stay, the rest are its line's modules
@@ -139,7 +139,7 @@ config_load() {
         eval "v=\$$k"
         case $v in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) echo "spark-shell: $k=$v in $CONFIG: minutes, 0 to 999 (0: never)" >&2; exit 1 ;; esac
     done
-    saver_known "$DISPLAY_SAVER" || { echo "spark-shell: DISPLAY_SAVER=$DISPLAY_SAVER in $CONFIG: clock, or one of $SAVER_NAMES" >&2; exit 1; }
+    saver_known "$DISPLAY_SAVER" || { echo "spark-shell: DISPLAY_SAVER=$DISPLAY_SAVER in $CONFIG: clock, art, or one of $SAVER_NAMES" >&2; exit 1; }
     [ -z "$KEYBOARD" ] || printf '%s\n' "$KEYBOARD" | grep -qE "$KB_RE" || { echo "spark-shell: KEYBOARD=$KEYBOARD in $CONFIG: layouts by their xkb names, a space between, a variant after a plus (us us+intl)" >&2; exit 1; }
     printf '%s\n' "$DIALOG_ATTACH_TYPES" | grep -qE '^[a-z0-9]{1,8}( [a-z0-9]{1,8})*$' || { echo "spark-shell: DIALOG_ATTACH_TYPES=$DIALOG_ATTACH_TYPES in $CONFIG: file types in lower case, a space between (txt md)" >&2; exit 1; }
     : "${CLOCK_FORMAT:=24}" "${WEEK_START:=sunday}"
@@ -175,7 +175,8 @@ anim_now() {   # -> the piece the dialog plays: none with no palette, else the o
     elif [ -n "${DIALOG_ANIMATION:-}" ]; then printf '%s' "$DIALOG_ANIMATION"
     else anim_for_palette "$_anp"; fi
 }
-SAVER_NAMES='spark starfield drift'   # lib/saver.py's list, in its order: what DISPLAY_SAVER takes besides clock
+SAVER_NAMES='spark starfield drift'   # lib/saver.py's list, in its order: what DISPLAY_SAVER takes besides the two drawn here
+SAVER_OWN='clock art'   # drawn here, no python3: the clock alone, and the art with the clock over it
 KB_RE='^[a-z]{2,10}(\+[a-z0-9_-]{1,24})?( [a-z]{2,10}(\+[a-z0-9_-]{1,24})?){0,7}$'   # one to eight layouts, a variant after a plus: us us+intl
 config_renames() {   # spark-shell on: the pad's settings a config from v0.142 or before names PAD_*, written once under their WINPAD_* names
     [ -f "$CONFIG" ] && _crn=$(grep -cE '^PAD_(PLACE|WIDTH|SIDE_WIDTH|HEIGHT|VIEW|BAND)=' "$CONFIG") || return 0

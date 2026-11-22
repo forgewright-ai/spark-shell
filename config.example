@@ -69,9 +69,10 @@ LOGIN=no
 DISPLAY_IDLE=10
 DISPLAY_LOCK=15
 
-# What the idle screen shows behind its clock: clock (the clock alone), or
-# a calm animation: spark, starfield or drift. A saver needs python3, and
-# it stops when the lock comes. spark-shell desktop display saver NAME sets
+# What the idle screen shows behind its clock: clock (the clock alone),
+# art (the theme's art on each screen, still, notifications out of sight),
+# or a calm animation: spark, starfield or drift. An animation needs
+# python3, and it stops when the lock comes. spark-shell desktop display saver NAME sets
 # this, and spark-shell desktop idle shows the idle screen now.
 DISPLAY_SAVER=clock
 

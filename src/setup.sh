@@ -583,6 +583,7 @@ check_pointer() {   # the spark pointer is drawn
 check_saver() {   # the idle screen's saver can run
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk saver ok "na (no desktop)"
     elif [ "$DISPLAY_SAVER" = clock ]; then chk saver ok "the idle screen shows the clock alone"
+    elif [ "$DISPLAY_SAVER" = art ]; then chk saver ok "the idle screen shows the art, the clock over it, still"
     elif saver_can; then chk saver ok "the idle screen shows the $DISPLAY_SAVER saver"
     else chk saver warn "python3 cannot run the $DISPLAY_SAVER saver: the idle screen shows the clock" "install python3, or spark-shell desktop display saver clock"; fi
 }

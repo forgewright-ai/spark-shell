@@ -3435,7 +3435,7 @@ case "$*" in
         [ -e "$HOME/ws-test" ] || exit 0   # only the workspace glyphs' test asks
         if [ -e "$HOME/ws-later" ]; then echo '[{"num":1,"name":"1:x"},{"num":5,"name":"5"}]'
         else echo '[{"num":1,"name":"1"},{"num":2,"name":"2:x"},{"num":3,"name":"3 writing"},{"num":10,"name":"10"},{"num":11,"name":"11"}]'; touch "$HOME/ws-later"; fi ;;
-    "-r -t subscribe -m [\"workspace\"]") echo '{ "change": "init", "old": null, "current": { "num": 5, "name": "5" } }' ;;   # as sway writes it: spaced
+    "-r -t subscribe -m [\"workspace\",\"output\"]") echo '{ "change": "init", "old": null, "current": { "num": 5, "name": "5" } }' ;;   # as sway writes it: spaced
     "-t get_outputs") echo '[{"name":"eDP-1","make":"BOE","model":"0x0BCA","serial":"","active":true,"scale":1.0,"current_mode":{"width":1920,"height":1080},"rect":{"x":0,"y":0,"width":1920,"height":1080},"modes":[{"width":1920,"height":1080},{"width":1280,"height":720}]},{"name":"HDMI-A-1","make":"Lenovo Group Limited","model":"T24i-30","serial":"V30A1","active":true,"scale":1.0,"current_mode":{"width":1920,"height":1080},"rect":{"x":1920,"y":0,"width":1920,"height":1080},"modes":[{"width":1920,"height":1080}]}]' ;;
 esac
 STUB
@@ -3487,15 +3487,15 @@ if [ -n "$py3" ]; then   # a bare container has no python3 (debian, arch, void):
     out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display 2>&1 | sed -n 1p)
     [ "$out" = "idle screen after 10 minutes $dot lock after 15 minutes" ] && ok "desktop display: with no saver chosen the line reads as it always did" || bad "display default line" "$out"
     out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver 2>&1)
-    [ "$out" = "$(printf '\342\234\223 clock\n  spark\n  starfield\n  drift')" ] && ok "desktop display saver: the savers listed, the one in use ticked, as the keyboard lists its layouts" || bad "saver list" "$out"
+    [ "$out" = "$(printf '\342\234\223 clock\n  art\n  spark\n  starfield\n  drift')" ] && ok "desktop display saver: the savers listed, the one in use ticked, as the keyboard lists its layouts" || bad "saver list" "$out"
     rc=0; out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver spark 2>&1) || rc=$?
     [ "$rc" = 0 ] && [ "$out" = 'idle screen shows the spark saver' ] && grep -qx 'DISPLAY_SAVER=spark' "$HOME/.config/spark-shell/config" \
         && ok "desktop display saver spark: said in one line, kept in the config" || bad "saver set" "rc=$rc $out"
     out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display 2>&1 | sed -n 1p)
     [ "$out" = "idle screen after 10 minutes $dot spark saver $dot lock after 15 minutes" ] && ok "desktop display: a chosen saver is named between the idle and the lock" || bad "display with saver" "$out"
-    [ "$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver 2>&1 | sed -n 2p)" = "$(printf '\342\234\223 spark')" ] && ok "desktop display saver: the tick moves to the one chosen" || bad "saver tick" "$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver 2>&1)"
+    [ "$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver 2>&1 | sed -n 3p)" = "$(printf '\342\234\223 spark')" ] && ok "desktop display saver: the tick moves to the one chosen" || bad "saver tick" "$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver 2>&1)"
     rc=0; out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver nope 2>&1) || rc=$?
-    [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: display saver takes clock, spark, starfield or drift' ] && grep -qx 'DISPLAY_SAVER=spark' "$HOME/.config/spark-shell/config" \
+    [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: display saver takes clock, art, spark, starfield or drift' ] && grep -qx 'DISPLAY_SAVER=spark' "$HOME/.config/spark-shell/config" \
         && ok "desktop display saver: a wrong name refused in one line, the config left as it was" || bad "saver word" "rc=$rc $out"
     rc=0; out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver 'spark drift' 2>&1) || rc=$?
     [ "$rc" = 1 ] && grep -qx 'DISPLAY_SAVER=spark' "$HOME/.config/spark-shell/config" && ok "desktop display saver: two names in one word are no name" || bad "saver two words" "rc=$rc $out"
@@ -3509,8 +3509,8 @@ if [ -n "$py3" ]; then   # a bare container has no python3 (debian, arch, void):
     printf '%s\n' "$rows" | grep -q "saver clock${tb}display show\$" && printf '%s\n' "$rows" | grep -q "idle screen after 10 minutes${tb}display show\$" && printf '%s\n' "$rows" | grep -q "lock after 15 minutes${tb}display show\$" \
         && ok "the dialog's display section: the saver in use ticked beside the idle and lock rows, which read as they did" || bad "saver rows" "$rows"
     rows=$(SWAYSOCK=$H/sock PATH="$H/svx:$H/lx:$PATH" sh "$SH" bar panel display --list full 2>&1)
-    [ "$(printf '%s\n' "$rows" | grep -c "${tb}display saver ")" = 3 ] && printf '%s\n' "$rows" | grep -q "saver spark${tb}display saver spark\$" && ! printf '%s\n' "$rows" | grep -q "saver clock${tb}display saver clock" \
-        && ok "the dialog's display section, full: the three other choices one Enter away, never the one in use" || bad "saver rows full" "$rows"
+    [ "$(printf '%s\n' "$rows" | grep -c "${tb}display saver ")" = 4 ] && printf '%s\n' "$rows" | grep -q "saver spark${tb}display saver spark\$" && ! printf '%s\n' "$rows" | grep -q "saver clock${tb}display saver clock" \
+        && ok "the dialog's display section, full: the four other choices one Enter away, never the one in use" || bad "saver rows full" "$rows"
     rows=$(SWAYSOCK=$H/sock PATH="$H/nopy:$H/lx:$PATH" sh "$SH" bar panel display --list full 2>&1)
     ! printf '%s\n' "$rows" | grep -q 'saver' && ok "the dialog's display section: no saver rows where python3 cannot run one" || bad "saver rows no python" "$rows"
     rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/svx:$H/lx:$PATH" sh "$SH" bar panel display saver starfield 2>&1) || rc=$?
@@ -3549,7 +3549,7 @@ if [ -n "$py3" ]; then   # a bare container has no python3 (debian, arch, void):
     # the key
     printf 'DESKTOP=sway\nDISPLAY_SAVER=mystery\n' > "$HOME/.config/spark-shell/config"
     rc=0; out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" status 2>&1) || rc=$?
-    [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'DISPLAY_SAVER=mystery in .*: clock, or one of spark starfield drift$' && ok "config: DISPLAY_SAVER=mystery is refused, with the names" || bad "saver key" "rc=$rc $out"
+    [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'DISPLAY_SAVER=mystery in .*: clock, art, or one of spark starfield drift$' && ok "config: DISPLAY_SAVER=mystery is refused, with the names" || bad "saver key" "rc=$rc $out"
     printf 'DESKTOP=sway\nDISPLAY_SAVER=spark drift\n' > "$HOME/.config/spark-shell/config"
     rc=0; out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" status 2>&1) || rc=$?
     [ "$rc" = 1 ] && ok "config: DISPLAY_SAVER=spark drift (two words) is refused, never read as the first" || bad "saver key two" "rc=$rc $out"
@@ -5082,7 +5082,7 @@ KBSWAY_STUB
 case "$*" in
     '-t get_version') echo '{"human_readable":"stub"}' ;;
     '-t get_workspaces') echo names >> "$HOME/ev.log"; echo '[]' ;;
-    '-r -t subscribe -m ["workspace"]') echo $$ > "$HOME/ev.pid"; while :; do echo '{ "change": "init" }' || exit 0; sleep 0.2; done ;;
+    '-r -t subscribe -m ["workspace","output"]') echo $$ > "$HOME/ev.pid"; while :; do echo '{ "change": "init" }' || exit 0; sleep 0.2; done ;;
 esac
 EVSWAY_STUB
     chmod +x "$H/evsway/swaymsg"
@@ -8390,6 +8390,125 @@ study '{"theme": "study-night", "portrait": "../x.png"}'; a2=$(sh "$SH" theme sh
     || bad "family refused" "$why | $a2"
 rm -rf "$fam" "$th_dir/study-night" "$th_dir/study-day"; cp "$H/cfg-before-art" "$cfg"; sh "$SH" theme dracula >/dev/null 2>&1
 if [ -f "$H/hist-before-art" ]; then cp "$H/hist-before-art" "$st_dir/theme.history"; else rm -f "$st_dir/theme.history"; fi
+if [ "$(uname -s)" != Darwin ]; then
+# one to three screens (#36): a family's panels go to the screens in their order from the left and by their turn; a work with no
+# panels gives each screen the art, a turned screen its portrait, its scene's portrait view or the art fitted; a screen that
+# comes, goes or moves draws them again, once; the lock shows the same stills
+mkdir -p "$H/scr" "$fam" "$th_dir/study-night" "$th_dir/study-day"
+cat > "$H/scr/swaymsg" <<'SCR'
+#!/bin/sh
+wide='{"name":"HDMI-A-1","make":"Test","model":"Wide","serial":"1","active":true,"scale":1,"transform":"normal","rect":{"x":0,"y":0,"width":1920,"height":1080}}'
+tall='{"name":"DP-3","make":"Test","model":"Tall","serial":"2","active":true,"scale":1,"transform":"270","rect":{"x":-1200,"y":0,"width":1200,"height":1920}}'
+side='{"name":"DP-4","make":"Test","model":"Side","serial":"3","active":true,"scale":2,"transform":"normal","rect":{"x":1920,"y":0,"width":1280,"height":720}}'
+moved='{"name":"HDMI-A-1","make":"Test","model":"Wide","serial":"1","active":true,"scale":1,"transform":"normal","rect":{"x":-3120,"y":0,"width":1920,"height":1080}}'
+case "$*" in
+    "-t get_version") echo '{"human_readable":"1.12"}' ;;
+    *get_outputs*) case $(cat "$HOME/screens" 2>/dev/null) in
+        3) echo "[$side,$wide,$tall]" ;; 2) echo "[$wide,$tall]" ;; moved) echo "[$side,$moved,$tall]" ;; *) echo "[$wide]" ;; esac ;;
+    *) echo "$*" >> "$HOME/scr.log"; echo '[{"success":true}]' ;;
+esac
+SCR
+chmod +x "$H/scr/swaymsg"
+scr() { SWAYSOCK=$H/sock PATH="$H/scr:$PATH" sh "$SH" "$@"; }
+scr_wait() { _i=0; while [ "$_i" -lt 50 ] && [ "$(grep -c "$1" "$HOME/scr.log" 2>/dev/null || :)" -lt "${2:-1}" ]; do sleep 0.2; _i=$((_i + 1)); done; }
+cp "$REPO/gallery/theme/nord.env" "$th_dir/study-night/palette.env"; cp "$REPO/gallery/theme/one-light.env" "$th_dir/study-day/palette.env"
+printf 'FORMAT=2\nPALETTE=nord\nWALLPAPER=fjord\nDRAWING=fjord\n' > "$th_dir/study-night/look.env"; printf 'FORMAT=2\nPALETTE=one-light\nWALLPAPER=shore\n' > "$th_dir/study-day/look.env"
+for p in wallpaper:64:36 test-wide-1:64:36 test-wide-2:64:36 test-wide-3:64:36 test-tall:36:64; do testpng "$(printf '%s' "$p" | cut -d: -f2)" "$(printf '%s' "$p" | cut -d: -f3)" "$th_dir/study-night/${p%%:*}.png"; done
+printf '%s\n' '{"format": 1, "id": "study", "title": "Study", "media": "cinematic", "variants": {"dark": {"theme": "study-night", "portrait": "test-tall.png",
+  "panels": {"2": [{"landscape": "test-wide-1.png"}, {"landscape": "test-wide-2.png"}], "3": [{"landscape": "test-wide-1.png"}, {"landscape": "test-wide-2.png"}, {"landscape": "test-wide-3.png"}]}},
+  "light": {"theme": "study-day"}}}' > "$fam/study.json"
+cp "$cfg" "$H/cfg-before-screens"; cp "$st_dir/theme.history" "$H/hist-before-screens" 2>/dev/null || rm -f "$H/hist-before-screens"; printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\n' > "$cfg"
+sh "$SH" theme study-night >/dev/null 2>&1
+echo 1 > "$HOME/screens"; s1=$(scr theme screens 2>&1)
+echo 2 > "$HOME/screens"; s2=$(scr theme screens 2>&1)
+echo 3 > "$HOME/screens"; s3=$(scr theme screens 2>&1)
+echo moved > "$HOME/screens"; s4=$(scr theme screens 2>&1)
+[ "$s1" = 'HDMI-A-1   1 of 1 from the left, landscape 1920x1080: the art' ] \
+    && [ "$s2" = "$(printf 'DP-3       1 of 2 from the left, portrait 1200x1920: its portrait (test-tall.png)\nHDMI-A-1   2 of 2 from the left, landscape 1920x1080: panel 2 of 2 (test-wide-2.png)')" ] \
+    && [ "$s3" = "$(printf 'DP-3       1 of 3 from the left, portrait 1200x1920: its portrait (test-tall.png)\nHDMI-A-1   2 of 3 from the left, landscape 1920x1080: panel 2 of 3 (test-wide-2.png)\nDP-4       3 of 3 from the left, landscape 2560x1440: panel 3 of 3 (test-wide-3.png)')" ] \
+    && [ "$s4" = "$(printf 'HDMI-A-1   1 of 3 from the left, landscape 1920x1080: panel 1 of 3 (test-wide-1.png)\nDP-3       2 of 3 from the left, portrait 1200x1920: its portrait (test-tall.png)\nDP-4       3 of 3 from the left, landscape 2560x1440: panel 3 of 3 (test-wide-3.png)')" ] \
+    && ok "theme screens: a family's panels for one, two and three screens by their place from the left, never by name; a turned screen its portrait; a screen moved to the left takes the first panel" \
+    || bad "theme screens" "$s1 | $s2 | $s3 | $s4"
+sh "$SH" theme nord >/dev/null 2>&1; echo 2 > "$HOME/screens"; s5=$(scr theme screens 2>&1)
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=watch\n' > "$cfg"; s6=$(scr theme screens 2>&1)
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=%s\n' "$th_dir/study-night/test-wide-1.png" > "$cfg"; s7=$(scr theme screens 2>&1)
+[ "$s5" = "$(printf 'DP-3       1 of 2 from the left, portrait 1200x1920: the art fitted, never cropped\nHDMI-A-1   2 of 2 from the left, landscape 1920x1080: the art')" ] \
+    && [ "$s6" = "$(printf 'DP-3       1 of 2 from the left, portrait 1200x1920: the scene drawn for a turned screen\nHDMI-A-1   2 of 2 from the left, landscape 1920x1080: the art')" ] \
+    && [ "$s7" = "$(printf 'DP-3       1 of 2 from the left, portrait 1200x1920: your wallpaper as you set it\nHDMI-A-1   2 of 2 from the left, landscape 1920x1080: your wallpaper as you set it')" ] \
+    && ok "theme screens: with no family, a turned screen shows the drawing fitted, never cropped, or the scene drawn for it; a picture of yours stays as you set it" \
+    || bad "theme screens fallback" "$s5 | $s6 | $s7"
+# the stills sent to sway, each screen by its port; a screen that comes or goes draws them again, the same screens never twice
+printf 'DESKTOP=sway\nTHEME=study-night\nWALLPAPER=fjord\nWALLPAPER_MOTION=off\n' > "$cfg"; rm -f "$HOME/scr.log" "$H/run/spark-shell-screens.plan"; echo 3 > "$HOME/screens"
+XDG_RUNTIME_DIR=$H/run scr desktop --motion >/dev/null 2>&1; scr_wait 'bg' 3
+p1=$(cat "$HOME/scr.log" 2>/dev/null | grep -c '' || :)
+XDG_RUNTIME_DIR=$H/run scr desktop --screens >/dev/null 2>&1; sleep 0.5; p2=$(cat "$HOME/scr.log" 2>/dev/null | grep -c '' || :)
+echo 2 > "$HOME/screens"; XDG_RUNTIME_DIR=$H/run scr desktop --screens >/dev/null 2>&1; scr_wait 'output "HDMI-A-1" bg .*test-wide-2.png' 2
+grep -q "^-- output \"DP-3\" bg \"$th_dir/study-night/test-tall.png\" fill\$" "$HOME/scr.log" && grep -q "^-- output \"HDMI-A-1\" bg \"$th_dir/study-night/test-wide-2.png\" fill\$" "$HOME/scr.log" \
+    && grep -q "^-- output \"DP-4\" bg \"$th_dir/study-night/test-wide-3.png\" fill\$" "$HOME/scr.log" && [ "$p1" = 3 ] && [ "$p1" = "$p2" ] \
+    && [ "$(grep -c '^-- output \* bg ' "$HOME/scr.log")" = 1 ] && [ "$(grep -c 'test-wide-2.png' "$HOME/scr.log")" = 2 ] \
+    && ok "desktop --motion and --screens: each screen its panel or portrait by its port; the same screens drawn once; a screen gone: output * first, then the panels for the screens left" \
+    || bad "screens to sway" "$p1 $p2 | $(cat "$HOME/scr.log" 2>&1)"
+# the lock: each screen its own still where one is made; never a loop
+mkdir -p "$H/lk2"; printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/swaylock.args"\n' > "$H/lk2/swaylock"; printf '#!/bin/sh\nexit 1\n' > "$H/lk2/pgrep"; chmod +x "$H/lk2/swaylock" "$H/lk2/pgrep"
+WAYLAND_DISPLAY=wayland-9 SWAYSOCK=$H/sock PATH="$H/lk2:$H/scr:$PATH" sh "$SH" desktop lock >/dev/null 2>&1 || :
+grep -qx -- "DP-3:$th_dir/study-night/test-tall.png" "$HOME/swaylock.args" && grep -qx -- "HDMI-A-1:$th_dir/study-night/test-wide-2.png" "$HOME/swaylock.args" \
+    && grep -qx -- '--scaling' "$HOME/swaylock.args" && ! grep -q '\.mp4' "$HOME/swaylock.args" \
+    && ok "desktop lock: each screen shows its own still, as the desktop does; one picture scaled to fill, never a loop" || bad "lock screens" "$(cat "$HOME/swaylock.args" 2>&1 | grep -n 'image\|:' | head)"
+cp "$H/cfg-before-screens" "$cfg"; if [ -f "$H/hist-before-screens" ]; then cp "$H/hist-before-screens" "$st_dir/theme.history"; else rm -f "$st_dir/theme.history"; fi; rm -rf "$fam" "$th_dir/study-night" "$th_dir/study-day" "$HOME/screens" "$HOME/scr.log"
+# the art at rest (#36): the idle windows clear over each screen's own still, the clock on a plate of the background; the loops
+# stopped and the notifications out of sight while it shows, each back after, and nothing touched that it did not change
+mkdir -p "$H/ia" "$H/sysac/class/power_supply/AC" "$H/sysbat/class/power_supply/BAT0"
+echo Mains > "$H/sysac/class/power_supply/AC/type"; echo 1 > "$H/sysac/class/power_supply/AC/online"
+echo Battery > "$H/sysbat/class/power_supply/BAT0/type"; echo Discharging > "$H/sysbat/class/power_supply/BAT0/status"
+cat > "$H/ia/swaymsg" <<'STUB'
+#!/bin/sh
+echo "$*" >> "$HOME/swaymsg.log"
+case "$*" in
+    "-t get_version") echo '{"human_readable":"sway-stub"}' ;;
+    "-t get_tree") echo '{"nodes":[]}' ;;
+    "-t get_workspaces") echo '[{"name":"1","focused":true,"visible":true}]' ;;
+    "-t get_outputs") echo '[{"name":"HDMI-A-1","make":"Test","model":"Wide","serial":"1","active":true,"focused":true,"current_workspace":"1","scale":1,"rect":{"x":0,"y":0,"width":1920,"height":1080}}]' ;;
+esac
+STUB
+printf '#!/bin/sh\necho "$*" >> "$HOME/mako.log"\ncase "$*" in mode) cat "$HOME/mako.mode" 2>/dev/null || echo default ;; esac\n' > "$H/ia/makoctl"
+printf '#!/bin/sh\nexit 1\n' > "$H/ia/sleep"   # the clock's minute ends at once
+chmod +x "$H/ia/swaymsg" "$H/ia/makoctl" "$H/ia/sleep"
+cp "$cfg" "$H/cfg-before-rest"
+art_rest() { rm -f "$HOME/swaymsg.log" "$HOME/mako.log"; : > "$H/run/spark-shell-motion.want"; SPARK_SHELL_SYS=$1 SWAYSOCK=$H/sock PATH="$H/ia:$PATH" sh "$SH" desktop idle >/dev/null 2>&1 || :; }   # art_rest SYS
+art_rest_off() { rm -f "$HOME/mako.log"; SPARK_SHELL_SYS=$1 SWAYSOCK=$H/sock PATH="$H/ia:$PATH" sh "$SH" desktop idle off >/dev/null 2>&1 || :; }   # art_rest_off SYS
+rst=$HOME/.local/state/spark-shell
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\nDISPLAY_SAVER=art\n' > "$cfg"; rm -f "$HOME/mako.mode"
+art_rest "$H/sysac"
+r1=$(grep -c 'alpha=0 ' "$HOME/swaymsg.log" || :); r2=$(grep -c 'alpha=0\.8' "$HOME/swaymsg.log" || :); r3=$(cat "$HOME/mako.log" 2>/dev/null || :)
+[ -f "$rst/idle.hush" ] && h1=1 || h1=0; [ -f "$rst/idle.still" ] && s1=1 || s1=0; [ -f "$H/run/spark-shell-motion.want" ] && w1=1 || w1=0
+art_rest_off "$H/sysac"; r4=$(cat "$HOME/mako.log" 2>/dev/null || :)
+[ "$r1" = 1 ] && [ "$r2" = 0 ] && printf '%s\n' "$r3" | grep -qx 'mode -a do-not-disturb' && [ "$h1$s1$w1" = 110 ] \
+    && printf '%s\n' "$r4" | grep -qx 'mode -r do-not-disturb' && [ ! -f "$rst/idle.hush" ] && [ ! -f "$rst/idle.still" ] \
+    && ok "desktop idle, saver art: the window clear over the screen's still, the loop stopped, do not disturb on; idle off: do not disturb off again, the loop asked back" \
+    || bad "idle art" "$r1 $r2 $h1$s1$w1 | $r3 | $r4 | $(grep 'exec foot' "$HOME/swaymsg.log")"
+printf 'default\ndo-not-disturb\n' > "$HOME/mako.mode"
+art_rest "$H/sysac"; r5=$(cat "$HOME/mako.log" 2>/dev/null || :); art_rest_off "$H/sysac"; r6=$(cat "$HOME/mako.log" 2>/dev/null || :)
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\nDISPLAY_SAVER=clock\n' > "$cfg"; rm -f "$HOME/mako.mode"
+art_rest "$H/sysbat"; [ -f "$rst/idle.still" ] && s2=1 || s2=0; [ -f "$H/run/spark-shell-motion.want" ] && w2=1 || w2=0; r7=$(grep -c 'alpha=0\.8' "$HOME/swaymsg.log" || :); r8=$(cat "$HOME/mako.log" 2>/dev/null || :)
+art_rest_off "$H/sysbat"
+art_rest "$H/sysac"; [ -f "$rst/idle.still" ] && s3=1 || s3=0; [ -f "$H/run/spark-shell-motion.want" ] && w3=1 || w3=0
+art_rest_off "$H/sysac"
+! printf '%s\n' "$r5$r6" | grep -q 'mode -[ar]' && [ "$s2$w2" = 10 ] && [ "$r7" = 1 ] && ! printf '%s\n' "$r8" | grep -q 'mode -a' && [ "$s3$w3" = 01 ] \
+    && ok "desktop idle: do not disturb that was on stays on, never turned off by the idle screen; on battery any idle screen shows stills, on mains the clock's loop plays on" \
+    || bad "idle rest" "$r5 | $r6 | $s2$w2 $r7 | $r8 | $s3$w3"
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\nDISPLAY_SAVER=art\n' > "$cfg"
+c1=$(PATH="$H/ia:$PATH" sh "$SH" desktop idle --clock 2>&1 || :)
+mkdir -p "$fam" "$th_dir/still-night"; cp "$REPO/gallery/theme/nord.env" "$th_dir/still-night/palette.env"; printf 'FORMAT=2\nPALETTE=nord\nWALLPAPER=fjord\n' > "$th_dir/still-night/look.env"
+printf '%s\n' '{"format": 1, "id": "still", "title": "Still", "media": "vector", "clock": false, "variants": {"dark": {"theme": "still-night"}}}' > "$fam/still.json"
+printf 'DESKTOP=sway\nTHEME=still-night\nWALLPAPER=fjord\nDISPLAY_SAVER=art\n' > "$cfg"
+c2=$(PATH="$H/ia:$PATH" sh "$SH" desktop idle --clock 2>&1 || :)
+esc=$(printf '\033')
+printf '%s' "$c1" | grep -q "${esc}\[[0-9]*;2H${esc}\[48;2;46;52;64;38;5;16m " && printf '%s' "$c1" | grep -q "${esc}\[[0-9]*;2H${esc}\[48;2;46;52;64;38;5;20m " \
+    && ! printf '%s' "$c2" | grep -q '38;5;16m' \
+    && ok "desktop idle --clock, saver art: the time and the date each on a plate of the background, legible on any art; a family that rests without a clock shows the art alone" \
+    || bad "idle art clock" "$(printf '%s' "$c1" | od -c | head -5) | $(printf '%s' "$c2" | od -c | head -3)"
+rm -rf "$fam" "$th_dir/still-night"; cp "$H/cfg-before-rest" "$cfg"; rm -f "$HOME/swaymsg.log" "$HOME/mako.log" "$HOME/mako.mode" "$H/run/spark-shell-motion.want"
+fi
 # a value set as it is, the dialog's own way (#183); a palette looked at is on the screen and nothing is kept
 mcp theme "$(call 1 theme_text '{"size":"14"}')" "$(call 2 theme_transparency '{"amount":"30"}')" "$(call 3 theme_preview '{"name":"nord"}')" "$(call 4 theme_preview '{"name":"none"}')" "$(call 5 theme_preview '{"name":"off"}')"
 [ "$(ans 1 | jq -r '.result.structuredContent.receipt' | cut -c1-10)" = 'text at 14' ] && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'transparency at 30%' ] \

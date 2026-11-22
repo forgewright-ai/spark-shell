@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # on_console -> 0 on /dev/tty1 and up (not XDG_VTNR: Void has no logind)
-# sets: IDLE_ALPHA IDLE_APP IDLE_FROM
-# reads: BAR_WS_ORDER CONFIG_DIR CONFIG_UNSET KB_RE LAYOUT_PENDING LAYOUT_SEEN NOTIFY_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SCREENS_CONF STATE_DIR TAB TERM_NAME TMP US WM_NAME
+# sets: IDLE_ALPHA IDLE_APP IDLE_FROM IDLE_HUSH IDLE_STILL
+# reads: BAR_WS_ORDER CONFIG_DIR CONFIG_UNSET KB_RE LAYOUT_PENDING LAYOUT_SEEN NOTIFY_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SAVER_OWN SCREENS_CONF STATE_DIR TAB TERM_NAME TMP US WM_NAME
 on_console() { case $(tty 2>/dev/null) in /dev/tty[1-9]*) return 0 ;; *) return 1 ;; esac; }
 # runtime_dir -- XDG_RUNTIME_DIR when unset (Void has no logind)
 runtime_dir() {
@@ -36,6 +36,7 @@ cmd_desktop() {
         --ask) cmd_panel layout; return ;;
         --pending) layout_pending; return ;;
         --motion) theme_load 2>/dev/null || :; motion_follow; return ;;
+        --screens) theme_load 2>/dev/null || :; art_screens_changed; return ;;   # the bar's output events: a screen came, went, moved or turned
         --chat) python3 "$REPO/lib/home.py" open "$REPO/spark-shell" chat; return ;;
         home) home_open "${2:-}"; return ;;
         voice) shift; voice_cmd "$@"; return ;;
@@ -104,7 +105,9 @@ layout_idle() {   # layout_idle [off|--clock|--side]
         | (map(select(.focused | not)) + map(select(.focused)))[] | [.name, .current_workspace] | @tsv' > "$TMP/idle.from" 2>/dev/null || :
     [ ! -s "$TMP/idle.from" ] || { mkdir_private "$STATE_DIR"; cat "$TMP/idle.from" > "$IDLE_FROM"; }
     wm_send "bar mode invisible" >/dev/null 2>&1 || :
-    _fs=$(font_spec); _foot=$(term_window_cmd "$IDLE_APP" "${_fs%%:*}" "$((_sz * 2))" "$IDLE_ALPHA" "$HEX_BG" "$REPO/spark-shell desktop idle")
+    idle_rest_begin
+    _ia=$IDLE_ALPHA; [ "$DISPLAY_SAVER" != art ] || _ia=0   # the art: each screen's own still, nothing over it but the clock
+    _fs=$(font_spec); _foot=$(term_window_cmd "$IDLE_APP" "${_fs%%:*}" "$((_sz * 2))" "$_ia" "$HEX_BG" "$REPO/spark-shell desktop idle")
     # the main screen last: the focus ends on the clock
     _main=$(idle_main)
     screens_json | jq -r --arg m "$_main" '.[] | select(.active and .name != $m) | .name' 2>/dev/null | while IFS= read -r _o; do
@@ -135,7 +138,20 @@ idle_back() {   # never a toggle: off and each window's end may all run it
         else wm_send "workspace back_and_forth" >/dev/null 2>&1 || :; fi
     fi
     [ "$DESKTOP_BAR" != yes ] || wm_send "bar mode dock" >/dev/null 2>&1 || :
+    idle_rest_end
     idle_close
+}
+IDLE_STILL=$STATE_DIR/idle.still   # the loops were stopped for the idle screen: they play again after it
+IDLE_HUSH=$STATE_DIR/idle.hush   # the idle screen turned do not disturb on: it turns it off after
+idle_rest_begin() {   # the art shows still and clean: the loops stopped (on battery, under any saver), the notifications out of sight; each noted to undo
+    if [ "$DISPLAY_SAVER" = art ] || on_battery; then
+        if [ -n "$(motion_ours)" ] || [ -f "$(motion_want)" ]; then mkdir_private "$STATE_DIR"; : > "$IDLE_STILL"; motion_stop; fi
+    fi
+    if [ "$DISPLAY_SAVER" = art ] && notify_hush; then mkdir_private "$STATE_DIR"; : > "$IDLE_HUSH"; fi
+}
+idle_rest_end() {   # what the idle screen held, back as it was; nothing it did not change
+    if [ -f "$IDLE_HUSH" ]; then rm -f "$IDLE_HUSH"; notify_unhush; fi
+    if [ -f "$IDLE_STILL" ]; then rm -f "$IDLE_STILL"; theme_load 2>/dev/null || :; motion_follow; fi
 }
 idle_close() {   # all but this shell's parent foot
     wm_tree | jq -r --arg a "$IDLE_APP" --argjson p "${PPID:-0}" '.. | objects | select(.app_id? == $a and .pid != $p) | .id' 2>/dev/null \
@@ -152,14 +168,17 @@ idle_wait() {   # idle_wait SECONDS -> 0 on input, 1 when the time ran out
 idle_clock_end() { { printf '\033[?1003l\033[?25h\033[0m'; [ -z "${_ist:-}" ] || stty "$_ist"; } 2>/dev/null || :; }   # mouse reports off, cursor back
 saver_version() { sed -n 's/^VERSION = "\(.*\)".*/\1/p' "$REPO/lib/saver.py" 2>/dev/null; }   # read without python3
 saver_can() { case ${SAVER_CAN_NOW:-} in 1) return 0 ;; 0) return 1 ;; esac; _sver=$(saver_version); [ -n "$_sver" ] && [ "$(python3 "$REPO/lib/saver.py" --version 2>/dev/null)" = "$_sver" ]; }   # a real python3, not a stub
-saver_known() { for _sn in clock $SAVER_NAMES; do [ "$_sn" != "$1" ] || return 0; done; return 1; }   # saver_known NAME
-saver_words() { if [ "$1" = clock ]; then echo "the clock alone"; else echo "the $1 saver"; fi; }   # saver_words NAME
+saver_known() { for _sn in $SAVER_OWN $SAVER_NAMES; do [ "$_sn" != "$1" ] || return 0; done; return 1; }   # saver_known NAME
+saver_words() { case $1 in clock) echo "the clock alone" ;; art) echo "the art, the clock over it" ;; *) echo "the $1 saver" ;; esac; }   # saver_words NAME
 saver_problem() {   # saver_problem NAME -> why not, or nothing
-    if ! saver_known "$1"; then echo "saver takes clock, spark, starfield or drift"; return 0; fi
-    [ "$1" = clock ] || saver_can || echo "saver $1 needs python3, which cannot run it here"
+    if ! saver_known "$1"; then echo "saver takes clock, art, spark, starfield or drift"; return 0; fi
+    case " $SAVER_OWN " in *" $1 "*) return 0 ;; esac
+    saver_can || echo "saver $1 needs python3, which cannot run it here"
 }
 idle_clock() {   # the time and the date, each minute
-    if [ "${DISPLAY_SAVER:-clock}" != clock ] && saver_can; then python3 "$REPO/lib/saver.py" "$DISPLAY_SAVER" && return 0; fi   # a failure falls through to the clock
+    case " $SAVER_OWN " in *" ${DISPLAY_SAVER:-clock} "*) ;; *) if saver_can; then python3 "$REPO/lib/saver.py" "$DISPLAY_SAVER" && return 0; fi ;; esac   # a failure falls through to the clock
+    [ "${DISPLAY_SAVER:-clock}" != art ] || [ "$(art_of "${THEME:-none}" | jq -r .clock 2>/dev/null)" != false ] || { idle_side; return 0; }   # a family that rests without a clock
+    _pl=''; if [ "${DISPLAY_SAVER:-clock}" = art ]; then theme_load 2>/dev/null || :; _pl=$(hex_rgb "#${HEX_BG:-242424}" | awk '{ printf "48;2;%d;%d;%d", $1, $2, $3 }'); fi   # the clock on a plate of the background: legible on any art
     printf '\033[?25l'; trap 'idle_clock_end; idle_back; exit 0' INT TERM HUP
     _a='38;5;16'; _m='38;5;20'   # foot.ini's slots 16 and 20: accent and muted
     _ist=''   # a byte at a time, every mouse move reported
@@ -169,7 +188,10 @@ idle_clock() {   # the time and the date, each minute
         set -- $(stty size 2>/dev/null || echo 24 80)
         _h=${1:-24}; _d=$(date '+%A %e %B' | tr -s ' ')
         printf '\033[2J'
-        if [ "$_h" -ge 9 ] && [ "${2:-80}" -ge 38 ]; then
+        if [ "$_h" -ge 9 ] && [ "${2:-80}" -ge 38 ] && [ -n "$_pl" ]; then   # over the art: each line on its plate, a cell of it either side
+            clock_rows | { _y=$((_h - 7)); while IFS= read -r _l; do printf '\033[%s;2H\033[%s;%sm %s ' "$_y" "$_pl" "$_a" "$_l"; _y=$((_y + 1)); done; }
+            printf '\033[0m\033[%s;2H\033[%s;%sm %s \033[0m' $((_h - 1)) "$_pl" "$_m" "$_d"
+        elif [ "$_h" -ge 9 ] && [ "${2:-80}" -ge 38 ]; then
             clock_rows | { _y=$((_h - 7)); while IFS= read -r _l; do printf '\033[%s;3H\033[%sm%s' "$_y" "$_a" "$_l"; _y=$((_y + 1)); done; }
             printf '\033[0m\033[%s;3H\033[%sm%s\033[0m' $((_h - 1)) "$_m" "$_d"
         else
@@ -183,7 +205,7 @@ idle_clock() {   # the time and the date, each minute
 }
 idle_side() {   # the saver without its clock, or nothing
     case ${DISPLAY_SAVER:-clock} in
-        clock|drift) ;;   # nothing to draw without the clock
+        clock|art|drift) ;;   # nothing to draw without the clock
         *) if saver_can; then python3 "$REPO/lib/saver.py" "$DISPLAY_SAVER" --no-clock && return 0; fi ;;
     esac
     printf '\033[?25l\033[2J'; trap 'idle_clock_end; idle_back; exit 0' INT TERM HUP
@@ -214,7 +236,7 @@ layout_display() {   # layout_display [idle|lock N | saver [NAME] | brightness N
             desktop_file_apply; idle_restart
             if [ "$1" = idle ]; then echo "idle screen $(idle_words "$2")"; else echo "lock $(idle_words "$2")"; fi ;;
         saver) if [ -z "${2:-}" ]; then
-                for _x in clock $SAVER_NAMES; do if [ "$_x" = "$DISPLAY_SAVER" ]; then echo "$PANEL_TICK $_x"; else echo "  $_x"; fi; done; return 0; fi
+                for _x in $SAVER_OWN $SAVER_NAMES; do if [ "$_x" = "$DISPLAY_SAVER" ]; then echo "$PANEL_TICK $_x"; else echo "  $_x"; fi; done; return 0; fi
             _p=$(saver_problem "$2"); [ -z "$_p" ] || refuse "display $_p"
             [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
             config_set DISPLAY_SAVER "$2" >/dev/null; DISPLAY_SAVER=$2; export DISPLAY_SAVER   # the idle window reads it at start: nothing to restart
@@ -448,6 +470,13 @@ layout_lock() {
     ! wm_lock_running || return 0
     : "${HEX_BG:=242424}" "${HEX_FG:=ffffff}" "${HEX_ACCENT:=24acd4}" "${HEX_MUTED:=616161}" "${HEX_ANSI_1:=f62b5a}" "${HEX_ANSI_3:=e3c401}"   # foot's own, when no palette loaded
     if wall_there; then set -- --image "$(wall_path)" --scaling fill
+        # each screen its own still where one is made, as the desktop shows it: a panel, a portrait, a scene's view, the art fitted; never a loop
+        while IFS="$TAB" read -r _ln _li _la _lt _ls _lr _lx _lm; do
+            [ -n "$_ln" ] && [ "$_lr" != landscape ] || continue
+            _lf=$(art_screen_file "$_lx" "$_lm" "$_ls") && [ -n "$_lf" ] && set -- "$@" --image "$_ln:$_lf"
+        done <<EOF
+$(art_screens 2>/dev/null)
+EOF
     elif [ "$WALLPAPER" = default ]; then set -- --color "$(wall_ground | tr -d '#')"
     elif wall_color; then set -- --color "$(wall_hex "$WALLPAPER" | tr -d '#')"
     else set -- --color "$HEX_BG"; fi

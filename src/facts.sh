@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- facts: what the desktop knows, for the model
 # sets: MACHINE_AT_NOW MACHINE_FACTS_EVERY MACHINE_NAME MACHINE_NOW_EVERY MACHINE_NOW_SOON MACHINE_NO_TOOL MACHINE_READS
-# reads: BAR_SYS LAYOUTS_DIR NOTES_DIR OS PANEL_APP PANEL_CACHE SAVER_NAMES TAB TMP WALL_SCENES WALL_SHIPPED WM_NAME
+# reads: BAR_SYS LAYOUTS_DIR NOTES_DIR OS PANEL_APP PANEL_CACHE SAVER_NAMES SAVER_OWN TAB TMP WALL_SCENES WALL_SHIPPED WM_NAME
 # spark reads two files there. NAME.facts: what holds while the machine
 # stays as it is, every name as its tool takes it, written only when it
 # changed (spark keeps it in the cached part of its prompt). NAME.now:
@@ -154,7 +154,7 @@ machine_facts() {   # -> the .facts lines
     _mst=$(theme_saved_names | head -8 | machine_names)
     printf -- "- Palettes, dark: %s; light: %s; none is terminal default colors.%s\n" \
         "$(grep -xFf "$TMP/machine.dark" "$TMP/machine.pal" | machine_join)" "$(grep -vxFf "$TMP/machine.dark" "$TMP/machine.pal" | machine_join)" "${_mst:+ Saved themes: $_mst.}"
-    _msa=clock; ! saver_can || _msa="clock $SAVER_NAMES"
+    _msa=$SAVER_OWN; ! saver_can || _msa="$SAVER_OWN $SAVER_NAMES"
     printf -- "- Wallpapers: %s, $(set -- $WALL_SCENES; echo $#) scenes that move, or default. Savers: %s.\n" "$(for _e in $WALL_SHIPPED; do printf '%s\n' "${_e%%:*}"; done | machine_join)" "$(printf '%s\n' $_msa | machine_join)"
     # the printers from the section's cache: the facts never ask CUPS
     if [ -s "$PANEL_CACHE/printers.status" ] && sed 1d "$PANEL_CACHE/printers.status" > "$TMP/machine.pr" 2>/dev/null && [ -s "$TMP/machine.pr" ]; then

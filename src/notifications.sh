@@ -6,6 +6,8 @@ NOTIFY_MODE=do-not-disturb
 mako_here() { [ -z "${SPARK_SHELL_NO_MAKO:-}" ] && command -v mako >/dev/null 2>&1; }   # SPARK_SHELL_NO_MAKO: for the tests
 notify_mode() { read_once notify.mode makoctl mode; }   # -> the modes on
 notify_up() { command -v makoctl >/dev/null 2>&1 && notify_mode >/dev/null 2>&1; }
+notify_hush() { notify_up && ! notify_dnd && makoctl mode -a "$NOTIFY_MODE" >/dev/null 2>&1; }   # do not disturb on for a while: true when it was off and is on now
+notify_unhush() { makoctl mode -r "$NOTIFY_MODE" >/dev/null 2>&1 || :; }   # the while is over
 notify_reload() { ! notify_up || makoctl reload >/dev/null 2>&1 || :; }
 notify_dnd() { read_once notify.dnd notify_dnd_now; }
 notify_dnd_now() { notify_mode 2>/dev/null | grep -qx "$NOTIFY_MODE"; }

@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- the sections: a title, the rows and the act each
-# reads: APPS BAR_SYS LAYOUTS_DIR LAYOUT_LAST OS PALETTE_DIR PANEL_CACHE PANEL_DOT PANEL_GO PANEL_MARK PANEL_RING PANEL_SEP PANEL_TICK PANEL_WARN SAVER_NAMES TAB TMP US WALL_GROUND_SAID
+# reads: APPS BAR_SYS LAYOUTS_DIR LAYOUT_LAST OS PALETTE_DIR PANEL_CACHE PANEL_DOT PANEL_GO PANEL_MARK PANEL_RING PANEL_SEP PANEL_TICK PANEL_WARN SAVER_NAMES SAVER_OWN TAB TMP US WALL_GROUND_SAID
 # a row is MARK<tab>TEXT<tab>ACTION [ARG]: the mark a sign or -, a
 # look-only row carries `show`
 panel_title() {   # panel_title SECTION -> the lines that say what opened the panel; glance: the date, the facts, an alarm line
@@ -277,7 +277,7 @@ panel_rows_display() {   # the idle and lock minutes (the other picks in a full 
     done
     if saver_can; then   # the saver rows where python3 runs one: the one in use, then the others in a full list
         printf '%s\tsaver %s\tshow\n' "$PANEL_TICK" "$DISPLAY_SAVER"
-        if [ "${2:-}" = full ]; then for _n in clock $SAVER_NAMES; do [ "$_n" = "$DISPLAY_SAVER" ] || printf -- '-\tsaver %s\tsaver %s\n' "$_n" "$_n"; done; fi
+        if [ "${2:-}" = full ]; then for _n in $SAVER_OWN $SAVER_NAMES; do [ "$_n" = "$DISPLAY_SAVER" ] || printf -- '-\tsaver %s\tsaver %s\n' "$_n" "$_n"; done; fi
     fi
     _b=$(light_get); [ -z "$_b" ] || printf -- '-\tbrightness %s%%\tshow\n-\tbrighter\tbrightness up\n-\tdimmer\tbrightness down\n' "$_b"
     ! wm_session || screen_rows | while IFS="$TAB" read -r _n _id _on _md _sc _x _y _w _h _mo _tr; do   # short, for the dialog's width: the port, the model, the mode, the scale

@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # ---------------------------------------------- verbs: theme, font, quiet
 # sets: MOTION_DIR MOTION_NOW THEME_WORDS WORDS_TAKE
-# reads: ANIMATION_NAMES CONFIG CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GLYPH_FAMILIES LOOKS_DIR LOOK_FORMAT MODE NEON NEON_OLD NL OS PALETTE_DIR PALETTE_MARK PANEL_SEP PATH_REFUSED PM RENDERED REPO ROOT SCENE_MAKE STATE_DIR TAB TERMINAL_SEEN TERM_PALETTE_FORMATS THEME_ENV THEME_KEYS TMP WALL_CACHE WALL_NAMES WALL_SCENES WALL_SHIPPED
+# reads: ANIMATION_NAMES CONFIG CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GLYPH_FAMILIES LOOKS_DIR LOOK_FORMAT MODE NEON NEON_OLD NL OS PALETTE_DIR PALETTE_MARK PANEL_SEP PATH_REFUSED PM RENDERED REPO ROOT SCENE_MAKE STATE_DIR TAB TERMINAL_SEEN TERM_PALETTE_FORMATS THEME_ENV THEME_KEYS TMP WALL_NAMES WALL_SCENES WALL_SHIPPED
 refuse_in() { echo "spark-shell $1: $2"; exit 1; }   # refuse_in VERB SENTENCE
 seat_on() { _r=$(rc_files); _r=${_r%% *}; [ -L "$HOME/$_r" ] && [ "$(readlink "$HOME/$_r")" = "$(rc_tree)/$_r" ]; }
 look_now() {   # after a palette change
@@ -29,7 +29,7 @@ verb_close() {   # verb_close SENTENCE -> a verb's last line
     else echo "$1"; fi
 }
 
-THEME_WORDS='none show list save delete back wallpaper text transparency animation glyphs icons spacing family face workspaces motion picture gallery install preview variant'   # no theme may be named one
+THEME_WORDS='none show list save delete back wallpaper text transparency animation glyphs icons spacing family face workspaces motion picture gallery install preview variant screens'   # no theme may be named one
 cmd_theme() {   # cmd_theme [NAME|none|show|list|WORD ARG...|"WORDS"]
     config_load
     case ${1:-show} in
@@ -57,6 +57,7 @@ cmd_theme() {   # cmd_theme [NAME|none|show|list|WORD ARG...|"WORDS"]
         gallery) shift; theme_gallery "$@"; return ;;
         install) shift; theme_install "$@"; return ;;
         variant) shift; theme_variant "$@"; return ;;
+        screens) shift; theme_screens "$@"; return ;;
     esac
     case "$*" in *' '*) theme_from_words "$*"; return ;; esac
     [ -n "$(theme_kind "$1")" ] || refuse_in theme "no palette named $1 -- spark-shell theme list shows them"
@@ -429,21 +430,11 @@ motion_make_scene() {   # motion_make_scene SCENE PALETTE_FILE WxH OUT -- a pixe
 motion_screens() {   # -> NAME<tab>WxH per screen on, in pixels
     wm_outputs | jq -r '.[] | select(.active) | [.name, (((.rect.width * (.scale // 1)) | floor | tostring) + "x" + ((.rect.height * (.scale // 1)) | floor | tostring))] | @tsv' 2>/dev/null || :
 }
-scene_screens() {   # portrait screens' stills, in the background
-    wall_scene "${WALLPAPER:-}" && _ssp=$(palette_file "${THEME:-}" 2>/dev/null) && scene_ready || return 0
-    _ssl=$(motion_screens | awk -F '\t' '{ split($2, s, "x"); if (s[2] + 0 > s[1] + 0) print }')
-    [ -n "$_ssl" ] || return 0
-    ( printf '%s\n' "$_ssl" | while IFS="$TAB" read -r _ssn _sss; do   # TMP dies with its step
-          _ssf=$WALL_CACHE/$WALLPAPER-$THEME-$_sss.png
-          [ -f "$_ssf" ] || { mkdir_state "$WALL_CACHE" && scene_still "$WALLPAPER" "$_ssp" "$_sss" "$_ssf"; } || continue
-          wm_send "output \"$_ssn\" bg \"$_ssf\" fill" >/dev/null 2>&1 || :
-      done ) </dev/null >/dev/null 2>&1 3>&- 4<&- &
-}
 MOTION_NOW=''   # from motion_follow: playing, making or nothing
 motion_follow() {   # the look's loops playing or made; else ours stopped
     MOTION_NOW=''
     [ "$OS" != Darwin ] && wm_up || return 0
-    scene_screens
+    art_screens_follow
     if [ "${WALLPAPER_MOTION:-off}" != on ] || ! motion_has "${WALLPAPER:-}" || [ -n "$(motion_missing)" ]; then motion_stop; return 0; fi
     _mj=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || return 0
     mkdir -p "$MOTION_DIR"

@@ -303,7 +303,7 @@ appearance_preview_art() (
             file) pic_png "$_dir/$_file" "$_made" "$_h" || : ;;
             scene) scene_still "$_wall" "$_pal" "$((_h * 9 / 32 * 2))x$_h" "$_made" || : ;;
             fit) _land=$(appearance_preview "$_key" | jq -r '.picture // empty')
-                [ -z "$_land" ] || art_fit "$_land" "$((_h * 9 / 32 * 2))x$_h" "$(art_edges "$_land" "$_ground")" "$_made" || : ;;
+                [ -z "$_land" ] || art_fit "$_land" "$((_h * 9 / 32 * 2))x$_h" "$(art_edges "$_land" "$_ground" "$TMP/edges.png")" "$_made" || : ;;
             strip) set --; for _f in $_files; do set -- "$@" "$_dir/$_f"; done; art_strip "$_made" "$((_h / 2))" "$_ground" "$@" || : ;;
         esac
         if [ -s "$_made" ]; then

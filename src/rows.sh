@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- rows: a section as an MCP server on stdio
 # sets: PROVIDE_CLIENT PROVIDE_LINE_MAX PROVIDE_PROTOCOL PROVIDE_SECTIONS PROVIDE_SECTIONS_OLD PROVIDE_TOOLS SCRUB_JQ
-# reads: ANIMATION_NAMES KEPT_LAYOUTS LAYOUTS_DIR LAYOUT_LAST PANEL_CROSS PANEL_DOT PANEL_GO PANEL_RING PANEL_SEP PANEL_TICK REPO SAVER_NAMES TAB TERM_PALETTE_FORMATS THUMB_DIR TMP US WALL_TYPES
+# reads: ANIMATION_NAMES KEPT_LAYOUTS LAYOUTS_DIR LAYOUT_LAST PANEL_CROSS PANEL_DOT PANEL_GO PANEL_RING PANEL_SEP PANEL_TICK REPO SAVER_NAMES SAVER_OWN TAB TERM_PALETTE_FORMATS THUMB_DIR TMP US WALL_TYPES
 # a section as an MCP server on stdio, JSON-RPC a line. Every JSON value
 # is built by jq with --arg, every request is parsed by jq; a method or a
 # tool name is matched by case, never run as a name
@@ -176,7 +176,7 @@ tool_spec_display() {   # the display and clock tools
     case $1 in
         display_idle)      _ts=display _ta=idle _tp=minutes _tk=minutes _th=i _tt='display idle N' _td='Show the idle screen after N idle minutes; 0 never.' ;;
         display_lock)      _ts=display _ta=lock _tp=minutes _tk=minutes _th=i _tt='display lock N' _td='Lock the screen after N idle minutes; 0 never.' ;;
-        display_saver)     _ts=display _ta=saver _tp=name _tk="clock|$(printf '%s' "$SAVER_NAMES" | tr ' ' '|')" _th=i _tt='display saver NAME' _td='What the idle screen shows: the clock alone, or an animation behind it.' ;;
+        display_saver)     _ts=display _ta=saver _tp=name _tk="$(printf '%s' "$SAVER_OWN $SAVER_NAMES" | tr ' ' '|')" _th=i _tt='display saver NAME' _td='What the idle screen shows: the clock alone, the theme art with the clock over it, or an animation behind it.' ;;
         display_brightness) _ts=display _ta=brightness _tp=level _tk=bright _th=if _tt='display brightness N' _td='Set the screen brightness, 1 to 100, or up or down a step.' ;;
         display_scale) _ts=display _ta=scale _tp=screen _tk=string _te='scale:scale' _th=if _tt='screen scale' _td='Set the scale on one connected screen; larger means larger text.' ;;
         display_mode) _ts=display _ta=mode _tp=screen _tk=string _te='mode:mode' _th=if _tt='screen mode' _td='Set one of the resolutions offered by the connected screen.' ;;

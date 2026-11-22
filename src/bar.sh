@@ -113,17 +113,29 @@ bar_ws_names() {   # renames "3" or "3 writing" to "3:LABEL" or "3:LABEL writing
             [ "$name" = "$n:$g$_wr" ] || wm_send "rename workspace \"$name\" to \"$n:$g$_wr\"" >/dev/null 2>&1 || :
         done
 }
-bar_ws_watch() {   # on sway's workspace events: the labels again
+bar_ws_watch() {   # on sway's workspace events: the labels again; on its output events, each screen's still
     bar_ws_names
-    wm_events '["workspace"]' | while IFS= read -r _e; do   # -r: one event a line
+    wm_events '["workspace","output"]' | while IFS= read -r _e; do   # -r: one event a line
         kill -0 "$$" 2>/dev/null || break   # the loop that started this is gone, its group not ended (its bar crashed): the reader leaves, and the subscriber ends at its next write
         case $_e in *'"change": "init"'*|*'"change":"init"'*|*'"change": "rename"'*|*'"change":"rename"'*) bar_ws_names ;; esac   # sway spaces its JSON; a rename drops the label
+        case $_e in *'"change": "unspecified"'*|*'"change":"unspecified"'*) "$REPO/spark-shell" desktop --screens </dev/null >/dev/null 2>&1 & ;; esac   # an output event: drawn again only when the screens changed
     done
 }
 bar_timeout() { if command -v timeout >/dev/null 2>&1; then timeout 3 "$@"; else "$@"; fi; }
 
 # --- the hardware
 bar_addr() { ip -4 -o addr show dev "$1" scope global 2>/dev/null | awk '{print $4; exit}' | cut -d/ -f1; }   # bar_addr IFACE -> a.b.c.d or nothing
+on_battery() {   # -> 0 when a battery runs the machine: one discharging, no mains or USB power online
+    _obt=1
+    for _obp in "$BAR_SYS"/class/power_supply/*; do
+        [ -r "$_obp/type" ] || continue
+        case $(cat "$_obp/type" 2>/dev/null) in
+            Mains|USB|USB_*) [ "$(cat "$_obp/online" 2>/dev/null)" != 1 ] || return 1 ;;
+            Battery) [ "$(cat "$_obp/status" 2>/dev/null)" != Discharging ] || _obt=0 ;;
+        esac
+    done
+    return "$_obt"
+}
 bar_wired() {   # -> the wired interfaces; type 1 is ethernet
     for d in "$BAR_SYS"/class/net/*; do
         [ -e "$d/device" ] && [ ! -d "$d/wireless" ] && [ "$(cat "$d/type" 2>/dev/null)" = 1 ] || continue
