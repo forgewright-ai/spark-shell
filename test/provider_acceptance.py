@@ -54,26 +54,50 @@ class Providers(unittest.TestCase):
         reply = self.provider(section, rpc(1, "resources/read", uri=f"spark-shell://{section}/rows"))
         return json.loads(reply[1]["result"]["contents"][0]["text"])["rows"]
 
-    def test_bundled_theme_gallery_opens_directly_and_applies_only_on_request(self):
+    def test_bundled_theme_gallery_opens_curated_rooms_and_applies_only_on_request(self):
         cfgdir = self.home / "config/spark-shell"
         cfgdir.mkdir(parents=True)
         config = cfgdir / "config"
-        before = "THEME=nord\nDESKTOP=sway\nWALLPAPER=fjord\n"
+        before = "THEME=nord\\nDESKTOP=sway\\nWALLPAPER=fjord\\n"
         config.write_text(before)
         base = "spark-shell://theme/rows/gallery"
-        names = [line.split("\t") for line in (REPO / "gallery/core/themes.tsv").read_text().splitlines()]
-        ids = [parts[-1] for parts in names]
+        sections = json.loads((REPO / "gallery/core/curation.json").read_text())["sections"]
+        names = [line.split("\\t") for line in (REPO / "gallery/core/themes.tsv").read_text().splitlines()]
+        ids = {parts[0]: parts[-1] for parts in names}
+        works = [name for section in sections for name in section["works"]]
+        self.assertEqual(len(works), 34)
+        self.assertEqual(set(works), set(ids))
+        self.assertEqual(len(works), len(set(works)))
         requests = [rpc(1, "resources/read", uri=base)]
-        requests += [rpc(i, "resources/read", uri=base + "/" + key) for i, key in enumerate(ids, 2)]
+        requests += [rpc(i, "resources/read", uri=base + "/collection/permanent/" + section["id"])
+                     for i, section in enumerate(sections, 2)]
+        requests += [rpc(i, "resources/read", uri=base + "/" + key)
+                     for i, key in enumerate(ids.values(), 2 + len(sections))]
         replies = self.provider("theme", *requests)
-        gallery, *cards = [json.loads(replies[q["id"]]["result"]["contents"][0]["text"]) for q in requests]
-        self.assertEqual((gallery["title"], gallery["state"]), ("Theme gallery", "34 themes"))
-        self.assertEqual([r["text"] for r in gallery["rows"]], [parts[0] for parts in names])
-        self.assertTrue(all(not r.get("group") and not r.get("tool") and not r.get("look") for r in gallery["rows"]))
-        for parts, row, card in zip(names, gallery["rows"], cards):
-            self.assertEqual(row["children"], base + "/" + parts[-1])
+        rendered = [json.loads(replies[q["id"]]["result"]["contents"][0]["text"]) for q in requests]
+        gallery = rendered[0]
+        rooms = rendered[1:1+len(sections)]
+        cards = rendered[1+len(sections):]
+        self.assertEqual((gallery["title"], gallery["state"]),
+                         ("The Gallery", "The Permanent Collection / 6 sections"))
+        self.assertEqual([r["text"] for r in gallery["rows"]], [section["title"] for section in sections])
+        self.assertTrue(all(r.get("group") == "The Permanent Collection"
+                            and not r.get("tool") and not r.get("look") for r in gallery["rows"]))
+        for section, entry, room in zip(sections, gallery["rows"], rooms):
+            self.assertEqual(entry["children"], base + "/collection/permanent/" + section["id"])
+            self.assertEqual(entry["columns"], [str(len(section["works"])) + " works"])
+            self.assertEqual(room["title"], section["title"])
+            self.assertEqual(room["state"], section["description"])
+            self.assertEqual([r["text"] for r in room["rows"]], section["works"])
+            self.assertEqual([r["children"] for r in room["rows"]],
+                             [base + "/" + ids[name] for name in section["works"]])
+            self.assertTrue(all(r.get("group") is None for r in room["rows"]))
+        for parts, card in zip(names, cards):
             self.assertEqual(card["title"], parts[0])
-            self.assertEqual(card["rows"][0]["tool"], {"name": "theme_palette", "arguments": {"name": parts[-1]}})
+            self.assertEqual(card["rows"][0]["tool"],
+                             {"name": "theme_palette", "arguments": {"name": parts[-1]}})
+        invalid = self.provider("theme", rpc(1, "resources/read", uri=base + "/collection/permanent/missing"))
+        self.assertIn("error", invalid[1])
         self.assertEqual(config.read_text(), before)
         self.assertFalse((cfgdir / "themes").exists())
         result = self.provider("theme", call(1, "theme_palette", name="ring-shadow"))[1]["result"]
@@ -98,7 +122,8 @@ class Providers(unittest.TestCase):
         self.assertIn("Manage themes", groups)
         self.assertEqual(section["title"], "Type and glyphs")
         self.assertEqual(next(r["step"]["set"]["name"] for r in section["rows"] if r["text"]=="Glyph family"), "theme_family")
-        self.assertTrue(all(r["page"] == base + "preview/" + r["id"].split(":")[-1] for r in gallery["rows"]))
+        self.assertEqual(len(gallery["rows"]), 6)
+        self.assertTrue(all(r["page"].startswith(base + "preview/") for r in gallery["rows"]))
         self.assertEqual(detail["rows"][0]["page"], base+"preview/nightswim")
         self.assertEqual(nord["facts"], ["fjord", "Nord"])
         self.assertEqual(photo["facts"], ["nightswim.png", "nightswim (from wallpaper)"])
@@ -179,12 +204,14 @@ class Providers(unittest.TestCase):
         (cfgdir / "config").write_text("THEME=first-dracula\nDESKTOP=sway\n")
         base = "spark-shell://theme/rows/gallery"
         reads = [rpc(i, "resources/read", uri=base + tail)
-                 for i, tail in enumerate(("", "/first-dracula", "/ring-shadow"), 1)]
+                 for i, tail in enumerate(("", "/collection/permanent/chromatic-nocturnes",
+                                           "/first-dracula", "/ring-shadow"), 1)]
         replies = self.provider("theme", *reads)
-        gallery, dracula, ring = [json.loads(replies[i]["result"]["contents"][0]["text"]) for i in range(1, 4)]
-        self.assertEqual(len(gallery["rows"]), 34)
-        self.assertTrue(all(not r.get("group") for r in gallery["rows"]))
-        selected = next(r for r in gallery["rows"] if r["sign"] == "check")
+        gallery, room, dracula, ring = [
+            json.loads(replies[i]["result"]["contents"][0]["text"]) for i in range(1, 5)]
+        self.assertEqual(len(gallery["rows"]), 6)
+        self.assertEqual(room["title"], "Chromatic Nocturnes")
+        selected = next(r for r in room["rows"] if r["sign"] == "check")
         self.assertEqual((selected["text"], selected["children"]), ("dracula", base + "/first-dracula"))
         for card, expected in ((dracula, "sun"), (ring, "flight")):
             motion = next(r for r in card["rows"] if r["id"] == "theme:detail:animation")
