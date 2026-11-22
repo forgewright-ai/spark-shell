@@ -1,5 +1,5 @@
-use crate::app::{Item, View};
-use crate::model::Rows;
+use crate::app::{App, Item, View};
+use crate::model::{Row, Rows};
 
 pub(crate) const GALLERY: &str = "spark-shell://theme/rows/gallery";
 
@@ -7,10 +7,49 @@ pub(crate) fn gallery(view: &View) -> bool {
     matches!(view, View::Folder(_, uri) if uri == GALLERY || uri.strip_prefix(GALLERY).is_some_and(|tail| tail.starts_with('/')))
 }
 
+pub(crate) fn section(view: &View) -> bool {
+    matches!(view, View::Folder(_, uri) if uri.starts_with("spark-shell://theme/rows/settings/"))
+}
+
+pub(crate) fn candidate(app: &App) -> Option<(usize, &Row)> {
+    match &app.view {
+        View::Section(p) if app.providers[*p].label == "theme" && app.input.is_empty() => app.providers[*p]
+            .rows
+            .rows
+            .iter()
+            .find(|r| r.id == "theme:gallery:open" && r.page.is_some())
+            .map(|r| (*p, r)),
+        View::Folder(p, uri) if gallery(&app.view) => {
+            let rows = &app.folder.as_ref().filter(|(_, u, _)| u == uri)?.2.rows;
+            if uri == GALLERY {
+                let id = match app.picks().get(app.sel)? {
+                    Item::Folder(i) => *i,
+                    _ => return None,
+                };
+                rows.get(id).filter(|r| r.page.is_some()).map(|r| (*p, r))
+            } else {
+                rows.first().filter(|r| r.id.starts_with("theme:apply:") && r.page.is_some()).map(|r| (*p, r))
+            }
+        }
+        _ => None,
+    }
+}
+
 pub(crate) fn overview(p: usize, source: &Rows, out: &mut Vec<Item>) -> bool {
     let index = |id: &str| source.rows.iter().position(|row| row.id == id);
     let Some(browse) = index("theme:gallery:open") else { return false };
     out.push(Item::Row(p, browse));
+    if source.rows.iter().any(|r| r.id.starts_with("theme:settings:")) {
+        out.extend(
+            source
+                .rows
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| r.id.starts_with("theme:settings:"))
+                .map(|(i, _)| Item::Row(p, i)),
+        );
+        return true;
+    }
     let groups: &[(&str, &[&str])] = &[
         (
             "wallpaper and motion",

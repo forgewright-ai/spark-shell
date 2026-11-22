@@ -230,7 +230,9 @@ pub enum Kind {
 pub fn kind(app: &App) -> Kind {
     match app.view {
         View::Home | View::Apps => kind_of(app, &app.list_items()),
-        View::Folder(..) if app.files_pane_view().is_some() || crate::appearance::gallery(&app.view) => kind_of(app, &app.list_items()),
+        View::Folder(..) if app.files_pane_view().is_some() || crate::appearance::gallery(&app.view) || crate::appearance::section(&app.view) => {
+            kind_of(app, &app.list_items())
+        }
         View::Dest(d) if d == crate::app::SETTINGS_DEST => kind_of(app, &app.list_items()),
         View::Section(_) => kind_of(app, &app.list_items()),
         _ => Kind::Grid,
@@ -247,7 +249,7 @@ fn kind_of(app: &App, items: &[Item]) -> Kind {
         View::Apps if items.iter().all(known) => Kind::Apps,
         View::Folder(..) if app.files_pane_view().is_some() && items.iter().all(known) => Kind::Files,
         View::Dest(d) if d == crate::app::SETTINGS_DEST && items.iter().all(known) => Kind::Settings,
-        View::Folder(..) if crate::appearance::gallery(&app.view) && items.iter().all(known) => Kind::Page,
+        View::Folder(..) if (crate::appearance::gallery(&app.view) || crate::appearance::section(&app.view)) && items.iter().all(known) => Kind::Page,
         View::Section(_) if items.iter().all(known) => Kind::Page,
         _ => Kind::Grid,
     }
@@ -2283,6 +2285,95 @@ fn choice_of(app: &App, m: &Metrics, p: usize, r: usize, room: f64) -> Option<K>
     })
 }
 
+/// Keep the poster in view while the list scrolls. A wide frame gives each its own column.
+fn theme_poster(app: &App, pen: &mut Pen, whole: Area, row: &crate::model::Row) -> Area {
+    let m = *pen.m;
+    let width = whole.right - whole.left;
+    let height = whole.bottom - whole.top;
+    let side = width >= m.px(760.0);
+    if height < m.px(180.0) && !side {
+        return whole;
+    }
+    let (left, right, top, list_area) = if side {
+        let divide = whole.left + (width * 0.40).round();
+        (
+            divide + m.px(24.0),
+            whole.right,
+            whole.top + m.px(14.0),
+            Area {
+                right: divide - m.px(12.0),
+                to: divide,
+                ..whole
+            },
+        )
+    } else {
+        (whole.left, whole.right, whole.top + m.px(4.0), whole)
+    };
+    let w = right - left;
+    let cap = if side {
+        height - m.px(110.0)
+    } else {
+        (height * 0.38 - m.px(46.0)).max(m.px(52.0))
+    };
+    let h = (w * 9.0 / 16.0).min(cap).max(m.px(32.0)).round();
+    let pw = w.min((h * 16.0 / 9.0).round());
+    let x = left + ((w - pw) / 2.0).round();
+    let page = app
+        .files
+        .peek
+        .as_ref()
+        .filter(|peek| Some(&peek.uri) == row.page.as_ref())
+        .and_then(|peek| peek.page.as_ref());
+    pen.fill(left, top, w, h, row.chip.first().copied().unwrap_or(pen.t.band));
+    if let Some(file) = page.and_then(|p| p.picture.as_ref()) {
+        pen.pictures.push(PictureAt {
+            x,
+            y: top,
+            w: pw,
+            h,
+            file: file.clone(),
+            wave: None,
+            corner: false,
+        });
+    } else {
+        let word = page.and_then(|p| p.say.as_deref()).unwrap_or(if page.is_some() {
+            "Wallpaper preview unavailable"
+        } else {
+            "Loading wallpaper"
+        });
+        let label = pen.fit(word, Size::Small, w - m.px(24.0));
+        let ink = row.chip.get(1).copied().unwrap_or(pen.t.ink);
+        pen.text(left + m.px(12.0), top + h / 2.0 + m.sup / 2.0, &label, Size::Small, ink, false);
+    }
+    let hues = row.chip.get(2..).unwrap_or_default();
+    for (i, color) in hues.iter().enumerate() {
+        let edge = |n: usize| (w * n as f64 / hues.len() as f64).round();
+        pen.fill(left + edge(i), top + h, edge(i + 1) - edge(i), m.px(4.0), *color);
+    }
+    let name = if row.id == "theme:gallery:open" {
+        row.columns.first().map(String::as_str).unwrap_or(&row.text)
+    } else if row.id.starts_with("theme:apply:") {
+        app.folder.as_ref().map(|f| f.2.title.as_str()).unwrap_or(&row.text)
+    } else {
+        &row.text
+    };
+    let caption = page.and_then(|pg| pg.facts.first()).map(String::as_str).unwrap_or("");
+    let base = top + h + m.px(32.0);
+    let label = pen.fit(name, Size::Lead, w * 0.62);
+    pen.text(left, base, &label, Size::Lead, pen.t.ink, true);
+    let caption = pen.fit(caption, Size::Small, w * 0.34);
+    pen.text_end(right, base, &caption, Size::Small, pen.t.muted, false);
+    pen.hit(left, top, w, h, Target::Key(HintKey::View));
+    if side {
+        list_area
+    } else {
+        Area {
+            top: base + m.px(16.0),
+            ..list_area
+        }
+    }
+}
+
 /// A section's page (v0.161): a setting one row, its options side by side, the one in use in the accent; the
 /// groups named large, as settings' are.
 fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
@@ -2305,8 +2396,25 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         bare: true,
         c3: true,
     };
-    let mut rows = rows_of(app, pen, items, shape, whole.right - whole.left - m.px(36.0));
-    if crate::appearance::gallery(&app.view) && app.input.is_empty() {
+    let candidate = crate::appearance::candidate(app).map(|(_, row)| row);
+    let area = candidate.map_or(whole, |r| theme_poster(app, pen, whole, r));
+    let facts: Vec<Item>;
+    let items = if candidate.is_some_and(|r| r.id.starts_with("theme:apply:")) {
+        facts = items
+            .iter()
+            .filter(|it| {
+                app.row_ref(it).is_some_and(|r| {
+                    r.id.starts_with("theme:apply:") || (r.id != "theme:detail:wall" && !r.columns.is_empty() && r.columns[0] != "keep current")
+                })
+            })
+            .cloned()
+            .collect();
+        &facts
+    } else {
+        items
+    };
+    let mut rows = rows_of(app, pen, items, shape, area.right - area.left - m.px(36.0));
+    if candidate.is_none() && crate::appearance::gallery(&app.view) && app.input.is_empty() {
         if let Some((_, _, folder)) = &app.folder {
             if let Some(r) = folder.rows.first().filter(|r| r.id.starts_with("theme:apply:") && r.chip.len() >= 3) {
                 rows.insert(
@@ -2321,7 +2429,7 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         }
     }
     let key = format!("page\u{1f}{:?}\u{1f}{}", app.view, app.input);
-    list(app, pen, &rows, whole, lit(app), list_focus(app), shape, app.scroll, key);
+    list(app, pen, &rows, area, lit(app), list_focus(app), shape, app.scroll, key);
 }
 
 /// Settings (v0.161): its groups named at 28 pixels, a setting two lines, its name over what it is set to now. What

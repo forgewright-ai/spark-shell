@@ -81,6 +81,36 @@ class Providers(unittest.TestCase):
         for setting in ("THEME=ring-shadow", "WALLPAPER=orbit", "WALLPAPER_MOTION=on", "GLYPH_FAMILY=banner"):
             self.assertIn(setting, config.read_text().splitlines())
 
+    def test_theme_wallpapers_are_read_only_and_settings_keep_their_controls(self):
+        cfg = self.home / "config/spark-shell/config"
+        cfg.parent.mkdir(parents=True)
+        before = "THEME=nord\nWALLPAPER=fjord\nDESKTOP=sway\nDIALOG_ANIMATION=none\n"
+        cfg.write_text(before)
+        base = "spark-shell://theme/"
+        paths = ("rows", "rows/settings/type", "rows/gallery", "rows/gallery/nightswim",
+                 "preview/nord", "preview/nightswim", "preview/nord?full=1", "current-wallpaper")
+        calls = [rpc(i, "resources/read", uri=base + path) for i, path in enumerate(paths, 1)]
+        replies = self.provider("theme", *calls)
+        root, section, gallery, detail, nord, photo, full, current = [
+            json.loads(replies[q["id"]]["result"]["contents"][0]["text"]) for q in calls]
+        groups = [r["text"] for r in root["rows"] if r["id"].startswith("theme:settings:")]
+        self.assertIn("Type and glyphs", groups)
+        self.assertIn("Manage themes", groups)
+        self.assertEqual(section["title"], "Type and glyphs")
+        self.assertEqual(next(r["step"]["set"]["name"] for r in section["rows"] if r["text"]=="Glyph family"), "theme_family")
+        self.assertTrue(all(r["page"] == base + "preview/" + r["id"].split(":")[-1] for r in gallery["rows"]))
+        self.assertEqual(detail["rows"][0]["page"], base+"preview/nightswim")
+        self.assertEqual(nord["facts"], ["fjord"])
+        self.assertEqual(photo["facts"], ["nightswim.png"])
+        if sys.platform != "darwin":
+            self.assertEqual(current["facts"], ["fjord"])
+        self.assertTrue(full["full"])
+        for preview in (nord, photo, full):
+            self.assertEqual(Path(preview["picture"]).read_bytes()[:8], bytes.fromhex("89504e470d0a1a0a"))
+        bad = self.provider("theme", rpc(1, "resources/read", uri=base+"preview/../nord"))
+        self.assertIn("error", bad[1])
+        self.assertEqual(cfg.read_text(), before)
+
     def test_preview_install_and_personal_theme_take_precedence(self):
         cfgdir = self.home / "config/spark-shell"
         themes = cfgdir / "themes"

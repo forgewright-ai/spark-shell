@@ -165,6 +165,21 @@ provide_resource_files() {   # provide_resource_files ID METHOD URI -- the files
 }
 provide_resource_special() {   # provide_resource_special ID METHOD URI -- one section's own resources: a read of them, or system's running list watched; false when the uri is not one
     case $sec:$2:$3 in
+        theme:resources/read:spark-shell://theme/rows/settings/?*)
+            if provide_rows theme | appearance_section "${3#spark-shell://theme/rows/settings/}" > "$TMP/theme.section"; then
+                rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.section")"
+            else rpc_error "$1" -32002 "no theme settings at that uri"; fi ;;
+        theme:resources/read:spark-shell://theme/current-wallpaper|theme:resources/read:spark-shell://theme/current-wallpaper'?full=1')
+            _af=''; case $3 in *'?full=1') _af=full ;; esac
+            if appearance_preview "${THEME:-none}" "$_af" current > "$TMP/theme.preview"; then
+                rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.preview")"
+            else rpc_error "$1" -32002 "no active theme wallpaper"; fi ;;
+        theme:resources/read:spark-shell://theme/preview/?*)
+            _ap=${3#spark-shell://theme/preview/}; _af=''
+            case $_ap in *'?full=1') _ap=${_ap%'?full=1'}; _af=full ;; esac
+            if appearance_preview "$_ap" "$_af" > "$TMP/theme.preview"; then
+                rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.preview")"
+            else rpc_error "$1" -32002 "no wallpaper at that uri"; fi ;;
         theme:resources/read:spark-shell://theme/rows/gallery)
             rpc_result "$1" "$(appearance_gallery | jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}')" ;;
         theme:resources/read:spark-shell://theme/rows/gallery/*)

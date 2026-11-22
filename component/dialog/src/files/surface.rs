@@ -208,11 +208,13 @@ impl App {
             }
         }
         let want = if self.files_details_beside() {
-            self.files_about().and_then(|a| a.row).and_then(|r| r.page)
+            self.files_about().and_then(|a| a.row).and_then(|r| r.page).zip(self.files())
+        } else if self.pixels {
+            crate::appearance::candidate(self).and_then(|(p, r)| r.page.clone().map(|uri| (uri, p)))
         } else {
             None
         };
-        let (Some(uri), Some(p)) = (want, self.files()) else {
+        let Some((uri, p)) = want else {
             self.files.peek = None;
             return;
         };
@@ -224,7 +226,7 @@ impl App {
                 .server(p)
                 .and_then(|s| s.request("resources/read", json!({"uri": uri}), Kind::Peek, mcp::T_READ));
             match id {
-                Some(id) => self.files.peek_asked = Some((p, id)),
+                Some(id) => self.files.peek_asked = Some((p, id, uri)),
                 // no provider to ask: nothing is shown
                 None => {
                     self.files.peek = Some(Peek {

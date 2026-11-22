@@ -424,7 +424,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
     read_once_end; ROWS_READ=''   # and a device plugged in meanwhile
     return "$_prs"
 }
-provide_rows_place() { case $1 in window) provide_rows_window ;; layout) provide_rows_layout ;; *) cat ;; esac; }   # stdin: a rows resource -> the same as the workspace place shows it
+provide_rows_place() { case $1 in theme) appearance_sections ;; window) provide_rows_window ;; layout) provide_rows_layout ;; *) cat ;; esac; }   # stdin: a rows resource -> the same as the workspace place shows it
 provide_rows_window() {   # stdin: the window section's rows -> the same with the workspace facts in; no sway: no rows
     jq -c --slurpfile facts "$TMP/win.facts" --arg sep "$PANEL_SEP" '
         def step($n; $a; $w): {name: $n, arguments: $a, said: $w};
