@@ -296,6 +296,7 @@ pub fn thing_of(label: &str) -> &'static str {
         "wifi" => "Network",
         "bt" => "Device",
         "storage" => "Drive",
+        "theme" => "Theme",
         _ => "File",
     }
 }
@@ -6892,6 +6893,24 @@ impl App {
                 ] {
                     add(&mut v, w, k);
                 }
+            }
+            View::Section(p)
+                if self.providers[*p].label == "theme"
+                    && self.input.is_empty()
+                    && self.providers[*p].rows.rows.iter().any(|r| r.id.starts_with("theme:settings:")) =>
+            {
+                add(&mut v, "Open", "Enter");
+                if crate::appearance::candidate(self).is_some() {
+                    add(&mut v, "Wallpaper", "F3");
+                }
+            }
+            View::Folder(_, uri) if crate::appearance::gallery(&self.view) && crate::appearance::candidate(self).is_some() => {
+                if uri == crate::appearance::GALLERY {
+                    add(&mut v, "Details", "Enter");
+                } else if crate::appearance::candidate(self).is_some_and(|(_, r)| r.sign != "check") {
+                    add(&mut v, "Apply", "Enter");
+                }
+                add(&mut v, "Wallpaper", "F3");
             }
             View::Dest(_) | View::Section(_) | View::Folder(..) | View::Found(..) => {
                 let rows = self.view_rows();

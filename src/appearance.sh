@@ -138,7 +138,8 @@ appearance_sections() {
             | select($items|length>0)
             | {id:("theme:settings:"+$id), text:$text, sign:"opens", children:("spark-shell://theme/rows/settings/"+$id),
                members:[$items[].id], columns:[], choice:true};
-        .rows |= map(if .id=="theme:gallery:open" and $active!="none" and (.chip|length)>0
+        (if any($rows[]; .id=="theme:gallery:open" and (.chip|length)>0) then .state=$label else . end)
+        | .rows |= map(if .id=="theme:gallery:open" and $active!="none" and (.chip|length)>0
                      then .page="spark-shell://theme/current-wallpaper" | .columns=[$label] else . end)
         | .rows += [section("wallpaper";"Wallpaper and motion";["theme:wallpaper","theme:show:Moving wallpaper","theme:show:Animation"]),
                     section("type";"Type and glyphs";["theme:show:Text face","theme:show:Text size","theme:show:Glyph family"]),

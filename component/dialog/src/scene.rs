@@ -2313,7 +2313,7 @@ fn theme_poster(app: &App, pen: &mut Pen, whole: Area, row: &crate::model::Row) 
     let cap = if side {
         height - m.px(110.0)
     } else {
-        (height * 0.38 - m.px(46.0)).max(m.px(52.0))
+        (height * 0.50 - m.px(10.0)).max(m.px(52.0))
     };
     let h = (w * 9.0 / 16.0).min(cap).max(m.px(32.0)).round();
     let pw = w.min((h * 16.0 / 9.0).round());
