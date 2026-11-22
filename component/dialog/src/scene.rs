@@ -1096,8 +1096,9 @@ enum K {
     /// number).
     Choice {
         name: String,
-        opts: Vec<Opt>,
+        opts: Vec<PlacedOption>,
         after: String,
+        end: (f64, f64),
     },
     /// A file or a folder in a list of files, as an app's row is (v0.160): its name leads, and under it what it
     /// is, its size, its date and, where the row carries one, its own folder.
@@ -1130,6 +1131,14 @@ struct Opt {
     k: usize,
     on: bool,
     verb: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct PlacedOption {
+    opt: Opt,
+    x: f64,
+    y: f64,
+    width: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1329,10 +1338,16 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
                 let words: String = app.input.split_whitespace().collect::<Vec<_>>().join(" ");
                 Some((one, plain("ask spark", words, false)))
             }
-            Item::Row(p, r) if shape.c3 => app.row_ref(it).map(|row| match choice_of(app, m, *p, *r, room) {
-                Some(k) => (one, k),
-                None if shape.two => row_two(m, row, one),
-                None => (one, of_row(row)),
+            Item::Row(..) | Item::Folder(_) if shape.c3 => app.row_ref(it).map(|row| {
+                if let Some(choice) = choice_of(app, m, it, room) {
+                    choice
+                } else if row.id.starts_with("theme:detail:") {
+                    (one, K::Fact(row.text.clone(), row.columns.join(crate::ui::SEP)))
+                } else if shape.two {
+                    row_two(m, row, one)
+                } else {
+                    (one, of_row(row))
+                }
             }),
             // a key of help (v0.162): what you do, the key at the row's end in the smaller text
             Item::Key(words, key) => Some((
@@ -1350,13 +1365,6 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
                 },
             )),
             Item::Hit(_) | Item::Row(..) => app.row_ref(it).map(|r| (one, of_row(r))),
-            Item::Folder(_) if shape.c3 => app.row_ref(it).map(|r| {
-                if r.id.starts_with("theme:detail:") {
-                    (one, K::Fact(r.text.clone(), r.columns.join(crate::ui::SEP)))
-                } else {
-                    (one, of_row(r))
-                }
-            }),
             Item::Folder(_) => app.row_ref(it).map(|r| {
                 let k = file_row(r, app.files_checks_any() && app.files.checked(&r.id));
                 (file_row_h(m, &k), k)
@@ -1906,17 +1914,19 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                 let n = ((end - x - w - m.px(16.0)) / m.sw).floor().max(4.0) as usize;
                 pen.text_end(end, base, &cut_middle(value, n), Size::Small, t.ink, false);
             }
-            K::Choice { name, opts, after } => {
-                let base = mid + m.px(6.0);
+            K::Choice { name, opts, after, end } => {
+                let base = top + m.px(28.0);
                 let w = pen.text(x, base, name, Size::Main, t.ink, on);
                 if on && focus {
                     pen.fill(x, base + m.px(5.0), w, 2.0, t.accent);
                 }
                 // the options from a column of their own, each a target a finger hits: 44 pixels at least
-                let mut ox = (x + w + m.px(24.0)).max(x + m.px(200.0));
-                for o in opts {
+                for placed in opts {
+                    let o = &placed.opt;
+                    let ox = x + placed.x;
+                    let target_y = top + placed.y;
+                    let tw = placed.width;
                     let ow = pen.width(&o.word, o.size);
-                    let tw = (ow + m.px(16.0)).max(m.px(44.0));
                     let tx = ox + ((tw - m.px(16.0) - ow) / 2.0).max(0.0);
                     let color = if o.on && !o.verb {
                         t.accent
@@ -1925,7 +1935,7 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                     } else {
                         t.muted
                     };
-                    let ob = if o.size == Size::Main { base } else { base + m.px(2.0) };
+                    let ob = base + placed.y + if o.size == Size::Main { 0.0 } else { m.px(2.0) };
                     let drawn = pen.text(tx, ob, &o.word, o.size, color, false);
                     if o.on && !o.verb {
                         pen.fill(tx, ob + m.px(5.0), drawn, 2.0, t.accent);
@@ -1933,16 +1943,15 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                     if let Some(n) = row.pick {
                         pen.hit(
                             ox - m.px(8.0),
-                            top.max(area.top),
+                            target_y.max(area.top),
                             tw,
-                            (top + h).min(area.bottom) - top.max(area.top),
+                            (target_y + m.px(44.0)).min(area.bottom) - target_y.max(area.top),
                             Target::Option(n, o.k),
                         );
                     }
-                    ox += tw + m.px(8.0);
                 }
                 if !after.is_empty() {
-                    pen.text(ox + m.px(4.0), base, after, Size::Small, t.muted, false);
+                    pen.text(x + end.0, base + end.1, after, Size::Small, t.muted, false);
                 }
             }
             K::Name { icon, name, what } => {
@@ -2255,9 +2264,8 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
 /// A row of one setting (C3, v0.161), where the row is one: a group of picks (its name, its picks side by side), a
 /// switch (on, off), a size (auto, then an A at each size around the one in use: T3), a value of a few short
 /// choices (side by side), else a value between its two words (less 35% more). None for any other row.
-fn choice_of(app: &App, m: &Metrics, p: usize, r: usize, room: f64) -> Option<K> {
-    let rows = &app.providers.get(p)?.rows.rows;
-    let row = rows.get(r)?;
+fn choice_of(app: &App, m: &Metrics, item: &Item, room: f64) -> Option<(f64, K)> {
+    let row = app.row_ref(item)?;
     let opt = |word: &str, k: usize, on: bool| Opt {
         word: word.to_string(),
         size: Size::Main,
@@ -2265,20 +2273,21 @@ fn choice_of(app: &App, m: &Metrics, p: usize, r: usize, room: f64) -> Option<K>
         on,
         verb: false,
     };
-    if let Some(run) = app.choice_group(p, r) {
-        let opts = run.iter().enumerate().map(|(k, i)| opt(&rows[*i].text, k, rows[*i].sign == "check")).collect();
-        return Some(K::Choice {
-            name: row.group.clone().unwrap_or_default(),
-            opts,
-            after: String::new(),
-        });
+    if let Item::Row(p, r) = item {
+        if let Some(run) = app.choice_group(*p, *r) {
+            let rows = &app.providers[*p].rows.rows;
+            let opts = run.iter().enumerate().map(|(k, i)| opt(&rows[*i].text, k, rows[*i].sign == "check")).collect();
+            return Some(choice_layout(m, room, row.group.as_deref().unwrap_or_default(), opts, String::new()));
+        }
     }
     if let Some(sw) = &row.switch {
-        return Some(K::Choice {
-            name: row.text.clone(),
-            opts: vec![opt("on", 0, sw.on), opt("off", 1, !sw.on)],
-            after: String::new(),
-        });
+        return Some(choice_layout(
+            m,
+            room,
+            &row.text,
+            vec![opt("on", 0, sw.on), opt("off", 1, !sw.on)],
+            String::new(),
+        ));
     }
     let st = row.step.as_ref()?;
     let n = st.values.len();
@@ -2299,26 +2308,19 @@ fn choice_of(app: &App, m: &Metrics, p: usize, r: usize, room: f64) -> Option<K>
                 verb: false,
             });
         }
-        return Some(K::Choice {
-            name: row.text.clone(),
-            opts,
-            after: now,
-        });
+        return Some(choice_layout(m, room, &row.text, opts, now));
     }
-    // side by side where they fit the row after its name, each a target of 44 pixels at least; else its two words
     let name_w = cells(&row.text) as f64 * m.cw;
     let need: f64 = st
         .values
         .iter()
         .map(|v| (cells(&v.0) as f64 * m.cw + m.px(16.0)).max(m.px(44.0)) + m.px(8.0))
         .sum();
-    if n <= 6 && need <= room - (name_w + m.px(24.0)).max(m.px(200.0)) {
+    let short_theme_list =
+        matches!(&app.view, View::Folder(_, uri) if uri.starts_with("spark-shell://theme/rows/settings/")) && st.values.iter().all(|v| cells(&v.0) <= 14);
+    if n <= 6 && (short_theme_list || need <= room - (name_w + m.px(24.0)).max(m.px(200.0))) {
         let opts = st.values.iter().enumerate().map(|(k, v)| opt(&v.0, k, k == st.at)).collect();
-        return Some(K::Choice {
-            name: row.text.clone(),
-            opts,
-            after: String::new(),
-        });
+        return Some(choice_layout(m, room, &row.text, opts, String::new()));
     }
     let verb = |word: &str, k: usize| Opt {
         word: word.to_string(),
@@ -2327,15 +2329,46 @@ fn choice_of(app: &App, m: &Metrics, p: usize, r: usize, room: f64) -> Option<K>
         on: false,
         verb: true,
     };
-    Some(K::Choice {
-        name: row.text.clone(),
-        opts: vec![
-            verb(&st.words.0, st.at.saturating_sub(1)),
-            opt(st.value(), st.at, true),
-            verb(&st.words.1, (st.at + 1).min(n.saturating_sub(1))),
-        ],
-        after: String::new(),
-    })
+    let opts = vec![
+        verb(&st.words.0, st.at.saturating_sub(1)),
+        opt(st.value(), st.at, true),
+        verb(&st.words.1, (st.at + 1).min(n.saturating_sub(1))),
+    ];
+    Some(choice_layout(m, room, &row.text, opts, String::new()))
+}
+
+fn choice_layout(m: &Metrics, room: f64, name: &str, options: Vec<Opt>, after: String) -> (f64, K) {
+    let target = m.px(44.0);
+    let gap = m.px(8.0);
+    let width = |o: &Opt| (cells(&o.word) as f64 * m.adv(o.size) + 2.0 * gap).max(target);
+    let column = (cells(name) as f64 * m.cw + m.px(24.0)).max(m.px(200.0));
+    let trailing = if after.is_empty() { 0.0 } else { cells(&after) as f64 * m.sw + gap };
+    let need = options.iter().map(|o| width(o) + gap).sum::<f64>() + trailing;
+    // Keep every option visible on a narrow screen. Its hit box follows it onto the next line.
+    let (mut x, mut y) = if column + need <= room { (column, 0.0) } else { (0.0, target) };
+    let mut opts = Vec::with_capacity(options.len());
+    for opt in options {
+        let w = width(&opt);
+        if x > 0.0 && x + w > room {
+            x = 0.0;
+            y += target;
+        }
+        opts.push(PlacedOption { opt, x, y, width: w });
+        x += w + gap;
+    }
+    if trailing > 0.0 && x + trailing > room {
+        x = 0.0;
+        y += target;
+    }
+    (
+        y + target,
+        K::Choice {
+            name: name.into(),
+            opts,
+            after,
+            end: (x + m.px(4.0), y),
+        },
+    )
 }
 
 /// Keep the poster in view while the list scrolls. A wide frame gives each its own column.
@@ -2428,7 +2461,7 @@ fn theme_poster(app: &App, pen: &mut Pen, whole: Area, row: &crate::model::Row) 
     let strip = if palette { m.px(8.0) } else { 0.0 };
     pen.hit(left, top, w, h - strip, Target::Key(HintKey::View));
     if palette {
-        pen.hit(left, top + h - strip, w, strip, Target::Key(HintKey::Open));
+        pen.hit(left, top + h - strip, w, bottom + m.px(12.0) - (top + h - strip), Target::Key(HintKey::Open));
     }
     if side {
         list_area
@@ -2465,7 +2498,7 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     if matches!(&app.view, View::Folder(_, uri) if uri.starts_with(crate::appearance::PALETTES))
         && app.input.is_empty()
         && whole.right - whole.left >= m.px(460.0)
-        && whole.bottom - whole.top >= m.px(562.0)
+        && whole.bottom - whole.top >= m.px(580.0)
     {
         return terminal_colors(app, pen, whole, shape);
     }
@@ -2511,14 +2544,14 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
 fn terminal_colors(app: &App, pen: &mut Pen, whole: Area, shape: Shape) {
     let m = *pen.m;
     let shape = Shape {
-        one: 38.0,
+        one: 44.0,
         pad: 8.0,
         heads: false,
         ..shape
     };
     let mid = ((whole.left + whole.right) / 2.0).round();
     let head = |s: &str| Row {
-        h: m.px(36.0),
+        h: m.px(32.0),
         pick: None,
         k: K::Head(s.into(), false, None),
     };
@@ -2548,7 +2581,7 @@ fn terminal_colors(app: &App, pen: &mut Pen, whole: Area, shape: Shape) {
         }
     }
     let mut controls = whole;
-    if whole.bottom - whole.top >= m.px(642.0) {
+    if whole.bottom - whole.top >= m.px(654.0) {
         let color = |id: &str| app.folder.as_ref()?.2.rows.iter().find(|r| r.id == id)?.swatch;
         if let (Some(bg), Some(fg), Some(accent), Some(blue), Some(green)) = (
             color("theme:color:BG"),
