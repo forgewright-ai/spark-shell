@@ -447,6 +447,61 @@ fn the_app_spacing_setting_sets_an_apps_row() {
     }
 }
 
+#[test]
+fn theme_browsing_keeps_search_and_separates_inspection_from_apply() {
+    let parse = |value: serde_json::Value| spark_dialog::model::rows(&value.to_string()).unwrap();
+    let mut a = home();
+    let mut theme = Provider::new("theme");
+    theme.ready = true;
+    let gallery = "spark-shell://theme/rows/gallery";
+    let card = format!("{gallery}/nord");
+    let tool = json!({"name":"theme_palette","arguments":{"name":"nord"}});
+    theme.rows = parse(json!({"title":"theme","rows":[
+        {"id":"theme:nord","text":"nord","tool":tool},
+        {"id":"theme:gallery:open","text":"Browse themes","children":gallery},
+        {"id":"theme:show:Animation","text":"Dialog motion","children":"spark-shell://theme/rows/animations"}
+    ]}));
+    a.providers = vec![theme];
+    a.view = View::Section(0);
+    let overview = scene(&mut a, 600.0, 800.0);
+    assert!(words(&overview).iter().any(|w| w.0 == "Browse themes"));
+    assert!(!words(&overview).iter().any(|w| w.0 == "nord"));
+    for c in "nord".chars() {
+        a.typed(c);
+    }
+    assert!(a.items().contains(&spark_dialog::app::Item::Row(0, 0)));
+    a.input.clear();
+    a.view = View::Folder(0, gallery.into());
+    a.folder = Some((
+        0,
+        gallery.into(),
+        parse(json!({"title":"Theme gallery","state":"1 theme","rows":[
+            {"id":"theme:entry:nord","text":"nord","children":card,"chip":["#2e3440","#d8dee9","#88c0d0"]}
+        ]})),
+    ));
+    (a.in_list, a.sel) = (true, 0);
+    assert_eq!(kind(&a), Kind::Page);
+    assert!(words(&scene(&mut a, 600.0, 800.0)).iter().any(|w| w.0 == "1 theme"));
+    a.enter();
+    assert_eq!(a.view, View::Folder(0, card.clone()));
+    assert!(!a.under_way());
+    a.folder = Some((
+        0,
+        card,
+        parse(json!({"title":"nord","rows":[
+            {"id":"theme:apply:nord","text":"apply theme","tool":tool,"quiet":true,"chip":["#2e3440","#d8dee9","#88c0d0"]},
+            {"id":"theme:detail:wall","text":"wallpaper","columns":["fjord"],"group":"wallpaper and motion"}
+        ]})),
+    ));
+    for width in [480.0, 1100.0] {
+        let detail = scene(&mut a, width, 800.0);
+        for caption in ["apply theme", "wallpaper", "fjord"] {
+            assert!(words(&detail).iter().any(|w| w.0 == caption), "{width}: {caption}");
+        }
+        assert!(!fills(&detail, [0x2e, 0x34, 0x40]).is_empty());
+    }
+}
+
 /// Settings (v0.161): its groups named at 28 pixels, as apps' and files' are; a setting two lines, its name over
 /// what it is set to now. Look is named appearance, and notifications is a group of its own.
 #[test]
@@ -1413,4 +1468,47 @@ fn the_scenes_are_painted_with_cairo_and_pango() {
         }
     }
     font.free(&lib);
+}
+
+#[test]
+fn theme_wallpaper_follows_the_highlight_and_the_viewer_never_applies() {
+    use spark_dialog::app::HintKey;
+    use spark_dialog::files::Peek;
+    use spark_dialog::preview;
+    let mut a = home();
+    let mut theme = Provider::new("theme");
+    theme.ready = true;
+    a.providers = vec![theme];
+    let gallery = "spark-shell://theme/rows/gallery";
+    let uri = "spark-shell://theme/preview/nord";
+    let poster = "/tmp/theme-wallpaper.png";
+    let row = json!({"id":"theme:entry:nord","text":"nord","children":format!("{gallery}/nord"),"page":uri,"chip":["#282828","#eeeeee","#88c0d0"]});
+    let rows = json!({"title":"Theme gallery","rows":[row,{"id":"theme:entry:harbor","text":"harbor","children":format!("{gallery}/harbor"),"page":"spark-shell://theme/preview/harbor"}]});
+    a.view = View::Folder(0, gallery.into());
+    a.folder = Some((0, gallery.into(), spark_dialog::model::rows(&rows.to_string()).unwrap()));
+    a.in_list = true;
+    let pg = preview::page(uri, &json!({"title":"nord","picture":poster,"facts":["fjord"]}).to_string()).unwrap();
+    a.files.peek = Some(Peek {
+        uri: uri.into(),
+        page: Some(pg),
+    });
+    for width in [480.0, 1060.0] {
+        let s = scene(&mut a, width, 800.0);
+        let picture = s.pictures.first().unwrap();
+        assert_eq!(picture.file, poster);
+        assert!(picture.h > 60.0 && picture.w > 200.0);
+        assert_eq!(s.hit(picture.x + 4.0, picture.y + 4.0), Some(&Target::Key(HintKey::View)));
+        assert!(words(&s).iter().any(|w| w.0 == "fjord"));
+    }
+    a.sel = 1;
+    assert!(
+        scene(&mut a, 600.0, 800.0).pictures.is_empty(),
+        "a late poster cannot appear under another name"
+    );
+    a.sel = 0;
+    a.hint_key(HintKey::View);
+    assert_eq!(a.view, View::Preview);
+    a.enter();
+    assert_eq!(a.view, View::Folder(0, gallery.into()));
+    assert!(!a.under_way());
 }

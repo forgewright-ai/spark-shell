@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the signs and the sizes
 # sets: PANEL_APP PANEL_BLOCKS PANEL_CACHE PANEL_COL PANEL_CROSS PANEL_DOT PANEL_DOWN PANEL_GO PANEL_IN PANEL_LOOKS PANEL_MARK PANEL_ORDER PANEL_PROMPT PANEL_RING PANEL_SEP PANEL_SIZE PANEL_TICK PANEL_UP PANEL_WARN PULSE_W
-# reads: BAR_SYS CONFIG_DIR OS PALETTE_DIR PULSE REPO STATE_DIR TMP
+# reads: BAR_SYS CONFIG_DIR CORE_DIR OS PALETTE_DIR PULSE REPO STATE_DIR TMP
 PANEL_APP='spark-dialog'              # the desktop window's app id: the dialog's
 PANEL_SIZE=60x40                      # columns x rows of the desktop window
 PANEL_COL=9                           # the section column: as wide as reminders
@@ -104,7 +104,7 @@ read_once() {   # read_once KEY PROBE [ARG...] -> PROBE's lines and status, aske
 }
 read_once_ask() { shift 2; "$@"; }   # FILE KEY PROBE [ARG...] -> the probe asked
 read_once_end() { [ -n "${ROWS_READ:-}" ] || return 0; set -- "$ROWS_READ".*; [ ! -e "$1" ] || rm -f "$@"; }   # the read's answers removed
-THEME_DIRS() { printf '%s %s' "$REPO/gallery/theme" "$PALETTE_DIR"; }   # the folders the palettes and the saved themes are read from
+THEME_DIRS() { printf '%s %s %s' "$REPO/gallery/theme" "$CORE_DIR" "$PALETTE_DIR"; }   # the folders the palettes and the saved themes are read from
 panel_dir() { mkdir_state "$PANEL_CACHE" && chmod 700 "$PANEL_CACHE"; }   # 700: names of networks, devices and apps
 panel_age() {   # panel_age NAME SECONDS -- an answer made older by that much
     _pc_file=$PANEL_CACHE/$1; [ -f "$_pc_file" ] || return 0

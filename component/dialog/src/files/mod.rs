@@ -298,7 +298,7 @@ pub struct State {
     pub pane: bool,
     /// What the file the details are of shows, and the request for it on its way: the provider, the request.
     pub peek: Option<Peek>,
-    pub peek_asked: Option<(usize, u64)>,
+    pub peek_asked: Option<(usize, u64, String)>,
 }
 
 impl Default for State {

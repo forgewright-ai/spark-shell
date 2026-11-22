@@ -3,6 +3,7 @@
 
 pub mod animation;
 pub mod app;
+mod appearance;
 pub mod apps;
 pub mod audit;
 pub mod calendar;

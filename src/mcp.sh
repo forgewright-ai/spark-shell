@@ -165,6 +165,27 @@ provide_resource_files() {   # provide_resource_files ID METHOD URI -- the files
 }
 provide_resource_special() {   # provide_resource_special ID METHOD URI -- one section's own resources: a read of them, or system's running list watched; false when the uri is not one
     case $sec:$2:$3 in
+        theme:resources/read:spark-shell://theme/rows/settings/?*)
+            if provide_rows theme | appearance_section "${3#spark-shell://theme/rows/settings/}" > "$TMP/theme.section"; then
+                rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.section")"
+            else rpc_error "$1" -32002 "no theme settings at that uri"; fi ;;
+        theme:resources/read:spark-shell://theme/current-wallpaper|theme:resources/read:spark-shell://theme/current-wallpaper'?full=1')
+            _af=''; case $3 in *'?full=1') _af=full ;; esac
+            if appearance_preview "${THEME:-none}" "$_af" current > "$TMP/theme.preview"; then
+                rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.preview")"
+            else rpc_error "$1" -32002 "no active theme wallpaper"; fi ;;
+        theme:resources/read:spark-shell://theme/preview/?*)
+            _ap=${3#spark-shell://theme/preview/}; _af=''
+            case $_ap in *'?full=1') _ap=${_ap%'?full=1'}; _af=full ;; esac
+            if appearance_preview "$_ap" "$_af" > "$TMP/theme.preview"; then
+                rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.preview")"
+            else rpc_error "$1" -32002 "no wallpaper at that uri"; fi ;;
+        theme:resources/read:spark-shell://theme/rows/gallery)
+            rpc_result "$1" "$(appearance_gallery | jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}')" ;;
+        theme:resources/read:spark-shell://theme/rows/gallery/*)
+            if appearance_detail "${3#spark-shell://theme/rows/gallery/}" > "$TMP/theme.detail"; then
+                rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.detail")"
+            else rpc_error "$1" -32002 "no theme at that uri"; fi ;;
         theme:resources/read:spark-shell://theme/rows/wallpapers)
             provide_wall_rows > "$TMP/wall.last"   # for the gate
             rpc_result "$1" "$(jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/wall.last")" ;;
@@ -428,7 +449,7 @@ provide_call_answer() {   # provide_call_answer ID -- the result: the receipt, t
 provide_quick() {   # provide_quick SECTION TOOL VALUE -> 0 when the rows always list it
     [ "$1" = theme ] || return 1
     case $2 in
-        theme_palette) case $(theme_kind "$3") in shipped|yours|saved|none) return 0 ;; look) [ "$3" = "${THEME:-}" ] ;; *) return 1 ;; esac ;;
+        theme_palette) case $(theme_kind "$3") in shipped|bundled|yours|saved|none) return 0 ;; look) [ "$3" = "${THEME:-}" ] ;; *) return 1 ;; esac ;;
         theme_wallpaper) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && { wall_shipped "$3" || [ "$3" = default ]; } ;;
         theme_text) case $3 in bigger|smaller|[6-9]|[1-3][0-9]|40) [ -n "$(look_font_size)" ] ;; *) return 1 ;; esac ;;
         theme_transparency) case ${3%\%} in more|less|[0-9]|[1-4][0-9]|50) return 0 ;; *) return 1 ;; esac ;;

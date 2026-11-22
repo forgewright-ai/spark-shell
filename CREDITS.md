@@ -92,6 +92,9 @@ upstream on its first line.
 - Solarized -- https://ethanschoonover.com/solarized -- MIT.
 - Tokyo Night -- https://github.com/folke/tokyonight.nvim -- Apache-2.0.
 
+The bundled harbor, meadowlark and nightswim themes and nightswim's
+picture come from spark-shell-gallery, gallery-v3 (MIT).
+
 ## The wallpaper drawings
 
 - NumPy -- https://github.com/numpy/numpy -- BSD-3-Clause.

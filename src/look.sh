@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # ------------------------------------------------------------- the slots
 # sets: HEX_KEYS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_THEMES SCENE_MAKE SCENE_READY SLOT_KEYS THUMB_DIR VGA_HEX WALL_GROUND_SAID WALL_KEYS WALL_NAMES WALL_SCENES WALL_SHIPPED WALL_TYPES WIN_KEYS
-# reads: MODE PATH_REFUSED PM POINTER_SEEN REPO STATE_DIR TERM_HEX THEME_ENV THEME_KEYS TMP WALL_CACHE
+# reads: CORE_DIR MODE PATH_REFUSED PM POINTER_SEEN REPO STATE_DIR TERM_HEX THEME_ENV THEME_KEYS TMP WALL_CACHE
 # slots (0-15), not hex: one file serves the console and an emulator;
 # spark reads SPARK_*_SGR at a tty
 SLOT_KEYS="ACCENT_SLOT MUTED_SLOT ACCENT_STAR MUTED_STAR ACCENT_SGR MUTED_SGR"
@@ -179,6 +179,7 @@ wall_follow() {   # draws the wallpaper in the palette in use when missing; a ro
     wall_shipped "$WALLPAPER" || return 0
     [ -n "${THEME:-}" ] && [ "$THEME" != none ] || return 0
     _td=$(theme_dir "$THEME")
+    case $_td in "$CORE_DIR"/*) _td='' ;; esac   # derived art belongs in the user's wallpaper cache
     if [ -n "$_td" ]; then [ "$(look_get "$_td" DRAWING)" = "$WALLPAPER" ] && [ -f "$_td/wallpaper.png" ] && return 0; _wb=$_td/wallpaper
     else wall_own "$WALLPAPER" && return 0; _wb=$WALL_CACHE/$WALLPAPER-$THEME; fi
     [ ! -f "$_wb.png" ] || return 0

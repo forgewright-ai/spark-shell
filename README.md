@@ -105,6 +105,23 @@ help lists them by subject. The bindings are named actions in
 The settings live in `~/.config/spark-shell/config`. `config.example`
 lists every key with its default, and the commands write them.
 
+## Theme settings
+
+Open **settings > theme > Browse themes**. The **Theme gallery** opens
+directly on the 34 bundled themes, including their wallpaper, motion,
+typeface and glyph settings. It works offline on a fresh install and
+after an update. Move through the list to see each wallpaper. Click the
+picture or press F3 for a larger view. Esc takes you back. Enter on a
+theme opens its details. Choose **apply theme** there to use it.
+Wallpaper and motion, type and glyphs, and interface settings can also
+be changed on their own.
+
+The bundled collection lives in `gallery/core/`. Personal themes take
+precedence when names match. They live in `$XDG_CONFIG_HOME/spark-shell/themes/`
+(default `~/.config/spark-shell/themes/`). To add a named collection, put
+its installed theme keys, one per line, in the adjacent `galleries/`
+directory, for example `studio.list`.
+
 ## Contributing
 
 The dialog, bar and winpad share the Rust library in `component/theme`.

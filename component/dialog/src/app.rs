@@ -296,6 +296,7 @@ pub fn thing_of(label: &str) -> &'static str {
         "wifi" => "Network",
         "bt" => "Device",
         "storage" => "Drive",
+        "theme" => "Theme",
         _ => "File",
     }
 }
@@ -1693,14 +1694,21 @@ impl App {
             }
             Kind::Peek => {
                 // what the file lit shows, for its details beside the list: the answer for the file lit now alone
-                self.files.peek_asked = None;
+                let Some((_, _, asked)) = self.files.peek_asked.take_if(|(p, id, _)| (*p, *id) == (idx, n)) else {
+                    return;
+                };
                 let text = result
                     .as_ref()
                     .and_then(|r| r.pointer("/contents/0/text"))
                     .and_then(Value::as_str)
                     .unwrap_or("");
                 let of = result.as_ref().and_then(|r| r.pointer("/contents/0/uri")).and_then(Value::as_str).map(scrub);
-                if let Some(pk) = self.files.peek.as_mut().filter(|pk| of.as_deref().is_none_or(|u| u == pk.uri)) {
+                if let Some(pk) = self
+                    .files
+                    .peek
+                    .as_mut()
+                    .filter(|pk| pk.uri == asked && of.as_deref().is_none_or(|u| u == pk.uri))
+                {
                     // a page that did not come says nothing, and is not asked for again
                     let page = preview::page(&pk.uri, text).filter(|_| text.len() <= mcp::RESOURCE_MAX);
                     pk.page = Some(page.unwrap_or_default());
@@ -1844,9 +1852,8 @@ impl App {
                 }
                 Kind::Peek => {
                     // the details say nothing of what the file shows, and ask no more
-                    if self.files.peek_asked == Some((idx, id)) {
-                        self.files.peek_asked = None;
-                        if let Some(pk) = self.files.peek.as_mut() {
+                    if let Some((_, _, asked)) = self.files.peek_asked.take_if(|(p, n, _)| (*p, *n) == (idx, id)) {
+                        if let Some(pk) = self.files.peek.as_mut().filter(|pk| pk.uri == asked) {
                             pk.page = Some(preview::Page::default());
                         }
                     }
@@ -1947,6 +1954,9 @@ impl App {
     /// A section's rows under their groups, as its own view shows them; under the section's name too
     /// where a view holds more than one section.
     fn section_rows(&self, p: usize, out: &mut Vec<Item>, heading: bool) {
+        if !heading && self.query().is_empty() && self.providers[p].label == "theme" && crate::appearance::overview(p, &self.providers[p].rows, out) {
+            return;
+        }
         let mut rows = vec![];
         let mut group: Option<String> = None;
         for (i, r) in self.providers[p].rows.rows.iter().enumerate() {
@@ -3690,6 +3700,14 @@ impl App {
             self.files_page_key(HintKey::View);
             return;
         }
+        if free {
+            if let Some(id) = crate::appearance::candidate(self).map(|(_, r)| r.id.clone()) {
+                self.light_row(&id);
+                if self.open_preview() {
+                    return;
+                }
+            }
+        }
         if free && !self.files_page_open() && self.lit_has_page() && self.open_preview() {
             return;
         }
@@ -4541,6 +4559,9 @@ impl App {
         if self.preview_key() {
             let Some(pv) = &self.preview else { return };
             let (p, row) = (pv.prov, pv.row().clone());
+            if self.providers[p].label == "theme" {
+                return self.escape();
+            }
             self.stop_sound();
             if let Some(call) = row.tool {
                 self.pick_step(p, call, &row.text);
@@ -6876,13 +6897,31 @@ impl App {
                     add(&mut v, w, k);
                 }
             }
+            View::Section(p)
+                if self.providers[*p].label == "theme"
+                    && self.input.is_empty()
+                    && self.providers[*p].rows.rows.iter().any(|r| r.id.starts_with("theme:settings:")) =>
+            {
+                add(&mut v, "Open", "Enter");
+                if crate::appearance::candidate(self).is_some() {
+                    add(&mut v, "Wallpaper", "F3");
+                }
+            }
+            View::Folder(_, uri) if crate::appearance::gallery(&self.view) && crate::appearance::candidate(self).is_some() => {
+                if uri == crate::appearance::GALLERY {
+                    add(&mut v, "Details", "Enter");
+                } else if crate::appearance::candidate(self).is_some_and(|(_, r)| r.sign != "check") {
+                    add(&mut v, "Apply", "Enter");
+                }
+                add(&mut v, "Wallpaper", "F3");
+            }
             View::Dest(_) | View::Section(_) | View::Folder(..) | View::Found(..) => {
                 let rows = self.view_rows();
                 if rows.iter().any(|r| !r.more.is_empty()) {
                     add(&mut v, "Actions", "F9");
                 }
                 if rows.iter().any(|r| r.page.is_some()) {
-                    add(&mut v, "View", "F3");
+                    add(&mut v, if crate::appearance::gallery(&self.view) { "Wallpaper" } else { "View" }, "F3");
                 }
                 if rows.iter().any(|r| r.step.is_some()) {
                     add(&mut v, "Change", "\u{2190} \u{2192}");
@@ -7481,9 +7520,19 @@ impl App {
             ),
             _ => (section_name(&self.providers[p].label).to_lowercase(), self.providers[p].rows.rows.clone()),
         };
-        let Some(pv) = Preview::new(p, &place, &rows, &row.id) else {
+        let Some(mut pv) = Preview::new(p, &place, &rows, &row.id) else {
             return false;
         };
+        if self.providers[p].label == "theme" {
+            let viewed = &mut pv.files[pv.at];
+            if viewed.id.starts_with("theme:apply:") {
+                viewed.text.clone_from(&place);
+            } else if viewed.id == "theme:gallery:open" {
+                if let Some(name) = viewed.columns.first() {
+                    viewed.text.clone_from(name);
+                }
+            }
+        }
         // the words that filtered the folder go: in the preview Space plays and Esc goes back (#163)
         self.set_input(String::new());
         self.preview = Some(pv);
@@ -7749,7 +7798,7 @@ impl App {
             keys.push((pv.map(|pv| thing_of(&self.providers[pv.prov].label)).unwrap_or("File"), "\u{2191} \u{2193}"));
         }
         // what Enter does to the thing shown, in its tool's word (Open an app, Connect a network); nothing where it has no tool
-        if let Some(t) = pv.and_then(|pv| pv.row().tool.as_ref()) {
+        if let Some(t) = pv.filter(|pv| self.providers[pv.prov].label != "theme").and_then(|pv| pv.row().tool.as_ref()) {
             keys.push((verb_of(&t.name), "Enter"));
         }
         if !zoomed && own.is_some_and(|k| k.play) {

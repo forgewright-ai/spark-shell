@@ -1,14 +1,19 @@
 # shellcheck extended-analysis=false
 # ------------------------------------------------------------ the palette
-# sets: CONSOLE_NOW KEPT_LAYOUTS KEPT_MAX LOOKS_DIR LOOK_FORMAT PALETTE_DIR PTS_DIR VT_SYSFS WALL_CACHE WALL_COVER
+# sets: CONSOLE_NOW CORE_DIR KEPT_LAYOUTS KEPT_MAX LOOKS_DIR LOOK_FORMAT PALETTE_DIR PTS_DIR VT_SYSFS WALL_CACHE WALL_COVER
 # reads: ANIMATION_NAMES CONFIG_DIR CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GLYPH_FAMILIES MODE OS PALETTE_MARK PATH_SAID REPO ROOT STATE_DIR TAB TERMINAL_SEEN TERM_NAME THEME_ENV THEME_KEYS TMP VGA_HEX WALL_TYPES
 PALETTE_DIR=$CONFIG_DIR/themes
+CORE_DIR=$REPO/gallery/core
 # theme.env, rendered from the palette, is what spark and every render read
 palette_file() {   # palette_file NAME -> the palette's file; false when none
     case $1 in ''|.*|*[!A-Za-z0-9._-]*) return 1 ;; esac
-    for _p in "$PALETTE_DIR/$1/palette.env" "$LOOKS_DIR/$1/palette.env" "$PALETTE_DIR/$1.env" "$REPO/gallery/theme/$1.env"; do
+    for _p in "$PALETTE_DIR/$1/palette.env" "$LOOKS_DIR/$1/palette.env" "$PALETTE_DIR/$1.env" "$REPO/gallery/theme/$1.env" "$CORE_DIR/$1/palette.env"; do
         [ -f "$_p" ] && { printf '%s' "$_p"; return 0; }
     done
+    # A curated variant can reuse the stock colors under its own key.
+    case $1 in core-*) _p=$REPO/gallery/theme/${1#core-}.env
+        if [ -f "$CORE_DIR/$1/look.env" ] && [ -f "$_p" ]; then printf '%s' "$_p"; return 0; fi ;;
+    esac
     return 1
 }
 # look.env format 1 (no FORMAT line) has FONT for FACE and TEXT_SIZE
@@ -16,18 +21,30 @@ LOOK_FORMAT=2   # a newer format is refused, not half read
 theme_dir() {   # theme_dir NAME -> its folder, or nothing
     case $1 in ''|.*|*[!A-Za-z0-9._-]*) return 0 ;; esac
     for _d in "$PALETTE_DIR/$1" "$LOOKS_DIR/$1"; do [ -f "$_d/palette.env" ] && { printf '%s' "$_d"; return 0; }; done
+    if [ ! -f "$PALETTE_DIR/$1.env" ] && [ -f "$CORE_DIR/$1/look.env" ]; then printf '%s' "$CORE_DIR/$1"; fi
     return 0
 }
-theme_kind() {   # theme_kind NAME -> saved | look | yours | shipped | none
+theme_kind() {   # theme_kind NAME -> saved | look | yours | shipped | bundled | none
     case $1 in none) echo none; return ;; ''|.*|*[!A-Za-z0-9._-]*) return 0 ;; esac
     if [ -f "$PALETTE_DIR/$1/palette.env" ]; then echo saved
     elif [ -f "$LOOKS_DIR/$1/palette.env" ]; then echo look
     elif [ -f "$PALETTE_DIR/$1.env" ]; then echo yours
-    elif [ -f "$REPO/gallery/theme/$1.env" ]; then echo shipped; fi
+    elif [ -f "$REPO/gallery/theme/$1.env" ]; then echo shipped
+    elif [ -f "$CORE_DIR/$1/look.env" ]; then echo bundled; fi
 }
 theme_saved_names() { for _d in "$PALETTE_DIR"/*/; do [ -f "${_d}palette.env" ] || continue; _d=${_d%/}; printf '%s\n' "${_d##*/}"; done | sort; }
+core_theme_ids() { awk -F '\t' '{print (NF == 2 ? $2 : $1)}' "$CORE_DIR/themes.tsv"; }
+theme_names() { { palette_names; theme_saved_names; core_theme_ids; } | LC_ALL=C sort -u; }
+theme_label() {
+    case $1 in
+        core-*) [ ! -f "$CORE_DIR/$1/look.env" ] || { printf '%s' "${1#core-}"; return; } ;;
+        first-*) if [ -f "$CORE_DIR/core-${1#first-}/look.env" ] &&
+            grep -qxF "$1" "$CONFIG_DIR/galleries/first-gallery.list" 2>/dev/null; then printf '%s' "${1#first-}"; return; fi ;;
+    esac
+    printf '%s' "$1"
+}
 theme_enum() { dirs_cached theme.enum "$(THEME_DIRS)" theme_enum_now; }   # -> the schema's enum, a|b|c
-theme_enum_now() { { palette_names; theme_saved_names; echo none; } | LC_ALL=C grep -E '^[A-Za-z0-9._-]+$' | sort -u | paste -sd'|' -; }
+theme_enum_now() { { theme_names; echo none; } | LC_ALL=C grep -E '^[A-Za-z0-9._-]+$' | sort -u | paste -sd'|' -; }
 look_get() { sed -n "s/^$2=//p" "$1/look.env" 2>/dev/null | head -1 | tr -d '\001-\037\177'; }   # look_get DIR KEY -> the value, control characters dropped
 look_set() {   # look_set DIR KEY VALUE
     mkdir -p "$1"; { [ ! -f "$1/look.env" ] || grep -v "^$2=" "$1/look.env"; printf '%s=%s\n' "$2" "$3"; } > "$1/look.env.new" && mv "$1/look.env.new" "$1/look.env"
@@ -72,7 +89,7 @@ theme_source_of() {   # theme_source_of DIR -> palette name, words or picture
 theme_words_of() {   # theme_words_of NAME -> its words, else NAME
     _td=$(theme_dir "$1"); _tw=''
     case $_td in "$LOOKS_DIR"/*) _tw=$(look_get "$_td" WORDS) ;; esac
-    printf '%s' "${_tw:-$1}"
+    if [ -n "$_tw" ]; then printf '%s' "$_tw"; else theme_label "$1"; fi
 }
 # a kept kind: the last ten applied, in KIND.history
 LOOKS_DIR=$STATE_DIR/looks            # looks not saved

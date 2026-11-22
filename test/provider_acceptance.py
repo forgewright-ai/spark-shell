@@ -54,6 +54,89 @@ class Providers(unittest.TestCase):
         reply = self.provider(section, rpc(1, "resources/read", uri=f"spark-shell://{section}/rows"))
         return json.loads(reply[1]["result"]["contents"][0]["text"])["rows"]
 
+    def test_bundled_theme_gallery_opens_directly_and_applies_only_on_request(self):
+        cfgdir = self.home / "config/spark-shell"
+        cfgdir.mkdir(parents=True)
+        config = cfgdir / "config"
+        before = "THEME=nord\nDESKTOP=sway\nWALLPAPER=fjord\n"
+        config.write_text(before)
+        base = "spark-shell://theme/rows/gallery"
+        names = [line.split("\t") for line in (REPO / "gallery/core/themes.tsv").read_text().splitlines()]
+        ids = [parts[-1] for parts in names]
+        requests = [rpc(1, "resources/read", uri=base)]
+        requests += [rpc(i, "resources/read", uri=base + "/" + key) for i, key in enumerate(ids, 2)]
+        replies = self.provider("theme", *requests)
+        gallery, *cards = [json.loads(replies[q["id"]]["result"]["contents"][0]["text"]) for q in requests]
+        self.assertEqual((gallery["title"], gallery["state"]), ("Theme gallery", "34 themes"))
+        self.assertEqual([r["text"] for r in gallery["rows"]], [parts[0] for parts in names])
+        self.assertTrue(all(not r.get("group") and not r.get("tool") and not r.get("look") for r in gallery["rows"]))
+        for parts, row, card in zip(names, gallery["rows"], cards):
+            self.assertEqual(row["children"], base + "/" + parts[-1])
+            self.assertEqual(card["title"], parts[0])
+            self.assertEqual(card["rows"][0]["tool"], {"name": "theme_palette", "arguments": {"name": parts[-1]}})
+        self.assertEqual(config.read_text(), before)
+        self.assertFalse((cfgdir / "themes").exists())
+        result = self.provider("theme", call(1, "theme_palette", name="ring-shadow"))[1]["result"]
+        self.assertFalse(result["isError"])
+        for setting in ("THEME=ring-shadow", "WALLPAPER=orbit", "WALLPAPER_MOTION=on", "GLYPH_FAMILY=banner"):
+            self.assertIn(setting, config.read_text().splitlines())
+
+    def test_theme_wallpapers_are_read_only_and_settings_keep_their_controls(self):
+        cfg = self.home / "config/spark-shell/config"
+        cfg.parent.mkdir(parents=True)
+        before = "THEME=nord\nWALLPAPER=fjord\nDESKTOP=sway\nDIALOG_ANIMATION=none\n"
+        cfg.write_text(before)
+        base = "spark-shell://theme/"
+        paths = ("rows", "rows/settings/type", "rows/gallery", "rows/gallery/nightswim",
+                 "preview/nord", "preview/nightswim", "preview/nord?full=1", "current-wallpaper")
+        calls = [rpc(i, "resources/read", uri=base + path) for i, path in enumerate(paths, 1)]
+        replies = self.provider("theme", *calls)
+        root, section, gallery, detail, nord, photo, full, current = [
+            json.loads(replies[q["id"]]["result"]["contents"][0]["text"]) for q in calls]
+        groups = [r["text"] for r in root["rows"] if r["id"].startswith("theme:settings:")]
+        self.assertIn("Type and glyphs", groups)
+        self.assertIn("Manage themes", groups)
+        self.assertEqual(section["title"], "Type and glyphs")
+        self.assertEqual(next(r["step"]["set"]["name"] for r in section["rows"] if r["text"]=="Glyph family"), "theme_family")
+        self.assertTrue(all(r["page"] == base + "preview/" + r["id"].split(":")[-1] for r in gallery["rows"]))
+        self.assertEqual(detail["rows"][0]["page"], base+"preview/nightswim")
+        self.assertEqual(nord["facts"], ["fjord"])
+        self.assertEqual(photo["facts"], ["nightswim.png"])
+        if sys.platform != "darwin":
+            self.assertEqual(current["facts"], ["fjord"])
+        self.assertTrue(full["full"])
+        for preview in (nord, photo, full):
+            self.assertEqual(Path(preview["picture"]).read_bytes()[:8], bytes.fromhex("89504e470d0a1a0a"))
+        bad = self.provider("theme", rpc(1, "resources/read", uri=base+"preview/../nord"))
+        self.assertIn("error", bad[1])
+        self.assertEqual(cfg.read_text(), before)
+
+    def test_preview_install_and_personal_theme_take_precedence(self):
+        cfgdir = self.home / "config/spark-shell"
+        themes = cfgdir / "themes"
+        themes.mkdir(parents=True)
+        colors = REPO / "gallery/theme/dracula.env"
+        for name, anim in (("first-dracula", "sun"), ("ring-shadow", "flight")):
+            folder = themes / name
+            folder.mkdir()
+            shutil.copyfile(colors, folder / "palette.env")
+            (folder / "look.env").write_text(f"FORMAT=2\nPALETTE=dracula\nANIMATION={anim}\n")
+        (cfgdir / "galleries").mkdir()
+        (cfgdir / "galleries/first-gallery.list").write_text("first-dracula\nring-shadow\n")
+        (cfgdir / "config").write_text("THEME=first-dracula\nDESKTOP=sway\n")
+        base = "spark-shell://theme/rows/gallery"
+        reads = [rpc(i, "resources/read", uri=base + tail)
+                 for i, tail in enumerate(("", "/first-dracula", "/ring-shadow"), 1)]
+        replies = self.provider("theme", *reads)
+        gallery, dracula, ring = [json.loads(replies[i]["result"]["contents"][0]["text"]) for i in range(1, 4)]
+        self.assertEqual(len(gallery["rows"]), 34)
+        self.assertTrue(all(not r.get("group") for r in gallery["rows"]))
+        selected = next(r for r in gallery["rows"] if r["sign"] == "check")
+        self.assertEqual((selected["text"], selected["children"]), ("dracula", base + "/first-dracula"))
+        for card, expected in ((dracula, "sun"), (ring, "flight")):
+            motion = next(r for r in card["rows"] if r["id"] == "theme:detail:animation")
+            self.assertEqual(motion["columns"], [expected])
+
     def test_duplicate_notes_keep_exact_identity_and_ambiguous_append_changes_nothing(self):
         notes = self.home / "notes"
         notes.mkdir()
