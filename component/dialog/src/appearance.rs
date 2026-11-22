@@ -15,6 +15,9 @@ pub(crate) fn section(view: &View) -> bool {
 
 pub(crate) fn terminal_palette(app: &App) -> Option<(usize, String)> {
     let (p, row) = candidate(app)?;
+    if row.id.starts_with("theme:room:") {
+        return None; // a collection poster is not a single palette
+    }
     let name = row.page.as_ref()?.strip_prefix("spark-shell://theme/preview/")?;
     Some((p, format!("{PALETTES}{name}")))
 }
@@ -29,7 +32,7 @@ pub(crate) fn candidate(app: &App) -> Option<(usize, &Row)> {
             .map(|r| (*p, r)),
         View::Folder(p, uri) if gallery(&app.view) => {
             let rows = &app.folder.as_ref().filter(|(_, u, _)| u == uri)?.2.rows;
-            if uri == GALLERY {
+            if uri == GALLERY || uri.strip_prefix(GALLERY).is_some_and(|tail| tail.starts_with("/collection/")) {
                 let id = match app.picks().get(app.sel)? {
                     Item::Folder(i) => *i,
                     _ => return None,
