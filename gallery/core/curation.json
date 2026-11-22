@@ -1,0 +1,81 @@
+{
+  "title": "The Permanent Collection",
+  "sections": [
+    {
+      "id": "electronic-modernism",
+      "title": "Electronic Modernism",
+      "description": "City light, circuits, signals, and the visual language of machines.",
+      "works": [
+        "amber-drizzle",
+        "chalk-circuit",
+        "phosphor-trace",
+        "signal-crossing",
+        "last-credit"
+      ]
+    },
+    {
+      "id": "surreal-imaginings",
+      "title": "Surreal Imaginings",
+      "description": "Playful narrative illustration, unexpected characters, and visual wit.",
+      "works": [
+        "cattle-call",
+        "duckpond",
+        "pigeon-post",
+        "last-ember",
+        "coral-current"
+      ]
+    },
+    {
+      "id": "landscape-atmosphere",
+      "title": "Landscape & Atmosphere",
+      "description": "Water, weather, horizons, celestial forms, and changing light.",
+      "works": [
+        "harbor",
+        "ice-horizon",
+        "lantern-watch",
+        "meadowlark",
+        "nightswim",
+        "ring-shadow",
+        "yuzu-snow"
+      ]
+    },
+    {
+      "id": "earth-pigment",
+      "title": "Earth & Pigment",
+      "description": "Cartography, organic color, mineral tones, and the warmth of traditional materials.",
+      "works": [
+        "ink-atlas",
+        "everforest-dark",
+        "gruvbox-light",
+        "rose-pine-dawn",
+        "solarized-light"
+      ]
+    },
+    {
+      "id": "chromatic-nocturnes",
+      "title": "Chromatic Nocturnes",
+      "description": "Dark color fields, restrained light, and expressive accent palettes.",
+      "works": [
+        "catppuccin-mocha",
+        "dracula",
+        "gruvbox-dark",
+        "nord",
+        "rose-pine",
+        "selenized-dark",
+        "tokyonight-night"
+      ]
+    },
+    {
+      "id": "light-color-studies",
+      "title": "Light & Color Studies",
+      "description": "Luminosity, airy grounds, tonal harmony, and daylight chromatics.",
+      "works": [
+        "catppuccin-latte",
+        "everforest-light",
+        "one-light",
+        "selenized-light",
+        "tokyonight-day"
+      ]
+    }
+  ]
+}
