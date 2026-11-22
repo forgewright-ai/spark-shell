@@ -113,10 +113,10 @@ typeface and glyph settings. It works offline on a fresh install and
 after an update. Open a theme to inspect it, then choose **apply theme**
 to use it. You can also adjust each setting individually.
 
-The bundled collection lives in `gallery/core/`. Personal themes stay
-in `$XDG_CONFIG_HOME/spark-shell/themes/` (default `~/.config/spark-shell/themes/`)
-and take precedence when names match. To add a named collection, place a
-list of installed theme keys, one per line, in the adjacent `galleries/`
+The bundled collection lives in `gallery/core/`. Personal themes take
+precedence when names match. They live in `$XDG_CONFIG_HOME/spark-shell/themes/`
+(default `~/.config/spark-shell/themes/`). To add a named collection, put
+its installed theme keys, one per line, in the adjacent `galleries/`
 directory, for example `studio.list`.
 
 ## Contributing
