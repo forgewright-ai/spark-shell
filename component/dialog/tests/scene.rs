@@ -284,13 +284,14 @@ fn what_home_finds_wears_homes_rows_an_app_with_its_picture() {
 
 #[test]
 fn the_grid_keeps_its_rows_inside_the_frame_for_a_place_not_drawn_yet() {
+    // (help was such a place until v0.162; how talk works still is)
     let mut a = home();
-    a.view = View::Help;
+    a.view = View::Talk;
     a.came_from.push(View::Home);
     (a.in_list, a.sel) = (false, 0);
     assert_eq!(kind(&a), Kind::Grid);
     let s = scene(&mut a, 600.0, 800.0);
-    let g = s.grid.expect("help keeps its grid rows");
+    let g = s.grid.expect("talk keeps its grid rows");
     // the rows' first text column stands on the frame's edge; the rows are kept inside the body's height, and
     // their lit row's bar has the window's width
     assert_eq!(g.x + 2.0 * M.cw, 24.0);
@@ -310,7 +311,11 @@ fn the_grid_keeps_its_rows_inside_the_frame_for_a_place_not_drawn_yet() {
     // where you are: home is a target, the place is where you are
     assert_eq!(word(&s, "home").2, Size::Small);
     assert_eq!(s.hit(30.0, 78.0), Some(&Target::Home));
-    assert_eq!(word(&s, "help").0, 24.0 + 7.0 * M.sw, "after home and its bar");
+    assert_eq!(
+        words(&s).iter().filter(|w| w.0 == "talk").map(|w| w.1).min_by(f64::total_cmp),
+        Some(24.0 + 7.0 * M.sw),
+        "after home and its bar"
+    );
 }
 
 #[test]
@@ -639,6 +644,77 @@ fn a_wide_window_shows_the_lit_setting_beside_the_list() {
         "no option takes a click beside the list"
     );
     assert_eq!(s.hit(1200.0, 500.0), Some(&Target::Pick(0)), "a click on the page opens the setting");
+}
+
+/// v0.162: help in the new type: its groups named large, what you do, its key in the smaller text at the row's end
+/// with no box; in a wide window a sheet of its keys in columns.
+#[test]
+fn help_is_its_keys_by_group_and_a_sheet_in_a_wide_window() {
+    let mut a = home();
+    a.view = View::Help;
+    a.came_from = vec![View::Home];
+    (a.in_list, a.sel) = (true, 0);
+    assert_eq!(kind(&a), Kind::Place);
+    let s = scene(&mut a, 600.0, 800.0);
+    assert_eq!(heading(&s, "general"), (48.0, 97.0 + 32.0 - M.big[0].1));
+    let enter = words(&s).into_iter().find(|w| w.0 == "Enter").expect("the key of the first row");
+    assert_eq!(enter.3, Size::Small);
+    assert!(!fills(&s, LIT).iter().any(|f| f.3 == 21.0 && f.1 < 700.0), "no box around a key in the list");
+    // full screen: the groups in columns, the second column right of the first
+    let wide = scene(&mut a, 1920.0, 1080.0);
+    let heads: Vec<_> = words(&wide).into_iter().filter(|w| w.3 == Size::Head).collect();
+    assert!(heads.iter().any(|w| w.1 > 600.0), "a group in a second column: {heads:?}");
+}
+
+/// v0.162: the Calendar in the new type: the time at 72 pixels and the day under it, the month named at 28 pixels,
+/// today in the accent and underlined, as many months as the window holds.
+#[test]
+fn the_calendar_is_the_time_large_and_the_months_side_by_side() {
+    let mut a = home();
+    a.view = View::Dest(spark_dialog::app::CALENDAR_DEST);
+    a.came_from = vec![View::Home];
+    a.today = Some((2026, 11, 21));
+    a.clock = "Sat 21 Nov \u{b7} 19:21".into();
+    assert_eq!(kind(&a), Kind::Calendar);
+    let s = scene(&mut a, 600.0, 800.0);
+    assert_eq!(word(&s, "19:21").2, Size::Title);
+    assert_eq!(word(&s, "Saturday, 21 November 2026").2, Size::Lead);
+    assert_eq!(word(&s, "November 2026").2, Size::Head);
+    let today = words(&s).into_iter().find(|w| w.0 == "21" && w.4).expect("today, bold");
+    assert!(fills(&s, ACCENT).iter().any(|f| f.1 > today.2 && f.3 == 2.0), "today underlined");
+    assert!(!words(&s).iter().any(|w| w.0 == "December 2026"), "one month at the start size");
+    let wide = scene(&mut a, 1920.0, 1080.0);
+    assert!(
+        word(&wide, "March 2027").0 > word(&wide, "November 2026").0,
+        "five months across at full screen"
+    );
+}
+
+/// v0.162: a place's row of words is two lines, its name over its words; a workspace's number is said once.
+#[test]
+fn a_places_row_of_words_is_two_lines() {
+    let mut a = home();
+    let mut p = Provider::new("system");
+    p.ready = true;
+    p.rows = spark_dialog::model::rows(
+        &json!({"title": "system", "rows": [
+            {"id": "system:check", "sign": "opens", "text": "check", "columns": ["not checked yet"], "children": "spark-shell://system/rows/check"},
+            {"id": "system:space", "sign": "opens", "text": "space", "columns": ["140 GB free"], "children": "spark-shell://system/rows/space"}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    a.providers = vec![p];
+    a.view = View::Section(0);
+    a.came_from = vec![View::Home];
+    (a.in_list, a.sel) = (true, 0);
+    assert_eq!(kind(&a), Kind::Place);
+    let s = scene(&mut a, 600.0, 800.0);
+    let (nx, ny, ..) = word(&s, "check");
+    let (wx, wy, ws, _) = word(&s, "not checked yet");
+    assert_eq!((nx, wx, ws), (48.0, 48.0, Size::Small), "its words under its name");
+    assert_eq!(wy - ny, 42.0 - 21.0 - M.sup + M.up);
+    assert!(fills(&s, LIT).contains(&(0.0, 97.0, 600.0, 52.0)), "{:?}", fills(&s, LIT));
 }
 
 /// A2 (v0.160): a wide window shows the lit app beside the list at once. The list keeps a column 696 pixels wide,

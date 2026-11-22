@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.162
+
+- Workspaces, notes, the Calendar, system, help and power read as
+  apps, files and settings do: their groups named at 28 pixels, a
+  row of words two lines, its name over its words, and a key in the
+  smaller text at the row's end, with no box.
+- The Calendar shows the time at 72 pixels and the day under it,
+  then as many months side by side as the window holds: one at
+  home's start size, five at full screen. Each month is named large;
+  today is in the accent and underlined, and a day with a reminder
+  is in the accent. Left and Right still move the months.
+- Help in a wide window is a sheet of its keys in columns.
+- A workspace's heading says its number once.
+- The dialog is 0.162.0.
+
 ## v0.161
 
 - Settings reads as apps and files do: its groups named at 28

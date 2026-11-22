@@ -956,6 +956,7 @@ fn main() {
             let now_clock = clock(prefs.twelve);
             if now_clock != last_clock {
                 last_clock = now_clock;
+                app.clock = last_clock.clone();
                 app.today = Some(today());
                 dirty = true;
             }
