@@ -2456,7 +2456,12 @@ fn theme_poster(app: &App, pen: &mut Pen, whole: Area, row: &crate::model::Row) 
     } else {
         &row.text
     };
-    let caption = page.and_then(|pg| pg.facts.first()).map(String::as_str).unwrap_or("");
+    let room = row.id.starts_with("theme:room:");
+    let caption = if room {
+        row.columns.first().map(String::as_str).unwrap_or("")
+    } else {
+        page.and_then(|pg| pg.facts.first()).map(String::as_str).unwrap_or("")
+    };
     let base = top + h + m.px(32.0);
     let label = pen.fit(name, Size::Lead, w * 0.62);
     pen.text(left, base, &label, Size::Lead, pen.t.ink, true);
@@ -2465,7 +2470,12 @@ fn theme_poster(app: &App, pen: &mut Pen, whole: Area, row: &crate::model::Row) 
     let mut bottom = base;
     if !row.id.starts_with("theme:apply:") {
         bottom += m.px(23.0);
-        if let Some(reference) = page.and_then(|pg| pg.facts.get(1)) {
+        if room {
+            if let Some(description) = row.line.as_deref() {
+                let label = pen.fit(description, Size::Small, w);
+                pen.text(left, bottom, &label, Size::Small, pen.t.muted, false);
+            }
+        } else if let Some(reference) = page.and_then(|pg| pg.facts.get(1)) {
             let label = pen.fit(&format!("Palette  {reference}"), Size::Small, w);
             pen.text(left, bottom, &label, Size::Small, pen.t.muted, false);
         }
