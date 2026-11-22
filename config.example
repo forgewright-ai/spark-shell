@@ -231,10 +231,10 @@ VOICE_PREFIX=
 VOICE_SUFFIX=
 
 # The dialog's animation as it opens, waits and closes: moon, ripple,
-# tide, embers, sun or flight, or none for no motion. Empty, the one the
-# palette brings (dracula's embers, nord's tide); a new palette brings
-# its own, as it brings its drawing, and none stays none. Settings >
-# theme changes it.
+# tide, embers, sun, flight or atlas, or none for no motion. Empty, the
+# one the palette brings (dracula's embers, nord's tide); a new palette
+# brings its own, as it brings its drawing, and none stays none.
+# Settings > theme changes it.
 DIALOG_ANIMATION=
 
 # Each app's icon before its name in home's apps: on or off. Off, or in

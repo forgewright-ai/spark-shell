@@ -113,6 +113,7 @@ art_of() {   # art_of THEME -> one line of JSON: its family, from the family fil
     _aw=$(art_wall "$1")
     _amv=still; ! motion_has "$_aw" || _amv=ambient
     _apt=fitted; ! wall_scene "$_aw" || _apt=authored   # every scene draws its own portrait view
+    _awp=$(theme_dir "$1")/$(look_get "$(theme_dir "$1")" PICTURE); [ "$_aw" != picture ] || [ ! -f "${_awp%.*}.mp4" ] || _amv=ambient
     if _af=$(family_for "$1"); then
         jq -c --arg t "$1" --arg l "$(theme_label "$1")" --arg wall "$_aw" --arg mv "$_amv" --arg pt "$_apt" '
             ([.variants | to_entries[] | select(.value.theme == $t or .value.theme == $l or (.value.theme | ltrimstr("core-")) == $l)] | first) as $me
@@ -253,6 +254,21 @@ art_wall_theirs() {   # -> 0 when the wallpaper is a picture or a color of the p
     _awt=$(theme_dir "${THEME:-none}")
     if [ -n "$_awt" ]; then case ${WALLPAPER:-} in "$_awt"/*) return 1 ;; esac; fi
     wall_yours || wall_color
+}
+art_loop_of() {   # art_loop_of PICTURE -> the loop beside a picture of the theme's own (NAME.mp4 beside NAME.jpg), a plain MP4; else false
+    _ald=$(theme_dir "${THEME:-none}"); [ -n "$_ald" ] || return 1
+    case $1 in "$_ald"/*) ;; *) return 1 ;; esac
+    _alf=${1%.*}.mp4
+    [ -f "$_alf" ] && [ ! -L "$_alf" ] && [ "$(od -An -c -j4 -N4 "$_alf" | tr -d ' \n')" = ftyp ] && printf '%s' "$_alf"
+}
+art_loops() {   # -> LOOP<tab>SCREEN for each screen whose still has its loop beside it, as the screens plan them; false for none
+    art_loop_of "${WALLPAPER:-}" >/dev/null || return 1
+    _ald=$(theme_dir "${THEME:-none}")
+    art_screens | while IFS="$TAB" read -r _aln _ali _ala _alt _als _alr _alx _alm; do
+        [ "$_alm" = fill ] || continue
+        if [ "$_alx" = - ]; then _alp=$WALLPAPER; else _alp=$_ald/$_alx; fi
+        _all=$(art_loop_of "$_alp") && printf '%s\t%s\n' "$_all" "$_aln"
+    done | grep .
 }
 art_plan_file() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-screens.plan"; }   # -> the screens as last drawn
 art_screen_file() {   # art_screen_file FILE MODE WxH -> the still a screen of the plan shows, when it is made; the lock takes these, never a loop

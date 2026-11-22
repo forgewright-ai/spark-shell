@@ -361,11 +361,12 @@ glyphs_step() {   # glyphs_step signs|words -> the receipt; 1 when refused
 # the loop cache; a player of yours is never stopped
 MOTION_DIR=${XDG_CACHE_HOME:-$HOME/.cache}/spark-shell/motion
 motion_names() { for _ms in "$REPO"/lib/motion_*.py; do [ -f "$_ms" ] || continue; _ms=${_ms##*/motion_}; printf '%s\n' "${_ms%.py}"; done; printf '%s\n' $WALL_SCENES; }   # -> the moving wallpapers, one a line
-motion_has() { wall_scene "$1" || { wall_shipped "$1" && [ -f "$REPO/lib/motion_$1.py" ]; }; }   # motion_has WALLPAPER -> 0 when it moves
+motion_has() { wall_scene "$1" || { wall_shipped "$1" && [ -f "$REPO/lib/motion_$1.py" ]; } || art_loop_of "$1" >/dev/null; }   # motion_has WALLPAPER -> 0 when it moves
 motion_missing() {   # -> the missing tools, or nothing
     _mm=''
     command -v mpv >/dev/null 2>&1 || _mm="$_mm mpv"
     if wall_scene "${WALLPAPER:-}"; then scene_ready || _mm="$_mm numpy"
+    elif art_loop_of "${WALLPAPER:-}" >/dev/null; then :   # a loop of the theme's own: nothing to make
     else for _mt in python3 rsvg-convert; do command -v "$_mt" >/dev/null 2>&1 || _mm="$_mm $_mt"; done; fi
     wallpaper_cmd >/dev/null || _mm="$_mm spark-wallpaper"
     printf '%s' "${_mm# }"
@@ -438,7 +439,13 @@ motion_follow() {   # the look's loops playing or made; else ours stopped
     if [ "${WALLPAPER_MOTION:-off}" != on ] || ! motion_has "${WALLPAPER:-}" || [ -n "$(motion_missing)" ]; then motion_stop; return 0; fi
     _mj=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || return 0
     mkdir -p "$MOTION_DIR"
-    if wall_scene "$WALLPAPER"; then   # the plan: LOOP<tab>SIZE<tab>SCREEN a line
+    if _mlp=$(art_loops); then   # the theme's own loops, linked into the cache so they are ours to stop: a loop a screen, none to make
+        printf '%s\n' "$_mlp" | while IFS="$TAB" read -r _mls _mln; do
+            _mll=$MOTION_DIR/given-$(printf '%s' "$_mls" | cksum | cut -d' ' -f1).mp4
+            ln -sf "$_mls" "$_mll" && printf '%s\tgiven\t%s\n' "$_mll" "$_mln"
+        done > "$_mj/plan"
+        awk -F '\t' '{ print "--screen"; print $3 "=" $1 }' "$_mj/plan" > "$_mj/args"
+    elif wall_scene "$WALLPAPER"; then   # the plan: LOOP<tab>SIZE<tab>SCREEN a line
         _mpf=$(palette_file "${THEME:-}" 2>/dev/null) || { rm -rf "${_mj:?}"; motion_stop; return 0; }   # no palette: the still alone
         cp "$_mpf" "$_mj/palette.env"
         _msum=$(cat "$SCENE_MAKE" "$_mpf" | cksum | cut -d' ' -f1)

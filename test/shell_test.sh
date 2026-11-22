@@ -4307,6 +4307,18 @@ _i=0; while [ "$_i" -lt 50 ] && ! grep -q '^-- output "DP-3" bg ".*/watch-dracul
 grep -q -- "--still poster --size 1200x1920 " "$HOME/scene.log" && grep -q '^-- output "DP-3" bg ".*/watch-dracula-1200x1920.png" fill$' "$HOME/mosway.log" && ! grep -q 'HDMI-A-1" bg' "$HOME/mosway.log" \
     && ok "desktop --motion, a scene: the portrait screen's still in its own shape, on that screen alone (#188)" || bad "scene portrait still" "$(cat "$HOME/scene.log" "$HOME/mosway.log" 2>&1)"
 mo_stop
+# a theme's own loops (Atlas Awakening): each screen's still has its loop beside it, linked into the cache and played as it is, none made
+rm -f "$HOME/player.log" "$HOME/mpv.log" "$HOME/mosway.log" "$H/run/spark-shell-motion.want"; _mat=$REPO/gallery/core/atlas-awakening
+ln -sf "$fixture_python" "$H/mo/python3"   # the real python3 reads the family's pictures, ahead of the stubs
+printf 'DESKTOP=sway\nTHEME=atlas-awakening\nWALLPAPER=%s\nWALLPAPER_MOTION=on\n' "$_mat/atlas-awakening.jpg" > "$HOME/.config/spark-shell/config"
+mo desktop --motion >/dev/null 2>&1; mo_wait 1
+_ml=$(sed -n 1p "$HOME/player.log" 2>/dev/null || :); _ml1=${_ml#--screen DP-3=}; _ml1=${_ml1%% *}; _ml2=${_ml##*HDMI-A-1=}
+case $_ml in "--screen DP-3=$_mdir/given-"*".mp4 --screen HDMI-A-1=$_mdir/given-"*.mp4) _mok=1 ;; *) _mok='' ;; esac
+_i=0; while [ "$_i" -lt 50 ] && ! grep -q "^-- output \"HDMI-A-1\" bg \"$_mat/bridge-viewpoint.jpg\" fill$" "$HOME/mosway.log" 2>/dev/null; do sleep 0.2; _i=$((_i + 1)); done
+[ -n "$_mok" ] && [ "$(readlink "$_ml1")" = "$_mat/just-beyond-reach.mp4" ] && [ "$(readlink "$_ml2")" = "$_mat/bridge-viewpoint.mp4" ] && [ ! -s "$HOME/mpv.log" ] \
+    && grep -q "^-- output \"DP-3\" bg \"$_mat/just-beyond-reach.jpg\" fill$" "$HOME/mosway.log" && grep -q "^-- output \"HDMI-A-1\" bg \"$_mat/bridge-viewpoint.jpg\" fill$" "$HOME/mosway.log" \
+    && ok "desktop --motion, a theme's own loops: the turned screen its portrait's loop, the other its panel's, linked into the cache, none made" || bad "given loops" "$_ml | $(cat "$HOME/mpv.log" "$HOME/mosway.log" 2>&1)"
+mo_stop
 cp "$H/cfg.mo" "$HOME/.config/spark-shell/config"
 # two screens with one name (no serial, the same model): each by its port, never both at once
 sed -i.bak 's/"make":"BOE","model":"0x0BCA","serial":""/"make":"Lenovo Group Limited","model":"T24i-30","serial":"V30A1"/' "$H/lx/swaymsg"; rm -f "$H/lx/swaymsg.bak" "$HOME/swaymsg.log"
@@ -6906,7 +6918,7 @@ grep -qxF 'no_focus [app_id="spark-preview"]' "$REPO/template/.config/sway/confi
 # the dialog's transitions (#122): the theme's row, the verb, the key the config holds
 printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
 o1=$(sh "$SH" theme animation 2>&1); o2=$(sh "$SH" theme animation next 2>&1); o3=$(sh "$SH" theme animation back 2>&1); o4=$(sh "$SH" theme animation none 2>&1); st=0; o5=$(sh "$SH" theme animation fireworks 2>&1) || st=$?
-[ "$o1" = "animation embers $(printf '\302\267') none, moon, ripple, tide, embers, sun, flight" ] && [ "${o2%% *}" = animation ] && printf '%s' "$o2" | grep -q '^animation sun ' && printf '%s' "$o3" | grep -q '^animation embers ' \
+[ "$o1" = "animation embers $(printf '\302\267') none, moon, ripple, tide, embers, sun, flight, atlas" ] && [ "${o2%% *}" = animation ] && printf '%s' "$o2" | grep -q '^animation sun ' && printf '%s' "$o3" | grep -q '^animation embers ' \
     && printf '%s' "$o4" | grep -q '^animation none ' && grep -qx 'DIALOG_ANIMATION=none' "$HOME/.config/spark-shell/config" && [ "$st" -ne 0 ] \
     && ok "theme animation: the palette's piece when none is set (dracula's embers), next and back step through the six and none, none is no motion, another word refused (#122)" || bad "theme animation" "$o1 | $o2 | $o3 | $o4 | $st $o5"
 # each palette brings its piece, as it brings its drawing; none stays none (#122)
@@ -6950,7 +6962,7 @@ fi
 # the palette's own said, each with its folder in the palette in use (none with none), Enter the step that sets it
 mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/animations"}')"
 ans 2 | jq -r '.result.contents[0].text' > "$H/anims.json"
-[ "$(jq -r '[.rows[] | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "moon:check:the palette's own|ripple:blank:|tide:blank:|embers:blank:|sun:blank:|flight:blank:|none:blank:no motion" ] \
+[ "$(jq -r '[.rows[] | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "moon:check:the palette's own|ripple:blank:|tide:blank:|embers:blank:|sun:blank:|flight:blank:|atlas:blank:|none:blank:no motion" ] \
     && jq -e --arg d "$REPO/gallery/animation" '(.rows[0].film == ($d + "/moon/tokyonight-night")) and (.rows[-1] | has("film") | not) and all(.rows[]; .tool.name == "theme_animation" and .tool.arguments.to == .text and .quiet == true)' "$H/anims.json" >/dev/null \
     && ok "provide theme: the animation list: the six and none, the one in use checked, the palette's own said, each piece's folder in the palette in use, Enter sets it in place (#132, #191)" || bad "animation list" "$(cat "$H/anims.json")"
 # #247: a palette with no set drawn ahead (a palette of yours, a theme from a picture or words) plays every piece too, the
@@ -6962,10 +6974,10 @@ o1=$(sh "$SH" theme animation 2>&1)
 mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(call 2 theme_animation '{"to":"moon"}')" "$(rq 3 resources/read '{"uri":"spark-shell://theme/rows/animations"}')" "$(rq 4 resources/read '{"uri":"spark-shell://theme/rows"}')"
 ans 3 | jq -r '.result.contents[0].text' > "$H/anims.json"; ans 4 | jq -r '.result.contents[0].text' > "$H/trows.json"
 a1=$(sed -n 's/^DIALOG_ANIMATION=//p' "$HOME/.config/spark-shell/config")
-[ "$o1" = "animation ripple $(printf '\302\267') none, moon, ripple, tide, embers, sun, flight" ] && [ "$a1" = moon ] \
+[ "$o1" = "animation ripple $(printf '\302\267') none, moon, ripple, tide, embers, sun, flight, atlas" ] && [ "$a1" = moon ] \
     && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = "animation moon $(printf '\302\267') from the dialog's next opening" ] \
     && [ "$(ans 2 | jq -r '.result.structuredContent.transitions')" = 'draw:moon' ] \
-    && [ "$(jq -r '[.rows[] | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "moon:check:|ripple:blank:|tide:blank:|embers:blank:|sun:blank:|flight:blank:|none:blank:no motion" ] \
+    && [ "$(jq -r '[.rows[] | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "moon:check:|ripple:blank:|tide:blank:|embers:blank:|sun:blank:|flight:blank:|atlas:blank:|none:blank:no motion" ] \
     && jq -e 'all(.rows[]; has("film") | not)' "$H/anims.json" >/dev/null \
     && { [ "$(uname -s)" = Darwin ] || jq -e '.rows[] | select(.id == "theme:show:Animation") | .columns == ["moon"] and .children == "spark-shell://theme/rows/animations" and .tool == null' "$H/trows.json" >/dev/null; } \
     && ok "theme animation, a palette with no pieces drawn ahead (#247): every piece in its list, the one set kept and played, none its own; the step names draw:moon for the dialog to draw" \
@@ -8098,7 +8110,7 @@ EOF
     bent 'FORMAT=3'; bent_refused 'it was made by a newer spark-shell (format 3, this one reads 2) -- spark-shell update' "a theme of a newer format is refused, never half read (#247)"
     bent 'FACE=comic'; bent_refused 'its FACE is not neon, argon, xenon, radon or krypton' "a FACE not of the five is refused (#247)"
     bent 'TEXT_SIZE=99'; bent_refused 'its TEXT_SIZE is not 6 to 40' "a TEXT_SIZE out of range is refused (#247)"
-    bent 'ANIMATION=disco'; bent_refused 'its ANIMATION is not none or one of moon, ripple, tide, embers, sun, flight' "an ANIMATION not of the pieces is refused (#247)"
+    bent 'ANIMATION=disco'; bent_refused 'its ANIMATION is not none or one of moon, ripple, tide, embers, sun, flight, atlas' "an ANIMATION not of the pieces is refused (#247)"
     bent "WORDS=sun$(printf '\033')[2Jny"; bent_refused 'its look.env holds a control character' "a control character anywhere in look.env is refused (a row would redraw the screen)"
     bent 'WORDS=sunny'; printf 'touch %s/pwned\n' "$H" >> "$th_dir/bent/look.env"; bent_refused "line $(grep -c '' "$th_dir/bent/look.env") of its look.env is not KEY=value" "a line that is not KEY=value is refused, by its number"
     rm -rf "$th_dir/bent"
@@ -8354,7 +8366,7 @@ sh "$SH" theme amber-drizzle >/dev/null 2>&1; a5=$(sh "$SH" theme show 2>&1 | se
 [ "$a1" = 'tokyonight, light (dark: tokyonight-night), vector, still, portrait fitted' ] && [ "$v1" = "variant light $(printf '\302\267') dark or light" ] && [ "$t1" = tokyonight-night ] \
     && [ "$a2" = 'tokyonight-night is the dark variant already' ] && [ "$rc" = 1 ] && [ "$a3" = 'spark-shell theme: variant takes dark or light' ] \
     && [ "$rc2" = 1 ] && [ "$a4" = 'spark-shell theme: nord has no light variant' ] && [ "$a5" = 'amber-drizzle, dark, pixel, ambient, portrait authored' ] \
-    && [ "$(art_row)" = '6 families, each read' ] \
+    && [ "$(art_row)" = '7 families, each read' ] \
     && ok "theme variant: a family's other variant is its own theme with its own drawing, said by theme show; one variant or a word not dark or light refused in one line; a theme with no family read from itself (a pixel scene moves and draws its own portrait view)" \
     || bad "theme variant" "$a1 | $v1 | $t1 | $a2 | $a3 | $a4 | $a5 | $(art_row)"
 fam=${cfg%/*}/families; mkdir -p "$fam" "$th_dir/study-night" "$th_dir/study-day"
@@ -8367,7 +8379,7 @@ study() {   # study 'DARK-VARIANT-JSON' -- the family file of the TEST-ONLY stud
 study '{"theme": "study-night", "portrait": "test-tall.png", "motion": "still", "panels": {"2": [{"landscape": "test-wide-1.png"}, {"landscape": "test-wide-2.png", "portrait": "test-tall.png"}], "3": [{"landscape": "test-wide-1.png"}, {"landscape": "test-wide-2.png"}, {"landscape": "test-wide-3.png"}]}}'
 sh "$SH" theme study-night >/dev/null 2>&1
 a1=$(sh "$SH" theme show 2>&1 | sed -n 's/^  art *//p'); c1=$(art_row)
-[ "$a1" = 'study, dark (light: study-day), cinematic, still, portrait authored, panels for 2 and 3 screens' ] && [ "$c1" = '7 families, each read' ] \
+[ "$a1" = 'study, dark (light: study-day), cinematic, still, portrait authored, panels for 2 and 3 screens' ] && [ "$c1" = '8 families, each read' ] \
     && ok "a family of yours (families/): its portrait and its panels for two and three screens read from its own folder, the check counts it" || bad "family of yours" "$a1 | $c1"
 why=''
 for case in \
@@ -8671,7 +8683,7 @@ if [ "$(uname -s)" != Darwin ]; then
 fi
 mcp theme "$(rq 1 tools/list)" "$(call 2 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal"}')" "$(call 3 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal","light":"dim","face":"neon","family":"stone","animation":"tide","drawing":"fjord"}')" "$(call 4 theme_delete '{"name":"nord"}')" "$(call 5 theme_back '{}')" "$(call 6 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal","light":"dark","face":"neon","family":"stone","animation":"tide","drawing":"fjord","name":"a name that runs on and on past forty letters"}')" "$(call 7 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal","light":"dark","face":"comic","family":"stone","animation":"tide","drawing":"fjord"}')"
 ans 1 | jq -e '.result.tools[] | select(.name == "theme_words") | .inputSchema.required == ["hue", "accent", "warmth", "contrast", "light", "face", "family", "animation", "drawing"] and .inputSchema.properties.light.enum == ["dark", "light"] and .inputSchema.properties.hue.enum[0] == "red" and .inputSchema.properties.accent.enum[-1] == "same" and .inputSchema.properties.name.maxLength == 40
-        and .inputSchema.properties.face.enum == ["neon", "argon", "xenon", "radon", "krypton"] and .inputSchema.properties.family.enum == ["stone", "star", "banner"] and .inputSchema.properties.animation.enum == ["moon", "ripple", "tide", "embers", "sun", "flight"] and (.inputSchema.properties.drawing.enum | index("fjord") != null and index("onsen") == null)' >/dev/null \
+        and .inputSchema.properties.face.enum == ["neon", "argon", "xenon", "radon", "krypton"] and .inputSchema.properties.family.enum == ["stone", "star", "banner"] and .inputSchema.properties.animation.enum == ["moon", "ripple", "tide", "embers", "sun", "flight", "atlas"] and (.inputSchema.properties.drawing.enum | index("fjord") != null and index("onsen") == null)' >/dev/null \
     && ans 1 | jq -e '.result.tools[] | select(.name == "theme_picture") | .inputSchema.required == ["path"] and .inputSchema.properties.face.enum[0] == "neon" and .inputSchema.properties.family.enum[-1] == "banner" and .inputSchema.properties.animation.enum[0] == "moon" and (.inputSchema.properties | has("drawing") | not)' >/dev/null \
     && ans 7 | jq -e '.error.message | startswith("theme_words: face is one of neon")' >/dev/null \
     && [ "$(ans 2 | jq -r .error.message)" = 'theme_words: missing light' ] && [ "$(ans 3 | jq -r .error.message)" = 'theme_words: light is one of dark, light' ] && [ "$(ans 6 | jq -r .error.message)" = 'theme_words: name is plain text, 40 characters at most' ] \

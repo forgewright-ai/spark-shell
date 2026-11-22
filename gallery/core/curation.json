@@ -89,8 +89,10 @@
       "id": "cinematic-worlds",
       "title": "Cinematic Worlds",
       "note": "Original illustrated environments, each drawn for landscape and portrait screens.",
-      "status": "pending",
-      "works": []
+      "status": "open",
+      "works": [
+        "atlas-awakening"
+      ]
     }
   ],
   "dispositions": {

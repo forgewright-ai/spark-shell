@@ -14,7 +14,7 @@ use spark_theme::animation::Colors;
 use std::f64::consts::PI;
 
 /// The pieces, in the order the theme's row steps through them (spark-shell's ANIMATION_NAMES).
-pub const NAMES: [&str; 6] = ["moon", "ripple", "tide", "embers", "sun", "flight"];
+pub const NAMES: [&str; 7] = ["moon", "ripple", "tide", "embers", "sun", "flight", "atlas"];
 pub const W: usize = 180;
 pub const H: usize = 120;
 const INK_MIN: f64 = 1.0 / 48.0;
@@ -313,6 +313,7 @@ enum Piece {
     Embers,
     Sun,
     Flight,
+    Atlas,
 }
 
 impl Piece {
@@ -324,6 +325,7 @@ impl Piece {
             "embers" => Piece::Embers,
             "sun" => Piece::Sun,
             "flight" => Piece::Flight,
+            "atlas" => Piece::Atlas,
             _ => return None,
         })
     }
@@ -345,6 +347,7 @@ impl Piece {
             Piece::Embers => (15, 30, 14),
             Piece::Sun => (30, 48, 22),
             Piece::Flight => (30, 72, 24),
+            Piece::Atlas => (30, 50, 25),
         };
         match anim {
             Anim::Open => o,
@@ -361,6 +364,7 @@ impl Piece {
             Piece::Embers => embers(c, ro, anim, f),
             Piece::Sun => sun(c, ro, anim, f),
             Piece::Flight => flight(c, ro, anim, f),
+            Piece::Atlas => vec![], // drawn by hand: frames() reads its GIFs
         }
     }
 }
@@ -777,14 +781,63 @@ fn flight(c: &Canvas, ro: &Roles, anim: Anim, f: f64) -> Vec<Layer> {
 /// before it lengthens it, as the GIF holds it. None for a name that is no piece.
 pub fn frames(name: &str, ro: &Roles, scale: u32, anim: Anim) -> Option<Vec<(Vec<u8>, u32)>> {
     let piece = Piece::named(name)?;
-    let c = Canvas::new(scale.clamp(1, 2));
-    let drawn = in_parallel((0..piece.frames(anim)).collect(), |f| render(&c, ro, &piece.draw(&c, ro, anim, f as f64)));
+    let drawn = if piece == Piece::Atlas {
+        atlas(ro, scale.clamp(1, 2) as usize, anim)?
+    } else {
+        let c = Canvas::new(scale.clamp(1, 2));
+        in_parallel((0..piece.frames(anim)).collect(), |f| render(&c, ro, &piece.draw(&c, ro, anim, f as f64)))
+    };
     let mut out: Vec<(Vec<u8>, u32)> = vec![];
     for px in drawn {
         match out.last_mut() {
             Some((last, ms)) if *last == px => *ms += piece.ms(),
             _ => out.push((px, piece.ms())),
         }
+    }
+    Some(out)
+}
+
+/// Atlas Awakening's piece, drawn by hand: three GIFs whose color numbers are roles, 0 nothing and 1 to 9 the text, the
+/// accent, the quiet text and the ANSI colors 1 to 6, each frame whole. The theme in use colors them, at `s` times.
+const ATLAS: [&[u8]; 3] = [
+    include_bytes!("../../../gallery/animation/atlas/open.gif"),
+    include_bytes!("../../../gallery/animation/atlas/wait.gif"),
+    include_bytes!("../../../gallery/animation/atlas/close.gif"),
+];
+
+fn atlas(ro: &Roles, s: usize, anim: Anim) -> Option<Vec<Vec<u8>>> {
+    let reel = match anim {
+        Anim::Open => ATLAS[0],
+        Anim::Wait => ATLAS[1],
+        Anim::Close => ATLAS[2],
+    };
+    let byte = |c: Rgb| c.map(|v| v.round().clamp(0.0, 255.0) as u8);
+    let ink = [
+        ro.fg, ro.accent, ro.muted, ro.ansi[1], ro.ansi[2], ro.ansi[3], ro.ansi[4], ro.ansi[5], ro.ansi[6],
+    ]
+    .map(byte);
+    let mut opts = gif::DecodeOptions::new();
+    opts.set_color_output(gif::ColorOutput::Indexed);
+    let mut dec = opts.read_info(std::io::Cursor::new(reel)).ok()?;
+    let mut out = vec![];
+    while let Some(f) = dec.read_next_frame().ok()? {
+        if (f.left, f.top, f.width as usize, f.height as usize) != (0, 0, W, H) || f.buffer.len() != W * H {
+            return None;
+        }
+        let mut px = vec![0u8; W * H * 4 * s * s];
+        for (i, &role) in f.buffer.iter().enumerate() {
+            let Some(c) = (role as usize).checked_sub(1).and_then(|r| ink.get(r)) else {
+                continue;
+            };
+            for dy in 0..s {
+                for dx in 0..s {
+                    let o = (((i / W) * s + dy) * W * s + (i % W) * s + dx) * 4;
+                    px[o..o + 3].copy_from_slice(c);
+                    px[o + 3] = 255;
+                }
+            }
+        }
+        out.push(px);
     }
     Some(out)
 }
@@ -911,7 +964,7 @@ mod tests {
     fn every_piece_is_the_gif_make_py_drew() {
         for pal in ["tokyonight-night", "solarized-light"] {
             let ro = theme(pal);
-            for name in NAMES {
+            for name in NAMES.into_iter().filter(|n| *n != "atlas") {
                 for (anim, reel) in [(Anim::Open, "open"), (Anim::Wait, "wait"), (Anim::Close, "close")] {
                     let gif = gif_frames(&format!("{}/../../gallery/animation/{}/{}/{}.gif", env!("CARGO_MANIFEST_DIR"), name, pal, reel));
                     let ours = frames(name, &ro, 1, anim).unwrap();
@@ -952,6 +1005,44 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn atlas_is_its_frames_in_the_themes_own_colors() {
+        // the frames as drawn: open starts and close ends empty; each pixel drawn is one of the nine roles of the theme
+        for pal in ["tokyonight-night", "solarized-light"] {
+            let ro = theme(pal);
+            let ink: Vec<Vec<u8>> = [
+                ro.fg, ro.accent, ro.muted, ro.ansi[1], ro.ansi[2], ro.ansi[3], ro.ansi[4], ro.ansi[5], ro.ansi[6],
+            ]
+            .iter()
+            .map(|c| c.map(|v| v.round().clamp(0.0, 255.0) as u8).to_vec())
+            .collect();
+            for (anim, n) in [(Anim::Open, 30), (Anim::Wait, 50), (Anim::Close, 25)] {
+                let fr = atlas(&ro, 1, anim).unwrap();
+                assert_eq!(fr.len(), n, "{} {:?}: every frame", pal, anim);
+                for px in &fr {
+                    assert!(
+                        px.chunks(4).all(|p| p[3] == 0 || (p[3] == 255 && ink.contains(&p[..3].to_vec()))),
+                        "{} {:?}",
+                        pal,
+                        anim
+                    );
+                }
+            }
+            assert!(atlas(&ro, 1, Anim::Open).unwrap()[0].chunks(4).all(|p| p[3] == 0), "open starts empty");
+            assert!(
+                atlas(&ro, 1, Anim::Close).unwrap().last().unwrap().chunks(4).all(|p| p[3] == 0),
+                "close ends empty"
+            );
+            let two = atlas(&ro, 2, Anim::Wait).unwrap();
+            assert_eq!(two[0].len(), W * H * 4 * 4, "twice the size, each pixel four");
+        }
+        let (a, b) = (
+            atlas(&theme("nord"), 1, Anim::Wait).unwrap(),
+            atlas(&theme("gruvbox-light"), 1, Anim::Wait).unwrap(),
+        );
+        assert_ne!(a[0], b[0], "the same frame in two themes' colors");
     }
 
     #[test]

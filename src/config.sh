@@ -158,7 +158,7 @@ config_load() {
 words_in() { for _wi in $1; do case " $2 " in *" $_wi "*) ;; *) return 1 ;; esac; done; }   # words_in WORDS KNOWN -> 0 when each of WORDS is one of KNOWN
 winpad_place_ok() { printf '%s\n' "$1" | grep -qE '^(bar|(top|bottom|left|right) (center|start|end|[0-9]{1,5})|free [0-9]{1,5} [0-9]{1,5})$'; }   # winpad_place_ok PLACE -> 0 for the bar, an edge and where along it (bottom center, left 300), or free X Y
 winpad_width_ok() { case $1 in ''|*[!0-9]*|0?*) return 1 ;; 0) [ "$2" = 0 ] ;; *) [ "${#1}" -le 4 ] && [ "$1" -ge "$2" ] ;; esac; }   # winpad_width_ok N LEAST -> 0 for whole pixels, LEAST to 9999 (0 alone where LEAST is 0)
-ANIMATION_NAMES='moon ripple tide embers sun flight'   # gallery/animation's pieces, in the theme row's order; none is no motion
+ANIMATION_NAMES='moon ripple tide embers sun flight atlas'   # gallery/animation's pieces, in the theme row's order; none is no motion
 # the piece each palette brings with its drawing
 ANIM_PAIRED="tokyonight-night:moon nord:tide everforest-dark:embers gruvbox-dark:sun catppuccin-mocha:moon dracula:embers rose-pine:ripple selenized-dark:tide solarized-light:sun catppuccin-latte:flight tokyonight-day:flight gruvbox-light:sun everforest-light:ripple rose-pine-dawn:sun selenized-light:tide one-light:flight"
 anim_for_palette() { for _e in $ANIM_PAIRED; do [ "${_e%%:*}" != "$1" ] || { printf '%s' "${_e#*:}"; return 0; }; done; echo embers; }   # anim_for_palette PALETTE -> the piece it brings; embers for one with none

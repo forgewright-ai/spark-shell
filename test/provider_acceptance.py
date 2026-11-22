@@ -87,8 +87,9 @@ class Providers(unittest.TestCase):
         names = [line.split("\t") for line in (REPO / "gallery/core/themes.tsv").read_text().splitlines()]
         ids = {parts[0]: parts[-1] for parts in names}
         works = [name for section in sections for name in section["works"]]
+        shows = [name for e in curation.get("exhibitions", []) if e["status"] == "open" for name in e["works"]]
         self.assertEqual(len(works), 34)
-        self.assertEqual(set(works), set(ids))
+        self.assertEqual(set(works) | set(shows), set(ids), "every work hangs in a section or an open exhibition")
         self.assertEqual(len(works), len(set(works)))
         requests = [rpc(1, "resources/read", uri=base)]
         requests += [rpc(i, "resources/read", uri=base + "/collection/permanent/" + section["id"])
@@ -100,11 +101,14 @@ class Providers(unittest.TestCase):
         gallery = rendered[0]
         rooms = rendered[1:1+len(sections)]
         cards = rendered[1+len(sections):]
-        self.assertEqual((gallery["title"], gallery["state"]), ("The Gallery", "34 works in 6 sections"))
-        self.assertEqual([r["text"] for r in gallery["rows"]], [section["title"] for section in sections])
+        self.assertEqual((gallery["title"], gallery["state"]), ("The Gallery", "34 works in 6 sections, 1 exhibition"))
+        kept = [r for r in gallery["rows"] if r.get("group") != "Exhibitions"]
+        self.assertEqual([r["text"] for r in kept], [section["title"] for section in sections])
         self.assertTrue(all(r.get("group") == "The Permanent Collection"
-                            and not r.get("tool") and not r.get("look") for r in gallery["rows"]))
-        for section, entry, room in zip(sections, gallery["rows"], rooms):
+                            and not r.get("tool") and not r.get("look") for r in kept))
+        self.assertEqual([(r["text"], r["columns"]) for r in gallery["rows"] if r.get("group") == "Exhibitions"],
+                         [("Cinematic Worlds", ["1 work"])])
+        for section, entry, room in zip(sections, kept, rooms):
             self.assertEqual(entry["children"], base + "/collection/permanent/" + section["id"])
             self.assertEqual(entry["columns"], [str(len(section["works"])) + " works"])
             self.assertEqual(room["title"], section["title"])
@@ -148,7 +152,7 @@ class Providers(unittest.TestCase):
         self.assertIn("Manage themes", groups)
         self.assertEqual(section["title"], "Type and glyphs")
         self.assertEqual(next(r["step"]["set"]["name"] for r in section["rows"] if r["text"]=="Glyph family"), "theme_family")
-        self.assertEqual(len(gallery["rows"]), 6)
+        self.assertEqual(len(gallery["rows"]), 7, "six sections and Cinematic Worlds")
         self.assertTrue(all(r["page"].startswith(base + "preview/") for r in gallery["rows"]))
         self.assertEqual(detail["rows"][0]["page"], base+"preview/nightswim")
         self.assertEqual(nord["facts"], ["fjord", "Nord"])
@@ -225,10 +229,22 @@ class Providers(unittest.TestCase):
         text = lambda reply: json.loads(reply["result"]["contents"][0]["text"])
         curation = json.loads((REPO / "gallery/core/curation.json").read_text())
         pending = [e["id"] for e in curation.get("exhibitions", []) if e["status"] != "open"]
+        opened = [e["title"] for e in curation.get("exhibitions", []) if e["status"] == "open"]
         replies = self.provider("theme", rpc(1, "resources/read", uri=base),
                                 *[rpc(i, "resources/read", uri=base + "/collection/exhibition/" + e) for i, e in enumerate(pending, 2)])
-        self.assertFalse(any(r.get("group") == "Exhibitions" for r in text(replies[1])["rows"]), "no exhibition before it opens")
+        self.assertEqual([r["text"] for r in text(replies[1])["rows"] if r.get("group") == "Exhibitions"], opened, "no exhibition before it opens")
         self.assertTrue(all("error" in replies[i] for i in range(2, 2 + len(pending))))
+        # Cinematic Worlds, open: Atlas Awakening, its portrait drawn for a turned screen, panels for two, loops of its own
+        replies = self.provider("theme", rpc(1, "resources/read", uri=base + "/collection/exhibition/cinematic-worlds"),
+                                rpc(2, "resources/read", uri=base + "/atlas-awakening"),
+                                rpc(3, "resources/read", uri="spark-shell://theme/preview/atlas-awakening/portrait"),
+                                rpc(4, "resources/read", uri="spark-shell://theme/preview/atlas-awakening/panels-2"))
+        show, detail = text(replies[1]), text(replies[2])
+        self.assertEqual([(r["text"], r["line"]) for r in show["rows"]], [("atlas-awakening", "cinematic illustration \u00b7 dark")])
+        facts = {r["id"]: r.get("columns", [None])[0] for r in detail["rows"]}
+        self.assertEqual((facts["theme:detail:media"], facts["theme:detail:family-of"], facts["theme:detail:moves"], facts["theme:detail:animation"]),
+                         ("cinematic illustration", "Atlas Awakening", "moves with moving wallpaper on", "atlas"))
+        self.assertEqual((text(replies[3])["facts"][0], text(replies[4])["facts"][0]), ("its own portrait", "2 panels, left to right"))
         # an open exhibition, a supporting work and a section's lead, from a curation of the test's own
         curation["exhibitions"] = [{"id": "study", "title": "Study", "note": "A test exhibition.", "status": "open",
                                     "works": ["nord", "absent", "dracula"]}]
@@ -297,7 +313,7 @@ class Providers(unittest.TestCase):
         replies = self.provider("theme", *reads)
         gallery, room, dracula, ring = [
             json.loads(replies[i]["result"]["contents"][0]["text"]) for i in range(1, 5)]
-        self.assertEqual(len(gallery["rows"]), 6)
+        self.assertEqual(len(gallery["rows"]), 7, "six sections and Cinematic Worlds")
         self.assertEqual(room["title"], "Chromatic Nocturnes")
         selected = next(r for r in room["rows"] if r["sign"] == "check")
         self.assertEqual((selected["text"], selected["children"]), ("dracula", base + "/first-dracula"))

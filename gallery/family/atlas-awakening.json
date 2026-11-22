@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "id": "atlas-awakening",
+  "title": "Atlas Awakening",
+  "media": "cinematic",
+  "variants": {
+    "dark": {
+      "theme": "atlas-awakening",
+      "portrait": "just-beyond-reach.jpg",
+      "panels": {
+        "2": [{"landscape": "atlas-awakening.jpg"}, {"landscape": "bridge-viewpoint.jpg"}]
+      }
+    }
+  }
+}

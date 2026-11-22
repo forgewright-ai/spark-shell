@@ -167,7 +167,13 @@ mod tests {
             .flatten()
             .filter(|e| e.path().is_dir() && !e.file_name().to_string_lossy().starts_with(['_', '.']))
         {
-            for pal in ["tokyonight-night", "solarized-light"] {
+            // atlas is drawn by hand: its three GIFs hold roles the theme colors, in no palette's folder
+            let pals: &[&str] = if piece.file_name() == "atlas" {
+                &[""]
+            } else {
+                &["tokyonight-night", "solarized-light"]
+            };
+            for pal in pals {
                 for reel in ["open", "wait", "close"] {
                     let bytes = std::fs::read(piece.path().join(pal).join(format!("{}.gif", reel))).unwrap();
                     let f = film(&bytes).unwrap_or_else(|| panic!("{:?} {} {}", piece.path(), pal, reel));
@@ -176,6 +182,6 @@ mod tests {
                 }
             }
         }
-        assert_eq!(n, 6 * 2 * 3, "six pieces");
+        assert_eq!(n, 6 * 2 * 3 + 3, "six pieces in two palettes, and atlas's own three");
     }
 }
