@@ -107,11 +107,11 @@ lists every key with its default, and the commands write them.
 
 ## Theme settings
 
-Open **settings > theme > The Gallery**. The six curatorial rooms of
-**The Permanent Collection** hold the 34 bundled works. Enter a room to
-browse its art. The selected work shows its wallpaper without changing your
-current theme. F3 opens the larger image; Esc returns to the room.
-Enter a work for its details, then choose **apply theme** to wear it.
+Open **settings > theme > The Gallery**. The 34 bundled themes hang in
+the six sections of **The Permanent Collection**. Open a section to browse
+its works. Moving through the list shows each wallpaper and changes nothing.
+F3 opens the larger picture and Esc goes back. Enter on a work opens its
+details; choose **apply theme** there to use it.
 
 Each work identifies its source palette. Press F4 on a work to inspect the
 **Terminal palette**; select a color to copy its hex value, or choose
@@ -125,18 +125,17 @@ spark-shell theme export amber-drizzle kitty > amber-drizzle.conf
 Formats are `env` (all 20 colors), `foot`, `kitty`, `ghostty`, and
 `alacritty`. With no format, the command prints `env`.
 
-The collection is curated in `gallery/core/curation.json` and its theme
-keys remain in `gallery/core/themes.tsv`. Both ship with spark-shell and
-work offline. Every work still has its original name, settings, and
-command-line behavior. Wallpaper and motion, type and glyphs, and interface
-settings can also be changed on their own.
+The sections are listed in `gallery/core/curation.json` and the theme
+names in `gallery/core/themes.tsv`. Both ship with spark-shell and work
+offline. Every theme keeps its name, settings and command. Wallpaper and
+motion, type and glyphs, and interface settings can also be changed on
+their own.
 
-Personal themes are shown in **Saved themes**; additional local collections
-made of installed theme names appear as separate rooms. Put a text file with
-one theme key per line under `$XDG_CONFIG_HOME/spark-shell/galleries/` to
-make one, for example `studio.list`. Personal themes take precedence when
-names match; they live under `$XDG_CONFIG_HOME/spark-shell/themes/` (by
-default `~/.config/spark-shell/themes/`).
+Saved themes have their own entry. Personal themes take precedence when
+names match; they live in `$XDG_CONFIG_HOME/spark-shell/themes/` (default
+`~/.config/spark-shell/themes/`). To add a collection of your own, put its
+theme names, one per line, in the adjacent `galleries/` directory, for
+example `studio.list`.
 
 ## Contributing
 

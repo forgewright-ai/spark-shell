@@ -8323,13 +8323,16 @@ jq -e --arg dw "$([ "$(uname -s)" = Darwin ] && echo default || echo fjord)" '(.
 mkdir -p "${cfg%/*}/galleries"
 printf 'desk\nnord\ndesk\nabsent\n' > "${cfg%/*}/galleries/studio.list"
 cp "$cfg" "$H/before-browse"
-mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows/gallery"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/gallery/desk"}')" "$(rq 3 resources/read '{"uri":"spark-shell://theme/rows/gallery/../desk"}')"
+mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows/gallery"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/gallery/desk"}')" "$(rq 3 resources/read '{"uri":"spark-shell://theme/rows/gallery/../desk"}')" \
+    "$(rq 4 resources/read '{"uri":"spark-shell://theme/rows/gallery/collection/local/studio"}')" "$(rq 5 resources/read '{"uri":"spark-shell://theme/rows/gallery/collection/local/../studio"}')"
 ans 1 | jq -r '.result.contents[0].text' > "$H/theme-gallery.json"
 ans 2 | jq -r '.result.contents[0].text' > "$H/theme-card.json"
-jq -e '[.rows[] | select(.group == "studio") | .text] == ["desk","nord"] and all(.rows[]; .tool == null and .look == null and (.chip | length) > 0)' "$H/theme-gallery.json" >/dev/null \
+ans 4 | jq -r '.result.contents[0].text' > "$H/theme-studio.json"
+jq -e '[.rows[] | select(.id == "theme:room:local:studio") | [.text, .columns[0]]] == [["studio", "2 works"]] and all(.rows[]; .tool == null and .look == null)' "$H/theme-gallery.json" >/dev/null \
+    && jq -e '[.rows[] | .text] == ["desk","nord"] and all(.rows[]; .tool == null and .look == null and (.chip | length) > 0)' "$H/theme-studio.json" >/dev/null \
     && jq -e '.title == "desk" and .rows[0].tool == {name:"theme_palette",arguments:{name:"desk"}} and any(.rows[]; .id == "theme:detail:family")' "$H/theme-card.json" >/dev/null \
-    && [ "$(ans 3 | jq -r .error.code)" = -32002 ] && cmp -s "$cfg" "$H/before-browse" \
-    && ok "theme gallery: a local collection appears once, inspection keeps the current look, apply names the saved theme" || bad "theme gallery" "$(cat "$H/theme-card.json")"
+    && [ "$(ans 3 | jq -r .error.code)" = -32002 ] && [ "$(ans 5 | jq -r .error.code)" = -32002 ] && cmp -s "$cfg" "$H/before-browse" \
+    && ok "theme gallery: a local collection is one entry of its own and lists each work once, inspection keeps the current look, apply names the saved theme" || bad "theme gallery" "$(cat "$H/theme-gallery.json" "$H/theme-studio.json" "$H/theme-card.json")"
 # a value set as it is, the dialog's own way (#183); a palette looked at is on the screen and nothing is kept
 mcp theme "$(call 1 theme_text '{"size":"14"}')" "$(call 2 theme_transparency '{"amount":"30"}')" "$(call 3 theme_preview '{"name":"nord"}')" "$(call 4 theme_preview '{"name":"none"}')" "$(call 5 theme_preview '{"name":"off"}')"
 [ "$(ans 1 | jq -r '.result.structuredContent.receipt' | cut -c1-10)" = 'text at 14' ] && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'transparency at 30%' ] \

@@ -58,11 +58,11 @@ class Providers(unittest.TestCase):
         cfgdir = self.home / "config/spark-shell"
         cfgdir.mkdir(parents=True)
         config = cfgdir / "config"
-        before = "THEME=nord\\nDESKTOP=sway\\nWALLPAPER=fjord\\n"
+        before = "THEME=nord\nDESKTOP=sway\nWALLPAPER=fjord\n"
         config.write_text(before)
         base = "spark-shell://theme/rows/gallery"
         sections = json.loads((REPO / "gallery/core/curation.json").read_text())["sections"]
-        names = [line.split("\\t") for line in (REPO / "gallery/core/themes.tsv").read_text().splitlines()]
+        names = [line.split("\t") for line in (REPO / "gallery/core/themes.tsv").read_text().splitlines()]
         ids = {parts[0]: parts[-1] for parts in names}
         works = [name for section in sections for name in section["works"]]
         self.assertEqual(len(works), 34)
