@@ -8333,6 +8333,63 @@ jq -e '[.rows[] | select(.id == "theme:room:local:studio") | [.text, .columns[0]
     && jq -e '.title == "desk" and .rows[0].tool == {name:"theme_palette",arguments:{name:"desk"}} and any(.rows[]; .id == "theme:detail:family")' "$H/theme-card.json" >/dev/null \
     && [ "$(ans 3 | jq -r .error.code)" = -32002 ] && [ "$(ans 5 | jq -r .error.code)" = -32002 ] && cmp -s "$cfg" "$H/before-browse" \
     && ok "theme gallery: a local collection is one entry of its own and lists each work once, inspection keeps the current look, apply names the saved theme" || bad "theme gallery" "$(cat "$H/theme-gallery.json" "$H/theme-studio.json" "$H/theme-card.json")"
+# art families (format 1): one concept's variants are themes of their own, each with its own drawing; a theme with no family is read from itself
+testpng() {   # testpng W H FILE -- a TEST-ONLY checkerboard PNG, never art
+    python3 -I -c 'import struct, sys, zlib
+w, h = int(sys.argv[1]), int(sys.argv[2])
+raw = b"".join(b"\0" + bytes(c for x in range(w) for c in ((255, 0, 255) if (x // 8 + y // 8) % 2 else (0, 0, 0))) for y in range(h))
+def chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+open(sys.argv[3], "wb").write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))' "$@"
+}
+cp "$cfg" "$H/cfg-before-art"; cp "$st_dir/theme.history" "$H/hist-before-art" 2>/dev/null || :
+art_row() { sh "$SH" check 2>&1 | grep -E '^(ok|warn|FAIL) +art ' | sed 's/^[a-zA-Z]* *art *//'; }   # -> the check's art row, its detail alone
+sh "$SH" theme core-tokyonight-day >/dev/null 2>&1
+a1=$(sh "$SH" theme show 2>&1 | sed -n 's/^  art *//p'); v1=$(sh "$SH" theme variant 2>&1)
+sh "$SH" theme variant dark >/dev/null 2>&1; t1=$(sed -n 's/^THEME=//p' "$cfg")
+a2=$(sh "$SH" theme variant dark 2>&1); rc=0; a3=$(sh "$SH" theme variant dusk 2>&1) || rc=$?
+sh "$SH" theme nord >/dev/null 2>&1; rc2=0; a4=$(sh "$SH" theme variant light 2>&1) || rc2=$?
+sh "$SH" theme amber-drizzle >/dev/null 2>&1; a5=$(sh "$SH" theme show 2>&1 | sed -n 's/^  art *//p')
+[ "$a1" = 'tokyonight, light (dark: tokyonight-night), vector, still, portrait fitted' ] && [ "$v1" = "variant light $(printf '\302\267') dark or light" ] && [ "$t1" = tokyonight-night ] \
+    && [ "$a2" = 'tokyonight-night is the dark variant already' ] && [ "$rc" = 1 ] && [ "$a3" = 'spark-shell theme: variant takes dark or light' ] \
+    && [ "$rc2" = 1 ] && [ "$a4" = 'spark-shell theme: nord has no light variant' ] && [ "$a5" = 'amber-drizzle, dark, pixel, ambient, portrait authored' ] \
+    && [ "$(art_row)" = '6 families, each read' ] \
+    && ok "theme variant: a family's other variant is its own theme with its own drawing, said by theme show; one variant or a word not dark or light refused in one line; a theme with no family read from itself (a pixel scene moves and draws its own portrait view)" \
+    || bad "theme variant" "$a1 | $v1 | $t1 | $a2 | $a3 | $a4 | $a5 | $(art_row)"
+fam=${cfg%/*}/families; mkdir -p "$fam" "$th_dir/study-night" "$th_dir/study-day"
+cp "$REPO/gallery/theme/nord.env" "$th_dir/study-night/palette.env"; cp "$REPO/gallery/theme/one-light.env" "$th_dir/study-day/palette.env"
+printf 'FORMAT=2\nPALETTE=nord\nWALLPAPER=fjord\n' > "$th_dir/study-night/look.env"; printf 'FORMAT=2\nPALETTE=one-light\nWALLPAPER=shore\n' > "$th_dir/study-day/look.env"
+for p in test-wide-1:64:36 test-wide-2:64:36 test-wide-3:64:36 test-tall:36:64; do testpng "$(printf '%s' "$p" | cut -d: -f2)" "$(printf '%s' "$p" | cut -d: -f3)" "$th_dir/study-night/${p%%:*}.png"; done
+study() {   # study 'DARK-VARIANT-JSON' -- the family file of the TEST-ONLY study, its dark variant as given
+    printf '{"format": 1, "id": "study", "title": "Study", "media": "cinematic", "clock": false, "variants": {"dark": %s, "light": {"theme": "study-day"}}}\n' "$1" > "$fam/study.json"
+}
+study '{"theme": "study-night", "portrait": "test-tall.png", "motion": "still", "panels": {"2": [{"landscape": "test-wide-1.png"}, {"landscape": "test-wide-2.png", "portrait": "test-tall.png"}], "3": [{"landscape": "test-wide-1.png"}, {"landscape": "test-wide-2.png"}, {"landscape": "test-wide-3.png"}]}}'
+sh "$SH" theme study-night >/dev/null 2>&1
+a1=$(sh "$SH" theme show 2>&1 | sed -n 's/^  art *//p'); c1=$(art_row)
+[ "$a1" = 'study, dark (light: study-day), cinematic, still, portrait authored, panels for 2 and 3 screens' ] && [ "$c1" = '7 families, each read' ] \
+    && ok "a family of yours (families/): its portrait and its panels for two and three screens read from its own folder, the check counts it" || bad "family of yours" "$a1 | $c1"
+why=''
+for case in \
+    '{"format": 2}|study.json is not read: it was made by a newer spark-shell (format 2, this one reads 1) -- spark-shell update' \
+    '{"format": 1, "id": "study", "title": "Study", "media": "cinematic", "variants": {"dark": {"theme": "study-night"}}, "script": "rm -rf ~"}|study.json is not read: it has a key format 1 has not: script' \
+    '{"format": 1, "id": "other", "title": "Study", "media": "cinematic", "variants": {"dark": {"theme": "study-night"}}}|study.json is not read: its id is not its file'"'"'s name' \
+    'dark:{"theme": "gone"}|study.json is not read: its dark variant names gone, which is no theme here' \
+    'dark:{"theme": "study-night", "portrait": "../study-day/test-tall.png"}|study.json is not read: its dark portrait is not the name of a PNG or JPEG' \
+    'dark:{"theme": "study-night", "portrait": "link.png"}|study.json is not read: its dark variant names link.png, which is not a plain file in the folder of study-night' \
+    'dark:{"theme": "study-night", "portrait": "fake.png"}|study.json is not read: its dark variant names fake.png: ' \
+    'dark:{"theme": "study-night", "panels": {"3": [{"landscape": "test-wide-1.png"}, {"landscape": "test-wide-2.png"}]}}|study.json is not read: its dark panels for 3 screens are not 3 panels' \
+    'raw:{"format": 1,|study.json is not read: it is not JSON'; do
+    give=${case%%|*}; want=${case#*|}
+    case $give in dark:*) study "${give#dark:}" ;; raw:*) printf '%s\n' "${give#raw:}" > "$fam/study.json" ;; *) printf '%s\n' "$give" > "$fam/study.json" ;; esac
+    ln -sf test-wide-1.png "$th_dir/study-night/link.png"; printf 'not a picture\n' > "$th_dir/study-night/fake.png"
+    got=$(art_row)
+    case $got in "$want"*) ;; *) why="$why [$want] got [$got]" ;; esac
+done
+study '{"theme": "study-night", "portrait": "../x.png"}'; a2=$(sh "$SH" theme show 2>&1 | sed -n 's/^  art *//p')
+[ -z "$why" ] && [ "$a2" = 'study-night, dark, vector, still, portrait fitted' ] \
+    && ok "a family file is refused whole, the first reason in one line: a newer format, a key the format has not, an id not its name, a theme not here, a path, a link, a picture that is not one, the wrong count of panels, not JSON; its themes read from themselves meanwhile" \
+    || bad "family refused" "$why | $a2"
+rm -rf "$fam" "$th_dir/study-night" "$th_dir/study-day"; cp "$H/cfg-before-art" "$cfg"; sh "$SH" theme dracula >/dev/null 2>&1
+if [ -f "$H/hist-before-art" ]; then cp "$H/hist-before-art" "$st_dir/theme.history"; else rm -f "$st_dir/theme.history"; fi
 # a value set as it is, the dialog's own way (#183); a palette looked at is on the screen and nothing is kept
 mcp theme "$(call 1 theme_text '{"size":"14"}')" "$(call 2 theme_transparency '{"amount":"30"}')" "$(call 3 theme_preview '{"name":"nord"}')" "$(call 4 theme_preview '{"name":"none"}')" "$(call 5 theme_preview '{"name":"off"}')"
 [ "$(ans 1 | jq -r '.result.structuredContent.receipt' | cut -c1-10)" = 'text at 14' ] && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'transparency at 30%' ] \

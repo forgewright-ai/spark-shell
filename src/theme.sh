@@ -29,7 +29,7 @@ verb_close() {   # verb_close SENTENCE -> a verb's last line
     else echo "$1"; fi
 }
 
-THEME_WORDS='none show list save delete back wallpaper text transparency animation glyphs icons spacing family face workspaces motion picture gallery install preview'   # no theme may be named one
+THEME_WORDS='none show list save delete back wallpaper text transparency animation glyphs icons spacing family face workspaces motion picture gallery install preview variant'   # no theme may be named one
 cmd_theme() {   # cmd_theme [NAME|none|show|list|WORD ARG...|"WORDS"]
     config_load
     case ${1:-show} in
@@ -56,6 +56,7 @@ cmd_theme() {   # cmd_theme [NAME|none|show|list|WORD ARG...|"WORDS"]
         picture) shift; theme_picture "$@"; return ;;
         gallery) shift; theme_gallery "$@"; return ;;
         install) shift; theme_install "$@"; return ;;
+        variant) shift; theme_variant "$@"; return ;;
     esac
     case "$*" in *' '*) theme_from_words "$*"; return ;; esac
     [ -n "$(theme_kind "$1")" ] || refuse_in theme "no palette named $1 -- spark-shell theme list shows them"
@@ -136,6 +137,7 @@ theme_show() {
     [ "$src" != "$THEME_ENV" ] || printf '  %-8s %s\n' files "theme.env and console-colors, written from the palette"
     [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || printf '  %-8s %s\n' look "$(theme_look_words)"
     _td=$(theme_dir "$THEME"); [ -z "$_td" ] || { _ws=$(look_get "$_td" WORDS); printf '  %-8s %s\n' folder "$_td (from $(look_get "$_td" PALETTE)${_ws:+: \"$_ws\"})"; }
+    ! command -v jq >/dev/null 2>&1 || printf '  %-8s %s\n' art "$(art_words "$THEME")"
 }
 theme_list() {
     _saved=$(theme_saved_names)

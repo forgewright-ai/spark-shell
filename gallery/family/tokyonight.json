@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "id": "tokyonight",
+  "title": "Tokyo Night",
+  "media": "vector",
+  "variants": {
+    "dark": {
+      "theme": "tokyonight-night"
+    },
+    "light": {
+      "theme": "core-tokyonight-day"
+    }
+  }
+}

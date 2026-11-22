@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "id": "catppuccin",
+  "title": "Catppuccin",
+  "media": "vector",
+  "variants": {
+    "dark": {
+      "theme": "catppuccin-mocha"
+    },
+    "light": {
+      "theme": "catppuccin-latte"
+    }
+  }
+}

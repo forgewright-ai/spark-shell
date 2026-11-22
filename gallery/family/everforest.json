@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "id": "everforest",
+  "title": "Everforest",
+  "media": "vector",
+  "variants": {
+    "dark": {
+      "theme": "core-everforest-dark"
+    },
+    "light": {
+      "theme": "everforest-light"
+    }
+  }
+}

@@ -485,6 +485,7 @@ cmd_check_lines() {   # the checks, a row each; false when one fails
     check_terminfo
     check_look
     check_theme
+    check_art
     check_font
     check_quiet
     check_desktop

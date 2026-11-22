@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "id": "selenized",
+  "title": "Selenized",
+  "media": "vector",
+  "variants": {
+    "dark": {
+      "theme": "selenized-dark"
+    },
+    "light": {
+      "theme": "selenized-light"
+    }
+  }
+}

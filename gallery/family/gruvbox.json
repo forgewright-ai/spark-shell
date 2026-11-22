@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "id": "gruvbox",
+  "title": "Gruvbox",
+  "media": "vector",
+  "variants": {
+    "dark": {
+      "theme": "gruvbox-dark"
+    },
+    "light": {
+      "theme": "gruvbox-light"
+    }
+  }
+}
