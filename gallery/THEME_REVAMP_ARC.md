@@ -1,5 +1,46 @@
 # Unified theme revamp — one implementation arc
 
+## Founder-controlled flagship artwork gate (2026-11-22)
+
+**This section takes precedence over any contrary asset-delivery wording below.**
+The founder has NOT approved Neon Rain or any other cinematic illustration as
+final. All generated images, GIF motion studies, previews and the earlier
+`spark_shell_theme_revamp_codex_assets.zip` are UNAPPROVED EXPLORATION,
+not production art. DO NOT import, commit, convert, upscale, package, deploy,
+release, or use them as final artwork. In particular, do not silently import
+the previously supplied "clean" Neon Rain draft from any ZIP or scratch path.
+Do not interpret a provisional color palette as an approved theme palette.
+
+The founder and ChatGPT will art-direct **one flagship theme together**,
+including its clean/unbranded artwork, intended day/night art concept,
+landscape and portrait companion compositions, optional three-panel
+composition, animation treatment and derived interface/terminal palette.
+**Only after the founder explicitly approves the final artwork version
+and hands over the approved assets may Codex integrate them.** Do not infer
+approval from a favorable comment about an earlier study.
+
+**Codex must continue independently now**: implement the complete
+manifest/theme-engine, variants, existing-terminal-palette support,
+per-theme animation/static modes, curated font/glyph/spacing/icon options,
+gallery UX, output orientation/triptych routing, lock and idle artwork
+display, compatibility/security/tests; conduct actual current-art visual
+and animation review; apply reversible pruning/archive decisions (never
+delete original user-accessible themes without explicit owner approval).
+Implement proof fixtures using existing shipped art or conspicuously
+TEST-ONLY generated gradients/checkerboards; never ship placeholders as
+an exhibition or pretend fixture work is production artwork.
+
+Original high-detail art production for all Cinematic Worlds work should
+follow the founder-approved flagship visual standard. Codex may prepare
+asset manifests, tests and empty *development* slots, but must not mark a
+cinematic exhibition or theme as finished while its artwork is pending.
+
+Report two separate statuses: **engineering ready for artwork integration**
+and **complete exhibition ready for owner review**. The first may pass
+CI while the second must remain blocked until approved flagship art and
+other required exhibited artwork are integrated, tested and reviewed.
+Do not close/merge/release PR #36 until the full arc is approved.
+
 ## Mandate
 
 Complete the theme/art/appearance experience as ONE coherent, reviewable change on
