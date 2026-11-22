@@ -881,6 +881,8 @@ pub struct App {
     pub picking: Option<Picking>,
     /// Today, (year, month, day), the machine's own clock: the calendar's today.
     pub today: Option<(i32, u32, u32)>,
+    /// The clock's words as the header has them ("Sat 21 Nov · 19:21"): the Calendar's time in the layout in pixels.
+    pub clock: String,
     /// The calendar's month, as months from this one.
     pub month_offset: i32,
     pub monday_first: bool,
@@ -1078,6 +1080,7 @@ impl App {
             attachment: None,
             picking: None,
             today: None,
+            clock: String::new(),
             month_offset: 0,
             monday_first: false,
             mode: Mode::Normal,

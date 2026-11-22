@@ -221,6 +221,10 @@ pub enum Kind {
     Settings,
     /// A section's page (v0.161): a setting one row, its options side by side.
     Page,
+    /// A place of home in the new type (v0.162): workspaces, notes, system, help, power; a row of words two lines.
+    Place,
+    /// The Calendar (v0.162): the time large, the months side by side, then its rows.
+    Calendar,
     /// The place's grid rows, inside the frame.
     Grid,
 }
@@ -232,10 +236,14 @@ pub fn kind(app: &App) -> Kind {
         View::Home | View::Apps => kind_of(app, &app.list_items()),
         View::Folder(..) if app.files_pane_view().is_some() => kind_of(app, &app.list_items()),
         View::Dest(d) if d == crate::app::SETTINGS_DEST => kind_of(app, &app.list_items()),
-        View::Section(_) => kind_of(app, &app.list_items()),
+        View::Section(_) | View::Help => kind_of(app, &app.list_items()),
+        View::Dest(d) if d == crate::app::WORKSPACE_DEST || d == crate::app::CALENDAR_DEST => kind_of(app, &app.list_items()),
         _ => Kind::Grid,
     }
 }
+
+/// The sections a place of home shows in the new type (v0.162), apart from settings' pages.
+const PLACES: [&str; 3] = ["notes", "system", "power"];
 
 /// The same, of the items already read.
 fn kind_of(app: &App, items: &[Item]) -> Kind {
@@ -247,7 +255,11 @@ fn kind_of(app: &App, items: &[Item]) -> Kind {
         View::Apps if items.iter().all(known) => Kind::Apps,
         View::Folder(..) if app.files_pane_view().is_some() && items.iter().all(known) => Kind::Files,
         View::Dest(d) if d == crate::app::SETTINGS_DEST && items.iter().all(known) => Kind::Settings,
+        View::Section(p) if items.iter().all(known) && app.providers.get(p).is_some_and(|x| PLACES.contains(&x.label.as_str())) => Kind::Place,
         View::Section(_) if items.iter().all(known) => Kind::Page,
+        View::Help if items.iter().all(known) => Kind::Place,
+        View::Dest(d) if d == crate::app::WORKSPACE_DEST && items.iter().all(known) => Kind::Place,
+        View::Dest(d) if d == crate::app::CALENDAR_DEST && items.iter().all(known) => Kind::Calendar,
         _ => Kind::Grid,
     }
 }
@@ -271,6 +283,7 @@ fn known(it: &Item) -> bool {
             | Item::Folder(_)
             | Item::Files(_)
             | Item::Here
+            | Item::Key(..)
     )
 }
 
@@ -333,7 +346,8 @@ pub fn size(app: &App, m: &Metrics, w: f64, h: f64) -> (u16, u16) {
         Kind::Home | Kind::Files => ((g.bottom - g.top) / m.px(44.0)) as u16,
         Kind::Apps => ((g.bottom - g.top) / app_row(m, app.apps.spacing)) as u16,
         Kind::Settings => ((g.bottom - g.top) / m.px(52.0)) as u16,
-        Kind::Page => ((g.bottom - g.top) / m.px(44.0)) as u16,
+        Kind::Page | Kind::Place => ((g.bottom - g.top) / m.px(44.0)) as u16,
+        Kind::Calendar => ((g.bottom - calendar_top(app, m, &g)) / m.px(44.0)) as u16,
     };
     (g.grid_cols(m), rows.max(1) + crate::ui::head(app).content + crate::ui::BOTTOM)
 }
@@ -545,6 +559,8 @@ pub fn build(app: &App, pal: &Palette, m: &Metrics, w: f64, h: f64, was: &[Scrol
         Kind::Files => files_body(app, &mut pen, &g, &items),
         Kind::Settings => settings(app, &mut pen, &g, &items),
         Kind::Page => page(app, &mut pen, &g, &items),
+        Kind::Place => place(app, &mut pen, &g, &items),
+        Kind::Calendar => calendar(app, &mut pen, &g, &items),
     }
     if g.status {
         status(app, &mut pen, &g, k);
@@ -1295,7 +1311,26 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
                 let words: String = app.input.split_whitespace().collect::<Vec<_>>().join(" ");
                 Some((one, plain("ask spark", words, false)))
             }
-            Item::Row(p, r) if shape.c3 => app.row_ref(it).map(|row| (one, choice_of(app, m, *p, *r, room).unwrap_or_else(|| of_row(row)))),
+            Item::Row(p, r) if shape.c3 => app.row_ref(it).map(|row| match choice_of(app, m, *p, *r, room) {
+                Some(k) => (one, k),
+                None if shape.two => row_two(m, row, one),
+                None => (one, of_row(row)),
+            }),
+            // a key of help (v0.162): what you do, the key at the row's end in the smaller text
+            Item::Key(words, key) => Some((
+                one,
+                K::One {
+                    icon: None,
+                    sign: "",
+                    swatch: vec![],
+                    name: words.clone(),
+                    muted: false,
+                    words: String::new(),
+                    end: End::None,
+                    tail: false,
+                    key: key.clone(),
+                },
+            )),
             Item::Hit(_) | Item::Row(..) => app.row_ref(it).map(|r| (one, of_row(r))),
             Item::Folder(_) => app.row_ref(it).map(|r| {
                 let k = file_row(r, app.files_checks_any() && app.files.checked(&r.id));
@@ -1669,7 +1704,7 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
             K::Head(text, big, click) => {
                 // a group of apps or of files is named in large type, and the name is all there is: no count, no rule
                 let w = if *big {
-                    pen.text(x, top + m.px(32.0), text, Size::Head, t.accent, false)
+                    pen.text(x, top + m.px(32.0), &heading_words(text), Size::Head, t.accent, false)
                 } else {
                     pen.text(x, top + m.px(24.0), text, Size::Small, t.accent, true)
                 };
@@ -2281,6 +2316,205 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     let rows = rows_of(app, pen, items, shape, whole.right - whole.left - m.px(36.0));
     let key = format!("page\u{1f}{:?}\u{1f}{}", app.view, app.input);
     list(app, pen, &rows, whole, lit(app), list_focus(app), shape, app.scroll, key);
+}
+
+/// A provider's row as a place's page has it (v0.162): a row of words that is no control is two lines, its name over
+/// its words, as an app's row is; any other row is the row of_row draws.
+fn row_two(m: &Metrics, r: &crate::model::Row, one: f64) -> (f64, K) {
+    let plain = r.step.is_none()
+        && r.switch.is_none()
+        && !r.choice
+        && r.key.is_none()
+        && r.swatch.is_none()
+        && r.chip.is_empty()
+        && matches!(r.sign.as_str(), "" | "blank" | "-" | "opens")
+        && r.columns.iter().any(|c| !c.is_empty());
+    if plain {
+        let words = r.columns.iter().filter(|c| !c.is_empty()).cloned().collect::<Vec<_>>().join(crate::ui::SEP);
+        (m.px(52.0), K::App(r.text.clone(), words, None, String::new()))
+    } else {
+        (one, of_row(r))
+    }
+}
+
+/// The shape of a place's rows (v0.162): its groups named large, a row of words two lines, a setting one row, a key in
+/// the smaller text with no box.
+const PLACE_SHAPE: Shape = Shape {
+    two: true,
+    one: 44.0,
+    narrow: false,
+    still: false,
+    pad: 24.0,
+    heads: true,
+    bare: true,
+    c3: true,
+};
+
+/// A place of home in the new type (v0.162): workspaces, notes, system, help and power.
+fn place(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
+    let m = *pen.m;
+    let whole = Area {
+        left: g.inset,
+        right: g.w - g.inset,
+        top: g.top,
+        bottom: g.bottom,
+        from: 0.0,
+        to: g.w,
+    };
+    let key = format!("place\u{1f}{:?}\u{1f}{}", app.view, app.input);
+    // help in a wide window is a sheet of its keys: its groups in columns, a column a group or more, as even as they go
+    let cols = ((whole.right - whole.left) / m.px(600.0)).floor() as usize;
+    if app.view == View::Help && wide(&m, g.w) && cols >= 2 {
+        let col_w = ((whole.right - whole.left) / cols as f64).floor();
+        let rows = rows_of(app, pen, items, PLACE_SHAPE, col_w - m.px(48.0));
+        let mut groups: Vec<Vec<Row>> = vec![];
+        for r in rows {
+            if matches!(r.k, K::Head(..)) || groups.is_empty() {
+                groups.push(vec![]);
+            }
+            if let Some(gr) = groups.last_mut() {
+                gr.push(r);
+            }
+        }
+        let total: f64 = groups.iter().flatten().map(|r| r.h).sum();
+        let per = total / cols as f64;
+        let mut columns: Vec<Vec<Row>> = vec![vec![]];
+        for gr in groups {
+            let h: f64 = columns.last().map(|c| c.iter().map(|r| r.h).sum()).unwrap_or(0.0);
+            if h > 0.0 && h + gr.iter().map(|r| r.h).sum::<f64>() / 2.0 > per && columns.len() < cols {
+                columns.push(vec![]);
+            }
+            if let Some(c) = columns.last_mut() {
+                c.extend(gr);
+            }
+        }
+        for (k, c) in columns.iter().enumerate() {
+            let from = whole.left + k as f64 * col_w;
+            let area = Area {
+                left: from,
+                right: from + col_w - m.px(24.0),
+                from: if k == 0 { 0.0 } else { from },
+                to: if k + 1 == columns.len() { g.w } else { from + col_w },
+                ..whole
+            };
+            list(app, pen, c, area, lit(app), list_focus(app), PLACE_SHAPE, 0, format!("{key}\u{1f}{k}"));
+        }
+        return;
+    }
+    let rows = rows_of(app, pen, items, PLACE_SHAPE, whole.right - whole.left - m.px(36.0));
+    list(app, pen, &rows, whole, lit(app), list_focus(app), PLACE_SHAPE, app.scroll, key);
+}
+
+/// A group's name in large type, its number said once: a workspace's name carries its number framed as the bar draws
+/// it ("workspace 1 {1}"), which large type repeats for nothing.
+fn heading_words(text: &str) -> String {
+    let words: Vec<&str> = text.split(' ').collect();
+    let mut out: Vec<&str> = vec![];
+    for (i, w) in words.iter().enumerate() {
+        let inner: String = w.chars().filter(|c| c.is_alphanumeric()).collect();
+        let framed = !inner.is_empty() && inner.len() < w.len() && i > 0 && words[i - 1] == inner;
+        if !framed {
+            out.push(w);
+        }
+    }
+    out.join(" ")
+}
+
+/// The time the header's clock says ("Sat 21 Nov · 19:21", "... · 7:21 pm"): its figures and its half of the day.
+fn clock_time(clock: &str) -> Option<(String, Option<String>)> {
+    let t = clock.rsplit('\u{b7}').next()?.trim();
+    let (hm, half) = match t.split_once(' ') {
+        Some((a, b)) => (a, Some(b.to_string())),
+        None => (t, None),
+    };
+    (hm.contains(':') && hm.chars().all(|c| c.is_ascii_digit() || c == ':')).then(|| (hm.to_string(), half))
+}
+
+/// A month's block in the Calendar (v0.162): its name, the days' initials, six weeks' room.
+const MONTH_W: f64 = 280.0;
+const MONTH_H: f64 = 44.0 + 24.0 + 6.0 * 34.0;
+const MONTH_AIR: f64 = 48.0;
+
+/// Where the Calendar's rows start: under the time and the day, and under the months.
+fn calendar_top(app: &App, m: &Metrics, g: &Geo) -> f64 {
+    let timed = clock_time(&app.clock).is_some();
+    g.top + if timed { m.px(150.0) } else { 0.0 } + m.px(MONTH_H) + m.px(20.0)
+}
+
+/// The Calendar in the new type (v0.162): the time at 72 pixels and the day under it; then as many months side by
+/// side as the window holds, each named at 28 pixels, today in the accent and underlined, a day with a reminder in
+/// the accent; then its rows (the time's settings, a new reminder, the reminders). Left and Right move the months.
+fn calendar(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
+    use crate::calendar::{shift, weekday, weeks_from, ymd, DAYS, MONTHS};
+    const WEEKDAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    let m = *pen.m;
+    let t = pen.t;
+    let x0 = g.inset + m.px(24.0);
+    let mut y = g.top;
+    if let Some((hm, half)) = clock_time(&app.clock) {
+        let w = pen.text(x0, y + m.px(84.0), &hm, Size::Title, t.ink, false);
+        if let Some(h) = half {
+            pen.text(x0 + w + m.px(12.0), y + m.px(84.0), &h, Size::Lead, t.muted, false);
+        }
+        if let Some((ty, tm, td)) = app.today {
+            let day = format!("{}, {} {} {}", WEEKDAYS[weekday(ty, tm, td) as usize % 7], td, MONTHS[(tm - 1) as usize], ty);
+            pen.text(x0, y + m.px(124.0), &day, Size::Lead, t.muted, false);
+        }
+        y += m.px(150.0);
+    }
+    let dated: Vec<(i32, u32, u32)> = app
+        .providers
+        .iter()
+        .find(|p| p.label == "reminders")
+        .map(|p| p.rows.rows.iter().filter_map(|r| ymd(r.date.as_deref()?)).collect())
+        .unwrap_or_default();
+    if let Some((ty, tm, td)) = app.today {
+        let step = m.px(MONTH_W + MONTH_AIR);
+        let across = ((g.w - 2.0 * g.inset - m.px(24.0) + m.px(MONTH_AIR)) / step).floor().max(1.0) as i32;
+        let cw = m.px(MONTH_W) / 7.0;
+        for k in 0..across {
+            let mx = x0 + k as f64 * step;
+            let (yr, mo) = shift(ty, tm, app.month_offset + k);
+            pen.text(
+                mx,
+                y + m.px(32.0),
+                &format!("{} {}", MONTHS[(mo - 1) as usize], yr),
+                Size::Head,
+                t.accent,
+                false,
+            );
+            for i in 0..7 {
+                let d = DAYS[(i + usize::from(app.monday_first)) % 7];
+                pen.text_end(mx + (i + 1) as f64 * cw - m.px(10.0), y + m.px(62.0), d, Size::Small, t.muted, false);
+            }
+            for (w, wk) in weeks_from(yr, mo, app.monday_first).iter().enumerate() {
+                let base = y + m.px(68.0) + (w + 1) as f64 * m.px(34.0) - m.px(10.0);
+                for (i, d) in wk.iter().enumerate() {
+                    let Some(d) = d else { continue };
+                    let today = (yr, mo, *d) == (ty, tm, td);
+                    let marked = dated.contains(&(yr, mo, *d));
+                    let n = d.to_string();
+                    let right = mx + (i + 1) as f64 * cw - m.px(10.0);
+                    let color = if today || marked { t.accent } else { t.ink };
+                    let wd = pen.text_end(right, base, &n, Size::Main, color, today);
+                    if today {
+                        pen.fill(right - wd, base + m.px(5.0), wd, 2.0, t.accent);
+                    }
+                }
+            }
+        }
+    }
+    let whole = Area {
+        left: g.inset,
+        right: g.w - g.inset,
+        top: calendar_top(app, &m, g),
+        bottom: g.bottom,
+        from: 0.0,
+        to: g.w,
+    };
+    let rows = rows_of(app, pen, items, PLACE_SHAPE, whole.right - whole.left - m.px(36.0));
+    let key = format!("calendar\u{1f}{}", app.input);
+    list(app, pen, &rows, whole, lit(app), list_focus(app), PLACE_SHAPE, app.scroll, key);
 }
 
 /// Settings (v0.161): its groups named at 28 pixels, a setting two lines, its name over what it is set to now. What
