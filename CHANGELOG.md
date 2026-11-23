@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.164.2
+
+- Atlas Awakening's loops move. A screen's still, or a reload of the
+  desktop, drew over a loop already playing, and the loop paused.
+- The dialog's atlas animation is the painted one, in its own colors,
+  twice the size of the drawn pieces. The open plays when the dialog
+  opens and the close when it closes.
+- Atlas Awakening's colors come from its paintings.
+- The dialog is 0.164.2.
+
 ## v0.164.1
 
 - Cinematic Worlds opens in the gallery with Atlas Awakening, its first
