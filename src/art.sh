@@ -300,7 +300,8 @@ art_screens_follow() {   # each screen output * does not suit gets its own still
                   [ -f "$_ssf" ] || { mkdir_state "$WALL_CACHE/screens" && art_fit "$_asw" "$_ass" "$(art_edges "$_asw" "$_asg" "$_ssf.edges.png")" "$_ssf"; } || continue
                   wm_send "output \"$_asn\" bg \"$_ssf\" fill" ;;
           esac >/dev/null 2>&1 || :
-      done ) </dev/null >/dev/null 2>&1 3>&- 4<&- &
+      done
+      sleep 0.5; motion_raise ) </dev/null >/dev/null 2>&1 3>&- 4<&- &   # each still starts the background drawer anew, over a loop already playing
 }
 art_screens_changed() {   # on sway's output events: a screen came, went, moved or turned since the screens were last drawn, so every screen's still and loop again
     command -v jq >/dev/null 2>&1 && wm_up || return 0

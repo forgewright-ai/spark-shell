@@ -4318,6 +4318,15 @@ _i=0; while [ "$_i" -lt 50 ] && ! grep -q "^-- output \"HDMI-A-1\" bg \"$_mat/br
 [ -n "$_mok" ] && [ "$(readlink "$_ml1")" = "$_mat/just-beyond-reach.mp4" ] && [ "$(readlink "$_ml2")" = "$_mat/bridge-viewpoint.mp4" ] && [ ! -s "$HOME/mpv.log" ] \
     && grep -q "^-- output \"DP-3\" bg \"$_mat/just-beyond-reach.jpg\" fill$" "$HOME/mosway.log" && grep -q "^-- output \"HDMI-A-1\" bg \"$_mat/bridge-viewpoint.jpg\" fill$" "$HOME/mosway.log" \
     && ok "desktop --motion, a theme's own loops: the turned screen its portrait's loop, the other its panel's, linked into the cache, none made" || bad "given loops" "$_ml | $(cat "$HOME/mpv.log" "$HOME/mosway.log" 2>&1)"
+if [ -r "/proc/$$/stat" ]; then   # where a process's start can be read
+    # a reload or a screen's still starts the background drawer (sway's child swaybg) after the loop, over it, and a covered
+    # player pauses: the next look (sway's exec_always desktop --motion) starts the player again, on top
+    printf '#!/bin/sh\nsleep 30\n' > "$H/mo/swaybg"; chmod +x "$H/mo/swaybg"; sleep 0.1; "$H/mo/swaybg" & _mbg=$!
+    TMPDIR=$H/motmp XDG_RUNTIME_DIR=$H/run SWAYSOCK=$H/sway-ipc.$(id -u).$$.sock SPARK_SHELL_WALLPAPER=$H/mo/spark-wallpaper PATH="$H/mo:$H/lx:$PATH" sh "$SH" desktop --motion >/dev/null 2>&1; mo_wait 2
+    [ "$(grep -c '' "$HOME/player.log")" = 2 ] && [ "$(sed -n 2p "$HOME/player.log")" = "$_ml" ] \
+        && ok "desktop --motion: a loop the background drawer started over is played again, on top (a still or a reload covered it)" || bad "loop raised" "$(cat "$HOME/player.log")"
+    kill "$_mbg" 2>/dev/null || :
+fi
 mo_stop
 cp "$H/cfg.mo" "$HOME/.config/spark-shell/config"
 # two screens with one name (no serial, the same model): each by its port, never both at once
@@ -6963,7 +6972,7 @@ fi
 mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/animations"}')"
 ans 2 | jq -r '.result.contents[0].text' > "$H/anims.json"
 [ "$(jq -r '[.rows[] | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "moon:check:the palette's own|ripple:blank:|tide:blank:|embers:blank:|sun:blank:|flight:blank:|atlas:blank:|none:blank:no motion" ] \
-    && jq -e --arg d "$REPO/gallery/animation" '(.rows[0].film == ($d + "/moon/tokyonight-night")) and (.rows[-1] | has("film") | not) and all(.rows[]; .tool.name == "theme_animation" and .tool.arguments.to == .text and .quiet == true)' "$H/anims.json" >/dev/null \
+    && jq -e --arg d "$REPO/gallery/animation" '(.rows[0].film == ($d + "/moon/tokyonight-night")) and (.rows[6].film == ($d + "/atlas")) and (.rows[-1] | has("film") | not) and all(.rows[]; .tool.name == "theme_animation" and .tool.arguments.to == .text and .quiet == true)' "$H/anims.json" >/dev/null \
     && ok "provide theme: the animation list: the six and none, the one in use checked, the palette's own said, each piece's folder in the palette in use, Enter sets it in place (#132, #191)" || bad "animation list" "$(cat "$H/anims.json")"
 # #247: a palette with no set drawn ahead (a palette of yours, a theme from a picture or words) plays every piece too, the
 # dialog drawing it in the palette's colors: the verb, the list and the row as for a shipped palette, no piece its own, and
@@ -6978,7 +6987,7 @@ a1=$(sed -n 's/^DIALOG_ANIMATION=//p' "$HOME/.config/spark-shell/config")
     && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = "animation moon $(printf '\302\267') from the dialog's next opening" ] \
     && [ "$(ans 2 | jq -r '.result.structuredContent.transitions')" = 'draw:moon' ] \
     && [ "$(jq -r '[.rows[] | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "moon:check:|ripple:blank:|tide:blank:|embers:blank:|sun:blank:|flight:blank:|atlas:blank:|none:blank:no motion" ] \
-    && jq -e 'all(.rows[]; has("film") | not)' "$H/anims.json" >/dev/null \
+    && jq -e 'all(.rows[]; has("film") == (.text == "atlas"))' "$H/anims.json" >/dev/null \
     && { [ "$(uname -s)" = Darwin ] || jq -e '.rows[] | select(.id == "theme:show:Animation") | .columns == ["moon"] and .children == "spark-shell://theme/rows/animations" and .tool == null' "$H/trows.json" >/dev/null; } \
     && ok "theme animation, a palette with no pieces drawn ahead (#247): every piece in its list, the one set kept and played, none its own; the step names draw:moon for the dialog to draw" \
     || bad "animation any palette" "$o1 | $a1 | $(ans 2 | jq -c .result.structuredContent 2>&1) | $(cat "$H/anims.json") $(jq -c '.rows[] | select(.id == "theme:show:Animation")' "$H/trows.json" 2>&1)"
@@ -7512,9 +7521,10 @@ STUB
     printf 'DESKTOP=sway\nTHEME=tokyonight-night\nDIALOG_ANIMATION=none\n' > "$HOME/.config/spark-shell/config"; sh "$C/spark-shell" dialog >/dev/null 2>&1; a2=$(grep -cx -- --transitions "$HOME/dialog.argv" || :)
     printf 'DESKTOP=sway\nTHEME=none\n' > "$HOME/.config/spark-shell/config"; sh "$C/spark-shell" dialog >/dev/null 2>&1; a3=$(grep -cx -- --transitions "$HOME/dialog.argv" || :)
     palette_fixture mine '#fe8019'; printf 'DESKTOP=sway\nTHEME=mine\n' > "$HOME/.config/spark-shell/config"; sh "$C/spark-shell" dialog >/dev/null 2>&1; a4=$(grep -A1 -x -- --transitions "$HOME/dialog.argv" | tail -1)
+    printf 'DESKTOP=sway\nTHEME=mine\nDIALOG_ANIMATION=atlas\n' > "$HOME/.config/spark-shell/config"; sh "$C/spark-shell" dialog >/dev/null 2>&1; a5=$(grep -A1 -x -- --transitions "$HOME/dialog.argv" | tail -1)
     rm -f "$HOME/.config/spark-shell/themes/mine.env"
-    [ "$a1" = "$C/gallery/animation/moon/tokyonight-night" ] && [ "$a2" = 0 ] && [ "$a3" = 0 ] && [ "$a4" = draw:embers ] \
-        && ok "dialog: the transitions are the palette's piece in the palette in use (tokyonight-night's moon); a palette of yours, the piece for the dialog to draw (draw:embers); none, or no palette, plays none (#122, #247)" || bad "dialog transitions" "$a1 $a2 $a3 $a4"
+    [ "$a1" = "$C/gallery/animation/moon/tokyonight-night" ] && [ "$a2" = 0 ] && [ "$a3" = 0 ] && [ "$a4" = draw:embers ] && [ "$a5" = "$C/gallery/animation/atlas" ] \
+        && ok "dialog: the transitions are the palette's piece in the palette in use (tokyonight-night's moon); a palette of yours, the piece for the dialog to draw (draw:embers); a painted piece its own reels in any palette (atlas); none, or no palette, plays none (#122, #247)" || bad "dialog transitions" "$a1 $a2 $a3 $a4 $a5"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     st=0; out=$(sh "$C/spark-shell" dialog nonsense 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell dialog: nonsense is not a section of the dialog' ] && ok "dialog WORD: a word that is no section, refused" || bad "dialog nonsense" "st=$st $out"

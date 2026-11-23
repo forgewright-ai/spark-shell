@@ -163,10 +163,14 @@ ANIMATION_NAMES='moon ripple tide embers sun flight atlas'   # gallery/animation
 ANIM_PAIRED="tokyonight-night:moon nord:tide everforest-dark:embers gruvbox-dark:sun catppuccin-mocha:moon dracula:embers rose-pine:ripple selenized-dark:tide solarized-light:sun catppuccin-latte:flight tokyonight-day:flight gruvbox-light:sun everforest-light:ripple rose-pine-dawn:sun selenized-light:tide one-light:flight"
 anim_for_palette() { for _e in $ANIM_PAIRED; do [ "${_e%%:*}" != "$1" ] || { printf '%s' "${_e#*:}"; return 0; }; done; echo embers; }   # anim_for_palette PALETTE -> the piece it brings; embers for one with none
 anim_palette() { _apd=$(theme_dir "${THEME:-}"); if [ -n "$_apd" ]; then look_get "$_apd" PALETTE; else printf '%s' "${THEME:-}"; fi; }   # -> the shipped palette under the theme in use: a saved theme's own, else the theme
-dialog_transitions() {   # -> the piece's drawn folder for the palette in use, else draw:PIECE for the dialog to draw itself; nothing for none
+dialog_transitions() {   # -> the piece's folder (its own painted reels, or drawn for the palette in use), else draw:PIECE for the dialog to draw itself; nothing for none
     _dtn=$(anim_now); [ "$_dtn" != none ] || return 0
-    _dtp=$(anim_palette); _dta=$REPO/gallery/animation/$_dtn/$_dtp
-    if [ -n "$_dtp" ] && [ -f "$_dta/open.gif" ]; then printf '%s\n' "$_dta"; else printf 'draw:%s\n' "$_dtn"; fi
+    anim_folder "$_dtn" "$(anim_palette)" || printf 'draw:%s\n' "$_dtn"
+}
+anim_folder() {   # anim_folder PIECE PALETTE -> the folder of its reels: a painted piece's own (open.webp, its own colors), else drawn for the palette; false for none
+    if [ -f "$REPO/gallery/animation/$1/open.webp" ]; then printf '%s\n' "$REPO/gallery/animation/$1"
+    elif [ -n "$2" ] && [ -f "$REPO/gallery/animation/$1/$2/open.gif" ]; then printf '%s\n' "$REPO/gallery/animation/$1/$2"
+    else return 1; fi
 }
 anim_drawn() { [ -n "$1" ] && [ -f "$REPO/gallery/animation/${ANIMATION_NAMES%% *}/$1/open.gif" ]; }   # anim_drawn PALETTE -> true when the pieces were drawn ahead for it (the shipped palettes)
 anim_now() {   # -> the piece the dialog plays: none with no palette, else the one set, else the palette's own

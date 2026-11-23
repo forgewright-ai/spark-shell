@@ -484,6 +484,14 @@ motion_follow() {   # the look's loops playing or made; else ours stopped
       fi
       rm -f "$MOTION_DIR/making"; rm -rf "${_mj:?}" ) </dev/null >/dev/null 2>&1 3>&- 4<&- &
 }
+motion_raise() {   # our loops back on top: the background drawer started after the player (a screen's still, a reload) covers it, and a covered player pauses
+    _mrb=$(wm_background_pid) && _mrt=$(proc_ticks "$_mrb") || return 0
+    for _mp in $(motion_ours); do
+        [ "$(proc_ticks "$_mp" || echo 0)" -lt "$_mrt" ] || continue
+        motion_play_want; return 0
+    done
+}
+proc_ticks() { [ -r "/proc/$1/stat" ] && sed 's/.*) //' "/proc/$1/stat" | awk '{ print $20 }'; }   # proc_ticks PID -> when it started, in clock ticks since boot
 motion_play_want() {
     [ -f "$(motion_want)" ] || return 0
     set --; while IFS= read -r _ma; do set -- "$@" "$_ma"; done < "$(motion_want)"

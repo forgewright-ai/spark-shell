@@ -1,6 +1,6 @@
 [package]
 name = "spark-dialog"
-version = "0.164.1"
+version = "0.164.2"
 edition = "2021"
 rust-version = "1.98"
 license = "MIT"
@@ -24,6 +24,7 @@ unicode-width = "0.2"
 unicode-segmentation = "1"
 libc = "0.2"
 gif = { version = "0.14.2", default-features = false, features = ["std"] }
+image-webp = "0.2.4"
 
 # the window of the dialog's own, as spark-bar and spark-winpad have theirs: Wayland's client library, cairo, pango
 # and the keyboard's layouts opened at run time, so the binary needs no -devel package and runs on each family's own

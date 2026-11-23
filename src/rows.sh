@@ -570,7 +570,7 @@ provide_anim_rows() {   # -> the animation list as a rows resource: the pieces a
     _ap=$(anim_palette); _an=$(anim_now); _apo=$(anim_for_palette "$_ap"); _anl="$ANIMATION_NAMES none"
     anim_drawn "$_ap" || _apo=''   # no shipped set for this palette: no piece is its own
     for _n in $_anl; do
-        _af=''; [ "$_n" = none ] || [ -z "$_ap" ] || [ ! -f "$REPO/gallery/animation/$_n/$_ap/open.gif" ] || _af=$REPO/gallery/animation/$_n/$_ap
+        _af=''; [ "$_n" = none ] || _af=$(anim_folder "$_n" "$_ap") || _af=''
         printf '%s\t%s\n' "$_n" "$_af"
     done | jq -Rn --arg now "$_an" --arg paired "$_apo" '
         [inputs | split("\t") | {id: ("theme:animation:" + .[0]), sign: (if .[0] == $now then "check" else "blank" end), text: .[0],

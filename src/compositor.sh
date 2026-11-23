@@ -15,6 +15,11 @@ wm_up() { wm_session && [ -n "$(swaymsg -t get_version 2>/dev/null)" ]; }   # it
 wm_running_any() { pgrep -x sway >/dev/null 2>&1; }
 wm_pid() { pgrep -u "$(id -u)" -x sway 2>/dev/null | head -1 || :; }
 wm_socket_of() { printf '%s\n' "${XDG_RUNTIME_DIR:-/nonexistent}/sway-ipc.$(id -u).$1.sock"; }   # wm_socket_of PID
+wm_background_pid() {   # -> the session's newest background drawer (swaybg, a child of the sway whose socket is SWAYSOCK); false for none
+    _wbs=${SWAYSOCK##*/sway-ipc.}; _wbs=${_wbs%.sock}; _wbs=${_wbs#*.}   # sway-ipc.UID.PID.sock -> PID
+    case $_wbs in ''|*[!0-9]*) return 1 ;; esac
+    pgrep -n -x -P "$_wbs" swaybg 2>/dev/null
+}
 wm_env_name() { printf 'SWAYSOCK'; }             # the session's variable, for a bus or a service manager
 wm_config_file() { printf '%s\n' "$HOME/$WM_CONFIG_REL"; }
 wm_config_template() { printf '%s\n' "$REPO/template/$WM_CONFIG_REL"; }

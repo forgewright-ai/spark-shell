@@ -439,6 +439,10 @@ fn decode_films(dir: &str, palette: &std::collections::HashMap<String, String>, 
         };
     }
     let one = |reel: &str| {
+        // a painted piece: its own WebP, in its own colors, read as it plays
+        if let Some(bytes) = std::fs::read(format!("{}/{}.webp", dir, reel)).ok().filter(|b| b.len() <= 16 << 20) {
+            return animation::film_webp(bytes, pixels);
+        }
         let f = format!("{}/{}{}.gif", dir, reel, if double { "@2x" } else { "" });
         let bytes = std::fs::read(&f).ok().filter(|b| b.len() <= 4 << 20)?;
         if pixels {
@@ -1146,8 +1150,8 @@ fn main() {
                             ((fw as u32 * cw).saturating_sub(film.w) / 2 / cw) as u16,
                             ((fh as u32 * chh).saturating_sub(film.h) / 2 / chh) as u16,
                         );
-                        if let Some(pic) = film.pics.get(k) {
-                            steps.push(place(x + dx, y + dy, pic));
+                        if let Some(pic) = film.pic(k) {
+                            steps.push(place(x + dx, y + dy, &pic));
                         }
                         shown_film = Some(((x, y, fw, fh), reel, shown));
                         // the opening's first frame is on the window: it is shown (#167)
@@ -1424,7 +1428,7 @@ fn main() {
                             ratatui::crossterm::cursor::SavePosition,
                             ratatui::crossterm::cursor::MoveTo(x + dx, y + dy)
                         );
-                        let _ = out.write_all(film.frames[k].0.as_bytes());
+                        let _ = out.write_all(film.sixel(k).unwrap_or_default().as_bytes());
                         let _ = queue!(out, ratatui::crossterm::cursor::RestorePosition);
                         let _ = out.write_all(b"\x1b[?2026l");
                         let _ = out.flush();
