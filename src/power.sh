@@ -210,7 +210,7 @@ panel_act_theme() {   # the theme steps: the text, the wallpaper, save, delete, 
         delete) _r=$(cmd_theme delete "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "deleted $_arg" ;;
         restore) _r=$(cmd_theme restore "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | tail -1 ;;
         color) _r=$(cmd_theme color "${_arg%% *}" "${_arg#* color=}" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | tail -1 ;;
-        export) _r=$(cmd_theme export "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | tail -1 ;;
+        export) _r=$(cmd_theme export "$_arg" spark-theme 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | tail -1 ;;
         install) _r=$(cmd_theme install "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | grep -m1 '^installed ' ;;
         colors|clock|pair|portrait) _r=$(cmd_theme "$_a" "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | tail -1 ;;
         pointer) # shellcheck disable=SC2086   # a cursor theme's name, then its size: two words

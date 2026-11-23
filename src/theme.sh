@@ -36,8 +36,8 @@ cmd_theme() {   # cmd_theme [NAME|none|show|list|WORD ARG...|"WORDS"]
         show) [ $# -le 1 ] || refuse_in theme "show takes no word"; theme_show; return ;;
         list) [ $# -le 1 ] || refuse_in theme "list takes no word"; theme_list; return ;;
         export) if [ $# -gt 1 ] || [ -z "$(theme_kind export)" ]; then
-                if [ $# -lt 2 ] || [ $# -gt 3 ]; then echo "usage: spark-shell theme export NAME [$TERM_PALETTE_FORMATS]" >&2; return 1; fi
-                if [ $# -eq 2 ] && [ -n "$(theme_dir "$2")" ]; then theme_export_file "$2"; return; fi   # a theme with its folder: the theme file
+                if [ $# -lt 2 ] || [ $# -gt 3 ]; then echo "usage: spark-shell theme export NAME [$TERM_PALETTE_FORMATS|spark-theme]" >&2; return 1; fi
+                if [ "${3:-}" = spark-theme ]; then theme_export_file "$2"; return; fi   # the theme itself, as a file to share
                 palette_export "$2" "${3:-env}"; return
             fi ;;
         save) shift; theme_save "$@"; return ;;
@@ -254,7 +254,7 @@ theme_restore() {   # theme_restore NAME -- a theme deleted from the dialog, bac
     echo "$_trn is back"
 }
 theme_export_file() {   # theme_export_file NAME -- the theme as NAME.spark-theme in the downloads folder: its look as a shared theme sets it, its colors, its pictures with no metadata, its loops, reels and family
-    _txd=$(theme_dir "$1"); [ -n "$_txd" ] || refuse_in theme "$1 has no folder -- spark-shell theme export $1 kitty gives its palette for a terminal"
+    _txd=$(theme_dir "$1"); [ -n "$_txd" ] || refuse_in theme "$1 is a palette, with no folder -- spark-shell theme export $1 kitty gives it for a terminal"
     case $1 in [a-z]*) ;; *) refuse_in theme "a theme file takes a name of a to z, 0 to 9 and - -- spark-shell theme duplicate $1 NEW first" ;; esac
     case $1 in *[!a-z0-9-]*) refuse_in theme "a theme file takes a name of a to z, 0 to 9 and - -- spark-shell theme duplicate $1 NEW first" ;; esac
     [ ${#1} -le 40 ] || refuse_in theme "a theme file takes a name of 40 letters at most -- spark-shell theme duplicate $1 NEW first"

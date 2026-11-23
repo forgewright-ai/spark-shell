@@ -6972,7 +6972,7 @@ fi
 mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/animations"}')"
 ans 2 | jq -r '.result.contents[0].text' > "$H/anims.json"
 [ "$(jq -r '[.rows[] | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "moon:check:the palette's own|ripple:blank:|tide:blank:|embers:blank:|sun:blank:|flight:blank:|atlas:blank:|none:blank:no motion" ] \
-    && jq -e --arg d "$REPO/gallery/animation" --arg a "$REPO/gallery/core/atlas-awakening/atlas-awakening-dialog" '(.rows[0].film == ($d + "/moon/tokyonight-night")) and (.rows[6].film == $a) and (.rows[-1] | has("film") | not) and all(.rows[]; .tool.name == "theme_animation" and .tool.arguments.to == .text and .quiet == true)' "$H/anims.json" >/dev/null \
+    && jq -e --arg d "$REPO/gallery/animation" --arg a "$REPO/gallery/core/atlas-awakening" '(.rows[0].film == ($d + "/moon/tokyonight-night")) and (.rows[6].film == ($a + "/atlas-awakening-dialog")) and (.rows[-1] | has("film") | not) and all(.rows[]; .tool.name == "theme_animation" and .tool.arguments.to == .text and .quiet == true)' "$H/anims.json" >/dev/null \
     && ok "provide theme: the animation list: the six and none, the one in use checked, the palette's own said, each piece's folder in the palette in use, Enter sets it in place (#132, #191)" || bad "animation list" "$(cat "$H/anims.json")"
 # #247: a palette with no set drawn ahead (a palette of yours, a theme from a picture or words) plays every piece too, the
 # dialog drawing it in the palette's colors: the verb, the list and the row as for a shipped palette, no piece its own, and
@@ -8075,7 +8075,7 @@ _xt=$(sed -n 's/^THEME=//p' "$cfg"); cp "$cfg" "$H/cfg.file"; mkdir -p "$th_dir/
 _xjpg='\377\300\000\021\010\000\020\000\040\003\001\021\000\002\021\000\003\021\000\377\331'   # a frame header and the end: a JPEG 32 by 16 to its header
 printf "\377\330\377\341\000\016Exif\000\000GPS 51$_xjpg" > "$th_dir/shore/shore.jpg"
 printf 'FORMAT=2\nPALETTE=picture\nWALLPAPER=picture\nPICTURE=shore.jpg\nFACE=argon\nALPHA=0.9\nPOINTER=Adwaita 48\nTEXT_SIZE=14\nANIMATION=tide\n' > "$th_dir/shore/look.env"
-x1=$(sh "$SH" theme export shore 2>&1 | tail -1); _xf=${x1#saved }
+x1=$(sh "$SH" theme export shore spark-theme 2>&1 | tail -1); _xf=${x1#saved }
 x2=$(tar -tf "$_xf" 2>&1 | paste -sd ' ' -); x3=$(tar -xOf "$_xf" shore/look.env 2>&1 | paste -sd ' ' -)
 mkdir -p "$H/xin"; tar -xf "$_xf" -C "$H/xin" shore/shore.jpg; x4=$(python3 -I "$REPO/lib/look.py" picture "$H/xin/shore/shore.jpg" 2>&1)
 x5=$(sh "$SH" theme export nord 2>&1 | head -1)
@@ -8107,7 +8107,7 @@ x9=''; for _xb in link script loop key; do x9="$x9|$(sh "$SH" theme install "$H/
     && [ "$rc6" = 1 ] && [ "$x6" = 'spark-shell theme: a theme of yours is named shore -- spark-shell theme rename shore NEW first, then install it' ] \
     && [ "$x7" = 'installed the theme shore from shore.spark-theme, its files checked -- spark-shell theme shore brings it back' ] && [ "$t7" = shore ] && [ "$x8" = 'jpeg 32 16' ] \
     && [ "$x9" = '|spark-shell theme: bad-link.spark-theme was not installed: it holds a link, a device or a folder: x/x-landscape-1.jpg|spark-shell theme: bad-script.spark-theme was not installed: it holds run.sh, a kind of file a theme has not|spark-shell theme: bad-loop.spark-theme was not installed: its loop x-landscape-1.mp4: it is no MP4|spark-shell theme: bad-key.spark-theme was not installed: its look.env holds POINTER, which a shared theme never sets' ] \
-    && ok "theme export NAME: NAME.spark-theme in Downloads, its look as shared (no pointer, no text size), its picture's metadata gone; a palette alone still printed; theme install FILE: read as data, a link, a script, a loop that is no MP4 and a pointer refused, a name of yours kept" \
+    && ok "theme export NAME spark-theme: NAME.spark-theme in Downloads, its look as shared (no pointer, no text size), its picture's metadata gone; a palette alone still printed; theme install FILE: read as data, a link, a script, a loop that is no MP4 and a pointer refused, a name of yours kept" \
     || bad "theme file" "$x1 | $x2 | $x3 | $x4 | $x5 | $rc6 $x6 | $x7 $t7 $x8 | $x9"
 mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows/yours"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/gallery/shore"}')" \
     "$(call 3 theme_export '{"name":"shore"}')" "$(call 4 theme_install "$(jq -cn --arg p "$H/bad-script.spark-theme" '{path: $p}')")"

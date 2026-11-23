@@ -20,8 +20,8 @@
   dialog's own opening and closing. A color hard to read on the ground
   says so. A bundled theme changes as a look of its own until you save
   it.
-- `spark-shell theme export NAME` writes NAME.spark-theme to the
-  downloads folder, with the theme's colors, look, pictures, loops and
+- `spark-shell theme export NAME spark-theme` writes NAME.spark-theme to
+  the downloads folder, with the theme's colors, look, pictures, loops and
   dialog animation. Pictures lose their metadata; the pointer and the
   text size stay yours. `spark-shell theme install FILE` reads one as
   data and checks it as the gallery's themes are. A theme's page has

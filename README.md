@@ -123,8 +123,7 @@ spark-shell theme export amber-drizzle kitty > amber-drizzle.conf
 ```
 
 Formats are `env` (all 20 colors), `foot`, `kitty`, `ghostty`, and
-`alacritty`. With no format, a palette prints `env` and a theme with its
-own folder is written as a theme file (below).
+`alacritty`. With no format, the command prints `env`.
 
 The sections are listed in `gallery/core/curation.json` and the theme
 names in `gallery/core/themes.tsv`. Both ship with spark-shell and work
@@ -150,7 +149,7 @@ turned, second and third screen, a loop for each picture, and the
 dialog's own opening and closing. A bundled theme changes as a look of
 its own until you save it.
 
-To share a theme, `spark-shell theme export NAME` writes
+To share a theme, `spark-shell theme export NAME spark-theme` writes
 `NAME.spark-theme` to the downloads folder: its colors, look, pictures,
 loops and dialog animation. Pictures lose their metadata, and the pointer
 and text size stay yours. `spark-shell theme install FILE` reads one as
