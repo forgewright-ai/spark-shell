@@ -6,8 +6,8 @@
   `spark-shell theme wallpaper bridge-viewpoint` shows Atlas Awakening's
   bridge. The picture chosen is always on a screen: beside a turned
   screen, the landscape screen shows it.
-- A theme's own loops move after an update or a reload too. The player
-  waits until the stills are drawn, then plays over them.
+- A theme's own loops move after an update or a reload too. They wait
+  until the stills are drawn, then play over them.
 
 ## v0.164.2
 
