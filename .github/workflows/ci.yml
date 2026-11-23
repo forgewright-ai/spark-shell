@@ -104,14 +104,18 @@ jobs:
         # secret gets a NOTICE and the generic patterns only. Each check is
         # an if/exit 1: a negated pipeline (`! git grep ...`) is exempt from
         # errexit, so only the last one would decide the step. A systemd
-        # unit name (getty@tty1.service) is not an address.
+        # unit name (getty@tty1.service) is not an address. A picture, a
+        # loop or a reel the list hits is read again by its parts
+        # (test/privacy_media.py): its coded data holds any short word by
+        # chance, its metadata only what a person wrote.
         env:
           SPARK_PRIVACY_TERMS_SECRET: ${{ secrets.SPARK_PRIVACY_TERMS }}
         run: |
           printf '%s\n' "$SPARK_PRIVACY_TERMS_SECRET" > "$RUNNER_TEMP/privacy-terms"
           terms=$(cat .privacy-terms "$RUNNER_TEMP/privacy-terms" | grep -v '^#' | grep -v '^[[:space:]]*$' | sort -u | sed 's,[][\.*^$+?(){}|/],\\&,g' | paste -sd'|' -)
           if [ -z "$terms" ]; then echo "NOTICE: no privacy word list -- generic patterns only"; else
-            if git grep -l -i -w -E "$terms" -- . ':(exclude).privacy-terms'; then
+            hits=$(git grep -l -i -w -E "$terms" -- . ':(exclude).privacy-terms' || true)
+            if [ -n "$hits" ] && ! printf '%s\n' "$hits" | PRIVACY_TERMS="$terms" python3 -I test/privacy_media.py; then
               echo "privacy: a listed word is in the tree"; exit 1; fi; fi
           hits=$(git grep -n -E '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- . | sed -E 's/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.(service|socket|timer|target)//g' | grep -E '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' | grep -v 'you@example.com' | cut -d: -f1 | sort -u || true)
           if [ -n "$hits" ]; then

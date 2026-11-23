@@ -45,7 +45,10 @@ step() {   # step NAME COMMAND... -- one check: ok and on, or FAIL with the end 
 privacy() {
     terms=$(cat .privacy-terms "${SPARK_PRIVACY_TERMS:-${XDG_CONFIG_HOME:-$HOME/.config}/spark/privacy-terms}" 2>/dev/null \
             | sed 's/#.*//; s/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | sort -u | sed 's,[][\.*^$+?(){}|/],\\&,g' | paste -sd'|' -)
-    if [ -n "$terms" ] && git grep -l -i -w -E "$terms" -- . ':(exclude).privacy-terms'; then echo "a listed word is in the tree"; return 1; fi
+    if [ -n "$terms" ]; then   # a picture, a loop or a reel the list hits is read again by its parts: its coded data holds any short word by chance
+        hits=$(git grep -l -i -w -E "$terms" -- . ':(exclude).privacy-terms' || true)
+        if [ -n "$hits" ] && ! printf '%s\n' "$hits" | PRIVACY_TERMS=$terms python3 -I test/privacy_media.py; then echo "a listed word is in the tree"; return 1; fi
+    fi
     hits=$(git grep -n -E '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- . | sed -E 's/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.(service|socket|timer|target)//g' \
            | grep -E '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' | grep -v 'you@example.com' | cut -d: -f1 | sort -u || true)
     [ -z "$hits" ] || { printf '%s\n' "$hits"; echo "an e-mail address is in the tree"; return 1; }
