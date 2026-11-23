@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.165
+
+- The dialog plays a theme's opening when it opens and its closing when
+  it closes, with nothing between. While something takes time, the glyph
+  family's bars show it.
+- Each theme keeps its files in one folder. Atlas Awakening's are named
+  by role: landscape-1, landscape-2 and portrait, each a still and a
+  loop, and dialog-open and dialog-close. Its stills and loops are 4K.
+  `spark-shell theme wallpaper landscape-2` shows its second picture.
+- Your themes takes the place of Manage themes. It lists each theme of
+  yours with rename, duplicate and delete, and the ways to make one:
+  from the look in use, a picture, a theme file, or a copy of the theme
+  in use. A delete from the dialog can be undone.
+- Colors and Screens and art, in the theme settings, change what the
+  dialog could not: the 20 colors, another theme's colors, the pointer,
+  the clock on the idle screen, the other variant, the pictures for a
+  turned, second and third screen, a loop for each picture, and the
+  dialog's own opening and closing. A color hard to read on the ground
+  says so. A bundled theme changes as a look of its own until you save
+  it.
+- `spark-shell theme export NAME` writes NAME.spark-theme to the
+  downloads folder, with the theme's colors, look, pictures, loops and
+  dialog animation. Pictures lose their metadata; the pointer and the
+  text size stay yours. `spark-shell theme install FILE` reads one as
+  data and checks it as the gallery's themes are. A theme's page has
+  Export.
+- The dialog is 0.165.0.
+
 ## v0.164.4
 
 - The dialog's atlas animation opens and closes clean. The open ends

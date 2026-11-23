@@ -123,7 +123,8 @@ spark-shell theme export amber-drizzle kitty > amber-drizzle.conf
 ```
 
 Formats are `env` (all 20 colors), `foot`, `kitty`, `ghostty`, and
-`alacritty`. With no format, the command prints `env`.
+`alacritty`. With no format, a palette prints `env` and a theme with its
+own folder is written as a theme file (below).
 
 The sections are listed in `gallery/core/curation.json` and the theme
 names in `gallery/core/themes.tsv`. Both ship with spark-shell and work
@@ -139,6 +140,21 @@ names match; they live in `$XDG_CONFIG_HOME/spark-shell/themes/` (default
 `~/.config/spark-shell/themes/`). To add a collection of your own, put its
 theme names, one per line, in the adjacent `galleries/` directory, for
 example `studio.list`.
+
+**Your themes** lists the themes you made or installed, each with rename,
+duplicate and delete, and the ways to make one: from the look in use, a
+picture, a theme file, or a copy of the theme in use. **Colors** and
+**Screens and art** change the theme in use: its 20 colors, the pointer,
+the clock on the idle screen, its other variant, the pictures for a
+turned, second and third screen, a loop for each picture, and the
+dialog's own opening and closing. A bundled theme changes as a look of
+its own until you save it.
+
+To share a theme, `spark-shell theme export NAME` writes
+`NAME.spark-theme` to the downloads folder: its colors, look, pictures,
+loops and dialog animation. Pictures lose their metadata, and the pointer
+and text size stay yours. `spark-shell theme install FILE` reads one as
+data, checks it as the gallery's themes are, and uses it.
 
 ## Contributing
 
