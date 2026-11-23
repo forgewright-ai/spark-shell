@@ -484,10 +484,12 @@ motion_follow() {   # the look's loops playing or made; else ours stopped
       fi
       rm -f "$MOTION_DIR/making"; rm -rf "${_mj:?}" ) </dev/null >/dev/null 2>&1 3>&- 4<&- &
 }
-motion_raise() {   # our loops back on top: the background drawer started after the player (a screen's still, a reload) covers it, and a covered player pauses
+motion_raise() {   # our loops back on top: the background drawer started anew (a screen's still, a reload) covers a player, which pauses
     _mrb=$(wm_background_pid) && _mrt=$(proc_ticks "$_mrb") || return 0
+    _mrh=$(getconf CLK_TCK 2>/dev/null) || _mrh=100; _mrt=$((_mrt + 3 * _mrh))   # it draws once its pictures are read: 3 s on
+    while [ "$(awk -v h="$_mrh" '{ printf "%d", $1 * h }' /proc/uptime)" -lt "$_mrt" ]; do sleep 0.5; done
     for _mp in $(motion_ours); do
-        [ "$(proc_ticks "$_mp" || echo 0)" -lt "$_mrt" ] || continue
+        [ "$(proc_ticks "$_mp" || echo 0)" -lt "$_mrt" ] || continue   # a player that started before the drawer drew
         motion_play_want; return 0
     done
 }
