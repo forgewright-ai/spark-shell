@@ -288,12 +288,11 @@ mod tests {
     fn every_piece_is_a_film_in_a_dark_and_a_light_palette() {
         let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../gallery/animation");
         let mut n = 0;
-        // a piece is a folder; one a tool left (__pycache__ beside lib/animation.py) is not, and a painted one (its own
-        // open.webp) has its own test
+        // a piece is a folder; one a tool left (__pycache__ beside lib/animation.py) is not
         for piece in std::fs::read_dir(root)
             .unwrap()
             .flatten()
-            .filter(|e| e.path().is_dir() && !e.file_name().to_string_lossy().starts_with(['_', '.']) && !e.path().join("open.webp").is_file())
+            .filter(|e| e.path().is_dir() && !e.file_name().to_string_lossy().starts_with(['_', '.']))
         {
             for pal in ["tokyonight-night", "solarized-light"] {
                 for reel in ["open", "close"] {
@@ -309,7 +308,11 @@ mod tests {
 
     #[test]
     fn a_painted_piece_plays_as_it_reads_in_its_own_colors() {
-        let at = |reel: &str| std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../gallery/animation/atlas/").to_string() + reel + ".webp").unwrap();
+        // Atlas Awakening's, beside its pictures in its theme's folder
+        let at = |reel: &str| {
+            std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../gallery/core/atlas-awakening/atlas-awakening-dialog-").to_string() + reel + ".webp")
+                .unwrap()
+        };
         // twice the drawn pieces' size; its frames and their times read from the headers: open and close 3.6 seconds each
         for (reel, frames, ms) in [("open", 106, 3599), ("close", 106, 3599)] {
             let f = film_webp(at(reel), true).unwrap();

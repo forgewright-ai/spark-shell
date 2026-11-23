@@ -217,7 +217,7 @@ THUMB_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/thumbs   # DRAWING-P
 thumb_palette() { if [ -n "${THEME:-}" ] && [ "$THEME" != none ] && palette_file "$THEME" >/dev/null; then printf '%s' "$THEME"; else printf none; fi; }   # -> THEME when it has a palette file, else none
 wall_thumbs() {   # draws the small pictures missing or stale; quiet
     art_stills | while IFS= read -r _asf; do   # the theme's own pictures
-        _t=$THUMB_DIR/$THEME-$(basename "${_asf%.*}").png
+        _t=$THUMB_DIR/$THEME-$(art_label "$_asf").png   # the row's own words name it (provide_wall_rows)
         [ -f "$_t" ] || { mkdir_state "$THUMB_DIR" && pic_png "$_asf" "$_t" 480; } || :
     done
     [ -n "$(svg_tool)" ] || return 0

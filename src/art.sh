@@ -9,7 +9,7 @@
 # file is data: jq reads it, each key is checked, and a picture it names is a
 # plain PNG or JPEG in the variant's own folder.
 # sets: ART_FORMAT ART_SCREENS FAMILY_CORE FAMILY_MAX FAMILY_RULES SCENES_PIXEL
-# reads: CONFIG_DIR OS PANEL_SEP REPO STATE_DIR TAB TMP WALL_CACHE
+# reads: CONFIG_DIR CORE_DIR OS PALETTE_DIR PANEL_SEP REPO STATE_DIR TAB TMP WALL_CACHE
 ART_FORMAT=1   # a newer format is refused, not half read
 FAMILY_CORE=$REPO/gallery/family
 FAMILY_MAX=16384
@@ -51,8 +51,9 @@ def problems:
      end)
   ] end;
 problems | first // empty'
-family_files() {   # -> the family files, yours first, one a line; an id once
-    for _ff in "$CONFIG_DIR"/families/*.json "$FAMILY_CORE"/*.json; do [ -f "$_ff" ] && printf '%s\n' "$_ff"; done | awk -F/ '!seen[$NF]++'
+family_files() {   # -> the family files, yours first, one a line; an id once: a theme's own (family.json in its folder, its id the folder's name), then the shared
+    for _ff in "$PALETTE_DIR"/*/family.json "$CORE_DIR"/*/family.json "$CONFIG_DIR"/families/*.json "$FAMILY_CORE"/*.json; do [ -f "$_ff" ] && printf '%s\n' "$_ff"; done \
+        | awk -F/ '{ k = ($NF == "family.json") ? $(NF - 1) ".json" : $NF } !seen[k]++'
 }
 family_why() {   # family_why FILE -> nothing and 0 for a family this spark-shell reads; else why in one line and 1
     [ -f "$1" ] && [ ! -L "$1" ] || { echo "it is not a plain file"; return 1; }
@@ -60,7 +61,10 @@ family_why() {   # family_why FILE -> nothing and 0 for a family this spark-shel
     ! LC_ALL=C grep -q "[^ -~$TAB]" "$1" || { echo "it holds a byte that is not plain text"; return 1; }
     _fw=$(jq -r --argjson fmt "$ART_FORMAT" "$FAMILY_RULES" "$1" 2>/dev/null) || { echo "it is not JSON"; return 1; }
     [ -z "$_fw" ] || { echo "$_fw"; return 1; }
-    [ "${1##*/}" = "$(jq -r .id "$1").json" ] || { echo "its id is not its file's name"; return 1; }
+    _fi=${1##*/}; [ "$_fi" != family.json ] || { _fi=${1%/family.json}; _fi=${_fi##*/}.json; }
+    [ "$_fi" = "$(jq -r .id "$1").json" ] || { echo "its id is not its file's name"; return 1; }
+    # a theme's own names that theme among its variants: a theme that came from someone else speaks for itself alone
+    [ "${1##*/}" != family.json ] || jq -e --arg t "${_fi%.json}" 'any(.variants[]; .theme == $t)' "$1" >/dev/null 2>&1 || { echo "it is in the folder of a theme it does not name"; return 1; }
     # the themes it names are here, and each picture is a plain PNG or JPEG in its variant's folder
     jq -r '.variants | to_entries[] | .key as $v | .value as $x
         | ([$v, $x.theme, ""] | @tsv), ([$x.portrait // empty, ($x.panels // {} | .[][] | .[])] | unique[] | [$v, $x.theme, .] | @tsv)' "$1" > "$TMP/family.files"
@@ -260,8 +264,14 @@ art_stills() {   # -> the theme's own landscape pictures, full paths, one a line
     { printf '%s\n' "$(look_get "$_ast" PICTURE)"; art_of "$THEME" | jq -r '.panels[][] | .landscape // empty'; } \
         | awk 'NF && !seen[$0]++' | while IFS= read -r _asf; do [ ! -f "$_ast/$_asf" ] || printf '%s\n' "$_ast/$_asf"; done
 }
-art_still() {   # art_still NAME -> the theme's own landscape picture NAME (its file's name, with or without the extension), full path; else false
-    art_stills | while IFS= read -r _asf; do _asb=${_asf##*/}; case $1 in "$_asb"|"${_asb%.*}") printf '%s' "$_asf"; exit 0 ;; esac; done | grep .
+art_still() {   # art_still NAME -> the theme's own landscape picture NAME (its file's name with or without the extension, or its role: landscape-2), full path; else false
+    art_stills | while IFS= read -r _asf; do _asb=${_asf##*/}; case $1 in "$_asb"|"${_asb%.*}"|"$(art_role "$_asf")") printf '%s' "$_asf"; exit 0 ;; esac; done | grep .
+}
+art_role() {   # art_role FILE -> its role in the theme: its name without the extension and the theme's name before it (landscape-1)
+    _arb=${1##*/}; _arb=${_arb%.*}; _arb=${_arb#"${THEME:-}"-}; printf '%s' "$_arb"
+}
+art_label() {   # art_label FILE -> its role as the list says it: Landscape 1
+    _arl=$(art_role "$1" | tr '_-' '  '); printf '%s%s' "$(printf '%s' "$_arl" | cut -c1 | tr 'a-z' 'A-Z')" "$(printf '%s' "$_arl" | cut -c2-)"
 }
 art_wall_theirs() {   # -> 0 when the wallpaper is a picture or a color of the person's own; a theme's own picture, in its folder, is the theme's
     _awt=$(theme_dir "${THEME:-none}")

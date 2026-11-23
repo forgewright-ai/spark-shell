@@ -4310,13 +4310,13 @@ mo_stop
 # a theme's own loops (Atlas Awakening): each screen's still has its loop beside it, linked into the cache and played as it is, none made
 rm -f "$HOME/player.log" "$HOME/mpv.log" "$HOME/mosway.log" "$H/run/spark-shell-motion.want"; _mat=$REPO/gallery/core/atlas-awakening
 ln -sf "$fixture_python" "$H/mo/python3"   # the real python3 reads the family's pictures, ahead of the stubs
-printf 'DESKTOP=sway\nTHEME=atlas-awakening\nWALLPAPER=%s\nWALLPAPER_MOTION=on\n' "$_mat/atlas-awakening.jpg" > "$HOME/.config/spark-shell/config"
+printf 'DESKTOP=sway\nTHEME=atlas-awakening\nWALLPAPER=%s\nWALLPAPER_MOTION=on\n' "$_mat/atlas-awakening-landscape-1.jpg" > "$HOME/.config/spark-shell/config"
 mo desktop --motion >/dev/null 2>&1; mo_wait 1
 _ml=$(sed -n 1p "$HOME/player.log" 2>/dev/null || :); _ml1=${_ml#--screen DP-3=}; _ml1=${_ml1%% *}; _ml2=${_ml##*HDMI-A-1=}
 case $_ml in "--screen DP-3=$_mdir/given-"*".mp4 --screen HDMI-A-1=$_mdir/given-"*.mp4) _mok=1 ;; *) _mok='' ;; esac
-_i=0; while [ "$_i" -lt 50 ] && ! grep -q "^-- output \"HDMI-A-1\" bg \"$_mat/atlas-awakening.jpg\" fill$" "$HOME/mosway.log" 2>/dev/null; do sleep 0.2; _i=$((_i + 1)); done
-[ -n "$_mok" ] && [ "$(readlink "$_ml1")" = "$_mat/just-beyond-reach.mp4" ] && [ "$(readlink "$_ml2")" = "$_mat/atlas-awakening.mp4" ] && [ ! -s "$HOME/mpv.log" ] \
-    && grep -q "^-- output \"DP-3\" bg \"$_mat/just-beyond-reach.jpg\" fill$" "$HOME/mosway.log" && grep -q "^-- output \"HDMI-A-1\" bg \"$_mat/atlas-awakening.jpg\" fill$" "$HOME/mosway.log" \
+_i=0; while [ "$_i" -lt 50 ] && ! grep -q "^-- output \"HDMI-A-1\" bg \"$_mat/atlas-awakening-landscape-1.jpg\" fill$" "$HOME/mosway.log" 2>/dev/null; do sleep 0.2; _i=$((_i + 1)); done
+[ -n "$_mok" ] && [ "$(readlink "$_ml1")" = "$_mat/atlas-awakening-portrait.mp4" ] && [ "$(readlink "$_ml2")" = "$_mat/atlas-awakening-landscape-1.mp4" ] && [ ! -s "$HOME/mpv.log" ] \
+    && grep -q "^-- output \"DP-3\" bg \"$_mat/atlas-awakening-portrait.jpg\" fill$" "$HOME/mosway.log" && grep -q "^-- output \"HDMI-A-1\" bg \"$_mat/atlas-awakening-landscape-1.jpg\" fill$" "$HOME/mosway.log" \
     && ok "desktop --motion, a theme's own loops: the turned screen its portrait's loop, the other the chosen picture's, linked into the cache, none made" || bad "given loops" "$_ml | $(cat "$HOME/mpv.log" "$HOME/mosway.log" 2>&1)"
 if [ -r "/proc/$$/stat" ]; then   # where a process's start can be read
     # a reload or a screen's still starts the background drawer (sway's child swaybg) after the loop, over it, and a covered
@@ -6972,7 +6972,7 @@ fi
 mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/animations"}')"
 ans 2 | jq -r '.result.contents[0].text' > "$H/anims.json"
 [ "$(jq -r '[.rows[] | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "moon:check:the palette's own|ripple:blank:|tide:blank:|embers:blank:|sun:blank:|flight:blank:|atlas:blank:|none:blank:no motion" ] \
-    && jq -e --arg d "$REPO/gallery/animation" '(.rows[0].film == ($d + "/moon/tokyonight-night")) and (.rows[6].film == ($d + "/atlas")) and (.rows[-1] | has("film") | not) and all(.rows[]; .tool.name == "theme_animation" and .tool.arguments.to == .text and .quiet == true)' "$H/anims.json" >/dev/null \
+    && jq -e --arg d "$REPO/gallery/animation" --arg a "$REPO/gallery/core/atlas-awakening/atlas-awakening-dialog" '(.rows[0].film == ($d + "/moon/tokyonight-night")) and (.rows[6].film == $a) and (.rows[-1] | has("film") | not) and all(.rows[]; .tool.name == "theme_animation" and .tool.arguments.to == .text and .quiet == true)' "$H/anims.json" >/dev/null \
     && ok "provide theme: the animation list: the six and none, the one in use checked, the palette's own said, each piece's folder in the palette in use, Enter sets it in place (#132, #191)" || bad "animation list" "$(cat "$H/anims.json")"
 # #247: a palette with no set drawn ahead (a palette of yours, a theme from a picture or words) plays every piece too, the
 # dialog drawing it in the palette's colors: the verb, the list and the row as for a shipped palette, no piece its own, and
@@ -7523,7 +7523,7 @@ STUB
     palette_fixture mine '#fe8019'; printf 'DESKTOP=sway\nTHEME=mine\n' > "$HOME/.config/spark-shell/config"; sh "$C/spark-shell" dialog >/dev/null 2>&1; a4=$(grep -A1 -x -- --transitions "$HOME/dialog.argv" | tail -1)
     printf 'DESKTOP=sway\nTHEME=mine\nDIALOG_ANIMATION=atlas\n' > "$HOME/.config/spark-shell/config"; sh "$C/spark-shell" dialog >/dev/null 2>&1; a5=$(grep -A1 -x -- --transitions "$HOME/dialog.argv" | tail -1)
     rm -f "$HOME/.config/spark-shell/themes/mine.env"
-    [ "$a1" = "$C/gallery/animation/moon/tokyonight-night" ] && [ "$a2" = 0 ] && [ "$a3" = 0 ] && [ "$a4" = draw:embers ] && [ "$a5" = "$C/gallery/animation/atlas" ] \
+    [ "$a1" = "$C/gallery/animation/moon/tokyonight-night" ] && [ "$a2" = 0 ] && [ "$a3" = 0 ] && [ "$a4" = draw:embers ] && [ "$a5" = "$C/gallery/core/atlas-awakening/atlas-awakening-dialog" ] \
         && ok "dialog: the transitions are the palette's piece in the palette in use (tokyonight-night's moon); a palette of yours, the piece for the dialog to draw (draw:embers); a painted piece its own reels in any palette (atlas); none, or no palette, plays none (#122, #247)" || bad "dialog transitions" "$a1 $a2 $a3 $a4 $a5"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     st=0; out=$(sh "$C/spark-shell" dialog nonsense 2>&1) || st=$?
@@ -8465,15 +8465,18 @@ printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=%s\n' "$th_dir/study-night/test-wide
 # landscape screen's panel gives way to it; the wallpaper list names them, the one in use checked
 _aw=$REPO/gallery/core/atlas-awakening
 sh "$SH" theme atlas-awakening >/dev/null 2>&1; echo 2 > "$HOME/screens"; s8=$(scr theme screens 2>&1 | tail -1)
-scr theme wallpaper bridge-viewpoint >/dev/null 2>&1; s9=$(scr theme screens 2>&1 | tail -1); w9=$(sed -n 's/^WALLPAPER=//p' "$cfg")
+scr theme wallpaper landscape-2 >/dev/null 2>&1; s9=$(scr theme screens 2>&1 | tail -1); w9=$(sed -n 's/^WALLPAPER=//p' "$cfg")
 mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/wallpapers"}')"
 r9=$(ans 2 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.group == "this theme") | .sign + ":" + .text + ":" + (.tool.arguments.name // "")] | join("|")')
-st=0; o10=$(scr theme wallpaper just-beyond-reach 2>&1) || st=$?
-[ "$s8" = 'HDMI-A-1   2 of 2 from the left, landscape 1920x1080: the wallpaper (atlas-awakening.jpg)' ] \
-    && [ "$s9" = 'HDMI-A-1   2 of 2 from the left, landscape 1920x1080: panel 2 of 2 (bridge-viewpoint.jpg)' ] && [ "$w9" = "$_aw/bridge-viewpoint.jpg" ] \
-    && [ "$r9" = 'blank:atlas-awakening:atlas-awakening|check:bridge-viewpoint:' ] && [ "$st" -ne 0 ] && printf '%s' "$o10" | grep -q 'just-beyond-reach is not' \
-    && ok "theme wallpaper NAME: a theme's own landscape picture by its name; the one chosen shows, the landscape screen's panel giving way; the list names them; a portrait is no wallpaper" \
-    || bad "theme own pictures" "$s8 | $s9 | $w9 | $r9 | $st $o10"
+st=0; o10=$(scr theme wallpaper portrait 2>&1) || st=$?
+# an old name in the config (a picture an update renamed): the theme's picture, kept so
+printf 'DESKTOP=sway\nTHEME=atlas-awakening\nWALLPAPER=%s\n' "$_aw/atlas-awakening.jpg" > "$cfg"; s11=$(scr theme screens 2>&1 | tail -1); w11=$(sed -n 's/^WALLPAPER=//p' "$cfg")
+[ "$s8" = 'HDMI-A-1   2 of 2 from the left, landscape 1920x1080: the wallpaper (atlas-awakening-landscape-1.jpg)' ] \
+    && [ "$s9" = 'HDMI-A-1   2 of 2 from the left, landscape 1920x1080: panel 2 of 2 (atlas-awakening-landscape-2.jpg)' ] && [ "$w9" = "$_aw/atlas-awakening-landscape-2.jpg" ] \
+    && [ "$r9" = 'blank:Landscape 1:landscape-1|check:Landscape 2:' ] && [ "$st" -ne 0 ] && printf '%s' "$o10" | grep -q 'portrait is not' \
+    && [ "$s11" = "$s8" ] && [ "$w11" = "$_aw/atlas-awakening-landscape-1.jpg" ] \
+    && ok "theme wallpaper NAME: a theme's own landscape picture by its role (landscape-2); the one chosen shows, the landscape screen's panel giving way; the list says each role; a portrait is no wallpaper; an old name in the config becomes the theme's picture" \
+    || bad "theme own pictures" "$s8 | $s9 | $w9 | $r9 | $st $o10 | $s11 $w11"
 sh "$SH" theme nord >/dev/null 2>&1   # the look the tests below read
 # the stills sent to sway, each screen by its port; a screen that comes or goes draws them again, the same screens never twice
 printf 'DESKTOP=sway\nTHEME=study-night\nWALLPAPER=fjord\nWALLPAPER_MOTION=off\n' > "$cfg"; rm -f "$HOME/scr.log" "$H/run/spark-shell-screens.plan"; echo 3 > "$HOME/screens"

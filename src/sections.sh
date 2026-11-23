@@ -250,9 +250,9 @@ panel_rows_theme() {   # the look: the palettes, the saved themes, the custom ro
 }
 panel_rows_wallpapers() {   # the theme's wallpaper list: the drawings, each with its palette; then custom: a picture, a color, the ground
     _cur=$(wall_name); _cwp=$(wall_path)
-    art_stills | while IFS= read -r _asf; do   # the theme's own pictures first, by name: the one chosen leads the screens
-        _asn=${_asf##*/}; _asn=${_asn%.*}
-        if [ "$_asf" = "$_cwp" ]; then printf '%s\t%s\tshow\tthis theme|its own picture\n' "$PANEL_TICK" "$_asn"; else printf -- '-\t%s\twallpaper %s\tthis theme|its own picture\n' "$_asn" "$_asn"; fi
+    art_stills | while IFS= read -r _asf; do   # the theme's own pictures first, by their role: the one chosen leads the screens
+        _asl=$(art_label "$_asf")
+        if [ "$_asf" = "$_cwp" ]; then printf '%s\t%s\tshow\tthis theme|its own picture\n' "$PANEL_TICK" "$_asl"; else printf -- '-\t%s\twallpaper %s\tthis theme|its own picture\n' "$_asl" "$(art_role "$_asf")"; fi
     done
     for w in $(wall_shipped_names); do
         _pw=$(wall_palette_of "$w"); case $_pw in any) _pw='for any dark palette' ;; every) _pw='moves, in any palette' ;; *) _pw="for $_pw" ;; esac   # the caption under its picture: 24 cells

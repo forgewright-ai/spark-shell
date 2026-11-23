@@ -439,9 +439,12 @@ fn decode_films(dir: &str, palette: &std::collections::HashMap<String, String>, 
         };
     }
     let one = |reel: &str| {
-        // a painted piece: its own WebP, in its own colors, read as it plays
-        if let Some(bytes) = std::fs::read(format!("{}/{}.webp", dir, reel)).ok().filter(|b| b.len() <= 16 << 20) {
-            return animation::film_webp(bytes, pixels);
+        // a painted piece: its own WebP, in its own colors, read as it plays; in a folder of its own (DIR/open.webp) or
+        // beside its theme's pictures (THEME-dialog, its reels THEME-dialog-open.webp)
+        for f in [format!("{}/{}.webp", dir, reel), format!("{}-{}.webp", dir, reel)] {
+            if let Some(bytes) = std::fs::read(&f).ok().filter(|b| b.len() <= 16 << 20) {
+                return animation::film_webp(bytes, pixels);
+            }
         }
         let f = format!("{}/{}{}.gif", dir, reel, if double { "@2x" } else { "" });
         let bytes = std::fs::read(&f).ok().filter(|b| b.len() <= 4 << 20)?;

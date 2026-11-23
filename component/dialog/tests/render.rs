@@ -1558,7 +1558,10 @@ fn the_opening_ends_in_the_home_and_rows_still_coming_have_the_read_bar() {
     assert!(!app.thinking(), "the open plays alone, no bar under it");
     app.follow_motion(t + std::time::Duration::from_millis(3600), 3599, 3599);
     assert_eq!(app.motion, None, "the open ends in the home");
-    assert!(app.thinking() && app.work() == spark_dialog::progress::Work::Read, "rows still coming: the Read bar");
+    assert!(
+        app.thinking() && app.work() == spark_dialog::progress::Work::Read,
+        "rows still coming: the Read bar"
+    );
     let i = app.providers.len() - 1;
     app.providers[i].ready = true;
     assert!(!app.thinking(), "every provider answered: no bar");

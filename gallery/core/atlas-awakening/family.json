@@ -6,9 +6,9 @@
   "variants": {
     "dark": {
       "theme": "atlas-awakening",
-      "portrait": "just-beyond-reach.jpg",
+      "portrait": "atlas-awakening-portrait.jpg",
       "panels": {
-        "2": [{"landscape": "atlas-awakening.jpg"}, {"landscape": "bridge-viewpoint.jpg"}]
+        "2": [{"landscape": "atlas-awakening-landscape-1.jpg"}, {"landscape": "atlas-awakening-landscape-2.jpg"}]
       }
     }
   }

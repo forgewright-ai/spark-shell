@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- the config: the readers of the settings and the theme
-# sets: ANIMATION_NAMES ANIM_PAIRED BAR_LEVELS BAR_MODULES CONFIG_UNSET GLYPH_FAMILIES KB_RE PATH_REFUSED PATH_SAID SAVER_NAMES SAVER_OWN THEME_KEYS
+# sets: ANIMATION_NAMES ANIM_PAINTED ANIM_PAIRED BAR_LEVELS BAR_MODULES CONFIG_UNSET GLYPH_FAMILIES KB_RE PATH_REFUSED PATH_SAID SAVER_NAMES SAVER_OWN THEME_KEYS
 # reads: CONFIG CONFIG_DIR OS REPO TERM_NAME TMP
 GLYPH_FAMILIES='stone star banner'
 BAR_MODULES='workspaces pad lan bt wifi out mic due light kb bat clock notifications'   # what the bar can show, in its order; the workspaces are the bar's own and stay, the rest are its line's modules
@@ -86,6 +86,13 @@ config_load() {
     # the console's four: a palette's name, "FACE SIZE", and two switches
     : "${THEME:=}" "${CONSOLE_FONT:=}" "${QUIET_LOGIN:=no}" "${QUIET_BOOT:=no}"
     case $THEME in .*|*[!A-Za-z0-9._-]*) echo "spark-shell: THEME=$THEME in $CONFIG: a palette's name or none (spark-shell theme list)" >&2; exit 1 ;; esac
+    # a picture of the theme's own that an update renamed (Atlas Awakening's, v0.165): the theme's picture, kept so once
+    if [ ! -e "$WALLPAPER" ] && _cld=$(theme_dir "$THEME" 2>/dev/null) && [ -n "$_cld" ]; then
+        case $WALLPAPER in "$_cld"/*)
+            _clp=$(look_get "$_cld" PICTURE)
+            if [ -n "$_clp" ] && [ -f "$_cld/$_clp" ]; then WALLPAPER=$_cld/$_clp; config_locked config_edit WALLPAPER "$WALLPAPER" 2>/dev/null || :; fi ;;
+        esac
+    fi
     if [ -n "$CONSOLE_FONT" ] && ! printf '%s' "$CONSOLE_FONT" | grep -qE '^[A-Za-z0-9._-]+ [0-9][0-9x.]*$'; then
         echo "spark-shell: CONSOLE_FONT=$CONSOLE_FONT in $CONFIG: FACE SIZE (spark-shell font list)" >&2; exit 1
     fi
@@ -167,9 +174,13 @@ dialog_transitions() {   # -> the piece's folder (its own painted reels, or draw
     _dtn=$(anim_now); [ "$_dtn" != none ] || return 0
     anim_folder "$_dtn" "$(anim_palette)" || printf 'draw:%s\n' "$_dtn"
 }
-anim_folder() {   # anim_folder PIECE PALETTE -> the folder of its reels: a painted piece's own (open.webp, its own colors), else drawn for the palette; false for none
-    if [ -f "$REPO/gallery/animation/$1/open.webp" ]; then printf '%s\n' "$REPO/gallery/animation/$1"
-    elif [ -n "$2" ] && [ -f "$REPO/gallery/animation/$1/$2/open.gif" ]; then printf '%s\n' "$REPO/gallery/animation/$1/$2"
+ANIM_PAINTED='atlas:atlas-awakening'   # a piece painted for a theme: its reels in that theme's folder, THEME-dialog-open.webp and -close.webp
+anim_folder() {   # anim_folder PIECE PALETTE -> where its reels are: a painted piece's, as THEME-dialog (its own colors), else the folder drawn for the palette; false for none
+    for _afp in $ANIM_PAINTED; do
+        [ "${_afp%%:*}" = "$1" ] || continue
+        _afd=$(theme_dir "${_afp#*:}") && [ -f "$_afd/${_afp#*:}-dialog-open.webp" ] && { printf '%s\n' "$_afd/${_afp#*:}-dialog"; return 0; }
+    done
+    if [ -n "$2" ] && [ -f "$REPO/gallery/animation/$1/$2/open.gif" ]; then printf '%s\n' "$REPO/gallery/animation/$1/$2"
     else return 1; fi
 }
 anim_drawn() { [ -n "$1" ] && [ -f "$REPO/gallery/animation/${ANIMATION_NAMES%% *}/$1/open.gif" ]; }   # anim_drawn PALETTE -> true when the pieces were drawn ahead for it (the shipped palettes)
