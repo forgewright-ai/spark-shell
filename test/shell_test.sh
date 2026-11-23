@@ -6021,8 +6021,8 @@ for _mf in "$REPO"/lib/motion_*.py; do _mn=${_mf##*/motion_}; wall_n=${_mn%.py};
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps system about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 172 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-five sections hold the 172 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 174 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-five sections hold the 174 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -8026,8 +8026,8 @@ y2=$(ans 2 | jq -r '.result.contents[0].text | fromjson | [.rows[] | .group + ":
 y3=$(ans 3 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.group == "manage") | .tool.name] | join(" ")')
 y4=$(ans 4 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.group == "manage") | .text] | join(" ")')
 [ "$y1" = 'Wallpaper and motion|Type and glyphs|Interface|Colors|Screens and art|Your themes' ] \
-    && printf '%s' "$y2" | grep -q '^new theme:from the look in use:|new theme:from a picture:|new theme:a copy of [a-z-]*:|' \
-    && printf '%s' "$y2" | grep -q 'yours:sea-two:rename,duplicate,delete' && [ "$y3" = 'theme_rename theme_duplicate theme_delete' ] && [ "$y4" = 'Duplicate as yours' ] \
+    && printf '%s' "$y2" | grep -q '^new theme:from the look in use:|new theme:from a picture:|new theme:from a theme file:|new theme:a copy of [a-z-]*:|' \
+    && printf '%s' "$y2" | grep -q 'yours:sea-two:rename,duplicate,delete' && [ "$y3" = 'theme_rename theme_duplicate theme_delete theme_export' ] && [ "$y4" = 'Duplicate as yours' ] \
     && ans 5 | jq -e '.result.isError == false and .result.structuredContent.undo.name == "theme_rename"' >/dev/null && [ -d "$th_dir/nord-two" ] \
     && ok "provide theme: Your themes in place of Manage themes: the ways to make one, then each theme of yours with rename, duplicate and delete; its page has them too, a bundled one Duplicate as yours; rename from the dialog, its undo the name back" \
     || bad "your themes" "$y1 | $y2 | $y3 | $y4 | $(ans 5 | head -c 300)"
@@ -8069,6 +8069,56 @@ f3=$(ans 3 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.id 
     && ok "provide theme: Colors (20 and another theme's), Screens and art (pictures picked, the clock a switch, loops and reels), from the settings; a color's undo its value before; a panel taken away" \
     || bad "theme fields provide" "$f1 | $f2 | $f3 | $(ans 4 | head -c 300) | $(ans 5 | head -c 200)"
 sh "$SH" theme "$_ft" >/dev/null 2>&1; cp "$H/cfg.fields" "$cfg"; rm -rf "$_fl"
+# a theme file (v0.165): export puts NAME.spark-theme in Downloads, its look as a shared theme sets it (no pointer, no text size) and its
+# picture with no metadata; install reads one as data alone (plain files in one folder, of the kinds a theme holds), checks it as the gallery's themes are, and wears it
+_xt=$(sed -n 's/^THEME=//p' "$cfg"); cp "$cfg" "$H/cfg.file"; mkdir -p "$th_dir/shore"; cp "$REPO/gallery/core/atlas-awakening/palette.env" "$th_dir/shore/palette.env"
+_xjpg='\377\300\000\021\010\000\020\000\040\003\001\021\000\002\021\000\003\021\000\377\331'   # a frame header and the end: a JPEG 32 by 16 to its header
+printf "\377\330\377\341\000\016Exif\000\000GPS 51$_xjpg" > "$th_dir/shore/shore.jpg"
+printf 'FORMAT=2\nPALETTE=picture\nWALLPAPER=picture\nPICTURE=shore.jpg\nFACE=argon\nALPHA=0.9\nPOINTER=Adwaita 48\nTEXT_SIZE=14\nANIMATION=tide\n' > "$th_dir/shore/look.env"
+x1=$(sh "$SH" theme export shore 2>&1 | tail -1); _xf=${x1#saved }
+x2=$(tar -tf "$_xf" 2>&1 | paste -sd ' ' -); x3=$(tar -xOf "$_xf" shore/look.env 2>&1 | paste -sd ' ' -)
+mkdir -p "$H/xin"; tar -xf "$_xf" -C "$H/xin" shore/shore.jpg; x4=$(python3 -I "$REPO/lib/look.py" picture "$H/xin/shore/shore.jpg" 2>&1)
+x5=$(sh "$SH" theme export nord 2>&1 | head -1)
+rc6=0; x6=$(sh "$SH" theme install "$_xf" 2>&1) || rc6=$?
+sh "$SH" theme delete shore >/dev/null 2>&1 </dev/null
+x7=$(sh "$SH" theme install "$_xf" 2>&1 | grep -m1 '^installed'); t7=$(sed -n 's/^THEME=//p' "$cfg"); x8=$(python3 -I "$REPO/lib/look.py" picture "$th_dir/shore/shore.jpg" 2>&1)
+python3 -I - "$H" "$th_dir/shore/palette.env" "$_xjpg" <<'EOF'
+import io, sys, tarfile
+h, pal, jpg = sys.argv[1], open(sys.argv[2], "rb").read(), b"\xff\xd8" + bytes(int(o, 8) for o in sys.argv[3].split("\\")[1:])
+def mk(name, members):
+    with tarfile.open(h + "/" + name + ".spark-theme", "w") as t:
+        for n, data in members:
+            ti = tarfile.TarInfo(n)
+            if data is None:
+                ti.type, ti.linkname = tarfile.SYMTYPE, "/etc/passwd"
+                t.addfile(ti)
+            else:
+                ti.size = len(data)
+                t.addfile(ti, io.BytesIO(data))
+look = b"FORMAT=2\nWALLPAPER=default\n"
+mk("bad-link", [("x/look.env", look), ("x/x-landscape-1.jpg", None)])
+mk("bad-script", [("x/look.env", look), ("x/run.sh", b"#!/bin/sh\n")])
+mk("bad-loop", [("x/look.env", look), ("x/palette.env", pal), ("x/x-landscape-1.jpg", jpg), ("x/x-landscape-1.mp4", b"no video at all")])
+mk("bad-key", [("x/look.env", look + b"POINTER=Adwaita 24\n"), ("x/palette.env", pal)])
+EOF
+x9=''; for _xb in link script loop key; do x9="$x9|$(sh "$SH" theme install "$H/bad-$_xb.spark-theme" 2>&1 | tail -1)"; done
+[ "$x1" = "saved $_xf" ] && [ "${_xf##*/}" = shore.spark-theme ] && [ "$x2" = 'shore/look.env shore/palette.env shore/shore.jpg' ] \
+    && [ "$x3" = 'FORMAT=2 PALETTE=picture WALLPAPER=picture PICTURE=shore.jpg FACE=argon ALPHA=0.9 ANIMATION=tide' ] && [ "$x4" = 'jpeg 32 16' ] && [ "$x5" = '# Palette reference: Nord' ] \
+    && [ "$rc6" = 1 ] && [ "$x6" = 'spark-shell theme: a theme of yours is named shore -- spark-shell theme rename shore NEW first, then install it' ] \
+    && [ "$x7" = 'installed the theme shore from shore.spark-theme, its files checked -- spark-shell theme shore brings it back' ] && [ "$t7" = shore ] && [ "$x8" = 'jpeg 32 16' ] \
+    && [ "$x9" = '|spark-shell theme: bad-link.spark-theme was not installed: it holds a link, a device or a folder: x/x-landscape-1.jpg|spark-shell theme: bad-script.spark-theme was not installed: it holds run.sh, a kind of file a theme has not|spark-shell theme: bad-loop.spark-theme was not installed: its loop x-landscape-1.mp4: it is no MP4|spark-shell theme: bad-key.spark-theme was not installed: its look.env holds POINTER, which a shared theme never sets' ] \
+    && ok "theme export NAME: NAME.spark-theme in Downloads, its look as shared (no pointer, no text size), its picture's metadata gone; a palette alone still printed; theme install FILE: read as data, a link, a script, a loop that is no MP4 and a pointer refused, a name of yours kept" \
+    || bad "theme file" "$x1 | $x2 | $x3 | $x4 | $x5 | $rc6 $x6 | $x7 $t7 $x8 | $x9"
+mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows/yours"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/gallery/shore"}')" \
+    "$(call 3 theme_export '{"name":"shore"}')" "$(call 4 theme_install "$(jq -cn --arg p "$H/bad-script.spark-theme" '{path: $p}')")"
+x10=$(ans 1 | jq -c '.result.contents[0].text | fromjson | .rows[] | select(.id == "theme:new:file") | [.text, .pick.tool, .pick.types]')
+x11=$(ans 2 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.group == "manage") | .text] | join(" ")')
+[ "$x10" = '["from a theme file","theme_install",["spark-theme"]]' ] && [ "$x11" = 'Rename Duplicate Delete Export' ] \
+    && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = "saved $_xf" ] \
+    && ans 4 | jq -e '.result.isError == true and (.result.content[0].text | endswith("it holds run.sh, a kind of file a theme has not"))' >/dev/null \
+    && ok "provide theme: Your themes takes a theme file (picked, .spark-theme); a theme with its folder has Export, the same file again kept once; a bad file refused in one line" \
+    || bad "theme file provide" "$x10 | $x11 | $(ans 3 | head -c 300) | $(ans 4 | head -c 300)"
+sh "$SH" theme "$_xt" >/dev/null 2>&1; cp "$H/cfg.file" "$cfg"; rm -rf "$th_dir/shore" "${_xf%/*}"/shore*.spark-theme
 rc=0; out=$(sh "$SH" theme delete nord 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: nord is a palette spark-shell ships, not a saved theme' ] && ok "theme delete nord: a shipped palette is refused" || bad "theme delete shipped" "rc=$rc $out"
 sh "$SH" theme winter-desk >/dev/null 2>&1

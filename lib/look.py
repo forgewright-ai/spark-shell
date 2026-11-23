@@ -8,6 +8,11 @@
                                         to extend it on a screen of another shape
   look.py picture FILE                  "png W H" or "jpeg W H": the kind and the size its header
                                         says, read before anything decodes it (the gallery's check)
+  look.py bare PICTURE OUT              the picture with no metadata (EXIF, XMP, text): its parts that
+                                        the gallery's check takes, its pixels untouched
+  look.py pack FOLDER OUT               a theme file: a plain tar of the theme's folder, FOLDER/FILE each
+  look.py unpack FILE DIR               a theme file's folder in DIR, each file plain, of a kind a theme
+                                        holds and within its size; the theme's name on stdout
   look.py --version
 
 The picture is a PNG (spark-shell makes a small one first, through gdk-pixbuf-thumbnailer or
@@ -23,8 +28,12 @@ background moved toward the text and the light greys the text moved toward the b
 The output is the palette file spark-shell reads: THEME_BG, THEME_FG, THEME_ACCENT,
 THEME_MUTED and THEME_ANSI_0 to THEME_ANSI_15, one #rrggbb a line.
 """
+import os
+import re
+import stat
 import struct
 import sys
+import tarfile
 import zlib
 
 VERSION = "2"
@@ -412,6 +421,147 @@ def picture_size(path):
     raise ValueError("not a PNG or a JPEG")
 
 
+def picture_bare(data):
+    """-> the picture with its own parts alone: a PNG of PNG_CHUNKS, a JPEG of JPEG_MARKERS, nothing after
+    its end. Metadata goes (a camera's place and time among it); the pixels are the same bytes."""
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        out, pos = [data[:8]], 8
+        while pos + 12 <= len(data):
+            n, = struct.unpack(">I", data[pos:pos + 4])
+            kind = data[pos + 4:pos + 8]
+            if pos + 12 + n > len(data):
+                raise ValueError("a PNG cut short")
+            if kind in PNG_CHUNKS:
+                out.append(data[pos:pos + 12 + n])
+            pos += 12 + n
+            if kind == b"IEND":
+                return b"".join(out)
+        raise ValueError("a PNG with no end")
+    if data[:3] == b"\xff\xd8\xff":
+        out, pos = [b"\xff\xd8"], 2
+        while pos + 2 <= len(data):
+            if data[pos] != 0xFF:
+                raise ValueError("a JPEG with a broken marker")
+            m = data[pos + 1]
+            if m == 0xFF:
+                pos += 1
+                continue
+            if m == 0xD9:
+                out.append(b"\xff\xd9")
+                return b"".join(out)
+            if m == 0xD8 or 0xD0 <= m <= 0xD7:
+                pos += 2
+                continue
+            if pos + 4 > len(data):
+                break
+            n, = struct.unpack(">H", data[pos + 2:pos + 4])
+            end = pos + 2 + n
+            if m == 0xDA:   # the scan's header and its coded bytes, to the next marker
+                while True:
+                    end = data.find(b"\xff", end)
+                    if end < 0 or end + 1 >= len(data):
+                        raise ValueError("a JPEG with no end")
+                    nx = data[end + 1]
+                    if nx == 0x00 or nx == 0xFF or 0xD0 <= nx <= 0xD7:
+                        end += 1
+                        continue
+                    break
+                out.append(data[pos:end])
+            elif m in JPEG_MARKERS:
+                out.append(data[pos:end])
+            pos = end
+        raise ValueError("a JPEG with no end")
+    raise ValueError("not a PNG or a JPEG")
+
+
+# --- a theme file: one theme's folder in a plain tar (spark-shell theme export and theme install FILE)
+
+THEME_FILE_KINDS = {"env": 8192, "json": 65536, "jpg": 16 << 20, "jpeg": 16 << 20, "png": 16 << 20,
+                    "mp4": 64 << 20, "webp": 16 << 20}   # the most bytes of each
+THEME_FILE_MAX = 256 << 20   # all its files together
+THEME_FILE_COUNT = 32
+THEME_NAME = re.compile(r"[a-z][a-z0-9-]{0,39}\Z")
+THEME_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}\Z")
+
+
+def said(s):
+    return "".join(c for c in s if c.isprintable())[:60]
+
+
+def theme_pack(folder, out):
+    """OUT: a plain tar of FOLDER's files as NAME/FILE, in name order, no owner and no time."""
+    name = os.path.basename(os.path.normpath(folder))
+    if not THEME_NAME.match(name):
+        raise ValueError("%s is not a theme's name (a to z, 0 to 9 and -, 40 at most)" % said(name))
+    with tarfile.open(out, "w", format=tarfile.USTAR_FORMAT) as t:
+        for part in sorted(os.listdir(folder)):
+            p = os.path.join(folder, part)
+            st = os.lstat(p)
+            if not stat.S_ISREG(st.st_mode):
+                raise ValueError("%s is not a plain file" % said(part))
+            info = tarfile.TarInfo(name + "/" + part)
+            info.size, info.mode, info.mtime = st.st_size, 0o644, 0
+            with open(p, "rb") as fh:
+                t.addfile(info, fh)
+
+
+def theme_unpack(path, out):
+    """-> the theme's name, its files in OUT/NAME. Read member by member, never extracted as the file
+    says: a plain file alone, in the one folder, named plainly, of a kind a theme holds, within its size."""
+    if os.path.getsize(path) > THEME_FILE_MAX + (1 << 20):
+        raise ValueError("it is over %d MiB" % (THEME_FILE_MAX >> 20))
+    try:
+        t = tarfile.open(path, "r:")
+    except tarfile.TarError:
+        raise ValueError("it is not a theme file") from None
+    name, seen, total = None, set(), 0
+    with t:
+        for m in t:
+            head, _, part = m.name.partition("/")
+            if m.isdir() and part == "" and (name is None or head == name):
+                continue
+            if not m.isreg():
+                raise ValueError("it holds a link, a device or a folder: %s" % said(m.name))
+            if not part or "/" in part:
+                raise ValueError("its files are not in one folder")
+            if not THEME_NAME.match(head):
+                raise ValueError("its folder is not a theme's name (a to z, 0 to 9 and -, 40 at most)")
+            if name is None:
+                name = head
+                os.mkdir(os.path.join(out, name), 0o700)
+            elif head != name:
+                raise ValueError("it holds more than one theme")
+            if not THEME_PART.match(part):
+                raise ValueError("it holds a file named %s" % said(part))
+            kind = part.rsplit(".", 1)[1].lower() if "." in part else ""
+            if kind not in THEME_FILE_KINDS:
+                raise ValueError("it holds %s, a kind of file a theme has not" % part)
+            if part in seen:
+                raise ValueError("it holds %s twice" % part)
+            if len(seen) >= THEME_FILE_COUNT:
+                raise ValueError("it holds over %d files" % THEME_FILE_COUNT)
+            if m.size > THEME_FILE_KINDS[kind]:
+                cap = THEME_FILE_KINDS[kind]
+                raise ValueError("its %s is over %s" % (part, "%d MiB" % (cap >> 20) if cap >= 1 << 20 else "%d KiB" % (cap >> 10)))
+            total += m.size
+            if total > THEME_FILE_MAX:
+                raise ValueError("its files are over %d MiB" % (THEME_FILE_MAX >> 20))
+            seen.add(part)
+            src = t.extractfile(m)
+            fd = os.open(os.path.join(out, name, part), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, "wb") as dst:
+                left = m.size
+                while left:
+                    b = src.read(min(left, 1 << 20))
+                    if not b:
+                        raise ValueError("it is cut short")
+                    dst.write(b)
+                    left -= len(b)
+    if name is None:
+        raise ValueError("it holds no theme")
+    return name
+
+
 # --- the command
 
 def edge_colors(path):
@@ -471,6 +621,24 @@ def main(argv):
             print("%s %d %d" % picture_size(argv[2]))
         except (OSError, ValueError, struct.error) as e:
             sys.stderr.write("%s\n" % e)
+            return 1
+        return 0
+    if argv[1] in ("bare", "pack", "unpack"):
+        if len(argv) != 4:
+            sys.stderr.write("%s takes two paths\n" % argv[1])
+            return 1
+        try:
+            if argv[1] == "bare":
+                with open(argv[2], "rb") as fh:
+                    data = picture_bare(fh.read())
+                with open(argv[3], "xb") as fh:
+                    fh.write(data)
+            elif argv[1] == "pack":
+                theme_pack(argv[2], argv[3])
+            else:
+                print(theme_unpack(argv[2], argv[3]))
+        except (OSError, ValueError, struct.error, tarfile.TarError, EOFError) as e:
+            sys.stderr.write("%s\n" % (e.strerror if isinstance(e, OSError) and e.strerror else e))
             return 1
         return 0
     if argv[1] == "words":

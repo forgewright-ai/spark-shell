@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # ---------------------------------------------- verbs: theme, font, quiet
 # sets: MOTION_DIR MOTION_NOW THEME_COLOR_WORDS THEME_WORDS WORDS_TAKE
-# reads: ANIMATION_NAMES CONFIG CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GLYPH_FAMILIES LOOKS_DIR LOOK_FORMAT MODE NEON NEON_OLD NL OS PALETTE_DIR PALETTE_MARK PANEL_SEP PATH_REFUSED PM RENDERED REPO ROOT SCENE_MAKE STATE_DIR TAB TERMINAL_SEEN TERM_PALETTE_FORMATS THEME_ENV THEME_KEYS TMP WALL_NAMES WALL_SCENES WALL_SHIPPED
+# reads: ANIMATION_NAMES CONFIG CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GALLERY_KEYS GLYPH_FAMILIES LOOKS_DIR LOOK_FORMAT MODE NEON NEON_OLD NL OS PALETTE_DIR PALETTE_MARK PANEL_SEP PATH_REFUSED PM RENDERED REPO ROOT SCENE_MAKE STATE_DIR TAB TERMINAL_SEEN TERM_PALETTE_FORMATS THEME_ENV THEME_KEYS TMP WALL_NAMES WALL_SCENES WALL_SHIPPED
 refuse_in() { echo "spark-shell $1: $2"; exit 1; }   # refuse_in VERB SENTENCE
 seat_on() { _r=$(rc_files); _r=${_r%% *}; [ -L "$HOME/$_r" ] && [ "$(readlink "$HOME/$_r")" = "$(rc_tree)/$_r" ]; }
 look_now() {   # after a palette change
@@ -37,6 +37,7 @@ cmd_theme() {   # cmd_theme [NAME|none|show|list|WORD ARG...|"WORDS"]
         list) [ $# -le 1 ] || refuse_in theme "list takes no word"; theme_list; return ;;
         export) if [ $# -gt 1 ] || [ -z "$(theme_kind export)" ]; then
                 if [ $# -lt 2 ] || [ $# -gt 3 ]; then echo "usage: spark-shell theme export NAME [$TERM_PALETTE_FORMATS]" >&2; return 1; fi
+                if [ $# -eq 2 ] && [ -n "$(theme_dir "$2")" ]; then theme_export_file "$2"; return; fi   # a theme with its folder: the theme file
                 palette_export "$2" "${3:-env}"; return
             fi ;;
         save) shift; theme_save "$@"; return ;;
@@ -251,6 +252,42 @@ theme_restore() {   # theme_restore NAME -- a theme deleted from the dialog, bac
     [ -n "$_trn" ] && [ -n "${THEME_DELETED:-}" ] && [ -d "$THEME_DELETED/$_trn" ] && [ -z "$(theme_kind "$_trn")" ] || refuse_in theme "${_trn:-it} can no longer come back"
     mkdir_private "$PALETTE_DIR" && mv "$THEME_DELETED/$_trn" "$PALETTE_DIR/$_trn" || refuse_in theme "could not bring $_trn back"
     echo "$_trn is back"
+}
+theme_export_file() {   # theme_export_file NAME -- the theme as NAME.spark-theme in the downloads folder: its look as a shared theme sets it, its colors, its pictures with no metadata, its loops, reels and family
+    _txd=$(theme_dir "$1"); [ -n "$_txd" ] || refuse_in theme "$1 has no folder -- spark-shell theme export $1 kitty gives its palette for a terminal"
+    case $1 in [a-z]*) ;; *) refuse_in theme "a theme file takes a name of a to z, 0 to 9 and - -- spark-shell theme duplicate $1 NEW first" ;; esac
+    case $1 in *[!a-z0-9-]*) refuse_in theme "a theme file takes a name of a to z, 0 to 9 and - -- spark-shell theme duplicate $1 NEW first" ;; esac
+    [ ${#1} -le 40 ] || refuse_in theme "a theme file takes a name of 40 letters at most -- spark-shell theme duplicate $1 NEW first"
+    command -v python3 >/dev/null 2>&1 || refuse_in theme "python3 is not installed, and it writes a theme file"
+    _txs=$TMP/theme.export/$1; rm -rf "$TMP/theme.export"; mkdir -p "$_txs"
+    _txf=$(palette_file "$1") || refuse_in theme "no palette named $1"; cp "$_txf" "$_txs/palette.env"
+    _txw=$(look_get "$_txd" WALLPAPER); _txp=''; [ "$_txw" != picture ] || _txp=$(look_get "$_txd" PICTURE)
+    {   printf 'FORMAT=%s\n' "$LOOK_FORMAT"
+        for _txk in $GALLERY_KEYS; do
+            case $_txk in FORMAT) continue ;; PICTURE) _txv=$_txp ;; *) _txv=$(look_get "$_txd" "$_txk") ;; esac
+            [ "$_txk" != FACE ] || [ -n "$_txv" ] || _txv=$(face_word "$(look_get "$_txd" FONT | sed 's/:.*//')") || _txv=''
+            [ -z "$_txv" ] || printf '%s=%s\n' "$_txk" "$_txv"
+        done
+    } > "$_txs/look.env"
+    for _txf in "$_txd"/*; do
+        _txb=${_txf##*/}; [ -f "$_txf" ] && [ ! -L "$_txf" ] || continue
+        case $_txb in
+            look.env|palette.env) ;;
+            family.json|"$1"-landscape-[1-9].mp4|"$1"-portrait.mp4|"$1"-dialog-open.webp|"$1"-dialog-close.webp) cp "$_txf" "$_txs/$_txb" ;;
+            "$1"-landscape-[1-9].jpg|"$1"-landscape-[1-9].png|"$1"-portrait.jpg|"$1"-portrait.png|"$_txp")
+                python3 -I "$REPO/lib/look.py" bare "$_txf" "$_txs/$_txb" 2>"$TMP/theme.why" || refuse_in theme "$1 cannot be shared: its $_txb is $(head -1 "$TMP/theme.why" | cut -c1-80)" ;;
+            *) ;;   # a drawing's copy: the other side draws its own
+        esac
+    done
+    if [ -f "$_txs/family.json" ]; then   # the variants every spark-shell has, and itself; a theme of the sender's own stays behind
+        jq -r '.variants[].theme' "$_txs/family.json" 2>/dev/null | while IFS= read -r _txt; do
+            [ "$_txt" != "$1" ] || continue; case $(theme_kind "$_txt") in shipped|bundled) ;; *) printf '%s\n' "$_txt" ;; esac; done > "$TMP/theme.gone"
+        [ ! -s "$TMP/theme.gone" ] || { jq --rawfile gone "$TMP/theme.gone" '.variants |= with_entries(select(.value.theme as $t | ($gone | split("\n") | index([$t])) | not))' "$_txs/family.json" > "$TMP/theme.family" && mv "$TMP/theme.family" "$_txs/family.json"; }
+    fi
+    gallery_theme_ok "$_txs" "$1" > "$TMP/theme.why" || refuse_in theme "$1 cannot be shared: $(cat "$TMP/theme.why")"
+    python3 -I "$REPO/lib/look.py" pack "$_txs" "$TMP/theme.export.tar" 2>"$TMP/theme.why" || refuse_in theme "$1 cannot be shared: $(head -1 "$TMP/theme.why")"
+    downloads_keep "$TMP/theme.export.tar" "$1" spark-theme || refuse_in theme "the downloads folder cannot take $1.spark-theme"
+    rm -rf "$TMP/theme.export" "$TMP/theme.export.tar"
 }
 theme_new_name() {   # theme_new_name WORDS... -- _tnn the name a theme of yours takes, free and no palette's; else one line and exit
     _tnn=$(layout_name_of "$*"); [ -n "$_tnn" ] || refuse_in theme "a theme's name is letters and digits"

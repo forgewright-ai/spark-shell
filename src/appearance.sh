@@ -171,7 +171,9 @@ appearance_yours() {
            state: (($mine | length | tostring) + (if ($mine | length) == 1 then " theme" else " themes" end)),
            rows: ([{id: "theme:new:look", group: "new theme", text: "from the look in use", tool: {name: "theme_save", arguments: {}, ask: ["name"]}},
                    {id: "theme:new:picture", group: "new theme", text: "from a picture", sign: "opens", children: "spark-shell://files/rows",
-                    pick: {tool: "theme_picture", types: ($types | split(" "))}}]
+                    pick: {tool: "theme_picture", types: ($types | split(" "))}},
+                   {id: "theme:new:file", group: "new theme", text: "from a theme file", sign: "opens", children: "spark-shell://files/rows",
+                    pick: {tool: "theme_install", types: ["spark-theme"]}}]
                   + (if $cur == "none" then [] else [{id: "theme:new:copy", group: "new theme", text: ("a copy of " + $label),
                       tool: {name: "theme_duplicate", arguments: {name: $cur}, ask: ["to"]}}] end)
                   + [$mine[] | del(._kind, ._room) | .group = "yours"
@@ -208,7 +210,7 @@ appearance_detail() {
         --arg wall "$_ad_wall" --arg motion "$_ad_motion" --arg anim "$_ad_anim" \
         --arg face "$_ad_face" --arg family "$_ad_family" --arg alpha "$_ad_alpha" --arg size "$_ad_size" \
         --arg bar "$_ad_bar" --arg icons "$_ad_icons" --arg spacing "$_ad_spacing" --argjson art "$(art_of "$1")" \
-        --argjson mine "$([ "$_ad_kind" = saved ] && echo true || echo false)" \
+        --argjson mine "$([ "$_ad_kind" = saved ] && echo true || echo false)" --argjson folder "$([ -n "$_ad_dir" ] && echo true || echo false)" \
         --argjson desktop "$([ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && echo true || echo false)" '
         def fact($g; $id; $label; $value):
             {id: ("theme:detail:" + $id), group: $g, text: $label, columns: [if $value == "" then "keep current" else $value end]};
@@ -240,7 +242,8 @@ appearance_detail() {
                  [{id: "theme:manage:rename", group: "manage", text: "Rename", tool: {name: "theme_rename", arguments: {name: $name}, ask: ["to"]}},
                   {id: "theme:manage:duplicate", group: "manage", text: "Duplicate", tool: {name: "theme_duplicate", arguments: {name: $name}, ask: ["to"]}},
                   {id: "theme:manage:delete", group: "manage", text: "Delete", tool: {name: "theme_delete", arguments: {name: $name}}}]
-               else [{id: "theme:manage:duplicate", group: "manage", text: "Duplicate as yours", tool: {name: "theme_duplicate", arguments: {name: $name}, ask: ["to"]}}] end))}'
+               else [{id: "theme:manage:duplicate", group: "manage", text: "Duplicate as yours", tool: {name: "theme_duplicate", arguments: {name: $name}, ask: ["to"]}}] end)
+            + (if $folder then [{id: "theme:manage:export", group: "manage", text: "Export", columns: ["a theme file in Downloads, to share"], tool: {name: "theme_export", arguments: {name: $name}}}] else [] end))}'
 }
 appearance_art() {   # appearance_art THEME -> its compositions: one screen, a turned screen and the panels its family has; each a preview, none applied
     case $(theme_kind "$1") in shipped|bundled|yours|saved|look) ;; *) return 1 ;; esac
@@ -290,20 +293,24 @@ appearance_copy_color() (
 appearance_save_palette() (
     case $2 in env) _ext=env ;; "$TERM_NAME") _ext=$TERM_NAME.ini ;; kitty) _ext=kitty.conf ;; ghostty) _ext=ghostty ;; alacritty) _ext=toml ;; *) return 1 ;; esac
     _text=$(palette_export "$1" "$2") || return 1
+    printf '%s\n' "$_text" > "$TMP/palette.keep" || return 1
+    downloads_keep "$TMP/palette.keep" "$(theme_label "$1")" "$_ext"
+)
+downloads_keep() (   # downloads_keep FILE BASE EXT -- FILE as BASE.EXT in the downloads folder, never over another file (BASE-2.EXT, ...); "saved PATH"
     _dir=$(xdg-user-dir DOWNLOAD 2>/dev/null) || _dir=''
     case $_dir in /*) ;; *) _dir=$HOME/$(user_dir_of downloads) ;; esac
     mkdir -p "$_dir" || return 1
-    _file=$(mktemp "$_dir/.spark-palette.XXXXXX") || return 1
+    _file=$(mktemp "$_dir/.spark-keep.XXXXXX") || return 1
     trap 'rm -f "$_file"' EXIT
-    printf '%s\n' "$_text" > "$_file" || return 1
-    _base=$_dir/$(theme_label "$1"); _out=$_base.$_ext; _n=1
+    cat "$1" > "$_file" || return 1
+    _base=$_dir/$2; _out=$_base.$3; _n=1
     while :; do
         if [ ! -e "$_out" ] && [ ! -L "$_out" ]; then
             ln "$_file" "$_out" 2>/dev/null && break
             { [ -e "$_out" ] || [ -L "$_out" ]; } || { echo "cannot save in $_dir"; return 1; }
         fi
         if [ -f "$_out" ] && [ ! -L "$_out" ] && cmp -s "$_file" "$_out"; then break; fi
-        _n=$((_n + 1)); _out=$_base-$_n.$_ext
+        _n=$((_n + 1)); _out=$_base-$_n.$3
     done
     printf 'saved %s\n' "$_out"
 )

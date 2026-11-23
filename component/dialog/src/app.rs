@@ -6864,7 +6864,7 @@ impl App {
                     vec![(format!("A folder for {}", what), false)]
                 }
             } else {
-                vec![(format!("Pick a picture ({})", pk.types.join(" ")), false)]
+                vec![(format!("Pick a file ({})", pk.types.join(" ")), false)]
             };
             v.extend(esc("Cancel"));
             return v;

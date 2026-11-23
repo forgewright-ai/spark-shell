@@ -791,7 +791,7 @@ fn a_pick_row_opens_the_files_offers_its_types_and_hands_the_picture_to_its_tool
         })
         .collect();
     assert_eq!(shown, vec!["docs", "photo.png"], "only the types the pick takes, and the folders");
-    assert!(app.hint().iter().any(|(t, _)| t.starts_with("Pick a picture (png)")));
+    assert!(app.hint().iter().any(|(t, _)| t.starts_with("Pick a file (png)")));
     app.in_list = true;
     app.sel = 1;
     app.enter();

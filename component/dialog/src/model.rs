@@ -235,7 +235,7 @@ fn film(v: Option<&Value>) -> Option<String> {
     (p.starts_with('/') && !p.split('/').any(|c| c == "..") && !p.chars().any(char::is_control)).then(|| p.to_string())
 }
 
-/// A pick names a tool in the offered shape and file types of a few lower-case letters or digits.
+/// A pick names a tool in the offered shape and file types: a word of lower-case letters, digits and -, 16 at most.
 fn pick(v: Option<&Value>) -> Option<Pick> {
     let v = v?;
     let tool = v.get("tool")?.as_str()?.to_string();
@@ -247,7 +247,9 @@ fn pick(v: Option<&Value>) -> Option<Pick> {
         .as_array()?
         .iter()
         .filter_map(Value::as_str)
-        .filter(|t| !t.is_empty() && t.len() <= 8 && t.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()))
+        .filter(|t| {
+            t.len() <= 16 && t.starts_with(|c: char| c.is_ascii_lowercase()) && t.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        })
         .map(str::to_string)
         .collect();
     let arguments: Map<String, Value> = v
@@ -504,6 +506,12 @@ mod tests {
         let r = rows(r#"{"title":"t","rows":[{"id":"a","text":"second screen","pick":{"tool":"theme_panel","types":["jpg"],"arguments":{"n":"2","path":"/etc/x","Bad":"x","w":"a b"}}}]}"#).unwrap();
         let pk = r.rows[0].pick.as_ref().unwrap();
         assert_eq!(pk.tool, "theme_panel");
+        let r = rows(r#"{"title":"t","rows":[{"id":"a","text":"from a theme file","pick":{"tool":"theme_install","types":["spark-theme","Bad","-x","a-very-long-type-name"]}}]}"#).unwrap();
+        assert_eq!(
+            r.rows[0].pick.as_ref().unwrap().types,
+            vec!["spark-theme"],
+            "a type is a lower-case word, - inside, 16 at most"
+        );
         assert_eq!(
             serde_json::Value::Object(pk.arguments.clone()),
             json!({"n": "2"}),

@@ -9,7 +9,7 @@
 # file is data: jq reads it, each key is checked, and a picture it names is a
 # plain PNG or JPEG in the variant's own folder.
 # sets: ART_FORMAT ART_SCREENS FAMILY_CORE FAMILY_MAX FAMILY_RULES SCENES_PIXEL
-# reads: CONFIG_DIR CORE_DIR LOOKS_DIR OS PALETTE_DIR PANEL_SEP REPO STATE_DIR TAB TMP WALL_CACHE
+# reads: CONFIG_DIR CORE_DIR LOOKS_DIR OS PALETTE_DIR PANEL_SEP REPO STATE_DIR TAB THEME_FILE_PICTURE_MAX TMP WALL_CACHE
 ART_FORMAT=1   # a newer format is refused, not half read
 FAMILY_CORE=$REPO/gallery/family
 FAMILY_MAX=16384
@@ -69,11 +69,15 @@ family_why() {   # family_why FILE -> nothing and 0 for a family this spark-shel
     jq -r '.variants | to_entries[] | .key as $v | .value as $x
         | ([$v, $x.theme, ""] | @tsv), ([$x.portrait // empty, ($x.panels // {} | .[][] | .[])] | unique[] | [$v, $x.theme, .] | @tsv)' "$1" > "$TMP/family.files"
     while IFS="$TAB" read -r _fv _ft _fp; do
-        case $(theme_kind "$_ft") in ''|none) echo "its $_fv variant names $_ft, which is no theme here"; return 1 ;; esac
+        if [ "${1##*/}" = family.json ] && [ "$_ft" = "${_fi%.json}" ]; then _fd=${1%/family.json}   # its own theme: the folder it is in, there or on its way in
+        else
+            case $(theme_kind "$_ft") in ''|none) echo "its $_fv variant names $_ft, which is no theme here"; return 1 ;; esac
+            [ -n "$_fp" ] || continue
+            _fd=$(theme_dir "$_ft"); [ -n "$_fd" ] || { echo "its $_fv variant names $_fp, and $_ft has no folder to hold it"; return 1; }
+        fi
         [ -n "$_fp" ] || continue
-        _fd=$(theme_dir "$_ft"); [ -n "$_fd" ] || { echo "its $_fv variant names $_fp, and $_ft has no folder to hold it"; return 1; }
         [ -f "$_fd/$_fp" ] && [ ! -L "$_fd/$_fp" ] || { echo "its $_fv variant names $_fp, which is not a plain file in the folder of $_ft"; return 1; }
-        _fq=$(gallery_picture_ok "$_fd/$_fp") || { echo "its $_fv variant names $_fp: ${_fq#its picture is }"; return 1; }
+        _fq=$(gallery_picture_ok "$_fd/$_fp" "$THEME_FILE_PICTURE_MAX") || { echo "its $_fv variant names $_fp: ${_fq#its picture is }"; return 1; }
     done < "$TMP/family.files"
 }
 family_for() {   # family_for THEME -> the file of the family it is a variant of, or false

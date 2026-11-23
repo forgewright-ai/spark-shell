@@ -13,7 +13,7 @@
 #   spark-shell check                 test the setup (exit 0 when all is ok)
 #   spark-shell update                move to the newest signed release, then on
 #   spark-shell theme NAME|none       set the colors and the look, or none
-#   spark-shell theme export NAME [FORMAT]  print a palette for a terminal
+#   spark-shell theme export NAME [FORMAT]  a theme file or a terminal palette
 #   spark-shell theme [list]          show the look in use, or list them all
 #   spark-shell theme save [NAME]     keep the look in use as a saved theme
 #   spark-shell theme delete NAME     delete a theme of yours
@@ -42,6 +42,7 @@
 #   spark-shell theme "WORDS"         a whole theme from words, read by spark
 #   spark-shell theme gallery         the themes and wallpapers in the gallery
 #   spark-shell theme install NAME    one from the gallery, checked as a release
+#   spark-shell theme install FILE    a theme file (.spark-theme), checked as data
 #   spark-shell theme variant dark|light  the theme's other variant
 #   spark-shell theme screens         what each screen shows, from the left
 #   spark-shell font FACE SIZE|none   set the console font, or use its own

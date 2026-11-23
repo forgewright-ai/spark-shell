@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- the gallery
-# sets: GALLERY_FLOOR GALLERY_FORMAT GALLERY_GIT GALLERY_KEYS GALLERY_PICTURE_MAX GALLERY_PIXELS_MAX GALLERY_URL GALLERY_WALLS
+# sets: GALLERY_FLOOR GALLERY_FORMAT GALLERY_GIT GALLERY_KEYS GALLERY_PICTURE_MAX GALLERY_PIXELS_MAX GALLERY_URL GALLERY_WALLS THEME_FILE_PICTURE_MAX
 # reads: ANIMATION_NAMES OS PALETTE_DIR PATH_REFUSED REPO STATE_DIR TAB THEME_KEYS THEME_WORDS TMP
 # a release is a tag gallery-vN signed by a key in allowed-signers, read only through its
 # tree's object id; one older than the floor is never taken. Data alone: no SVG, no GIF, no
@@ -10,7 +10,8 @@ GALLERY_GIT=$STATE_DIR/gallery.git
 GALLERY_FLOOR=$STATE_DIR/gallery.floor
 GALLERY_FORMAT=1
 GALLERY_PICTURE_MAX=4194304   # bytes: 4 MiB a picture
-GALLERY_PIXELS_MAX=7680x4320
+GALLERY_PIXELS_MAX=7680x4320   # either way round
+THEME_FILE_PICTURE_MAX=16777216   # a theme file's still: 16 MiB, its pictures in 4K
 GALLERY_WALLS=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/gallery   # the wallpapers installed from it
 GALLERY_KEYS='FORMAT PALETTE WORDS WALLPAPER PICTURE FACE ALPHA ANIMATION GLYPH_FAMILY BAR_GLYPHS WALLPAPER_MOTION DIALOG_ICONS DIALOG_SPACING'   # what a shared theme may set: never the text size, the pointer or a file of the machine
 gallery_git() { GIT_TERMINAL_PROMPT=0 git -c protocol.allow=never -c protocol.https.allow=always -c protocol.file.allow=always -c core.hooksPath=/dev/null -c transfer.fsckObjects=true -c gc.auto=0 -c maintenance.auto=false "$@"; }   # https or a folder, no prompt, no hook, every object checked; no upkeep after a fetch (it rewrote the shallow file under the next one)
@@ -80,15 +81,17 @@ gallery_take() {   # gallery_take NAME DIR -> the entry's files in DIR, each che
         [ "$(wc -c < "$2/${_gp##*/}" | tr -d ' ')" = "$_gz" ] && [ "$(sha256_of "$2/${_gp##*/}")" = "$_gh" ] || { echo "$_gp is not the file the gallery's index names: its size or its sha256 differs"; return 1; }
     done < "$TMP/gallery.entry"
 }
-gallery_picture_ok() {   # gallery_picture_ok FILE -> 0 for a PNG or a JPEG as its name says, within the size and the pixels allowed, read from its header before anything decodes it; else one line and 1
+gallery_picture_ok() {   # gallery_picture_ok FILE [MAX] -> 0 for a PNG or a JPEG as its name says, within the size (MAX bytes, the gallery's by default) and the pixels allowed, read from its header before anything decodes it; else one line and 1
     command -v python3 >/dev/null 2>&1 || { echo "python3 is not installed, and it reads a picture's header"; return 1; }
-    [ "$(wc -c < "$1" | tr -d ' ')" -le "$GALLERY_PICTURE_MAX" ] || { echo "its picture is over $((GALLERY_PICTURE_MAX / 1048576)) MiB"; return 1; }
+    _gpm=${2:-$GALLERY_PICTURE_MAX}
+    [ "$(wc -c < "$1" | tr -d ' ')" -le "$_gpm" ] || { echo "its picture is over $((_gpm / 1048576)) MiB"; return 1; }
     _gq=$(python3 -I "$REPO/lib/look.py" picture "$1" 2>&1) || { echo "its picture is $(printf '%s' "$_gq" | tr -d '\001-\037\177' | cut -c1-80)"; return 1; }
     set -- "$1" $_gq
     case $(printf '%s' "${1##*.}" | tr 'A-Z' 'a-z'):$2 in png:png|jpg:jpeg|jpeg:jpeg) ;; *) echo "its picture is a $2 named ${1##*/}"; return 1 ;; esac
-    [ "$3" -ge 1 ] && [ "$4" -ge 1 ] && [ "$3" -le "${GALLERY_PIXELS_MAX%x*}" ] && [ "$4" -le "${GALLERY_PIXELS_MAX#*x}" ] || { echo "its picture is $3x$4, past $GALLERY_PIXELS_MAX"; return 1; }
+    [ "$3" -ge 1 ] && [ "$4" -ge 1 ] && { { [ "$3" -le "${GALLERY_PIXELS_MAX%x*}" ] && [ "$4" -le "${GALLERY_PIXELS_MAX#*x}" ]; } || { [ "$4" -le "${GALLERY_PIXELS_MAX%x*}" ] && [ "$3" -le "${GALLERY_PIXELS_MAX#*x}" ]; }; } \
+        || { echo "its picture is $3x$4, past $GALLERY_PIXELS_MAX"; return 1; }
 }
-gallery_theme_ok() {   # gallery_theme_ok DIR -> 0 when a theme from the gallery holds data alone, as its format says; else one line and 1
+gallery_theme_ok() {   # gallery_theme_ok DIR [NAME] -> 0 when a theme from the gallery holds data alone, as its format says; NAME's: a theme file's, its own stills, loops, reels and family too; else one line and 1
     [ -f "$1/look.env" ] && [ -f "$1/palette.env" ] || { echo "it has no look.env or no palette.env"; return 1; }
     ! LC_ALL=C grep -q '[^ -~]' "$1/look.env" "$1/palette.env" || { echo "its look.env or palette.env is not plain ASCII"; return 1; }
     _gw=$(look_ok "$1") || { echo "$_gw"; return 1; }
@@ -103,9 +106,22 @@ gallery_theme_ok() {   # gallery_theme_ok DIR -> 0 when a theme from the gallery
           n++ }
         END { if (!b && n != split(keys, a, " ")) print "count" }' "$1/palette.env")
     [ -z "$_gb" ] || { echo "its palette.env is not the twenty colors, each #rrggbb once"; return 1; }
-    _gp=$(look_get "$1" PICTURE)
-    for _gf in "$1"/*; do case ${_gf##*/} in look.env|palette.env|"$_gp") ;; *) echo "it holds a file that is none of its own: ${_gf##*/}"; return 1 ;; esac; done
-    if [ "$(look_get "$1" WALLPAPER)" = picture ]; then gallery_picture_ok "$1/$_gp" || return 1
+    _gp=$(look_get "$1" PICTURE); _gn=${2:-}
+    for _gf in "$1"/*; do
+        _gb=${_gf##*/}
+        case $_gb in look.env|palette.env|"$_gp") continue ;; esac
+        [ -n "$_gn" ] || { echo "it holds a file that is none of its own: $_gb"; return 1; }
+        case $_gb in
+            family.json) _gw=$(family_why "$_gf") || { echo "its family.json: $_gw"; return 1; } ;;
+            "$_gn"-landscape-[1-9].jpg|"$_gn"-landscape-[1-9].png|"$_gn"-portrait.jpg|"$_gn"-portrait.png) gallery_picture_ok "$_gf" "$THEME_FILE_PICTURE_MAX" || return 1 ;;
+            "$_gn"-landscape-[1-9].mp4|"$_gn"-portrait.mp4) [ -f "${_gf%.mp4}.jpg" ] || [ -f "${_gf%.mp4}.png" ] || { echo "its loop $_gb has no picture of its own"; return 1; }
+                _gw=$(media_ok "$_gf" mp4) || { echo "its loop $_gb: $_gw"; return 1; } ;;
+            "$_gn"-dialog-open.webp|"$_gn"-dialog-close.webp) _gw=$(media_ok "$_gf" webp) || { echo "its reel $_gb: $_gw"; return 1; } ;;
+            *) echo "it holds a file that is none of its own: $_gb"; return 1 ;;
+        esac
+    done
+    [ "$(look_get "$1" ANIMATION)" != own ] || { [ -f "$1/$_gn-dialog-open.webp" ] && [ -f "$1/$_gn-dialog-close.webp" ]; } || { echo "its ANIMATION is own, and it has no opening and closing of its own"; return 1; }
+    if [ "$(look_get "$1" WALLPAPER)" = picture ]; then gallery_picture_ok "$1/$_gp" ${_gn:+"$THEME_FILE_PICTURE_MAX"} || return 1
     elif [ -n "$_gp" ]; then echo "it names a PICTURE its WALLPAPER does not use"; return 1; fi
 }
 theme_gallery() {   # theme_gallery -- what the gallery's release offers: the themes and the wallpapers
@@ -132,8 +148,9 @@ theme_gallery() {   # theme_gallery -- what the gallery's release offers: the th
     [ -z "$GALLERY_SKIPPED" ] || echo "Not taken, as no key in allowed-signers signed them:$GALLERY_SKIPPED."
     echo "spark-shell theme install NAME puts one in place and uses it."
 }
-theme_install() {   # theme_install NAME -- a theme or a wallpaper from the gallery, checked, put in place and used
-    [ $# -eq 1 ] || refuse_in theme "install takes one name -- spark-shell theme gallery lists them"
+theme_install() {   # theme_install NAME|FILE -- a theme or a wallpaper from the gallery, or a theme file; checked, put in place and used
+    [ $# -eq 1 ] || refuse_in theme "install takes one name or one theme file -- spark-shell theme gallery lists them"
+    case $1 in *.spark-theme) theme_install_file "$1"; return ;; esac
     case $1 in [a-z]*) ;; *) refuse_in theme "install takes a gallery name: lowercase letters, digits and -" ;; esac
     case $1 in *[!a-z0-9-]*) refuse_in theme "install takes a gallery name: lowercase letters, digits and -" ;; esac
     [ ${#1} -le 40 ] || refuse_in theme "install takes a gallery name of 40 letters at most"
@@ -165,5 +182,24 @@ theme_install() {   # theme_install NAME -- a theme or a wallpaper from the gall
     mkdir_private "$PALETTE_DIR"; rm -rf "$_gt.new"; cp -R "$_gd" "$_gt.new" && rm -rf "${_gt:?}" && mv "$_gt.new" "$_gt"
     echo "installed the theme $1 from the gallery's $GALLERY_TAG, signed and its sha256s checked -- spark-shell theme $1 brings it back"
     theme_apply "$1"
+}
+theme_install_file() {   # theme_install_file FILE -- a theme file (spark-shell theme export): read as data, checked as the gallery's themes are with its own stills, loops and reels, put in place and used
+    _gx=$(printf '%s' "${1##*/}" | tr -d '\001-\037\177' | cut -c1-80)
+    [ -f "$1" ] && [ ! -L "$1" ] && [ -r "$1" ] || refuse_in theme "$_gx is not a theme file here"
+    command -v python3 >/dev/null 2>&1 || refuse_in theme "python3 is not installed, and it reads a theme file"
+    _gd=$TMP/theme.file; rm -rf "$_gd"; mkdir -p "$_gd"
+    _gn=$(python3 -I "$REPO/lib/look.py" unpack "$1" "$_gd" 2>"$TMP/gallery.why") || refuse_in theme "$_gx was not installed: $(head -1 "$TMP/gallery.why" | tr -d '\001-\037\177' | cut -c1-120)"
+    case " $THEME_WORDS " in *" $_gn "*) refuse_in theme "$_gx was not installed: $_gn is a word of spark-shell theme" ;; esac
+    case $(theme_kind "$_gn") in
+        '') ;;
+        saved) refuse_in theme "a theme of yours is named $_gn -- spark-shell theme rename $_gn NEW first, then install it" ;;
+        *) refuse_in theme "$_gn is a theme here already: $_gx was not installed" ;;
+    esac
+    gallery_theme_ok "$_gd/$_gn" "$_gn" > "$TMP/gallery.why" || refuse_in theme "$_gx was not installed: $(cat "$TMP/gallery.why")"
+    _gw=$(look_get "$_gd/$_gn" WORDS | tr -cd 'A-Za-z0-9 ,.-' | cut -c1-80); [ -z "$(look_get "$_gd/$_gn" WORDS)" ] || look_set "$_gd/$_gn" WORDS "$_gw"
+    _gt=$PALETTE_DIR/$_gn   # the name held to its shape by the reader: never empty, never a path
+    mkdir_private "$PALETTE_DIR"; rm -rf "$_gt.new"; mv "$_gd/$_gn" "$_gt.new" && mv "$_gt.new" "$_gt" || refuse_in theme "could not put $_gn in place"
+    echo "installed the theme $_gn from $_gx, its files checked -- spark-shell theme $_gn brings it back"
+    theme_apply "$_gn"
 }
 
