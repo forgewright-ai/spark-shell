@@ -16,7 +16,9 @@
 #   spark-shell theme export NAME [FORMAT]  print a palette for a terminal
 #   spark-shell theme [list]          show the look in use, or list them all
 #   spark-shell theme save [NAME]     keep the look in use as a saved theme
-#   spark-shell theme delete NAME     delete a saved theme
+#   spark-shell theme delete NAME     delete a theme of yours
+#   spark-shell theme rename NAME NEW  a theme of yours by a new name
+#   spark-shell theme duplicate NAME NEW  any theme as a new one of yours
 #   spark-shell theme back            the look before this one, again
 #   spark-shell theme wallpaper X     a drawing, a picture, a color or default
 #   spark-shell theme text N          the text size everywhere; bigger, smaller

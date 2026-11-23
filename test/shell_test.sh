@@ -6021,8 +6021,8 @@ for _mf in "$REPO"/lib/motion_*.py; do _mn=${_mf##*/motion_}; wall_n=${_mn%.py};
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps system about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 160 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-five sections hold the 160 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 163 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-five sections hold the 163 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -7999,9 +7999,39 @@ sh "$SH" theme dracula >/dev/null 2>&1
 for n in 1 2 3 4 5 6 7 8; do sh "$SH" theme nord >/dev/null 2>&1; sh "$SH" theme dracula >/dev/null 2>&1; done
 [ "$(grep -c '' "$st_dir/theme.history")" = 4 ] && [ "$(cut -f2 "$st_dir/theme.history" | paste -sd ' ' -)" = 'dracula nord tokyonight-night winter-desk' ] && ok "the same look again moves up, never twice in the list" || bad "history dedup" "$(cat "$st_dir/theme.history")"
 sh "$SH" theme save undo-196 >/dev/null 2>&1; sh "$SH" theme winter-desk >/dev/null 2>&1
-mcp theme "$(call 1 theme_delete '{"name":"undo-196"}')"
-ans 1 | jq -e '.result.isError == false and (.result.structuredContent | has("undo") | not)' >/dev/null && [ ! -d "$th_dir/undo-196" ] \
-    && ok "provide theme_delete: the saved theme gone and no undo offered, where its undo once put the palette in use on again (#196)" || bad "theme delete undo" "$(cat "$H/mcp.out" | head -c 400)"
+mcp theme "$(call 1 theme_delete '{"name":"undo-196"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/yours"}')" "$(call 3 theme_restore '{"name":"undo-196"}')"
+ans 1 | jq -e '.result.isError == false and .result.structuredContent.undo == {"name": "theme_restore", "arguments": {"name": "undo-196"}}' >/dev/null \
+    && ! ans 2 | jq -e '.result.contents[0].text | fromjson | any(.rows[]; .text == "undo-196")' >/dev/null \
+    && ans 3 | jq -e '.result.isError == false' >/dev/null && [ -f "$th_dir/undo-196/palette.env" ] \
+    && ok "provide theme_delete: the theme gone from Your themes, its undo the theme itself back (never the palette in use, #196)" || bad "theme delete undo" "$(cat "$H/mcp.out" | head -c 600)"
+sh "$SH" theme delete undo-196 >/dev/null 2>&1 </dev/null
+# Your themes (v0.165): a theme of yours renamed, any theme duplicated as yours (its own files named for it, its family too)
+sh "$SH" theme duplicate atlas-awakening sea-copy >/dev/null 2>&1; d1=$(ls "$th_dir/sea-copy" | paste -sd ' ' -)
+f1=$(jq -c '[.id, .variants.dark.theme, .variants.dark.portrait]' "$th_dir/sea-copy/family.json" 2>&1); p1=$(sed -n 's/^PICTURE=//p' "$th_dir/sea-copy/look.env")
+o2=$(sh "$SH" theme rename sea-copy sea-two 2>&1); f2=$(jq -c '[.id, .variants.dark.portrait]' "$th_dir/sea-two/family.json" 2>&1)
+rc=0; o3=$(sh "$SH" theme rename nord mine 2>&1) || rc=$?
+rc4=0; o4=$(sh "$SH" theme duplicate nord sea-two 2>&1) || rc4=$?
+sh "$SH" theme duplicate nord nord-mine >/dev/null 2>&1; l5=$(sed -n 's/^PALETTE=//p' "$th_dir/nord-mine/look.env")
+case $d1 in *sea-copy-landscape-1.jpg*sea-copy-portrait.mp4*) _d1=1 ;; *) _d1='' ;; esac
+[ -n "$_d1" ] && [ "$f1" = '["sea-copy","sea-copy","sea-copy-portrait.jpg"]' ] && [ "$p1" = sea-copy-landscape-1.jpg ] \
+    && [ "$o2" = 'renamed sea-copy to sea-two' ] && [ ! -e "$th_dir/sea-copy" ] && [ "$f2" = '["sea-two","sea-two-portrait.jpg"]' ] \
+    && [ "$rc" = 1 ] && [ "$o3" = 'spark-shell theme: nord comes with spark-shell -- spark-shell theme duplicate nord NEW makes it yours' ] \
+    && [ "$rc4" = 1 ] && [ "$o4" = 'spark-shell theme: sea-two is taken -- another name' ] && [ "$l5" = nord ] && [ -f "$th_dir/nord-mine/palette.env" ] \
+    && ok "theme duplicate and rename: a bundled theme copied as yours, its files and family named for it; renamed so again; a bundled theme is never renamed, a taken name refused, a palette copied as a look of its own" \
+    || bad "theme duplicate rename" "$d1 | $f1 | $p1 | $o2 | $f2 | $rc $o3 | $rc4 $o4 | $l5"
+mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/yours"}')" "$(rq 3 resources/read '{"uri":"spark-shell://theme/rows/gallery/sea-two"}')" "$(rq 4 resources/read '{"uri":"spark-shell://theme/rows/gallery/nord"}')" \
+    "$(call 5 theme_rename '{"name":"nord-mine","to":"nord-two"}')"
+y1=$(ans 1 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.id | startswith("theme:settings:")) | .text] | join("|")')
+y2=$(ans 2 | jq -r '.result.contents[0].text | fromjson | [.rows[] | .group + ":" + .text + ":" + ((.more // []) | map(.said) | join(","))] | join("|")')
+y3=$(ans 3 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.group == "manage") | .tool.name] | join(" ")')
+y4=$(ans 4 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.group == "manage") | .text] | join(" ")')
+[ "$y1" = 'Wallpaper and motion|Type and glyphs|Interface|Your themes' ] \
+    && printf '%s' "$y2" | grep -q '^new theme:from the look in use:|new theme:from a picture:|new theme:a copy of [a-z-]*:|' \
+    && printf '%s' "$y2" | grep -q 'yours:sea-two:rename,duplicate,delete' && [ "$y3" = 'theme_rename theme_duplicate theme_delete' ] && [ "$y4" = 'Duplicate as yours' ] \
+    && ans 5 | jq -e '.result.isError == false and .result.structuredContent.undo.name == "theme_rename"' >/dev/null && [ -d "$th_dir/nord-two" ] \
+    && ok "provide theme: Your themes in place of Manage themes: the ways to make one, then each theme of yours with rename, duplicate and delete; its page has them too, a bundled one Duplicate as yours; rename from the dialog, its undo the name back" \
+    || bad "your themes" "$y1 | $y2 | $y3 | $y4 | $(ans 5 | head -c 300)"
+for _yt in sea-two nord-two; do sh "$SH" theme delete "$_yt" >/dev/null 2>&1 </dev/null; done
 rc=0; out=$(sh "$SH" theme delete nord 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: nord is a palette spark-shell ships, not a saved theme' ] && ok "theme delete nord: a shipped palette is refused" || bad "theme delete shipped" "rc=$rc $out"
 sh "$SH" theme winter-desk >/dev/null 2>&1

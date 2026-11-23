@@ -149,7 +149,7 @@ class Providers(unittest.TestCase):
             json.loads(replies[q["id"]]["result"]["contents"][0]["text"]) for q in calls]
         groups = [r["text"] for r in root["rows"] if r["id"].startswith("theme:settings:")]
         self.assertIn("Type and glyphs", groups)
-        self.assertIn("Manage themes", groups)
+        self.assertIn("Your themes", groups)
         self.assertEqual(section["title"], "Type and glyphs")
         self.assertEqual(next(r["step"]["set"]["name"] for r in section["rows"] if r["text"]=="Glyph family"), "theme_family")
         self.assertEqual(len(gallery["rows"]), 7, "six sections and Cinematic Worlds")

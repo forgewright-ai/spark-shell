@@ -41,6 +41,9 @@ cmd_theme() {   # cmd_theme [NAME|none|show|list|WORD ARG...|"WORDS"]
             fi ;;
         save) shift; theme_save "$@"; return ;;
         delete) shift; theme_delete "$@"; return ;;
+        rename) shift; [ $# -ge 2 ] || refuse_in theme "rename NAME NEW -- which theme, and its new name?"; theme_rename "$@"; return ;;
+        duplicate) shift; [ $# -ge 2 ] || refuse_in theme "duplicate NAME NEW -- which theme, and the new one's name?"; theme_duplicate "$@"; return ;;
+        restore) shift; theme_restore "$@"; return ;;
         back) [ $# -le 1 ] || refuse_in theme "back takes no word"; theme_back; return ;;
         wallpaper) shift; theme_wallpaper "$@"; return ;;
         text) shift; theme_text "$@"; return ;;
@@ -224,9 +227,72 @@ theme_delete() {   # theme_delete NAME... -- its folder and history lines
     esac
     [ "$name" != "${THEME:-}" ] || refuse_in theme "$name is the theme in use -- spark-shell theme NAME another first"
     kept_delete_ok theme "$name" || return 0
-    rm -rf "$(theme_dir "$name")"
+    if [ -n "${THEME_DELETED:-}" ]; then   # the dialog's undo brings it back
+        mkdir -p "$THEME_DELETED" && rm -rf "${THEME_DELETED:?}/$name" && mv "$(theme_dir "$name")" "$THEME_DELETED/$name" || refuse_in theme "could not delete $name"
+    else rm -rf "$(theme_dir "$name")"; fi
     _kh=$(kept_hist theme); [ ! -f "$_kh" ] || { awk -F '\t' -v n="$name" '$2 != n' "$_kh" > "$_kh.new" && mv "$_kh.new" "$_kh"; }
     echo "deleted $name"
+}
+theme_restore() {   # theme_restore NAME -- a theme deleted from the dialog, back: its undo
+    _trn=$(layout_name_of "$*")
+    [ -n "$_trn" ] && [ -n "${THEME_DELETED:-}" ] && [ -d "$THEME_DELETED/$_trn" ] && [ -z "$(theme_kind "$_trn")" ] || refuse_in theme "${_trn:-it} can no longer come back"
+    mkdir_private "$PALETTE_DIR" && mv "$THEME_DELETED/$_trn" "$PALETTE_DIR/$_trn" || refuse_in theme "could not bring $_trn back"
+    echo "$_trn is back"
+}
+theme_new_name() {   # theme_new_name WORDS... -- _tnn the name a theme of yours takes, free and no palette's; else one line and exit
+    _tnn=$(layout_name_of "$*"); [ -n "$_tnn" ] || refuse_in theme "a theme's name is letters and digits"
+    case " $THEME_WORDS " in *" $_tnn "*) refuse_in theme "$_tnn is a word of spark-shell theme, so no theme can go by it" ;; esac
+    [ -z "$(theme_kind "$_tnn")" ] || refuse_in theme "$_tnn is taken -- another name"
+}
+theme_folder_copy() {   # theme_folder_copy DIR NEWDIR NEW -- a theme's folder as another's: plain files alone, its own (DIR's name-*) named NEW-*, its look and family saying so
+    _tco=${1##*/}; rm -rf "$2.new"; mkdir -p "$2.new" || return 1
+    for _tcf in "$1"/*; do
+        [ -f "$_tcf" ] && [ ! -L "$_tcf" ] || continue
+        _tcb=${_tcf##*/}; case $_tcb in "$_tco"-*) _tcb=$3-${_tcb#"$_tco"-} ;; esac
+        cp "$_tcf" "$2.new/$_tcb" || return 1
+    done
+    if [ -f "$2.new/look.env" ]; then sed "s|^PICTURE=$_tco-|PICTURE=$3-|" "$2.new/look.env" > "$2.new/look.new" && mv "$2.new/look.new" "$2.new/look.env" || return 1; fi
+    if [ -f "$2.new/family.json" ]; then   # the family names the new theme and its files; a variant that is another theme stays
+        jq --arg o "$_tco" --arg l "$(theme_label "$_tco")" --arg n "$3" '.id = $n | .title = $n
+            | .variants |= map_values(if .theme == $o or .theme == $l then .theme = $n else . end)
+            | walk(if type == "string" and startswith($o + "-") then $n + "-" + ltrimstr($o + "-") else . end)' "$2.new/family.json" > "$2.new/family.new" \
+            && mv "$2.new/family.new" "$2.new/family.json" || return 1
+    fi
+    mv "$2.new" "$2"
+}
+theme_duplicate() {   # theme_duplicate NAME NEW... -- any theme as a new one of yours, to change: its folder copied, or a palette's look written
+    _dpf=$1; shift
+    _dpk=$(theme_kind "$_dpf"); [ -n "$_dpk" ] && [ "$_dpk" != none ] || refuse_in theme "no theme named $_dpf -- spark-shell theme list shows them"
+    theme_new_name "$@"; _dpt=$_tnn; mkdir_private "$PALETTE_DIR"
+    _dpd=$(theme_dir "$_dpf")
+    if [ -n "$_dpd" ]; then theme_folder_copy "$_dpd" "$PALETTE_DIR/$_dpt" "$_dpt" || { rm -rf "$PALETTE_DIR/$_dpt.new"; refuse_in theme "could not copy $_dpf"; }
+    else
+        _dpp=$(palette_file "$_dpf") || refuse_in theme "no palette named $_dpf"
+        _dpn=$PALETTE_DIR/$_dpt; rm -rf "$_dpn.new"; mkdir -p "$_dpn.new" && cp "$_dpp" "$_dpn.new/palette.env" || refuse_in theme "could not copy $_dpf"
+        { printf 'FORMAT=%s\nPALETTE=%s\n' "$LOOK_FORMAT" "$_dpf"; _dpw=$(wall_for_palette "$_dpf" 2>/dev/null) && printf 'WALLPAPER=%s\nDRAWING=%s\n' "$_dpw" "$_dpw"; } > "$_dpn.new/look.env"
+        mv "$_dpn.new" "$_dpn" || refuse_in theme "could not copy $_dpf"
+    fi
+    echo "$_dpt is a copy of $(theme_label "$_dpf") -- spark-shell theme $_dpt uses it"
+}
+theme_rename() {   # theme_rename NAME NEW... -- a theme of yours by a new name: its folder and its own files, its history lines, the config when in use
+    _rnf=$1; shift
+    case $(theme_kind "$_rnf") in
+        saved) ;;
+        look) refuse_in theme "$_rnf is not saved yet -- spark-shell theme save NAME keeps it" ;;
+        shipped|bundled) refuse_in theme "$_rnf comes with spark-shell -- spark-shell theme duplicate $_rnf NEW makes it yours" ;;
+        *) refuse_in theme "no theme of yours named $_rnf" ;;
+    esac
+    theme_new_name "$@"; _rnt=$_tnn; _rnd=$(theme_dir "$_rnf")
+    theme_folder_copy "$_rnd" "$PALETTE_DIR/$_rnt" "$_rnt" || { rm -rf "$PALETTE_DIR/$_rnt.new"; refuse_in theme "could not rename $_rnf"; }
+    rm -rf "$_rnd"
+    _kh=$(kept_hist theme); [ ! -f "$_kh" ] || { awk -F '\t' -v o="$_rnf" -v n="$_rnt" 'BEGIN { OFS = FS } $2 == o { $2 = n } 1' "$_kh" > "$_kh.new" && mv "$_kh.new" "$_kh"; }
+    if [ "$_rnf" = "${THEME:-}" ]; then   # in use: the config names it, and its picture by the new name
+        config_locked config_edit THEME "$_rnt"; THEME=$_rnt; export THEME
+        case $WALLPAPER in "$_rnd"/*) _rnw=${WALLPAPER#"$_rnd"/}; case $_rnw in "$_rnf"-*) _rnw=$_rnt-${_rnw#"$_rnf"-} ;; esac
+            WALLPAPER=$PALETTE_DIR/$_rnt/$_rnw; export WALLPAPER; config_locked config_edit WALLPAPER "$WALLPAPER" ;; esac
+        [ "$MODE" = dry ] || look_apply >/dev/null 2>&1 || :
+    fi
+    echo "renamed $_rnf to $_rnt"
 }
 theme_back() {   # one look further back each call
     while :; do

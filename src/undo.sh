@@ -50,7 +50,10 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         bar:tray) if [ "$BAR_TRAY" = yes ]; then printf 'tray on\ttray on\n'; else printf 'tray off\ttray off\n'; fi ;;
         theme:wallpaper|theme:wallpaper-picture|theme:wallpaper-color) _cur=$(wall_name); if [ -n "$_cur" ]; then printf 'wallpaper %s\twallpaper %s\n' "$_cur" "$_cur"; else printf 'wallpaper-picture %s\twallpaper %s\n' "$WALLPAPER" "${WALLPAPER##*/}"; fi ;;
         theme:theme) printf '%s\ttheme %s\n' "${THEME:-none}" "${THEME:-none}" ;;
-        theme:delete) ;;   # no inverse
+        theme:delete) [ "$(theme_kind "$_arg")" != saved ] || printf 'restore %s\t%s is back\n' "$_arg" "$_arg" ;;
+        theme:rename) _n=$(layout_name_of "${_arg#* to=}"); [ -z "$_n" ] || printf 'rename %s to=%s\t%s has its name again\n' "$_n" "${_arg%% *}" "${_arg%% *}" ;;
+        theme:duplicate) _n=$(layout_name_of "${_arg#* to=}"); [ -z "$_n" ] || printf 'delete %s\t%s deleted again\n' "$_n" "$_n" ;;
+        theme:restore) ;;   # no inverse
         theme:*) printf '%s\ttheme %s\n' "${THEME:-none}" "${THEME:-none}" ;;
         wifi:connect|wifi:hidden) _c=$(wifi_connected); if [ -n "$_c" ]; then printf 'connect %s\twifi %s\n' "$_c" "$_c"; else printf 'disconnect\twifi off\n'; fi ;;
         wifi:disconnect) _c=$(wifi_connected); [ -z "$_c" ] || printf 'connect %s\twifi %s\n' "$_c" "$_c" ;;
@@ -280,6 +283,9 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         theme:animation) case " next back none $ANIMATION_NAMES " in *" ${3:-} "*) echo "$3"; return 0 ;; *) echo "theme: animation takes none, $(printf '%s' "$ANIMATION_NAMES" | sed 's/ /, /g'), next or back"; return 1 ;; esac ;;
         theme:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "theme: save takes a name"; return 1 ;;
         theme:delete) case $(theme_kind "${3:-}") in saved|look) [ "$3" != "${THEME:-}" ] && { echo "$3"; return 0; }; echo "theme: $3 is the theme in use"; return 1 ;; *) echo "theme: no saved theme named ${3:-?}"; return 1 ;; esac ;;
+        theme:restore) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo 'theme: restore takes the name'; return 1 ;;
+        theme:rename) [ "$(theme_kind "${3%% *}")" = saved ] && { echo "$3"; return 0; }; echo "theme: no theme of yours named ${3%% *}"; return 1 ;;
+        theme:duplicate) case $(theme_kind "${3%% *}") in ''|none) echo "theme: no theme named ${3%% *}"; return 1 ;; *) echo "$3"; return 0 ;; esac ;;
         theme:back) [ -s "$(kept_hist theme)" ] && { echo ''; return 0; }; echo "theme: no look before this one"; return 1 ;;
         theme:words) case $3 in *[!a-z0-9=\ -]*) echo "$WORDS_TAKE"; return 1 ;; [a-z]*' accent='[a-z]*' warmth='[a-z]*' contrast='[a-z]*' light='[a-z]*|[a-z]*' accent='[a-z]*' warmth='[a-z]*' contrast='[a-z]*' light='[a-z]*' name='*) echo "$3"; return 0 ;; *) echo "theme: words take a hue, then accent, warmth, contrast and light"; return 1 ;; esac ;;
         layout:delete) { [ -f "$LAYOUTS_DIR/${3:-}" ] || kept_names layout | grep -qxF -- "${3:-}"; } && { echo "$3"; return 0; }; echo "layout: no saved or recent layout named ${3:-?}"; return 1 ;;

@@ -75,6 +75,7 @@ provide_main() {   # provide_main SECTION
     WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; CLIENT_PAIRING=''; : > "$PROOTS"
     REM_DELETED=$TMP/deleted   # kept for undo until the provider ends
     LAYOUT_DELETED=$TMP/deleted-layouts
+    THEME_DELETED=$TMP/deleted-themes
     trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; files_stop; files_sound_stop; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # a kill that finds nobody is no failure
     trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM   # so the EXIT trap runs
     mkfifo "$TMP/in"
@@ -186,6 +187,8 @@ provide_resource_special() {   # provide_resource_special ID METHOD URI -- one s
             if "$_read" "${_path#*/}" > "$TMP/terminal.rows"; then
                 rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/terminal.rows")"
             else rpc_error "$1" -32002 "no palette at that uri"; fi ;;
+        theme:resources/read:spark-shell://theme/rows/yours)
+            rpc_result "$1" "$(appearance_yours | jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}')" ;;
         theme:resources/read:spark-shell://theme/rows/gallery)
             rpc_result "$1" "$(appearance_gallery | jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}')" ;;
         theme:resources/read:spark-shell://theme/rows/gallery/collection/*)

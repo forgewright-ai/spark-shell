@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # sets: APPEARANCE_CURATION
-# reads: CONFIG_DIR CORE_DIR OS PALETTE_DIR PANEL_SEP REPO SCENE_MAKE TAB TERM_NAME THEME_KEYS THUMB_DIR TMP
+# reads: CONFIG_DIR CORE_DIR OS PALETTE_DIR PANEL_SEP REPO SCENE_MAKE TAB TERM_NAME THEME_KEYS THUMB_DIR TMP WALL_TYPES
 appearance_gallery_entries() {
     {
         for gallery in "$CONFIG_DIR"/galleries/*.list; do
@@ -102,6 +102,23 @@ appearance_gallery_collection() {
           else empty end'
 }
 
+# Your themes: the ways to make one, then every theme of yours, each with its page and its rename, duplicate and
+# delete; the theme in use is checked.
+appearance_yours() {
+    appearance_gallery_entries | jq -c --arg cur "${THEME:-none}" --arg label "$(theme_label "${THEME:-none}")" --arg types "$WALL_TYPES" '
+        [.rows[] | select(._kind == "saved")] as $mine
+        | {title: "Your themes", short: [],
+           state: (($mine | length | tostring) + (if ($mine | length) == 1 then " theme" else " themes" end)),
+           rows: ([{id: "theme:new:look", group: "new theme", text: "from the look in use", tool: {name: "theme_save", arguments: {}, ask: ["name"]}},
+                   {id: "theme:new:picture", group: "new theme", text: "from a picture", sign: "opens", children: "spark-shell://files/rows",
+                    pick: {tool: "theme_picture", types: ($types | split(" "))}}]
+                  + (if $cur == "none" then [] else [{id: "theme:new:copy", group: "new theme", text: ("a copy of " + $label),
+                      tool: {name: "theme_duplicate", arguments: {name: $cur}, ask: ["to"]}}] end)
+                  + [$mine[] | del(._kind, ._room) | .group = "yours"
+                     | .more = [{name: "theme_rename", arguments: {name: .text}, ask: ["to"], said: "rename"},
+                                {name: "theme_duplicate", arguments: {name: .text}, ask: ["to"], said: "duplicate"},
+                                {name: "theme_delete", arguments: {name: .text}, said: "delete"}]])}'
+}
 appearance_detail() {
     _ad_kind=$(theme_kind "$1")
     case $_ad_kind in shipped|bundled|yours|saved|look) ;; *) return 1 ;; esac
@@ -131,6 +148,7 @@ appearance_detail() {
         --arg wall "$_ad_wall" --arg motion "$_ad_motion" --arg anim "$_ad_anim" \
         --arg face "$_ad_face" --arg family "$_ad_family" --arg alpha "$_ad_alpha" --arg size "$_ad_size" \
         --arg bar "$_ad_bar" --arg icons "$_ad_icons" --arg spacing "$_ad_spacing" --argjson art "$(art_of "$1")" \
+        --argjson mine "$([ "$_ad_kind" = saved ] && echo true || echo false)" \
         --argjson desktop "$([ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && echo true || echo false)" '
         def fact($g; $id; $label; $value):
             {id: ("theme:detail:" + $id), group: $g, text: $label, columns: [if $value == "" then "keep current" else $value end]};
@@ -157,7 +175,12 @@ appearance_detail() {
                fact("type and glyphs"; "face"; "typeface"; $face), fact("type and glyphs"; "size"; "text size"; $size),
                fact("type and glyphs"; "family"; "glyph family"; $family), fact("type and glyphs"; "bar"; "the bar"; $bar),
                fact("windows"; "alpha"; "opacity"; (if $alpha == "" then "" else (($alpha | tonumber) * 100 | round | tostring) + "%" end)),
-               fact("windows"; "icons"; "app icons"; $icons), fact("windows"; "spacing"; "app spacing"; $spacing)])}'
+               fact("windows"; "icons"; "app icons"; $icons), fact("windows"; "spacing"; "app spacing"; $spacing)]
+            + (if $mine then
+                 [{id: "theme:manage:rename", group: "manage", text: "Rename", tool: {name: "theme_rename", arguments: {name: $name}, ask: ["to"]}},
+                  {id: "theme:manage:duplicate", group: "manage", text: "Duplicate", tool: {name: "theme_duplicate", arguments: {name: $name}, ask: ["to"]}},
+                  {id: "theme:manage:delete", group: "manage", text: "Delete", tool: {name: "theme_delete", arguments: {name: $name}}}]
+               else [{id: "theme:manage:duplicate", group: "manage", text: "Duplicate as yours", tool: {name: "theme_duplicate", arguments: {name: $name}, ask: ["to"]}}] end))}'
 }
 appearance_art() {   # appearance_art THEME -> its compositions: one screen, a turned screen and the panels its family has; each a preview, none applied
     case $(theme_kind "$1") in shipped|bundled|yours|saved|look) ;; *) return 1 ;; esac
@@ -322,7 +345,8 @@ appearance_preview_art() (
 )
 
 appearance_sections() {
-    jq -c --arg label "$(theme_label "${THEME:-none}")" '
+    _asn=$(theme_saved_names | grep -c '' || :)
+    jq -c --arg label "$(theme_label "${THEME:-none}")" --arg yours "$_asn $([ "$_asn" = 1 ] && echo theme || echo themes)" '
         .rows as $rows | (.state // "none") as $active
         | def section($id;$text;$ids):
             [$ids[] as $id | $rows[] | select(.id==$id)] as $items
@@ -335,7 +359,8 @@ appearance_sections() {
         | .rows += [section("wallpaper";"Wallpaper and motion";["theme:wallpaper","theme:show:Moving wallpaper","theme:show:Animation"]),
                     section("type";"Type and glyphs";["theme:show:Text face","theme:show:Text size","theme:show:Glyph family"]),
                     section("interface";"Interface";["theme:show:Transparency","theme:show:Words on the bar","theme:show:App icons","theme:show:App spacing"]),
-                    section("manage";"Manage themes";["theme:save","theme:picture","theme:none"])]'
+                    {id:"theme:settings:yours", text:"Your themes", sign:"opens", choice:true, columns:[$yours],
+                     children:"spark-shell://theme/rows/yours"}]'
 }
 appearance_section() {
     jq -ec --arg key "theme:settings:$1" '
