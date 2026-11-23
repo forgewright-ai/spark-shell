@@ -8022,10 +8022,12 @@ case $d1 in *sea-copy-landscape-1.jpg*sea-copy-portrait.mp4*) _d1=1 ;; *) _d1=''
 mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/yours"}')" "$(rq 3 resources/read '{"uri":"spark-shell://theme/rows/gallery/sea-two"}')" "$(rq 4 resources/read '{"uri":"spark-shell://theme/rows/gallery/nord"}')" \
     "$(call 5 theme_rename '{"name":"nord-mine","to":"nord-two"}')"
 y1=$(ans 1 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.id | startswith("theme:settings:")) | .text] | join("|")')
+_settings='Wallpaper and motion|Type and glyphs|Interface|Colors|Screens and art|Your themes'   # a Mac has no desktop: no wallpaper, no screens
+[ "$(uname -s)" != Darwin ] || _settings='Type and glyphs|Interface|Colors|Your themes'
 y2=$(ans 2 | jq -r '.result.contents[0].text | fromjson | [.rows[] | .group + ":" + .text + ":" + ((.more // []) | map(.said) | join(","))] | join("|")')
 y3=$(ans 3 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.group == "manage") | .tool.name] | join(" ")')
 y4=$(ans 4 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.group == "manage") | .text] | join(" ")')
-[ "$y1" = 'Wallpaper and motion|Type and glyphs|Interface|Colors|Screens and art|Your themes' ] \
+[ "$y1" = "$_settings" ] \
     && printf '%s' "$y2" | grep -q '^new theme:from the look in use:|new theme:from a picture:|new theme:from a theme file:|new theme:a copy of [a-z-]*:|' \
     && printf '%s' "$y2" | grep -q 'yours:sea-two:rename,duplicate,delete' && [ "$y3" = 'theme_rename theme_duplicate theme_delete theme_export' ] && [ "$y4" = 'Duplicate as yours' ] \
     && ans 5 | jq -e '.result.isError == false and .result.structuredContent.undo.name == "theme_rename"' >/dev/null && [ -d "$th_dir/nord-two" ] \
@@ -8063,7 +8065,7 @@ f3=$(ans 3 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.id 
 [ "$f1" = "21 spark-shell://theme/rows/colors/from accent=#c88850:theme_color" ] \
     && printf '%s' "$f2" | grep -q '^theme:screens:landscape-2:theme_panel theme:screens:landscape-3:theme_panel theme:screens:portrait:theme_portrait theme:screens:clock:switch theme:screens:pair: ' \
     && printf '%s' "$f2" | grep -q 'theme:screens:dialog-open:theme_reel theme:screens:dialog-close:theme_reel$' \
-    && [ "$f3" = 'Wallpaper and motion|Type and glyphs|Interface|Colors|Screens and art|Your themes' ] \
+    && [ "$f3" = "$_settings" ] \
     && ans 4 | jq -e '.result.isError == false and .result.structuredContent.undo == {"name": "theme_color", "arguments": {"word": "accent", "color": "#c88850"}}' >/dev/null \
     && ans 5 | jq -e '.result.isError == false' >/dev/null && ! jq -e '.variants.dark.panels["3"]' "$_fl/family.json" >/dev/null \
     && ok "provide theme: Colors (20 and another theme's), Screens and art (pictures picked, the clock a switch, loops and reels), from the settings; a color's undo its value before; a panel taken away" \

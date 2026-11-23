@@ -426,9 +426,9 @@ appearance_sections() {
         | .rows += [section("wallpaper";"Wallpaper and motion";["theme:wallpaper","theme:show:Moving wallpaper","theme:show:Animation"]),
                     section("type";"Type and glyphs";["theme:show:Text face","theme:show:Text size","theme:show:Glyph family"]),
                     section("interface";"Interface";["theme:show:Transparency","theme:show:Pointer","theme:show:Words on the bar","theme:show:App icons","theme:show:App spacing"]),
-                    {id:"theme:settings:colors", text:"Colors", sign:"opens", choice:true, columns:[], children:"spark-shell://theme/rows/colors"},
-                    {id:"theme:settings:screens", text:"Screens and art", sign:"opens", choice:true, columns:[], children:"spark-shell://theme/rows/screens"},
-                    {id:"theme:settings:yours", text:"Your themes", sign:"opens", choice:true, columns:[$yours],
+                    {id:"theme:settings:colors", text:"Colors", sign:"opens", choice:true, columns:[], children:"spark-shell://theme/rows/colors"}]
+                 + (if any($rows[]; .id=="theme:wallpaper") then [{id:"theme:settings:screens", text:"Screens and art", sign:"opens", choice:true, columns:[], children:"spark-shell://theme/rows/screens"}] else [] end)   # the screens of a desktop: none on a Mac
+                 + [{id:"theme:settings:yours", text:"Your themes", sign:"opens", choice:true, columns:[$yours],
                      children:"spark-shell://theme/rows/yours"}]'
 }
 appearance_section() {
