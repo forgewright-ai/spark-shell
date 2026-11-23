@@ -4314,10 +4314,10 @@ printf 'DESKTOP=sway\nTHEME=atlas-awakening\nWALLPAPER=%s\nWALLPAPER_MOTION=on\n
 mo desktop --motion >/dev/null 2>&1; mo_wait 1
 _ml=$(sed -n 1p "$HOME/player.log" 2>/dev/null || :); _ml1=${_ml#--screen DP-3=}; _ml1=${_ml1%% *}; _ml2=${_ml##*HDMI-A-1=}
 case $_ml in "--screen DP-3=$_mdir/given-"*".mp4 --screen HDMI-A-1=$_mdir/given-"*.mp4) _mok=1 ;; *) _mok='' ;; esac
-_i=0; while [ "$_i" -lt 50 ] && ! grep -q "^-- output \"HDMI-A-1\" bg \"$_mat/bridge-viewpoint.jpg\" fill$" "$HOME/mosway.log" 2>/dev/null; do sleep 0.2; _i=$((_i + 1)); done
-[ -n "$_mok" ] && [ "$(readlink "$_ml1")" = "$_mat/just-beyond-reach.mp4" ] && [ "$(readlink "$_ml2")" = "$_mat/bridge-viewpoint.mp4" ] && [ ! -s "$HOME/mpv.log" ] \
-    && grep -q "^-- output \"DP-3\" bg \"$_mat/just-beyond-reach.jpg\" fill$" "$HOME/mosway.log" && grep -q "^-- output \"HDMI-A-1\" bg \"$_mat/bridge-viewpoint.jpg\" fill$" "$HOME/mosway.log" \
-    && ok "desktop --motion, a theme's own loops: the turned screen its portrait's loop, the other its panel's, linked into the cache, none made" || bad "given loops" "$_ml | $(cat "$HOME/mpv.log" "$HOME/mosway.log" 2>&1)"
+_i=0; while [ "$_i" -lt 50 ] && ! grep -q "^-- output \"HDMI-A-1\" bg \"$_mat/atlas-awakening.jpg\" fill$" "$HOME/mosway.log" 2>/dev/null; do sleep 0.2; _i=$((_i + 1)); done
+[ -n "$_mok" ] && [ "$(readlink "$_ml1")" = "$_mat/just-beyond-reach.mp4" ] && [ "$(readlink "$_ml2")" = "$_mat/atlas-awakening.mp4" ] && [ ! -s "$HOME/mpv.log" ] \
+    && grep -q "^-- output \"DP-3\" bg \"$_mat/just-beyond-reach.jpg\" fill$" "$HOME/mosway.log" && grep -q "^-- output \"HDMI-A-1\" bg \"$_mat/atlas-awakening.jpg\" fill$" "$HOME/mosway.log" \
+    && ok "desktop --motion, a theme's own loops: the turned screen its portrait's loop, the other the chosen picture's, linked into the cache, none made" || bad "given loops" "$_ml | $(cat "$HOME/mpv.log" "$HOME/mosway.log" 2>&1)"
 if [ -r "/proc/$$/stat" ]; then   # where a process's start can be read
     # a reload or a screen's still starts the background drawer (sway's child swaybg) after the loop, over it, and a covered
     # player pauses: the next look (sway's exec_always desktop --motion) starts the player again, on top
@@ -8461,6 +8461,20 @@ printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=%s\n' "$th_dir/study-night/test-wide
     && [ "$s7" = "$(printf 'DP-3       1 of 2 from the left, portrait 1200x1920: your wallpaper as you set it\nHDMI-A-1   2 of 2 from the left, landscape 1920x1080: your wallpaper as you set it')" ] \
     && ok "theme screens: with no family, a turned screen shows the drawing fitted, never cropped, or the scene drawn for it; a picture of yours stays as you set it" \
     || bad "theme screens fallback" "$s5 | $s6 | $s7"
+# a theme's own landscape pictures, chosen by name: the one chosen is on a screen, where the panels would leave it out the
+# landscape screen's panel gives way to it; the wallpaper list names them, the one in use checked
+_aw=$REPO/gallery/core/atlas-awakening
+sh "$SH" theme atlas-awakening >/dev/null 2>&1; echo 2 > "$HOME/screens"; s8=$(scr theme screens 2>&1 | tail -1)
+scr theme wallpaper bridge-viewpoint >/dev/null 2>&1; s9=$(scr theme screens 2>&1 | tail -1); w9=$(sed -n 's/^WALLPAPER=//p' "$cfg")
+mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/wallpapers"}')"
+r9=$(ans 2 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.group == "this theme") | .sign + ":" + .text + ":" + (.tool.arguments.name // "")] | join("|")')
+st=0; o10=$(scr theme wallpaper just-beyond-reach 2>&1) || st=$?
+[ "$s8" = 'HDMI-A-1   2 of 2 from the left, landscape 1920x1080: the wallpaper (atlas-awakening.jpg)' ] \
+    && [ "$s9" = 'HDMI-A-1   2 of 2 from the left, landscape 1920x1080: panel 2 of 2 (bridge-viewpoint.jpg)' ] && [ "$w9" = "$_aw/bridge-viewpoint.jpg" ] \
+    && [ "$r9" = 'blank:atlas-awakening:atlas-awakening|check:bridge-viewpoint:' ] && [ "$st" -ne 0 ] && printf '%s' "$o10" | grep -q 'just-beyond-reach is not' \
+    && ok "theme wallpaper NAME: a theme's own landscape picture by its name; the one chosen shows, the landscape screen's panel giving way; the list names them; a portrait is no wallpaper" \
+    || bad "theme own pictures" "$s8 | $s9 | $w9 | $r9 | $st $o10"
+sh "$SH" theme nord >/dev/null 2>&1   # the look the tests below read
 # the stills sent to sway, each screen by its port; a screen that comes or goes draws them again, the same screens never twice
 printf 'DESKTOP=sway\nTHEME=study-night\nWALLPAPER=fjord\nWALLPAPER_MOTION=off\n' > "$cfg"; rm -f "$HOME/scr.log" "$H/run/spark-shell-screens.plan"; echo 3 > "$HOME/screens"
 XDG_RUNTIME_DIR=$H/run scr desktop --motion >/dev/null 2>&1; scr_wait 'bg' 3

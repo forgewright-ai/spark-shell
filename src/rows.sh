@@ -117,7 +117,7 @@ tool_spec_theme() {   # the theme tools
         theme_delete)      _ts=theme _ta=delete _tp=name _tk=string _th=dif _tt='theme delete NAME' _td='Delete a saved theme.' ;;
         theme_back)        _ts=theme _ta=back _th=f _tt='theme back' _td='The look before this one.' ;;   # free: no row carries it, the gate asks the history
         theme_text)        _ts=theme _ta=text _tp=size _tk='bigger|smaller|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31|32|33|34|35|36|37|38|39|40' _th='' _tt='theme text SIZE' _td='The text one size bigger or smaller, or a size from 6 to 40, on every surface.' ;;
-        theme_wallpaper)   _ts=theme _ta=wallpaper _tp=name _tk=string _th=i _tt='theme wallpaper NAME' _td='The wallpaper: one of the drawings, or default (the ground, the palette a shade darker).' ;;
+        theme_wallpaper)   _ts=theme _ta=wallpaper _tp=name _tk=string _th=i _tt='theme wallpaper NAME' _td='The wallpaper: one of the drawings, a picture of the theme'"'"'s own by its name, or default (the ground, the palette a shade darker).' ;;
         theme_wallpaper_color) _ts=theme _ta=wallpaper-color _tp=color _tk=string _th=if _tt='theme wallpaper color COLOR' _td='A plain color as the wallpaper: a name (teal, navy, olive, maroon...) or #rrggbb.' ;;
         theme_wallpaper_picture) _ts=theme _ta=wallpaper-picture _tp=path _tk=path _th=if _tt='theme wallpaper picture PATH' _td='A picture of yours as the wallpaper.' ;;
         theme_picture)     _ts=theme _ta=picture _tp=path _tk=path _te="face?:$(look_pick_list face) family?:$(look_pick_list family) animation?:$(look_pick_list animation)" _th=f _tt='theme picture PATH' _td='A theme from a picture of yours: its colors as the palette, the picture as the wallpaper; the face, the glyph family and the animation when the words ask for them (as theme words takes them), else the face and the family in use and the animation the colors suggest.' ;;
@@ -556,10 +556,10 @@ provide_wall_rows() {   # -> the wallpaper list as a rows resource: the drawings
     ( TMP=$(mktemp -d) && { wall_thumbs; rm -rf "$TMP"; } ) >/dev/null 2>&1 </dev/null 3>&- 4<&- 5>&- &   # the previews drawn in the background; a row without one yet draws none
     _gr=$(wall_ground); _cc=''; ! wall_color || _cc=$(wall_hex "$WALLPAPER")
     panel_rows wallpapers full | while IFS="$TAB" read -r _m _t _a _x; do provide_row_line theme "$_m" "$_t" "$_a" "$_x"; done \
-        | jq -Rn --arg types "$WALL_TYPES" --arg dir "$THUMB_DIR" --arg tp "$_tp" --arg ground "$_gr" --arg color "$_cc" '
+        | jq -Rn --arg types "$WALL_TYPES" --arg dir "$THUMB_DIR" --arg tp "$_tp" --arg ground "$_gr" --arg color "$_cc" --arg theme "${THEME:-}" '
             [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], tool: (if .[3] == "" then null else {name: .[3], arguments: (.[4] | fromjson)} end), more: [],
                 columns: ((.[5] // "") | split("|") | .[1:2] | map(select(. != ""))), children: null, group: ((.[5] // "") | split("|") | .[0] | if . == "" or . == null then null else . end)}
-             | if .group == "drawings" then .preview = ($dir + "/" + .text + "-" + $tp + ".png") else . end
+             | if .group == "drawings" then .preview = ($dir + "/" + .text + "-" + $tp + ".png") elif .group == "this theme" then .preview = ($dir + "/" + $theme + "-" + .text + ".png") else . end
              | if .text == "the ground" then .chip = [$ground] elif .id == ("theme:show:" + .text) and .group == "custom" and $color != "" and .columns == ["a color"] then .chip = [$color] else . end
              | if .id == "theme:wallpaper-color" then .tool.ask = ["color"] else . end
              | if (.tool.name // "") == "theme_wallpaper" then .quiet = true else . end   # a drawing or the ground kept in place, nothing said

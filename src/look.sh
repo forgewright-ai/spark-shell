@@ -216,6 +216,10 @@ WALL_GROUND_SAID="the palette's own, darker"   # the ground's column
 THUMB_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/thumbs   # DRAWING-PALETTE.png for the list
 thumb_palette() { if [ -n "${THEME:-}" ] && [ "$THEME" != none ] && palette_file "$THEME" >/dev/null; then printf '%s' "$THEME"; else printf none; fi; }   # -> THEME when it has a palette file, else none
 wall_thumbs() {   # draws the small pictures missing or stale; quiet
+    art_stills | while IFS= read -r _asf; do   # the theme's own pictures
+        _t=$THUMB_DIR/$THEME-$(basename "${_asf%.*}").png
+        [ -f "$_t" ] || { mkdir_state "$THUMB_DIR" && pic_png "$_asf" "$_t" 480; } || :
+    done
     [ -n "$(svg_tool)" ] || return 0
     mkdir_state "$THUMB_DIR"; _tp=$(thumb_palette); _pf=''; [ "$_tp" = none ] || _pf=$(palette_file "$_tp")
     for _w in $(wall_shipped_names); do
@@ -251,6 +255,7 @@ wall_word() {   # wall_word WORD -> default, a shipped name, #rrggbb or a readab
     case $1 in '') return 0 ;; none|default|ground) printf 'default'; return 0 ;; esac
     if wall_shipped "$1"; then printf '%s' "$1"; return 0; fi
     wall_hex "$1" && return 0
+    if _w=$(art_still "$1"); then printf '%s' "$_w"; return 0; fi   # a picture of the theme's own, by its name
     _w=$1; _t='~'   # a quoted ~ is HOME
     case $_w in "$_t") _w=$HOME ;; "$_t/"*) _w=$HOME/${_w#"$_t/"} ;; esac
     [ -f "$_w" ] && [ -r "$_w" ] || return 0

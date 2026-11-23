@@ -249,12 +249,16 @@ panel_rows_theme() {   # the look: the palettes, the saved themes, the custom ro
     [ -z "$_de" ] || printf -- '-\tAnimation\tshow\tdialog\n-\tApp icons\tshow\tdialog\n-\tApp spacing\tshow\tdialog\n'   # the dialog's transitions, opening their list; the apps' icons a switch; their space a value
 }
 panel_rows_wallpapers() {   # the theme's wallpaper list: the drawings, each with its palette; then custom: a picture, a color, the ground
-    _cur=$(wall_name)
+    _cur=$(wall_name); _cwp=$(wall_path)
+    art_stills | while IFS= read -r _asf; do   # the theme's own pictures first, by name: the one chosen leads the screens
+        _asn=${_asf##*/}; _asn=${_asn%.*}
+        if [ "$_asf" = "$_cwp" ]; then printf '%s\t%s\tshow\tthis theme|its own picture\n' "$PANEL_TICK" "$_asn"; else printf -- '-\t%s\twallpaper %s\tthis theme|its own picture\n' "$_asn" "$_asn"; fi
+    done
     for w in $(wall_shipped_names); do
         _pw=$(wall_palette_of "$w"); case $_pw in any) _pw='for any dark palette' ;; every) _pw='moves, in any palette' ;; *) _pw="for $_pw" ;; esac   # the caption under its picture: 24 cells
         if [ "$w" = "$_cur" ]; then printf '%s\t%s\twallpaper %s\tdrawings|%s\n' "$PANEL_TICK" "$w" "$w" "$_pw"; else printf -- '-\t%s\twallpaper %s\tdrawings|%s\n' "$w" "$w" "$_pw"; fi
     done
-    [ -n "$_cur" ] || printf '%s\tpicture %s\tshow\tcustom\n' "$PANEL_TICK" "$(basename "$(wall_path)")"
+    [ -n "$_cur" ] || art_stills | grep -qxF -- "$_cwp" || printf '%s\tpicture %s\tshow\tcustom\n' "$PANEL_TICK" "$(basename "$_cwp")"
     printf -- '-\ta picture\twallpaper-picture\tcustom\n'   # the files, to pick a picture from (the dialog's)
     ! wall_color || printf '%s\t%s\tshow\tcustom|a color\n' "$PANEL_TICK" "$_cur"
     printf -- '-\ta color\twallpaper-color\tcustom|a name or #rrggbb\n'   # it asks for one (provide_wall_rows)

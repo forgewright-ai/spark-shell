@@ -176,6 +176,7 @@ theme_screens() {   # theme_screens -- what each screen shows, from the left
             case $_tsr:$_tsm in
                 landscape:*) _tsw="the art" ;;
                 panel*) _tsw="$_tsr ($_tsf)" ;;
+                chosen:*) _tsw="the wallpaper ($_tsf)" ;;
                 portrait:fill) _tsw="its portrait ($_tsf)" ;;
                 portrait:scene) _tsw="the scene drawn for a turned screen" ;;
                 *) _tsw="the art fitted, never cropped" ;;
@@ -248,7 +249,19 @@ art_screens() {   # [OUTPUTS-JSON-FILE] -> NAME<tab>ID<tab>AT<tab>TURN<tab>WxH<t
     esac
     # another wallpaper than the theme's own: read from itself, no companion of the theme's
     [ -n "$_asa" ] || { _asa='{"panels": {}, "portrait_file": null, "portrait": "fitted"}'; ! wall_scene "${WALLPAPER:-}" || _asa='{"panels": {}, "portrait_file": null, "portrait": "authored"}'; }
-    if [ -n "${1:-}" ]; then cat "$1"; else wm_outputs; fi 2>/dev/null | jq -r --argjson art "$_asa" "$ART_SCREENS" 2>/dev/null || :
+    _asc=''; case ${WALLPAPER:-} in "$_asd"/?*) [ -z "$_asd" ] || _asc=${WALLPAPER#"$_asd"/} ;; esac   # a picture of the theme's own, chosen
+    # the chosen picture is on a screen: where the panels leave it out, the first landscape screen's panel gives way to it
+    if [ -n "${1:-}" ]; then cat "$1"; else wm_outputs; fi 2>/dev/null | jq -r --argjson art "$_asa" "$ART_SCREENS" 2>/dev/null \
+        | awk -F '\t' -v OFS='\t' -v c="$_asc" '{ r[NR] = $0; f[NR] = $7; if ($7 == c) on = 1; if (!p && $4 == "landscape" && $6 ~ /^panel /) p = NR }
+            END { for (i = 1; i <= NR; i++) { if (i == p && c != "" && !on) { $0 = r[i]; $6 = "chosen"; $7 = c; r[i] = $0 }; print r[i] } }' || :
+}
+art_stills() {   # -> the theme's own landscape pictures, full paths, one a line: its picture, then its panels'
+    _ast=$(theme_dir "${THEME:-none}"); [ -n "$_ast" ] || return 0
+    { printf '%s\n' "$(look_get "$_ast" PICTURE)"; art_of "$THEME" | jq -r '.panels[][] | .landscape // empty'; } \
+        | awk 'NF && !seen[$0]++' | while IFS= read -r _asf; do [ ! -f "$_ast/$_asf" ] || printf '%s\n' "$_ast/$_asf"; done
+}
+art_still() {   # art_still NAME -> the theme's own landscape picture NAME (its file's name, with or without the extension), full path; else false
+    art_stills | while IFS= read -r _asf; do _asb=${_asf##*/}; case $1 in "$_asb"|"${_asb%.*}") printf '%s' "$_asf"; exit 0 ;; esac; done | grep .
 }
 art_wall_theirs() {   # -> 0 when the wallpaper is a picture or a color of the person's own; a theme's own picture, in its folder, is the theme's
     _awt=$(theme_dir "${THEME:-none}")
