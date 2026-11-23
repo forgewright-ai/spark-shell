@@ -187,6 +187,10 @@ provide_resource_special() {   # provide_resource_special ID METHOD URI -- one s
             if "$_read" "${_path#*/}" > "$TMP/terminal.rows"; then
                 rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/terminal.rows")"
             else rpc_error "$1" -32002 "no palette at that uri"; fi ;;
+        theme:resources/read:spark-shell://theme/rows/colors|theme:resources/read:spark-shell://theme/rows/colors/from|theme:resources/read:spark-shell://theme/rows/screens|theme:resources/read:spark-shell://theme/rows/screens/pair|theme:resources/read:spark-shell://theme/rows/pointers)
+            case ${3#spark-shell://theme/rows/} in colors) _apr=appearance_colors ;; colors/from) _apr=appearance_colors_from ;; screens) _apr=appearance_screens ;; screens/pair) _apr=appearance_pairs ;; pointers) _apr=appearance_pointers ;; esac
+            if "$_apr" > "$TMP/theme.part"; then rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.part")"
+            else rpc_error "$1" -32002 "nothing at that uri: no theme in use"; fi ;;
         theme:resources/read:spark-shell://theme/rows/yours)
             rpc_result "$1" "$(appearance_yours | jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}')" ;;
         theme:resources/read:spark-shell://theme/rows/gallery)
@@ -355,9 +359,11 @@ provide_args_bad() {   # provide_args_bad ARGUMENTS -> why they do not fit the t
         elif (keys - [$p, $q] - $xk - [""]) != [] then "no argument " + ((keys - [$p, $q] - $xk)[0])
         elif $p != "" and (has($p) | not) then "missing " + $p
         elif ([$xr[] | select(. as $e | $a | has($e[0]) | not)] | length) > 0 then "missing " + ([$xr[] | select(. as $e | $a | has($e[0]) | not)][0][0])
-        elif ([$xp[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net" and .[1] != "seconds" and .[1] != "pixels") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xp[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net" and .[1] != "seconds" and .[1] != "pixels") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
+        elif ([$xp[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net" and .[1] != "seconds" and .[1] != "pixels" and .[1] != "art" and .[1] != "color") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xp[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net" and .[1] != "seconds" and .[1] != "pixels" and .[1] != "art" and .[1] != "color") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
         elif any($xp[]; . as $e | .[1] == "filename" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | length) < 1 or ($a[$e[0]] | length) > 255 or ($a[$e[0]] | test("[\u0000-\u001f\u007f/]")))) then "name is one name, no slash, 255 characters at most"
         elif any($xp[]; . as $e | .[1] == "path" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | startswith("/") | not) or ($a[$e[0]] | length) > 4096 or ($a[$e[0]] | test("[\u0000-\u001f\u007f]")))) then "to is a whole path, plain text"
+        elif any($xp[]; . as $e | .[1] == "art" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] != "none" and (($a[$e[0]] | startswith("/") | not) or ($a[$e[0]] | length) > 4096 or ($a[$e[0]] | test("[\u0000-\u001f\u007f]")))))) then "path is a whole path, or none"
+        elif any($xp[]; . as $e | .[1] == "color" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^#[0-9a-fA-F]{6}$") | not))) then "color is #rrggbb"
         elif ([$xs[] | select(.[1] == "text" or .[1] == "name") | . as $e | select(($a | has($e[0])) and ((($a[$e[0]] | type) != "string") or (($a[$e[0]] | length) > 40) or (($a[$e[0]]) | plain | not)))] | length) > 0 then ([$xs[] | select(.[1] == "text" or .[1] == "name") | .[0]][0]) + " is plain text, 40 characters at most"
         elif any($xs[]; . as $e | .[1] == "coordinate" and (($a[$e[0]] | type) != "number" or $a[$e[0]] < -65535 or $a[$e[0]] > 65535 or $a[$e[0]] != ($a[$e[0]] | floor))) then "coordinates are whole numbers, -65535 to 65535"
         elif any($xs[]; . as $e | .[1] == "scale" and (if ($a[$e[0]] | type) != "string" then true else ($a[$e[0]] | length) > 16 or ($a[$e[0]] | test("^[0-9]+([.][0-9]+)?$") | not) or (($a[$e[0]] | tonumber? // 0) <= 0) end)) then "scale is a positive decimal"
@@ -375,6 +381,7 @@ provide_args_bad() {   # provide_args_bad ARGUMENTS -> why they do not fit the t
         elif $k == "delay" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 100 and .[$p] <= 2000 then "" else $p + " is a whole number, 100 to 2000" end)
         elif $k == "alpha" then (if (.[$p] | type) == "number" and .[$p] >= 0 and .[$p] <= 1 then "" else $p + " is a number, 0 to 1" end)
         elif $k == "path" then (if (.[$p] | type) == "string" and (.[$p] | startswith("/")) and (.[$p] | length) <= 4096 and (.[$p] | test("[\u0000-\u001f\u007f]") | not) then "" else $p + " is a whole path, plain text" end)
+        elif $k == "art" then (if .[$p] == "none" or ((.[$p] | type) == "string" and (.[$p] | startswith("/")) and (.[$p] | length) <= 4096 and (.[$p] | test("[\u0000-\u001f\u007f]") | not)) then "" else $p + " is a whole path, or none" end)
         elif (.[$p] | type) != "string" or ((.[$p]) | plain | not) then $p + " is plain text, 256 characters at most"
         elif ($k | contains("|")) and (.[$p] as $x | $k | split("|") | any(. == $x) | not) then $p + " is one of " + ($k | split("|") | join(", "))
         else "" end
@@ -481,7 +488,7 @@ provide_quick() {   # provide_quick SECTION TOOL VALUE -> 0 when the rows always
         theme_text) case $3 in bigger|smaller|[6-9]|[1-3][0-9]|40) [ -n "$(look_font_size)" ] ;; *) return 1 ;; esac ;;
         theme_transparency) case ${3%\%} in more|less|[0-9]|[1-4][0-9]|50) return 0 ;; *) return 1 ;; esac ;;
         theme_preview) [ "$3" = off ] || case $(theme_kind "$3") in shipped|yours) return 0 ;; *) return 1 ;; esac ;;
-        theme_animation) case " next back none $ANIMATION_NAMES " in *" $3 "*) return 0 ;; *) return 1 ;; esac ;;
+        theme_animation) case " next back none own $ANIMATION_NAMES " in *" $3 "*) return 0 ;; *) return 1 ;; esac ;;
         theme_glyphs) case $3 in signs|words) return 0 ;; *) return 1 ;; esac ;;
         theme_icons) case $3 in on|off) return 0 ;; *) return 1 ;; esac ;;
         theme_spacing) case $3 in none|groups|rows) return 0 ;; *) return 1 ;; esac ;;

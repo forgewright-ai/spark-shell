@@ -156,6 +156,8 @@ impl Switch {
 pub struct Pick {
     pub tool: String,
     pub types: Vec<String>,
+    /// Fixed arguments the call takes beside the path picked (which screen a picture is for): short plain words.
+    pub arguments: Map<String, Value>,
 }
 
 /// A swatch is "#rrggbb", nothing else.
@@ -248,7 +250,23 @@ fn pick(v: Option<&Value>) -> Option<Pick> {
         .filter(|t| !t.is_empty() && t.len() <= 8 && t.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()))
         .map(str::to_string)
         .collect();
-    (!types.is_empty()).then_some(Pick { tool, types })
+    let arguments: Map<String, Value> = v
+        .get("arguments")
+        .and_then(Value::as_object)
+        .map(|a| {
+            a.iter()
+                .filter(|(k, v)| {
+                    k.len() <= 16
+                        && k.bytes().all(|b| b.is_ascii_lowercase())
+                        && *k != "path"
+                        && v.as_str()
+                            .is_some_and(|s| s.len() <= 32 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'))
+                })
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    (!types.is_empty()).then_some(Pick { tool, types, arguments })
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -480,6 +498,18 @@ pub fn rows(text: &str) -> Option<Rows> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_pick_keeps_its_fixed_arguments_short_plain_words_and_never_the_path() {
+        let r = rows(r#"{"title":"t","rows":[{"id":"a","text":"second screen","pick":{"tool":"theme_panel","types":["jpg"],"arguments":{"n":"2","path":"/etc/x","Bad":"x","w":"a b"}}}]}"#).unwrap();
+        let pk = r.rows[0].pick.as_ref().unwrap();
+        assert_eq!(pk.tool, "theme_panel");
+        assert_eq!(
+            serde_json::Value::Object(pk.arguments.clone()),
+            json!({"n": "2"}),
+            "the path is the pick's; a key in capitals or a value with a space is dropped"
+        );
+    }
 
     #[test]
     fn the_hints_read_with_the_specs_defaults() {

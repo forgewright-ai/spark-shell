@@ -209,6 +209,11 @@ panel_act_theme() {   # the theme steps: the text, the wallpaper, save, delete, 
         save) _r=$(cmd_theme save "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "saved $(layout_name_of "$_arg") $PANEL_SEP spark-shell theme $(layout_name_of "$_arg") brings it back" ;;
         delete) _r=$(cmd_theme delete "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "deleted $_arg" ;;
         restore) _r=$(cmd_theme restore "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | tail -1 ;;
+        color) _r=$(cmd_theme color "${_arg%% *}" "${_arg#* color=}" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | tail -1 ;;
+        colors|clock|pair|portrait) _r=$(cmd_theme "$_a" "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | tail -1 ;;
+        pointer) # shellcheck disable=SC2086   # a cursor theme's name, then its size: two words
+            _r=$(cmd_theme pointer $_arg 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | tail -1 ;;
+        panel|loop|reel) _r=$(cmd_theme "$_a" "${_arg%% *}" "${_arg#* path=}" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | tail -1 ;;
         rename|duplicate) _rn=''; case $_arg in *' to='*) _rn=${_arg#* to=} ;; esac
             [ -n "$_rn" ] || { echo "$_a takes a new name"; return 1; }
             _r=$(cmd_theme "$_a" "${_arg%% *}" "$_rn" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | tail -1 ;;

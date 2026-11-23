@@ -242,6 +242,7 @@ panel_rows_theme() {   # the look: the palettes, the saved themes, the custom ro
     [ -z "$_de" ] || printf -- '-\tWallpaper\twallpaper\tscreen|%s\n' "$(wall_now)"   # opens the wallpaper list
     [ -z "$_de" ] || printf -- '-\tMoving wallpaper\tshow\tscreen\n'   # a switch
     printf -- '-\tTransparency\tshow\tscreen\n'   # a value left and right change
+    [ -z "$_de" ] || printf -- '-\tPointer\tshow\tscreen\n'   # its list: default and the cursor themes here
     [ -z "$_sz" ] || printf -- '-\tText size\tshow\ttext and bar\n'
     [ -z "$_de" ] || printf -- '-\tWords on the bar\tshow\ttext and bar\n'   # a switch
     printf -- '-\tGlyph family\tshow\ttext and bar\n'   # a value left and right change: the dialog's signs, and the bar's on the desktop

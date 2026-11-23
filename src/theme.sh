@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # ---------------------------------------------- verbs: theme, font, quiet
-# sets: MOTION_DIR MOTION_NOW THEME_WORDS WORDS_TAKE
+# sets: MOTION_DIR MOTION_NOW THEME_COLOR_WORDS THEME_WORDS WORDS_TAKE
 # reads: ANIMATION_NAMES CONFIG CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GLYPH_FAMILIES LOOKS_DIR LOOK_FORMAT MODE NEON NEON_OLD NL OS PALETTE_DIR PALETTE_MARK PANEL_SEP PATH_REFUSED PM RENDERED REPO ROOT SCENE_MAKE STATE_DIR TAB TERMINAL_SEEN TERM_PALETTE_FORMATS THEME_ENV THEME_KEYS TMP WALL_NAMES WALL_SCENES WALL_SHIPPED
 refuse_in() { echo "spark-shell $1: $2"; exit 1; }   # refuse_in VERB SENTENCE
 seat_on() { _r=$(rc_files); _r=${_r%% *}; [ -L "$HOME/$_r" ] && [ "$(readlink "$HOME/$_r")" = "$(rc_tree)/$_r" ]; }
@@ -29,7 +29,7 @@ verb_close() {   # verb_close SENTENCE -> a verb's last line
     else echo "$1"; fi
 }
 
-THEME_WORDS='none show list save delete back wallpaper text transparency animation glyphs icons spacing family face workspaces motion picture gallery install preview variant screens'   # no theme may be named one
+THEME_WORDS='none show list save delete back wallpaper text transparency animation glyphs icons spacing family face workspaces motion picture gallery install preview variant screens rename duplicate restore color colors pointer clock pair portrait panel loop reel export'   # no theme may be named one
 cmd_theme() {   # cmd_theme [NAME|none|show|list|WORD ARG...|"WORDS"]
     config_load
     case ${1:-show} in
@@ -44,6 +44,15 @@ cmd_theme() {   # cmd_theme [NAME|none|show|list|WORD ARG...|"WORDS"]
         rename) shift; [ $# -ge 2 ] || refuse_in theme "rename NAME NEW -- which theme, and its new name?"; theme_rename "$@"; return ;;
         duplicate) shift; [ $# -ge 2 ] || refuse_in theme "duplicate NAME NEW -- which theme, and the new one's name?"; theme_duplicate "$@"; return ;;
         restore) shift; theme_restore "$@"; return ;;
+        color) shift; theme_color "$@"; return ;;
+        colors) shift; theme_colors "$@"; return ;;
+        pointer) shift; theme_pointer "$@"; return ;;
+        clock) shift; theme_clock "$@"; return ;;
+        pair) shift; theme_pair "$@"; return ;;
+        portrait) shift; theme_portrait "$@"; return ;;
+        panel) shift; theme_panel "$@"; return ;;
+        loop) shift; theme_loop "$@"; return ;;
+        reel) shift; theme_reel "$@"; return ;;
         back) [ $# -le 1 ] || refuse_in theme "back takes no word"; theme_back; return ;;
         wallpaper) shift; theme_wallpaper "$@"; return ;;
         text) shift; theme_text "$@"; return ;;
@@ -179,8 +188,8 @@ theme_save() {   # theme_save [NAME...]
     if [ -z "$name" ]; then case $(theme_kind "$THEME") in look) name=$THEME ;; *) refuse_in theme "save NAME -- a name for this look" ;; esac; fi
     case $(theme_kind "$name") in shipped|yours) refuse_in theme "$name is a palette's name -- give the theme another" ;; esac
     _pf=$(palette_file "$THEME") || refuse_in theme "no palette named $THEME -- spark-shell theme list shows them"
-    _d=$PALETTE_DIR/$name
-    if [ -d "$_d" ] && [ "$name" != "$THEME" ]; then
+    _d=${THEME_SAVE_DIR:-$PALETTE_DIR}/$name
+    if [ -d "$_d" ] && [ "$name" != "$THEME" ] && [ -z "${THEME_SAVE_OVER:-}" ]; then
         if [ -t 0 ] && { : < /dev/tty; } 2>/dev/null; then
             printf 'write over the saved theme %s? [y/N] ' "$name" > /dev/tty; IFS= read -r _y < /dev/tty || _y=''
             case $_y in y|Y|yes) ;; *) refuse_in theme "$name kept as it was" ;; esac
@@ -188,7 +197,9 @@ theme_save() {   # theme_save [NAME...]
     fi
     theme_load
     _src=$(theme_dir "$THEME")
-    mkdir_private "$PALETTE_DIR"; rm -rf "$_d.new"; mkdir -p "$_d.new"
+    mkdir_private "${THEME_SAVE_DIR:-$PALETTE_DIR}"; rm -rf "$_d.new"
+    if [ -n "$_src" ]; then theme_folder_copy "$_src" "$_d.new" "$name" || { rm -rf "$_d.new" "$_d.new.new"; refuse_in theme "could not keep the look"; }   # its pictures, loops, reels and family come along
+    else mkdir -p "$_d.new"; fi
     cp "$_pf" "$_d.new/palette.env"
     _origin=$THEME; [ -z "$_src" ] || _origin=$(look_get "$_src" PALETTE)
     _tsp=''
@@ -199,7 +210,9 @@ theme_save() {   # theme_save [NAME...]
             printf 'WALLPAPER=%s\nDRAWING=%s\n' "$WALLPAPER" "$WALLPAPER"
             _wp=$(wall_path); cp "$_wp" "$_d.new/wallpaper.png"; [ ! -f "${_wp%.png}.svg" ] || cp "${_wp%.png}.svg" "$_d.new/wallpaper.svg"
         elif wall_there; then
-            _tsp=${WALLPAPER##*/}; cp "$WALLPAPER" "$_d.new/$_tsp"; printf 'WALLPAPER=picture\nPICTURE=%s\n' "$_tsp"
+            _tsp=${WALLPAPER##*/}
+            case ${_src:+$WALLPAPER} in "$_src"/*) _tso=${_src##*/}; case $_tsp in "$_tso"-*) _tsp=$name-${_tsp#"$_tso"-} ;; esac ;; *) cp "$WALLPAPER" "$_d.new/$_tsp" ;; esac   # the theme's own: copied with its folder
+            printf 'WALLPAPER=picture\nPICTURE=%s\n' "$_tsp"
         else printf 'WALLPAPER=%s\n' "$WALLPAPER"; fi
         _fc=$(face_word "${FONT%%:*}") || _fc=''; [ -z "$_fc" ] || printf 'FACE=%s\n' "$_fc"   # your own face stays out
         _fs=$(look_font_size); case $_fs in [6-9]|[1-3][0-9]|40) printf 'TEXT_SIZE=%s\n' "$_fs" ;; esac   # only a size theme text sets
@@ -253,12 +266,137 @@ theme_folder_copy() {   # theme_folder_copy DIR NEWDIR NEW -- a theme's folder a
     done
     if [ -f "$2.new/look.env" ]; then sed "s|^PICTURE=$_tco-|PICTURE=$3-|" "$2.new/look.env" > "$2.new/look.new" && mv "$2.new/look.new" "$2.new/look.env" || return 1; fi
     if [ -f "$2.new/family.json" ]; then   # the family names the new theme and its files; a variant that is another theme stays
-        jq --arg o "$_tco" --arg l "$(theme_label "$_tco")" --arg n "$3" '.id = $n | .title = $n
-            | .variants |= map_values(if .theme == $o or .theme == $l then .theme = $n else . end)
-            | walk(if type == "string" and startswith($o + "-") then $n + "-" + ltrimstr($o + "-") else . end)' "$2.new/family.json" > "$2.new/family.new" \
+        # its files' names alone: a new name that begins with the old one (NAME-changed) is renamed once
+        jq --arg o "$_tco" --arg l "$(theme_label "$_tco")" --arg n "$3" 'def ren: if type == "string" and startswith($o + "-") then $n + "-" + ltrimstr($o + "-") else . end;
+            .variants |= map_values((if has("portrait") then .portrait |= ren else . end) | (if has("panels") then .panels |= map_values(map(map_values(ren))) else . end)
+                                     | (if .theme == $o or .theme == $l then .theme = $n else . end))
+            | .id = $n | .title = $n' "$2.new/family.json" > "$2.new/family.new" \
             && mv "$2.new/family.new" "$2.new/family.json" || return 1
     fi
     mv "$2.new" "$2"
+}
+theme_editable() {   # -- _ted the folder of the theme in use to change: one of yours as it is; a bundled theme or a palette kept first as a look of its own, NAME-changed, until it is saved
+    case $(theme_kind "${THEME:-none}") in
+        saved|look) _ted=$(theme_dir "$THEME"); return 0 ;;
+        ''|none) refuse_in theme "no theme is in use -- spark-shell theme NAME first" ;;
+    esac
+    _tek=$(theme_label "$THEME")-changed
+    THEME_SAVE_DIR=$LOOKS_DIR; THEME_SAVE_OVER=1; theme_save "$_tek" >/dev/null; THEME_SAVE_DIR=''; THEME_SAVE_OVER=''
+    _ted=$LOOKS_DIR/$_tek
+}
+THEME_COLOR_WORDS='background:BG text:FG accent:ACCENT muted:MUTED black:ANSI_0 red:ANSI_1 green:ANSI_2 yellow:ANSI_3 blue:ANSI_4 magenta:ANSI_5 cyan:ANSI_6 white:ANSI_7 bright-black:ANSI_8 bright-red:ANSI_9 bright-green:ANSI_10 bright-yellow:ANSI_11 bright-blue:ANSI_12 bright-magenta:ANSI_13 bright-cyan:ANSI_14 bright-white:ANSI_15'   # the 20 colors by their words, in the palette's order
+theme_color() {   # theme_color WORD COLOR -- one of the 20 colors of the theme in use; its contrast on the ground said when it reads poorly
+    _tck=''; for _e in $THEME_COLOR_WORDS; do [ "${_e%%:*}" != "${1:-}" ] || _tck=THEME_${_e#*:}; done
+    [ -n "$_tck" ] || refuse_in theme "color takes a color's word ($(printf '%s' "$THEME_COLOR_WORDS" | sed 's/:[A-Z_0-9]*//g; s/ /, /g')), then #rrggbb"
+    _tcv=$(wall_hex "${2:-}") || refuse_in theme "$1 takes #rrggbb or a color's name"
+    theme_editable
+    { grep -v "^$_tck=" "$_ted/palette.env"; printf '%s=%s\n' "$_tck" "$_tcv"; } > "$_ted/palette.env.new" && mv "$_ted/palette.env.new" "$_ted/palette.env" || refuse_in theme "could not keep $1"
+    theme_apply "$THEME" >/dev/null
+    echo "$1 $_tcv$(color_contrast_said "$_ted/palette.env" "$_tck")"
+}
+color_contrast_said() {   # color_contrast_said PALETTE KEY -> ", 3.2:1 on the ground, hard to read" when text in that color, or on it, reads poorly; else nothing
+    _ccb=$(palette_get "$1" THEME_BG)
+    case $2 in THEME_ANSI_0|THEME_ANSI_8) return 0 ;; THEME_BG) _ccv=$(palette_get "$1" THEME_FG) ;; *) _ccv=$(palette_get "$1" "$2") ;; esac
+    _ccr=$(hex_contrast "${_ccv#\#}" "${_ccb#\#}" 2>/dev/null) || return 0
+    case $_ccr in ''|*[!0-9]*) return 0 ;; esac
+    [ "$_ccr" -lt 450 ] || return 0
+    printf ', %s.%s:1 on the ground, hard to read' "$((_ccr / 100))" "$(( (_ccr % 100) / 10 ))"
+}
+theme_colors() {   # theme_colors NAME -- the theme in use in another theme's colors, the rest as it is
+    _tcp=$(palette_file "${1:-}") || refuse_in theme "no theme named ${1:-?} -- spark-shell theme list shows them"
+    theme_editable
+    [ "$_tcp" = "$_ted/palette.env" ] || cp "$_tcp" "$_ted/palette.env" || refuse_in theme "could not take the colors of $1"
+    look_set "$_ted" PALETTE "$1"
+    theme_apply "$THEME" >/dev/null
+    echo "the colors of $(theme_label "$1")"
+}
+theme_pointer() {   # theme_pointer NAME [SIZE]|default -- the pointer of the look in use: a cursor theme and its size, or spark's own
+    case ${1:-} in '') echo "pointer ${POINTER:-default} $PANEL_SEP default, or a cursor theme and its size"; return ;; default) _tpv='' ;; *) _tpv=$1${2:+ $2} ;; esac
+    pointer_ok "$_tpv" || refuse_in theme "pointer takes default, or a cursor theme's name and its size in pixels (Adwaita 32)"
+    config_locked config_edit POINTER "$_tpv"; POINTER=$_tpv; export POINTER
+    case $(theme_kind "${THEME:-none}") in saved|look) look_set "$(theme_dir "$THEME")" POINTER "$_tpv" ;; esac
+    [ "$MODE" = dry ] || look_apply >/dev/null 2>&1 || :
+    echo "pointer ${_tpv:-default}"
+}
+theme_family_edit() {   # theme_family_edit JQ [JQ ARGS...] -- the theme in use's own family file changed by JQ ($me its name, $v its variant), made first with the theme its one variant; refused whole when it is no family this spark-shell reads
+    theme_editable; _tff=$_ted/family.json; _tfn=${_ted##*/}
+    if [ -f "$_tff" ]; then cp "$_tff" "$TMP/family.was"
+    else
+        rm -f "$TMP/family.was"; _tfa=$(art_of "$THEME")
+        jq -n --arg n "$_tfn" --arg v "$(printf '%s' "$_tfa" | jq -r .variant)" --arg m "$(printf '%s' "$_tfa" | jq -r .media)" \
+            '{format: 1, id: $n, title: $n, media: $m, variants: {($v): {theme: $n}}}' > "$_tff" || refuse_in theme "could not make the theme's family"
+    fi
+    _tfj=$1; shift
+    if ! jq "$@" --arg me "$_tfn" --arg v "$(art_of "$THEME" | jq -r .variant)" "$_tfj" "$_tff" > "$_tff.new" || ! mv "$_tff.new" "$_tff"; then theme_family_back; refuse_in theme "could not change the theme's family"; fi
+    _tfw=$(family_why "$_tff") || { theme_family_back; refuse_in theme "not changed: $_tfw"; }
+}
+theme_family_back() { if [ -f "$TMP/family.was" ]; then mv "$TMP/family.was" "$_tff"; else rm -f "$_tff"; fi; rm -f "$_tff.new"; }   # the family as it was
+theme_clock() {   # theme_clock on|off -- the clock over the art on the idle screen and the lock
+    case ${1:-} in on|off) ;; *) refuse_in theme "clock takes on or off" ;; esac
+    theme_family_edit '.clock = ($c == "on")' --arg c "$1"
+    echo "the clock over the art $1"
+}
+theme_pair() {   # theme_pair NAME|none -- the theme in use's other variant: a theme here in the other light, or none
+    case ${1:-} in '') refuse_in theme "pair takes a theme in the other light, or none" ;; none) _tpo=''; _tpw='' ;; *) _tpo=$1
+        case $(theme_kind "$_tpo") in ''|none) refuse_in theme "no theme named $_tpo -- spark-shell theme list shows them" ;; esac
+        _tpw=$(art_variant "$_tpo")
+        [ "$_tpw" != "$(art_of "${THEME:-none}" | jq -r .variant)" ] || refuse_in theme "$_tpo is $_tpw too: a pair is one dark and one light" ;;
+    esac
+    theme_family_edit '.variants |= with_entries(select(.value.theme == $me)) | if $o == "" then . else .variants[$w] = {theme: $o} end' --arg o "$_tpo" --arg w "$_tpw"
+    if [ -n "$_tpo" ]; then echo "its $_tpw variant is $_tpo -- spark-shell theme variant $_tpw"; else echo "no other variant"; fi
+}
+theme_take() {   # theme_take FILE ROLE picture|loop|reel -- FILE checked, copied into the theme's folder as NAME-ROLE.EXT (the role's older file of that kind gone); _tkf its name
+    case $3 in picture) _tkw=$(gallery_picture_ok "$1" 2>&1) ;; loop) _tkw=$(media_ok "$1" mp4) ;; reel) _tkw=$(media_ok "$1" webp) ;; esac || refuse_in theme "${1##*/} not taken: ${_tkw#its picture is }"
+    _tke=$(printf '%s' "${1##*.}" | tr 'A-Z' 'a-z'); [ "$_tke" != jpeg ] || _tke=jpg
+    _tkn=${_ted##*/}
+    case $3 in picture) for _e in jpg png; do rm -f "$_ted/$_tkn-$2.$_e"; done ;; esac
+    _tkf=$_tkn-$2.$_tke; cp "$1" "$_ted/$_tkf" || refuse_in theme "could not copy ${1##*/}"
+}
+theme_portrait() {   # theme_portrait PICTURE|none -- the picture a turned screen shows, copied into the theme as NAME-portrait
+    theme_editable
+    if [ "${1:-}" = none ]; then for _e in jpg png; do rm -f "$_ted/${_ted##*/}-portrait.$_e"; done; _tkf=''
+    else [ -n "${1:-}" ] || refuse_in theme "portrait takes a picture, or none"; theme_take "$1" portrait picture; fi
+    theme_family_edit 'if $f == "" then del(.variants[$v].portrait) else .variants[$v].portrait = $f end' --arg f "$_tkf"
+    theme_apply "$THEME" >/dev/null
+    if [ -n "$_tkf" ]; then echo "a turned screen shows $_tkf"; else echo "a turned screen shows the art fitted"; fi
+}
+theme_panel() {   # theme_panel 2|3 PICTURE|none -- the picture the second or third screen from the left shows, copied in as NAME-landscape-N; the theme's picture leads
+    case ${1:-} in 2|3) ;; *) refuse_in theme "panel takes 2 or 3, then a picture or none" ;; esac
+    theme_editable; _tpl=$(look_get "$_ted" PICTURE); _tpn=${_ted##*/}
+    [ "$(look_get "$_ted" WALLPAPER)" = picture ] && [ -n "$_tpl" ] || refuse_in theme "panels follow a picture of the theme's own -- spark-shell theme wallpaper PICTURE first"
+    if [ "${2:-}" = none ]; then for _e in jpg png; do rm -f "$_ted/$_tpn-landscape-$1.$_e"; done
+    else [ -n "${2:-}" ] || refuse_in theme "panel $1 takes a picture, or none"; theme_take "$2" "landscape-$1" picture; fi
+    _tp2=''; _tp3=''; for _e in jpg png; do [ ! -f "$_ted/$_tpn-landscape-2.$_e" ] || _tp2=$_tpn-landscape-2.$_e; [ ! -f "$_ted/$_tpn-landscape-3.$_e" ] || _tp3=$_tpn-landscape-3.$_e; done
+    theme_family_edit '.variants[$v].panels = ((if $p2 == "" then {} else {"2": [{landscape: $l}, {landscape: $p2}]} end)
+            + (if $p2 == "" or $p3 == "" then {} else {"3": [{landscape: $l}, {landscape: $p2}, {landscape: $p3}]} end))
+        | if .variants[$v].panels == {} then del(.variants[$v].panels) else . end' --arg l "$_tpl" --arg p2 "$_tp2" --arg p3 "$_tp3"
+    theme_apply "$THEME" >/dev/null
+    if [ -z "$_tp2" ]; then echo "no panels: each screen shows the art"; elif [ -z "$_tp3" ]; then echo "panels for 2 screens"; else echo "panels for 2 and 3 screens"; fi
+}
+theme_loop() {   # theme_loop ROLE LOOP|none -- a loop for one of the theme's own pictures (landscape-1, portrait), copied in beside it
+    theme_editable; _tlp=''
+    for _tlf in "$_ted"/*.jpg "$_ted"/*.png; do [ -f "$_tlf" ] || continue; _tlb=${_tlf##*/}; _tlb=${_tlb%.*}; case ${1:-} in "$_tlb"|"${_tlb#"${_ted##*/}"-}") _tlp=$_tlf ;; esac; done
+    [ -n "$_tlp" ] || refuse_in theme "no picture of the theme's own is ${1:-?} -- spark-shell theme screens shows them"
+    if [ "${2:-}" = none ]; then rm -f "${_tlp%.*}.mp4"; _tld='still'
+    else _tlw=$(media_ok "${2:-}" mp4) || refuse_in theme "${2##*/} not taken: $_tlw"; cp "$2" "${_tlp%.*}.mp4" || refuse_in theme "could not copy ${2##*/}"; _tld='a loop'; fi
+    theme_apply "$THEME" >/dev/null
+    echo "${_tlp##*/}: $_tld"
+}
+theme_reel() {   # theme_reel open|close REEL|none -- the dialog's own opening or closing for the theme, an animated WebP copied in as NAME-dialog-open; with both, it plays its own
+    case ${1:-} in open|close) ;; *) refuse_in theme "reel takes open or close, then an animated WebP or none" ;; esac
+    theme_editable; _trn=${_ted##*/}
+    if [ "${2:-}" = none ]; then rm -f "$_ted/$_trn-dialog-$1.webp"
+    else [ -n "${2:-}" ] || refuse_in theme "reel $1 takes an animated WebP, or none"; theme_take "$2" "dialog-$1" reel; fi
+    if [ -f "$_ted/$_trn-dialog-open.webp" ] && [ -f "$_ted/$_trn-dialog-close.webp" ]; then
+        look_set "$_ted" ANIMATION own; config_locked config_edit DIALOG_ANIMATION own; DIALOG_ANIMATION=own; export DIALOG_ANIMATION
+        echo "the theme plays its own opening and closing"
+    else
+        if [ "$(look_get "$_ted" ANIMATION)" = own ]; then
+            _tra=$(anim_for_palette "$(look_get "$_ted" PALETTE)"); look_set "$_ted" ANIMATION "$_tra"
+            config_locked config_edit DIALOG_ANIMATION "$_tra"; DIALOG_ANIMATION=$_tra; export DIALOG_ANIMATION
+        fi
+        echo "the $1 reel ${2:+set}; the theme plays its own once both are there"
+    fi
 }
 theme_duplicate() {   # theme_duplicate NAME NEW... -- any theme as a new one of yours, to change: its folder copied, or a palette's look written
     _dpf=$1; shift
@@ -367,6 +505,7 @@ anim_step() {   # anim_step NAME|none|next|back -> the receipt; 1 when refused
     # shellcheck disable=SC2086   # the names, a word each, on purpose
     case $1 in
         next|back) _an=$(printf '%s\n' none $ANIMATION_NAMES | awk -v c="$(anim_now)" -v d="$1" '{ n[NR] = $0; if ($0 == c) i = NR } END { if (!i) i = 1; print n[d == "next" ? i % NR + 1 : (i + NR - 2) % NR + 1] }') ;;
+        own) anim_folder own '' >/dev/null || { echo "the theme has no opening and closing of its own -- spark-shell theme reel open|close FILE"; return 1; }; _an=own ;;
         *) case " none $ANIMATION_NAMES " in *" $1 "*) _an=$1 ;; *) echo "animation takes none, $(printf '%s' "$ANIMATION_NAMES" | sed 's/ /, /g'), next or back"; return 1 ;; esac ;;
     esac
     config_set DIALOG_ANIMATION "$_an" >/dev/null; DIALOG_ANIMATION=$_an; export DIALOG_ANIMATION

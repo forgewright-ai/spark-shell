@@ -101,7 +101,7 @@ config_load() {
     : "${DIALOG_ATTACH:=yes}" "${DIALOG_ATTACH_TYPES:=txt md}" "${DIALOG_MODEL:=yes}" "${DIALOG_TALK:=yes}"
     : "${DIALOG_SEMANTIC:=yes}"   # the dialog's rows ranked by meaning, with spark; no keeps the word search
     : "${DIALOG_ANIMATION:=}"   # the dialog's transitions: a piece of gallery/animation, none, or empty for the palette's own
-    [ -z "$DIALOG_ANIMATION" ] || case " none $ANIMATION_NAMES " in *" $DIALOG_ANIMATION "*) ;; *) echo "spark-shell: DIALOG_ANIMATION=$DIALOG_ANIMATION in $CONFIG: none or one of $ANIMATION_NAMES" >&2; exit 1 ;; esac
+    [ -z "$DIALOG_ANIMATION" ] || case " none own $ANIMATION_NAMES " in *" $DIALOG_ANIMATION "*) ;; *) echo "spark-shell: DIALOG_ANIMATION=$DIALOG_ANIMATION in $CONFIG: none or one of $ANIMATION_NAMES" >&2; exit 1 ;; esac
     : "${DIALOG_ICONS:=on}"   # each app's icon before its name in home's apps; the dialog reads it each second
     case $DIALOG_ICONS in on|off) ;; *) echo "spark-shell: DIALOG_ICONS=$DIALOG_ICONS in $CONFIG: on or off" >&2; exit 1 ;; esac
     : "${DIALOG_SPACING:=groups}"   # the space around the apps with their icons: none, groups, rows
@@ -172,10 +172,11 @@ anim_for_palette() { for _e in $ANIM_PAIRED; do [ "${_e%%:*}" != "$1" ] || { pri
 anim_palette() { _apd=$(theme_dir "${THEME:-}"); if [ -n "$_apd" ]; then look_get "$_apd" PALETTE; else printf '%s' "${THEME:-}"; fi; }   # -> the shipped palette under the theme in use: a saved theme's own, else the theme
 dialog_transitions() {   # -> the piece's folder (its own painted reels, or drawn for the palette in use), else draw:PIECE for the dialog to draw itself; nothing for none
     _dtn=$(anim_now); [ "$_dtn" != none ] || return 0
-    anim_folder "$_dtn" "$(anim_palette)" || printf 'draw:%s\n' "$_dtn"
+    anim_folder "$_dtn" "$(anim_palette)" || [ "$_dtn" = own ] || printf 'draw:%s\n' "$_dtn"
 }
 ANIM_PAINTED='atlas:atlas-awakening'   # a piece painted for a theme: its reels in that theme's folder, THEME-dialog-open.webp and -close.webp
-anim_folder() {   # anim_folder PIECE PALETTE -> where its reels are: a painted piece's, as THEME-dialog (its own colors), else the folder drawn for the palette; false for none
+anim_folder() {   # anim_folder PIECE PALETTE -> where its reels are: the theme's own (own), a painted piece's, as THEME-dialog (its own colors), else the folder drawn for the palette; false for none
+    if [ "$1" = own ]; then _afd=$(theme_dir "${THEME:-none}") && [ -n "$_afd" ] && [ -f "$_afd/${_afd##*/}-dialog-open.webp" ] && [ -f "$_afd/${_afd##*/}-dialog-close.webp" ] && printf '%s\n' "$_afd/${_afd##*/}-dialog"; return; fi
     for _afp in $ANIM_PAINTED; do
         [ "${_afp%%:*}" = "$1" ] || continue
         _afd=$(theme_dir "${_afp#*:}") && [ -f "$_afd/${_afp#*:}-dialog-open.webp" ] && { printf '%s\n' "$_afd/${_afp#*:}-dialog"; return 0; }

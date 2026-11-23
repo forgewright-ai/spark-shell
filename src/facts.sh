@@ -54,7 +54,7 @@ machine_no_tool() {   # -> MACHINE_NO_TOOL as the help writes them, one line
 }
 machine_cmds() {   # -> spark-shell's commands as the help says them, a line a verb; the keys and idle left out
     usage | sed -n 's/^ *\(spark-shell [^ ].*\)$/\1/p' | sed 's/   *.*$//' \
-        | grep -E '^spark-shell (theme|font|layout|notes|reminders|desktop [a-z]+|bar|dialog)( |$)' | grep -vxE 'spark-shell desktop (portals|keys|idle .*)|spark-shell theme (variant .*|screens|rename .*|duplicate .*)' \
+        | grep -E '^spark-shell (theme|font|layout|notes|reminders|desktop [a-z]+|bar|dialog)( |$)' | grep -vxE 'spark-shell desktop (portals|keys|idle .*)|spark-shell theme (variant .*|screens|rename .*|duplicate .*|color .*|colors .*|pointer .*|clock .*|pair .*|portrait .*|panel .*|loop .*|reel .*)' \
         | awk '
             { n = split($0, w, " "); key = w[2]; s = 3; if (key == "desktop") { key = key " " w[3]; s = 4 }
               alt = ""; for (i = s; i <= n; i++) alt = alt (alt == "" ? "" : " ") w[i]

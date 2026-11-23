@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # sets: APPEARANCE_CURATION
-# reads: CONFIG_DIR CORE_DIR OS PALETTE_DIR PANEL_SEP REPO SCENE_MAKE TAB TERM_NAME THEME_KEYS THUMB_DIR TMP WALL_TYPES
+# reads: CONFIG_DIR CORE_DIR OS PALETTE_DIR PANEL_SEP REPO SCENE_MAKE TAB TERM_NAME THEME_COLOR_WORDS THEME_KEYS THUMB_DIR TMP WALL_TYPES
 appearance_gallery_entries() {
     {
         for gallery in "$CONFIG_DIR"/galleries/*.list; do
@@ -104,6 +104,66 @@ appearance_gallery_collection() {
 
 # Your themes: the ways to make one, then every theme of yours, each with its page and its rename, duplicate and
 # delete; the theme in use is checked.
+# Colors: the 20 of the theme in use, each changed by its value, its swatch beside it; above them, another theme's
+appearance_colors() {
+    _acp=$(palette_file "${THEME:-none}") || return 1
+    for _e in $THEME_COLOR_WORDS; do printf '%s\t%s\n' "${_e%%:*}" "$(palette_get "$_acp" "THEME_${_e#*:}")"; done \
+        | jq -Rn --arg label "$(theme_label "$THEME")" '[inputs | split("\t")] as $c
+            | {title: "Colors", state: $label, short: [],
+               rows: ([{id: "theme:colors:from", text: "another theme'"'"'s colors", sign: "opens", children: "spark-shell://theme/rows/colors/from"}]
+                      + [$c[] | {id: ("theme:color:" + .[0]), group: (if (.[0] | test("^(background|text|accent|muted)$")) then "the four" else "the sixteen" end),
+                                 text: .[0], chip: [.[1]], columns: [.[1]], tool: {name: "theme_color", arguments: {word: .[0]}, ask: ["color"]}}])}'
+}
+appearance_colors_from() {   # every theme, its swatch: Enter takes its colors
+    appearance_gallery_entries | jq -c '{title: "Another theme'"'"'s colors", state: "", short: [],
+        rows: [.rows[] | (.id | ltrimstr("theme:entry:")) as $n | {id: ("theme:colors:" + $n), text, group, chip, page, quiet: true,
+               tool: {name: "theme_colors", arguments: {name: $n}}}]}'
+}
+# Screens and art: the pictures each screen shows, the clock over the art, the other variant, a loop per picture, the
+# dialog's own reels; a picture or a file is picked from your files, and more takes one away
+appearance_screens() {
+    _asd=$(theme_dir "${THEME:-none}"); _asn=${_asd##*/}; _asa=$(art_of "${THEME:-none}")
+    { for _r in landscape-2 landscape-3 portrait dialog-open dialog-close; do
+          _f=''; for _e in jpg png webp; do [ -z "$_asd" ] || [ ! -f "$_asd/$_asn-$_r.$_e" ] || _f=$_asn-$_r.$_e; done; printf 'file\t%s\t%s\n' "$_r" "$_f"
+      done
+      art_stills | while IFS= read -r _f; do _l=$_f; [ -f "${_f%.*}.mp4" ] && _m=loop || _m=still; printf 'loop\t%s\t%s\t%s\n' "$(art_role "$_f")" "$(art_label "$_f")" "$_m"; done
+      _p=$(printf '%s' "$_asa" | jq -r '.portrait_file // empty'); [ -z "$_p" ] || { [ -f "$_asd/${_p%.*}.mp4" ] && _m=loop || _m=still; printf 'loop\tportrait\tPortrait\t%s\n' "$_m"; }
+    } | jq -Rn --argjson art "$_asa" --arg label "$(theme_label "${THEME:-none}")" '
+        [inputs | split("\t")] as $in | ($in | map(select(.[0] == "file")) | map({(.[1]): .[2]}) | add // {}) as $f
+        | def file($n; $r; $what; $tool; $args; $types): {id: ("theme:screens:" + $r), group: $what, text: $n, sign: "opens",
+              columns: [if $f[$r] == "" then "none" else $f[$r] end], children: "spark-shell://files/rows",
+              pick: {tool: $tool, types: $types, arguments: $args},
+              more: (if $f[$r] == "" then [] else [{name: $tool, arguments: ($args + {path: "none"}), said: "take it away"}] end)};
+        {title: "Screens and art", state: $label, short: [],
+         rows: ([file("second screen"; "landscape-2"; "pictures"; "theme_panel"; {n: "2"}; ["jpg", "jpeg", "png"]),
+                 file("third screen"; "landscape-3"; "pictures"; "theme_panel"; {n: "3"}; ["jpg", "jpeg", "png"]),
+                 (file("turned screen"; "portrait"; "pictures"; "theme_portrait"; {}; ["jpg", "jpeg", "png"]) | .pick.arguments = {})]
+                + [{id: "theme:screens:clock", group: "idle and lock", text: "clock over the art", columns: [],
+                    switch: {on: $art.clock, turn_on: {name: "theme_clock", arguments: {to: "on"}}, turn_off: {name: "theme_clock", arguments: {to: "off"}}}},
+                   {id: "theme:screens:pair", group: "variants", text: "other variant", sign: "opens", children: "spark-shell://theme/rows/screens/pair",
+                    columns: [([$art.variants | to_entries[] | select(.key != $art.variant) | .value] | first) // "none"]}]
+                + [$in[] | select(.[0] == "loop") | {id: ("theme:screens:loop:" + .[1]), group: "loops", text: .[2], sign: "opens", columns: [.[3]],
+                    children: "spark-shell://files/rows", pick: {tool: "theme_loop", types: ["mp4"], arguments: {role: .[1]}},
+                    more: (if .[3] == "loop" then [{name: "theme_loop", arguments: {role: .[1], path: "none"}, said: "take it away"}] else [] end)}]
+                + [file("opening"; "dialog-open"; "dialog"; "theme_reel"; {which: "open"}; ["webp"]), file("closing"; "dialog-close"; "dialog"; "theme_reel"; {which: "close"}; ["webp"])])}'
+}
+appearance_pairs() {   # the themes in the other light, and none: Enter pairs it
+    _apv=$(art_of "${THEME:-none}" | jq -r .variant)
+    appearance_gallery_entries | jq -c --argjson idx "$(art_index)" --arg v "$_apv" '{title: "Other variant", state: "", short: [],
+        rows: ([{id: "theme:pair:none", text: "none", tool: {name: "theme_pair", arguments: {name: "none"}}}]
+               + [.rows[] | (.id | ltrimstr("theme:entry:")) as $n | select(($idx[$n].variant // "") != $v and ($idx[$n].variant // "") != "")
+                  | {id: ("theme:pair:" + $n), text, chip, page, quiet: true, tool: {name: "theme_pair", arguments: {name: $n}}}])}'
+}
+appearance_pointers() {   # default, then each cursor theme here at the size in use
+    _aps=${POINTER##* }; case $_aps in ''|*[!0-9]*) _aps=24 ;; esac
+    for _apd in "$HOME/.local/share/icons" "$HOME/.icons" /usr/local/share/icons /usr/share/icons; do
+        for _apc in "$_apd"/*/cursors; do [ -d "$_apc" ] || continue; _apc=${_apc%/cursors}; printf '%s\n' "${_apc##*/}"; done
+    done | LC_ALL=C sort -u | grep -E '^[A-Za-z0-9._-]+$' | jq -Rn --arg cur "${POINTER:-default}" --arg size "$_aps" '{title: "Pointer", state: $cur, short: [],
+        rows: ([{id: "theme:pointer:default", text: "default", columns: ["spark'"'"'s own"], sign: (if $cur == "default" then "check" else "blank" end),
+                 tool: {name: "theme_pointer", arguments: {name: "default"}}}]
+               + [inputs | {id: ("theme:pointer:" + .), text: ., columns: [$size + " px"], sign: (if ($cur | split(" ")[0]) == . then "check" else "blank" end),
+                            tool: {name: "theme_pointer", arguments: {name: (. + " " + $size)}}}])}'
+}
 appearance_yours() {
     appearance_gallery_entries | jq -c --arg cur "${THEME:-none}" --arg label "$(theme_label "${THEME:-none}")" --arg types "$WALL_TYPES" '
         [.rows[] | select(._kind == "saved")] as $mine
@@ -358,7 +418,9 @@ appearance_sections() {
                      then .page="spark-shell://theme/current-wallpaper" | .columns=[$label] else . end)
         | .rows += [section("wallpaper";"Wallpaper and motion";["theme:wallpaper","theme:show:Moving wallpaper","theme:show:Animation"]),
                     section("type";"Type and glyphs";["theme:show:Text face","theme:show:Text size","theme:show:Glyph family"]),
-                    section("interface";"Interface";["theme:show:Transparency","theme:show:Words on the bar","theme:show:App icons","theme:show:App spacing"]),
+                    section("interface";"Interface";["theme:show:Transparency","theme:show:Pointer","theme:show:Words on the bar","theme:show:App icons","theme:show:App spacing"]),
+                    {id:"theme:settings:colors", text:"Colors", sign:"opens", choice:true, columns:[], children:"spark-shell://theme/rows/colors"},
+                    {id:"theme:settings:screens", text:"Screens and art", sign:"opens", choice:true, columns:[], children:"spark-shell://theme/rows/screens"},
                     {id:"theme:settings:yours", text:"Your themes", sign:"opens", choice:true, columns:[$yours],
                      children:"spark-shell://theme/rows/yours"}]'
 }

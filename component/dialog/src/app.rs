@@ -559,6 +559,7 @@ pub struct Picking {
     pub prov: usize,
     pub tool: String,
     pub types: Vec<String>,
+    pub arguments: serde_json::Map<String, Value>,
     pub step: Option<Step>,
     pub field: String,
     pub what: String,
@@ -4952,6 +4953,7 @@ impl App {
                         prov: p,
                         tool: pk.tool.clone(),
                         types: pk.types.clone(),
+                        arguments: pk.arguments.clone(),
                         step: None,
                         field: String::new(),
                         what: String::new(),
@@ -5000,7 +5002,7 @@ impl App {
                     let Some(path) = row.tool.as_ref().and_then(|t| t.arguments.get("path")).and_then(Value::as_str) else {
                         return;
                     };
-                    let mut arguments = serde_json::Map::new();
+                    let mut arguments = pk.arguments.clone();
                     arguments.insert("path".into(), Value::String(path.to_string()));
                     self.picking = None;
                     self.came_from.truncate(pk.depth);
@@ -5955,6 +5957,7 @@ impl App {
                 prov: step.prov,
                 tool: step.call.name.clone(),
                 types: vec![],
+                arguments: serde_json::Map::new(),
                 step: Some(step),
                 field,
                 what,

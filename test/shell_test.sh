@@ -6021,8 +6021,8 @@ for _mf in "$REPO"/lib/motion_*.py; do _mn=${_mf##*/motion_}; wall_n=${_mn%.py};
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps system about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 163 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-five sections hold the 163 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 172 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-five sections hold the 172 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -8025,13 +8025,50 @@ y1=$(ans 1 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.id 
 y2=$(ans 2 | jq -r '.result.contents[0].text | fromjson | [.rows[] | .group + ":" + .text + ":" + ((.more // []) | map(.said) | join(","))] | join("|")')
 y3=$(ans 3 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.group == "manage") | .tool.name] | join(" ")')
 y4=$(ans 4 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.group == "manage") | .text] | join(" ")')
-[ "$y1" = 'Wallpaper and motion|Type and glyphs|Interface|Your themes' ] \
+[ "$y1" = 'Wallpaper and motion|Type and glyphs|Interface|Colors|Screens and art|Your themes' ] \
     && printf '%s' "$y2" | grep -q '^new theme:from the look in use:|new theme:from a picture:|new theme:a copy of [a-z-]*:|' \
     && printf '%s' "$y2" | grep -q 'yours:sea-two:rename,duplicate,delete' && [ "$y3" = 'theme_rename theme_duplicate theme_delete' ] && [ "$y4" = 'Duplicate as yours' ] \
     && ans 5 | jq -e '.result.isError == false and .result.structuredContent.undo.name == "theme_rename"' >/dev/null && [ -d "$th_dir/nord-two" ] \
     && ok "provide theme: Your themes in place of Manage themes: the ways to make one, then each theme of yours with rename, duplicate and delete; its page has them too, a bundled one Duplicate as yours; rename from the dialog, its undo the name back" \
     || bad "your themes" "$y1 | $y2 | $y3 | $y4 | $(ans 5 | head -c 300)"
 for _yt in sea-two nord-two; do sh "$SH" theme delete "$_yt" >/dev/null 2>&1 </dev/null; done
+# the theme's fields (v0.165): a bundled theme changed as a look of its own (NAME-changed) with its files, until it is saved
+_fa=$REPO/gallery/core/atlas-awakening; cp "$_fa/atlas-awakening-portrait.jpg" "$H/tall.jpg"; cp "$_fa/atlas-awakening-landscape-2.jpg" "$H/third.jpg"
+cp "$_fa/atlas-awakening-landscape-2.mp4" "$H/loop.mp4"; cp "$_fa/atlas-awakening-dialog-open.webp" "$H/open.webp"; printf 'no video' > "$H/fake.mp4"
+_fl=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/looks/atlas-awakening-changed; _ft=$(sed -n 's/^THEME=//p' "$cfg"); cp "$cfg" "$H/cfg.fields"
+sh "$SH" theme atlas-awakening >/dev/null 2>&1
+c1=$(sh "$SH" theme color accent '#c88850' 2>&1 | tail -1); c2=$(sh "$SH" theme color muted '#333333' 2>&1 | tail -1); t1=$(sed -n 's/^THEME=//p' "$cfg")
+rc3=0; c3=$(sh "$SH" theme color purple '#123456' 2>&1) || rc3=$?
+c4=$(sh "$SH" theme clock off 2>&1 | tail -1); c5=$(sh "$SH" theme pair solarized-light 2>&1 | tail -1); rc6=0; c6=$(sh "$SH" theme pair nord 2>&1) || rc6=$?
+c7=$(sh "$SH" theme portrait "$H/tall.jpg" 2>&1 | tail -1); c8=$(sh "$SH" theme panel 3 "$H/third.jpg" 2>&1 | tail -1)
+rc9=0; c9=$(sh "$SH" theme loop landscape-2 "$H/fake.mp4" 2>&1) || rc9=$?
+sh "$SH" theme reel open none >/dev/null 2>&1; a10=$(sed -n 's/^DIALOG_ANIMATION=//p' "$cfg"); c11=$(sh "$SH" theme reel open "$H/open.webp" 2>&1 | tail -1); a11=$(sed -n 's/^DIALOG_ANIMATION=//p' "$cfg")
+s12=$(sh "$SH" theme show 2>&1 | sed -n 's/^  art *//p')
+[ -f "$_fl/atlas-awakening-changed-landscape-1.mp4" ] && [ -f "$_fl/atlas-awakening-changed-dialog-close.webp" ] && [ "$t1" = atlas-awakening-changed ] \
+    && [ "$c1" = 'accent #c88850' ] && [ "$c2" = 'muted #333333, 1.2:1 on the ground, hard to read' ] && grep -qx 'THEME_ACCENT=#c88850' "$_fl/palette.env" \
+    && [ "$rc3" = 1 ] && printf '%s' "$c3" | grep -q '^spark-shell theme: color takes a color.s word (background, text' \
+    && [ "$c4" = 'the clock over the art off' ] && [ "$c5" = 'its light variant is solarized-light -- spark-shell theme variant light' ] \
+    && [ "$rc6" = 1 ] && [ "$c6" = 'spark-shell theme: nord is dark too: a pair is one dark and one light' ] \
+    && [ "$c7" = 'a turned screen shows atlas-awakening-changed-portrait.jpg' ] && [ "$c8" = 'panels for 2 and 3 screens' ] \
+    && [ "$rc9" = 1 ] && [ "$c9" = 'spark-shell theme: fake.mp4 not taken: it is no MP4' ] \
+    && [ "$a10" = atlas ] && [ "$c11" = 'the theme plays its own opening and closing' ] && [ "$a11" = own ] \
+    && [ "$s12" = 'atlas-awakening-changed, dark (light: solarized-light), cinematic, ambient, portrait authored, panels for 2 and 3 screens' ] \
+    && ok "theme color, clock, pair, portrait, panel, loop, reel: a bundled theme changed as a look of its own with its files; a color's contrast said when low; a dark pair refused, a file that is no MP4 refused; both reels its own" \
+    || bad "theme fields" "$t1 | $c1 | $c2 | $rc3 $c3 | $c4 | $c5 | $rc6 $c6 | $c7 | $c8 | $rc9 $c9 | $a10 $c11 $a11 | $s12"
+mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows/colors"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/screens"}')" "$(rq 3 resources/read '{"uri":"spark-shell://theme/rows"}')" \
+    "$(call 4 theme_color '{"word":"accent","color":"#d08a52"}')" "$(call 5 theme_panel '{"n":"3","path":"none"}')"
+f1=$(ans 1 | jq -r '.result.contents[0].text | fromjson | [(.rows | length), .rows[0].children, (.rows[3] | .text + "=" + .columns[0] + ":" + .tool.name)] | map(tostring) | join(" ")')
+f2=$(ans 2 | jq -r '.result.contents[0].text | fromjson | [.rows[] | .id + ":" + (.pick.tool // (if .switch then "switch" else "" end))] | join(" ")')
+f3=$(ans 3 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.id | startswith("theme:settings:")) | .text] | join("|")')
+[ "$f1" = "21 spark-shell://theme/rows/colors/from accent=#c88850:theme_color" ] \
+    && printf '%s' "$f2" | grep -q '^theme:screens:landscape-2:theme_panel theme:screens:landscape-3:theme_panel theme:screens:portrait:theme_portrait theme:screens:clock:switch theme:screens:pair: ' \
+    && printf '%s' "$f2" | grep -q 'theme:screens:dialog-open:theme_reel theme:screens:dialog-close:theme_reel$' \
+    && [ "$f3" = 'Wallpaper and motion|Type and glyphs|Interface|Colors|Screens and art|Your themes' ] \
+    && ans 4 | jq -e '.result.isError == false and .result.structuredContent.undo == {"name": "theme_color", "arguments": {"word": "accent", "color": "#c88850"}}' >/dev/null \
+    && ans 5 | jq -e '.result.isError == false' >/dev/null && ! jq -e '.variants.dark.panels["3"]' "$_fl/family.json" >/dev/null \
+    && ok "provide theme: Colors (20 and another theme's), Screens and art (pictures picked, the clock a switch, loops and reels), from the settings; a color's undo its value before; a panel taken away" \
+    || bad "theme fields provide" "$f1 | $f2 | $f3 | $(ans 4 | head -c 300) | $(ans 5 | head -c 200)"
+sh "$SH" theme "$_ft" >/dev/null 2>&1; cp "$H/cfg.fields" "$cfg"; rm -rf "$_fl"
 rc=0; out=$(sh "$SH" theme delete nord 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: nord is a palette spark-shell ships, not a saved theme' ] && ok "theme delete nord: a shipped palette is refused" || bad "theme delete shipped" "rc=$rc $out"
 sh "$SH" theme winter-desk >/dev/null 2>&1
@@ -8150,7 +8187,7 @@ EOF
     bent 'FORMAT=3'; bent_refused 'it was made by a newer spark-shell (format 3, this one reads 2) -- spark-shell update' "a theme of a newer format is refused, never half read (#247)"
     bent 'FACE=comic'; bent_refused 'its FACE is not neon, argon, xenon, radon or krypton' "a FACE not of the five is refused (#247)"
     bent 'TEXT_SIZE=99'; bent_refused 'its TEXT_SIZE is not 6 to 40' "a TEXT_SIZE out of range is refused (#247)"
-    bent 'ANIMATION=disco'; bent_refused 'its ANIMATION is not none or one of moon, ripple, tide, embers, sun, flight, atlas' "an ANIMATION not of the pieces is refused (#247)"
+    bent 'ANIMATION=disco'; bent_refused 'its ANIMATION is not none, own or one of moon, ripple, tide, embers, sun, flight, atlas' "an ANIMATION not of the pieces is refused (#247)"
     bent "WORDS=sun$(printf '\033')[2Jny"; bent_refused 'its look.env holds a control character' "a control character anywhere in look.env is refused (a row would redraw the screen)"
     bent 'WORDS=sunny'; printf 'touch %s/pwned\n' "$H" >> "$th_dir/bent/look.env"; bent_refused "line $(grep -c '' "$th_dir/bent/look.env") of its look.env is not KEY=value" "a line that is not KEY=value is refused, by its number"
     rm -rf "$th_dir/bent"

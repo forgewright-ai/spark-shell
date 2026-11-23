@@ -9,7 +9,7 @@
 # file is data: jq reads it, each key is checked, and a picture it names is a
 # plain PNG or JPEG in the variant's own folder.
 # sets: ART_FORMAT ART_SCREENS FAMILY_CORE FAMILY_MAX FAMILY_RULES SCENES_PIXEL
-# reads: CONFIG_DIR CORE_DIR OS PALETTE_DIR PANEL_SEP REPO STATE_DIR TAB TMP WALL_CACHE
+# reads: CONFIG_DIR CORE_DIR LOOKS_DIR OS PALETTE_DIR PANEL_SEP REPO STATE_DIR TAB TMP WALL_CACHE
 ART_FORMAT=1   # a newer format is refused, not half read
 FAMILY_CORE=$REPO/gallery/family
 FAMILY_MAX=16384
@@ -52,7 +52,7 @@ def problems:
   ] end;
 problems | first // empty'
 family_files() {   # -> the family files, yours first, one a line; an id once: a theme's own (family.json in its folder, its id the folder's name), then the shared
-    for _ff in "$PALETTE_DIR"/*/family.json "$CORE_DIR"/*/family.json "$CONFIG_DIR"/families/*.json "$FAMILY_CORE"/*.json; do [ -f "$_ff" ] && printf '%s\n' "$_ff"; done \
+    for _ff in "$PALETTE_DIR"/*/family.json "$LOOKS_DIR"/*/family.json "$CORE_DIR"/*/family.json "$CONFIG_DIR"/families/*.json "$FAMILY_CORE"/*.json; do [ -f "$_ff" ] && printf '%s\n' "$_ff"; done \
         | awk -F/ '{ k = ($NF == "family.json") ? $(NF - 1) ".json" : $NF } !seen[k]++'
 }
 family_why() {   # family_why FILE -> nothing and 0 for a family this spark-shell reads; else why in one line and 1
@@ -149,7 +149,7 @@ theme_variant() {   # theme_variant [dark|light] -- the theme in use in its othe
     [ -n "$_tvt" ] || refuse_in theme "$(theme_label "$THEME") has no $1 variant"
     theme_apply "$_tvt"
 }
-art_index() { dirs_cached art.index "$(THEME_DIRS) $FAMILY_CORE $CONFIG_DIR/families" art_index_now; }   # -> {THEME: {family, title, media, variant, variants}} for every theme here, kept until a theme or family file changes
+art_index() { dirs_cached art.index "$(THEME_DIRS) $LOOKS_DIR $FAMILY_CORE $CONFIG_DIR/families" art_index_now; }   # -> {THEME: {family, title, media, variant, variants}} for every theme here, kept until a theme or family file changes
 art_index_now() {
     family_files | while IFS= read -r _aif; do family_why "$_aif" >/dev/null && cat "$_aif"; done | jq -cs . > "$TMP/art.families"
     theme_names | while IFS= read -r _aik; do
@@ -277,6 +277,23 @@ art_wall_theirs() {   # -> 0 when the wallpaper is a picture or a color of the p
     _awt=$(theme_dir "${THEME:-none}")
     if [ -n "$_awt" ]; then case ${WALLPAPER:-} in "$_awt"/*) return 1 ;; esac; fi
     wall_yours || wall_color
+}
+media_ok() {   # media_ok FILE mp4|webp -> nothing and 0 for a plain MP4 (ftyp, H.264 where ffprobe can say, 7680 by 4320 and 64 MiB at most) or an animated WebP (16 MiB at most); else why in one line and 1
+    [ -f "$1" ] && [ ! -L "$1" ] && [ -r "$1" ] || { echo "it is not a plain file"; return 1; }
+    _mos=$(wc -c < "$1" | tr -d ' ')
+    case $2 in
+        mp4) [ "$_mos" -le 67108864 ] || { echo "a loop is 64 MiB at most"; return 1; }
+            [ "$(od -An -c -j4 -N4 "$1" | tr -d ' \n')" = ftyp ] || { echo "it is no MP4"; return 1; }
+            command -v ffprobe >/dev/null 2>&1 || return 0
+            _moc=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of csv=p=0 "$1" 2>/dev/null | head -1)
+            case $_moc in h264,[0-9]*,[0-9]*) ;; *) echo "its video is not H.264"; return 1 ;; esac
+            _mow=${_moc#h264,}; _mow=${_mow%%,*}; _moh=${_moc##*,}
+            [ "$_mow" -le 7680 ] && [ "$_moh" -le 7680 ] && [ $((_mow * _moh)) -le $((7680 * 4320)) ] || { echo "it is ${_mow}x$_moh, past 7680x4320"; return 1; } ;;
+        webp) [ "$_mos" -le 16777216 ] || { echo "a reel is 16 MiB at most"; return 1; }
+            [ "$(od -An -c -N4 "$1" | tr -d ' \n')" = RIFF ] && [ "$(od -An -c -j8 -N4 "$1" | tr -d ' \n')" = WEBP ] || { echo "it is no WebP"; return 1; }
+            od -An -c -j12 -N36 "$1" | tr -d ' \n' | grep -q ANIM || { echo "it is a still WebP, no animation"; return 1; } ;;
+        *) echo "no such kind"; return 1 ;;
+    esac
 }
 art_loop_of() {   # art_loop_of PICTURE -> the loop beside a picture of the theme's own (NAME.mp4 beside NAME.jpg), a plain MP4; else false
     _ald=$(theme_dir "${THEME:-none}"); [ -n "$_ald" ] || return 1

@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- undo: the step and its journal
-# reads: ANIMATION_NAMES BAR_FULL BAR_SYS CONFIG FONT_FACES GLYPH_FAMILIES KEPT_LAYOUTS LAYOUTS_DIR LAYOUT_LAST MODE OS ROOT TAB TMP US WALL_NAMES WORDS_TAKE YES
+# reads: ANIMATION_NAMES BAR_FULL BAR_SYS CONFIG FONT_FACES GLYPH_FAMILIES KEPT_LAYOUTS LAYOUTS_DIR LAYOUT_LAST MODE OS ROOT TAB THEME_COLOR_WORDS TMP US WALL_NAMES WORDS_TAKE YES
 panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORDS" that takes the step back, or nothing
     _p=$1; _a=$2; shift 2; _arg=$*
     case $_p:$_a in
@@ -53,7 +53,11 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         theme:delete) [ "$(theme_kind "$_arg")" != saved ] || printf 'restore %s\t%s is back\n' "$_arg" "$_arg" ;;
         theme:rename) _n=$(layout_name_of "${_arg#* to=}"); [ -z "$_n" ] || printf 'rename %s to=%s\t%s has its name again\n' "$_n" "${_arg%% *}" "${_arg%% *}" ;;
         theme:duplicate) _n=$(layout_name_of "${_arg#* to=}"); [ -z "$_n" ] || printf 'delete %s\t%s deleted again\n' "$_n" "$_n" ;;
-        theme:restore) ;;   # no inverse
+        theme:restore|theme:colors|theme:pair|theme:portrait|theme:panel|theme:loop|theme:reel) ;;   # no inverse: the look before is theme back's
+        theme:color) _cw=${_arg%% *}; _ck=''; for _e in $THEME_COLOR_WORDS; do [ "${_e%%:*}" != "$_cw" ] || _ck=THEME_${_e#*:}; done
+            _cp=$(palette_file "${THEME:-none}") && [ -n "$_ck" ] && _co=$(palette_get "$_cp" "$_ck") && [ -n "$_co" ] && printf 'color %s color=%s\t%s %s\n' "$_cw" "$_co" "$_cw" "$_co" ;;
+        theme:clock) _cl=$(art_of "${THEME:-none}" | jq -r 'if .clock then "on" else "off" end'); printf 'clock %s\tthe clock over the art %s\n' "$_cl" "$_cl" ;;
+        theme:pointer) printf 'pointer %s\tpointer %s\n' "${POINTER:-default}" "${POINTER:-default}" ;;
         theme:*) printf '%s\ttheme %s\n' "${THEME:-none}" "${THEME:-none}" ;;
         wifi:connect|wifi:hidden) _c=$(wifi_connected); if [ -n "$_c" ]; then printf 'connect %s\twifi %s\n' "$_c" "$_c"; else printf 'disconnect\twifi off\n'; fi ;;
         wifi:disconnect) _c=$(wifi_connected); [ -z "$_c" ] || printf 'connect %s\twifi %s\n' "$_c" "$_c" ;;
@@ -284,6 +288,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         theme:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "theme: save takes a name"; return 1 ;;
         theme:delete) case $(theme_kind "${3:-}") in saved|look) [ "$3" != "${THEME:-}" ] && { echo "$3"; return 0; }; echo "theme: $3 is the theme in use"; return 1 ;; *) echo "theme: no saved theme named ${3:-?}"; return 1 ;; esac ;;
         theme:restore) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo 'theme: restore takes the name'; return 1 ;;
+        theme:color|theme:colors|theme:pointer|theme:clock|theme:pair|theme:portrait|theme:panel|theme:loop|theme:reel) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo "theme: $2 takes a word"; return 1 ;;
         theme:rename) [ "$(theme_kind "${3%% *}")" = saved ] && { echo "$3"; return 0; }; echo "theme: no theme of yours named ${3%% *}"; return 1 ;;
         theme:duplicate) case $(theme_kind "${3%% *}") in ''|none) echo "theme: no theme named ${3%% *}"; return 1 ;; *) echo "$3"; return 0 ;; esac ;;
         theme:back) [ -s "$(kept_hist theme)" ] && { echo ''; return 0; }; echo "theme: no look before this one"; return 1 ;;

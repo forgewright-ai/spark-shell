@@ -60,7 +60,7 @@ look_ok() {   # look_ok DIR -> 0, or why and 1
     _lv=$(look_get "$1" FONT); [ -z "$_lv" ] || font_ok "$_lv" || { echo "its FONT is not a face and a size (letters, digits, spaces and : = . + _ -)"; return 1; }
     _lv=$(look_get "$1" FACE); case $_lv in *[!a-z]*) _lv=-- ;; esac; case " $FONT_FACES " in *" ${_lv:-neon} "*) ;; *) echo "its FACE is not neon, argon, xenon, radon or krypton"; return 1 ;; esac
     _lv=$(look_get "$1" TEXT_SIZE); case $_lv in ''|[6-9]|[1-3][0-9]|40) ;; *) echo "its TEXT_SIZE is not 6 to 40"; return 1 ;; esac
-    _lv=$(look_get "$1" ANIMATION); case $_lv in *[!a-z]*) _lv=-- ;; esac; case " none $ANIMATION_NAMES " in *" ${_lv:-none} "*) ;; *) echo "its ANIMATION is not none or one of $(printf '%s' "$ANIMATION_NAMES" | sed 's/ /, /g')"; return 1 ;; esac
+    _lv=$(look_get "$1" ANIMATION); case $_lv in *[!a-z]*) _lv=-- ;; esac; case " none own $ANIMATION_NAMES " in *" ${_lv:-none} "*) ;; *) echo "its ANIMATION is not none, own or one of $(printf '%s' "$ANIMATION_NAMES" | sed 's/ /, /g')"; return 1 ;; esac
     _lv=$(look_get "$1" GALLERY); [ -z "$_lv" ] || gallery_num "$_lv" >/dev/null || { echo "its GALLERY is not a gallery release (gallery-v1, gallery-v2...)"; return 1; }
     _lv=$(look_get "$1" ALPHA); [ -z "$_lv" ] || alpha_ok "$_lv" || { echo "its ALPHA is not 0 to 1"; return 1; }
     _lv=$(look_get "$1" POINTER); pointer_ok "$_lv" || { echo "its POINTER is not a cursor theme's NAME and SIZE"; return 1; }

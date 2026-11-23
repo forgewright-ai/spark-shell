@@ -19,6 +19,15 @@
 #   spark-shell theme delete NAME     delete a theme of yours
 #   spark-shell theme rename NAME NEW  a theme of yours by a new name
 #   spark-shell theme duplicate NAME NEW  any theme as a new one of yours
+#   spark-shell theme color NAME #rrggbb  one of the theme's 20 colors
+#   spark-shell theme colors NAME     the theme in another theme's colors
+#   spark-shell theme pointer NAME [SIZE]  the pointer, or default
+#   spark-shell theme clock on|off    the clock over the art at rest
+#   spark-shell theme pair NAME|none  the theme's other variant
+#   spark-shell theme portrait FILE   a turned screen's picture, or none
+#   spark-shell theme panel 2|3 FILE  a picture for the 2nd or 3rd screen
+#   spark-shell theme loop NAME FILE  an MP4 loop for a picture, or none
+#   spark-shell theme reel open|close FILE  the dialog's own reels
 #   spark-shell theme back            the look before this one, again
 #   spark-shell theme wallpaper X     a drawing, a picture, a color or default
 #   spark-shell theme text N          the text size everywhere; bigger, smaller
