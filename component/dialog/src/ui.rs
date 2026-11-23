@@ -442,7 +442,7 @@ fn draw_layout(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     buf.set_style(Rect::new(0, 0, w, h), Style::default().fg(pal.fg));
     // the opening, and the wait after it while the home loads, play alone in the middle of the window: nothing
     // else is drawn until they end, then the whole dialog at once (#142)
-    if let Some((reel @ (Reel::Open | Reel::Wait), since)) = app.motion {
+    if let Some((Reel::Open, since)) = app.motion {
         let mut drawn = Drawn {
             alone: true,
             ..Drawn::default()
@@ -453,7 +453,7 @@ fn draw_layout(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
                 buf[(xx, yy)].set_diff_option(CellDiffOption::Skip);
             }
         }
-        drawn.film = Some((x, y, bw, bh, reel, since));
+        drawn.film = Some((x, y, bw, bh, Reel::Open, since));
         return drawn;
     }
     // a preview opened on Space keeps the whole screen: its zoom and its drag want the room (#120); elsewhere one

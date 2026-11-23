@@ -564,6 +564,9 @@ pub struct Picking {
     pub what: String,
 }
 
+/// The longest the home's first rows have the Read bar, from the dialog's start.
+const HOME_READ_MS: u128 = 10_000;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum View {
     Home,
@@ -996,6 +999,8 @@ pub struct App {
     held: Vec<(usize, String, Held, Option<Instant>)>,
     /// The transition playing, and since when (#122); main.rs moves it on and draws it.
     pub motion: Option<(Reel, Instant)>,
+    /// When the dialog started: the home's first rows have the Read bar until HOME_READ_MS from it.
+    born: Instant,
     /// The transitions are loaded: Esc that closes the dialog plays the close first.
     pub films: bool,
     /// The transitions to read again, a theme step having changed them (#126): a folder, or None for none.
@@ -1144,6 +1149,7 @@ impl App {
             set_next: vec![],
             held: vec![],
             motion: None,
+            born: Instant::now(),
             films: false,
             films_want: None,
             preview_pages: 1,
@@ -1230,15 +1236,21 @@ impl App {
             || self.view_wait().is_some()
     }
 
-    /// spark works on words: the header's march says so and nothing else does (#139). A step, a page, a place's
-    /// rows show none: a page slow to come has its wait (#122), a step its row (#196).
+    /// The header's march: spark works on words (#139), or the home's first rows are still coming after the open.
+    /// A step, a page, a place's rows show it on their own row: a page slow to come (#122), a step (#196).
     pub fn thinking(&self) -> bool {
-        self.wait.is_some()
+        self.wait.is_some() || self.home_reading()
     }
 
-    /// What spark's work is, for the march: its reply is think, its model loading is swell.
+    /// What the march shows: spark's reply is think, its model loading is swell, the home's rows coming is read.
     pub fn work(&self) -> Work {
-        self.wait.unwrap_or(Work::Think)
+        self.wait.unwrap_or(if self.home_reading() { Work::Read } else { Work::Think })
+    }
+
+    /// The home on screen, its open played, a provider's first rows still coming: for up to HOME_READ_MS from the
+    /// dialog's start, so a provider that never answers does not hold the bar.
+    fn home_reading(&self) -> bool {
+        self.view == View::Home && self.motion.is_none() && !self.home_ready() && self.born.elapsed().as_millis() < HOME_READ_MS
     }
 
     /// The providers whose rows the view on screen shows: they check for changes while it does (#37).
@@ -7908,9 +7920,9 @@ impl App {
         }
     }
 
-    /// A key or a click: the open or the wait stops where it is, and the key does what it does.
+    /// A key or a click: the open stops where it is, and the key does what it does.
     pub fn cut_motion(&mut self) {
-        if matches!(self.motion, Some((Reel::Open | Reel::Wait, _))) {
+        if matches!(self.motion, Some((Reel::Open, _))) {
             self.motion = None;
         }
     }
@@ -7920,14 +7932,13 @@ impl App {
         self.providers.iter().all(|p| p.ready || p.dead.is_some())
     }
 
-    /// The transition moved on: the open ends in the wait while the home loads, the wait when it has,
-    /// the close in the window going. `open` and `close` are how long they play.
+    /// The transition moved on: the open ends in the home, rows still read showing the glyph family's bar; the
+    /// close ends in the window going. `open` and `close` are how long they play.
     pub fn follow_motion(&mut self, now: Instant, open: u128, close: u128) {
         let Some((reel, since)) = self.motion else { return };
         let ms = now.duration_since(since).as_millis();
         match reel {
-            Reel::Open if ms >= open => self.motion = (!self.home_ready()).then_some((Reel::Wait, now)),
-            Reel::Wait if self.home_ready() || ms >= crate::animation::WAIT_MAX_MS => self.motion = None,
+            Reel::Open if ms >= open => self.motion = None,
             Reel::Close if ms >= close => self.quit = Some(0),
             _ => {}
         }

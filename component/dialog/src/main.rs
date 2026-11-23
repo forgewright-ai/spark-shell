@@ -453,7 +453,6 @@ fn decode_films(dir: &str, palette: &std::collections::HashMap<String, String>, 
     };
     Some(animation::Films {
         open: one("open")?,
-        wait: one("wait")?,
         close: one("close")?,
     })
 }
@@ -996,7 +995,7 @@ fn main() {
                 // layout in pixels: its own steps, and inside it the grid's rows of a place it has not drawn yet,
                 // laid at the body's corner and kept inside the body's box
                 // a window too small for the frame is the grid's too: it says to make the window larger
-                let alone = matches!(app.motion, Some((Reel::Open | Reel::Wait, _))) || !scene::fits(&m, window_px.0, window_px.1);
+                let alone = matches!(app.motion, Some((Reel::Open, _))) || !scene::fits(&m, window_px.0, window_px.1);
                 let mut steps;
                 let (mut ox, mut oy) = (0.0, 0.0);
                 let mut boxed = false;
@@ -1144,7 +1143,7 @@ fn main() {
                     (Some((x, y, fw, fh, reel, since)), Some(f)) => {
                         let ms = Instant::now().saturating_duration_since(since).as_millis();
                         let film = f.of(reel);
-                        let (k, left) = film.at(ms, reel == Reel::Wait);
+                        let (k, left) = film.at(ms, false);
                         let shown = k;
                         let (dx, dy) = (
                             ((fw as u32 * cw).saturating_sub(film.w) / 2 / cw) as u16,
@@ -1406,7 +1405,7 @@ fn main() {
                 (Some((x, y, w, h, reel, since)), Some(f), Some((cw, chh))) if sixel_ok => {
                     let ms = Instant::now().saturating_duration_since(since).as_millis();
                     let film = f.of(reel);
-                    let (k, left) = film.at(ms, reel == Reel::Wait);
+                    let (k, left) = film.at(ms, false);
                     let shown = k;
                     let at = ((x, y, w, h), reel, shown);
                     if shown_film != Some(at) {

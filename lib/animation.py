@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Six small pieces for the home dialog's transitions, each drawn in a
-palette's own colors on nothing, each as open, wait and close GIFs.
+palette's own colors on nothing, each as open and close GIFs.
 
     python3 lib/animation.py [--piece NAME ...] [PALETTE.env ...] [--out DIR]
 
-    moon    a crescent waxes to a full moon in its halo; the halo breathes and
-            the stars around it catch the light in turn; the moon wanes away
-    ripple  a drop falls into still water and rings keep spreading from it; at
-            the close the rings gather back and the drop lifts away
+    moon    a crescent waxes to a full moon in its halo; the moon wanes away
+    ripple  a drop falls into still water and rings spread from it; at the
+            close the rings gather back and the drop lifts away
     tide    a line opens from the centre and swells into three threads that
             sway against each other; they settle into the line and it closes
     embers  a low line glows and embers lift off it, yellow to red, going dark
@@ -19,9 +18,9 @@ palette's own colors on nothing, each as open, wait and close GIFs.
             trail, and at the close flies off the top left
 
 Each palette (by default every gallery/theme/*.env) gets DIR/PIECE/NAME/ (by default
-gallery/animation/PIECE/NAME/): open.gif plays once (about 1.2 s) and hands
-over to wait.gif, which loops; close.gif plays once (about 1 s) and ends on
-nothing; each also @2x. 180 by 120 at 1x.
+gallery/animation/PIECE/NAME/): open.gif plays once (about 1.2 s) as the
+dialog opens, close.gif once (about 1 s) as it closes, ending on nothing;
+each also @2x. 180 by 120 at 1x. A wait has the glyph family's bars.
 
 A GIF pixel is drawn or not, never half. So every edge and every fade is
 mixed toward the dialog's surface, PANEL_BG (spark-shell's panel_load: the
@@ -243,56 +242,36 @@ def ease_io(u):
     return 4 * u**3 if u < 0.5 else 1 - (-2 * u + 2) ** 3 / 2
 
 
-def bump(u):
-    return math.sin(math.pi * u) if 0 < u < 1 else 0.0
-
-
 # -- the pieces -----------------------------------------------------------------
 
 
 class Moon:
-    name, ms, frames = "moon", 40, {"open": 30, "wait": 60, "close": 20}
+    name, ms, frames = "moon", 40, {"open": 30, "close": 20}
     CX, CY, R = 90.0, 60.0, 17.0
-    HALO = ((36.0, 0.08, 2.4), (26.0, 0.16, 1.2))  # radius, strength, how far it breathes
-    STARS = ((38, 28, 4), (143, 22, 18), (152, 92, 31), (27, 95, 44))  # x, y, the frame its light rises from
+    HALO = ((36.0, 0.08), (26.0, 0.16))  # radius, strength
 
     def draw(self, c, ro, anim, f):
         cx, cy, r = self.CX, self.CY, self.R
-        far, breath = 2 * r + 2, 0.0
+        far = 2 * r + 2
         if anim == "open":  # the shadow slides off to the left: a crescent lit on the right
             g, sx = ease_out((f - 4) / 24), cx - far * ease_io(f / 26)
-        elif anim == "wait":
-            g, sx, breath = 1.0, None, math.sin(2 * math.pi * f / 60)
         else:  # it comes back from the right
             g, sx = 1 - ease_in(f / 18), cx + far * (1 - ease_io(f / 18))
         out = []
         # on dark a pale moon, the text's color; on light a pastel one, as the light wallpapers draw theirs
         moon, soft = (mix(ro.fg, ro.accent, 0.15), 1.0) if ro.dark else (mix(ro.accent, ro.surface, 0.5), 0.7)
-        for hr, a, amp in self.HALO:
+        for hr, a in self.HALO:
             if g > 0:
-                out.append(Layer(disc(c, cx, cy, r + (hr - r) * g + amp * breath), ro.accent, soft * a * g * (1 + 0.15 * breath)))
-        if sx is None:
-            out.append(Layer(disc(c, cx, cy, r), moon))
-        else:
-            a = c.area(cx - r - 1, cy - r - 1, cx + r + 1, cy + r + 1)
-            rows, cols, X, Y = a
-            lit = c.cov(np.hypot(X - cx, Y - cy) - r) * (1 - c.cov(np.hypot(X - sx, Y - cy) - (r + 1)))
-            out.append(Layer((lit, rows, cols), moon))
-        if anim == "wait":
-            for x, y, t0 in self.STARS:
-                b = bump((f - t0) / 14)
-                if b > 0:
-                    arm = 1 + 3.5 * b
-                    out.append(Layer(capsule(c, x - arm, y, x + arm, y, 0.3), ro.fg, 0.55 * b))
-                    out.append(Layer(capsule(c, x, y - arm, x, y + arm, 0.3), ro.fg, 0.55 * b))
-                    out.append(Layer(disc(c, x, y, 0.5 + 0.6 * b), ro.fg, 0.9 * b))
+                out.append(Layer(disc(c, cx, cy, r + (hr - r) * g), ro.accent, soft * a * g))
+        rows, cols, X, Y = c.area(cx - r - 1, cy - r - 1, cx + r + 1, cy + r + 1)
+        lit = c.cov(np.hypot(X - cx, Y - cy) - r) * (1 - c.cov(np.hypot(X - sx, Y - cy) - (r + 1)))
+        out.append(Layer((lit, rows, cols), moon))
         return out
 
 
 class Ripple:
-    name, ms, frames = "ripple", 40, {"open": 30, "wait": 60, "close": 24}
+    name, ms, frames = "ripple", 40, {"open": 30, "close": 24}
     CX, CY, RMAX, LIFE = 90.0, 66.0, 46.0, 40
-    BIRTHS = ((0, 0.8), (20, 0.65), (40, 1.0))  # the frame of the loop a ring is born, how strong
     TOP = 6.0
 
     def rings(self, c, col, age, k, out):
@@ -319,9 +298,6 @@ class Ripple:
                 if t < 1:  # two droplets thrown up
                     for side in (-1, 1):
                         out.append(Layer(disc(c, cx + side * (4 + 7 * t), cy - 36 * t * (1 - t), 0.9), col, 0.85 * (1 - t * t)))
-        elif anim == "wait":
-            for b, k in self.BIRTHS:
-                self.rings(c, col, (f - b) % 60, k, out)
         else:
             for s in (0, 5):  # rings come in from the edge, quicker as they near the centre
                 v = (f - s) / 13
@@ -335,7 +311,7 @@ class Ripple:
 
 
 class Tide:
-    name, ms, frames = "tide", 40, {"open": 30, "wait": 72, "close": 23}
+    name, ms, frames = "tide", 40, {"open": 30, "close": 23}
     CX, CY, E, L = 90.0, 60.0, 76.0, 72
     THREADS = (  # amplitude, wavelength, turns a loop, phase, half width, which color
         (6.0, 54.0, 2, 1.3, 0.55, "back"),
@@ -363,8 +339,6 @@ class Tide:
         if anim == "open":
             e, amp, tau = (self.E * ease_out((f - 2) / 16) if f >= 2 else 0.0), ease_io((f - 8) / 21), f - 30
             dot = (0.5, 1.0, 1.0, 0.5)[f] if f < 4 else 0.0
-        elif anim == "wait":
-            e, amp, tau, dot = self.E, 1.0, f, 0.0
         else:
             e, amp, tau = self.E * (1 - ease_io((f - 8) / 12)), 1 - ease_io(f / 12), f
             dot = (1.0, 0.66, 0.33, 0.0)[f - 19] if f >= 19 else 0.0
@@ -380,7 +354,7 @@ class Tide:
 
 
 class Embers:
-    name, ms, frames = "embers", 80, {"open": 15, "wait": 30, "close": 14}
+    name, ms, frames = "embers", 80, {"open": 15, "close": 14}
     G, Y0, X0, X1, L = 3.0, 102.0, 42.0, 138.0, 30
 
     def __init__(self):
@@ -411,8 +385,6 @@ class Embers:
         mid, half = (len(self.cells) - 1) / 2, len(self.cells) / 2
         if anim == "open":
             reach, dim, tau = half * (f + 1) / 4, 1.0, f - 15
-        elif anim == "wait":
-            reach, dim, tau = half, 1.0, f
         else:
             reach, dim, tau = half * (1 - f / 9), 1 - f / 12, f
         for i, cell in enumerate(self.cells):
@@ -426,8 +398,6 @@ class Embers:
                 born = b - 30
                 if born >= -15:
                     self.ember(c, ro, tau - born, e, out)
-            elif anim == "wait":
-                self.ember(c, ro, (f - b) % 30, e, out)
             else:  # only those already in the air
                 born = 0 if b == 0 else b - 30
                 self.ember(c, ro, f - born, e, out)
@@ -435,7 +405,7 @@ class Embers:
 
 
 class Sun:
-    name, ms, frames = "sun", 40, {"open": 30, "wait": 48, "close": 22}
+    name, ms, frames = "sun", 40, {"open": 30, "close": 22}
     CX, CY, R, HZ, L, P = 90.0, 78.0, 34.0, 88.0, 48, 7.0  # P: the stripes' spacing
 
     def sun(self, c, ro, cy, tau):
@@ -460,8 +430,6 @@ class Sun:
         sunk = self.R + self.HZ - self.CY + 2  # how far below to be out of sight
         if anim == "open":
             hl, cy, light, tau = 64 * ease_out(f / 10), self.CY + sunk * (1 - ease_out((f - 5) / 23)), ease_io((f - 14) / 15), f - 30
-        elif anim == "wait":
-            hl, cy, light, tau = 64.0, self.CY, 1.0, f
         else:
             hl, cy, light, tau = 64 * (1 - ease_io((f - 11) / 10)), self.CY + sunk * ease_in(f / 15), 1 - ease_io(f / 10), f
         out = []
@@ -481,7 +449,7 @@ class Sun:
 
 
 class Flight:
-    name, ms, frames = "flight", 40, {"open": 30, "wait": 72, "close": 24}
+    name, ms, frames = "flight", 40, {"open": 30, "close": 24}
     CX, CY, A, L = 90.0, 60.0, 64.0, 72
     OPEN = ((206.0, 104.0), (160.0, 116.0), (118.0, 88.0), (90.0, 60.0))  # it meets the eight at its crossing, heading up left
     CLOSE = ((90.0, 60.0), (71.4, 41.4), (40.0, 8.0), (-24.0, -26.0))
@@ -502,7 +470,7 @@ class Flight:
     def at(self, anim, tau):
         if anim == "open":
             return None if tau < 0 else self.bezier(self.OPEN, tau / 30) if tau < 30 else self.eight(tau - 30)
-        if anim == "wait" or tau < 0:
+        if tau < 0:
             return self.eight(tau)
         return self.bezier(self.CLOSE, tau / 20) if tau <= 20 else None
 
@@ -524,7 +492,7 @@ class Flight:
 
 
 PIECES = {p.name: p for p in (Moon(), Ripple(), Tide(), Embers(), Sun(), Flight())}
-ANIMS = (("open", False), ("wait", True), ("close", False))
+ANIMS = (("open", False), ("close", False))
 
 
 # -- GIF ------------------------------------------------------------------------

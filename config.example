@@ -230,7 +230,7 @@ VOICE_ENGINE=
 VOICE_PREFIX=
 VOICE_SUFFIX=
 
-# The dialog's animation as it opens, waits and closes: moon, ripple,
+# The dialog's animation as it opens and closes: moon, ripple,
 # tide, embers, sun, flight or atlas, or none for no motion. Empty, the
 # one the palette brings (dracula's embers, nord's tide); a new palette
 # brings its own, as it brings its drawing, and none stays none.

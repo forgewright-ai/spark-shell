@@ -282,14 +282,6 @@ fn ease_io(u: f64) -> f64 {
     }
 }
 
-fn bump(u: f64) -> f64 {
-    if 0.0 < u && u < 1.0 {
-        (PI * u).sin()
-    } else {
-        0.0
-    }
-}
-
 /// Python's % on floats: the sign of the divisor.
 fn pmod(a: f64, b: f64) -> f64 {
     a.rem_euclid(b)
@@ -297,11 +289,10 @@ fn pmod(a: f64, b: f64) -> f64 {
 
 // -- the pieces ----------------------------------------------------------------------------------------------------
 
-/// Which of the three a frame is drawn for.
+/// Which of the two a frame is drawn for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Anim {
     Open,
-    Wait,
     Close,
 }
 
@@ -338,17 +329,16 @@ impl Piece {
     }
 
     fn frames(self, anim: Anim) -> u32 {
-        let (o, w, c) = match self {
-            Piece::Moon => (30, 60, 20),
-            Piece::Ripple => (30, 60, 24),
-            Piece::Tide => (30, 72, 23),
-            Piece::Embers => (15, 30, 14),
-            Piece::Sun => (30, 48, 22),
-            Piece::Flight => (30, 72, 24),
+        let (o, c) = match self {
+            Piece::Moon => (30, 20),
+            Piece::Ripple => (30, 24),
+            Piece::Tide => (30, 23),
+            Piece::Embers => (15, 14),
+            Piece::Sun => (30, 22),
+            Piece::Flight => (30, 24),
         };
         match anim {
             Anim::Open => o,
-            Anim::Wait => w,
             Anim::Close => c,
         }
     }
@@ -365,20 +355,14 @@ impl Piece {
     }
 }
 
-/// A crescent waxes to a full moon in its halo; the halo breathes and the stars catch the light in turn.
+/// A crescent waxes to a full moon in its halo, and wanes away.
 fn moon(c: &Canvas, ro: &Roles, anim: Anim, f: f64) -> Vec<Layer> {
-    const HALO: [(f64, f64, f64); 2] = [(36.0, 0.08, 2.4), (26.0, 0.16, 1.2)];
-    const STARS: [(f64, f64, f64); 4] = [(38.0, 28.0, 4.0), (143.0, 22.0, 18.0), (152.0, 92.0, 31.0), (27.0, 95.0, 44.0)];
+    const HALO: [(f64, f64); 2] = [(36.0, 0.08), (26.0, 0.16)];
     let (cx, cy, r) = (90.0, 60.0, 17.0);
     let far = 2.0 * r + 2.0;
-    let mut breath = 0.0;
     let (g, sx) = match anim {
-        Anim::Open => (ease_out((f - 4.0) / 24.0), Some(cx - far * ease_io(f / 26.0))),
-        Anim::Wait => {
-            breath = (2.0 * PI * f / 60.0).sin();
-            (1.0, None)
-        }
-        Anim::Close => (1.0 - ease_in(f / 18.0), Some(cx + far * (1.0 - ease_io(f / 18.0)))),
+        Anim::Open => (ease_out((f - 4.0) / 24.0), cx - far * ease_io(f / 26.0)),
+        Anim::Close => (1.0 - ease_in(f / 18.0), cx + far * (1.0 - ease_io(f / 18.0))),
     };
     let mut out = vec![];
     let (moon, soft) = if ro.dark {
@@ -386,35 +370,15 @@ fn moon(c: &Canvas, ro: &Roles, anim: Anim, f: f64) -> Vec<Layer> {
     } else {
         (mix(ro.accent, ro.surface, 0.5), 0.7)
     };
-    for (hr, a, amp) in HALO {
+    for (hr, a) in HALO {
         if g > 0.0 {
-            out.push(layer(
-                disc(c, cx, cy, r + (hr - r) * g + amp * breath),
-                ro.accent,
-                soft * a * g * (1.0 + 0.15 * breath),
-            ));
+            out.push(layer(disc(c, cx, cy, r + (hr - r) * g), ro.accent, soft * a * g));
         }
     }
-    match sx {
-        None => out.push(layer(disc(c, cx, cy, r), moon, 1.0)),
-        Some(sx) => {
-            let shape = c
-                .area(cx - r - 1.0, cy - r - 1.0, cx + r + 1.0, cy + r + 1.0)
-                .and_then(|a| c.fill(a, |x, y| c.cov((x - cx).hypot(y - cy) - r) * (1.0 - c.cov((x - sx).hypot(y - cy) - (r + 1.0)))));
-            out.push(layer(shape, moon, 1.0));
-        }
-    }
-    if anim == Anim::Wait {
-        for (x, y, t0) in STARS {
-            let b = bump((f - t0) / 14.0);
-            if b > 0.0 {
-                let arm = 1.0 + 3.5 * b;
-                out.push(layer(capsule(c, x - arm, y, x + arm, y, 0.3), ro.fg, 0.55 * b));
-                out.push(layer(capsule(c, x, y - arm, x, y + arm, 0.3), ro.fg, 0.55 * b));
-                out.push(layer(disc(c, x, y, 0.5 + 0.6 * b), ro.fg, 0.9 * b));
-            }
-        }
-    }
+    let shape = c
+        .area(cx - r - 1.0, cy - r - 1.0, cx + r + 1.0, cy + r + 1.0)
+        .and_then(|a| c.fill(a, |x, y| c.cov((x - cx).hypot(y - cy) - r) * (1.0 - c.cov((x - sx).hypot(y - cy) - (r + 1.0)))));
+    out.push(layer(shape, moon, 1.0));
     out
 }
 
@@ -454,11 +418,6 @@ fn ripple(c: &Canvas, ro: &Roles, anim: Anim, f: f64) -> Vec<Layer> {
                         ));
                     }
                 }
-            }
-        }
-        Anim::Wait => {
-            for (b, k) in [(0.0, 0.8), (20.0, 0.65), (40.0, 1.0)] {
-                rings(pmod(f - b, 60.0), k, &mut out);
             }
         }
         Anim::Close => {
@@ -514,7 +473,6 @@ fn tide(c: &Canvas, ro: &Roles, anim: Anim, f: f64) -> Vec<Layer> {
             let dot = if f < 4.0 { [0.5, 1.0, 1.0, 0.5][f as usize] } else { 0.0 };
             (e, ease_io((f - 8.0) / 21.0), f - 30.0, dot)
         }
-        Anim::Wait => (big_e, 1.0, f, 0.0),
         Anim::Close => {
             let dot = if f >= 19.0 { [1.0, 0.66, 0.33, 0.0][(f - 19.0) as usize] } else { 0.0 };
             (big_e * (1.0 - ease_io((f - 8.0) / 12.0)), 1.0 - ease_io(f / 12.0), f, dot)
@@ -621,7 +579,6 @@ fn embers(c: &Canvas, ro: &Roles, anim: Anim, f: f64) -> Vec<Layer> {
     let (mid, half) = ((cells.len() as f64 - 1.0) / 2.0, cells.len() as f64 / 2.0);
     let (reach, dim, tau) = match anim {
         Anim::Open => (half * (f + 1.0) / 4.0, 1.0, f - 15.0),
-        Anim::Wait => (half, 1.0, f),
         Anim::Close => (half * (1.0 - f / 9.0), 1.0 - f / 12.0, f),
     };
     for (i, cell) in cells.iter().enumerate() {
@@ -640,7 +597,6 @@ fn embers(c: &Canvas, ro: &Roles, anim: Anim, f: f64) -> Vec<Layer> {
                     ember(tau - born, e, &mut out);
                 }
             }
-            Anim::Wait => ember(pmod(f - b, 30.0), e, &mut out),
             Anim::Close => {
                 let born = if e.0 == 0 { 0.0 } else { b - 30.0 };
                 ember(f - born, e, &mut out);
@@ -661,7 +617,6 @@ fn sun(c: &Canvas, ro: &Roles, anim: Anim, f: f64) -> Vec<Layer> {
             ease_io((f - 14.0) / 15.0),
             f - 30.0,
         ),
-        Anim::Wait => (64.0, big_cy, 1.0, f),
         Anim::Close => (
             64.0 * (1.0 - ease_io((f - 11.0) / 10.0)),
             big_cy + sunk * ease_in(f / 15.0),
@@ -749,7 +704,6 @@ fn flight(c: &Canvas, ro: &Roles, anim: Anim, f: f64) -> Vec<Layer> {
                     Some(eight(tau - 30.0))
                 }
             }
-            Anim::Wait => Some(eight(tau)),
             Anim::Close if tau < 0.0 => Some(eight(tau)),
             Anim::Close => (tau <= 20.0).then(|| bezier(CLOSE, tau / 20.0)),
         }
@@ -833,7 +787,7 @@ fn film(name: &str, ro: &Roles, scale: u32, anim: Anim, pixels: bool) -> Option<
     })
 }
 
-/// A piece's three films in the palette: what main.rs plays for `draw:PIECE`. None for a name that is no piece.
+/// A piece's two films in the palette: what main.rs plays for `draw:PIECE`. None for a name that is no piece.
 pub fn films(name: &str, ro: &Roles, scale: u32) -> Option<Films> {
     films_as(name, ro, scale, false)
 }
@@ -846,7 +800,6 @@ pub fn films_pixels(name: &str, ro: &Roles, scale: u32) -> Option<Films> {
 fn films_as(name: &str, ro: &Roles, scale: u32, pixels: bool) -> Option<Films> {
     Some(Films {
         open: film(name, ro, scale, Anim::Open, pixels)?,
-        wait: film(name, ro, scale, Anim::Wait, pixels)?,
         close: film(name, ro, scale, Anim::Close, pixels)?,
     })
 }
@@ -889,11 +842,11 @@ mod tests {
     }
 
     #[test]
-    fn every_piece_draws_its_three_at_both_sizes() {
+    fn every_piece_draws_its_two_at_both_sizes() {
         let ro = theme("tokyonight-night");
         for name in NAMES {
             for scale in [1, 2] {
-                for anim in [Anim::Open, Anim::Wait, Anim::Close] {
+                for anim in [Anim::Open, Anim::Close] {
                     let fr = frames(name, &ro, scale, anim).unwrap();
                     let total: u32 = fr.iter().map(|(_, ms)| *ms).sum();
                     let p = Piece::named(name).unwrap();
@@ -918,7 +871,7 @@ mod tests {
         for pal in ["tokyonight-night", "solarized-light"] {
             let ro = theme(pal);
             for name in NAMES {
-                for (anim, reel) in [(Anim::Open, "open"), (Anim::Wait, "wait"), (Anim::Close, "close")] {
+                for (anim, reel) in [(Anim::Open, "open"), (Anim::Close, "close")] {
                     let gif = gif_frames(&format!("{}/../../gallery/animation/{}/{}/{}.gif", env!("CARGO_MANIFEST_DIR"), name, pal, reel));
                     let ours = frames(name, &ro, 1, anim).unwrap();
                     // the GIF's frames unrolled to the piece's own ticks, ours too
@@ -978,7 +931,7 @@ mod tests {
         assert_eq!(Roles::from(|_| None), None, "no palette, no roles");
     }
 
-    /// How long a piece's three films take to draw, at 2x: `cargo test --release -- --ignored --nocapture draw_time`.
+    /// How long a piece's two films take to draw, at 2x: `cargo test --release -- --ignored --nocapture draw_time`.
     #[test]
     #[ignore]
     fn draw_time() {
@@ -988,7 +941,7 @@ mod tests {
             films(name, &ro, 2).unwrap();
             let drawn = t.elapsed().as_millis();
             let t = std::time::Instant::now();
-            for reel in ["open", "wait", "close"] {
+            for reel in ["open", "close"] {
                 let p = format!(
                     "{}/../../gallery/animation/{}/tokyonight-night/{}@2x.gif",
                     env!("CARGO_MANIFEST_DIR"),
@@ -1005,7 +958,7 @@ mod tests {
     fn a_film_is_sixel_frames_at_the_pieces_size() {
         let f = films("embers", &theme("dracula"), 1).unwrap();
         assert_eq!((f.open.w, f.open.h), (180, 120));
-        assert!(f.wait.frames.iter().all(|(s, ms)| s.starts_with("\x1bP") && *ms >= 80));
+        assert!(f.open.frames.iter().all(|(s, ms)| s.starts_with("\x1bP") && *ms >= 80));
         assert_eq!(films("embers", &theme("dracula"), 2).unwrap().close.w, 360);
     }
 }

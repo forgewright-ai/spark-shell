@@ -6941,7 +6941,7 @@ printf 'DIALOG_ANIMATION=fireworks\n' >> "$HOME/.config/spark-shell/config"; st=
 printf 'DESKTOP=sway\nTHEME=tokyonight-night\n' > "$HOME/.config/spark-shell/config"
 _np=0; for _pd in "$REPO"/gallery/animation/*/; do [ -f "$_pd/tokyonight-night/open.gif" ] && [ -f "$_pd/solarized-light/close.gif" ] && _np=$((_np + 1)); done
 [ -f "$REPO/gallery/animation/moon/tokyonight-night/open.gif" ] && grep -q -- '--transitions "$_ta"' "$SRC" && [ "$_np" = 6 ] \
-    && ok "the dialog is given the piece in the palette in use, every piece in every palette: open, wait, close, at one and two times (#122)" || bad "transitions given" "$(ls "$REPO/gallery/animation")"
+    && ok "the dialog is given the piece in the palette in use, every piece in every palette: open and close, at one and two times (#122)" || bad "transitions given" "$(ls "$REPO/gallery/animation")"
 # #142: in the dialog's own window nothing is drawn ahead of the opening (#138 drew the prompt first, and the dialog then
 # came in parts): the cursor hidden, then the dialog; elsewhere (a terminal) the same
 if command -v python3 >/dev/null 2>&1; then

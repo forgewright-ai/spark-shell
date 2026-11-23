@@ -1544,6 +1544,26 @@ fn the_opening_plays_alone_then_the_whole_dialog() {
     assert!(!drawn.alone && drawn.film.is_none(), "after it, the dialog whole");
 }
 
+/// The open ends in the home, never in a wait (v0.165): a provider whose first rows are still coming has the
+/// glyph family's Read bar in the header, and the bar goes when its rows come.
+#[test]
+fn the_opening_ends_in_the_home_and_rows_still_coming_have_the_read_bar() {
+    let mut app = full();
+    app.cfg.progress = true;
+    let mut slow = Provider::new("wifi");
+    slow.ready = false;
+    app.providers.push(slow);
+    let t = std::time::Instant::now();
+    app.motion = Some((spark_dialog::animation::Reel::Open, t));
+    assert!(!app.thinking(), "the open plays alone, no bar under it");
+    app.follow_motion(t + std::time::Duration::from_millis(3600), 3599, 3599);
+    assert_eq!(app.motion, None, "the open ends in the home");
+    assert!(app.thinking() && app.work() == spark_dialog::progress::Work::Read, "rows still coming: the Read bar");
+    let i = app.providers.len() - 1;
+    app.providers[i].ready = true;
+    assert!(!app.thinking(), "every provider answered: no bar");
+}
+
 /// Back is the header's left where there is a level above (the dialog design notes, v0.124.4), the place's name
 /// centered after it, and the key row still says Back with its key.
 #[test]

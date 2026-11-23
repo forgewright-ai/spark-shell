@@ -1,6 +1,6 @@
 //! The dialog's transitions (#122): the art of gallery/animation (PR #121), played in the middle of
-//! the content area. `open` plays once when the dialog opens, `wait` loops while there is nothing
-//! else to show, `close` plays once when Esc closes it. A GIF is decoded once to its frames, each frame
+//! the content area. `open` plays once when the dialog opens, then the home shows; `close` plays once
+//! when Esc closes it. A wait has the glyph family's bars (progress.rs), never a film. A GIF is decoded once to its frames, each frame
 //! encoded to sixel once, its ground left unpainted: sixel names a color in whole percents, so a ground
 //! painted the surface's color would sit a shade off the window's own. main.rs clears a frame's cells
 //! and draws the next in one synchronized update, at the GIF's own pace.
@@ -10,14 +10,11 @@ use crate::sixel::{show, Image, Viewport};
 
 /// A frame shorter than this is held this long: GIF counts in hundredths, and a 0 means "fast".
 pub const FRAME_MIN_MS: u32 = 20;
-/// The wait loop gives up after this long: a provider that never answers does not hold the home back.
-pub const WAIT_MAX_MS: u128 = 4000;
 
-/// Which of the three plays.
+/// Which of the two plays.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reel {
     Open,
-    Wait,
     Close,
 }
 
@@ -70,11 +67,10 @@ impl Film {
     }
 }
 
-/// The three a piece has.
+/// The two a piece has.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Films {
     pub open: Film,
-    pub wait: Film,
     pub close: Film,
 }
 
@@ -82,7 +78,6 @@ impl Films {
     pub fn of(&self, reel: Reel) -> &Film {
         match reel {
             Reel::Open => &self.open,
-            Reel::Wait => &self.wait,
             Reel::Close => &self.close,
         }
     }
@@ -273,8 +268,8 @@ mod tests {
 
     #[test]
     fn a_piece_decodes_to_frames_laid_on_the_surface_at_its_own_pace() {
-        let wait = include_bytes!("../../../gallery/animation/embers/tokyonight-night/wait.gif");
-        let f = film(wait).expect("a film");
+        let open = include_bytes!("../../../gallery/animation/embers/tokyonight-night/open.gif");
+        let f = film(open).expect("a film");
         assert_eq!((f.w, f.h), (180, 120));
         assert!(f.frames.len() > 10 && f.frames.iter().all(|(s, ms)| s.starts_with("\x1bP0;1;0q\"1;1;180;120") && *ms >= FRAME_MIN_MS));
         assert!(
@@ -301,7 +296,7 @@ mod tests {
             .filter(|e| e.path().is_dir() && !e.file_name().to_string_lossy().starts_with(['_', '.']) && !e.path().join("open.webp").is_file())
         {
             for pal in ["tokyonight-night", "solarized-light"] {
-                for reel in ["open", "wait", "close"] {
+                for reel in ["open", "close"] {
                     let bytes = std::fs::read(piece.path().join(pal).join(format!("{}.gif", reel))).unwrap();
                     let f = film(&bytes).unwrap_or_else(|| panic!("{:?} {} {}", piece.path(), pal, reel));
                     assert_eq!((f.w, f.h), (180, 120));
@@ -309,15 +304,14 @@ mod tests {
                 }
             }
         }
-        assert_eq!(n, 6 * 2 * 3, "six drawn pieces");
+        assert_eq!(n, 6 * 2 * 2, "six drawn pieces");
     }
 
     #[test]
     fn a_painted_piece_plays_as_it_reads_in_its_own_colors() {
         let at = |reel: &str| std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../gallery/animation/atlas/").to_string() + reel + ".webp").unwrap();
-        // twice the drawn pieces' size; its frames and their times read from the headers: open and close 3.6 seconds
-        // each, a turn of the wait 9.6
-        for (reel, frames, ms) in [("open", 106, 3599), ("wait", 288, 9599), ("close", 106, 3599)] {
+        // twice the drawn pieces' size; its frames and their times read from the headers: open and close 3.6 seconds each
+        for (reel, frames, ms) in [("open", 106, 3599), ("close", 106, 3599)] {
             let f = film_webp(at(reel), true).unwrap();
             assert_eq!((f.w, f.h, f.frames.len(), f.length()), (360, 240, frames, ms), "{}", reel);
             assert!(f.pics.is_empty(), "{}: no frame is held but the one shown", reel);
@@ -337,11 +331,11 @@ mod tests {
         assert!(px.iter().any(|p| p[0] == 255 && p[1] > p[3] + 40), "a warm color, red over blue");
         assert!(px[0][0] == 0, "the corner is clear: the window's ground shows");
         // as sixel for a terminal, the ground unpainted
-        let s = film_webp(at("wait"), false).unwrap();
+        let s = film_webp(at("close"), false).unwrap();
         assert!(s.sixel(10).unwrap().starts_with("\x1bP0;1;0q\"1;1;360;240"));
         assert!(film_webp(b"RIFF\0\0\0\0WEBPnot one".to_vec(), true).is_none());
         assert!(film_webp(
-            std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../gallery/animation/embers/tokyonight-night/wait.gif")).unwrap(),
+            std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../gallery/animation/embers/tokyonight-night/open.gif")).unwrap(),
             true
         )
         .is_none());
