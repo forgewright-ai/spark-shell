@@ -242,8 +242,9 @@ class Providers(unittest.TestCase):
         show, detail = text(replies[1]), text(replies[2])
         self.assertEqual([(r["text"], r["line"]) for r in show["rows"]], [("atlas-awakening", "cinematic illustration \u00b7 dark")])
         facts = {r["id"]: r.get("columns", [None])[0] for r in detail["rows"]}
-        self.assertEqual((facts["theme:detail:media"], facts["theme:detail:family-of"], facts["theme:detail:moves"], facts["theme:detail:animation"]),
-                         ("cinematic illustration", "Atlas Awakening", "moves with moving wallpaper on", "atlas"))
+        moves = None if sys.platform == "darwin" else "moves with moving wallpaper on"   # no desktop on a Mac: no wallpaper motion
+        self.assertEqual((facts["theme:detail:media"], facts["theme:detail:family-of"], facts.get("theme:detail:moves"), facts["theme:detail:animation"]),
+                         ("cinematic illustration", "Atlas Awakening", moves, "atlas"))
         self.assertEqual((text(replies[3])["facts"][0], text(replies[4])["facts"][0]), ("its own portrait", "2 panels, left to right"))
         # an open exhibition, a supporting work and a section's lead, from a curation of the test's own
         curation["exhibitions"] = [{"id": "study", "title": "Study", "note": "A test exhibition.", "status": "open",
