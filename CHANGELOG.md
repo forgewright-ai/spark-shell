@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.164.3
+
+- A theme's own landscape pictures are in the wallpaper list, by name.
+  `spark-shell theme wallpaper bridge-viewpoint` shows Atlas Awakening's
+  bridge. The picture chosen is always on a screen: beside a turned
+  screen, the landscape screen shows it.
+
 ## v0.164.2
 
 - Atlas Awakening's loops move. A screen's still, or a reload of the
