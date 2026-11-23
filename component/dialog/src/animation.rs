@@ -315,13 +315,16 @@ mod tests {
     #[test]
     fn a_painted_piece_plays_as_it_reads_in_its_own_colors() {
         let at = |reel: &str| std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../gallery/animation/atlas/").to_string() + reel + ".webp").unwrap();
-        // twice the drawn pieces' size; its frames and their times read from the headers: open and close four seconds
+        // twice the drawn pieces' size; its frames and their times read from the headers: open and close 3.6 seconds
         // each, a turn of the wait 9.6
-        for (reel, frames, ms) in [("open", 118, 3999), ("wait", 288, 9599), ("close", 118, 3999)] {
+        for (reel, frames, ms) in [("open", 106, 3599), ("wait", 288, 9599), ("close", 106, 3599)] {
             let f = film_webp(at(reel), true).unwrap();
             assert_eq!((f.w, f.h, f.frames.len(), f.length()), (360, 240, frames, ms), "{}", reel);
             assert!(f.pics.is_empty(), "{}: no frame is held but the one shown", reel);
         }
+        // the open ends where the close starts, the control raised: no pass through the wait's pose between them
+        let (o, c) = (film_webp(at("open"), true).unwrap(), film_webp(at("close"), true).unwrap());
+        assert_eq!(o.pic(o.frames.len() - 1).unwrap(), c.pic(0).unwrap());
         let f = film_webp(at("open"), true).unwrap();
         // a frame, then one before it: read again from the first, the same pixels
         let (late, early) = (f.pic(60).unwrap(), f.pic(20).unwrap());

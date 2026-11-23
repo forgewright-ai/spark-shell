@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.164.4
+
+- The dialog's atlas animation opens and closes clean. The open ends
+  with the control raised, and the close starts there, with no pass
+  through the waiting pose.
+
 ## v0.164.3
 
 - A theme's own landscape pictures are in the wallpaper list, by name.
