@@ -80,6 +80,8 @@ const MPV_RENDER_PARAM_WL_DISPLAY: c_int = 9;
 const MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME: c_int = 12;
 // mpv_render_update_flag (render.h)
 const MPV_RENDER_UPDATE_FRAME: u64 = 1;
+// mpv_error (client.h)
+const MPV_ERROR_OPTION_NOT_FOUND: c_int = -5;
 // mpv_event_id (client.h)
 const MPV_EVENT_NONE: c_int = 0;
 const MPV_EVENT_LOG_MESSAGE: c_int = 2;
@@ -211,6 +213,14 @@ fn options(scaling: Scaling) -> Vec<(&'static str, &'static str)> {
         ("hwdec", "auto-safe"),
         ("loop-file", "inf"),
         ("aid", "no"),
+        // a loop is an MP4 (lib/look.py reads its boxes), whole in its file:
+        // no other format of ffmpeg's is tried, no file it names is opened,
+        // no subtitle is drawn and no script or downloader runs
+        ("demuxer-lavf-format", "mov"),
+        ("access-references", "no"),
+        ("sid", "no"),
+        ("ytdl", "no"),
+        ("load-scripts", "no"),
         // fill the screen and crop the rest, like the still wallpaper's fill
         ("panscan", "1.0"),
         // a frame comes at its time, so drawing it at once is on time (render.h)
@@ -246,10 +256,11 @@ impl Core {
         for (name, value) in options(scaling) {
             let (n, v) = (cstring(name)?, cstring(value)?);
             // SAFETY: a live handle, before mpv_initialize; NUL-terminated strings.
-            core.check(
-                unsafe { (lib.set_option_string)(handle, n.as_ptr(), v.as_ptr()) },
-                &format!("option {name}={value}"),
-            )?;
+            let code = unsafe { (lib.set_option_string)(handle, n.as_ptr(), v.as_ptr()) };
+            // a build without Lua has no ytdl and no scripts to turn off
+            if code != MPV_ERROR_OPTION_NOT_FOUND {
+                core.check(code, &format!("option {name}={value}"))?;
+            }
         }
         // SAFETY: a live handle, initialized once.
         core.check(unsafe { (lib.initialize)(handle) }, "mpv_initialize")?;
@@ -521,6 +532,11 @@ mod tests {
                 ("demuxer-lavf-o", "protocol_whitelist=file"),
                 ("stream-lavf-o", "protocol_whitelist=file"),
                 ("autoload-files", "no"),
+                ("demuxer-lavf-format", "mov"),
+                ("access-references", "no"),
+                ("sid", "no"),
+                ("ytdl", "no"),
+                ("load-scripts", "no"),
             ] {
                 assert!(options.contains(&wanted), "{wanted:?} is not in {options:?}");
             }
