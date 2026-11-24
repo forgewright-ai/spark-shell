@@ -63,14 +63,11 @@ bar_screen_rows() {   # -> the rows of the shortest screen on, its shorter side 
 }
 render_expr() {   # -> the sed script that renders a template, one s command a line: BSD sed reads a -e script of 2048 bytes at most, and the idle watcher line alone passed it
     e="s|@HOME@|$(esc "$HOME")|g${NL}s|@USER@|$(esc "$(id -un)")|g${NL}s|@NAME@|$(esc "$(short_host)")|g${NL}s|@REPO@|$(esc "$REPO")|g"
-    for k in $THEME_KEYS; do
+    for k in $THEME_KEYS $SLOT_KEYS $HEX_KEYS $WALL_KEYS $PANEL_KEYS $WIN_KEYS $POINTER_KEYS; do
         eval "v=\$$k"
         # shellcheck disable=SC2154   # v is set by the eval above
-        e="$e${NL}s|@$k@|$(esc "$v")|g"
-    done
-    for k in $SLOT_KEYS $HEX_KEYS $WALL_KEYS $PANEL_KEYS $WIN_KEYS $POINTER_KEYS; do
-        eval "v=\$$k"
-        e="$e${NL}s|@$k@|$(esc "$v")|g"
+        case $v in *[\\\&\|]*) v=$(esc "$v") ;; esac   # a process only where there is something to escape: a hundred keys pass here
+        e="$e${NL}s|@$k@|$v|g"
     done
     _fs=$(font_spec)   # FONT as foot can draw it: the old face until Monaspace Neon is installed
     # foot's font is a list: a glyph Neon lacks (U+2304) comes from DejaVu Sans Mono before
@@ -96,9 +93,9 @@ render_expr() {   # -> the sed script that renders a template, one s command a l
     e="$e${NL}s|@KEY_CAPS@|$(input_caps "$KEY_CAPS")|g"
     printf '%s' "$e"
 }
-render_sed() { printf '%s\n' "$1" > "$TMP/render.sed"; sed -f "$TMP/render.sed" "$2"; }   # render_sed SCRIPT SRC -> SRC through the script, from a file (never one -e line)
-render_tmp() {   # render_tmp SRC DST -- the template through EXPR, every placeholder gone
-    render_sed "$EXPR" "$1" > "$2"
+render_sed() { printf '%s\n' "$1" > "$TMP/render.sed" && sed -f "$TMP/render.sed" "$2"; }   # render_sed SCRIPT SRC -> SRC through the script, from a file (never one -e line)
+render_tmp() {   # render_tmp SRC DST -- the template through EXPR, every placeholder gone; 1 when it could not be written
+    render_sed "$EXPR" "$1" > "$2" 2>"$TMP/store.why" || return 1
     case $1 in "$(wm_config_template)") python3 "$REPO/lib/home.py" render "$2" || exit 1 ;; esac
     if grep -q '@[A-Z_0-9]*@' "$2"; then
         printf 'spark-shell: %s: unrendered placeholder: %s\n' "$1" "$(grep -o '@[A-Z_0-9]*@' "$2" | head -1)" >&2
@@ -122,15 +119,13 @@ render_sum_keep() {   # render_sum_keep DST -- its checksum now, in place of the
         && cp "$TMP/renders" "$STATE_DIR/renders" && chmod 0600 "$STATE_DIR/renders"
 }
 render_one() {   # render_one SRC DST -- EXPR must be set
-    render_tmp "$1" "$TMP/render"
+    render_tmp "$1" "$TMP/render" || { write_failed look "$2 could not be made$(store_said)"; return 0; }
     if [ -f "$2" ] && [ ! -L "$2" ] && cmp -s "$TMP/render" "$2"; then ok look "$2"; render_sum_keep "$2"; return; fi
     if [ -f "$2" ] && [ ! -L "$2" ] && { ! grep -q 'rendered by spark-shell' "$2" || render_by_hand "$2"; }; then backup "$2"; fi
     changes=$((changes + 1))
     if [ "$MODE" = dry ]; then row would look "$2"; return; fi
-    mkdir -p "$(dirname "$2")"
-    rm -f "$2"
-    cp "$TMP/render" "$2"
-    chmod 0644 "$2"
+    # a link there is no file of ours: the render takes its place
+    { mkdir -p "$(dirname "$2")" && { [ ! -L "$2" ] || rm -f "$2"; } && write_whole "$2" cat "$TMP/render" && chmod 0644 "$2"; } 2>/dev/null || { write_failed look "$2 could not be written$(store_said)"; return 0; }
     render_sum_keep "$2"
     row render look "$2"
 }

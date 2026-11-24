@@ -108,7 +108,7 @@ scene_ready() {   # python3 with numpy is here, asked once
 }
 scene_still() {   # scene_still SCENE PALETTE_FILE WxH OUT.png -> the still, or false
     scene_ready || return 1
-    _stn=${4%.png}.new.png   # not _ssn: scene_screens's
+    _stn=${4%/*}/.${4##*/}.new.png   # hidden beside it: no file of a theme's while it is made. Not _ssn: scene_screens's
     if python3 -I "$SCENE_MAKE" --scene "$1" --still poster --size "$3" --png "$_stn" "$2" >/dev/null 2>&1 && [ -s "$_stn" ]; then mv "$_stn" "$4"; else rm -f "$_stn"; return 1; fi
 }
 wall_for_palette() { for _e in $WALL_SHIPPED; do _r=${_e#*:}; [ "${_r%%:*}" != "$1" ] || { printf '%s' "${_e%%:*}"; return 0; }; done; return 1; }   # wall_for_palette PALETTE -> its drawing, or false
@@ -135,7 +135,7 @@ wall_recolor_sed() {   # wall_recolor_sed SVG PALETTE_FILE -> sed from the roles
         printf 's/%s/#%s/g\n' "$_c" "$(wall_role_hex "$_r" "$2")"
     done
 }
-wall_recolor() { wall_recolor_sed "$1" "$2" > "$TMP/recolor.sed"; sed -f "$TMP/recolor.sed" "$1"; }   # wall_recolor SVG PALETTE_FILE -> the drawing recolored
+wall_recolor() { wall_recolor_sed "$1" "$2" > "$TMP/recolor.sed" && sed -f "$TMP/recolor.sed" "$1"; }   # wall_recolor SVG PALETTE_FILE -> the drawing recolored
 # gdk-pixbuf's thumbnailer stands in where a distro still ships it
 svg_tool() {   # -> the SVG tool here, or nothing (SPARK_SHELL_NO_SVG: none)
     [ -z "${SPARK_SHELL_NO_SVG:-}" ] || return 0
@@ -145,11 +145,12 @@ svg_pkg() {   # -> the package with rsvg-convert here
     case $PM in apt) echo librsvg2-bin ;; pacman) echo librsvg ;; xbps) echo librsvg-utils ;; dnf) echo librsvg2-tools ;; zypper) echo rsvg-convert ;; brew) echo librsvg ;; *) echo librsvg ;; esac
 }
 svg_png() {   # svg_png SVG OUT WIDTH -> a PNG WIDTH wide, whole or not there
+    stage_clear "$2"
     case $(svg_tool) in
-        rsvg-convert) rsvg-convert -w "$3" -o "$2.new" "$1" 2>/dev/null ;;
-        gdk-pixbuf-thumbnailer) gdk-pixbuf-thumbnailer -s "$3" "$1" "$2.new" 2>/dev/null ;;
+        rsvg-convert) rsvg-convert -w "$3" -o "$_sgn" "$1" 2>/dev/null ;;
+        gdk-pixbuf-thumbnailer) gdk-pixbuf-thumbnailer -s "$3" "$1" "$_sgn" 2>/dev/null ;;
         *) false ;;
-    esac && mv "$2.new" "$2" || { rm -f "$2.new"; return 1; }
+    esac && file_commit "$2" || { file_unstage "$2"; return 1; }
 }
 pic_magic() {   # pic_magic FILE -> 0 for PNG, JPEG, GIF or WebP magic
     case $(od -An -tx1 -N12 < "$1" 2>/dev/null | tr -d ' \n') in 89504e470d0a1a0a*|ffd8ff*|47494638*|52494646????????57454250) return 0 ;; *) return 1 ;; esac
@@ -172,7 +173,7 @@ pic_png() {   # pic_png PICTURE OUT SIZE -> a PNG within SIZE square; else false
 wall_render() {   # wall_render DRAWING PALETTE_FILE OUT_BASE -> OUT_BASE.svg, OUT_BASE.png (3840 by 2160), or false
     mkdir_state "$(dirname "$3")"
     if wall_scene "$1"; then scene_still "$1" "$2" 3840x2160 "$3.png"; return; fi
-    wall_recolor "$REPO/gallery/wallpaper/$1.svg" "$2" > "$3.svg.new" && mv "$3.svg.new" "$3.svg"
+    write_whole "$3.svg" wall_recolor "$REPO/gallery/wallpaper/$1.svg" "$2" || return 1
     svg_png "$3.svg" "$3.png" 3840 || { rm -f "$3.png"; return 1; }
 }
 wall_follow() {   # draws the wallpaper in the palette in use when missing; a row when it cannot
@@ -186,7 +187,7 @@ wall_follow() {   # draws the wallpaper in the palette in use when missing; a ro
     [ "$MODE" != dry ] || { row would wallpaper "$WALLPAPER drawn in $THEME ($_wb.png)"; return 0; }
     _pf=$(palette_file "$THEME") || return 0
     if wall_render "$WALLPAPER" "$_pf" "$_wb"; then
-        [ -z "$_td" ] || look_set "$_td" DRAWING "$WALLPAPER"
+        [ -z "$_td" ] || look_set "$_td" DRAWING "$WALLPAPER" || write_failed wallpaper "$_td/look.env could not be written$(store_said)"
         wall_load; EXPR=$(render_expr)   # later renders name the new picture
         row render wallpaper "$WALLPAPER drawn in $THEME ($_wb.png)"
     elif wall_scene "$WALLPAPER"; then row todo wallpaper "$WALLPAPER: python3 with numpy draws its picture, and it is not here (spark-shell on desktop installs it)"
@@ -194,10 +195,10 @@ wall_follow() {   # draws the wallpaper in the palette in use when missing; a ro
 }
 wall_color() { hex_rgb "$WALLPAPER" >/dev/null; }   # WALLPAPER is #rrggbb
 wall_yours() { case ${WALLPAPER:-} in ''|none|default) return 1 ;; esac; ! wall_color && ! wall_shipped "$WALLPAPER" && ! wall_bundled "$WALLPAPER"; }   # WALLPAPER is a path of yours; false before the config is read
-wall_bundled() {   # wall_bundled PATH -> 0 for a bundled theme's own picture, in its folder or its copy changed and not saved (NAME-changed): its art, never yours
+wall_bundled() {   # wall_bundled PATH -> 0 for a bundled theme's own picture, in its folder or its copy changed and not saved (NAME-changed, NAME-changed-2): its art, never yours
     case $1 in
         "$CORE_DIR"/*/*) return 0 ;;
-        "$LOOKS_DIR"/*-changed/*) _wbn=${1#"$LOOKS_DIR"/}; _wbn=${_wbn%%/*}; _wbn=${_wbn%-changed}
+        "$LOOKS_DIR"/*-changed/*|"$LOOKS_DIR"/*-changed-[0-9]*/*) _wbn=${1#"$LOOKS_DIR"/}; _wbn=${_wbn%%/*}; _wbn=${_wbn%-changed*}
             [ -f "$CORE_DIR/$_wbn/look.env" ] || [ -f "$CORE_DIR/core-$_wbn/look.env" ] ;;
         *) return 1 ;;
     esac
@@ -332,37 +333,36 @@ transparency_of() { awk -v a="${1:-1}" 'BEGIN { printf "%d", (1 - a) * 100 + 0.5
 
 # PANEL_PAD 0x0: the dialog draws the margins
 PANEL_KEYS="PANEL_SIZE PANEL_PAD PANEL_LOW PANEL_BG PANEL_HI PANEL_BAND PANEL_MUTED PANEL_INK PANEL_INK_URGENT PANEL_ATTENTION NOTIFY_PAD NOTIFY_WIDTH NOTIFY_HEIGHT"   # NOTIFY_*: mako's air, width and most height, pixels
-panel_load() {
+panel_load() {   # the dialog's, the titles' and mako's own colors from the palette's, all in one awk: it runs at every start
+    # shellcheck disable=SC2046   # eight colors, split on purpose
+    set -- $(awk -v bg="$HEX_BG" -v fg="$HEX_FG" -v accent="$HEX_ACCENT" -v muted="$HEX_MUTED" -v red="$HEX_ANSI_1" -v yellow="$HEX_ANSI_3" '
+        function h(c, i) { return index("0123456789abcdef", substr(tolower(c), i, 1)) - 1 }
+        function v(c, i) { return h(c, i) * 16 + h(c, i + 1) }
+        function toward(x, y, p) { return x + int((y - x) * p / 100) }
+        function at(x, y, p) { return int(x + (y - x) * p / 100) }
+        function mix(a, b, p) { return sprintf("%02x%02x%02x", toward(v(a, 1), v(b, 1), p), toward(v(a, 3), v(b, 3), p), toward(v(a, 5), v(b, 5), p)) }   # hex_mix
+        function lin(x) { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ^ 2.4 }
+        function lum(c) { return 0.2126 * lin(v(c, 1)) + 0.7152 * lin(v(c, 3)) + 0.0722 * lin(v(c, 5)) }
+        function contrast(a, b,   x, y) { x = lum(a); y = lum(b); return x > y ? (x + 0.05) / (y + 0.05) : (y + 0.05) / (x + 0.05) }
+        function push(ink, fill,   end, p) { end = lum(ink) < lum(fill) ? "000000" : "ffffff"
+            for (p = 0; p <= 100; p += 5) { OUT = sprintf("%02x%02x%02x", at(v(ink, 1), v(end, 1), p), at(v(ink, 3), v(end, 3), p), at(v(ink, 5), v(end, 5), p)); if (contrast(OUT, fill) >= 4.5) return 1 }
+            return 0 }
+        function lift(ink, fill, alt) {   # what reads at 4.5 to 1 on fill: ink itself; else ink pushed by fives away from fill, to black or to white; else alt, pushed the same way; else the end that reads
+            if (!push(ink, fill) && !push(alt, fill)) OUT = contrast("000000", fill) >= 4.5 ? "000000" : "ffffff"
+            return OUT }
+        BEGIN {
+            panel = mix(bg, fg, 9); m = mix(muted, fg, 35)
+            for (p = 40; p <= 100 && contrast(m, panel) < 4.5; p += 5) m = mix(muted, fg, p)   # muted lifted until it reads
+            print mix(bg, fg, 4), panel, mix(bg, fg, 18), mix(panel, accent, 25), m, lift(bg, accent, fg), lift(bg, red, fg), lift(yellow, bg, fg)
+        }')
+    # PANEL_INK and PANEL_INK_URGENT: what is written on the accent (the plate's digits, the title of the band with the
+    # focus) and on the red (an urgent band's title, close's chip); PANEL_ATTENTION: the attention color on the ground
     # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
-    PANEL_LOW=$(hex_mix "$HEX_BG" "$HEX_FG" 4); PANEL_BG=$(hex_mix "$HEX_BG" "$HEX_FG" 9); PANEL_HI=$(hex_mix "$HEX_BG" "$HEX_FG" 18); PANEL_BAND=$(hex_mix "$PANEL_BG" "$HEX_ACCENT" 25); PANEL_PAD=0x0
+    { PANEL_LOW=$1; PANEL_BG=$2; PANEL_HI=$3; PANEL_BAND=$4; PANEL_MUTED=$5; PANEL_INK=$6; PANEL_INK_URGENT=$7; PANEL_ATTENTION=$8; PANEL_PAD=0x0; }
     _ns=$(look_font_size); : "${_ns:=12}"
     # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
     { NOTIFY_PAD="$_ns,$((_ns * 3 / 2))"; NOTIFY_WIDTH=$((_ns * 30)); NOTIFY_HEIGHT=$((_ns * 8)); }   # half the dialog's air, thirty cells, four lines
-    # muted lifted until it reads at 4.5 to 1
-    _pl=35; PANEL_MUTED=$(hex_mix "$HEX_MUTED" "$HEX_FG" "$_pl")
-    while [ "$_pl" -lt 100 ] && [ "$(hex_contrast "$PANEL_MUTED" "$PANEL_BG")" -lt 450 ]; do _pl=$((_pl + 5)); PANEL_MUTED=$(hex_mix "$HEX_MUTED" "$HEX_FG" "$_pl"); done
-    # what is written on the accent (the plate's digits, the title of the band with the focus), on the red (an urgent
-    # band's title, close's chip) and in the attention color on the ground: each as the palette has it where it reads at
-    # 4.5 to 1, else lifted until it does
-    # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
-    { PANEL_INK=$(hex_lift "$HEX_BG" "$HEX_ACCENT" "$HEX_FG"); PANEL_INK_URGENT=$(hex_lift "$HEX_BG" "$HEX_ANSI_1" "$HEX_FG"); PANEL_ATTENTION=$(hex_lift "$HEX_ANSI_3" "$HEX_BG" "$HEX_FG"); }
     for k in $PANEL_KEYS; do export "${k?}"; done
-}
-hex_lift() {   # hex_lift INK FILL ALT -> rrggbb that reads at 4.5 to 1 on FILL: INK itself; else INK pushed by fives away from FILL, to black or to white; else ALT, pushed the same way; one awk, for it runs at every start
-    awk -v a="$1" -v f="$2" -v b="$3" 'function h(c, i) { return index("0123456789abcdef", substr(tolower(c), i, 1)) - 1 }
-        function v(c, i) { return h(c, i) * 16 + h(c, i + 1) }
-        function lin(x) { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ^ 2.4 }
-        function lum(r, g, b) { return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b) }
-        function reads(r, g, b,   x) { x = lum(r, g, b); return (x > F ? (x + 0.05) / (F + 0.05) : (F + 0.05) / (x + 0.05)) >= 4.5 }
-        function push(c,   r, g, b, e, p, x, y, z) {
-            r = v(c, 1); g = v(c, 3); b = v(c, 5); e = lum(r, g, b) < F ? 0 : 255
-            for (p = 0; p <= 100; p += 5) {
-                x = int(r + (e - r) * p / 100); y = int(g + (e - g) * p / 100); z = int(b + (e - b) * p / 100)
-                if (reads(x, y, z)) { OUT = sprintf("%02x%02x%02x", x, y, z); return 1 }
-            }
-            OUT = sprintf("%02x%02x%02x", e, e, e); return 0
-        }
-        BEGIN { F = lum(v(f, 1), v(f, 3), v(f, 5)); if (!push(a) && !push(b)) OUT = reads(0, 0, 0) ? "000000" : "ffffff"; printf "%s", OUT }'   # both on one side of a mid fill: the end that reads
 }
 hex_lit() { if [ "$(hex_contrast "$2" 000000)" -le "$(hex_contrast "$1" 000000)" ]; then hex_mix "$1" ffffff 40; else hex_mix "$1" 000000 40; fi; }   # hex_lit FILL INK -> FILL two fifths away from INK, to white where INK is the darker: a chip under the pointer, on which INK reads no worse
 hex_contrast() {   # hex_contrast RRGGBB RRGGBB -> WCAG contrast times 100
