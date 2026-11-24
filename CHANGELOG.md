@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.166.3
+
+- Atlas Awakening has new paintings for its second landscape and its
+  portrait, and new loops for all three pictures. Each loop starts from
+  its painting, so nothing jumps when the motion begins, and it moves
+  more gently.
+- A theme changed from Atlas Awakening keeps its own copies of the
+  pictures: `spark-shell theme atlas-awakening` brings the new ones.
+
 ## v0.166.2
 
 - Home stays in sight when the bar is hidden or shown, or the tray
