@@ -105,6 +105,7 @@ for _ in $(seq 15); do makoctl mode >/dev/null 2>&1 && break; sleep 1; done
 makoctl mode >/dev/null 2>&1 || { echo "FAIL: mako does not answer"; exit 1; }
 bar_up
 echo "ok: $(swaymsg -t get_version | jq -r '"sway " + .human_readable'), output $out 1920x1080, mako up, the bar's loop running"
+bar_id() { swaymsg -t get_bar_config | jq -r '[.[] | select(startswith("spark-line"))] | last'; }   # -> sway's own bar, the one made last
 redraw() { kill -USR1 "$(cat "$pidf")" 2>/dev/null || :; sleep "${1:-2}"; }
 bar_h() { swaymsg -t get_tree | jq -r '[.. | objects | select(.type? == "workspace" and .name != "__i3_scratch")][0].rect | .y, .height' | paste -sd' ' -; }
 shot() { grim "$proof/$1.png"; echo "ok: $proof/$1.png"; }
@@ -155,7 +156,7 @@ strip bar-seen top
 
 echo "== the bar at the bottom; a notification in the bottom right corner"
 S bar bottom >/dev/null; sleep 3
-[ "$(swaymsg -t get_bar_config bar-0 | jq -r .position)" = bottom ] || { echo "FAIL: sway's bar is not at the bottom"; exit 1; }
+[ "$(swaymsg -t get_bar_config "$(bar_id)" | jq -r .position)" = bottom ] || { echo "FAIL: sway's bar is not at the bottom"; exit 1; }
 bar_up
 notify-send -a calendar "Standup in 5 minutes" "room 2, or the call"; sleep 1; redraw
 shot bar-bottom; strip bar-bottom-strip bottom
@@ -164,9 +165,9 @@ S bar top >/dev/null; sleep 3
 
 echo "== the bar's text, auto: 1080 rows, then 2160"
 bar_up; S bar seen; redraw 3
-f1=$(swaymsg -t get_bar_config bar-0 | jq -r .font); strip text-auto-1080 top
+f1=$(swaymsg -t get_bar_config "$(bar_id)" | jq -r .font); strip text-auto-1080 top
 swaymsg "output $out resolution 3840x2160" >/dev/null; sleep 2; redraw 4
-f2=$(swaymsg -t get_bar_config bar-0 | jq -r .font); strip text-auto-2160 top
+f2=$(swaymsg -t get_bar_config "$(bar_id)" | jq -r .font); strip text-auto-2160 top
 shot screen-2160
 echo "ok: the bar's font $f1 on 1080 rows, $f2 on 2160"
 [ "$f1" != "$f2" ] || { echo "FAIL: auto kept one size"; exit 1; }
