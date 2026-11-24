@@ -305,7 +305,7 @@ dependencies = [
 
 [[package]]
 name = "spark-wallpaper"
-version = "0.137.0"
+version = "0.167.0"
 dependencies = [
  "calloop",
  "khronos-egl",

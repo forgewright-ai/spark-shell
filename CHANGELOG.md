@@ -1,12 +1,68 @@
 # Changelog
 
-## v0.166.5
+## v0.167
 
+- Display is under appearance, between the theme and the bar. Its page
+  starts with the screens, drawn to scale with the picture each shows:
+  drag one to move it, or use Ctrl and an arrow, and Enter opens it.
+  Brightness, the idle screen, the saver and the lock are a row each.
+- A resolution, a scale or a turn set there goes back by itself in 15
+  seconds unless it is kept. Enter keeps it, Esc puts it back at once,
+  and a logout leaves the screens as they were saved.
+- Type and glyphs shows what it offers: each typeface in its own
+  letters, each glyph family by its signs, each text size by an A.
 - Your themes and Screens and art pick a file again. From a theme file,
   from a picture, and each picture, loop and reel on Screens and art
   opened the files to browse, and Enter on a file opened it instead of
   taking it. Now the file is taken, and its page comes back.
-- The dialog is 0.166.5.
+- The login screen shows on each screen the picture that screen has on
+  the desktop. It showed one picture on all of them.
+- The login form is a window of its own, drawn once at its screen's size
+  and down to its last pixel. It was drawn at a terminal's first size
+  and again at the screen's, and the last part of a row stayed bare.
+- Hiding or showing the bar, moving it and switching the tray no longer
+  reload sway: the pictures, the pad and the open windows stay as they
+  are. `spark-shell on`, an update and Super+Shift+c still reload.
+- The minimize sign points up.
+- Home comes back to the middle of a screen that was turned or made
+  smaller and left a part of it outside.
+- The tray's icons no longer take a strip of their own after the idle
+  screen or a full screen video.
+- A full disk, a power cut or two commands at once no longer lose a
+  theme, a look or the config: each is written whole beside the old one
+  and then takes its place, and a verb says it is done only when it is.
+- Rename and delete follow everything that names the theme: the
+  wallpaper, the pairs, the looks before. A value in the config that is
+  no longer good does not stop the verb that mends it.
+- A file or a role that is refused leaves a bundled theme as it is. It
+  switched to a changed copy before the file was looked at.
+- A photo is cleaned of its metadata as it is taken, not refused for it.
+  An export drops what a loop or a reel says of where and when it was
+  made.
+- With 300 themes of your own the gallery opens in a fifth of a second.
+  It took 16.
+- A loop is an MP4 of one H.264 video. A shared theme file whose loop
+  has sound is refused: take the loop again and export it.
+- An update moves forward only, to a signed release that holds the
+  commit this clone is at. A patch is checked on every machine, not only
+  where it is made: it changes nothing that only a release may.
+- A fresh install checks out the newest release (README).
+- What spark lays out opens apps with pages and files, and a window it
+  may not open is left out of what is kept. Network settings and the
+  time zone ask for a yes when spark proposes them.
+- The name a Wi-Fi network, a screen or a window gives itself reaches no
+  command, and one that is no text ends neither the bar nor the pad.
+- A theme made by someone else is read whole before it is used: its
+  pictures, loops and reels, and every byte of its text.
+- A preview and the moving wallpaper read one local file and open
+  nothing it names.
+- A lock whose pictures take more than 3 seconds shows a plain color. A
+  desktop that crashes ends its login, and no shell is left open.
+- A program in a terminal may copy, and no longer reads what is on the
+  clipboard (foot 1.20 and later).
+- What root writes is read as you, and checked where root alone can
+  change it.
+- The dialog, the bar, the pad and the moving wallpaper are 0.167.0.
 
 ## v0.166.4
 
