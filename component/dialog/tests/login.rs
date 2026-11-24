@@ -284,3 +284,27 @@ fn a_click_lands_on_what_is_drawn_there() {
     assert_eq!(at(&b, &l, "confirm"), None, "the confirm view has its one field");
     assert_eq!(at(&b, &l, " F11 "), Some(Spot::Press(Key::F(11))));
 }
+
+#[test]
+fn login_in_a_window_fills_its_height_and_nothing_right_of_the_strip() {
+    use spark_dialog::draw::{Cell, Step};
+    let mut l = Login::new("box", "Void Linux");
+    l.can_restart = true;
+    let p = palette("tokyonight-night");
+    let cell = Cell { w: 12.0, h: 23.0 };
+    // 1080 pixels are 46 rows of 23 and 22 pixels more: the strip's ground covers them too
+    let steps = login_ui::steps(&l, &p, CLOCK, cell, 1080.0);
+    assert_eq!(login_ui::rows_in(1080.0, cell), 46);
+    assert!(matches!(steps[0], Step::Fill { x, y, w, h, .. } if (x, y, w, h) == (0.0, 0.0, 58.0 * 12.0, 1080.0)));
+    for s in &steps {
+        let (x, w) = match s {
+            Step::Fill { x, w, .. } | Step::Under { x, w, .. } => (*x, *w),
+            Step::Symbol { x, cells, .. } => (*x, *cells as f64 * cell.w),
+            _ => (0.0, 0.0),
+        };
+        assert!(x >= 0.0 && x + w <= 58.0 * 12.0, "{s:?} is right of the strip");
+    }
+    // a window of no height is one row, and draws
+    assert_eq!(login_ui::rows_in(0.0, cell), 1);
+    assert!(!login_ui::steps(&l, &p, CLOCK, cell, 0.0).is_empty());
+}

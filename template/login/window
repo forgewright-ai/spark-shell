@@ -5,8 +5,11 @@
 # The window opens on the main screen: the one Settings > Display named
 # (screens.conf's workspace 1, #135), else the one at 0 0 (screens.conf
 # sets the others beside it): sway opens a window where the focus is.
-main=$(sed -n 's/^workspace 1 output "\(.*\)"$/\1/p' /@LOGIN_ETC@/screens.conf 2>/dev/null | head -1)
+main=$(sed -n 's/^workspace 1 output "\([A-Za-z0-9 ._:()+\/,-]*\)"$/\1/p' /@LOGIN_ETC@/screens.conf 2>/dev/null | head -1)
 [ -n "$main" ] || main=$(swaymsg -t get_outputs 2>/dev/null | jq -r '[.[] | select(.active != false and .rect.x == 0 and .rect.y == 0)] | first | .name // empty' 2>/dev/null || :)
-[ -z "$main" ] || swaymsg focus output "$main" >/dev/null 2>&1 || :
-foot -c /@LOGIN_ETC@/foot.ini -a spark-login /@LOGIN_ETC@/run
+[ -z "$main" ] || swaymsg "focus output \"$main\"" >/dev/null 2>&1 || :
+# the pictures come first, so the screens go from black to whole, once
+sleep 0.2
+# a window of its own, drawn at its screen's size alone; where none opens, a terminal holds the form
+/@LOGIN_ETC@/run --window || foot -c /@LOGIN_ETC@/foot.ini -a spark-login /@LOGIN_ETC@/run
 swaymsg exit

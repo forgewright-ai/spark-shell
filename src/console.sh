@@ -62,18 +62,25 @@ root_ready() {   # root_ready ROW -- a root to write with, asked once; else a to
 # under /boot (a vfat ESP, dmask 0077) a user cannot see a file: root tests
 # and reads there, and a failed chmod is no error (vfat has no modes)
 root_exists() { [ -e "$1" ] || root_do test -e "$1" 2>/dev/null; }   # root_exists PATH
+root_bytes() { root_do tee "$2" < "$1" 2>&1 >/dev/null; }   # root_bytes SRC DST -> the system's words when DST could not be written. SRC is opened as you, never as root: a link of yours to a file you cannot read is refused here, and is not copied for everyone to read
 root_try() {   # root_try SRC DST [MODE] -- a root file written from SRC; a new one takes MODE (0644). False when it could not be written, root_why the system's words: for a step that has its own row for that
     _new=0; root_exists "$2" || _new=1
-    root_why=$(root_do mkdir -p "$(dirname "$2")" 2>&1) && root_why=$(root_do cp "$1" "$2" 2>&1) || { root_why=$(root_said "$root_why"); return 1; }
+    root_why=$(root_do mkdir -p "$(dirname "$2")" 2>&1) && root_why=$(root_bytes "$1" "$2" 2>&1) || { root_why=$(root_said "$root_why"); return 1; }
     root_why=''
     [ "$_new" = 0 ] || root_do chmod "${3:-0644}" "$2" 2>/dev/null || true
+}
+root_sudoers() {   # root_sudoers SRC DST -- a sudoers file: written beside DST under a name sudo does not read, checked there, where root alone can change it, then moved onto DST
+    root_try "$1" "$2.spark-shell-new" 0440 && root_do visudo -cf "$2.spark-shell-new" >/dev/null 2>&1 && root_do mv -f "$2.spark-shell-new" "$2" && return 0
+    root_do rm -f "$2.spark-shell-new" 2>/dev/null || :
+    return 1
 }
 # a write that failed was once said to have worked: this returned the chmod's status, and where a step asked (root_put
 # A B && rm the copy kept of B) the copy went after a restore that had not happened. It ends the run now, with a row
 root_put() { root_try "$@" || root_stop "$2"; }   # root_put SRC DST [MODE] -- root_try, and the run ends where it fails (root_stop)
-root_swap() {   # root_swap SRC DST MODE -- a root program put in place by a rename: Linux refuses a write to a running binary. A step that fails ends the run, and no half-made file stays beside the program
-    root_why=$(root_do mkdir -p "$(dirname "$2")" 2>&1) && root_why=$(root_do cp "$1" "$2.spark-shell-new" 2>&1) \
-        && root_why=$(root_do chmod "$3" "$2.spark-shell-new" 2>&1) && root_why=$(root_do mv -f "$2.spark-shell-new" "$2" 2>&1) && { root_why=''; return 0; }
+root_swap() {   # root_swap SRC DST MODE [SHA256] -- a root program put in place by a rename: Linux refuses a write to a running binary. With SHA256, the bytes are checked where root alone can change them. A step that fails ends the run, and no half-made file stays beside the program
+    root_why=$(root_do mkdir -p "$(dirname "$2")" 2>&1) && root_why=$(root_bytes "$1" "$2.spark-shell-new" 2>&1) && root_why=$(root_do chmod "$3" "$2.spark-shell-new" 2>&1) \
+        && { [ -z "${4:-}" ] || [ "$(sha256_of "$2.spark-shell-new")" = "$4" ] || { root_why='its sha256 is not the pinned one'; false; }; } \
+        && root_why=$(root_do mv -f "$2.spark-shell-new" "$2" 2>&1) && { root_why=''; return 0; }
     root_why=$(root_said "$root_why")
     root_do rm -f "$2.spark-shell-new" 2>/dev/null || :
     root_stop "$2"

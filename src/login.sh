@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # the gsettings color-scheme is yours: put back only while spark-shell's
-# sets: GREETD_CONF LOGIN_ETC LOGIN_FILES LOGIN_FONTS LOGIN_ICONS LOGIN_LIB LOGIN_MARK LOGIN_SUDOERS OLD_GREETD_CONF OLD_GREETD_DIRS OLD_GREETD_FILES
-# reads: DIALOG_BIN DISTRO FACES_OTHER FAMILIES_SAID MODE NEON_STYLES NL OS POINTER_DIR POINTER_THEMES RENDERED REPO ROOT SCREENS_CONF SOUND_CONF SOUND_SV SPARK_CONFIG_DIR STATE_DIR TERM_LOGIN_CONF TMP WM_LOGIN_CONF WM_NAME
+# sets: GREETD_CONF LOGIN_ETC LOGIN_FILES LOGIN_FONTS LOGIN_ICONS LOGIN_LIB LOGIN_MARK LOGIN_SCREEN_LINES LOGIN_SUDOERS OLD_GREETD_CONF OLD_GREETD_DIRS OLD_GREETD_FILES
+# reads: DIALOG_BIN DISTRO FACES_OTHER FAMILIES_SAID MODE NEON_STYLES NL OS POINTER_DIR POINTER_THEMES RENDERED REPO ROOT SCREENS_CONF SOUND_CONF SOUND_SV SPARK_CONFIG_DIR STATE_DIR TAB TERM_LOGIN_CONF TMP WM_LOGIN_CONF WM_NAME
 # last value still holds; an outside change takes it back
 portal_ready() {
     [ "$OS" != Darwin ] && notify_bus && command -v gsettings >/dev/null 2>&1 &&
@@ -162,7 +162,7 @@ login_port() {   # -> spark's port for the screen's spark row, or nothing withou
     printf '%s' "$_p"
 }
 login_render() {   # -> the screen's files in $TMP/login, from template/login in the palette
-    mkdir -p "$TMP/login"
+    login_stills_read
     if [ "$(init_shape)" = systemd ]; then _pw=' --restart "/usr/bin/systemctl reboot" --shutdown "/usr/bin/systemctl poweroff"'
     else _pw=' --restart "/usr/bin/sudo -n /usr/bin/reboot" --shutdown "/usr/bin/sudo -n /usr/bin/poweroff"'; fi
     _p=$(login_port); [ -z "$_p" ] || _pw="$_pw --spark-port $_p"
@@ -179,16 +179,56 @@ login_render() {   # -> the screen's files in $TMP/login, from template/login in
         fi
     done
 }
-login_screens() {   # -> the login screen's screens.conf: the output lines of yours, so its screens sit and turn as the desktop's do
+# the screens' lines, word for word as spark-shell writes them in your screens.conf: the login account's sway takes no
+# other line of that file, so nothing written there by hand or by a monitor's name reaches it
+LOGIN_SCREEN_LINES='^(output "[A-Za-z0-9 ._:()+/,-]{1,120}" (scale [0-9]+([.][0-9]+)?|mode [0-9]{2,5}x[0-9]{2,5}(@[0-9.]{1,9}Hz)?|position -?[0-9]{1,5} -?[0-9]{1,5}|transform (normal|90|180|270)|enable|disable)|workspace 1 output "[A-Za-z0-9 ._:()+/,-]{1,120}")$'
+login_screens() {   # -> the login screen's screens.conf: the screens sit and turn as the desktop's do, the main one too (its form goes there), and each shows the picture it has there
     echo '# rendered by spark-shell from your screens.conf -- the screens as the desktop has them; spark-shell off login removes it'
-    [ ! -f "$SCREENS_CONF" ] || grep -e '^output ' -e '^workspace 1 output ' "$SCREENS_CONF" || :   # the main screen too: its form goes there
+    [ ! -f "$SCREENS_CONF" ] || grep -E "$LOGIN_SCREEN_LINES" "$SCREENS_CONF" || :
+    login_still_lines
 }
-login_screens_follow() {   # after a screen setting: the login screen's copy now when root asks no password, else said in one line
+# the pictures: a screen that shows one of its own on the desktop (a turned screen's portrait, a panel) shows it here
+# too, copied beside the wallpaper as wallpaper.1 and on
+login_stills() {   # -> OUTPUT<tab>FILE for each such screen, by the running desktop's plan; false where no desktop runs, so no plan is known
+    wm_up || return 1
+    wall_there || return 0
+    art_screen_stills | while IFS="$TAB" read -r _lsn _lsf; do
+        _lsi=$(screen_rows | awk -F '\t' -v n="$_lsn" '$1 == n { print $2; exit }')
+        [ "$(screen_rows | awk -F '\t' -v i="$_lsi" '$2 == i' | grep -c .)" -eq 1 ] && screen_id_ok "$_lsi" || _lsi=$_lsn   # a shared name, or one no line may hold: the port's
+        ! screen_id_ok "$_lsi" || printf '%s\t%s\n' "$_lsi" "$_lsf"
+    done
+}
+login_look() { printf '%s %s' "${THEME:-}" "${WALLPAPER:-}" | cksum | cut -d' ' -f1; }   # -> the look the pictures are of, as a number
+login_stills_read() {   # -> $TMP/login/stills: the pictures to copy; none with no desktop running
+    mkdir -p "$TMP/login"; login_stills > "$TMP/login/stills" || rm -f "$TMP/login/stills"
+}
+login_still_lines() {   # -> their lines in screens.conf. With no desktop running, the ones written before stay while the look is the one they were written for
+    if [ -f "$TMP/login/stills" ]; then
+        [ ! -s "$TMP/login/stills" ] || awk -F '\t' -v d="$LOGIN_ETC" -v l="$(login_look)" 'NR == 1 { print "# the pictures of look " l } { printf "output \"%s\" bg /%s/wallpaper.%d fill\n", $1, d, NR }' "$TMP/login/stills"
+    elif grep -qxF "# the pictures of look $(login_look)" "$ROOT/$LOGIN_ETC/screens.conf" 2>/dev/null; then
+        grep -E -e '^# the pictures of look ' -e '^output "[A-Za-z0-9 ._:()+/,-]{1,120}" bg /[a-z/-]*/wallpaper[.][0-9]+ fill$' "$ROOT/$LOGIN_ETC/screens.conf" || :
+    fi
+}
+login_stills_want() {   # -> N<tab>FILE for each picture that differs from its copy, N alone for a copy no screen shows
+    [ -f "$TMP/login/stills" ] || return 0
+    _lwn=0
+    while IFS="$TAB" read -r _ _lwf; do
+        _lwn=$((_lwn + 1)); cmp -s "$_lwf" "$ROOT/$LOGIN_ETC/wallpaper.$_lwn" || printf '%s\t%s\n' "$_lwn" "$_lwf"
+    done < "$TMP/login/stills"
+    for _lwf in "$ROOT/$LOGIN_ETC"/wallpaper.*; do [ ! -e "$_lwf" ] || [ "${_lwf##*.}" -le "$_lwn" ] || printf '%s\n' "${_lwf##*.}"; done
+}
+login_stills_put() {
+    login_stills_want > "$TMP/login/stills.want"
+    while IFS="$TAB" read -r _lpn _lpf; do
+        if [ -n "$_lpf" ]; then root_put "$_lpf" "$ROOT/$LOGIN_ETC/wallpaper.$_lpn"; else root_do rm -f "$ROOT/$LOGIN_ETC/wallpaper.$_lpn"; fi
+    done < "$TMP/login/stills.want"
+}
+login_screens_follow() {   # after a screen setting, and once a look's pictures are made: the login screen's copies now when root asks no password, else said in one line
     login_wanted && [ -f "$ROOT/$LOGIN_ETC/sway.conf" ] || return 0
     row_part=login
-    mkdir -p "$TMP/login"; login_screens > "$TMP/login/screens.conf"
-    ! cmp -s "$TMP/login/screens.conf" "$ROOT/$LOGIN_ETC/screens.conf" || return 0
-    if [ -n "$ROOT" ] || [ "$(id -u)" -eq 0 ] || sudo -n true 2>/dev/null; then root_put "$TMP/login/screens.conf" "$ROOT/$LOGIN_ETC/screens.conf"
+    login_stills_read; login_screens > "$TMP/login/screens.conf"
+    [ -n "$(login_stills_want)" ] || ! cmp -s "$TMP/login/screens.conf" "$ROOT/$LOGIN_ETC/screens.conf" || return 0
+    if [ -n "$ROOT" ] || [ "$(id -u)" -eq 0 ] || sudo -n true 2>/dev/null; then login_stills_put; root_put "$TMP/login/screens.conf" "$ROOT/$LOGIN_ETC/screens.conf"
     else echo "the login screen takes the screens at spark-shell on login (sudo)"; fi
 }
 login_mode() { case $1 in session|window|run|login-boot) echo 0755 ;; sudoers) echo 0440 ;; *) echo 0644 ;; esac; }
@@ -198,6 +238,7 @@ login_pointer_put() {   # the two spark themes copied under /usr/share/icons, wh
         root_do rm -rf "$ROOT/$LOGIN_ICONS/$_t"
         root_do mkdir -p "$ROOT/$LOGIN_ICONS"
         root_do cp -R "$POINTER_DIR/$_t" "$ROOT/$LOGIN_ICONS/$_t"
+        [ ! -L "$ROOT/$LOGIN_ICONS/$_t" ] || { root_do rm -f "$ROOT/$LOGIN_ICONS/$_t"; continue; }   # a link copied as a link: the modes below would be given to what it points at
         root_do chmod -R u=rwX,go=rX "$ROOT/$LOGIN_ICONS/$_t"
     done
 }
@@ -219,6 +260,7 @@ login_files_differ() {   # -> the screen's files that differ from what spark-she
     cmp -s "$TMP/login/config.toml" "$ROOT/$GREETD_CONF" || printf ' config.toml'
     if wall_there; then cmp -s "$(wall_path)" "$ROOT/$LOGIN_ETC/wallpaper" || printf ' wallpaper'
     elif [ -e "$ROOT/$LOGIN_ETC/wallpaper" ]; then printf ' wallpaper'; fi
+    [ -z "$(login_stills_want)" ] || printf ' pictures'
     for _t in $POINTER_THEMES; do   # the pointer's copy, when the themes are drawn: the same version
         [ ! -d "$POINTER_DIR/$_t" ] || [ "$(cat "$ROOT/$LOGIN_ICONS/$_t/version" 2>/dev/null)" = "$(cat "$POINTER_DIR/$_t/version")" ] || printf ' %s' "$_t"
     done
@@ -271,9 +313,10 @@ login_screen_apply() {   # the login rows of `on` with LOGIN=yes
             _m=$(login_mode "$f")
             if [ "$_m" = 0755 ]; then root_swap "$TMP/login/$f" "$ROOT/$LOGIN_ETC/$f" "$_m"; else root_put "$TMP/login/$f" "$ROOT/$LOGIN_ETC/$f" "$_m"; fi
         done
-        root_swap "$DIALOG_BIN" "$ROOT/$LOGIN_LIB/spark-dialog" 0755
+        root_swap "$DIALOG_BIN" "$ROOT/$LOGIN_LIB/spark-dialog" 0755 "$(dialog_want_sha)"
         if wall_there; then root_put "$(wall_path)" "$ROOT/$LOGIN_ETC/wallpaper"
         else root_do rm -f "$ROOT/$LOGIN_ETC/wallpaper"; fi
+        login_stills_put
         login_pointer_put
         login_fonts_put
         if [ -e "$ROOT/$GREETD_CONF" ] && ! greetd_ours && [ ! -e "$ROOT/$GREETD_CONF.spark-shell-orig" ]; then
@@ -281,7 +324,7 @@ login_screen_apply() {   # the login rows of `on` with LOGIN=yes
         fi
         root_put "$TMP/login/config.toml" "$ROOT/$GREETD_CONF"
         if [ "$DISTRO" = void ]; then
-            sudoers_same || root_put "$TMP/login/sudoers" "$ROOT/$LOGIN_SUDOERS" 0440   # written once; a pass for another file leaves it
+            sudoers_same || root_sudoers "$TMP/login/sudoers" "$ROOT/$LOGIN_SUDOERS" || root_stop "$ROOT/$LOGIN_SUDOERS"   # written once; a pass for another file leaves it
             root_swap "$TMP/login/login-boot" "$ROOT/$LOGIN_LIB/login-boot" 0755
         fi
         ok login "the login screen's files are written (/$LOGIN_ETC)"
@@ -349,6 +392,7 @@ login_screen_off() {   # by the records alone: the boot back to getty, the scree
         else root_put "$TMP/rc.local" "$ROOT/etc/rc.local"; fi
     fi
     for f in $LOGIN_FILES wallpaper boot; do root_do rm -f "$ROOT/$LOGIN_ETC/$f"; done
+    for f in "$ROOT/$LOGIN_ETC"/wallpaper.*; do [ ! -e "$f" ] || root_do rm -f "$f"; done
     for _t in $POINTER_THEMES; do root_do rm -rf "$ROOT/$LOGIN_ICONS/$_t"; done
     root_do rm -rf "$ROOT/$LOGIN_FONTS"
     root_do rm -f "$ROOT/$LOGIN_LIB/spark-dialog" "$ROOT/$LOGIN_LIB/login-boot"

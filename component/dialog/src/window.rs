@@ -78,7 +78,7 @@ pub enum Out {
 }
 
 enum Cmd {
-    Frame(Vec<Step>, Rgb),
+    Frame(Vec<Step>, Option<Rgb>),
     Title(String),
     Pointer(&'static str),
     Paste(bool),
@@ -122,7 +122,11 @@ impl Handle {
     }
     /// A frame to show: the grid's steps, and the ground for the pixels past the last whole cell.
     pub fn frame(&self, steps: Vec<Step>, ground: Rgb) {
-        let _ = self.tx.send(Cmd::Frame(steps, ground));
+        let _ = self.tx.send(Cmd::Frame(steps, Some(ground)));
+    }
+    /// A frame with no ground under its steps: what they leave is clear, and what is behind the window shows there.
+    pub fn frame_clear(&self, steps: Vec<Step>) {
+        let _ = self.tx.send(Cmd::Frame(steps, None));
     }
     /// The words on the window's band.
     pub fn title(&self, title: &str) {
@@ -243,7 +247,7 @@ struct State {
     shared: Arc<AtomicI32>,
     configured: bool,
     /// The frame shown: drawn again when the size or the scale changes.
-    frame: Option<(Vec<Step>, Rgb)>,
+    frame: Option<(Vec<Step>, Option<Rgb>)>,
     /// A frame came and is not painted yet; a frame is on the surface; the dialog's loop asked to hear of it.
     stale: bool,
     committed: bool,
@@ -395,14 +399,21 @@ impl State {
             eprintln!("spark-dialog: no shared memory for a frame");
             return;
         };
-        // the ground over the whole window first: the pixels past the last whole cell are the ground's too
-        let whole = [Step::Fill {
-            x: 0.0,
-            y: 0.0,
-            w: self.px.0 as f64,
-            h: self.px.1 as f64,
-            color: *ground,
-        }];
+        // the ground over the whole window first: the pixels past the last whole cell are the ground's too. With none,
+        // a buffer used before is wiped, so nothing of the last frame stays where this one draws nothing
+        let whole: Vec<Step> = ground
+            .map(|color| Step::Fill {
+                x: 0.0,
+                y: 0.0,
+                w: self.px.0 as f64,
+                h: self.px.1 as f64,
+                color,
+            })
+            .into_iter()
+            .collect();
+        if whole.is_empty() {
+            data.fill(0);
+        }
         for part in [&whole[..], &steps[..]] {
             let px = Pixels {
                 data: &mut *data,

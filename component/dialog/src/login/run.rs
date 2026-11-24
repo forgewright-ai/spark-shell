@@ -1,10 +1,13 @@
 //! `spark-dialog login`: the login screen greetd shows on tty1, in a
-//! foot window that fills the screen. The terminal, the event loop and
-//! the machine's facts (its name, its distro, the clock, spark's port);
-//! the state is login/mod.rs, the drawing login/ui.rs, greetd greetd.rs.
+//! window of its own that fills the screen, or in the terminal it runs
+//! in. The face it is drawn on, the event loop and the machine's facts
+//! (its name, its distro, the clock, spark's port); the state is
+//! login/mod.rs, the drawing login/ui.rs, greetd greetd.rs.
 
 use ratatui::backend::CrosstermBackend;
-use ratatui::crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
+use ratatui::crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
+};
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::Terminal;
@@ -18,11 +21,22 @@ use std::time::Duration;
 
 pub const USAGE: &str = "spark-dialog login -- the login screen greetd shows on tty1 (set up by spark-shell on login)
 
-  spark-dialog login [--restart \"PATH WORDS\"] [--shutdown \"PATH WORDS\"]
+  spark-dialog login [--window] [--font \"FACE SIZE\"]
+                     [--restart \"PATH WORDS\"] [--shutdown \"PATH WORDS\"]
                      [--spark-port N] [--desktop on|off]
+
+--window draws it in a window of its own, else the terminal it runs in. It ends
+with 0 after a login, 3 when no window opens, 4 when the window went before one.
 ";
 
+/// What the program ends with when no window opens, and when the window went before a login: whoever started it
+/// shows the login screen in a terminal then.
+const NO_WINDOW: i32 = 3;
+const WINDOW_GONE: i32 = 4;
+
 struct Args {
+    window: bool,
+    font: String,
     restart: Option<Vec<String>>,
     shutdown: Option<Vec<String>>,
     port: Option<u16>,
@@ -31,6 +45,8 @@ struct Args {
 
 fn args() -> Result<Args, String> {
     let mut a = Args {
+        window: false,
+        font: "monospace 12".into(),
         restart: None,
         shutdown: None,
         port: None,
@@ -41,6 +57,13 @@ fn args() -> Result<Args, String> {
         let mut val = |name: &str| it.next().ok_or_else(|| format!("{} takes a value", name));
         match w.as_str() {
             "-h" | "--help" | "help" => return Err(String::new()),
+            "--window" => a.window = true,
+            "--font" => {
+                a.font = val("--font")?;
+                if a.font.trim().is_empty() || a.font.chars().any(char::is_control) {
+                    return Err("the font is a face and a size, as \"Monaspace Neon 12\"".into());
+                }
+            }
             "--restart" => a.restart = Some(login::power_argv(&val("--restart")?)?),
             "--shutdown" => a.shutdown = Some(login::power_argv(&val("--shutdown")?)?),
             "--spark-port" => {
@@ -62,6 +85,10 @@ fn args() -> Result<Args, String> {
 
 enum Ev {
     Term(Event),
+    /// The window's size in pixels.
+    Px(u32, u32),
+    /// The window is gone: the compositor ended, or closed it.
+    Gone,
     Tick,
     Spark(bool),
     Done(Outcome),
@@ -192,6 +219,171 @@ fn key_of(code: KeyCode, m: KeyModifiers) -> Option<Key> {
     })
 }
 
+/// A key that types or acts now: pressed, or held and counted again, but a held Enter logs in once.
+fn pressed(k: &KeyEvent) -> bool {
+    match k.kind {
+        KeyEventKind::Press => true,
+        KeyEventKind::Repeat => k.code != KeyCode::Enter,
+        KeyEventKind::Release => false,
+    }
+}
+
+/// What the login screen is drawn on.
+enum Face {
+    /// A window of its own: clear but for the strip, as tall as its screen.
+    #[cfg(target_os = "linux")]
+    Own(own::Window),
+    Term(Terminal<CrosstermBackend<std::io::Stdout>>),
+}
+
+impl Face {
+    /// The face asked for; else the code to end with and why.
+    fn open(a: &Args, tx: &mpsc::Sender<Ev>) -> Result<Face, (i32, String)> {
+        #[cfg(target_os = "linux")]
+        if a.window {
+            return own::Window::open(&a.font, tx.clone()).map(Face::Own).map_err(|e| (NO_WINDOW, e));
+        }
+        #[cfg(not(target_os = "linux"))]
+        if a.window {
+            return Err((NO_WINDOW, "a window of its own opens only on Linux, under a Wayland compositor".into()));
+        }
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            while let Ok(e) = event::read() {
+                if tx.send(Ev::Term(e)).is_err() {
+                    return;
+                }
+            }
+        });
+        let _ = terminal::enable_raw_mode();
+        let _ = execute!(std::io::stdout(), EnterAlternateScreen, EnableMouseCapture);
+        let mut t = Terminal::new(CrosstermBackend::new(std::io::stdout())).map_err(|e| {
+            let _ = terminal::disable_raw_mode();
+            (1, e.to_string())
+        })?;
+        let _ = t.hide_cursor();
+        Ok(Face::Term(t))
+    }
+
+    fn draw(&mut self, l: &Login, pal: &Palette, clock: &str) {
+        match self {
+            #[cfg(target_os = "linux")]
+            Face::Own(w) => w.draw(l, pal, clock),
+            Face::Term(t) => {
+                let _ = t.draw(|f| {
+                    // the login screen draws the dialog's own grid; the terminal is handed its cells
+                    let area = f.area();
+                    let mut b = spark_dialog::grid::Buffer::empty(spark_dialog::grid::Rect::new(0, 0, area.width, area.height));
+                    login_ui::draw(l, pal, clock, &mut b);
+                    spark_dialog::terminal::blit(&b, f.buffer_mut());
+                });
+            }
+        }
+    }
+
+    /// The window's size in pixels, as the compositor says it.
+    fn sized(&mut self, w: u32, h: u32) {
+        match self {
+            #[cfg(target_os = "linux")]
+            Face::Own(own) => own.sized(w, h),
+            Face::Term(_) => {
+                let _ = (w, h);
+            }
+        }
+    }
+
+    /// A terminal's cells changed: what it showed is wiped.
+    fn resized(&mut self) {
+        if let Face::Term(t) = self {
+            let _ = t.clear();
+        }
+    }
+
+    /// A second went by: a window the compositor gave no other size is drawn at the one it has. True when that is news.
+    fn settle(&mut self) -> bool {
+        match self {
+            #[cfg(target_os = "linux")]
+            Face::Own(w) => w.settle(),
+            Face::Term(_) => false,
+        }
+    }
+
+    /// The face's size in cells, for a click.
+    fn cells(&self) -> (u16, u16) {
+        match self {
+            #[cfg(target_os = "linux")]
+            Face::Own(w) => w.cells(),
+            Face::Term(t) => t.size().map(|s| (s.width, s.height)).unwrap_or_default(),
+        }
+    }
+
+    fn close(&mut self) {
+        if let Face::Term(t) = self {
+            let _ = execute!(t.backend_mut(), DisableMouseCapture, LeaveAlternateScreen);
+            let _ = terminal::disable_raw_mode();
+            let _ = t.show_cursor();
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod own {
+    use super::{login_ui, Ev, Login, Palette};
+    use spark_dialog::window::{self, Handle, Out, Setup};
+    use std::sync::mpsc;
+
+    /// The login screen's own window. It maps clear, at the size it asked for, and the compositor then gives it its
+    /// screen's: the strip is drawn for that size alone, so nothing of it ever moves.
+    pub struct Window {
+        handle: Handle,
+        px: (u32, u32),
+        settled: bool,
+    }
+
+    impl Window {
+        pub fn open(font: &str, tx: mpsc::Sender<Ev>) -> Result<Window, String> {
+            let setup = Setup {
+                font: font.to_string(),
+                app_id: "spark-login".into(),
+                title: "login".into(),
+                cols: login_ui::STRIP,
+                rows: 30,
+            };
+            let handle = window::open(setup, move |o| {
+                let _ = tx.send(match o {
+                    Out::Event(e) => Ev::Term(e),
+                    Out::Pixels(w, h) => Ev::Px(w, h),
+                    Out::Gone => Ev::Gone,
+                    Out::At(..) | Out::Drawn => return,
+                });
+            })?;
+            handle.frame_clear(vec![]);
+            let px = handle.px;
+            Ok(Window { handle, px, settled: false })
+        }
+
+        pub fn sized(&mut self, w: u32, h: u32) {
+            self.settled |= (w, h) != self.handle.px;
+            self.px = (w, h);
+        }
+
+        pub fn settle(&mut self) -> bool {
+            !std::mem::replace(&mut self.settled, true)
+        }
+
+        pub fn cells(&self) -> (u16, u16) {
+            let cell = self.handle.cell;
+            (((self.px.0 as f64 / cell.w) as u16).max(1), login_ui::rows_in(self.px.1 as f64, cell))
+        }
+
+        pub fn draw(&self, l: &Login, pal: &Palette, clock: &str) {
+            if self.settled {
+                self.handle.frame_clear(login_ui::steps(l, pal, clock, self.handle.cell, self.px.1 as f64));
+            }
+        }
+    }
+}
+
 pub fn main() {
     let a = match args() {
         Ok(a) => a,
@@ -233,31 +425,13 @@ pub fn main() {
             }
         });
     }
-    {
-        let tx = tx.clone();
-        std::thread::spawn(move || loop {
-            match event::read() {
-                Ok(e) => {
-                    if tx.send(Ev::Term(e)).is_err() {
-                        return;
-                    }
-                }
-                Err(_) => return,
-            }
-        });
-    }
-
-    let _ = terminal::enable_raw_mode();
-    let _ = execute!(std::io::stdout(), EnterAlternateScreen, EnableMouseCapture);
-    let mut term = match Terminal::new(CrosstermBackend::new(std::io::stdout())) {
-        Ok(t) => t,
-        Err(e) => {
-            let _ = terminal::disable_raw_mode();
-            println!("spark-dialog login -- {}", e);
-            std::process::exit(1);
+    let mut face = match Face::open(&a, &tx) {
+        Ok(f) => f,
+        Err((code, why)) => {
+            eprintln!("spark-dialog login -- {}", why);
+            std::process::exit(code);
         }
     };
-    let _ = term.hide_cursor();
     let mut code = None;
     let mut dirty = true;
     let mut last_clock = String::new();
@@ -268,18 +442,17 @@ pub fn main() {
             dirty = true;
         }
         if dirty {
-            let _ = term.draw(|f| {
-                // the login screen draws the dialog's own grid; the terminal is handed its cells
-                let area = f.area();
-                let mut b = spark_dialog::grid::Buffer::empty(spark_dialog::grid::Rect::new(0, 0, area.width, area.height));
-                login_ui::draw(&l, &pal, &last_clock, &mut b);
-                spark_dialog::terminal::blit(&b, f.buffer_mut());
-            });
+            face.draw(&l, &pal, &last_clock);
             dirty = false;
         }
         let Ok(ev) = rx.recv() else { break };
         match ev {
-            Ev::Tick => {}
+            Ev::Tick => dirty |= face.settle(),
+            Ev::Px(w, h) => {
+                face.sized(w, h);
+                dirty = true;
+            }
+            Ev::Gone => code = Some(WINDOW_GONE),
             Ev::Spark(r) => {
                 dirty |= l.spark != Some(r);
                 l.spark = Some(r);
@@ -295,20 +468,18 @@ pub fn main() {
                 dirty = true;
             }
             Ev::Term(Event::Resize(_, _)) => {
-                let _ = term.clear();
+                face.resized();
                 dirty = true;
             }
             Ev::Term(e @ (Event::Key(_) | Event::Mouse(_))) => {
                 let act = match e {
-                    Event::Key(k) if k.kind == KeyEventKind::Press => {
+                    Event::Key(k) if pressed(&k) => {
                         let Some(key) = key_of(k.code, k.modifiers) else { continue };
                         l.key(key)
                     }
                     Event::Mouse(m) if m.kind == MouseEventKind::Down(MouseButton::Left) => {
-                        let size = term.size().unwrap_or_default();
-                        let Some(s) = login_ui::spot(&l, size.width, size.height, m.column, m.row) else {
-                            continue;
-                        };
+                        let (w, h) = face.cells();
+                        let Some(s) = login_ui::spot(&l, w, h, m.column, m.row) else { continue };
                         l.click(s)
                     }
                     _ => continue,
@@ -376,8 +547,6 @@ pub fn main() {
             _ => {}
         }
     }
-    let _ = execute!(term.backend_mut(), DisableMouseCapture, LeaveAlternateScreen);
-    let _ = terminal::disable_raw_mode();
-    let _ = term.show_cursor();
+    face.close();
     std::process::exit(code.unwrap_or(0));
 }

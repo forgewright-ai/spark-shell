@@ -182,8 +182,10 @@ me=$(id -un)
 kids_of() {   # kids_of PID -> its children's pids, as the kernel lists them: pgrep is a stub in some sections and missing in some of CI's images
     cat "/proc/$1/task/$1/children" 2>/dev/null || awk -v p="$1" '$4 == p { print $1 }' /proc/[0-9]*/stat 2>/dev/null || :
 }
-nowrite() {   # nowrite DIR [PATH] -- a cp in DIR (a folder first on PATH) that refuses PATH from now on, as a file system that takes no write there does; with no PATH it takes every one again. For root as for anyone: CI's suites run as root, which no mode stops
-    [ -x "$1/cp" ] || { printf '#!/bin/sh\nfor a; do last=$a; done\nif [ -s "%s/nowrite" ] && [ "$last" = "$(cat "%s/nowrite")" ]; then echo "cp: cannot create regular file \047$last\047: Read-only file system" >&2; exit 1; fi\nexec %s "$@"\n' "$H" "$H" "$(command -v cp)" > "$1/cp"; chmod +x "$1/cp"; }
+nowrite() {   # nowrite DIR [PATH] -- a cp and a tee in DIR (a folder first on PATH) that refuse PATH, or the new file made beside it, from now on, as a file system that takes no write there does; with no PATH they take every one again. For root as for anyone: CI's suites run as root, which no mode stops
+    for _nwt in cp tee; do
+        [ -x "$1/$_nwt" ] || { printf '#!/bin/sh\nfor a; do last=$a; done\nif [ -s "%s/nowrite" ] && [ "${last%%.spark-shell-new}" = "$(cat "%s/nowrite")" ]; then echo "%s: cannot create regular file \047$last\047: Read-only file system" >&2; exit 1; fi\nexec %s "$@"\n' "$H" "$H" "$_nwt" "$(command -v "$_nwt")" > "$1/$_nwt"; chmod +x "$1/$_nwt"; }
+    done
     if [ $# = 2 ]; then printf '%s\n' "$2" > "$H/nowrite"; else rm -f "$H/nowrite"; fi
 }
 lives() {   # lives PID -- it runs still. One that ended and that nobody reaped does not: in CI's containers the first process reaps no orphan, and kill -0 says yes to what is left of it
@@ -959,10 +961,11 @@ else
     printf '#!/bin/sh\n[ "$1" = --version ] && echo "foot version: 1.21.0 (Debian)"\n' > "$HOME/.local/bin/foot"
     sh "$SH" on --yes >/dev/null
     grep -q '^\[colors\]$' "$foot" && ! grep -q '^\[colors-dark\]$' "$foot" && ok "foot.ini: foot 1.21 gets [colors] alone" || bad "foot 1.21 section" "$(grep -n '^\[' "$foot")"
+    grep -qx '\[security\]' "$foot" && grep -qx 'osc52=copy-enabled' "$foot" && ok "foot.ini: a program in a terminal may copy and never read the clipboard (foot 1.20 and later)" || bad "foot osc52" "$(grep -n 'security\|osc52\|FOOT' "$foot")"
     grep -qx 'resize-by-cells=no' "$foot" && ok "foot.ini: a floating terminal fills its window, not cut to whole cells with the wallpaper showing in the rest (foot 1.17 and later, v0.148.1)" || bad "foot fill" "$(grep -n 'resize\|FOOT' "$foot")"
     printf '#!/bin/sh\n[ "$1" = --version ] && echo "foot version: 1.16.2 (Ubuntu)"\n' > "$HOME/.local/bin/foot"
     sh "$SH" on --yes >/dev/null
-    ! grep -q 'resize-by-cells\|@FOOT' "$foot" && ok "foot.ini: foot 1.16 does not know the key and is not handed it" || bad "foot 1.16 fill" "$(grep -n 'resize\|FOOT' "$foot")"
+    ! grep -q 'resize-by-cells\|osc52\|^\[security\|@FOOT' "$foot" && ok "foot.ini: foot 1.16 does not know the keys and is not handed them" || bad "foot 1.16 fill" "$(grep -n 'resize\|FOOT' "$foot")"
     printf '#!/bin/sh\n[ "$1" = --version ] && echo "foot version: 1.28.0 (Arch)"\n' > "$HOME/.local/bin/foot"
     sh "$SH" on --yes >/dev/null
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: foot 1.28 gets [colors-dark] alone" || bad "foot 1.28 section" "$(grep -n '^\[' "$foot")"
@@ -972,9 +975,9 @@ else
         && ok "sway: with no winpad on the machine the titles are plain: no button is drawn that does not click (v0.143)" || bad "band plain" "$(grep -n title_format "$sway")"
     printf '#!/bin/sh\n' > "$HOME/winpad-here"; chmod +x "$HOME/winpad-here"
     SPARK_SHELL_WINPAD=$HOME/winpad-here sh "$SH" on --yes >/dev/null
-    _bg=' &#x2715;  &#x25BD;  &#x25A1; '
+    _bg=' &#x2715;  &#x25B3;  &#x25A1; '
     grep -qxF "for_window [shell=\".*\"] title_format \"$_bg  %title\"" "$sway" && grep -qxF "for_window [app_id=\"^(foot|spark-shell-.*)\$\"] title_format \"$_bg  terminal   %title\"" "$sway" \
-        && grep -qF 'pub const GLYPH_REFS: [&str; 3] = ["&#x2715;", "&#x25BD;", "&#x25A1;"];' "$REPO/component/winpad/src/buttons.rs" \
+        && grep -qF 'pub const GLYPH_REFS: [&str; 3] = ["&#x2715;", "&#x25B3;", "&#x25A1;"];' "$REPO/component/winpad/src/buttons.rs" \
         && ok "sway: with a winpad, the close, minimize and fill buttons are the start of every title, sway's own pixels, so they move with the window (v0.142), written as character references so the render stays ASCII; the component's are the same three" || bad "band glyphs" "$(grep -n title_format "$sway")"
     printf 'VOICE_ENGINE=/bin/true\n' >> "$HOME/.config/spark-shell/config"
     printf '#!/bin/sh\nexit 0\n' > "$HOME/.local/bin/wtype"; chmod +x "$HOME/.local/bin/wtype"   # a desktop has it; without it no mic is drawn
@@ -2556,7 +2559,7 @@ printf '#!/bin/sh\n# yours\necho hello\n' > "$H/root/etc/rc.local"; cp "$H/root/
 palette_fixture test '#fe8019'
 L theme test >/dev/null
 [ "$(grep -c ' #spark-shell-palette#$' "$H/root/etc/rc.local")" = 1 ] && head -3 "$H/root/etc/rc.local" | cmp -s - "$H/rc.local.orig" \
-    && grep -q "^\[ -r '$HOME/.config/spark-shell/console-colors.rgb' \] && setvtrgb '$HOME/.config/spark-shell/console-colors.rgb' #spark-shell-palette#\$" "$H/root/etc/rc.local" \
+    && grep -q "^\[ -f '$HOME/.config/spark-shell/console-colors.rgb' \] && setvtrgb '$HOME/.config/spark-shell/console-colors.rgb' #spark-shell-palette#\$" "$H/root/etc/rc.local" \
     && [ ! -e "$H/root/etc/systemd" ] && ok "theme test (runit): one marked line at the end of /etc/rc.local, no unit" || bad "rc.local line" "$(cat "$H/root/etc/rc.local")"
 ck=$(L check || true)
 printf '%s\n' "$ck" | grep -q '^ok     theme        test:' && ok "check (runit): the theme row is ok" || bad "check runit" "$(printf '%s\n' "$ck" | grep theme)"
@@ -3658,8 +3661,6 @@ rm -f "$HOME/xrandr.log"; (unset DISPLAY; SWAYSOCK=$H/sock PATH="$H/xr:$H/lx:$PA
 [ "$_x1" = 1 ] && [ "$_x2" = 0 ] && [ ! -e "$HOME/xrandr.log" ] && grep -qxF 'for_window [shell="xwayland"] exec @REPO@/spark-shell desktop screen --x11-main' "$REPO/template/.config/sway/config" \
     && ok "desktop screen: the main screen is X11's primary once an X11 window starts, by its port, once; nothing with no X11 (#173)" || bad "screen x11 main" "x1=$_x1 x2=$_x2 $(cat "$HOME/xrandr.log" 2>&1)"
 rm -f "$HOME/xrandr.log" "$HOME/xrandr.monitors"
-grep -qF 'sed -n '"'"'s/^workspace 1 output "\(.*\)"$/\1/p'"'"' /@LOGIN_ETC@/screens.conf' "$REPO/template/login/window" \
-    && ok "login window: its form goes to the main screen screens.conf names, else the one at 0 0 (#135)" || bad "login window main" "$(head -12 "$REPO/template/login/window")"
 grep -v '^LOGIN=' "$HOME/.config/spark-shell/config" > "$H/cfg.tmp" && cat "$H/cfg.tmp" > "$HOME/.config/spark-shell/config"; rm -rf "$H/root/etc/spark-shell/login"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 off 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'eDP-1 off' ] && grep -qxF -- '-- output "BOE 0x0BCA Unknown" disable' "$HOME/swaymsg.log" && grep -q 'disable' "$HOME/.config/spark-shell/screens.conf" \
@@ -7827,7 +7828,7 @@ else
         && ok "Void: greetd's config.toml is ours (the session as _greeter), the package's kept" || bad "void greetd conf" "$(cat "$H/root/etc/greetd/config.toml")"
     grep -q -- '--desktop off --restart "/usr/bin/sudo -n /usr/bin/reboot" --shutdown "/usr/bin/sudo -n /usr/bin/poweroff"\( --spark-port [0-9]*\)\{0,1\}$' "$le/run" && grep -q '^export PANEL_BG=[0-9a-f]\{6\} ' "$le/run" \
         && ok "Void: the run file: no desktop yet, the power keys through sudo, the palette" || bad "void run" "$(cat "$le/run")"
-    [ "$(cat "$H/root/etc/sudoers.d/spark-shell-login")" = "$(sed -n '$p' "$REPO/template/login/sudoers" | sed 's/@LOGIN_ACCOUNT@/_greeter/')" ] || [ "$(sed -n '$p' "$H/root/etc/sudoers.d/spark-shell-login")" = '_greeter ALL=(root) NOPASSWD: /usr/bin/reboot, /usr/bin/poweroff' ] \
+    [ "$(cat "$H/root/etc/sudoers.d/spark-shell-login")" = "$(sed -n '$p' "$REPO/template/login/sudoers" | sed 's/@LOGIN_ACCOUNT@/_greeter/')" ] || [ "$(sed -n '$p' "$H/root/etc/sudoers.d/spark-shell-login")" = '_greeter ALL=(root) NOPASSWD: /usr/bin/reboot "", /usr/bin/poweroff ""' ] \
         && grep -q '^visudo -cf ' "$H/log" && ok "Void: sudoers lets _greeter run reboot and poweroff only, checked by visudo first" || bad "void sudoers" "$(cat "$H/root/etc/sudoers.d/spark-shell-login" "$H/log")"
     grep -q '^_seatd:x:990:_greeter$' "$H/root/etc/group" && [ -e "$le/seatd.group" ] && ok "Void: _greeter joins _seatd, recorded" || bad "void seatd" "$(cat "$H/root/etc/group")"
     [ "$(cat "$le/boot")" = on ] && grep -q '/usr/local/lib/spark-shell/login-boot #spark-shell-login#$' "$H/root/etc/rc.local" \
@@ -7944,9 +7945,27 @@ esac
 EOF
 chmod +x "$lw_d/bin/foot" "$lw_d/bin/swaymsg"
 sed "s|@LOGIN_ETC@|$lw_etc|g" "$REPO/template/login/window" > "$lw_d/window"
+mkdir -p "/$lw_etc"
+cat > "/$lw_etc/run" <<EOF
+#!/bin/sh
+echo "run \$*" >> "$lw_d/log"
+[ ! -e "$lw_d/no-window" ] || exit 3
+EOF
+chmod +x "/$lw_etc/run"
 PATH="$lw_d/bin:$PATH" sh "$lw_d/window" >/dev/null 2>&1
-[ "$(cat "$lw_d/log")" = "$(printf 'swaymsg focus output HDMI-A-1\nfoot -c /%s/foot.ini -a spark-login /%s/run\nswaymsg exit' "$lw_etc" "$lw_etc")" ] \
-    && ok "template/login/window: the screen at 0 0 is focused first, so the login opens on the main screen; then sway ends with the window (#116)" || bad "login window main screen" "$(cat "$lw_d/log" 2>&1)"
+[ "$(cat "$lw_d/log")" = "$(printf 'swaymsg focus output "HDMI-A-1"\nrun --window\nswaymsg exit')" ] \
+    && ok "template/login/window: the screen at 0 0 is focused first, so the login opens on the main screen; its own window, then sway ends with it (#116)" || bad "login window main screen" "$(cat "$lw_d/log" 2>&1)"
+: > "$lw_d/log"; : > "$lw_d/no-window"
+PATH="$lw_d/bin:$PATH" sh "$lw_d/window" >/dev/null 2>&1
+[ "$(cat "$lw_d/log")" = "$(printf 'swaymsg focus output "HDMI-A-1"\nrun --window\nfoot -c /%s/foot.ini -a spark-login /%s/run\nswaymsg exit' "$lw_etc" "$lw_etc")" ] \
+    && ok "template/login/window: where no window opens, or it goes before a login, a terminal holds the form" || bad "login window fallback" "$(cat "$lw_d/log" 2>&1)"
+: > "$lw_d/log"; rm -f "$lw_d/no-window"
+printf '%s\n' 'workspace 1 output "Lenovo Group Limited T24i-30 V30A1"' 'workspace 1 output "x; exec id"' > "/$lw_etc/screens.conf"
+PATH="$lw_d/bin:$PATH" sh "$lw_d/window" >/dev/null 2>&1; _lw1=$(sed -n 1p "$lw_d/log")
+: > "$lw_d/log"; printf '%s\n' 'workspace 1 output "x; exec id"' 'workspace 1 output "x$(id)"' > "/$lw_etc/screens.conf"
+PATH="$lw_d/bin:$PATH" sh "$lw_d/window" >/dev/null 2>&1; _lw2=$(sed -n 1p "$lw_d/log")
+[ "$_lw1" = 'swaymsg focus output "Lenovo Group Limited T24i-30 V30A1"' ] && [ "$_lw2" = 'swaymsg focus output "HDMI-A-1"' ] \
+    && ok "template/login/window: the main screen by its name; a name no line may hold is not read" || bad "login window names" "$_lw1 | $_lw2"
 rm -rf "$lw_d"
 bp=$REPO/template/linux/.bash_profile
 grep -q 'SPARK_SHELL_SESSION:-}" != shell' "$bp" && ok ".bash_profile: the login screen's shell session never starts the desktop" || bad ".bash_profile shell session"
@@ -8624,6 +8643,22 @@ WAYLAND_DISPLAY=wayland-9 SWAYSOCK=$H/sock PATH="$H/lk2:$H/scr:$PATH" sh "$SH" d
 grep -qx -- "DP-3:$th_dir/study-night/test-tall.png" "$HOME/swaylock.args" && grep -qx -- "HDMI-A-1:$th_dir/study-night/test-wide-2.png" "$HOME/swaylock.args" \
     && grep -qx -- '--scaling' "$HOME/swaylock.args" && ! grep -q '\.mp4' "$HOME/swaylock.args" \
     && ok "desktop lock: each screen shows its own still, as the desktop does; one picture scaled to fill, never a loop" || bad "lock screens" "$(cat "$HOME/swaylock.args" 2>&1 | grep -n 'image\|:' | head)"
+# the login screen: each screen the picture it has on the desktop, copied for its account and named by the screen; they go with
+# the screen, and a line of screens.conf that is none of spark-shell's reaches no config of the login account
+lgn=$H/root/etc/spark-shell/login; sc_f=$HOME/.config/spark-shell/screens.conf; cp "$sc_f" "$H/sc-before" 2>/dev/null || rm -f "$H/sc-before"
+mkdir -p "$lgn"; echo '# a login screen' > "$lgn/sway.conf"; printf 'LOGIN=yes\n' >> "$cfg"
+XDG_RUNTIME_DIR=$H/run scr desktop screen hdmi-a-1 main >/dev/null 2>&1 || :
+l1=$(grep -v '^#' "$lgn/screens.conf" 2>&1); cmp -s "$lgn/wallpaper.1" "$th_dir/study-night/test-tall.png" && cmp -s "$lgn/wallpaper.2" "$th_dir/study-night/test-wide-2.png" && l2=copied || l2=$(ls "$lgn")
+{ cat "$sc_f"; printf '%s\n' 'output "x" bg $(id) fill' 'output "Test Wide 1" scale 1; exec id' 'workspace 1 output "x; exec id"' 'exec id' 'output "Test Wide 1" position 0 0'; } > "$H/sc-bad"; cat "$H/sc-bad" > "$sc_f"
+XDG_RUNTIME_DIR=$H/run scr desktop screen hdmi-a-1 main >/dev/null 2>&1 || :
+l3=$(grep -v '^#' "$lgn/screens.conf" 2>&1 | grep -c '[$;]\|exec' || :); l4=$(grep -cxF 'output "Test Wide 1" position 0 0' "$lgn/screens.conf" || :)
+echo 1 > "$HOME/screens"; XDG_RUNTIME_DIR=$H/run scr desktop screen hdmi-a-1 main >/dev/null 2>&1 || :
+l5=0; for l6 in "$lgn"/wallpaper.*; do [ ! -e "$l6" ] || l5=$((l5 + 1)); done; l6=$(grep -c ' bg ' "$lgn/screens.conf" || :)
+[ "$l1" = "$(printf 'workspace 1 output "Test Wide 1"\noutput "Test Tall 2" bg /etc/spark-shell/login/wallpaper.1 fill\noutput "Test Wide 1" bg /etc/spark-shell/login/wallpaper.2 fill')" ] && [ "$l2" = copied ] \
+    && [ "$l3" = 0 ] && [ "$l4" = 1 ] && [ "$l5" = 0 ] && [ "$l6" = 0 ] \
+    && ok "login: each screen wears the picture it has on the desktop; a screen gone takes its picture along; screens.conf's own lines alone reach the login account" \
+    || bad "login pictures" "$l1 | $l2 | $l3 $l4 $l5 $l6 $(cat "$lgn/screens.conf" 2>&1)"
+rm -rf "$lgn"; if [ -f "$H/sc-before" ]; then cp "$H/sc-before" "$sc_f"; else rm -f "$sc_f"; fi
 cp "$H/cfg-before-screens" "$cfg"; if [ -f "$H/hist-before-screens" ]; then cp "$H/hist-before-screens" "$st_dir/theme.history"; else rm -f "$st_dir/theme.history"; fi; rm -rf "$fam" "$th_dir/study-night" "$th_dir/study-day" "$HOME/screens" "$HOME/scr.log"
 # the art at rest (#36): the idle windows clear over each screen's own still, the clock on a plate of the background; the loops
 # stopped and the notifications out of sight while it shows, each back after, and nothing touched that it did not change

@@ -3,6 +3,7 @@
 # sets: SCREENS_CONF SCREEN_MAIN_MARK
 # reads: CONFIG_DIR TAB TMP
 SCREENS_CONF=$CONFIG_DIR/screens.conf
+screen_id_ok() { case $1 in ''|*[!A-Za-z0-9\ ._:\(\)+/,-]*) return 1 ;; esac; [ "${#1}" -le 120 ]; }   # what a line of a config may name a screen by
 screen_scale_valid() { [ "${#1}" -le 16 ] && printf '%s\n' "$1" | awk '/^[0-9]+([.][0-9]+)?$/ && $0 + 0 > 0 {ok=1} END {exit !ok}'; }
 screen_action() (   # screen_action ACTION ARGS [check]
     action=$1; value=$2; check=${3:-}

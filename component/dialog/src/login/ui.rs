@@ -3,6 +3,7 @@
 //! terminal's own ground, which foot draws with transparency over the
 //! wallpaper. One text column, every color a slot of the palette.
 
+use crate::draw::{rows_steps, tones, Cell, Step};
 use crate::grid::{Buffer, Color, Modifier, Rect, Style};
 use crate::login::{Field, Key, Login, Note, Power, Session, Spot, View};
 use crate::palette::Palette;
@@ -237,6 +238,29 @@ pub fn draw(l: &Login, pal: &Palette, clock: &str, buf: &mut Buffer) {
         p.put(x, spark_row, &format!("  {}", words), p.fg(pal.muted));
     }
     p.keys(power_row, &power(l), POWER_GAP);
+}
+
+/// The strip as drawing steps, for a window of the login screen's own `h` pixels tall: the strip's ground down to the
+/// window's last pixel, past the last whole row, then the grid's boxes and symbols. Right of the strip nothing is drawn.
+pub fn steps(l: &Login, pal: &Palette, clock: &str, cell: Cell, h: f64) -> Vec<Step> {
+    let rows = rows_in(h, cell);
+    let mut buf = Buffer::empty(Rect::new(0, 0, STRIP, rows));
+    draw(l, pal, clock, &mut buf);
+    let t = tones(pal);
+    let mut out = vec![Step::Fill {
+        x: 0.0,
+        y: 0.0,
+        w: STRIP as f64 * cell.w,
+        h,
+        color: t.ground,
+    }];
+    out.extend(rows_steps(&buf, cell, &t, 0, rows));
+    out
+}
+
+/// How many whole rows of text a window `h` pixels tall holds.
+pub fn rows_in(h: f64, cell: Cell) -> u16 {
+    ((h / cell.h) as u16).max(1)
 }
 
 /// The screen as text and its color slots, one code pair a cell, for the

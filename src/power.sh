@@ -78,7 +78,7 @@ power_apply() {   # on desktop's power row: the sudo rule
     if [ "$(cat "$STATE_DIR/power.sudoers" 2>/dev/null)" = "$_ps" ]; then ok power "you suspend, restart and shut down from the dialog (/$POWER_SUDOERS)"; return 0; fi
     need power "let $(id -un) suspend, restart and shut down with no password, nothing else: /$POWER_SUDOERS (sudo)" && seat_root on "the power" || return 0
     root_do visudo -cf "$TMP/power.sudoers" >/dev/null 2>&1 || { row todo power "visudo refused the sudoers file -- nothing written"; acting=0; return 0; }
-    if root_try "$TMP/power.sudoers" "$ROOT/$POWER_SUDOERS" 0440; then
+    if root_sudoers "$TMP/power.sudoers" "$ROOT/$POWER_SUDOERS"; then
         mkdir_private "$STATE_DIR"; printf '%s\n' "$_ps" > "$STATE_DIR/power.sudoers"
         ok power "you suspend, restart and shut down from the dialog (/$POWER_SUDOERS)"
     else row todo power "the sudoers file could not be written${root_why:+: $root_why} -- spark-shell on desktop again"; acting=0; fi

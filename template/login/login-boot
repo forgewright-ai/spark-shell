@@ -9,6 +9,8 @@ sv=/etc/runit/runsvdir/default
 if [ "$(cat "$d/boot" 2>/dev/null)" = on ] && [ -d /etc/sv/greetd ]; then
     if [ -L "$sv/agetty-tty1" ]; then rm -f "$sv/agetty-tty1" && : > "$d/getty.off"; fi
     if [ ! -e "$sv/greetd" ]; then ln -s /etc/sv/greetd "$sv/greetd" && : > "$d/greetd.on"; fi
+    # the login screen's runtime dir, in a folder no other account writes: one it would make under /tmp, anyone could make first
+    mkdir -p -m 0755 /run/spark-shell && mkdir -p -m 0700 /run/spark-shell/login && chown @LOGIN_ACCOUNT@ /run/spark-shell/login
 else
     if [ -e "$d/greetd.on" ]; then rm -f "$sv/greetd" "$d/greetd.on"; fi
     if [ -e "$d/getty.off" ]; then
