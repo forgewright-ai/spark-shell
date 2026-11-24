@@ -197,8 +197,7 @@ login_stills() {   # -> OUTPUT<tab>FILE for each such screen, by the running des
     wall_there || return 0
     art_screen_stills | while IFS="$TAB" read -r _lsn _lsf; do
         _lsi=$(screen_rows | awk -F '\t' -v n="$_lsn" '$1 == n { print $2; exit }')
-        [ "$(screen_rows | awk -F '\t' -v i="$_lsi" '$2 == i' | grep -c .)" -eq 1 ] && screen_id_ok "$_lsi" || _lsi=$_lsn   # a shared name, or one no line may hold: the port's
-        ! screen_id_ok "$_lsi" || printf '%s\t%s\n' "$_lsi" "$_lsf"
+        ! _lsi=$(screen_ref "$_lsi" "$_lsn") || printf '%s\t%s\n' "$_lsi" "$_lsf"
     done
 }
 login_look() { printf '%s %s' "${THEME:-}" "${WALLPAPER:-}" | cksum | cut -d' ' -f1; }   # -> the look the pictures are of, as a number
