@@ -198,9 +198,15 @@ unsafe extern "C" fn get_proc_address(egl: *mut c_void, name: *const c_char) -> 
 }
 
 /// The options of every core: the loop drawn through the render API, by
-/// the GPU when it safely can, filling the screen, with no sound.
+/// the GPU when it safely can, filling the screen, with no sound. A theme's
+/// loop may be a stranger's file, so nothing but that file is opened.
 fn options(scaling: Scaling) -> Vec<(&'static str, &'static str)> {
     let mut options = vec![
+        // mpv's own readers take a playlist or an edit list under any name
+        ("demuxer", "+lavf"),
+        ("demuxer-lavf-o", "protocol_whitelist=file"),
+        ("stream-lavf-o", "protocol_whitelist=file"),
+        ("autoload-files", "no"),
         ("vo", "libmpv"),
         ("hwdec", "auto-safe"),
         ("loop-file", "inf"),
@@ -500,4 +506,24 @@ impl Renderer<WlSurface> for MpvRenderer {
 
 fn cstring(s: &str) -> Result<CString, String> {
     CString::new(s).map_err(|_| format!("{s:?} has a NUL byte"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_core_opens_its_file_alone() {
+        for scaling in [Scaling::Smooth, Scaling::Nearest] {
+            let options = options(scaling);
+            for wanted in [
+                ("demuxer", "+lavf"),
+                ("demuxer-lavf-o", "protocol_whitelist=file"),
+                ("stream-lavf-o", "protocol_whitelist=file"),
+                ("autoload-files", "no"),
+            ] {
+                assert!(options.contains(&wanted), "{wanted:?} is not in {options:?}");
+            }
+        }
+    }
 }
