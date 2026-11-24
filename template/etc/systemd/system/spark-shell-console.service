@@ -6,9 +6,11 @@
 Description=spark-shell: the console palette (setvtrgb)
 After=console-setup.service systemd-vconsole-setup.service
 ConditionPathExists=@CONSOLE_RGB@
+ConditionFileNotEmpty=@CONSOLE_RGB@
 
 [Service]
 Type=oneshot
+TimeoutStartSec=10
 ExecStart=/usr/bin/setvtrgb @CONSOLE_RGB@
 
 [Install]

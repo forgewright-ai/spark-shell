@@ -225,7 +225,7 @@ CONSOLE_NOW=''
 console_now() { [ -z "$CONSOLE_NOW" ] || console_send "$CONSOLE_NOW"; }
 root_path_ok() { case $1 in *[!A-Za-z0-9/._-]*) return 1 ;; *) return 0 ;; esac; }
 unit_render() { sed -e "s|@CONSOLE_RGB@|$(esc "$CONSOLE_RGB")|g" "$REPO/template/$CONSOLE_UNIT" > "$TMP/unit"; }
-palette_line() { printf "[ -r '%s' ] && setvtrgb '%s'" "$CONSOLE_RGB" "$CONSOLE_RGB"; }   # the rc.local line (runit)
+palette_line() { printf "[ -f '%s' ] && setvtrgb '%s'" "$CONSOLE_RGB" "$CONSOLE_RGB"; }   # the rc.local line (runit): a plain file alone, so a pipe left there never holds the boot
 VT_SYSFS=$ROOT/sys/module/vt/parameters/default_red
 vt_here() { [ -r "$VT_SYSFS" ]; }                              # not a container
 vt_live() { head -1 "$VT_SYSFS" 2>/dev/null || true; }         # the kernel's reds now

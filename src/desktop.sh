@@ -547,7 +547,7 @@ layout_start() {   # layout_start PENDING -- sway on this console, PENDING a lay
     mkdir_private "$log_dir"
     [ -z "${pending:-}" ] || printf '%s\n' "$pending" > "$LAYOUT_PENDING"
     rm -f "$BAR_WS_ORDER" "$STATE_DIR/ws-pool" "$NOTIFY_SEEN"   # a new login; mako's ids start again
-    st=0
+    st=0; _started=$(date +%s)
     sound_start "$log_dir/sound.log"
     # no session bus from logind (Void): dbus-run-session, so notifications reach mako
     _bus=''; notify_bus || ! command -v dbus-run-session >/dev/null 2>&1 || _bus=dbus-run-session
@@ -557,6 +557,9 @@ layout_start() {   # layout_start PENDING -- sway on this console, PENDING a lay
     semantic_stop
     machine_rm now
     [ "${TERM:-}" != linux ] || printf '\033[?25h'
+    # a desktop that ran and then crashed ends the login as leaving it does: its screen may have been locked, and the
+    # shell under it is open to whoever sits there. One that never came up keeps its shell, for the reason to be read
+    [ "$st" = 0 ] || [ $(( $(date +%s) - _started )) -lt 10 ] || st=0
     exit "$st"
 }
 
