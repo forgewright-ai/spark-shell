@@ -19,6 +19,9 @@ tab=$(printf '\t')
 plain() {   # plain FILE -- no hex color, no byte outside ASCII
     ! grep -Eq '#[0-9a-fA-F]{6}' "$1" && ! LC_ALL=C grep -q "[^ -~${tab}]" "$1"
 }
+a_picture() {   # a_picture FILE... -- each a whole PNG of one pixel, whatever its name: a picture a screen can show
+    for _af in "$@"; do printf '\211PNG\015\012\032\012\000\000\000\015IHDR\000\000\000\001\000\000\000\001\010\002\000\000\000\220wS\336\000\000\000\014IDATx\332c\020P\060\000\000\000\244\000a\012\233\256\336\000\000\000\000IEND\256B`\202' > "$_af"; done
+}
 
 # every throwaway folder the suite makes is listed here and goes at its end: the homes once stayed in /tmp, one a
 # fresh, every run (v0.129.2). A folder a test left unreadable is made readable first
@@ -1404,7 +1407,7 @@ if [ "$(uname -s)" != Darwin ]; then
     printf '%s\n' "$out" | grep -q '^wallpaper default -- the ground' && ok "theme wallpaper (bare): none is said as the ground" || bad "wallpaper bare" "$out"
     sh "$SH" theme wallpaper default >/dev/null
     grep -q '^WALLPAPER=default$' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps outer 8$' "$sway" && ok "theme wallpaper default: the ground again" || bad "wallpaper default" "$(grep -n 'bg\|gaps' "$sway")"
-    pic="$HOME/pictures/one two.jpg"; mkdir -p "$HOME/pictures"; printf x > "$pic"
+    pic="$HOME/pictures/one two.jpg"; mkdir -p "$HOME/pictures"; a_picture "$pic"
     out=$(sh "$SH" theme wallpaper "$pic")
     grep -q "^WALLPAPER=$pic\$" "$HOME/.config/spark-shell/config" && grep -q '^PROMPT_STYLE=full$' "$HOME/.config/spark-shell/config" \
         && ok "theme wallpaper PATH: WALLPAPER in the config, the other lines kept" || bad "wallpaper config" "$(cat "$HOME/.config/spark-shell/config")"
@@ -1424,7 +1427,7 @@ if [ "$(uname -s)" != Darwin ]; then
     [ $rc = 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell theme: /nowhere/at/all.jpg is not a readable file or a color\. Give a picture.s path, default (the ground), one of the drawings (skyline, fjord, forest, sunset, hills, dunes, orbit, ripples, contours, morning, meadow, kites, fields, grove, arches, shore, flight, embers, onsen, duck, reef, campfire, ufo, pigeons, garoa, horizon, watch, problem, continue, crossing), #rrggbb or one of these colors: black, white, gray, silver, navy, blue, teal, green, olive, maroon, red, purple, brown, orange$' \
         && [ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" = 1 ] && ok "theme wallpaper: the refusal is one line that lists what is accepted" || bad "wallpaper refusal words" "$out"
     # a path from where you are, and a quoted ~: saved as the full path
-    printf x > "$pic"; printf x > "$HOME/pictures/two.png"
+    a_picture "$pic" "$HOME/pictures/two.png"
     rc=0; out=$(cd "$HOME/pictures" && sh "$SH" theme wallpaper two.png 2>&1) || rc=$?
     full=$(cd "$HOME/pictures" && pwd)/two.png
     [ $rc = 0 ] && grep -qxF "WALLPAPER=$full" "$HOME/.config/spark-shell/config" && grep -qxF "output * bg \"$full\" fill" "$sway" \
@@ -3425,16 +3428,41 @@ rc=0; WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop lock >/dev/n
 [ "$rc" = 0 ] && grep -qx -- --daemonize "$HOME/swaylock.args" && ok "desktop lock with a theme.env that will not load: the lock comes up anyway" || bad "lock bad theme" "rc=$rc $(cat "$HOME/swaylock.args" 2>&1)"
 mv "$HOME/.config/spark/theme.env.good" "$HOME/.config/spark/theme.env"; rm -f "$HOME/.config/spark/theme.env.bad"
 # a lock that runs, by its environment: 41 this session's, 42 another display's, 43 another runtime folder's, 44 one that cannot be read
-mkdir -p "$H/lproc/41" "$H/lproc/42" "$H/lproc/43" "$H/lproc/44"
+mkdir -p "$H/lproc/41" "$H/lproc/42" "$H/lproc/43" "$H/lproc/44" "$H/lproc/45"
 printf 'A=1\0WAYLAND_DISPLAY=wayland-1\0XDG_RUNTIME_DIR=%s\0' "$H/run" > "$H/lproc/41/environ"
 printf 'A=x\nWAYLAND_DISPLAY=wayland-1\0WAYLAND_DISPLAY=wayland-2\0XDG_RUNTIME_DIR=%s\0' "$H/run" > "$H/lproc/42/environ"
 printf 'WAYLAND_DISPLAY=wayland-1\0XDG_RUNTIME_DIR=%s\0' "$H/run2" > "$H/lproc/43/environ"
+cp "$H/lproc/41/environ" "$H/lproc/45/environ"; printf '45 (swaylock) S 1 40 40 0 -1\n' > "$H/lproc/45/stat"   # the lock's password helper, in its caller's session for good
+lockstat() { printf '41 (swaylock) S 1 40 %s 0 -1\n' "$1" > "$H/lproc/41/stat"; }   # lockstat 40|41 -- the lock still starting, or up: it left its caller's session
+lockstat 41
 lockrun() { printf '%s\n' "$@" > "$HOME/locked"; rm -f "$HOME/swaylock.args"; rc=0; XDG_RUNTIME_DIR=$H/run SPARK_SHELL_PROC=$H/lproc WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop lock >/dev/null 2>&1 || rc=$?; }   # lockrun PID... -- a lock asked for with those swaylocks running
 lockrun 42 41
 [ "$rc" = 0 ] && [ ! -e "$HOME/swaylock.args" ] && ok "desktop lock: a lock already up stays, no second" || bad "lock twice" "rc=$rc"
 lockrun 42 43 44
 [ "$rc" = 0 ] && grep -qx -- --daemonize "$HOME/swaylock.args" && ok "desktop lock: another session's lock, or one that cannot be read, is not this session's: it locks, and swaylock itself refuses a second" || bad "lock another session" "rc=$rc"
-rm -rf "$HOME/locked" "$H/lproc"
+# a lock that is starting is no lock yet: it is waited for, and where it ends or takes too long this one locks, past a picture at once
+printf 'DESKTOP=sway\nWALLPAPER=ripples\n' > "$HOME/.config/spark-shell/config"
+lockstat 40; ( sleep 0.7; lockstat 41 ) & lockrun 45 41; l1=$rc; [ ! -e "$HOME/swaylock.args" ] || l1="$l1 a second"; grep -q ' 40 41 ' "$H/lproc/41/stat" || l1="$l1 too early"; wait $!
+lockstat 40; ( sleep 0.7; echo 45 > "$H/gone"; mv "$H/gone" "$HOME/locked"; rm -rf "$H/lproc/45" ) & lockrun 45 41; l2=$rc; grep -qx -- --image "$HOME/swaylock.args" || l2="$l2 no lock"; wait $!
+lockstat 40; lockrun 41; l3=$rc; l3a=$(paste -sd ' ' - < "$HOME/swaylock.args" 2>/dev/null)
+case $l3a in '--daemonize --config /dev/null --color '*) ;; *) l3="$l3 $l3a" ;; esac
+[ "$l1" = 0 ] && [ "$l2" = 0 ] && [ "$l3" = 0 ] && ok "desktop lock: a lock still reading its pictures is waited for and never said to be one; one that goes leaves this one to lock, one that takes too long a plain one" || bad "lock starting" "$l1 | $l2 | $l3"
+# what it shows keeps no screen open: past 3 seconds the lock that reads a picture is ended, and one of a plain color is up; said to be locked only when swaylock says so
+cat > "$H/lx/swaylock" <<'STUB'
+#!/bin/sh
+echo "$$ $*" >> "$HOME/swaylock.calls"
+case $(cat "$HOME/swaylock.how"):$* in hung:*--image*) exec sleep 60 ;; dies:*--image*) exit 1 ;; slow:*) sleep 1 ;; never:*) exit 1 ;; esac
+STUB
+lockhow() {   # lockhow HOW -- a lock asked for with a swaylock that does so: rc, its calls, whether the first is gone, in time
+    echo "$1" > "$HOME/swaylock.how"; rm -f "$HOME/swaylock.calls" "$HOME/locked"; _lt=$(date +%s)
+    rc=0; XDG_RUNTIME_DIR=$H/run WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop lock >/dev/null 2>&1 || rc=$?
+    _ls=$(($(date +%s) - _lt)); _lf=$(sed -n '1s/ .*//p' "$HOME/swaylock.calls"); _lg=gone; ! kill -0 "$_lf" 2>/dev/null || _lg=here
+    lh="$rc $(awk '{ printf "%s%s", (NR > 1 ? "," : ""), (/--image/ ? "picture" : / --config .dev.null --color [0-9a-f]+ / ? "plain" : "other") }' "$HOME/swaylock.calls") $_lg $([ "$_ls" -le 5 ] && echo soon || echo late)"
+}
+lockhow fine; k1=$lh; lockhow hung; k2=$lh; lockhow dies; k3=$lh; lockhow slow; k4=$lh; lockhow never; k5=$lh
+[ "$k1" = '0 picture gone soon' ] && [ "$k2" = '0 picture,plain gone soon' ] && [ "$k3" = '0 picture,plain gone soon' ] && [ "$k4" = '0 picture gone soon' ] && [ "$k5" = '1 picture,plain gone soon' ] \
+    && ok "desktop lock: a swaylock that hangs on a picture, or ends on one, gives way to one of a plain color within 5 seconds, never two at once; a slow one is waited for; none that locks: said so" || bad "lock pictures" "$k1 | $k2 | $k3 | $k4 | $k5"
+rm -rf "$HOME/locked" "$HOME/swaylock.how" "$HOME/swaylock.calls" "$H/lproc"
 rc=0; out=$(env -u WAYLAND_DISPLAY PATH="$H/lx:$PATH" sh "$SH" desktop lock 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: locks the desktop: run it inside it (Super+Escape)' ] && ok "desktop lock outside the desktop: refused in one line" || bad "lock outside" "rc=$rc $out"
 shots=$HOME/pictures/screenshots
@@ -6330,7 +6358,7 @@ mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},
 ans 2 | jq -r '.result.contents[0].text' | jq -e '.title == "theme" and (.state | type == "string" and length > 0)' >/dev/null \
     && ok "provide: a rows read carries the section's state beside its title, so a subtitle follows each step" || bad "rows state" "$(ans 2 | head -c 300)"
 # the wallpaper's picture: a path, no row of it (the dialog's pick), so its own gate: under home, no link, nothing hidden, a picture's type
-mkdir -p "$H/Pictures" "$H/.hid"; printf 'x' > "$H/Pictures/sea.png"; printf 'x' > "$H/.hid/sea.png"; printf 'x' > "$H/Pictures/sea.txt"; PH=$(realpath "$H")
+mkdir -p "$H/Pictures" "$H/.hid"; a_picture "$H/Pictures/sea.png" "$H/.hid/sea.png" "$H/Pictures/sea.txt"; PH=$(realpath "$H")
 mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" \
     "$(call 2 theme_wallpaper_picture "$(jq -cn --arg p "$PH/.hid/sea.png" '{path: $p}')")" "$(call 3 theme_wallpaper_picture "$(jq -cn --arg p "$PH/Pictures/sea.txt" '{path: $p}')")" "$(call 4 theme_wallpaper_picture '{"path":"/etc/hosts"}')"
 [ "$(ans 2 | jq -r '.result.content[0].text')" = 'wallpaper: a hidden file is not offered' ] && [ "$(ans 3 | jq -r '.result.content[0].text')" = 'wallpaper: a picture is jpg jpeg png webp' ] && [ "$(ans 4 | jq -r '.result.content[0].text')" = 'wallpaper: a picture comes from under your home' ] \
@@ -8455,6 +8483,393 @@ x11=$(ans 2 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.gr
     && ok "provide theme: Your themes takes a theme file (picked, .spark-theme); a theme with its folder has Export, the same file again kept once; a bad file refused in one line" \
     || bad "theme file provide" "$x10 | $x11 | $(ans 3 | head -c 300) | $(ans 4 | head -c 300)"
 sh "$SH" theme "$_xt" >/dev/null 2>&1; cp "$H/cfg.file" "$cfg"; rm -rf "$th_dir/shore" "${_xf%/*}"/shore*.spark-theme
+# hostile and broken files (v0.167): a stranger's theme, a damaged picture, the wrong kind of file. Each is refused in one
+# plain line with its name and the reason, and the theme stays as it was; what comes in or goes out carries no metadata
+if command -v python3 >/dev/null 2>&1; then
+    _ht=$(sed -n 's/^THEME=//p' "$cfg"); cp "$cfg" "$H/cfg.hostile"; _hp=$HOME/pictures; _hx=$H/hostile; mkdir -p "$_hp" "$_hx"
+    cat > "$H/hostile.py" <<'EOF'
+import importlib.util, io, os, random, struct, sys, tarfile, zlib
+repo, pics, out = sys.argv[1:4]
+sys.dont_write_bytecode = True
+spec = importlib.util.spec_from_file_location("look", repo + "/lib/look.py")
+look = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(look)
+core = repo + "/gallery/core/atlas-awakening/"
+read = lambda p: open(p, "rb").read()
+bad = []
+
+
+def keep(path, data):
+    open(path, "wb").write(data)
+
+
+def said(f, *a):   # what a reader answers, or the one line it refuses with
+    try:
+        r = f(*a)
+        return " ".join(str(x) for x in r if not isinstance(x, (bytes, bytearray))) if isinstance(r, tuple) else r
+    except Exception as e:
+        return look.why(e)
+
+
+def want(name, got, expected):
+    if got != expected:
+        bad.append("%s: %r, not %r" % (name, got, expected))
+
+
+# --- pictures
+seg = lambda m, b: b"\xff" + bytes([m]) + struct.pack(">H", len(b) + 2) + b
+jfif = seg(0xE0, b"JFIF\0\1\1\0\0\1\0\1\0\0")
+scan = seg(0xDA, b"\1\1\0\0\x3f\0") + b"\x12\x34"
+body = seg(0xDB, b"\0" + b"\1" * 64) + seg(0xC0, b"\x08\0\x10\0\x20\3\1\x11\0\2\x11\0\3\x11\0")
+plain = b"\xff\xd8" + jfif + body + scan + b"\xff\xd9"
+exif = lambda turn: seg(0xE1, b"Exif\0\0II*\0\x08\0\0\0\1\0" + struct.pack("<HHIHH", 0x112, 3, 1, turn, 0) + b"GPS 51.5")
+photo = b"\xff\xd8" + exif(1) + jfif + seg(0xE2, b"ICC_PROFILE\0\1\1" + b"x" * 300) + seg(0xEE, b"Adobe\0\x64\0\0\0\0\1") + seg(0xFE, b"home sweet home") + plain[20:] + b"MPF after"
+png = lambda *k: b"\x89PNG\r\n\x1a\n" + b"".join(struct.pack(">I", len(b)) + t + b + struct.pack(">I", zlib.crc32(t + b)) for t, b in ((b"IHDR", struct.pack(">IIBBBBB", 4, 2, 8, 2, 0, 0, 0)),) + k + ((b"IDAT", zlib.compress((b"\0" + b"\x10\x20\x30" * 4) * 2)), (b"IEND", b"")))
+files = {
+    "photo.JPG": (photo, "a JPEG with a 0xE1 marker, which a still picture has not", "jpeg 32 16", plain),
+    "turned.jpg": (b"\xff\xd8" + exif(6) + plain[2:], "a JPEG with a 0xE1 marker, which a still picture has not", "jpeg 32 16", "a photo turned by its EXIF alone, which a theme drops: save it upright"),
+    "rgb.jpg": (b"\xff\xd8" + seg(0xEE, b"Adobe\0\x64\0\0\0\0\0") + plain[2:], "a JPEG with a 0xEE marker, which a still picture has not", "jpeg 32 16", "a JPEG in CMYK or RGB, which a plain one is not: save it in sRGB"),
+    "jfxx.jpg": (plain[:20] + seg(0xE0, b"JFXX\0\x13\2\2" + b"\1" * 12) + plain[20:], "a JPEG with a small picture in it, which a still picture has not", "jpeg 32 16", plain),
+    "thumb.jpg": (b"\xff\xd8" + seg(0xE0, b"JFIF\0\1\1\0\0\1\0\1\2\1" + b"\7" * 6) + plain[20:], "a JPEG with a small picture in it, which a still picture has not", "jpeg 32 16", plain),
+    "sixtyfour.jpg": (plain[:-2] + scan * 63 + b"\xff\xd9", "jpeg 32 16", "jpeg 32 16", None),
+    "scans.jpg": (plain[:-2] + scan * 64 + b"\xff\xd9",) + ("a JPEG of over 64 scans, which takes too long to show",) * 3,
+    "CUT.jpg": (plain[:-2],) + ("a JPEG with no end",) * 3,
+    "fill.jpg": (b"\xff\xd8" + jfif + b"\xff\xff" + body[1:] + scan + b"\xff\xd9", "jpeg 32 16", "jpeg 32 16", plain),
+    "ZERO.jpg": (b"", "not a PNG or a JPEG", "not a PNG, a JPEG, a WebP or a GIF", "not a PNG or a JPEG"),
+    "text.jpg": (b"hello\n", "not a PNG or a JPEG", "not a PNG, a JPEG, a WebP or a GIF", "not a PNG or a JPEG"),
+    "wide.jpg": (plain.replace(b"\0\x10\0\x20", b"\xff\xff\xff\xff"), "jpeg 65535 65535", "a picture of 65535x65535, more than a screen can show", None),
+    "said.png": (png((b"tEXt", b"GPS\0home")), "a PNG with a 'tEXt' chunk, which a still picture has not", "png 4 2", png()),
+    "cut.png": (png()[:-9],) + ("a PNG with no end",) * 3,
+}
+for name, (data, strict, shown, bare) in files.items():
+    p = pics + "/" + name
+    keep(p, data)
+    want("picture " + name, said(look.picture_size, p), strict)
+    want("shown " + name, said(look.picture_shown, p), shown)
+    got = said(look.picture_bare, data)
+    want("bare " + name, got, data if bare is None else bare)
+    if isinstance(got, bytes):
+        keep(out + "/bare", got)
+        want("bare, then read, " + name, said(look.picture_size, out + "/bare").split()[0] in ("png", "jpeg"), True)
+keep(pics + "/My Photo.jpg", plain)
+keep(pics + "/plain.jpg", plain)
+
+# --- loops, from the shipped one's first frame: one of H.264, a few of what a loop is not
+box = lambda k, *b: struct.pack(">I4s", 8 + sum(map(len, b)), k) + b"".join(b)
+ship = read(core + "atlas-awakening-landscape-1.mp4")
+
+
+def at(k, n=0):   # a box of the shipped loop's by its kind
+    i = ship.index(k, n) - 4
+    return ship[i:i + struct.unpack(">I", ship[i:i + 4])[0]]
+
+
+stsz, stco = at(b"stsz"), at(b"stco")
+first = struct.unpack(">I", stsz[20:24])[0]
+where = struct.unpack(">I", stco[16:20])[0]
+frame = ship[where:where + first]
+u32 = lambda *n: struct.pack(">%dI" % len(n), *n)
+dref = box(b"dref", u32(0, 1), box(b"url ", u32(1)))
+
+
+def mp4(dref=dref, stsd=at(b"stsd"), extra=b"", more=b"", top=b"", frames=frame, name=b"", sizes=None, offset=None, clock=b""):
+    head = at(b"ftyp")
+    made = lambda k: at(k) if not clock else at(k)[:12] + clock + at(k)[20:]
+
+    def build(start):
+        stbl = box(b"stbl", stsd, box(b"stts", u32(0, 1, 1, 512)), box(b"stsc", u32(0, 1, 1, 1, 1)), box(b"stsz", u32(0, 0, 1, sizes or len(frames))), box(b"stco", u32(0, 1, start if offset is None else offset)))
+        mdia = box(b"mdia", made(b"mdhd"), at(b"hdlr") if not name else box(b"hdlr", at(b"hdlr")[8:32], name), box(b"minf", at(b"vmhd"), box(b"dinf", dref), stbl))
+        return head + box(b"moov", made(b"mvhd"), box(b"trak", made(b"tkhd"), mdia, extra), more) + top
+
+    start = len(build(0)) + 8
+    return build(start) + box(b"mdat", frames, b"spoken words")
+
+
+
+
+def coded(w, h):   # an H.264 header of frames W by H, in blocks of 16
+    ue = lambda n: "0" * (len(bin(n + 1)) - 3) + bin(n + 1)[2:]
+    bits = ue(0) + ue(0) + ue(2) + ue(1) + "0" + ue(w - 1) + ue(h - 1) + "1" + "1001"
+    bits += "0" * (-len(bits) % 8)
+    sps = b"\x67\x42\0\x33" + bytes(int(bits[i:i + 8], 2) for i in range(0, len(bits), 8))
+    return box(b"avcC", b"\1\x42\0\x33\xff\xe1" + struct.pack(">H", len(sps)) + sps + b"\1\0\1\x68")
+
+
+clean = mp4()
+stsd = at(b"stsd")
+entry = stsd[24:102]
+size = lambda avcc: box(b"stsd", u32(0, 1), box(b"avc1", entry, avcc))
+place = mp4(extra=box(b"udta", b"GPS 51.5 -0.12"), more=box(b"udta", box(b"meta", b"HOME")) + box(b"trak", box(b"mdia", box(b"hdlr", u32(0, 0), b"soun", u32(0, 0, 0)))), top=box(b"uuid", b"GPS 51.5 -0.12"), name=b"Anna's iPhone\0", clock=u32(3800000000, 3800000001))
+loops = {
+    "clean.mp4": (clean, "3840 2160"),
+    "place.mp4": (place, "an MP4 with a track beside its video"),
+    "udta.mp4": (mp4(extra=box(b"udta", b"GPS")), "3840 2160"),
+    "dref.mp4": (mp4(dref=box(b"dref", u32(0, 1), box(b"url ", u32(0), b"http://x/\0"))), "an MP4 that names another file"),
+    "dref2.mp4": (mp4(dref=box(b"dref", u32(0, 2), box(b"url ", u32(1)), box(b"alis", u32(0), b"/etc/passwd"))), "an MP4 that names another file"),
+    "sdp.mp4": (b"v=0\nftyp\no=- 0 0 IN IP4 127.0.0.1\nc=IN IP4 127.0.0.1\nm=video 5004 RTP/AVP 96\n", "a broken MP4"),
+    "cue.mp4": (b"REM ftyp\nFILE \"http://x/a.wav\" WAVE\n", "a broken MP4"),
+    "rmra.mp4": (clean.replace(b"mvhd", b"rmra", 1), "an MP4 with a 'rmra' box, which a loop has not"),
+    "cmov.mp4": (at(b"ftyp") + box(b"moov", box(b"cmov", b"x")), "an MP4 with a 'cmov' box, which a loop has not"),
+    "frag.mp4": (clean + box(b"moof", b""), "an MP4 with a 'moof' box, which a loop has not"),
+    "hevc.mp4": (mp4(stsd=stsd.replace(b"avc1", b"hvc1", 1)), "no H.264 video"),
+    "avc3.mp4": (mp4(stsd=stsd.replace(b"avc1", b"avc3", 1)), "no H.264 video"),
+    "wide.mp4": (mp4(stsd=stsd[:48] + struct.pack(">HH", 9000, 16) + stsd[52:]), "9000x16, past 7680x4320"),
+    "sps.mp4": (mp4(stsd=size(coded(1000, 1000))), "16000x16000, past 7680x4320"),
+    "spsfine.mp4": (mp4(stsd=size(coded(240, 135))), "3840 2160"),
+    "nosps.mp4": (mp4(stsd=size(box(b"avcC", b"\1\x42\0\x33\xff\xe1\0\4\x67\x42\0\0"))), "an MP4 with a broken H.264 header"),
+    "out.mp4": (mp4(offset=4), "an MP4 whose video is not all in it"),
+    "long.mp4": (mp4(sizes=1 << 30), "an MP4 whose video is not all in it"),
+    "none.mp4": (at(b"ftyp"), "an MP4 of not one moov"),
+    "text.mp4": (b"no video", "no MP4"),
+    "ZERO.mp4": (b"", "no MP4"),
+}
+for name, (data, answer) in loops.items():
+    keep(pics + "/" + name, data)
+    want("loop " + name, said(look.loop_read, data), answer)
+bare = said(look.file_bare, place, "loop")
+want("a loop bare is read", said(look.loop_read, bare), "3840 2160")
+want("a loop bare is as long", len(bare), len(place))
+want("a loop bare keeps its video", frame in bare, True)
+for word in (b"GPS", b"51.5", b"HOME", b"Anna", b"spoken", b"soun"):
+    want("a loop bare holds %r" % word, word in bare, False)
+for kind in (b"mvhd", b"tkhd", b"mdhd"):
+    i = bare.index(kind)
+    want("a loop bare: %r's times" % kind, bare[i + 8:i + 16], bytes(8))
+keep(pics + "/bare.mp4", bare)
+
+# --- reels, from the shipped opening's frames
+reel = read(core + "atlas-awakening-dialog-open.webp")
+anmf = [(a, b) for k, a, b in look.webp_chunks(reel, 12, len(reel)) if k == b"ANMF"]
+chunk = look.webp_chunk
+u24 = lambda n: struct.pack("<I", n)[:3]
+
+
+def webp(frames, w=360, h=240, flags=0x12, after=b"", tail=b""):
+    b = b"WEBP" + chunk(b"VP8X", bytes([flags, 0, 0, 0]) + u24(w - 1) + u24(h - 1)) + chunk(b"ANIM", bytes(6)) + b"".join(frames) + after
+    return b"RIFF" + struct.pack("<I", len(b)) + b + tail
+
+
+def cell(w, h, parts, x=0, y=0):
+    return chunk(b"ANMF", u24(x // 2) + u24(y // 2) + u24(w - 1) + u24(h - 1) + u24(40) + b"\0" + parts)
+
+
+good = [chunk(b"ANMF", reel[a:b]) for a, b in anmf[:3]]
+own = reel[anmf[0][0] + 16:anmf[0][1]]
+vp8 = look.webp_chunks(own, 0, len(own))[1]
+vp8 = chunk(b"VP8 ", own[vp8[1]:vp8[2]])
+panic = cell(10, 10, chunk(b"ALPH", b"\0" + b"\xff" * 100) + vp8)
+reels = {
+    "good.webp": (webp(good), "360 240 3"),
+    "panic.webp": (webp([panic] + good), "a WebP whose frame is not the size its header says"),
+    "later.webp": (webp(good + [panic]), "a WebP whose frame is not the size its header says"),
+    "outside.webp": (webp(good + [cell(200, 200, own, x=200)]), "a WebP with a frame outside its picture"),
+    "half.webp": (webp([cell(16, 16, chunk(b"ALPH", bytes(257)))]), "a WebP with a broken frame"),
+    "short.webp": (webp([cell(199, 199, chunk(b"ALPH", b"\0" * 9) + vp8)]), None),
+    "still.webp": (b"RIFF" + struct.pack("<I", 4 + len(vp8)) + b"WEBP" + vp8, "a still WebP, no animation"),
+    "solid.webp": (webp(good, flags=2), "a WebP with no clear ground (no alpha)"),
+    "large.webp": (webp(good, w=1025), "1025x240, past 1024x1024"),
+    "cut.webp": (webp(good)[:-9], "a WebP cut short"),
+    "tail.webp": (webp(good, tail=b"more"), "a WebP with data after its end"),
+    "many.webp": (webp([cell(1, 1, chunk(b"VP8L", b"\x2f\0\0\0\0" + bytes(11)))] * 1001), "a WebP of over 1000 frames"),
+    "place.webp": (webp(good, flags=0x1e, after=chunk(b"EXIF", b"GPS 51.5") + chunk(b"XMP ", b"<home/>")), "360 240 3"),
+    "text.webp": (b"not one", "no WebP"),
+}
+for name, (data, answer) in reels.items():
+    keep(pics + "/" + name, data)
+    got = said(look.reel_read, data)
+    if answer is None:
+        want("reel " + name + " refused", got.startswith("a WebP"), True)
+    else:
+        want("reel " + name, got, answer)
+want("a reel bare", said(look.file_bare, reels["place.webp"][0]), webp(good))
+want("the shipped reels are bare", [look.file_bare(read(core + "atlas-awakening-dialog-%s.webp" % r)) == read(core + "atlas-awakening-dialog-%s.webp" % r) for r in ("open", "close")], [True, True])
+
+# --- theme files
+pal = read(core + "palette.env")
+lk = b"FORMAT=2\nWALLPAPER=default\n"
+
+
+def theme(name, *members, folder=None):
+    f = folder or name
+    with tarfile.open(out + "/" + name + ".spark-theme", "w") as t:
+        for n, d in members:
+            ti = tarfile.TarInfo(f + "/" + n)
+            ti.size = len(d)
+            t.addfile(ti, io.BytesIO(d))
+
+
+picture = b"FORMAT=2\nWALLPAPER=picture\nPICTURE=%s-landscape-1.jpg\n"
+theme("nul", ("look.env", lk + b"\0POINTER=x 24\n"), ("palette.env", pal))
+theme("nulpal", ("look.env", lk), ("palette.env", pal.replace(b"\n", b"\0\n", 1)))
+theme("nulfam", ("look.env", lk), ("palette.env", pal), ("family.json", b'{"format":1}\0'))
+theme("twokeys", ("look.env", lk), ("palette.env", pal.replace(b"THEME_BG=", b"THEME_BG THEME_FG=", 1)))
+theme("slow", ("look.env", picture % b"slow"), ("palette.env", pal), ("slow-landscape-1.jpg", files["scans.jpg"][0]))
+theme("net", ("look.env", picture % b"net"), ("palette.env", pal), ("net-landscape-1.jpg", plain), ("net-landscape-1.mp4", loops["sdp.mp4"][0]))
+theme("ends", ("look.env", b"FORMAT=2\nWALLPAPER=default\nANIMATION=own\n"), ("palette.env", pal), ("ends-dialog-open.webp", reels["panic.webp"][0]), ("ends-dialog-close.webp", reels["good.webp"][0]))
+theme("over", ("look.env", lk), ("palette.env", pal), folder="atlas-awakening-changed")
+theme("keys", ("look.env", lk), ("palette.env", pal), ("family.json", b'{"format":1,"id":"keys","title":"x","media":"picture","variants":{"dark":{"theme":"keys"}},"\\u001b[2J\\nred":1}'))
+theme("guest", ("look.env", lk), ("palette.env", pal), ("family.json", b'{"format":1,"id":"guest","title":"Guest","media":"picture","clock":false,"variants":{"dark":{"theme":"nord"},"light":{"theme":"guest"}}}'))
+theme("twice", ("look.env", lk), ("palette.env", pal))
+with open(out + "/dirs.spark-theme", "wb") as fh:
+    d = tarfile.TarInfo("a/")
+    d.type = tarfile.DIRTYPE
+    fh.write(d.tobuf(tarfile.USTAR_FORMAT) * 5000 + bytes(1024))
+with open(out + "/chain.spark-theme", "wb") as fh:
+    x = tarfile.TarInfo("x")
+    x.type = tarfile.XHDTYPE
+    fh.write(x.tobuf(tarfile.USTAR_FORMAT) * 3000 + tarfile.TarInfo("a/b.jpg").tobuf(tarfile.USTAR_FORMAT) + bytes(1024))
+
+# --- a few hundred changed at random, from one seed: read or refused in one line, whatever they are
+rnd = random.Random(167)
+seeds = [("picture", files["photo.JPG"][0]), ("picture", files["said.png"][0]), ("loop", place), ("loop", mp4(frames=frame[:400])), ("reel", webp(good[:1])), ("reel", webp([cell(1, 1, chunk(b"VP8L", b"\x2f\0\0\0\0" + bytes(11)))] * 3)), ("unpack", read(out + "/keys.spark-theme")), ("unpack", read(out + "/chain.spark-theme")[:4096])]
+ran = 0
+for n in range(640):
+    kind, data = seeds[n % len(seeds)]
+    b = bytearray(data)
+    for _ in range(rnd.randint(1, 6)):
+        i = rnd.randrange(min(len(b), 3000))
+        how = rnd.random()
+        if how < 0.4:
+            b[i] = rnd.choice((0, 1, 0x7F, 0xFF, rnd.randrange(256)))
+        elif how < 0.7:
+            b[i:i + 4] = struct.pack(rnd.choice(("<I", ">I")), rnd.choice((0, 1, 7, 8, 0x7FFFFFFF, 0xFFFFFFFF, len(b), rnd.randrange(1 << 16))))
+        elif how < 0.8:
+            del b[i:i + rnd.randint(1, 40)]
+        elif how < 0.9:
+            b[i:i] = b[i:i + rnd.randint(1, 40)]
+        else:
+            del b[max(1, i):]
+    p = out + "/fuzz"
+    keep(p, b)
+    for argv in {"picture": (["picture", p], ["shown", p]), "loop": (["loop", p],), "reel": (["reel", p], ["shown", p]), "unpack": ()}[kind] + (["bare", p, out + "/fuzzed"],) if kind != "unpack" else (["unpack", p, out + "/fuzzdir"],):
+        os.makedirs(out + "/fuzzdir", exist_ok=True)
+        so, se = sys.stdout, sys.stderr
+        sys.stdout, sys.stderr = io.StringIO(), io.StringIO()
+        try:
+            rc = look.main(["look.py"] + argv)
+            line = (sys.stdout if rc == 0 else sys.stderr).getvalue()
+        except BaseException as e:
+            rc, line = -1, repr(e)
+        finally:
+            sys.stdout, sys.stderr = so, se
+        ran += 1
+        if rc not in (0, 1) or rc == 1 and (line.count("\n") != 1 or not line.strip()) or len(line) > 400:
+            bad.append("fuzz %d %s: %s %r" % (n, argv[0], rc, line[:200]))
+        if argv[0] == "bare":
+            if rc == 0 and kind != "picture":   # what is made bare is taken whole
+                fine = said(look.file_bare, read(out + "/fuzzed"))
+                want("fuzz %d bare again" % n, isinstance(fine, bytes) and fine == read(out + "/fuzzed"), True)
+            if os.path.exists(out + "/fuzzed"):
+                os.remove(out + "/fuzzed")
+        for root, dirs, names in os.walk(out + "/fuzzdir", topdown=False):
+            for f in names:
+                os.remove(os.path.join(root, f))
+            for f in dirs:
+                os.rmdir(os.path.join(root, f))
+print("\n".join(bad) or "ran %d" % ran)
+EOF
+    h1=$(python3 -I "$H/hostile.py" "$REPO" "$_hp" "$_hx" 2>&1 | head -20)
+    [ "$h1" = 'ran 1440' ] && ok "look.py: 14 pictures, 21 loops and 14 reels read or refused in their own words, each cleaned of its metadata (a place, a name, a camera's clock, another track); 640 changed at random and never a traceback" || bad "look.py hostile" "$h1"
+    sh "$SH" theme duplicate atlas-awakening reef >/dev/null 2>&1; sh "$SH" theme reef >/dev/null 2>&1; _hd=$th_dir/reef
+    heard() { hrc=0; hout=$(sh "$SH" theme "$@" 2>&1 </dev/null) || hrc=$?; }
+    left() { for _lf in "$1"/.[!.]* "$1"/*.new; do [ ! -e "$_lf" ] || printf ' %s' "${_lf##*/}"; done; }   # left FOLDER -- what an unfinished copy would leave there
+    held() { cksum "$_hd"/* | sed "s|$_hd/||" | paste -sd ' ' -; left "$_hd"; }   # the theme's files, and none left behind
+    h0=$(held)
+    # its own file given back to it, and a photo: the same picture (issue: the old one was removed before the copy)
+    heard portrait "$_hd/reef-portrait.jpg"; a1=$hrc$hout; heard panel 2 "$_hd/reef-landscape-2.jpg"; a2=$hrc$hout; h2=$(held)
+    { head -c 2 "$_hd/reef-portrait.jpg"; printf '\377\341\000\020Exif\000\000GPS 51.5'; tail -c +3 "$_hd/reef-portrait.jpg"; } > "$_hp/phone.JPEG"
+    heard portrait "$_hp/phone.JPEG"; a3=$hrc$hout; h3=$(held)
+    [ "$a1" = '0a turned screen shows reef-portrait.jpg' ] && [ "$a2" = '0panels for 2 screens' ] && [ "$a3" = "$a1" ] && [ "$h2" = "$h0" ] && [ "$h3" = "$h0" ] \
+        && ok "theme portrait and panel: the theme's own file given back stays, and a photo loses its metadata, its pixels the same bytes" || bad "theme portrait own" "$a1 | $a2 | $a3 | $h0 | $h2 | $h3"
+    rm -f "$_hp/PIPE.jpg"; mkfifo "$_hp/PIPE.jpg" "$_hp/PIPE.mp4" 2>/dev/null || :
+    refused() {   # refused WHY VERB ARG... -- the verb refused with WHY, nothing of the theme's changed
+        _rw=$1; shift; heard "$@"
+        [ "$hrc" = 1 ] && [ "$hout" = "spark-shell theme: $_rw" ] && [ "$(held)" = "$h0" ] || _rb="$_rb | $*: $hrc $hout"
+    }
+    _rb=''
+    for _hk in portrait 'panel 2' 'panel 3'; do
+        # shellcheck disable=SC2086   # the verb and its number
+        for _hf in 'turned.jpg:a photo turned by its EXIF alone, which a theme drops: save it upright' 'rgb.jpg:a JPEG in CMYK or RGB, which a plain one is not: save it in sRGB' 'scans.jpg:a JPEG of over 64 scans, which takes too long to show' 'ZERO.jpg:not a PNG or a JPEG' 'CUT.jpg:a JPEG with no end' 'text.jpg:not a PNG or a JPEG' 'PIPE.jpg:not a file that can be read' 'gone.jpg:not a file that can be read' 'clean.mp4:not a PNG or a JPEG' 'wide.jpg:65535x65535, past 7680x4320'; do
+            refused "${_hf%%:*} not taken: ${_hf#*:}" $_hk "$_hp/${_hf%%:*}"
+        done
+    done
+    for _hf in 'sdp.mp4:a broken MP4' 'dref.mp4:an MP4 that names another file' 'hevc.mp4:no H.264 video' 'text.mp4:no MP4' 'ZERO.mp4:no MP4' 'good.webp:no MP4'; do refused "${_hf%%:*} not taken: it is ${_hf#*:}" loop portrait "$_hp/${_hf%%:*}"; done
+    refused 'PIPE.mp4 not taken: not a file that can be read' loop portrait "$_hp/PIPE.mp4"; refused 'loop portrait takes an MP4, or none' loop portrait
+    for _hf in 'panic.webp:a WebP whose frame is not the size its header says' 'later.webp:a WebP whose frame is not the size its header says' 'still.webp:a still WebP, no animation' 'solid.webp:a WebP with no clear ground (no alpha)' 'cut.webp:a WebP cut short' 'clean.mp4:no WebP'; do refused "${_hf%%:*} not taken: it is ${_hf#*:}" reel open "$_hp/${_hf%%:*}"; done
+    refused 'no theme named ghost -- spark-shell theme list shows them' export ghost spark-theme
+    [ -z "$_rb" ] && ok "theme portrait, panel, loop and reel: 45 files that are no picture, no loop or no reel, a pipe among them, each refused by name and reason with the theme as it was" || bad "theme refused" "$_rb"
+    # the family refused (its title too long, by hand): the picture before comes back; a folder that cannot be written: nothing changes
+    cp "$_hd/family.json" "$H/fam.was"; jq '.title = "x" * 50' "$H/fam.was" > "$_hd/family.json"; h0=$(held)
+    heard portrait "$_hp/plain.jpg"; b1=$hrc$hout; [ "$(held)" = "$h0" ] || b1="$b1, changed"; heard panel 3 "$_hp/plain.jpg"; b2=$hrc$hout; [ "$(held)" = "$h0" ] || b2="$b2, changed"
+    cp "$H/fam.was" "$_hd/family.json"; h0=$(held); b3=''
+    if [ "$(id -u)" != 0 ]; then chmod 555 "$_hd"; heard portrait "$_hp/plain.jpg"; b3=$hrc$hout; heard reel open "$_hp/good.webp"; b3="$b3 $hrc$hout"; chmod 755 "$_hd"; [ "$(held)" = "$h0" ] || b3="$b3, changed"; else b3='1spark-shell theme: could not copy plain.jpg 1spark-shell theme: could not copy good.webp'; fi
+    [ "$b1" = '1spark-shell theme: not changed: its title is not plain text of 40 characters at most' ] && [ "$b2" = "$b1" ] && [ "$b3" = '1spark-shell theme: could not copy plain.jpg 1spark-shell theme: could not copy good.webp' ] \
+        && ok "theme portrait and panel: where the family or the folder refuses, the picture before stays, and no file is left behind" || bad "theme portrait family" "$b1 | $b2 | $b3"
+    # the theme's own picture leads, and is no panel beside itself: it was gone with the panel; a name is said with no escape of its own
+    cp "$_hd/look.env" "$H/look.was"; sed 's/^PICTURE=.*/PICTURE=reef-landscape-2.jpg/' "$H/look.was" > "$_hd/look.env"; h0=$(held)
+    heard panel 2 none; n1=$hrc$hout; heard panel 2 "$_hp/plain.jpg"; n2=$hrc$hout; [ "$(held)" = "$h0" ] || n2="$n2, changed"; cp "$H/look.was" "$_hd/look.env"; h0=$(held)
+    _hn=$_hp/red$(printf '\033')[31m.jpg; echo x > "$_hn"; heard portrait "$_hn"; n3=$hrc$hout; rm -f "$_hn"
+    [ "$n1" = "1spark-shell theme: reef-landscape-2.jpg is the theme's own picture, which leads: it is no panel 2 beside itself" ] && [ "$n2" = "$n1" ] && [ "$n3" = '1spark-shell theme: red[31m.jpg not taken: not a PNG or a JPEG' ] \
+        && ok "theme panel 2 where the theme's own picture is its landscape-2: refused, the picture stays; a file's name is said in plain letters" || bad "theme panel own" "$n1 | $n2 | $n3"
+    # a loop and a reel lose what is no part of them on the way in; a reel taken away says so
+    heard loop portrait "$_hp/place.mp4"; c1=$hrc$hout; cmp -s "$_hd/reef-portrait.mp4" "$_hp/bare.mp4" || c1="$c1, not bare"
+    heard reel open none; c2=$hrc$hout; heard reel open "$_hp/place.webp"; c3=$hrc$hout; cmp -s "$_hd/reef-dialog-open.webp" "$_hp/good.webp" || c3="$c3, not bare"
+    [ "$c1" = '0reef-portrait.jpg: a loop' ] && [ "$c2" = '0no open reel; the theme plays its own once both are there' ] && [ "$c3" = '0the theme plays its own opening and closing' ] \
+        && ok "theme loop and reel: a phone's clip and a reel come in with no place, name, sound or metadata; reel open none says it is gone" || bad "theme loop bare" "$c1 | $c2 | $c3"
+    # without jq a family can be neither read nor written: one line, nothing changed, no raw shell line
+    h0=$(held); mkdir -p "$H/nojq"
+    for _hn in sh sed awk grep cat cut tr tail head od wc rm cp mv ln mkdir mktemp ls sort date dirname basename readlink realpath id uname python3 paste cksum find chmod cmp env sleep touch tput stat printf expr tee test hostname ps; do _hc=$(command -v "$_hn") || continue; case $_hc in /*) ln -sf "$_hc" "$H/nojq/$_hn" ;; esac; done
+    d1=''; for _hk in "portrait $_hp/plain.jpg" 'panel 2 none' 'clock off' 'pair nord' 'variant dark' 'duplicate reef reef-two' 'rename reef reef-two'; do
+        # shellcheck disable=SC2086   # the verb and its words
+        hrc=0; hout=$(PATH=$H/nojq sh "$SH" theme $_hk 2>&1 </dev/null) || hrc=$?
+        [ "$hrc" = 1 ] && [ "$hout" = "spark-shell theme: jq is not installed, and it reads a theme's family" ] && [ "$(held)" = "$h0" ] || d1="$d1 | $_hk: $hrc $hout"
+    done
+    [ -z "$d1" ] && [ ! -e "$th_dir/reef-two" ] && ok "theme portrait, panel, clock, pair, variant, duplicate and rename without jq: one line says so, and the pictures stay" || bad "theme no jq" "$d1"
+    # a picture of one's own: no picture, one cut short or one that takes too long is none
+    e1=''; for _hf in 'ZERO.jpg:is not a PNG, a JPEG, a WebP or a GIF' 'text.jpg:is not a PNG, a JPEG, a WebP or a GIF' 'CUT.jpg:is a JPEG with no end' 'cut.png:is a PNG with no end' 'scans.jpg:is a JPEG of over 64 scans, which takes too long to show' 'wide.jpg:is a picture of 65535x65535, more than a screen can show'; do
+        for _hk in picture wallpaper; do
+            [ "$_hk:$(uname -s)" != wallpaper:Darwin ] || continue
+            heard "$_hk" "$_hp/${_hf%%:*}"; [ "$hrc" = 1 ] && [ "$hout" = "spark-shell theme: ${_hf%%:*} ${_hf#*:}" ] || e1="$e1 | $_hk ${_hf%%:*}: $hrc $hout"
+        done
+    done
+    cp "$_hd/look.env" "$H/look.was"; cp "$_hd/reef-landscape-1.jpg" "$H/pic.was"; : > "$_hd/reef-landscape-1.jpg"; heard reef; e2=$hrc$hout; cp "$H/pic.was" "$_hd/reef-landscape-1.jpg"
+    printf '\000POINTER=x 24\n' >> "$_hd/look.env"; heard reef; e3=$hrc$(printf '%s\n' "$hout" | tail -1); cp "$H/look.was" "$_hd/look.env"
+    [ -z "$e1" ] && [ "$e2" = '1spark-shell theme: reef cannot be used: its reef-landscape-1.jpg is not a PNG, a JPEG, a WebP or a GIF. Nothing was changed' ] && [ "$e3" = '1spark-shell theme: reef cannot be used: its look.env holds a control character. Nothing was changed' ] \
+        && ok "theme picture and wallpaper: an empty file, a text, a cut picture, one of 65 scans and one larger than a screen are refused by name; a theme whose picture is empty, or whose look.env holds a NUL, is not used" || bad "theme picture refused" "$e1 | $e2 | $e3"
+    # export: a picture whose name a theme file does not take goes by one it does, and nothing carries a place; install reads it back
+    cp "$_hp/My Photo.jpg" "$_hd/My Photo.jpg"; sed 's/^PICTURE=.*/PICTURE=My Photo.jpg/' "$H/look.was" > "$_hd/look.env"; cp "$_hp/place.mp4" "$_hd/reef-landscape-2.mp4"; cp "$_hp/place.webp" "$_hd/reef-dialog-open.webp"; cp "$_hp/photo.JPG" "$_hd/reef-landscape-3.jpg"
+    jq 'del(.variants.dark.panels)' "$H/fam.was" > "$_hd/family.json"
+    heard panel 2 "$_hp/plain.jpg"; f0=$hrc$hout
+    heard export reef spark-theme; f1=$hrc$hout; _xf=${hout#saved }; f2=$(tar -tf "$_xf" 2>&1 | paste -sd ' ' -); f3=$(tar -xOf "$_xf" reef/look.env 2>&1 | grep PICTURE)
+    f4=$(LC_ALL=C grep -ac 'GPS 51\.5\|Anna.s iPhone\|spoken words\|home sweet\|<home/>' "$_xf") || :; f5=$(LC_ALL=C grep -ac 'Anna.s iPhone' "$_hd/reef-landscape-2.mp4") || :
+    sh "$SH" theme nord >/dev/null 2>&1; sh "$SH" theme delete reef >/dev/null 2>&1 </dev/null; heard install "$_xf"; f6=$(printf '%s\n' "$hout" | grep -c '^installed the theme reef from ')
+    [ "$f0" = "1spark-shell theme: panels lead with the theme's picture, and My Photo.jpg is no name for one -- letters, digits, - and _, then .jpg or .png" ] \
+        && case $f1 in 0saved\ *) true ;; *) false ;; esac && [ "$f2" = 'reef/family.json reef/look.env reef/palette.env reef/reef-dialog-close.webp reef/reef-dialog-open.webp reef/reef-landscape-1.jpg reef/reef-landscape-1.mp4 reef/reef-landscape-2.jpg reef/reef-landscape-2.mp4 reef/reef-landscape-3.jpg reef/reef-picture.jpg reef/reef-portrait.jpg reef/reef-portrait.mp4' ] \
+        && [ "$f3" = PICTURE=reef-picture.jpg ] && [ "$f4" = 0 ] && [ "$f5" = 1 ] && [ "$f6" = 1 ] && [ -f "$th_dir/reef/reef-picture.jpg" ] \
+        && ok "theme export and install: a picture named My Photo.jpg goes as reef-picture.jpg and comes back; no place, name, sound or comment of a picture, a loop or a reel is in the file" || bad "theme export bare" "$f0 | $f1 | $f2 | $f3 | $f4 $f5 $f6 $hout"
+    # install: what a stranger's theme may not be
+    g1=''; for _hf in 'nul:its look.env holds a byte that is not plain text' 'nulpal:its palette.env holds a byte that is not plain text' 'nulfam:its family.json holds a byte that is not plain text' 'twokeys:its palette.env is not the twenty colors, each #rrggbb once' 'slow:its slow-landscape-1.jpg is a JPEG of over 64 scans, which takes too long to show' 'net:its loop net-landscape-1.mp4: it is a broken MP4' 'ends:its reel ends-dialog-open.webp: it is a WebP whose frame is not the size its header says' 'over:atlas-awakening-changed is the name of a change not saved' 'keys:its family.json: it has a key format 1 has not: [2J' 'dirs:it holds over 32 files' 'chain:it is broken'; do
+        heard install "$_hx/${_hf%%:*}.spark-theme"; [ "$hrc" = 1 ] && [ "$hout" = "spark-shell theme: ${_hf%%:*}.spark-theme was not installed: ${_hf#*:}" ] || g1="$g1 | ${_hf%%:*}: $hrc $hout"
+    done
+    heard install sea-changed; g2=$hrc$hout
+    [ -z "$g1" ] && [ "$g2" = '1spark-shell theme: sea-changed ends in -changed, the name of a change not saved, so no theme is installed by it' ] && [ -z "$(left "$th_dir")" ] \
+        && ok "theme install: a NUL in its look, colors or family, two keys in one, a slow picture, a loop that opens the network, a reel that ends the dialog, the name of a change not saved, an escape in a key: each refused in one plain line, nothing left behind" || bad "theme install hostile" "$g1 | $g2 | $(ls -A "$th_dir")"
+    # its family speaks for itself alone: nord is nobody's variant but its own
+    sh "$SH" theme nord >/dev/null 2>&1; i0=$(sh "$SH" theme variant 2>&1); heard install "$_hx/guest.spark-theme"; i1=$(printf '%s\n' "$hout" | grep -c '^installed'); i2=$(sh "$SH" theme variant 2>&1)
+    sh "$SH" theme nord >/dev/null 2>&1; i3=$(sh "$SH" theme variant 2>&1); rc=0; i4=$(sh "$SH" theme variant light 2>&1) || rc=$?
+    [ "$i1" = 1 ] && [ "$i2" = "variant light $SEP dark or light" ] && [ "$i3" = "$i0" ] && [ "$rc" = 1 ] && [ "$i4" = 'spark-shell theme: nord has no light variant' ] \
+        && ok "a theme's own family speaks for that theme alone: one that names nord as its dark variant leaves nord as it is" || bad "family guest" "$i0 | $i1 | $i2 | $i3 | $rc $i4"
+    # three installs of one file at once: one is put in place whole, the others say so
+    sh "$SH" theme nord >/dev/null 2>&1
+    for _hn in 1 2 3; do sh "$SH" theme install "$_hx/twice.spark-theme" > "$H/twice.$_hn" 2>&1 </dev/null & done; wait
+    j1=$(cat "$H"/twice.[123] | grep -c '^installed the theme twice from '); j2=$(cat "$H"/twice.[123] | grep -c "^spark-shell theme: \(twice.spark-theme was not installed: another twice was put there meanwhile\|a theme of yours is named twice -- \)")
+    [ "$j1" = 1 ] && [ "$j2" = 2 ] && [ "$(ls -A "$th_dir/twice" | paste -sd ' ' -)" = 'look.env palette.env' ] && ok "theme install of one file three times at once: one is in place, whole and never one inside another; the others say so" || bad "theme install at once" "$j1 $j2 $(ls -AR "$th_dir/twice") $(cat "$H"/twice.[123] | grep 'spark-shell theme')"
+    sh "$SH" theme "$_ht" >/dev/null 2>&1; for _hn in reef guest twice; do sh "$SH" theme delete "$_hn" >/dev/null 2>&1 </dev/null || :; done
+    cp "$H/cfg.hostile" "$cfg"; rm -rf "$th_dir/reef" "$th_dir/guest" "$th_dir/twice" "$_hx" "$H/nojq" "${_xf%/*}"/reef*.spark-theme
+    for _hn in "$_hp"/*; do case ${_hn##*/} in *.mp4|*.webp|*.JPG|*.JPEG|ZERO.jpg|CUT.jpg|text.jpg|turned.jpg|rgb.jpg|jfxx.jpg|thumb.jpg|scans.jpg|sixtyfour.jpg|fill.jpg|wide.jpg|said.png|cut.png|plain.jpg|PIPE.jpg|'My Photo.jpg') rm -f "$_hn" ;; esac; done
+else
+    ok "hostile theme files: skipped, no python3 here (the CI containers)"
+fi
 rc=0; out=$(sh "$SH" theme delete nord 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: nord is a palette spark-shell ships, not a saved theme' ] && ok "theme delete nord: a shipped palette is refused" || bad "theme delete shipped" "rc=$rc $out"
 sh "$SH" theme winter-desk >/dev/null 2>&1
@@ -8634,7 +9049,7 @@ if [ "$(uname -s)" != Darwin ]; then
     grep -qx 'WALLPAPER=skyline' "$cfg" && grep -qF "output * bg \"$REPO/gallery/wallpaper/skyline.png\" fill" "$sway" && ok "theme tokyonight-night under fjord: skyline comes with the palette, the clone's own picture" || bad "palette brings drawing" "$(grep WALLPAPER "$cfg"; grep ' bg ' "$sway")"
     sh "$SH" theme wallpaper navy >/dev/null 2>&1; sh "$SH" theme nord >/dev/null 2>&1
     grep -qx 'WALLPAPER=fjord' "$cfg" && grep -qF "output * bg \"$REPO/gallery/wallpaper/fjord.png\" fill" "$sway" && ok "theme nord under a color: fjord replaces the color, as the row says (#25)" || bad "color under nord" "$(grep WALLPAPER "$cfg"; grep ' bg ' "$sway")"
-    mkdir -p "$HOME/pictures"; printf x > "$HOME/pictures/mine.png"
+    mkdir -p "$HOME/pictures"; a_picture "$HOME/pictures/mine.png"
     sh "$SH" theme wallpaper "$HOME/pictures/mine.png" >/dev/null 2>&1; sh "$SH" theme tokyonight-night >/dev/null 2>&1
     grep -qxF "WALLPAPER=$HOME/pictures/mine.png" "$cfg" && ! sh "$SH" theme list | grep -q '^  nord  *fjord' && sh "$SH" panel theme --list | grep -q "^  theme      nord	theme nord$" \
         && ok "theme tokyonight-night under a picture of yours: the picture stays, and the list names no drawing then" || bad "picture stays" "$(grep WALLPAPER "$cfg"; sh "$SH" theme list | grep nord)"
@@ -8668,7 +9083,7 @@ if [ "$(uname -s)" != Darwin ]; then
         && ok "theme wallpaper skyline with no renderer: the todo row names the package, the clone's picture meanwhile" || bad "no renderer row" "rc=$rc $out"
     # a picture of yours read small through rsvg-convert when the thumbnailer is gone: the picture inside a square SVG, its margins clear (python3 reads the colors: CI's bare containers have none)
     if command -v python3 >/dev/null 2>&1; then
-        mkdir -p "$HOME/pictures"; printf '\377\330\377 a JPEG by its first bytes alone' > "$HOME/pictures/photo.jpg"; : > "$H/rsvg.log"
+        mkdir -p "$HOME/pictures"; printf "\377\330$_xjpg" > "$HOME/pictures/photo.jpg"; : > "$H/rsvg.log"
         rc=0; out=$(SPARK_SHELL_NO_THUMB=1 PATH=$H/rsvg:$H/.local/bin:$sys sh "$SH" theme picture ~/pictures/photo.jpg 2>&1) || rc=$?
         [ "$rc" = 0 ] && grep -q '^rsvg-convert -w 256 -h 256 -o .*/small.png.new .*/pic/wrap.svg$' "$H/rsvg.log" && [ -f "$st_dir/looks/photo/palette.env" ] && grep -qx 'THEME=photo' "$cfg" \
             && ok "theme picture PATH through rsvg-convert: the picture drawn 256 wide inside an SVG, a look made from it" || bad "rsvg picture" "rc=$rc $out $(cat "$H/rsvg.log")"
