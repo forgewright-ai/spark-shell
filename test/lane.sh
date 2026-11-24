@@ -9,6 +9,8 @@
 #                                (test/tag.sh) asks a copy it trusts about a clone it does not
 #   sh test/lane.sh --full       what main and a release ask: every job
 #   sh test/lane.sh --paths      the paths on stdin, one a line (a test's seam); --lines N says its size
+#   sh test/lane.sh --names      each name a module of this tree takes from another, or from a command, "MODULE NAME"
+#                                a line (test/modules_check.py)
 #
 # Three lines: lane=, why= (the path or the size that decided) and jobs= (ci.yml's jobs it asks for, a space
 # around each name).
@@ -20,8 +22,9 @@
 #             not name, and a fix too large for the fast lane. CI: every job.
 #   guarded   the supply chain (the workflows, the hooks, the signers, this gate and the tagging rule, the
 #             entry every verb passes through, the update path and what else reads a signature, what
-#             fetches a build) and what acts as root (on and off, a distro's package lists, a module that
-#             calls a root function, before the change or after it). CI: every job. A person tags it.
+#             fetches a build, what a build is made by and takes from outside) and what acts as root (on and
+#             off, a distro's package lists, what becomes root's file, a module that says a root word or
+#             takes a name that is another's, before the change or after it). CI: every job. A person tags it.
 #
 # A path this list does not name is standard, never fast: a new kind of file is proven whole until someone
 # says what it is.
@@ -31,7 +34,7 @@ FAST_JOBS=' debian fedora '
 FULL_JOBS=' linux debian ubuntu arch void fedora opensuse desktop macos dialog-build dialog wallpaper wallpaper-deny winpad winpad-deny ear ear-deny bar bar-deny '
 FAST_LINES=400   # the most a fast fix changes outside test/ and the changelog
 
-base=''; at=HEAD; here=''; full=''; paths=''; lines=''
+base=''; at=HEAD; here=''; full=''; paths=''; taken_names=''; lines=''
 while [ $# -gt 0 ]; do
     case $1 in
         --base) base=${2:?--base takes a commit}; shift ;;
@@ -39,8 +42,9 @@ while [ $# -gt 0 ]; do
         --here) here=1 ;;
         --full) full=1 ;;
         --paths) paths=1 ;;
+        --names) taken_names=1 ;;
         --lines) lines=${2:?--lines takes a number}; shift ;;
-        *) echo "usage: sh test/lane.sh [--base REF] [--at REF] [--here] | --full | --paths [--lines N]" >&2; exit 2 ;;
+        *) echo "usage: sh test/lane.sh [--base REF] [--at REF] [--here] | --full | --paths [--lines N] | --names" >&2; exit 2 ;;
     esac
     shift
 done
@@ -49,7 +53,8 @@ done
 say() { printf 'lane=%s\nwhy=%s\njobs=%s\n' "$1" "$2" "$3"; exit 0; }
 [ -z "$full" ] || say standard 'the whole matrix was asked for' "$FULL_JOBS"
 
-if [ -n "$paths" ]; then
+if [ -n "$taken_names" ]; then changed=names
+elif [ -n "$paths" ]; then
     changed=$(cat)
 else
     [ -n "$base" ] || base=$(git merge-base origin/main "$at" 2>/dev/null) || base=''
@@ -63,35 +68,95 @@ else
 fi
 [ -n "$changed" ] || say fast 'nothing changed' "$FAST_JOBS"
 
-# roots -- the text on stdin calls a root function, or fetches
-roots() { grep -q -e root_do -e as_root -e root_put -e root_swap -e root_try -e 'curl '; }
-# module PATH -> guarded | standard | fast, for a module of src/. Read as the change leaves it and as it was before:
-# a change that takes the root call out of a module changed what acts as root. A list of paths (a test's seam)
-# has no before: the file in this tree. A module that is gone and never acted as root is no small fix: standard
-module() {
-    if [ -n "$paths" ]; then
-        if [ ! -f "$1" ]; then echo standard; elif roots < "$1"; then echo guarded; else echo fast; fi
-    elif git show "$at:$1" 2>/dev/null | roots || git show "$base:$1" 2>/dev/null | roots; then echo guarded
-    elif git cat-file -e "$at:$1" 2>/dev/null; then echo fast
-    else echo standard; fi
+# the commands the update, a signature and root's steps run: a function by one of these names takes its place
+COMMANDS='awk basename cat cd chmod cksum cmp command cp curl cut date dirname echo env find git grep head id install jq kill ln ls mkdir mktemp mv paste printf python3 read readlink rm rmdir sed sh sha256sum shasum sort sudo systemctl tail tar test touch tr true type uname visudo wc'
+# the globals more than one module sets: the flags of a run, the palette's file and a subshell's own temp folder
+SHARED='LAYOUT_ON MODE PROVIDE_CLIENT PULSE REFUSE_AS THEME_ENV TMP US VERBOSE YES'
+
+# text END PATH -- the file at END, a commit; this tree's when END is empty
+text() { if [ -n "$1" ]; then git show "$1:$2" 2>/dev/null; else cat "$2" 2>/dev/null; fi; }
+# roots -- the text on stdin calls a root function or a way to root, fetches, runs git, or takes a name by alias or
+# unset. A word only shown to the person counts too: it is kept in a module that is guarded anyway
+roots() { grep -q -e root_do -e as_root -e root_put -e root_swap -e root_try -e sudo -e doas -e pkexec -e run0 -e 'curl ' -e wget -e 'git ' -e GIT_ -e 'alias ' -e 'unset -f'; }
+# names MODULE [all] -- of the module on stdin, "MODULE<tab>NAME" a line: the functions it defines and the globals it
+# sets at source time; with all, each global it sets anywhere too
+names() {
+    tr -d '\000' | LC_ALL=C awk -v m="$1" -v all="${2:-}" '
+        { while (sub(/\\$/, "")) { if ((getline next_line) <= 0) break; $0 = $0 next_line } }
+        {
+            for (s = $0; match(s, /[A-Za-z_][A-Za-z0-9_]*[ \t]*\([ \t]*\)/); s = substr(s, RSTART + RLENGTH)) {
+                n = substr(s, RSTART, RLENGTH); sub(/[ \t(].*/, "", n)
+                if (RSTART == 1 || substr(s, RSTART - 1, 1) !~ /[0-9.$-]/) print m "\t" n
+            }
+            if (match($0, /^[A-Za-z_][A-Za-z0-9_]*=/)) print m "\t" substr($0, 1, RLENGTH - 1)
+            if (all) for (s = " " $0; match(s, /[^A-Za-z0-9_][A-Z_][A-Z0-9_]*=/); s = substr(s, RSTART + RLENGTH)) print m "\t" substr(s, RSTART + 1, RLENGTH - 2)
+        }'
 }
+# owned END -- the names of the entry and of every module at END
+owned() {
+    if [ -n "$1" ]; then git ls-tree --full-tree --name-only "$1" spark-shell src/ 2>/dev/null; else ls spark-shell src/*.sh 2>/dev/null; fi \
+        | while IFS= read -r m; do text "$1" "$m" | names "$m"; done
+}
+# says END OWNED PATH -- the file says a root word
+says() { text "$1" "$3" | roots; }
+# taken END OWNED PATH -> the names of the module that are another's, or a command's: the modules share one namespace,
+# and the last to take a name is the one that answers to it
+taken() {
+    mine=$(text "$1" "$3" | names '' all | cut -f2)
+    [ -z "$mine" ] || { printf '%s\n' "$COMMANDS" | tr ' ' '\n'; printf '%s\n' "$2" | awk -F '\t' -v m="$3" '$1 != m { print $2 }'; } \
+        | grep -vxF "$(printf '%s\n' "$SHARED" | tr ' ' '\n')" | grep -xF "$mine" | sort -u
+}
+takes() { [ -n "$(taken "$@")" ]; }
+if [ -n "$taken_names" ]; then
+    own_at=$(owned '')
+    for p in src/*.sh; do taken '' "$own_at" "$p" | sed "s|^|$p |"; done
+    exit 0
+fi
+# either TEST PATH -- it holds as the change leaves the file or as it was before: a change that takes the root call out
+# of a module changed what acts as root. A list of paths (a test's seam) has no before: the file in this tree
+either() { if [ -n "$paths" ]; then "$1" '' "$own_at" "$2"; else "$1" "$at" "$own_at" "$2" || "$1" "$base" "$own_base" "$2"; fi; }
+here_still() { if [ -n "$paths" ]; then [ -f "$1" ]; else git cat-file -e "$at:$1" 2>/dev/null; fi; }
+# module PATH LANE -> guarded, else LANE, for a module of src/. One that is gone and never acted as root is no small fix: standard
+module() { if either says "$1" || either takes "$1"; then echo guarded; elif here_still "$1"; then echo "$2"; else echo standard; fi; }
+# crates PATH -- of the Cargo.lock on stdin, each package from outside this tree; of a Cargo.toml, all but its own version
+crates() {
+    case $1 in
+        *Cargo.lock) awk '
+            function out() { if (from != "") print name, version, from, sum; name = version = from = sum = "" }
+            /^\[/ { out() }
+            $1 == "name" { name = $3 } $1 == "version" { version = $3 } $1 == "source" { from = $3 } $1 == "checksum" { sum = $3 }
+            END { out() }' ;;
+        *) awk '/^\[/ { part = $0 } part == "[package]" && /^version = "[0-9.]*"$/ { next } { print }' ;;
+    esac
+}
+# cargo PATH -> guarded when a build would take another package, or be made another way; our own version that moves is standard
+cargo() { if [ -z "$paths" ] && [ "$(text "$at" "$1" | crates "$1")" != "$(text "$base" "$1" | crates "$1")" ]; then echo guarded; else echo standard; fi; }
 # area PATH -> guarded | standard | fast
 area() {
     case $1 in
         '"'*) echo guarded ;;   # a name git had to quote
         .github/*|.githooks/*|allowed-signers|distro/*) echo guarded ;;
+        .gitattributes|*/.gitattributes|.gitmodules) echo guarded ;;   # what a checkout writes
         test/gate.sh|test/lane.sh|test/prove.sh|test/tag.sh) echo guarded ;;
+        test/*_build.sh|test/dialog_sbom.sh) echo guarded ;;   # a release runs them
+        component/*deny.toml|component/*build.rs|component/*.cargo/*|component/*rust-toolchain*) echo guarded ;;   # how a build is made, and what it may take
+        component/*Cargo.lock|component/*Cargo.toml) cargo "$1" ;;
         spark-shell) echo guarded ;;                  # the entry: every verb passes through it, the update too, and the help is its head
         src/setup.sh|src/dialog.sh|src/gallery.sh) echo guarded ;;   # on and off; the update and the gallery, which read a signature and say what is trusted
-        src/config.sh) echo standard ;;               # every setting goes through it
-        src/*.sh) module "$1" ;;
-        test/*_proof.py|test/*_proof.sh|test/*_build.sh|test/dialog_sbom.sh|test/dialog_pty.py) echo standard ;;   # run by the desktop job or a build job
+        src/render.sh|template/etc/*|template/login/*) echo guarded ;;   # root's own files, and what renders them
+        lib/dhcp.py|lib/network.py) echo guarded ;;   # run as root
+        src/config.sh) module "$1" standard ;;        # every setting goes through it
+        src/*.sh) module "$1" fast ;;
+        lib/*) if either says "$1"; then echo guarded; else echo standard; fi ;;
+        test/*_proof.py|test/*_proof.sh|test/dialog_pty.py) echo standard ;;   # run by the desktop job or a build job
         test/*) echo fast ;;
         README.md|CHANGELOG.md|CREDITS.md|LICENSE|config.example) echo fast ;;
         *) echo standard ;;
     esac
 }
 
+own_at=''; own_base=''
+case $changed in *src/*) if [ -n "$paths" ]; then own_at=$(owned ''); else own_at=$(owned "$at"); own_base=$(owned "$base"); fi ;; esac
 lane=fast; why=''
 old_ifs=$IFS; IFS='
 '

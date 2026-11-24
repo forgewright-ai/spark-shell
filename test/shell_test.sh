@@ -7048,8 +7048,10 @@ standard|10|lib/home.py
 standard|10|lib/shim/xterm
 standard|10|test/bar_desktop_proof.py
 standard|10|test/desktop_proof.sh
-standard|10|test/winpad_build.sh
 standard|10|a/new/kind
+standard|10|component/Cargo.lock
+standard|10|lib/wifi.py
+fast|10|src/theme.sh src/home.sh src/rows.sh src/layout.sh src/system.sh
 standard|10|src/GONE.sh
 standard|10|src/bar.sh lib/home.py
 guarded|10|src/setup.sh
@@ -7063,13 +7065,41 @@ guarded|1|.github/dependabot.yml
 guarded|1|.githooks/pre-push
 guarded|1|allowed-signers
 guarded|1|distro/void.env
+guarded|1|template/etc/sudoers.d/spark-shell-power
+guarded|1|template/login/sudoers
+guarded|1|src/render.sh
+guarded|1|lib/dhcp.py
+guarded|1|lib/network.py
+guarded|1|test/winpad_build.sh
+guarded|1|test/dialog_sbom.sh
+guarded|1|component/dialog/deny.toml
+guarded|1|component/dialog/build.rs
+guarded|1|component/.cargo/config.toml
+guarded|1|component/bar/rust-toolchain.toml
+guarded|1|.gitattributes
 guarded|1|test/gate.sh
 guarded|1|test/lane.sh
 guarded|1|test/prove.sh
 guarded|1|test/tag.sh
 guarded|10|src/bar.sh README.md src/login.sh spark-shell
 CASES
-[ -z "$_lb" ] && ok "test/lane.sh: a small fix in the user's side of the shell, the tests or the words is fast, to 400 lines; a component, a template, a helper, a proof, the config's module and a path it does not name are standard; the workflows, the hooks, the signers, the gate and the tagging rule, the entry, on and off, the update, the gallery and a module that acts as root are guarded, and guarded wins" || bad "lanes by path" "$_lb"
+[ -z "$_lb" ] && ok "test/lane.sh: a small fix in the user's side of the shell, the tests or the words is fast, to 400 lines; a component, a template, a helper, a proof, the config's module and a path it does not name are standard; the workflows, the hooks, the signers, the gate and the tagging rule, the entry, on and off, the update, the gallery, what becomes root's file, what a build is made by and a module that acts as root are guarded, and guarded wins" || bad "lanes by path" "$_lb"
+# the modules the list guards, by name: one that joins them leaves the fast lane, so it is named here
+_lm='console core devices dialog font gallery login packages palette power quiet render seat semantic setup sound sparkbar storage undo voice winpad'
+_lb=''
+for _f in $_lm; do _lg=$(printf 'src/%s.sh\n' "$_f" | sh "$REPO/test/lane.sh" --paths | sed -n 's/^lane=//p'); [ "$_lg" = guarded ] || _lb="$_lb [src/$_f.sh: $_lg]"; done
+_lg=$(for _f in "$REPO"/src/*.sh; do _f=${_f##*/}; case " $_lm config " in *" ${_f%.sh} "*) ;; *) echo "src/$_f" ;; esac; done | sh "$REPO/test/lane.sh" --paths | grep -v '^jobs=' | tr '\n' ' ')
+case $_lg in lane=fast\ *) ;; *) _lb="$_lb [the other modules: $_lg]" ;; esac
+[ -z "$_lb" ] && ok "test/lane.sh: the modules guarded are the ones named here, and every other one but the config's is the fast lane's" || bad "lanes by module" "$_lb"
+# one name, one module: a function or a global that is another module's, or a function by a command's name, is said
+_lb=''; _ld=$(tmpd); mkdir "$_ld/src" "$_ld/test"; cp "$REPO/spark-shell" "$_ld/"; cp "$REPO"/src/*.sh "$_ld/src/"; cp "$REPO/test/lane.sh" "$REPO/test/modules_check.py" "$_ld/test/"
+_lg=$(sh "$_ld/test/lane.sh" --names | paste -sd, -); [ -z "$_lg" ] || _lb="$_lb [this tree: $_lg]"
+printf 'tag_signed() { return 0; }\n' >> "$_ld/src/bar.sh"; printf 'sed() { cat; }\nnotes_x() { REPO=/x; }\n' >> "$_ld/src/notes.sh"
+_lg=$(sh "$_ld/test/lane.sh" --names | paste -sd, -); [ "$_lg" = 'src/bar.sh tag_signed,src/dialog.sh tag_signed,src/notes.sh REPO,src/notes.sh sed' ] || _lb="$_lb [names taken: $_lg]"
+if command -v python3 >/dev/null 2>&1; then
+    python3 -I "$_ld/test/modules_check.py" 2>&1 | grep -qxF 'modules check: one name: src/bar.sh takes tag_signed, which another module has or a command is' || _lb="$_lb [modules_check]"
+fi
+[ -z "$_lb" ] && ok "test/lane.sh --names and test/modules_check.py: one name, one module, and no function by a command's name" || bad "one name" "$_lb"
 # the jobs a lane asks for are ci.yml's own: the full list is every job but the four every run has, each of them asked
 # for by the plan in its own name, and green needs them all. A job added to ci.yml and not to the list fails here. A
 # job that waits for the pins spells out lint's result and theirs: with the builds skipped (the fast lane) the default,
@@ -7145,6 +7175,37 @@ if command -v git >/dev/null 2>&1; then
     out=$(cd "$_lr" && sh "$REPO/test/lane.sh" --here --base "$_lu~1" --at "$_lu" | sed -n -e 's/^lane=//p' -e 's/^why=//p' | tr '\n' '|'); case $out in 'guarded|src/PLAIN.sh|') ;; *) _lb="$_lb [--here, another clone: $out]" ;; esac
     out=$(_lane --base no-such-commit); case $out in 'standard|no base to measure the change from|') ;; *) _lb="$_lb [a base that is no commit: $out]" ;; esac
     [ -z "$_lb" ] && ok "test/lane.sh on a change: measured from where the branch left origin/main; tests and the changelog count for no line; a module that starts to act as root is guarded, one that stops and one taken out that did too, and a workflow moved under test/; a plain module taken out is standard; a name git quotes is guarded; a commit that is not checked out and another clone are read from git; no base to measure from takes every job" || bad "lanes by change" "$_lb"
+    _lb=''
+    # a name that is another's: the modules share one namespace, and the last to take a name answers to it
+    _lnew() { _lgit update-ref refs/remotes/origin/main HEAD; printf '%s\n' "$2" >> "$_lr/src/$1.sh"; _lgit add -A; _lgit commit -q -m "$1"; out=$(_lane); _lgit reset -q --hard HEAD~1; }   # _lnew MODULE LINE -> out, the lane of a commit that adds LINE to MODULE
+    printf 'trusted() { :; }\nPINNED=1\nif true; then inner() { :; }; fi\nasks() { FLAG=1; }\n' > "$_lr/src/TRUST.sh"
+    printf '#!/bin/sh\nBASE=/\n' > "$_lr/spark-shell"; printf 'a() { :; }\n' > "$_lr/src/PLAIN.sh"; _lgit add -A; _lgit commit -q -m names
+    _lnew PLAIN 'mine() { :; }'; case $out in fast\|*) ;; *) _lb="$_lb [a name of its own: $out]" ;; esac
+    for _ln in 'trusted() { return 0; }' '    trusted () { return 0; }' 'other() { :; }; trusted( ) { :; }' 'trusted\
+() { :; }' 'inner() { :; }' 'PINNED=2' 'other() { PINNED=2; }' 'export BASE=/x' 'sha256sum() { echo x; }' 'command() { :; }' 'alias ssh-keygen=x' 'unset -f trusted' 'sudo true' 'doas true' 'pkexec true' 'run0 true' 'wget x' 'git log' 'export GIT_DIR=x'; do
+        _lnew PLAIN "$_ln"; case $out in 'guarded|src/PLAIN.sh|') ;; *) _lb="$_lb [$_ln: $out]" ;; esac
+    done
+    _lnew NEW 'trusted() { :; }'; case $out in 'guarded|src/NEW.sh|') ;; *) _lb="$_lb [a new module: $out]" ;; esac
+    _lnew TRUST 'FLAG=1'; case $out in fast\|*) ;; *) _lb="$_lb [a global of its own, set in a function already: $out]" ;; esac
+    mkdir -p "$_lr/lib"; _lgit update-ref refs/remotes/origin/main HEAD; echo '["sudo", "-n"]' > "$_lr/lib/wifi.py"; _lgit add -A; _lgit commit -q -m helper
+    out=$(_lane); case $out in 'guarded|lib/wifi.py|') ;; *) _lb="$_lb [a helper that starts to run sudo: $out]" ;; esac
+    # the crates: a version of our own that moves is standard; a package from outside, or a Cargo.toml's anything else, is guarded
+    mkdir -p "$_lr/component/dialog"
+    printf 'version = 4\n\n[[package]]\nname = "adler2"\nversion = "2.0.1"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "32"\n\n[[package]]\nname = "spark-dialog"\nversion = "9.0.0"\ndependencies = [\n "adler2",\n]\n' > "$_lr/component/Cargo.lock"
+    printf '[package]\nname = "spark-dialog"\nversion = "9.0.0"\n\n[dependencies]\nadler2 = "2"\n\n[dependencies.two]\nversion = "2"\n' > "$_lr/component/dialog/Cargo.toml"
+    _lgit add -A; _lgit commit -q -m crates; _lgit update-ref refs/remotes/origin/main HEAD
+    _lcargo() { _lgit commit -q -a -m cargo; out=$(_lane); _lgit reset -q --hard HEAD~1; }
+    sed -i.bak 's/9\.0\.0/9.0.1/' "$_lr/component/Cargo.lock" "$_lr/component/dialog/Cargo.toml"; rm -f "$_lr/component/Cargo.lock.bak" "$_lr/component/dialog/Cargo.toml.bak"
+    _lcargo; case $out in 'standard|component/Cargo.lock|') ;; *) _lb="$_lb [our own version: $out]" ;; esac
+    for _ln in 's/2\.0\.1/2.0.2/' 's/checksum = "32"/checksum = "33"/' 's/rust-lang/other/' 's/"adler2"/"adler3"/'; do
+        sed "$_ln" "$_lr/component/Cargo.lock" > "$_lr/l"; mv "$_lr/l" "$_lr/component/Cargo.lock"; _lcargo
+        case $out in 'guarded|component/Cargo.lock|') ;; *) _lb="$_lb [Cargo.lock $_ln: $out]" ;; esac
+    done
+    for _ln in 's/^version = "2"/version = "3"/' 's/^adler2 = .*/adler2 = { git = "https:\/\/example.com\/x" }/' 's/^name = .*/&\nbuild = "x.rs"/'; do
+        sed "$_ln" "$_lr/component/dialog/Cargo.toml" > "$_lr/l"; mv "$_lr/l" "$_lr/component/dialog/Cargo.toml"; _lcargo
+        case $out in 'guarded|component/dialog/Cargo.toml|') ;; *) _lb="$_lb [Cargo.toml $_ln: $out]" ;; esac
+    done
+    [ -z "$_lb" ] && ok "test/lane.sh on a change: a module that takes a function's or a global's name from another, or a command's, is guarded, and one that says a root word; a helper that starts to run sudo too; a package from outside the tree or a Cargo.toml's anything but its version is guarded, a version of our own is not" || bad "lanes by name" "$_lb"
 fi
 # test/prove.sh: the desktop job's proofs, each one, and a folder that is not its own is never removed
 _lb=''

@@ -8,7 +8,9 @@ comments removed, and checks:
   - a statement that runs at source time (outside every function) names no function and
     no global of a module sourced after it;
   - a module declares the globals it reads from other modules in a `# reads:` line and
-    the globals it sets at source time in a `# sets:` line, both near its top.
+    the globals it sets at source time in a `# sets:` line, both near its top;
+  - one name, one module: no module defines a function or sets a global that another has,
+    or a function by a command's name (test/lane.sh --names, the rule a tag is judged by).
 --report prints the whole picture (functions, globals, their owners and readers) and the
 declaration lines each module should carry, and exits 0. Without it, a finding is an
 error and the exit code is 1.
@@ -16,6 +18,7 @@ error and the exit code is 1.
 import glob
 import os
 import re
+import subprocess
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -163,6 +166,12 @@ def main():
             problems.append("reads: %s says it reads %s and does not" % (name, " ".join(sorted(extra))))
         if sets != decls[name]["sets"]:
             problems.append("sets: %s sets %s at source time; its line says %s" % (name, " ".join(sorted(sets)) or "nothing", " ".join(sorted(decls[name]["sets"])) or "nothing"))
+    # 4. one name, one module
+    said = subprocess.run(["sh", os.path.join(REPO, "test", "lane.sh"), "--names"], text=True, capture_output=True)
+    for line in said.stdout.splitlines():
+        problems.append("one name: %s takes %s, which another module has or a command is" % tuple(line.split(" ", 1)))
+    if said.returncode:
+        problems.append("one name: test/lane.sh --names failed: " + said.stderr.strip())
     if report:
         print("modules: %d (%s)" % (len(files) - 1, " ".join(n for n, _ in files[1:])))
         print("functions: %d defined, %d dead, %d named by tests alone" % (len(defs), len(dead), len(test_only)))
