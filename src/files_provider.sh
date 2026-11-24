@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- the files provider: the rows, the trash, opening, the calls
-# reads: FILES_SHOW_LINES FILES_SHOW_MAX FILES_THUMB_DIR OS PANEL_SEP REPO SCRUB_JQ TAB TMP US
+# reads: FILES_SHOW_LINES FILES_SHOW_MAX FILES_THUMB_DIR OS PANEL_SEP REPO SCRUB_AWK SCRUB_JQ TAB TMP US
 provide_files_rows() {   # provide_files_rows [URI] -> the rows the uri names: the roots', a folder's, the trash's, a search's; false when it names no folder files_ok allows
     _fu=${1:-spark-shell://files/rows}; _fhere=''; FILES_N=0; FILES_B=0; FILES_D=0
     [ ! -d "$FILES_THUMB_DIR" ] || rm -rf "$FILES_THUMB_DIR"   # an old cache, removed
@@ -148,7 +148,7 @@ files_trash_rows() {   # -> the rows of your home's trash, the newest first, the
         -v today="$(date +%Y%m%d)" -v yday="$(date -d "@$(( $(date +%s) - 86400 ))" +%Y%m%d 2>/dev/null || date -r "$(( $(date +%s) - 86400 ))" +%Y%m%d)" -v year="$(date +%Y)" '
         function hex(c) { return index("0123456789abcdef", tolower(c)) - 1 }
         function dec(s,   r, i) { r = ""; for (i = 1; i <= length(s); i++) if (substr(s, i, 1) == "%" && i + 2 <= length(s)) { r = r sprintf("%c", hex(substr(s, i + 1, 1)) * 16 + hex(substr(s, i + 2, 1))); i += 2 } else r = r substr(s, i, 1); return r }
-        function clean(s) { gsub(/[\001-\037\177]|\302[\200-\237]|\342\200[\213-\217\250-\256]|\342\201[\240\246-\251]|\357\273\277/, "", s); return s }
+        '"$SCRUB_AWK"'
         function size(n) { if (n < 1024) return sprintf("%d B", n); if (n < 1048576) return sprintf("%d KB", n / 1024); if (n < 1073741824) return sprintf("%.1f MB", n / 1048576); return sprintf("%.1f GB", n / 1073741824) }
         function when(d) { if (d == today) return "today"; if (d == yday) return "yesterday"; if (substr(d, 1, 4) == year) return substr(d, 7, 2) " " mon[substr(d, 5, 2) + 0]; return substr(d, 1, 4) }
         BEGIN {

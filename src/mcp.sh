@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the wire: the MCP server on stdio, one process on fd 3
 # sets: PROVIDE_POLL PROVIDE_WATCHED
-# reads: ANIMATION_NAMES CONFIG FONT_FACES GLYPH_FAMILIES NOTES_DIR OS PROVIDE_LINE_MAX PROVIDE_PROTOCOL PROVIDE_SECTIONS REPO TAB THEME_ENV THEME_KEYS TMP SYSTEM_CHECK
+# reads: ANIMATION_NAMES CONFIG FONT_FACES GLYPH_FAMILIES NOTES_DIR OS PROVIDE_LINE_MAX PROVIDE_PROTOCOL PROVIDE_SECTIONS REPO SCRUB_UNSEEN TAB THEME_ENV THEME_KEYS TMP SYSTEM_CHECK
 # only MCP on the wire: fd 1 goes to stderr; the loop alone writes fd 3
 rpc_send() { ( printf '%s\n' "$1" >&3 ) 2>/dev/null || :; }   # a subshell: a closed wire ends it, never the provider
 rpc_result() { printf '%s' "$2" | jq -c --argjson id "$1" '{jsonrpc: "2.0", id: $id, result: .}' >&3; }   # rpc_result ID JSON -- by stdin: no argument limit
@@ -352,7 +352,7 @@ EOF
 }
 provide_args_bad() {   # provide_args_bad ARGUMENTS -> why they do not fit the tool (tool_spec's _tp, _tk, _tq and _te), nothing when they do
     printf '%s' "$1" | jq -r --arg p "$_tp" --arg k "$_tk" --arg q "$_tq" --arg x "$_te" '
-        def plain: test("^[^\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff\u2028\u2029]{1,256}$");
+        def plain: test("^[^\u0000-\u001f\u007f-\u009f'"$SCRUB_UNSEEN"']{1,256}$");
         ($x | split(" ") | map(select(. != "") | split(":") | [(.[0] | rtrimstr("?")), .[1], (.[0] | endswith("?"))])) as $xs | ($xs | map(.[0])) as $xk | . as $a |
         [$xs[] | select(.[1] != "text" and .[1] != "seconds" and .[1] != "pixels" and (.[2] | not))] as $xr | [$xs[] | select(. as $e | $a | has($e[0]))] as $xp |   # the extras a call must give; the ones this call gave
         if type != "object" then "arguments are an object"

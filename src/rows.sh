@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- rows: a section as an MCP server on stdio
-# sets: PROVIDE_CLIENT PROVIDE_LINE_MAX PROVIDE_PROTOCOL PROVIDE_SECTIONS PROVIDE_SECTIONS_OLD PROVIDE_TOOLS SCRUB_JQ
+# sets: PROVIDE_CLIENT PROVIDE_LINE_MAX PROVIDE_PROTOCOL PROVIDE_SECTIONS PROVIDE_SECTIONS_OLD PROVIDE_TOOLS SCRUB_AWK SCRUB_JQ SCRUB_UNSEEN
 # reads: ANIMATION_NAMES KEPT_LAYOUTS LAYOUTS_DIR LAYOUT_LAST PANEL_CROSS PANEL_DOT PANEL_GO PANEL_RING PANEL_SEP PANEL_TICK REPO SAVER_NAMES SAVER_OWN TAB TERM_PALETTE_FORMATS THUMB_DIR TMP US WALL_TYPES
 # a section as an MCP server on stdio, JSON-RPC a line. Every JSON value
 # is built by jq with --arg, every request is parsed by jq; a method or a
@@ -13,10 +13,15 @@ PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel c
 # the scrubber for every string a provider hands on: what can redraw or
 # reorder a screen goes
 #   C0 but the tab, DEL and C1            \u0000-\u0008 \u000b-\u001f \u007f-\u009f
-#   the bidi controls                     \u200e \u200f \u202a-\u202e \u2066-\u2069
-#   the zero-width set                    \u200b-\u200d \u2060 \ufeff
+#   the bidi controls                     \u061c \u200e \u200f \u202a-\u202e \u2066-\u2069
+#   the zero-width set                    \u00ad \u180e \u200b-\u200d \u2060-\u2065 \ufeff
+#   the letters drawn as a blank          \u115f \u1160 \u3164 \uffa0
+#   the annotation marks, the tag block   \ufff9-\ufffb U+E0000-U+E007F
 #   the line and paragraph separators     \u2028 \u2029
-SCRUB_JQ='gsub("[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069\u200b-\u200d\u2060\ufeff\u2028\u2029]"; "")'
+SCRUB_UNSEEN='\u00ad\u061c\u115f\u1160\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2069\u3164\ufeff\uffa0\ufff9-\ufffb\udb40\udc00-\udb40\udc7f'   # what jq drops past C0, DEL and C1; the tag block as its surrogates
+SCRUB_JQ='gsub("[\u0000-\u0008\u000b-\u001f\u007f-\u009f'"$SCRUB_UNSEEN"']"; "")'
+# the same on UTF-8 bytes, for an awk under LC_ALL=C; a tab goes too
+SCRUB_AWK='function clean(s) { gsub(/[\001-\037\177]|\302[\200-\237\255]|\330\234|\341\205[\237\240]|\341\240\216|\342\200[\213-\217\250-\256]|\342\201[\240-\251]|\343\205\244|\357\273\277|\357\276\240|\357\277[\271-\273]|\363\240[\200\201][\200-\277]/, "", s); return s }'
 scrub_plain() {   # scrub_plain WORDS -> them scrubbed; printable ASCII as it is, no process
     case $1 in *[!\ -~]*) printf '%s' "$1" | scrub_text ;; *) printf '%s' "$1" ;; esac
 }

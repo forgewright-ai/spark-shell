@@ -7416,6 +7416,19 @@ fi
 rm -f "$HOME/.config/spark-shell/layouts/work"
 grep -q '^LOCAL_RISK="wifi_forget window_close bt_pair"$' "$SRC" && grep -q 'pub const LOCAL_RISK: \[&str; 3\] = \["wifi_forget", "window_close", "bt_pair"\];' "$REPO/component/dialog/src/app.rs" \
     && ok "the shell and the dialog hold one list of risky steps" || bad "risk lists" "$(grep -n LOCAL_RISK "$SRC" "$REPO/component/dialog/src/app.rs")"
+# a character no screen shows makes two names look one: U+00AD, 061C, 115F, 1160, 180E, 2061 to 2064, 3164, FFA0, FFF9 to FFFB and the tag block leave a row, a file's
+# name and a step's argument; an emoji's variation selector stays
+_un='\302\255 \330\234 \341\205\237 \341\205\240 \341\240\216 \342\201\241 \342\201\242 \342\201\243 \342\201\244 \343\205\244 \357\276\240 \357\277\271 \357\277\272 \357\277\273 \363\240\200\200 \363\240\200\201 \363\240\201\201 \363\240\201\277'
+_ub=''; _ui=0; set --
+for _uc in $_un; do
+    _ut=$(printf "pay${_uc}pal"); _ui=$((_ui + 1)); set -- "$@" "$(call "$_ui" notes_find "$(jq -cn --arg w "$_ut" '{words: $w}')")"
+    [ "$(. "$REPO/src/rows.sh"; printf '%s\n' "$_ut" | scrub_text)" = paypal ] || _ub="$_ub row:$_uc"
+    [ "$(. "$REPO/src/rows.sh"; printf '%s\n' "$_ut" | LC_ALL=C awk "$SCRUB_AWK"' { print clean($0) }')" = paypal ] || _ub="$_ub file:$_uc"
+done
+mcp notes "$@"
+[ "$(jq -s '[.[] | select(.error.code == -32602)] | length' "$H/mcp.out")" = "$_ui" ] || _ub="$_ub arguments:$(jq -c 'select(.error == null) | .id' "$H/mcp.out" | paste -sd, -)"
+_ut=$(printf 'pay\342\235\244\357\270\217pal'); [ "$(. "$REPO/src/rows.sh"; printf '%s\n' "$_ut" | scrub_text)" = "$_ut" ] && [ "$(. "$REPO/src/rows.sh"; printf '%s\n' "$_ut" | LC_ALL=C awk "$SCRUB_AWK"' { print clean($0) }')" = "$_ut" ] || _ub="$_ub emoji"
+[ -z "$_ub" ] && ok "scrub: each character no screen shows leaves a row and a file's name, and is refused in a step's argument; an emoji keeps its variation selector" || bad "scrub unseen" "$_ub"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 printf 'buy bread\n' > "$H/notes.md"; printf 'x\000y' > "$H/blob.txt"; printf 'a' > "$H/pic.png"
 awk 'BEGIN { for (i = 0; i < 1601; i++) printf "0123456789" }' > "$H/long.md"; : > "$H/empty.md"; printf 'caf\351\n' > "$H/latin1.txt"

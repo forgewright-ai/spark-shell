@@ -11,9 +11,17 @@ pub const DROP: &[(char, char, &str)] = &[
     ('\u{202a}', '\u{202e}', "the bidi embeddings and overrides"),
     ('\u{2066}', '\u{2069}', "the bidi isolates"),
     ('\u{200b}', '\u{200d}', "the zero-width space and joiners"),
-    ('\u{2060}', '\u{2060}', "the word joiner"),
+    ('\u{2060}', '\u{2065}', "the word joiner and the invisible operators"),
     ('\u{feff}', '\u{feff}', "the zero-width no-break space"),
     ('\u{2028}', '\u{2029}', "the line and paragraph separators"),
+    ('\u{00ad}', '\u{00ad}', "the soft hyphen"),
+    ('\u{061c}', '\u{061c}', "the Arabic letter mark"),
+    ('\u{115f}', '\u{1160}', "the Hangul fillers"),
+    ('\u{180e}', '\u{180e}', "the Mongolian vowel separator"),
+    ('\u{3164}', '\u{3164}', "the Hangul filler"),
+    ('\u{ffa0}', '\u{ffa0}', "the halfwidth Hangul filler"),
+    ('\u{fff9}', '\u{fffb}', "the annotation marks"),
+    ('\u{e0000}', '\u{e007f}', "the tag block"),
 ];
 
 /// The text with every DROP class gone and a tab as a space.
@@ -121,6 +129,18 @@ mod tests {
                 assert_eq!(scrub(&s), "xy", "{} ({:?}) stayed", why, c);
             }
         }
+    }
+
+    #[test]
+    fn a_character_no_screen_shows_goes_and_an_emoji_stays() {
+        let unseen =
+            "\u{ad}\u{61c}\u{115f}\u{1160}\u{180e}\u{2061}\u{2062}\u{2063}\u{2064}\u{3164}\u{ffa0}\u{fff9}\u{fffa}\u{fffb}\u{e0001}\u{e0020}\u{e0041}\u{e007f}";
+        for c in unseen.chars() {
+            assert_eq!(scrub(&format!("pay{}pal", c)), "paypal", "{:?} stayed", c);
+        }
+        // the variation selector keeps an emoji in color; the joiner between two goes, as ever
+        assert_eq!(scrub("\u{2764}\u{fe0f}"), "\u{2764}\u{fe0f}");
+        assert_eq!(scrub("\u{1f468}\u{200d}\u{1f469}"), "\u{1f468}\u{1f469}");
     }
 
     #[test]

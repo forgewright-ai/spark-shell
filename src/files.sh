@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the files provider
 # sets: FILES_DEPTH FILES_FOUND_MAX FILES_MATCH_MAX FILES_NAMES FILES_NAMES_AGE FILES_RECENT_DAYS FILES_RECENT_MAX FILES_ROWS_BYTES FILES_ROWS_MAX FILES_SEARCH_T FILES_SHOW_LINES FILES_SHOW_MAX FILES_SKIP FILES_THUMB_DIR FILES_WALK_T
-# reads: NOTES_DIR OS TAB THUMB_DIR TMP US
+# reads: NOTES_DIR OS SCRUB_AWK TAB THUMB_DIR TMP US
 FILES_SHOW_MAX=1048576   # a file shown or attached: a megabyte at most
 FILES_SHOW_LINES=12      # the lines a show puts in the exchange
 FILES_RECENT_DAYS=7      # the files touched in the last days, at the top of your home
@@ -112,7 +112,7 @@ files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' line
             }
             return r
         }
-        function clean(s) { gsub(/[\001-\037\177]|\302[\200-\237]|\342\200[\213-\217\250-\256]|\342\201[\240\246-\251]|\357\273\277/, "", s); return s }   # SCRUB_JQ, on bytes
+        '"$SCRUB_AWK"'
         function size(n) { if (n < 1024) return sprintf("%d B", n); if (n < 1048576) return sprintf("%d KB", n / 1024); if (n < 1073741824) return sprintf("%.1f MB", n / 1048576); return sprintf("%.1f GB", n / 1073741824) }
         function when(d) { if (d == today) return "today"; if (d == yday) return "yesterday"; if (substr(d, 1, 4) == year) return substr(d, 7, 2) " " mon[substr(d, 5, 2) + 0]; return substr(d, 1, 4) }
         function stamp(s,   d) { d = substr(s, 1, 4) substr(s, 6, 2) substr(s, 9, 2); if (substr(d, 1, 4) != year) return substr(d, 7, 2) " " mon[substr(d, 5, 2) + 0] " " substr(d, 1, 4); return when(d) " " substr(s, 12, 5) }   # a wide list: the date with the time, the year in place of the time for another year
