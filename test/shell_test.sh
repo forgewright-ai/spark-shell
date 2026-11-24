@@ -7531,6 +7531,23 @@ with tarfile.open(h + "/assets/rewrite.tar.bz2", "w:bz2") as t:
     out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" check 2>&1 || :)
     printf '%s\n' "$out" | grep -q "^ok     voice        spark-ear and its models ($ear_dir)$" \
         && ok "check: the ear and its models in place, as the release pins them (v0.146)" || bad "check voice ok" "$(printf '%s\n' "$out" | grep voice)"
+    # a pin that moved: what is installed is of the pin before, so it is said, and fetched again; the parts whose pin stayed are not
+    cp "$C/src/voice.sh" "$H/voice.keep"; cp "$H/assets/runtime.tar.bz2" "$H/runtime.keep"; mv "$H/assets/punct.tar.bz2" "$H/punct.keep"
+    mkdir -p "$H/rt/lib"; echo 'the engine, newer' > "$H/rt/lib/libsherpa-onnx-c-api.so"; echo 'the runtime, newer' > "$H/rt/lib/libonnxruntime.so"; (cd "$H" && python3 -I -c 'import tarfile
+with tarfile.open("assets/runtime.tar.bz2", "w:bz2") as t: t.add("rt")')
+    sed "s/^VOICE_RUNTIME_SHA256=.*/VOICE_RUNTIME_SHA256=$(sum256 "$H/assets/runtime.tar.bz2")/" "$H/voice.keep" > "$C/src/voice.sh"
+    out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" check 2>&1 || :); _vb=''
+    printf '%s\n' "$out" | grep -q '^FAIL   voice        the engine or a model is not the one spark-shell pins now -- spark-shell on desktop$' || _vb="$_vb [check: $(printf '%s\n' "$out" | grep voice)]"
+    out=$(voice_on --yes || :); printf '%s\n' "$out" | grep -q "^ok     voice        spark-ear and its models installed ($ear_dir), sha256 checked$" || _vb="$_vb [on: $(printf '%s\n' "$out" | grep voice)]"
+    [ "$(cat "$ear_dir/lib/libsherpa-onnx-c-api.so")" = 'the engine, newer' ] && [ "$(cat "$ear_dir/lib/libonnxruntime.so")" = 'the runtime, newer' ] || _vb="$_vb [the library before it stays]"
+    out=$(voice_on --dry-run || :); printf '%s\n' "$out" | grep -q "^ok     voice        spark-ear and its models, as pinned ($ear_dir)$" || _vb="$_vb [again: $(printf '%s\n' "$out" | grep voice)]"
+    # an install from before the pins were kept: right while the pin is one of then, fetched again once it is not
+    rm -f "$ear_dir"/*/pin; out=$(voice_on --dry-run || :); printf '%s\n' "$out" | grep -q '^would  voice        fetch spark-ear' || _vb="$_vb [no pin kept, another one now: $(printf '%s\n' "$out" | grep voice)]"
+    _vp=$(sed -n 's/^VOICE_[A-Z]*_SHA256=\([0-9a-f]*\).*/\1/p' "$C/src/voice.sh" | paste -sd' ' -); sed -i.bak "s/^VOICE_PINS_THEN=.*/VOICE_PINS_THEN='$_vp'/" "$C/src/voice.sh"
+    out=$(voice_on --dry-run || :); printf '%s\n' "$out" | grep -q "^ok     voice        spark-ear and its models, as pinned ($ear_dir)$" || _vb="$_vb [no pin kept, the one of then: $(printf '%s\n' "$out" | grep voice)]"
+    cp "$H/voice.keep" "$C/src/voice.sh"; rm -f "$C/src/voice.sh.bak"; cp "$H/runtime.keep" "$H/assets/runtime.tar.bz2"; mv "$H/punct.keep" "$H/assets/punct.tar.bz2"
+    [ "$(sed -n "s/^VOICE_PINS_THEN='\(.*\)'$/\1/p" "$REPO/src/voice.sh" | tr ' ' '\n' | grep -cE '^[0-9a-f]{64}$')" = 4 ] || _vb="$_vb [the pins of then are four]"
+    [ -z "$_vb" ] && ok "on: a pin that moved fetches that part again and no other, and check says so before; an install from before the pins were kept is as it was pinned then" || bad "voice pin moved" "$_vb"
     rm -rf "$ear_dir" "$ear_bin"; cp "$H/assets/model.tar.bz2" "$H/model.keep"; printf 'x' >> "$H/assets/model.tar.bz2"
     out=$(voice_on --yes || :)
     printf '%s\n' "$out" | grep -q '^todo   voice        the model fetched is not the one spark-shell pins: not installed$' \

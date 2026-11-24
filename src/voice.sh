@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- voice: the ear hears, the words go in the terminal's line, the band shows it
-# sets: EAR_BIN VOICE_DIR VOICE_MODEL_SHA256 VOICE_MODEL_URL VOICE_PUNCT_SHA256 VOICE_PUNCT_URL VOICE_REWRITE_SHA256 VOICE_REWRITE_URL VOICE_RUNTIME_SHA256 VOICE_RUNTIME_URL VOICE_TAP_MS
+# sets: EAR_BIN VOICE_DIR VOICE_MODEL_SHA256 VOICE_MODEL_URL VOICE_PINS_THEN VOICE_PUNCT_SHA256 VOICE_PUNCT_URL VOICE_REWRITE_SHA256 VOICE_REWRITE_URL VOICE_RUNTIME_SHA256 VOICE_RUNTIME_URL VOICE_TAP_MS
 # reads: DIALOG_URL OS REPO STATE_DIR TMP
 EAR_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-ear
 VOICE_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/ear   # the engine: lib/ and model/
@@ -13,6 +13,8 @@ VOICE_PUNCT_URL=${SPARK_SHELL_VOICE_PUNCT_URL:-https://github.com/k2-fsa/sherpa-
 VOICE_PUNCT_SHA256=9f5e5a72c7d2829635bd074fce92b6bbd5b78da8a52e7ad8ed1be933f366b99d
 VOICE_REWRITE_URL=${SPARK_SHELL_VOICE_REWRITE_URL:-https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-unified-en-0.6b-int8-non-streaming.tar.bz2}   # the line read again when the speaking stops
 VOICE_REWRITE_SHA256=99f63605b3a85a54c250c0869670a687b7d6598a47bf2421515e1f839a76e150
+# an install through v0.166 kept no pin beside what it fetched: it is one of these, the pins every release till then had
+VOICE_PINS_THEN='532c45bbd41036d83cd70606797529aa8086c2053395a58967736c727625b120 7bd33a914e93370a1ba9c2066d9e841bdcad8613fa2a00537c1ae15d851a14d8 9f5e5a72c7d2829635bd074fce92b6bbd5b78da8a52e7ad8ed1be933f366b99d 99f63605b3a85a54c250c0869670a687b7d6598a47bf2421515e1f839a76e150'
 
 # the ear, pinned like the pad
 ear_release_tag() {   # -> clone_tag when it pins an ear and component/ear/ is unchanged since; false otherwise
@@ -36,6 +38,13 @@ voice_rewrite() { printf '%s' "$VOICE_DIR/rewrite"; }   # the line read again at
 voice_punct_here() { [ -f "$(voice_punct)/model.onnx" ] && [ -f "$(voice_punct)/bpe.vocab" ]; }
 voice_rewrite_here() { [ -f "$(voice_rewrite)/encoder.int8.onnx" ] && [ -f "$(voice_rewrite)/tokens.txt" ]; }
 voice_engine_here() { [ -f "$(voice_lib)" ] && [ -f "$VOICE_DIR/lib/libonnxruntime.so" ] && [ -f "$(voice_model)/encoder.int8.onnx" ] && [ -f "$(voice_model)/tokens.txt" ]; }
+voice_pinned() {   # voice_pinned PART SHA256 -- what is installed of PART came from the archive of that sha256
+    if [ -f "$VOICE_DIR/$1/pin" ]; then [ "$(cat "$VOICE_DIR/$1/pin")" = "$2" ]; return; fi
+    case " $VOICE_PINS_THEN " in *" $2 "*) return 0 ;; esac
+    return 1
+}
+voice_pin() { printf '%s\n' "$2" > "$VOICE_DIR/$1/pin"; }   # voice_pin PART SHA256 -- kept beside what was unpacked
+voice_as_pinned() { voice_pinned lib "$VOICE_RUNTIME_SHA256" && voice_pinned model "$VOICE_MODEL_SHA256" && voice_pinned punct "$VOICE_PUNCT_SHA256" && voice_pinned rewrite "$VOICE_REWRITE_SHA256"; }
 voice_engine() {   # -> the command that hears here: your own, else the ear; false when neither can
     if [ -n "${VOICE_ENGINE:-}" ]; then printf '%s' "$VOICE_ENGINE"; return 0; fi
     voice_engine_here || return 1
@@ -193,7 +202,7 @@ voice_install() {   # the voice row of on desktop: the ear and its engine in pla
     _vit=$(wallpaper_target) || { skip voice "no spark-ear built for $(uname -m) yet"; return 0; }
     _vir=$(ear_release_tag) || { row todo voice "this clone is past its release: the ear comes with the next tag"; return 0; }
     _viw=$(ear_want_sha); [ -n "$_viw" ] || { skip voice "$_vir pins no spark-ear"; return 0; }
-    if ear_ok && voice_engine_here && voice_punct_here && voice_rewrite_here; then ok voice "spark-ear and its models, as pinned ($VOICE_DIR)"; return 0; fi
+    if ear_ok && voice_engine_here && voice_punct_here && voice_rewrite_here && voice_as_pinned; then ok voice "spark-ear and its models, as pinned ($VOICE_DIR)"; return 0; fi
     [ "$DIALOG_URL" != none ] && [ "$VOICE_RUNTIME_URL" != none ] || { skip voice "no release to fetch from (SPARK_SHELL_DIALOG_URL=none)"; return 0; }
     command -v curl >/dev/null 2>&1 || { row todo voice "curl is not installed: the ear cannot be fetched (spark-shell on installs it)"; return 0; }
     need voice "fetch spark-ear for $_vir and its models (sherpa-onnx 2.0.1, English, 620 MB: the words as you speak, their punctuation, and the line read again at the end), the sha256 of each checked" || return 0
@@ -202,21 +211,21 @@ voice_install() {   # the voice row of on desktop: the ear and its engine in pla
         voice_fetch ear "$DIALOG_URL/$_vir/spark-ear-$_vit" "$_viw" "$TMP/spark-ear" || return 0
         mkdir -p "$(dirname "$EAR_BIN")" && chmod 755 "$TMP/spark-ear" && mv "$TMP/spark-ear" "$EAR_BIN"
     fi
-    if [ ! -f "$(voice_lib)" ] || [ ! -f "$VOICE_DIR/lib/libonnxruntime.so" ]; then
+    if [ ! -f "$(voice_lib)" ] || [ ! -f "$VOICE_DIR/lib/libonnxruntime.so" ] || ! voice_pinned lib "$VOICE_RUNTIME_SHA256"; then
         voice_fetch "engine's library" "$VOICE_RUNTIME_URL" "$VOICE_RUNTIME_SHA256" "$TMP/runtime.tar.bz2" || return 0
-        voice_unpack "$TMP/runtime.tar.bz2" "$VOICE_DIR/lib" libsherpa-onnx-c-api.so libonnxruntime.so || { row todo voice "the engine's library did not unpack"; return 0; }
+        voice_unpack "$TMP/runtime.tar.bz2" "$VOICE_DIR/lib" libsherpa-onnx-c-api.so libonnxruntime.so && voice_pin lib "$VOICE_RUNTIME_SHA256" || { row todo voice "the engine's library did not unpack"; return 0; }
     fi
-    if ! voice_engine_here; then
+    if ! voice_engine_here || ! voice_pinned model "$VOICE_MODEL_SHA256"; then
         voice_fetch model "$VOICE_MODEL_URL" "$VOICE_MODEL_SHA256" "$TMP/model.tar.bz2" || return 0
-        voice_unpack "$TMP/model.tar.bz2" "$(voice_model)" encoder.int8.onnx decoder.int8.onnx joiner.int8.onnx tokens.txt || { row todo voice "the model did not unpack"; return 0; }
+        voice_unpack "$TMP/model.tar.bz2" "$(voice_model)" encoder.int8.onnx decoder.int8.onnx joiner.int8.onnx tokens.txt && voice_pin model "$VOICE_MODEL_SHA256" || { row todo voice "the model did not unpack"; return 0; }
     fi
-    if ! voice_punct_here; then
+    if ! voice_punct_here || ! voice_pinned punct "$VOICE_PUNCT_SHA256"; then
         voice_fetch "punctuation model" "$VOICE_PUNCT_URL" "$VOICE_PUNCT_SHA256" "$TMP/punct.tar.bz2" || return 0
-        voice_unpack "$TMP/punct.tar.bz2" "$(voice_punct)" model.onnx bpe.vocab || { row todo voice "the punctuation model did not unpack"; return 0; }
+        voice_unpack "$TMP/punct.tar.bz2" "$(voice_punct)" model.onnx bpe.vocab && voice_pin punct "$VOICE_PUNCT_SHA256" || { row todo voice "the punctuation model did not unpack"; return 0; }
     fi
-    if ! voice_rewrite_here; then
+    if ! voice_rewrite_here || ! voice_pinned rewrite "$VOICE_REWRITE_SHA256"; then
         voice_fetch "rewriting model" "$VOICE_REWRITE_URL" "$VOICE_REWRITE_SHA256" "$TMP/rewrite.tar.bz2" || return 0
-        voice_unpack "$TMP/rewrite.tar.bz2" "$(voice_rewrite)" encoder.int8.onnx decoder.int8.onnx joiner.int8.onnx tokens.txt || { row todo voice "the rewriting model did not unpack"; return 0; }
+        voice_unpack "$TMP/rewrite.tar.bz2" "$(voice_rewrite)" encoder.int8.onnx decoder.int8.onnx joiner.int8.onnx tokens.txt && voice_pin rewrite "$VOICE_REWRITE_SHA256" || { row todo voice "the rewriting model did not unpack"; return 0; }
     fi
     row ok voice "spark-ear and its models installed ($VOICE_DIR), sha256 checked"
 }
@@ -231,6 +240,7 @@ check_voice() {
     elif ! voice_engine_here; then chk voice fail "the engine is missing" "spark-shell on desktop"
     elif ! voice_punct_here; then chk voice fail "the punctuation model is missing" "spark-shell on desktop"
     elif ! voice_rewrite_here; then chk voice fail "the rewriting model is missing" "spark-shell on desktop"
+    elif ! voice_as_pinned; then chk voice fail "the engine or a model is not the one spark-shell pins now" "spark-shell on desktop"
     elif ! wm_type_here; then chk voice fail "$(wm_missing type)" "spark-shell on desktop"
     else chk voice ok "spark-ear and its models ($VOICE_DIR)"; fi
 }
