@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the compositor: the one module that names it (sway)
 # sets: WM_CONFIG_REL WM_LOGIN_CONF WM_NAME WM_OWN WM_TRAY
-# reads: REPO
+# reads: REPO TAB
 WM_NAME=sway
 WM_OWN='sway swaybar swaybg swaymsg swaylock swayidle'   # its own processes: never apps, never ended
 WM_CONFIG_REL=.config/sway/config
