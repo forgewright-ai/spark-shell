@@ -9049,9 +9049,9 @@ if [ "$(uname -s)" != Darwin ]; then
     # the bar's set (#160) and the glyph family (#248): a switch and a value left and right change in Settings > theme; a
     # step with its undo, the same value again a refusal; a saved theme keeps both and brings them back
     jq -e '(.rows[] | select(.id == "theme:show:Words on the bar") | .switch == {on: false, turn_on: {name: "theme_glyphs", arguments: {to: "words"}}, turn_off: {name: "theme_glyphs", arguments: {to: "signs"}}} and .tool == null and .group == "text and bar")
-        and (.rows[] | select(.id == "theme:show:Glyph family") | .step == {values: [{shown: "stone", sent: "stone"}, {shown: "star", sent: "star"}, {shown: "banner", sent: "banner"}], at: 0, set: {name: "theme_family", arguments: {}}, key: "to", words: ["back", "next"]} and .tool == null and .group == "text and bar")
+        and (.rows[] | select(.id == "theme:show:Glyph family") | .step == {values: [{shown: "stone", sent: "stone", sample: "'"$(printf '\342\226\260\342\226\261\342\226\260\342\226\261 \342\226\260')"'"}, {shown: "star", sent: "star", sample: "'"$(printf '\342\224\201\342\224\200\342\224\201\342\224\200 \342\234\246')"'"}, {shown: "banner", sent: "banner", sample: "'"$(printf '\342\226\256\342\226\257\342\226\256\342\226\257 \342\236\244')"'"}], at: 0, set: {name: "theme_family", arguments: {}}, key: "to", words: ["back", "next"]} and .tool == null and .group == "text and bar")
         and ([.rows[] | select(.id | test("[Ww]orkspaces"))] | length == 0)' "$H/trows.json" >/dev/null \
-        && ok "provide theme rows (#160, #183, #248): words on the bar a switch, the glyph family a value, stone first; no workspaces row" || bad "bar rows" "$(jq -c '[.rows[] | select(.group == "text and bar")]' "$H/trows.json")"
+        && ok "provide theme rows (#160, #183, #248): words on the bar a switch, the glyph family a value, stone first, each with its own signs; no workspaces row" || bad "bar rows" "$(jq -c '[.rows[] | select(.group == "text and bar")]' "$H/trows.json")"
     mcp theme "$(call 1 theme_glyphs '{"to":"words"}')" "$(call 2 theme_glyphs '{"to":"words"}')" "$(call 3 theme_family '{"to":"star"}')" "$(call 4 theme_family '{"to":"star"}')" "$(call 5 theme_family '{"to":"runes"}')" "$(call 6 theme_workspaces '{"to":"numbers"}')"
     [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'the bar in words' ] && ans 1 | jq -e '.result.structuredContent.undo | .name == "theme_glyphs" and .arguments.to == "signs"' >/dev/null \
         && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'the bar is in words already' ] \
@@ -9109,11 +9109,18 @@ if [ "$(uname -s)" != Darwin ]; then
         printf 'FONT=Monaspace Neon:size=12\n' >> "$cfg"
         mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows"}')" "$(call 2 theme_face '{"to":"argon"}')" "$(call 3 theme_face '{"to":"comic"}')"
         ans 1 | jq -r '.result.contents[0].text' > "$H/frows.json"
+        jq -e '.rows[] | select(.id == "theme:show:Text face") | [.step.values[] | .face // "none"] == ["none", "none", "none", "none", "none"]' "$H/frows.json" >/dev/null \
+            && ok "provide theme rows: a typeface not installed carries no family to draw its specimen in" || bad "faces not here" "$(jq -c '.rows[] | select(.id == "theme:show:Text face")' "$H/frows.json")"
         jq -e '.rows[] | select(.id == "theme:show:Text face") | .step.at == 0 and (.step.values | map(.sent)) == ["neon", "argon", "xenon", "radon", "krypton"] and .step.set == {name: "theme_face", arguments: {}}' "$H/frows.json" >/dev/null \
             && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = "text in argon $(printf '\302\267') from spark-shell on, which installs it; neon until then" ] \
             && ans 2 | jq -e '.result.structuredContent.undo == {name: "theme_face", arguments: {to: "neon"}}' >/dev/null && grep -qx 'FONT=Monaspace Argon:size=12' "$cfg" \
             && ans 3 | jq -e '.error.message | startswith("theme_face: to is one of neon, argon, xenon, radon, krypton")' >/dev/null \
             && ok "provide theme_face (#247): neon first among the five, a step that keeps the size, its undo the face before; a face not of the five refused" || bad "face step" "$(cut -c1-400 "$H/mcp.out")"
+        for f in Neon Argon; do _fd=$H/.local/share/fonts/monaspace-$(printf '%s' "$f" | tr 'A-Z' 'a-z'); mkdir -p "$_fd"; for _s in Regular Bold Italic BoldItalic; do : > "$_fd/Monaspace$f-$_s.otf"; done; done; rm -f "$H/.local/share/fonts/monaspace-argon/MonaspaceArgon-Bold.otf"
+        mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows/settings/type"}')"
+        ans 1 | jq -r '.result.contents[0].text' | jq -e '.rows[] | select(.id == "theme:show:Text face") | [.step.values[] | .face // "none"] == ["Monaspace Neon", "none", "none", "none", "none"]' >/dev/null \
+            && ok "provide theme rows: a typeface installed whole carries its family, one that lacks a style does not" || bad "faces here" "$(ans 1 | cut -c1-600)"
+        rm -rf "$H/.local/share/fonts/monaspace-neon" "$H/.local/share/fonts/monaspace-argon"
         sh "$SH" theme save facelook >/dev/null 2>&1; sh "$SH" theme face neon >/dev/null 2>&1; sh "$SH" theme facelook >/dev/null 2>&1
         grep -qx 'FACE=argon' "$th_dir/facelook/look.env" && grep -qx 'TEXT_SIZE=12' "$th_dir/facelook/look.env" && ! grep -q '^FONT=' "$th_dir/facelook/look.env" && grep -qx 'FONT=Monaspace Argon:size=12' "$cfg" \
             && ok "theme save keeps the face and its size as FACE and TEXT_SIZE, and the theme brings them back (#247)" || bad "face kept" "$(cat "$th_dir/facelook/look.env"; grep FONT "$cfg")"

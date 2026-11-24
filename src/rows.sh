@@ -374,6 +374,8 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
         _pr_chips=$(theme_chips theme); _pr_size=$(look_font_size); _pr_anim=$(anim_now)
         _pr_trn=$(transparency_of "$ALPHA"); if [ "$_pr_trn" -eq 0 ]; then _pr_tr=off; else _pr_tr="$_pr_trn%"; fi
     fi
+    [ "$1" != theme ] || [ -s "$TMP/theme.type" ] || appearance_type > "$TMP/theme.type"   # what each typeface and family looks like: once for the provider's life
+    _pr_type='{}'; [ ! -s "$TMP/theme.type" ] || _pr_type=$(cat "$TMP/theme.type")
     _pr_bar=''; [ "$1" != bar ] || { _pr_bar=$(BAR_TEXT=auto; bar_line_font "$(font_spec)"); _pr_bar=${_pr_bar##* }; _pr_bar=${_pr_bar%px}; _pr_bar=${_pr_bar%%.*}; }   # auto's own size, whatever size is in use
     _asks='[]'
     if [ "$1" = wifi ] && [ -n "$(wifi_tool)" ]; then   # a secured network not saved yet: its password is asked, masked
@@ -391,7 +393,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                     if ($id | startswith("spark-shell-")) then {more: [{name:"reminders_done", arguments:{name:$id}, said:"done"}, {name:"reminders_snooze", arguments:{name:$id}, said:"again in 10 minutes"}, {name:"reminders_delete", arguments:{name:$id}, said:"delete"}]} else {} end
                    else {} end)] as $rows
             | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
-        | jq -c --argjson desktopkeys "$_pr_keys" --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$_pr_chips" --arg size "$_pr_size" --arg anim "$_pr_anim" --arg pointer "${POINTER:-default}" --arg glyphs "$BAR_GLYPHS" --arg icons "$DIALOG_ICONS" --arg spacing "$DIALOG_SPACING" --arg family "$GLYPH_FAMILY" --arg face "$(face_word "${FONT%%:*}" || :)" --arg motion "$WALLPAPER_MOTION" --argjson trn "$_pr_trn" --arg tr "$_pr_tr" --arg bartext "$BAR_TEXT" --arg barsize "$_pr_bar" --arg tray "$BAR_TRAY" '
+        | jq -c --argjson desktopkeys "$_pr_keys" --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$_pr_chips" --arg size "$_pr_size" --arg anim "$_pr_anim" --arg pointer "${POINTER:-default}" --arg glyphs "$BAR_GLYPHS" --arg icons "$DIALOG_ICONS" --arg spacing "$DIALOG_SPACING" --arg family "$GLYPH_FAMILY" --arg face "$(face_word "${FONT%%:*}" || :)" --arg motion "$WALLPAPER_MOTION" --argjson trn "$_pr_trn" --arg tr "$_pr_tr" --arg bartext "$BAR_TEXT" --arg barsize "$_pr_bar" --arg tray "$BAR_TRAY" --argjson type "$_pr_type" '
             .rows |= map(
                 (if $s == "theme" and ((.group // "") | test("^(dark|light|custom)$")) and $chips[.text] != null then .chip = $chips[.text] else . end)
                 | (if $s == "theme" and ((.group // "") | test("^(dark|light)$")) and (.tool.name // "") == "theme_palette"
@@ -409,10 +411,10 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                    elif $s == "theme" and .id == "theme:show:App icons" then .switch = {on: ($icons == "on"), turn_on: {name: "theme_icons", arguments: {to: "on"}}, turn_off: {name: "theme_icons", arguments: {to: "off"}}}
                    elif $s == "theme" and .id == "theme:show:Glyph family" then
                      (["stone", "star", "banner"]) as $v
-                     | .step = {values: [$v[] | {shown: ., sent: .}], at: ($v | index($family) // 0), set: {name: "theme_family", arguments: {}}, key: "to", words: ["back", "next"]}
+                     | .step = {values: [$v[] | {shown: ., sent: .} + ($type[.] // {})], at: ($v | index($family) // 0), set: {name: "theme_family", arguments: {}}, key: "to", words: ["back", "next"]}
                    elif $s == "theme" and .id == "theme:show:Text face" and $face != "" then
                      (["neon", "argon", "xenon", "radon", "krypton"]) as $v
-                     | .text = "Typeface" | .step = {values: [$v[] | {shown: ., sent: .}], at: ($v | index($face)), set: {name: "theme_face", arguments: {}}, key: "to", words: ["back", "next"]}
+                     | .text = "Typeface" | .step = {values: [$v[] | {shown: ., sent: .} + ($type[.] // {})], at: ($v | index($face)), set: {name: "theme_face", arguments: {}}, key: "to", words: ["back", "next"]}
                    elif $s == "theme" and .id == "theme:show:Text face" then .text = "Typeface" | .columns = ["yours"]   # a face of your own: no step
                    elif $s == "theme" and .id == "theme:show:Moving wallpaper" then .text = "Wallpaper motion" | .switch = {on: ($motion == "on"), turn_on: {name: "theme_motion", arguments: {to: "on"}}, turn_off: {name: "theme_motion", arguments: {to: "off"}}}
                    elif $s == "bar" and .id == "bar:show:Text size" then   # auto first, with its own size, then every size: one list whatever is in use

@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # sets: APPEARANCE_CURATION
-# reads: CONFIG_DIR CORE_DIR OS PALETTE_DIR PANEL_SEP REPO SCENE_MAKE TAB TERM_NAME THEME_COLOR_WORDS THEME_KEYS THUMB_DIR TMP WALL_TYPES
+# reads: CONFIG_DIR CORE_DIR FONT_FACES GLYPH_FAMILIES OS PALETTE_DIR PANEL_SEP REPO SCENE_MAKE TAB TERM_NAME THEME_COLOR_WORDS THEME_KEYS THUMB_DIR TMP WALL_TYPES
 appearance_gallery_entries() {
     {
         for gallery in "$CONFIG_DIR"/galleries/*.list; do
@@ -435,6 +435,18 @@ appearance_sections() {
                  + (if any($rows[]; .id=="theme:wallpaper") then [{id:"theme:settings:screens", text:"Screens and art", sign:"opens", choice:true, columns:[], children:"spark-shell://theme/rows/screens"}] else [] end)   # the screens of a desktop: none on a Mac
                  + [{id:"theme:settings:yours", text:"Your themes", sign:"opens", choice:true, columns:[$yours],
                      children:"spark-shell://theme/rows/yours"}]'
+}
+# The type page shows each choice as what it is: a typeface installed here by its family's name, so a specimen never lies,
+# and a glyph family by its own signs, its gauge pair twice and its thinking sign.
+appearance_type() {   # -> {WORD: {face}} for each typeface here and {WORD: {sample}} for each glyph family
+    {
+        for _atf in $FONT_FACES; do ! appearance_face_here "$_atf" || printf '%s\tface\t%s\n' "$_atf" "$(face_name "$_atf")"; done
+        for _atf in $GLYPH_FAMILIES; do ( family_set "$_atf"; printf '%s\tsample\t%s\n' "$_atf" "$FAM_ON$FAM_OFF$FAM_ON$FAM_OFF $FAM_THINK" ); done
+    } | jq -Rnc '[inputs | split("\t") | {(.[0]): {(.[1]): .[2]}}] | add // {}'
+}
+appearance_face_here() {   # appearance_face_here neon -> 0 when it is installed, by spark-shell or otherwise
+    case $1 in neon) neon_here; return ;; esac
+    face_ours "$1" || { command -v fc-list >/dev/null 2>&1 && [ -n "$(fc-list "$(face_name "$1")" family 2>/dev/null)" ]; }
 }
 appearance_section() {
     jq -ec --arg key "theme:settings:$1" '
