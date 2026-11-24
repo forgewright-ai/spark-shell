@@ -350,10 +350,10 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it
 provide_tools() {   # provide_tools SECTION -> the section's tools as one JSON array; a person's step (p) to the dialog alone
     for _n in $PROVIDE_TOOLS; do tool_spec "$_n" && [ "$_ts" = "$1" ] && { provide_person_ok || case $_th in *p*) false ;; esac; } && tool_json "$_n"; done | jq -cs .
 }
-# a person's step (hint p) runs from its row in the dialog, never from a plan: another client neither sees
-# nor calls it; a client with no name is the suite's raw requests and sees every tool
+# a person's step (hint p) runs from its row in the dialog, never from a plan: another client, or one that gave
+# no name, neither sees nor calls it
 PROVIDE_CLIENT=''
-provide_person_ok() { case $PROVIDE_CLIENT in ''|spark-dialog) return 0 ;; esac; return 1; }
+provide_person_ok() { [ "$PROVIDE_CLIENT" = spark-dialog ]; }
 provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state", "rows": [{"id", "sign", "text", "tool", "more", "columns", "children", "group"}], "short": [ID]}; a tool may carry "ask", the arguments the host asks for
     [ "$1" != clock ] || [ "${2:-}" = settings ] || { provide_clock_rows; return; }
     [ "$1" != about ] || { provide_about_rows; return; }

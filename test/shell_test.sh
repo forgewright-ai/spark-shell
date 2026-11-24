@@ -6066,6 +6066,7 @@ bar_fixture
 theme_fixture '#ff5555'
 mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 init=$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{"elicitation":{}},"clientInfo":{"name":"test","version":"0"}}')
+pinit() { rq 0 initialize "$(jq -cn --arg n "$1" '{protocolVersion: "2025-06-18", capabilities: {}, clientInfo: {name: $n, version: "1"}}')"; }   # pinit NAME -- a client by that name
 mcp theme "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(rq 2 tools/list)" "$(rq 3 ping)"
 st=$?; [ "$st" -eq 0 ] && [ "$(ans 1 | jq -r '.result.protocolVersion + " " + .result.serverInfo.name')" = '2025-06-18 theme' ] && ans 1 | jq -e '.result.capabilities == {tools: {listChanged: true}, resources: {subscribe: true, listChanged: true}, logging: {}}' >/dev/null \
     && [ "$(grep -c '' "$H/mcp.out")" = 3 ] && [ "$(ans 3 | jq -c .result)" = '{}' ] \
@@ -6086,7 +6087,7 @@ for _mf in "$REPO"/lib/motion_*.py; do _mn=${_mf##*/motion_}; wall_n=${_mn%.py};
 [ -z "$_wb" ] && [ "$(ls "$REPO/gallery/wallpaper" | wc -l | tr -d ' ')" = 36 ] && ok "gallery/wallpaper/: the 18 drawings, each its SVG and a 3840 by 2160 PNG; lib/motion_NAME.py a script of a shipped one alone, lib/wallpaper.py the scenes'" || bad "wallpaper files" "$_wb $(ls "$REPO/gallery/wallpaper")"
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
-for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps system about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
+for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps system about undo files; do mcp "$s" "$(pinit spark-dialog)" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
 [ "$(grep -c '' "$H/tools.all")" = 174 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
     && ok "provide: the twenty-five sections hold the 174 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
@@ -6260,14 +6261,15 @@ jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.dest
     && [ "$(jq -r 'select(._meta["spark-shell/person"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'system_clean_packages system_fix system_update system_update_system' ] \
     && ok "provide: the tools that put a window in front say so (_meta spark-shell/opens), so the dialog steps aside at the click (#196); a person's step says so too (spark-shell/person: a terminal, or sudo, v0.129.2); no other _meta" || bad "tool opens" "$(jq -c 'select(._meta) | [.name, ._meta]' "$H/tools.all")"
 # a person's step to the dialog alone (v0.129.2): another client that names itself (spark's MCP list, the prompt line, spark
-# do) neither sees it nor calls it; the suite's raw requests, which name no client, see every tool
-pinit() { rq 0 initialize "$(jq -cn --arg n "$1" '{protocolVersion: "2025-06-18", capabilities: {}, clientInfo: {name: $n, version: "1"}}')"; }
+# do) neither sees it nor calls it; nor does a client with no name
 mcp system "$(pinit spark-dialog)" "$(rq 1 tools/list)"; _pd=$(ans 1 | jq -r '[.result.tools[].name] | join(" ")')
+mcp system "$(rq 1 tools/list)" "$(call 2 system_update)"; _pn="$(ans 1 | jq -r '[.result.tools[].name] | join(" ")'); $(ans 2 | jq -r .error.message)"   # a client with no name
 mcp system "$(pinit spark)" "$(rq 1 tools/list)" "$(call 2 system_update)"; _ps=$(ans 1 | jq -r '[.result.tools[].name] | join(" ")')
 [ "$_pd" = 'system_check system_fix system_copy_details system_update system_update_system system_export system_front system_end system_measure system_clean_packages' ] \
+    && [ "$_pn" = "system_check system_copy_details system_export system_front system_end system_measure; system_update runs from its row in the dialog, never from a plan" ] \
     && [ "$_ps" = 'system_check system_copy_details system_export system_front system_end system_measure' ] \
     && [ "$(ans 2 | jq -r .error.message)" = 'system_update runs from its row in the dialog, never from a plan' ] \
-    && ok "provide system: a person's step to the dialog alone; spark sees the rest, and a call of one is refused in one line (v0.129.2)" || bad "person steps" "dialog: $_pd | spark: $_ps | $(ans 2)"
+    && ok "provide system: a person's step to the dialog alone; spark, or a client with no name, sees the rest, and a call of one is refused in one line (v0.129.2)" || bad "person steps" "dialog: $_pd | no name: $_pn | spark: $_ps | $(ans 2)"
 # system (named tools through v0.152; v0.129): six utilities, a page each, and about; the check kept, a fake /proc, a
 # measured home; every step that ends or runs something held to its gate. Linux alone: macOS has no /proc and no system place
 if [ "$(uname -s)" != Darwin ]; then
@@ -6289,7 +6291,7 @@ if [ "$(uname -s)" != Darwin ]; then
     tproc 4194401 "$(id -u)" 50 /usr/bin/sway; tproc 4194402 "$(id -u)" 10 /usr/bin/spark-dialog --home; tproc 4194403 "$_ou" 5 /usr/sbin/udevd
     tproc 4194404 0 0; tproc 4194405 "$(id -u)" 300 /usr/lib/firefox/firefox; tproc 4194406 "$(id -u)" 200 /usr/lib/firefox/firefox -contentproc
     tproc 4194407 "$(id -u)" 1 python3 /opt/notes-sync.py; tproc 4194408 "$(id -u)" 0 /usr/bin/swaybar -b bar-0
-    (SPARK_SHELL_PROC=$TP; export SPARK_SHELL_PROC; mcp system "$(rq 1 resources/read '{"uri":"spark-shell://system/rows"}')" "$(rq 2 resources/read '{"uri":"spark-shell://system/rows/check"}')" \
+    (SPARK_SHELL_PROC=$TP; export SPARK_SHELL_PROC; mcp system "$(pinit spark-dialog)" "$(rq 1 resources/read '{"uri":"spark-shell://system/rows"}')" "$(rq 2 resources/read '{"uri":"spark-shell://system/rows/check"}')" \
         "$(rq 3 resources/read '{"uri":"spark-shell://system/rows/check/passed"}')" "$(rq 4 resources/read '{"uri":"spark-shell://system/rows/running"}')" \
         "$(rq 5 resources/read "$(jq -cn --arg u "spark-shell://system/page/$(b64u system:program:firefox)" '{uri: $u}')")" \
         "$(call 6 system_end '{"name":"sway"}')" "$(call 7 system_end '{"name":"spark-dialog"}')" "$(call 8 system_end '{"name":"udevd"}')" "$(call 9 system_end '{"name":"nosuch"}')" \
