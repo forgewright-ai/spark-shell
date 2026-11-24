@@ -3390,7 +3390,7 @@ grep -qx 'exec @IDLE_EXEC@' "$sw_t" && grep -qx 'bindsym $mod+Escape exec @REPO@
 grep -qx 'bindsym Print exec @REPO@/spark-shell desktop capture screen' "$sw_t" && grep -qx 'bindsym Shift+Print exec @REPO@/spark-shell desktop capture area' "$sw_t" && grep -qx 'bindsym $mod+Print exec @REPO@/spark-shell desktop capture window' "$sw_t" \
     && ok "sway template: Print the screen, Shift+Print an area, Super+Print the window" || bad "capture keys" "$(grep -n Print "$sw_t")"
 printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/swaylock.args"\n' > "$H/lx/swaylock"
-printf '#!/bin/sh\n[ "$*" = "-u %s -x swaylock" ] && [ -e "$HOME/locked" ]\n' "$(id -u)" > "$H/lx/pgrep"
+printf '#!/bin/sh\n[ "$*" = "-u %s -x swaylock" ] && [ -e "$HOME/locked" ] && cat "$HOME/locked"\n' "$(id -u)" > "$H/lx/pgrep"
 printf '#!/bin/sh\necho "$*" >> "$HOME/grim.log"\nfor a; do f=$a; done\n[ ! -e "$HOME/grim-fails" ] || exit 1\nprintf PNG > "$f"\n' > "$H/lx/grim"
 printf '#!/bin/sh\n[ -e "$HOME/slurp-none" ] && exit 1\necho "10,20 300x200"\n' > "$H/lx/slurp"
 printf '#!/bin/sh\necho "$*" >> "$HOME/wlcopy.log"; cat > "$HOME/clip"\n' > "$H/lx/wl-copy"
@@ -3424,10 +3424,17 @@ printf 'THEME_BG=$(oops)\n' > "$HOME/.config/spark/theme.env.bad"; cp "$HOME/.co
 rc=0; WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop lock >/dev/null 2>&1 || rc=$?
 [ "$rc" = 0 ] && grep -qx -- --daemonize "$HOME/swaylock.args" && ok "desktop lock with a theme.env that will not load: the lock comes up anyway" || bad "lock bad theme" "rc=$rc $(cat "$HOME/swaylock.args" 2>&1)"
 mv "$HOME/.config/spark/theme.env.good" "$HOME/.config/spark/theme.env"; rm -f "$HOME/.config/spark/theme.env.bad"
-touch "$HOME/locked"; rm -f "$HOME/swaylock.args"
-rc=0; WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop lock >/dev/null 2>&1 || rc=$?
+# a lock that runs, by its environment: 41 this session's, 42 another display's, 43 another runtime folder's, 44 one that cannot be read
+mkdir -p "$H/lproc/41" "$H/lproc/42" "$H/lproc/43" "$H/lproc/44"
+printf 'A=1\0WAYLAND_DISPLAY=wayland-1\0XDG_RUNTIME_DIR=%s\0' "$H/run" > "$H/lproc/41/environ"
+printf 'A=x\nWAYLAND_DISPLAY=wayland-1\0WAYLAND_DISPLAY=wayland-2\0XDG_RUNTIME_DIR=%s\0' "$H/run" > "$H/lproc/42/environ"
+printf 'WAYLAND_DISPLAY=wayland-1\0XDG_RUNTIME_DIR=%s\0' "$H/run2" > "$H/lproc/43/environ"
+lockrun() { printf '%s\n' "$@" > "$HOME/locked"; rm -f "$HOME/swaylock.args"; rc=0; XDG_RUNTIME_DIR=$H/run SPARK_SHELL_PROC=$H/lproc WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop lock >/dev/null 2>&1 || rc=$?; }   # lockrun PID... -- a lock asked for with those swaylocks running
+lockrun 42 41
 [ "$rc" = 0 ] && [ ! -e "$HOME/swaylock.args" ] && ok "desktop lock: a lock already up stays, no second" || bad "lock twice" "rc=$rc"
-rm -f "$HOME/locked"
+lockrun 42 43 44
+[ "$rc" = 0 ] && grep -qx -- --daemonize "$HOME/swaylock.args" && ok "desktop lock: another session's lock, or one that cannot be read, is not this session's: it locks, and swaylock itself refuses a second" || bad "lock another session" "rc=$rc"
+rm -rf "$HOME/locked" "$H/lproc"
 rc=0; out=$(env -u WAYLAND_DISPLAY PATH="$H/lx:$PATH" sh "$SH" desktop lock 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: locks the desktop: run it inside it (Super+Escape)' ] && ok "desktop lock outside the desktop: refused in one line" || bad "lock outside" "rc=$rc $out"
 shots=$HOME/pictures/screenshots

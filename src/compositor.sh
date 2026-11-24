@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the compositor: the one module that names it (sway)
 # sets: WM_CONFIG_REL WM_LOGIN_CONF WM_NAME WM_OWN WM_TRAY
-# reads: REPO TAB
+# reads: BAR_PROC REPO TAB
 WM_NAME=sway
 WM_OWN='sway swaybar swaybg swaymsg swaylock swayidle'   # its own processes: never apps, never ended
 WM_CONFIG_REL=.config/sway/config
@@ -21,6 +21,10 @@ wm_background_pid() {   # -> the session's newest background drawer (swaybg, a c
         | sort -n | tail -1 | cut -d' ' -f2 | grep .   # its children read from /proc: an image may have no pgrep
 }
 wm_env_name() { printf 'SWAYSOCK'; }             # the session's variable, for a bus or a service manager
+wm_proc_has() {   # wm_proc_has PID NAME=VALUE... -> 0 when that process was started with each of them; false where its environment cannot be read
+    _wph=$(tr '\n\0' ' \n' 2>/dev/null < "$BAR_PROC/$1/environ") || return 1
+    shift; for _wpv in "$@"; do printf '%s\n' "$_wph" | grep -qxF -- "$_wpv" || return 1; done
+}
 wm_config_file() { printf '%s\n' "$HOME/$WM_CONFIG_REL"; }
 wm_config_template() { printf '%s\n' "$REPO/template/$WM_CONFIG_REL"; }
 wm_portals_conf() { printf '%s\n' "$HOME/.config/xdg-desktop-portal/sway-portals.conf"; }
@@ -70,7 +74,14 @@ wm_main_screen_of() { sed -n 's/^workspace 1 output "\(.*\)"$/\1/p' "$1" | head 
 
 # the lock, the idle watcher, the background, the capture, the clipboard
 wm_lock_here() { command -v swaylock >/dev/null 2>&1; }
-wm_lock_running() { pgrep -u "$(id -u)" -x swaylock >/dev/null 2>&1; }
+# a lock of this session's alone: another session's (a second desktop, on tty2) leaves this one open. From outside, with
+# no display, it is the session of wm_pid. One whose environment cannot be read is not counted: swaylock refuses a second by itself
+wm_lock_running() {
+    if [ -n "${WAYLAND_DISPLAY:-}" ]; then set -- "WAYLAND_DISPLAY=$WAYLAND_DISPLAY" "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-}"
+    else set -- "$(wm_env_name)=$(wm_socket_of "$(wm_pid)")"; fi
+    for _wlp in $(pgrep -u "$(id -u)" -x swaylock 2>/dev/null); do ! wm_proc_has "$_wlp" "$@" || return 0; done
+    return 1
+}
 wm_lock() { exec swaylock --daemonize "$@"; }
 wm_lock_fallback() { printf 'swaylock -f'; }
 wm_idle_cmd() {   # wm_idle_cmd LOCK-LINE IDLE-SECONDS LOCK-SECONDS -> the watcher command; 0 seconds: no timer
