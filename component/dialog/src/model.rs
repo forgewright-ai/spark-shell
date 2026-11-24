@@ -279,7 +279,7 @@ fn switch(v: Option<&Value>) -> Option<Switch> {
 }
 
 /// A preview is a path to a PNG, absolute, with no parent step in it; the dialog checks where it lies.
-fn preview(v: Option<&Value>) -> Option<String> {
+pub(crate) fn preview(v: Option<&Value>) -> Option<String> {
     let p = v?.as_str()?;
     (p.starts_with('/') && p.ends_with(".png") && !p.split('/').any(|c| c == "..") && !p.chars().any(char::is_control)).then(|| p.to_string())
 }

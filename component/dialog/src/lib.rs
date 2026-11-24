@@ -7,6 +7,7 @@ mod appearance;
 pub mod apps;
 pub mod audit;
 pub mod calendar;
+pub mod display;
 pub mod draw;
 pub mod files;
 pub mod gate;
