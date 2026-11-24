@@ -18,9 +18,9 @@ dialog_want_sha() {   # -> the sha256 the release tag's tree pins for this machi
 }
 sha256_of() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 dialog_ok() { [ -x "$DIALOG_BIN" ] && _dw=$(dialog_want_sha) && [ -n "$_dw" ] && [ "$(sha256_of "$DIALOG_BIN")" = "$_dw" ]; }   # the binary in place is the one the tree pins
-tag_floor() {   # -> the newest signed tag at or behind HEAD; false when none
+tag_floor() {   # tag_floor [TEST] -> the newest signed tag at or behind HEAD, one TEST holds of when it is given; false when none
     for _tf in $(git -C "$REPO" tag -l 'v[0-9]*.[0-9]*' --merged HEAD --sort=-v:refname 2>/dev/null); do
-        if tag_signed "$_tf"; then printf '%s\n' "$_tf"; return 0; fi
+        if "${1:-tag_signed}" "$_tf"; then printf '%s\n' "$_tf"; return 0; fi
     done
     return 1
 }
@@ -36,39 +36,64 @@ release_tag() {   # -> clone_tag when it pins a dialog and its sources, includin
 # key, PATCH_SIGNER, signs a patch release (vX.Y.Z) and nothing else: it lives on a machine that tags fixes by a rule
 # (test/tag.sh), so a vX.Y, a gallery or any other tag it signed is no signed tag here
 PATCH_SIGNER=spark-shell-patch
-tag_is_patch() { case ${1#v} in *[!0-9.]*|*..*|.*|*.|*.*.*.*) return 1 ;; *.*.*) [ "v${1#v}" = "$1" ] ;; *) return 1 ;; esac; }   # tag_is_patch TAG -- vX.Y.Z, three numbers
-signers_for() {   # signers_for TAG -> the file of the keys that may have signed TAG: every key for a patch release, the release keys alone for any other tag
-    if tag_is_patch "$1"; then printf '%s\n' "$REPO/allowed-signers"
-    else grep -v "^$PATCH_SIGNER " "$REPO/allowed-signers" > "$TMP/signers.release" || :; printf '%s\n' "$TMP/signers.release"; fi
-}
-tag_verify() { git -C "$REPO" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$(signers_for "$1")" -c gpg.program=false -c gpg.openpgp.program=false -c gpg.x509.program=false verify-tag "$1"; }   # tag_verify TAG -- by the keys allowed-signers has for a tag of its kind alone: a signature of another kind gets no program
-tag_signed() {   # tag_signed TAG -> 0 when a key in allowed-signers signed it and the tag object names itself TAG
-    command -v ssh-keygen >/dev/null 2>&1 && [ -f "$REPO/allowed-signers" ] || return 1
+tag_is_release() { printf '%s\n' "$1" | LC_ALL=C grep -qxE 'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\.[1-9][0-9]*)?'; }   # tag_is_release TAG -- vX.Y, or vX.Y.Z from 1: plain numbers, no other part
+tag_is_patch() { case $1 in *.*.*) tag_is_release "$1" ;; *) return 1 ;; esac; }   # tag_is_patch TAG -- vX.Y.Z
+signers_release() { grep -v "^$PATCH_SIGNER " "$REPO/allowed-signers" > "$TMP/signers.release" || :; printf '%s\n' "$TMP/signers.release"; }   # -> the file of the release keys alone
+signers_for() { if tag_is_patch "$1"; then printf '%s\n' "$REPO/allowed-signers"; else signers_release; fi; }   # signers_for TAG -> the file of the keys that may have signed TAG: every key for a patch release, the release keys alone for any other tag
+tag_verify() { git -C "$REPO" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=${2:-$(signers_for "$1")}" -c gpg.program=false -c gpg.openpgp.program=false -c gpg.x509.program=false verify-tag "$1"; }   # tag_verify TAG [FILE] -- by the keys allowed-signers has for a tag of its kind, or by FILE's, alone: a signature of another kind gets no program
+tag_signed() {   # tag_signed TAG -> 0 when TAG is a release's name, a key in allowed-signers signed it and the tag object names itself TAG
+    tag_is_release "$1" && command -v ssh-keygen >/dev/null 2>&1 && [ -f "$REPO/allowed-signers" ] || return 1
     tag_verify "$1" >/dev/null 2>&1 || return 1
     [ "$(git -C "$REPO" cat-file tag "$1" 2>/dev/null | sed -n 's/^tag //p' | sed -n 1p)" = "$1" ]
 }
-cmd_update() {   # the clone moves forward to the newest signed tag past its own; then on --yes when the seat is on
+tag_by_release_key() { tag_verify "$1" "$(signers_release)" >/dev/null 2>&1; }   # tag_by_release_key TAG -- of a signed TAG: a release key's, not a patch key's alone
+tag_behind() { git -C "$REPO" merge-base --is-ancestor "$1" "$2" 2>/dev/null; }   # tag_behind A B -- B holds the commit A
+patch_base() {   # patch_base TAG -> the release TAG patches: the newest one behind it that a release key signed; false when it is of another vX.Y, or of another history than this clone's
+    for _pb in $(git -C "$REPO" tag -l 'v[0-9]*.[0-9]*' --merged "refs/tags/$1" --sort=-v:refname 2>/dev/null); do
+        tag_signed "$_pb" && tag_by_release_key "$_pb" || continue
+        case $_pb in "${1%.*}"|"${1%.*}".*) ;; *) return 1 ;; esac
+        tag_behind "refs/tags/$_pb" HEAD || tag_behind HEAD "refs/tags/$_pb" || return 1
+        printf '%s\n' "$_pb"; return 0
+    done
+    return 1
+}
+tag_trusted() { tag_signed "$1" && { tag_by_release_key "$1" || patch_base "$1" >/dev/null; }; }   # tag_trusted TAG -- signed, and a patch key's is on a release of its own vX.Y
+patch_fits() {   # patch_fits TAG -- of a trusted TAG: a release key's, or nothing guarded differs from the release it patches, by this tree's list (test/lane.sh): what a patch key may tag is checked here, not only where it tags
+    ! tag_by_release_key "$1" || return 0
+    _pfb=$(patch_base "$1") || return 1
+    case $(sh "$REPO/test/lane.sh" --base "refs/tags/$_pfb" --at "refs/tags/$1" 2>/dev/null | sed -n 's/^lane=//p') in fast|standard) return 0 ;; esac
+    return 1
+}
+cmd_update() {   # the clone moves forward to the newest signed tag that holds its commit; then on --yes when the seat is on
     REFUSE_AS=update
     config_load
     command -v git >/dev/null 2>&1 || refuse "git is not installed"
     command -v ssh-keygen >/dev/null 2>&1 || refuse "ssh-keygen is not installed: a release tag's signature cannot be read (the openssh package)"
     [ -f "$REPO/allowed-signers" ] || refuse "no allowed-signers beside spark-shell: not a clone of spark-shell"
     git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 || refuse "$REPO is not a git clone"
-    _here=$(tag_floor || echo none)
+    [ "$(git -C "$REPO" rev-parse --is-shallow-repository 2>/dev/null)" != true ] || refuse "the clone is shallow, and a release is checked against its history -- nothing moved; git -C $REPO fetch --unshallow gets it"
     # a tag moved on origin fails the whole fetch: it stays as first seen, and is said
     _fo=$(LC_ALL=C git -C "$REPO" fetch origin 'refs/tags/*:refs/tags/*' 2>&1) || {
         _moved=$(printf '%s\n' "$_fo" | sed -n 's/.*\[rejected\] *\([^ ]*\) .*would clobber existing tag.*/\1/p' | paste -sd' ' -)
         [ -n "$_moved" ] || refuse "could not fetch the tags from origin"
         echo "spark-shell update: $_moved moved on origin: the copy here stays"
     }
-    _to=''; _skipped=''
+    _here=$(tag_floor tag_trusted || echo none)
+    _to=''; _skipped=''; _apart=''; _fenced=''
     for _t in $(git -C "$REPO" tag -l 'v[0-9]*.[0-9]*' --sort=-v:refname); do   # a release is a dotted name: gallery-v1 is not one
         [ "$_t" != "$_here" ] || break        # newest first: the rest are behind the clone's own
-        if tag_signed "$_t"; then _to=$_t; break; fi
-        _skipped="$_skipped $_t"
+        if ! tag_trusted "$_t"; then _skipped="$_skipped $_t"
+        elif ! tag_behind HEAD "refs/tags/$_t"; then _apart="$_apart $_t"   # not ahead of what is here: your own commits, or another repository's release
+        elif ! patch_fits "$_t"; then _fenced="$_fenced $_t"
+        else _to=$_t; break; fi
     done
     if [ -z "$_to" ]; then
-        [ -n "$_skipped" ] || { echo "spark-shell update: at $_here, the newest release"; return 0; }
+        if [ -z "$_skipped$_apart$_fenced" ]; then
+            _past=''; [ "$_here" = none ] || [ "$(git -C "$REPO" rev-parse HEAD)" = "$(git -C "$REPO" rev-parse "refs/tags/$_here^{commit}")" ] || _past=" (this clone is past it)"
+            echo "spark-shell update: at $_here, the newest release$_past"; return 0
+        fi
+        [ -z "$_apart" ] || refuse "signed, but not ahead of the commit this clone is at:$_apart -- nothing moved (commits of your own? git -C $REPO log HEAD --not --tags)"
+        [ -z "$_fenced" ] || refuse "a patch that changes what only a release may:$_fenced -- nothing moved"
         refuse "the releases past $_here are not signed by a key in allowed-signers:$_skipped -- nothing moved"
     fi
     # a tag is up minutes before its release: a seat moved now would find no build
@@ -76,14 +101,14 @@ cmd_update() {   # the clone moves forward to the newest signed tag past its own
         refuse "$_to is signed, but its release is not published yet -- nothing moved; try again in a few minutes"
     fi
     _by=$(tag_verify "$_to" 2>&1 | sed -n 's/.*signature for \([^ ]*\) with.*/\1/p' | sed -n 1p)
-    _note=''; [ -z "$_skipped" ] || _note=" (skipped, not a signed release:$_skipped)"
+    _note="${_skipped:+ (skipped, not a signed release:$_skipped)}${_apart:+ (skipped, not ahead of this clone:$_apart)}${_fenced:+ (skipped, a patch that changes what only a release may:$_fenced)}"
     if [ "$MODE" = dry ]; then
         echo "spark-shell update: would move $_here -> $_to, signed by ${_by:-a key in allowed-signers}$_note"
         ! seat_on || echo "spark-shell update: then spark-shell on --yes, from $_to"
         return 0
     fi
     [ -z "$(git -C "$REPO" status --porcelain --untracked-files=no 2>/dev/null)" ] || refuse "the clone has changes of its own (git -C $REPO status) -- nothing moved"
-    git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "$_to" 2>/dev/null || refuse "could not move the clone to $_to"
+    git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "refs/tags/$_to" 2>/dev/null || refuse "could not move the clone to $_to"
     echo "spark-shell update: $_to, signed by ${_by:-a key in allowed-signers} (was $_here)$_note"
     seat_on || return 0
     rm -rf "$TMP"; trap - EXIT   # an exec runs no trap

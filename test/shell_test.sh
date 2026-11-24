@@ -8989,6 +8989,12 @@ if command -v ssh-keygen >/dev/null 2>&1; then
     C=$U/c/spark-shell
     out=$(sh "$C" update 2>&1) && rc=0 || rc=$?
     [ "$rc" -eq 0 ] && [ "$out" = "spark-shell update: at v9.0, the newest release" ] && ok "update: nothing newer: one line, exit 0" || bad "update: nothing newer" "$rc $out"
+    # a clone of main past its release, and one with no history
+    echo zero > "$U/w/zero"; git -C "$U/w" add -A; git -C "$U/w" commit -q -m zero; git -C "$U/w" push -q origin main
+    git clone -q "$U/origin.git" "$U/p"; out=$(sh "$U/p/spark-shell" update 2>&1) && rc=0 || rc=$?
+    [ "$rc" -eq 0 ] && [ "$out" = "spark-shell update: at v9.0, the newest release (this clone is past it)" ] && ok "update: a clone of main past its release: one line says so, exit 0" || bad "update: past the release" "$rc $out"
+    git clone -q --depth 1 "file://$U/origin.git" "$U/s"; out=$(sh "$U/s/spark-shell" update 2>&1) && rc=0 || rc=$?
+    [ "$rc" -eq 1 ] && [ "$out" = "spark-shell update: the clone is shallow, and a release is checked against its history -- nothing moved; git -C $U/s fetch --unshallow gets it" ] && ok "update: a shallow clone is refused, and told how to get its history" || bad "update: shallow" "$rc $out"
     echo one > "$U/w/one"; git -C "$U/w" add -A; git -C "$U/w" commit -q -m v9.1; git -C "$U/w" tag -s -m v9.1 v9.1
     echo two > "$U/w/two"; git -C "$U/w" add -A; git -C "$U/w" commit -q -m v9.2; git -C "$U/w" tag -a -m v9.2 v9.2
     echo three > "$U/w/three"; git -C "$U/w" add -A; git -C "$U/w" commit -q -m v9.3; git -C "$U/w" -c user.signingkey="$U/other" tag -s -m v9.3 v9.3
@@ -9072,6 +9078,25 @@ GPG
     echo eleven > "$U/w/eleven"; git -C "$U/w" add -A; git -C "$U/w" commit -q -m v77; git -C "$U/w" tag -s -m v77 v77; git -C "$U/w" push -q origin main v77
     out=$(sh "$D" update --dry-run 2>&1) && rc=0 || rc=$?
     [ "$rc" -eq 0 ] && ! printf '%s\n' "$out" | grep -q 'v77' && ok "update: a signed tag that is no dotted release name (v77) is never taken as a release (#247)" || bad "update: undotted tag" "$rc $out"
+    # a name with a leading zero, a fourth part or a .0 is no release's, whoever signed it
+    for _t in v9.10.0 v9.10.01 v9.10.1.1; do git -C "$U/w" tag -s -m "$_t" "$_t"; git -C "$U/w" push -q origin "$_t"; done
+    out=$(sh "$D" update --dry-run 2>&1) && rc=0 || rc=$?
+    out=$(printf '%s\n' "$out" | sed -n 2p); case $out in "spark-shell update: would move v9.7 -> v9.10, signed by spark-shell-release (skipped, not a signed release:"*) _ub='' ;; *) _ub=" $rc $out" ;; esac
+    for _t in v9.10.0 v9.10.01 v9.10.1.1; do case "$out " in *" $_t "*|*" $_t) "*) ;; *) _ub="$_ub [$_t is not named]" ;; esac; done
+    [ -z "$_ub" ] && ok "update: a release's name is vX.Y or vX.Y.Z, plain numbers: a leading zero, a fourth part or a .0 is skipped and named" || bad "update: names" "$_ub"
+    # the key signs another repository's releases too: one of them here, of a history of its own, is no release of this clone's
+    git init -q -b main "$U/sib"; echo sib > "$U/sib/spark-shell"; git -C "$U/sib" add -A; git -C "$U/sib" commit -q -m sib
+    git -C "$U/sib" -c gpg.format=ssh -c user.signingkey="$U/key" tag -s -m v50.0 v50.0; git -C "$U/sib" push -q "$U/origin.git" v50.0
+    out=$(sh "$D" update --dry-run 2>&1) && rc=0 || rc=$?
+    case $rc:$(printf '%s\n' "$out" | sed -n 2p) in "0:spark-shell update: would move v9.7 -> v9.10, signed by spark-shell-release "*" (skipped, not ahead of this clone: v50.0)") ok "update: a signed tag of another history is skipped and named, and this clone's own next release taken" ;; *) bad "update: another history" "$rc $out" ;; esac
+    git clone -q "$U/origin.git" "$U/e"; git -C "$U/e" -c advice.detachedHead=false checkout -q --detach v9.10
+    out=$(sh "$U/e/spark-shell" update 2>&1) && rc=0 || rc=$?
+    [ "$rc" -eq 1 ] && [ "$out" = "spark-shell update: signed, but not ahead of the commit this clone is at: v50.0 -- nothing moved (commits of your own? git -C $U/e log HEAD --not --tags)" ] && [ "$(git -C "$U/e" rev-parse HEAD)" = "$(git -C "$U/e" rev-parse 'v9.10^{commit}')" ] \
+        && ok "update: with nothing past it but another history's signed tag, the clone stays" || bad "update: another history alone" "$rc $out"
+    git -C "$U/e" -c advice.detachedHead=false checkout -q --detach v9.7; echo mine > "$U/e/mine"; git -C "$U/e" add mine; git -C "$U/e" commit -q -m mine; _was=$(git -C "$U/e" rev-parse HEAD)
+    out=$(sh "$U/e/spark-shell" update 2>&1) && rc=0 || rc=$?
+    [ "$rc" -eq 1 ] && [ "$out" = "spark-shell update: signed, but not ahead of the commit this clone is at: v50.0 v9.10 v9.8 -- nothing moved (commits of your own? git -C $U/e log HEAD --not --tags)" ] && [ "$(git -C "$U/e" rev-parse HEAD)" = "$_was" ] \
+        && ok "update: a clone with commits of its own is told in one line, and stays" || bad "update: own commits" "$rc $out"
     git -C "$U/d" remote set-url origin "$U/gone.git"
     out=$(sh "$D" update --dry-run 2>&1) && rc=0 || rc=$?
     [ "$rc" -eq 1 ] && [ "$out" = "spark-shell update: could not fetch the tags from origin" ] && ok "update: an origin that does not answer is still refused" || bad "update: no origin" "$rc $out"
@@ -9155,10 +9180,16 @@ CURL
     out=$(T --now) && rc=0 || rc=$?
     [ "$rc" = 1 ] && [ "$out" = "tag: refused: v9.2 is not signed by a key the installed allowed-signers trust for it: not a release -- nothing tagged" ] && ! on_origin v9.2.1 \
         && ok "tag: the tag it patches must be a release: a vX.Y the patch key signed is no base for a patch" || bad "tag: base" "$rc $out"
-    # more than a fix, each said: too large, a new setting, something guarded, a new line of help (the entry's head)
+    # more than a fix, each said: no text, too large, a new setting, something guarded, a new line of help (the entry's head)
+    cp "$U/w/src/notes.sh" "$U/notes"; printf '\000\n' >> "$U/w/src/notes.sh"; land v9.0.2 notext
+    out=$(T --now) && rc=0 || rc=$?
+    _tb=''; [ "$rc" = 1 ] && [ "$out" = "tag: refused: src/notes.sh differs from v9.0.1 and is no text: a person tags it -- nothing tagged" ] || _tb="$_tb [no text: $rc $out]"
+    cp "$U/notes" "$U/w/src/notes.sh"; land v9.0.02 text
+    out=$(T --now) && rc=0 || rc=$?
+    [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^tag: main is at [0-9a-f]\{7\}, under ## v9\.0\.02: no patch, a person tags it$' || _tb="$_tb [a leading zero: $rc $out]"
     i=0; while [ "$i" -lt 400 ]; do echo "# $i"; i=$((i + 1)); done >> "$U/w/src/notes.sh"; land v9.0.2 large
     out=$(T --now) && rc=0 || rc=$?
-    _tb=''; [ "$rc" = 1 ] && [ "$out" = "tag: refused: 402 lines differ from v9.0.1 outside test/ and the changelog, more than 400: a person tags it -- nothing tagged" ] || _tb="$_tb [large: $rc $out]"
+    [ "$rc" = 1 ] && [ "$out" = "tag: refused: 402 lines differ from v9.0.1 outside test/ and the changelog, more than 400: a person tags it -- nothing tagged" ] || _tb="$_tb [large: $rc $out]"
     echo 'NEW_KEY=1' >> "$U/w/config.example"; land v9.0.2 key
     out=$(T --now) && rc=0 || rc=$?
     [ "$rc" = 1 ] && [ "$out" = "tag: refused: the keys of config.example differ from v9.0.1: more than a fix, a person tags it -- nothing tagged" ] || _tb="$_tb [key: $rc $out]"
@@ -9169,16 +9200,35 @@ CURL
     out=$(T --now) && rc=0 || rc=$?
     [ "$rc" = 1 ] && [ "$out" = "tag: refused: v9.0.2 changes spark-shell since v9.0.1, and that is guarded: a person tags it -- nothing tagged" ] || _tb="$_tb [the entry: $rc $out]"
     [ -z "$_tb" ] && ! on_origin v9.0.2 && [ -z "$(git -C "$U/t" tag -l v9.0.2)" ] \
-        && ok "tag: more than a fix is a person's, each said: over 400 lines, a new key of config.example, a module that acts as root, the entry and its help" || bad "tag: the fence" "$_tb"
+        && ok "tag: more than a fix is a person's, each said: a file git counts no line of, over 400 lines, a new key of config.example, a module that acts as root, the entry and its help" || bad "tag: the fence" "$_tb"
     # a key the installed release does not trust signs nothing that leaves
     git clone -q "$U/origin.git" "$U/t2"; git -C "$U/t2" config gpg.format ssh; git -C "$U/t2" config user.signingkey "$U/other"
     git -C "$U/t2" config "url.$U/origin.git.insteadOf" https://github.com/test/spark-shell.git; git -C "$U/t2" remote set-url origin https://github.com/test/spark-shell.git
-    W revert --no-edit HEAD HEAD~1 HEAD~2 HEAD~3 >/dev/null; land v9.0.2 again
+    W revert --no-edit HEAD HEAD~1 HEAD~2 HEAD~3 >/dev/null; mkdir -p "$U/w/gallery/core"; printf '\211PNG\000' > "$U/w/gallery/core/x.png"; land v9.0.2 again   # a picture of the gallery's is no text, and fits
     out=$(cd "$U/t2" && CURL_DIR=$U SPARK_SHELL_TAG_CURL=$U/curl SPARK_SHELL_TAG_SIGNERS=$U/signers sh "$REPO/test/tag.sh" --now 2>&1) && rc=0 || rc=$?
     [ "$rc" = 1 ] && [ "$out" = "tag: refused: the key this clone signs with is not one the installed allowed-signers trust; the tag is undone -- nothing tagged" ] && ! on_origin v9.0.2 && [ -z "$(git -C "$U/t2" tag -l v9.0.2)" ] \
         && ok "tag: a tag signed by a key the installed release does not trust is undone before it leaves" || bad "tag: another key" "$rc $out"
     out=$(T --now) && rc=0 || rc=$?
     [ "$rc" = 0 ] && on_origin v9.0.2 && ok "tag: the same commit, from the clone with the patch key, is tagged" || bad "tag: after the fence" "$rc $out"
+    # what the patch key signed is read again where it lands: an install's own list says what a patch may change
+    ptag() { W checkout -q --detach v9.0.2; printf '%s\n' "$3" >> "$U/w/$2"; W add -A; W commit -q -m "$1"; W -c user.signingkey="$U/${4:-patch}" tag -s -m "$1" "$1"; W push -q origin "$1"; }   # ptag TAG FILE LINE [KEY] -- TAG on a commit past v9.0.2 that adds LINE to FILE, signed by KEY
+    W fetch -q origin 'refs/tags/*:refs/tags/*'
+    ptag v9.0.3 src/login.sh '# a word'; ptag v9.0.4 src/notes.sh 'tag_signed() { return 0; }'; ptag v9.0.5 template/etc/sudoers.d/spark-shell-power '# a word'
+    ptag v9.0.6 component/Cargo.lock "$(printf '\n[[package]]\nname = "x"\nversion = "1.0.0"\nsource = "registry+https://example.com/x"')"; ptag v9.0.7 component/dialog/build.rs 'fn main() {}'
+    ptag v9.7.1 src/notes.sh '# a fix'   # no v9.7 a release key signed
+    out=$(sh "$C" update --dry-run 2>&1) && rc=0 || rc=$?
+    [ "$rc" = 0 ] && [ "$out" = "spark-shell update: would move v9.0 -> v9.0.2, signed by spark-shell-patch (skipped, not a signed release: v9.7.1 v9.2) (skipped, a patch that changes what only a release may: v9.0.7 v9.0.6 v9.0.5 v9.0.4 v9.0.3)" ] \
+        && ok "update: a patch key's tag that changes something guarded by this tree's list is skipped and named, and so is one of a vX.Y no release key signed; the patch before them is taken" || bad "update: the fence" "$rc $out"
+    ptag v9.0.8 src/login.sh '# a word' key
+    out=$(sh "$C" update --dry-run 2>&1) && rc=0 || rc=$?
+    case $rc:$out in "0:spark-shell update: would move v9.0 -> v9.0.8, signed by spark-shell-release (skipped, not a signed release: v9.7.1 v9.2)") ok "update: the same change in a patch a release key signed is taken" ;; *) bad "update: a person's patch" "$rc $out" ;; esac
+    # ... on this clone's own line: not on a release of another history that was merged in, and no floor for the next one
+    git init -q -b main "$U/sib"; echo sib > "$U/sib/spark-shell"; git -C "$U/sib" add -A; git -C "$U/sib" commit -q -m sib
+    git -C "$U/sib" -c gpg.format=ssh -c user.signingkey="$U/key" tag -s -m v60.0 v60.0; git -C "$U/sib" push -q "$U/origin.git" v60.0; W fetch -q origin 'refs/tags/*:refs/tags/*'
+    _tm=$(W commit-tree -p 'v9.0.8^{commit}' -p 'v60.0^{commit}' -m merged 'v60.0^{tree}'); W -c user.signingkey="$U/patch" tag -s -m v60.0.1 v60.0.1 "$_tm"; W push -q origin v60.0.1
+    W -c user.signingkey="$U/patch" tag -s -m v70.0.1 v70.0.1 'v9.0^{commit}'; W push -q origin v70.0.1
+    out=$(sh "$C" update --dry-run 2>&1) && rc=0 || rc=$?
+    case $rc:$out in "0:spark-shell update: would move v9.0 -> v9.0.8, signed by spark-shell-release (skipped, not a signed release: v70.0.1 v60.0.1 v9.7.1 v9.2) (skipped, not ahead of this clone: v60.0)") ok "update: a patch key's tag on a release of another history, or on no release of its vX.Y at the clone's own commit, moves nothing and hides no release" ;; *) bad "update: another line" "$rc $out" ;; esac
     unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL GIT_CONFIG_NOSYSTEM
     rm -rf "$U"
 else

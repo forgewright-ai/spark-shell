@@ -18,10 +18,10 @@
 #     this clone's own file only where none is installed), named as its object says, and behind main. A tag
 #     anyone with a write token could push is no base for a patch;
 #   - nothing guarded differs from it, by this copy's list (test/lane.sh): the workflows, the hooks, the
-#     signers, the gate and this rule, the entry and its help, the update path, what fetches a build, what
-#     acts as root;
-#   - it is a fix: the keys of config.example are as they were, and at most 400 lines changed outside test/
-#     and the changelog;
+#     signers, the gate and this rule, the entry and its help, the update path, what fetches a build, what a
+#     build takes from outside, what acts as root. An install asks its own list again before it moves;
+#   - it is a fix: the keys of config.example are as they were, at most 400 lines changed outside test/ and
+#     the changelog, and what is no text is a picture or a loop of the gallery's;
 #   - ci.yml passed for the exact commit in main's own run, the one that takes every job (GitHub's public
 #     API through curl, no token);
 #   - the fix has rested the cooling hours on main, counted from when that run was made, by GitHub's clock:
@@ -72,8 +72,8 @@ sha=$(git rev-parse refs/remotes/origin/main)
 short=$(printf '%s' "$sha" | cut -c1-7)
 top=$(git show "$sha:CHANGELOG.md" 2>/dev/null | grep -m1 '^## v' || :)
 ver=${top#"## v"}
-# three_numbers X.Y.Z -- a patch's version
-three_numbers() { case $1 in *[!0-9.]*|*..*|.*|*.|*.*.*.*) return 1 ;; *.*.*) return 0 ;; *) return 1 ;; esac; }
+# three_numbers X.Y.Z -- a patch's version, as an install reads it (tag_is_release in src/dialog.sh)
+three_numbers() { case $1 in *.*.*) printf 'v%s\n' "$1" | LC_ALL=C grep -qxE 'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\.[1-9][0-9]*)?' ;; *) return 1 ;; esac; }
 [ -n "$ver" ] || no "CHANGELOG.md on main has no '## vX.Y' heading"
 three_numbers "$ver" || { say "main is at $short, under $top: no patch, a person tags it"; exit 0; }
 tag=v$ver
@@ -81,7 +81,6 @@ if git rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1; then say "$tag ex
 
 # the tag it patches: the release for Z = 1, else the patch before
 patch=${ver##*.}; line=${ver%.*}
-[ "$patch" -ge 1 ] || no "$top is no patch of a release"
 if [ "$patch" -eq 1 ]; then base=v$line; else base=v$line.$((patch - 1)); fi
 git rev-parse -q --verify "refs/tags/$base" >/dev/null 2>&1 || no "$tag patches $base, and no such tag exists"
 git merge-base --is-ancestor "$base^{commit}" "$sha" 2>/dev/null || no "$base is not behind main"
@@ -113,7 +112,11 @@ esac
 # help, which is the head of the entry, and the entry is guarded
 keys_of() { git show "$1:config.example" 2>/dev/null | sed -n 's/^\([A-Z][A-Z0-9_]*\)=.*/\1/p' | sort -u; }
 [ "$(keys_of "$base")" = "$(keys_of "$sha")" ] || no "the keys of config.example differ from $base: more than a fix, a person tags it"
-lines=$(git diff --no-renames --numstat "$base" "$sha" -- . ':(exclude)test' ':(exclude)CHANGELOG.md' | awk '{ n += $1 + $2 } END { print n + 0 }')
+stat=$(git diff --no-renames --numstat "$base" "$sha" -- . ':(exclude)test' ':(exclude)CHANGELOG.md')
+# git counts no line of a file it takes for no text
+odd=$(printf '%s\n' "$stat" | awk -F '\t' '$1 == "-" && $3 !~ /^gallery\/.*\.(jpg|png|gif|webp|mp4)$/ { print $3; exit }')
+[ -z "$odd" ] || no "$odd differs from $base and is no text: a person tags it"
+lines=$(printf '%s\n' "$stat" | awk '{ n += $1 + $2 } END { print n + 0 }')
 [ "$lines" -le "$MOST" ] || no "$lines lines differ from $base outside test/ and the changelog, more than $MOST: a person tags it"
 
 # ci.yml passed for the exact commit, in main's own run; and when that run was made, by GitHub's clock
