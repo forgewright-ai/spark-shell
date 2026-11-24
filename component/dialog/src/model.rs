@@ -69,6 +69,8 @@ pub struct Row {
     pub choice: bool,
     /// A row that stands only while a model answers, or only while none does.
     pub when_model: Option<bool>,
+    /// The screens, drawn to scale from their places (v0.167).
+    pub map: Option<crate::display::screens::Map>,
 }
 
 impl Row {
@@ -530,6 +532,7 @@ pub fn rows(text: &str) -> Option<Rows> {
             back: r.get("back").and_then(Value::as_bool).unwrap_or(false),
             choice: r.get("choice").and_then(Value::as_bool).unwrap_or(false),
             when_model: r.get("when_model").and_then(Value::as_bool),
+            map: crate::display::screens::read(r),
         })
         .collect();
     let short = v

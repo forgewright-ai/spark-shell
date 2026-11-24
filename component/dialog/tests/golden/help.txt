@@ -29,9 +29,9 @@
     zoom in, zoom out, fit                       +  -  0    
     previous page, next page                        <  >    
                                                             
-  windows                                                   
-    open a terminal                         Super+Return    
-    ↓ 22 more                                               
+  display                                                   
+    move the lit screen beside another      Ctrl+← → ↑ ↓    
+    ↓ 23 more                                               
                                                             
     ask spark · Ctrl+Enter                                  
   ────────────────────────────────────────────────────────  

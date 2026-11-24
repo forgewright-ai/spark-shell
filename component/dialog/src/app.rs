@@ -36,9 +36,12 @@ pub enum HintKey {
     CopyPath,
     Select,
     Pane,
+    /// The lit screen moved to a side of its neighbor (the display page's map, v0.167).
+    Place(Side),
 }
 
 use crate::animation::Reel;
+use crate::display::screens::Side;
 use crate::gate;
 use crate::mcp::{self, Incoming, Kind, Server};
 use crate::model::{self, Call, Rows, Tool};
@@ -616,6 +619,8 @@ pub enum Held {
     At(usize),
     On(bool),
     Checked,
+    /// A screen's place in a map, in layout pixels (v0.167).
+    Placed(String, (i32, i32)),
 }
 
 /// How long a value set in place is held over the rows read after its call came back.
@@ -862,6 +867,8 @@ pub struct App {
     pub apps: crate::apps::State,
     /// Files' own state over the folder list: checks, pages, the other pane, a batch (crate::files).
     pub files: crate::files::State,
+    /// The display section's: the screen chosen in its map, a drag of one, a change on trial (crate::display).
+    pub display: crate::display::State,
     pub window_focused: bool,
     /// The request spark is answering now; an older reply is dropped.
     pub want_serial: u64,
@@ -1001,7 +1008,7 @@ pub struct App {
     set_next: Vec<(usize, String, Call)>,
     /// Values shown before the provider's rows say them: kept over every rows read until a moment after
     /// the last one was set, so a read that left before it never shows the old value again.
-    held: Vec<(usize, String, Held, Option<Instant>)>,
+    pub(crate) held: Vec<(usize, String, Held, Option<Instant>)>,
     /// The transition playing, and since when (#122); main.rs moves it on and draws it.
     pub motion: Option<(Reel, Instant)>,
     /// When the dialog started: the home's first rows have the Read bar until HOME_READ_MS from it.
@@ -1077,6 +1084,7 @@ impl App {
             prompts: Default::default(),
             apps: crate::apps::State::default(),
             files: crate::files::State::default(),
+            display: Default::default(),
             window_focused: true,
             want_serial: 0,
             target: None,
@@ -1388,6 +1396,7 @@ impl App {
             self.set_done(idx, n, true, "not changed: the part of the desktop that does it stopped", false);
         }
         self.held.retain(|(hp, _, _, _)| *hp != idx);
+        self.trial_lost(idx);
         if self.target.as_ref().is_some_and(|t| t.provider == idx) || was_shown {
             self.want_cancel();
         }
@@ -1778,6 +1787,19 @@ impl App {
                 let mut fresh = false;
                 if !refused {
                     if let Some(sc) = result.as_ref().and_then(|r| r.get("structuredContent")) {
+                        let set = self.setting.as_ref().filter(|(q, p, ..)| *q == n && *p == idx);
+                        if let Some((id, tool)) = set.map(|(_, _, id, call)| (id.clone(), call.name.clone())) {
+                            let privacy = result.as_ref().map(|r| gate::result_privacy(None, r)).unwrap_or_default();
+                            self.trial_take(idx, &tool, sc, &privacy, Instant::now());
+                            // a screen put at a place is a move, and a move is taken back (a value set in place is not)
+                            if self
+                                .held
+                                .iter()
+                                .any(|(p, h, held, _)| *p == idx && *h == id && matches!(held, Held::Placed(..)))
+                            {
+                                self.offer_undo(idx, "screen position", sc, &privacy);
+                            }
+                        }
                         self.wear_theme(idx, sc);
                         fresh = self.setting.as_ref().is_some_and(|(q, p, _, _)| *q == n && *p == idx) && self.take_rows(idx, sc);
                     }
@@ -1813,6 +1835,7 @@ impl App {
             (Some(r), _) => self.reply_seen = Some((r.clone(), now)),
             (None, _) => self.reply_seen = None,
         }
+        self.display_tick(now);
         self.follow_view(now);
         self.search_now(now);
         self.rank_warm();
@@ -1911,7 +1934,14 @@ impl App {
     }
 
     pub fn pickable(row: &model::Row) -> bool {
-        row.tool.is_some() || row.children.is_some() || row.step.is_some() || row.switch.is_some() || !row.more.is_empty() || row.back || row.page.is_some()
+        row.tool.is_some()
+            || row.children.is_some()
+            || row.step.is_some()
+            || row.switch.is_some()
+            || row.map.is_some()
+            || !row.more.is_empty()
+            || row.back
+            || row.page.is_some()
     }
 
     /// The sections present that a destination holds; Settings holds those of SETTINGS that run here.
@@ -1982,6 +2012,11 @@ impl App {
                 continue;
             }
             if !self.query().is_empty() && !self.matches(p, r) {
+                continue;
+            }
+            // a map is drawn by the layout in pixels alone, over the whole of its section: the rows under it name each
+            // screen everywhere
+            if r.map.is_some() && (!self.pixels || !self.query().is_empty()) {
                 continue;
             }
             // a group of a few short picks is one row in the layout in pixels (v0.161): the one in use stands for it,
@@ -2101,6 +2136,11 @@ impl App {
                 "view",
                 "previous page, next page",
                 format!("{}  {}", k(HintKey::Char('<')), k(HintKey::Char('>'))),
+            ),
+            (
+                "display",
+                "move the lit screen beside another",
+                self.cfg.keys.labels(&[Side::Left, Side::Right, Side::Above, Side::Below].map(HintKey::Place)),
             ),
         ]
         .into_iter()
@@ -2910,6 +2950,7 @@ impl App {
     /// out; a row that only opens its own section is left out, as the section's view leaves it (the setting opens it).
     fn home_finds(&self, p: usize, r: &model::Row) -> bool {
         Self::pickable(r)
+            && r.map.is_none()
             && !(Some(p) == self.about_idx && !r.tool.as_ref().is_some_and(|t| t.name == "about_open"))
             && r.children.as_deref() != Some(format!("spark-shell://{}/rows", self.providers[p].label).as_str())
     }
@@ -3778,7 +3819,7 @@ impl App {
 
     /// A key that wants the prompt free says what holds it, and true: a question, an answer being typed, a form, a
     /// pick. It acts in none of them.
-    fn key_held(&mut self) -> bool {
+    pub(crate) fn key_held(&mut self) -> bool {
         let why = match self.mode {
             Mode::Normal if (self.view == View::Apps && self.apps.form()) || (self.files_page_open() && self.files.form()) => {
                 "finish this first: Enter saves, Esc cancels"
@@ -4057,7 +4098,7 @@ impl App {
             }
             return self.preview_page(-1);
         }
-        if self.step_value(false) || self.choose_side(false) {
+        if self.map_walk(false) || self.step_value(false) || self.choose_side(false) {
             return;
         }
         // nothing typed, outside the Calendar: Left goes back a level (the dialog design notes)
@@ -4100,7 +4141,7 @@ impl App {
                 self.preview_page(1)
             };
         }
-        if self.step_value(true) || self.choose_side(true) {
+        if self.map_walk(true) || self.step_value(true) || self.choose_side(true) {
             return;
         }
         // nothing typed and a row lit: Right goes in a level where the lit row opens one, as Left goes back one. A
@@ -4842,6 +4883,10 @@ impl App {
             if !words.is_empty() && !matches!(item, Item::Dest(_) | Item::Setting(_) | Item::OpenModels | Item::More(..)) {
                 self.set_input(String::new());
             }
+        }
+        // the map of the screens: the page of the one chosen
+        if let Some((p, uri)) = self.map_opens(&item) {
+            return self.open_children(p, &uri);
         }
         // a switch flips and a value kept is set, found by words or not; a value row found by words stays lit
         if self.flip_or_keep(&item) {
@@ -6218,6 +6263,7 @@ impl App {
                         self.want_transitions(t, sc.get("palette").is_some());
                     }
                 }
+                self.trial_take(idx, &step.call.name, &sc, &privacy, Instant::now());
                 // a window put in front closes the dialog when the steps are done; anything else shows it again
                 if sc.get("opened").and_then(Value::as_bool) == Some(true) {
                     self.opened = true;
@@ -6237,43 +6283,11 @@ impl App {
                 }
                 self.undo = None;
                 self.files.undo_more.clear(); // a batch's undo past this step goes with the undo it followed
-                if let Some(u) = sc.get("undo") {
-                    if let (Some(name), Some(args)) = (u.get("name").and_then(Value::as_str), u.get("arguments").and_then(Value::as_object)) {
-                        let call = Call {
-                            name: name.to_string(),
-                            arguments: args.clone(),
-                            ask: vec![],
-                            said: None,
-                            pick: None,
-                            value: None,
-                            children: None,
-                        };
-                        let undo_schema = self.providers[idx].tools.iter().find(|t| t.name == name).map(|t| &t.schema);
-                        let carries_secret = args.iter().any(|(k, v)| {
-                            gate::secret(k, undo_schema.and_then(|s| s.get("properties")).and_then(|p| p.get(k)))
-                                || !privacy.text_safe(v.as_str().unwrap_or(&v.to_string()))
-                        });
-                        if !carries_secret {
-                            let line = format!("undo {}", step.line);
-                            self.undo = Some(Step {
-                                prov: idx,
-                                call,
-                                who: Who::Undo,
-                                line,
-                                typed: false,
-                            });
-                            // Undo at the end of the reply row: after the receipt, or alone for a click
-                            match self.reply.as_mut() {
-                                Some(r) if r.mark == Mark::Done => r.undo = true,
-                                _ => self.reply = Some(Reply::undo_only()),
-                            }
-                        }
-                    }
-                }
+                self.offer_undo(idx, &step.line, &sc, &privacy);
             }
         }
         if let Err(e) = &outcome {
-            if !batch_step {
+            if !batch_step && !self.trial_told(&step.call, e) {
                 self.refuse(e);
                 self.stop_queue();
             }
@@ -6285,6 +6299,42 @@ impl App {
             self.files_step_done(&step, outcome);
         }
         self.next_step();
+    }
+
+    /// The step that takes a step back, where its answer carries one and no credential with it: Undo at the end of the
+    /// reply row, after the receipt, or alone for a click.
+    fn offer_undo(&mut self, idx: usize, line: &str, sc: &Value, privacy: &gate::ResultPrivacy) {
+        let Some(u) = sc.get("undo") else { return };
+        let (Some(name), Some(args)) = (u.get("name").and_then(Value::as_str), u.get("arguments").and_then(Value::as_object)) else {
+            return;
+        };
+        let undo_schema = self.providers[idx].tools.iter().find(|t| t.name == name).map(|t| &t.schema);
+        let carries_secret = args.iter().any(|(k, v)| {
+            gate::secret(k, undo_schema.and_then(|s| s.get("properties")).and_then(|p| p.get(k))) || !privacy.text_safe(v.as_str().unwrap_or(&v.to_string()))
+        });
+        if carries_secret {
+            return;
+        }
+        let call = Call {
+            name: name.to_string(),
+            arguments: args.clone(),
+            ask: vec![],
+            said: None,
+            pick: None,
+            value: None,
+            children: None,
+        };
+        self.undo = Some(Step {
+            prov: idx,
+            call,
+            who: Who::Undo,
+            line: format!("undo {}", line),
+            typed: false,
+        });
+        match self.reply.as_mut() {
+            Some(r) if r.mark == Mark::Done => r.undo = true,
+            _ => self.reply = Some(Reply::undo_only()),
+        }
     }
 
     /// The rows a call's answer carries, as the step left them (#196): taken as a read's are, and nothing is read
@@ -6365,6 +6415,9 @@ impl App {
     /// note, a window, a layout. A place, a setting, a choice, an action of a details page is a menu's row.
     pub fn object_pick(&self, n: usize) -> bool {
         let Some(it) = self.picks().get(n).cloned() else { return false };
+        if self.row_ref(&it).is_some_and(|r| r.map.is_some()) {
+            return true; // the map's own ground: a click lights it, as one on a screen does
+        }
         match &it {
             // an app's own row is the object; the managing rows at the list's end are a menu's and act on one
             // click (the dialog design notes, v0.124.4)
@@ -6419,7 +6472,7 @@ impl App {
                 Some(parts.join(crate::ui::SEP))
             }
             Item::Folder(_) | Item::Row(..) | Item::Hit(_) if self.object_pick(self.sel) => {
-                let r = self.row_ref(&it)?;
+                let r = self.row_ref(&it).filter(|r| r.map.is_none())?; // the map says its screens itself
                 if let Some(line) = &r.line {
                     return Some(line.clone());
                 }
@@ -6725,6 +6778,8 @@ impl App {
             return;
         }
         match key {
+            // a change on trial: its card goes first
+            HintKey::Enter if self.trial_keys() => self.trial_end(true),
             HintKey::Enter => self.enter(),
             HintKey::Ask => self.ask(),
             HintKey::Conversation => {
@@ -6743,6 +6798,9 @@ impl App {
             HintKey::Delete => self.delete(),
             // the way out, with a signal's 130 for the caller
             HintKey::Quit => self.quit = Some(130),
+            // a screen held by the pointer is let go where it was, then a change on trial put back
+            HintKey::Escape if self.map_cancel() => {}
+            HintKey::Escape if self.trial_keys() => self.trial_end(false),
             HintKey::Escape => self.escape(),
             HintKey::Newline => self.newline(),
             HintKey::Tab => self.tab(false),
@@ -6758,6 +6816,7 @@ impl App {
                     self.files_pane_key();
                 }
             }
+            HintKey::Place(side) => self.map_place(side),
             HintKey::Rename | HintKey::Open | HintKey::Copy | HintKey::Move | HintKey::New | HintKey::Trash | HintKey::Actions | HintKey::CopyPath => {
                 self.row_key(key)
             }
@@ -6997,6 +7056,9 @@ impl App {
             }
             View::Dest(_) | View::Section(_) | View::Folder(..) | View::Found(..) => {
                 let rows = self.view_rows();
+                if self.pixels && rows.iter().any(|r| r.map.is_some()) {
+                    add(&mut v, "Open", "Enter");
+                }
                 if rows.iter().any(|r| !r.more.is_empty()) {
                     add(&mut v, "Actions", "F9");
                 }
@@ -7005,6 +7067,9 @@ impl App {
                 }
                 if rows.iter().any(|r| r.step.is_some()) {
                     add(&mut v, "Change", "\u{2190} \u{2192}");
+                }
+                if self.pixels && rows.iter().any(|r| r.map.as_ref().is_some_and(|m| m.screens.iter().any(|s| m.moves(&s.name)))) {
+                    add(&mut v, "Move", "Ctrl+\u{2190} Ctrl+\u{2192} Ctrl+\u{2191} Ctrl+\u{2193}");
                 }
                 if self.is_calendar() {
                     add(&mut v, "Month", "\u{2190} \u{2192}");
@@ -7062,7 +7127,7 @@ impl App {
     }
 
     /// The provider an item's row is of: a section's, the folder's, the one that found it.
-    fn prov_of(&self, it: &Item) -> Option<usize> {
+    pub(crate) fn prov_of(&self, it: &Item) -> Option<usize> {
         match it {
             Item::Row(p, _) => Some(*p),
             Item::Folder(_) => self.folder.as_ref().map(|(p, _, _)| *p),
@@ -7315,7 +7380,7 @@ impl App {
 
     /// A value set in place (#183): held to its tool as every step is, shown on its row at once, then
     /// set; while one is being set, the newest wanted for each row waits, and only it is sent.
-    fn set_value(&mut self, p: usize, id: &str, held: Held, call: Call) {
+    pub(crate) fn set_value(&mut self, p: usize, id: &str, held: Held, call: Call) {
         let step = Step {
             prov: p,
             call: call.clone(),
@@ -7443,6 +7508,11 @@ impl App {
                 Held::On(on) => {
                     for sw in matches.filter_map(|r| r.switch.as_mut()) {
                         sw.on = on;
+                    }
+                }
+                Held::Placed(name, at) => {
+                    for r in matches {
+                        Self::map_hold(r, &name, at);
                     }
                 }
                 Held::Checked => {

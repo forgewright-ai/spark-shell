@@ -39,6 +39,16 @@ pub(crate) fn display(app: &App) -> bool {
     screen(&app.view) || matches!(&app.view, View::Section(p) if app.providers.get(*p).is_some_and(|x| x.label == "display"))
 }
 
+/// The screen a list of resolutions is of, as the list says it: the place above it.
+pub(crate) fn modes_of(app: &App) -> Option<String> {
+    let View::Folder(_, uri) = &app.view else { return None };
+    if !uri.starts_with(SCREENS) || !uri.ends_with("/modes") || app.came_from.len() < 2 {
+        return None;
+    }
+    let rows = &app.folder.as_ref().filter(|(_, u, _)| u == uri)?.2;
+    rows.state.clone().filter(|s| !s.trim().is_empty())
+}
+
 /// A folder whose poster is the lit row: the poster says the row's line under its name, so the status line says
 /// nothing of it, and the poster stands still as the row lit changes.
 pub(crate) fn poster_lit(app: &App) -> bool {

@@ -587,6 +587,7 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
         || drawn.keys.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.wave.is_some_and(on)
         || drawn.reply_undo.is_some_and(|(a, b, y)| span(a, b, y))
+        || drawn.trial.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.other_path.is_some_and(|(a, b, y)| span(a, b, y))
         || drawn.other_pick_at(col, row).is_some();
     if dragging {
@@ -650,11 +651,20 @@ fn act(app: &mut App, target: scene::Target) {
         scene::Target::Head(label) => app.apps_heading(&label),
         scene::Target::Home => app.go_home(),
         scene::Target::Back => app.back_key(),
+        scene::Target::BackBy(levels) => {
+            for _ in 0..levels.min(8) {
+                if app.can_go_back() {
+                    app.back_key();
+                }
+            }
+        }
         scene::Target::ListApp(id) => app.apps_show(&id),
         scene::Target::PaneRow(n) if app.view == View::Apps => app.apps_pane_row(n, Instant::now()),
         scene::Target::PaneRow(n) => app.files_pane_row(n, Instant::now()),
         scene::Target::Step(n, up) => app.step_at(n, up),
         scene::Target::Option(n, k) => app.option_at(n, k),
+        scene::Target::Screen(..) => {} // the press is the map's own: it may be a drag
+        scene::Target::Trial(keep) => app.trial_end(keep),
         scene::Target::Crumb(uri) => app.files_go_to(&uri),
         scene::Target::OtherRow(n) => app.pane_clicked(n, Instant::now()),
         scene::Target::OtherPane => {
@@ -1286,7 +1296,7 @@ fn main() {
                     _ => pointer_at(&app, &drawn, c, r, false),
                 };
                 // not while a picture is moved or a list dragged: the holding hand stays for the whole of the drag
-                if want != pointer && drag.is_none() && !press.as_ref().is_some_and(|p| p.moved) {
+                if want != pointer && drag.is_none() && !press.as_ref().is_some_and(|p| p.moved) && !app.map_dragging() {
                     pointer = want;
                     point(&window, &mut out, want);
                 }
@@ -1524,8 +1534,10 @@ fn main() {
                     shown_icons.clear();
                     dirty = true;
                 }
-                let (was, said) = (app.busy(), app.reply.is_some());
+                let (was, said, card) = (app.busy(), app.reply.is_some(), app.trial_card().map(|(_, left)| left));
                 app.tick(Instant::now());
+                // the card of a change on trial: a frame a second, and one when it ends
+                dirty |= card != app.trial_card().map(|(_, left)| left);
                 // a receipt left the message's row: a frame without it
                 dirty |= said != app.reply.is_some();
                 // a frame for the march while it shows, and when the work starts or ends; none for work nothing shows (#196).
@@ -1662,6 +1674,7 @@ fn main() {
             }
             Ev::Term(Event::FocusLost) => {
                 app.window_focused = false;
+                app.map_cancel();
                 app.focus_lost();
                 dirty = true;
             }
@@ -1670,7 +1683,7 @@ fn main() {
                 dirty |= frame_for_mouse(m.kind, drag.is_some()) && !(drag.is_none() && matches!(m.kind, MouseEventKind::Drag(_)));
                 // the pointer says what a click does where it is (#129)
                 // a picture being moved, or a list being dragged: the holding hand
-                let dragging = (drag.is_some() && matches!(m.kind, MouseEventKind::Drag(_))) || press.as_ref().is_some_and(|p| p.moved);
+                let dragging = (drag.is_some() && matches!(m.kind, MouseEventKind::Drag(_))) || press.as_ref().is_some_and(|p| p.moved) || app.map_dragging();
                 mouse_at = Some((m.column, m.row));
                 // in a frame of the layout in pixels the grid's cell is the one of the place's rows under the pointer,
                 // and no cell at all outside them
@@ -1694,6 +1707,13 @@ fn main() {
                         // a click raises the dialog over a video's player: it stops, unless the click is the key that pauses it (#125)
                         if !matches!(target, Some(scene::Target::Key(_))) && !drawn.keys.iter().any(|(a, b, y, _)| row == *y && col >= *a && col < *b) {
                             app.stop_video();
+                        }
+                        // a press on a screen of the map is the map's, not the list's: let go where it began it chooses the
+                        // screen, dragged it moves it
+                        if let (Some(scene::Target::Screen(n, name)), Some(fit)) = (&target, shown.as_ref().and_then(|sc| sc.map)) {
+                            press = None;
+                            app.map_press(*n, name, at_px, fit.scale);
+                            continue;
                         }
                         // a press on a list waits: let go where it began it is the click, dragged it scrolls the list,
                         // with the pointer or with a finger
@@ -1725,6 +1745,8 @@ fn main() {
                             app.back_key(); // the header's back, or its place name: back a level (the dialog design notes)
                         } else if let Some((_, _, _, label)) = drawn.heads.iter().find(|(a, b, y, _)| row == *y && col >= *a && col < *b) {
                             app.apps_heading(&label.clone()); // a category's heading: the list narrowed to it, or widened
+                        } else if let Some((_, _, _, keep)) = drawn.trial.iter().find(|(a, b, y, _)| row == *y && col >= *a && col < *b) {
+                            app.trial_end(*keep);
                         } else if drawn.reply_undo.is_some_and(|(a, b, y)| row == y && col >= a && col < b) {
                             app.undo_now();
                         } else if let Some((_, _, _, c)) = drawn.chips.iter().find(|(a, b, y, _)| row == *y && col >= *a && col < *b) {
@@ -1754,6 +1776,15 @@ fn main() {
                             app.pane_clicked(n, Instant::now());
                         } else if drawn.other_path.is_some_and(|(a, b, y)| row == y && col >= a && col < b) {
                             app.files_pane(); // its path: the pane becomes active
+                        }
+                    }
+                    MouseEventKind::Drag(MouseButton::Left) if app.map_held() => {
+                        if app.map_drag(at_px) {
+                            dirty = true;
+                        }
+                        if app.map_dragging() && pointer != "grabbing" {
+                            pointer = "grabbing";
+                            point(&window, &mut out, pointer);
                         }
                     }
                     MouseEventKind::Drag(MouseButton::Left) => {
@@ -1789,6 +1820,12 @@ fn main() {
                             }
                         }
                     }
+                    MouseEventKind::Up(MouseButton::Left) if app.map_held() => {
+                        app.map_release(Instant::now());
+                        dirty = true;
+                    }
+                    // the button was let go elsewhere
+                    MouseEventKind::Moved if app.map_cancel() => dirty = true,
                     MouseEventKind::Up(button) => {
                         // a press on a list let go: where it began, it is the click
                         if let Some(p) = press.take().filter(|_| button == MouseButton::Left) {

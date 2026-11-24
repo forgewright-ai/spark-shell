@@ -1,5 +1,6 @@
 //! Named home actions. One validated map drives terminal input and visible hints.
 use crate::app::HintKey;
+use crate::display::screens::Side;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::path::Path;
 
@@ -33,6 +34,10 @@ const DEFAULTS: &[(&str, HintKey, &str)] = &[
     ("copy-path", HintKey::CopyPath, "Ctrl+C"),
     ("select", HintKey::Select, "Space"),
     ("pane", HintKey::Pane, "Ctrl+Tab"),
+    ("move-left", HintKey::Place(Side::Left), "Ctrl+Left"),
+    ("move-right", HintKey::Place(Side::Right), "Ctrl+Right"),
+    ("move-up", HintKey::Place(Side::Above), "Ctrl+Up"),
+    ("move-down", HintKey::Place(Side::Below), "Ctrl+Down"),
     ("zoom-in", HintKey::Char('+'), "Plus"),
     ("zoom-out", HintKey::Char('-'), "-"),
     ("zoom-fit", HintKey::Char('0'), "0"),
@@ -235,9 +240,25 @@ impl Bindings {
             "Down" => "\u{2193}",
             "Left" => "\u{2190}",
             "Right" => "\u{2192}",
+            "Ctrl+Up" => "Ctrl+\u{2191}",
+            "Ctrl+Down" => "Ctrl+\u{2193}",
+            "Ctrl+Left" => "Ctrl+\u{2190}",
+            "Ctrl+Right" => "Ctrl+\u{2192}",
             "Plus" => "+",
             label => label,
         }
+    }
+
+    /// Several actions' keys on one chip: the modifier they share said once (Ctrl+ before four arrows); one with no
+    /// key of its own is left out.
+    pub fn labels(&self, actions: &[HintKey]) -> String {
+        let keys: Vec<&str> = actions.iter().map(|a| self.label(*a)).filter(|l| !l.is_empty()).collect();
+        let held = keys.first().and_then(|k| k.rfind('+')).map_or("", |at| &keys[0][..=at]);
+        if keys.len() > 1 && held.len() > 1 && keys.iter().all(|k| k.len() > held.len() && k.starts_with(held)) {
+            let rest: Vec<&str> = keys.iter().map(|k| &k[held.len()..]).collect();
+            return format!("{}{}", held, rest.join(" "));
+        }
+        keys.join(" ")
     }
 
     pub fn help(&self) -> Vec<(&str, &str)> {
@@ -248,6 +269,24 @@ impl Bindings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn control_and_the_arrows_move_a_screen_and_share_one_chip() {
+        use crate::display::screens::Side;
+        let keys = Bindings::default();
+        let ctrl = |code| keys.action(KeyEvent::new(code, KeyModifiers::CONTROL));
+        let sides = [Side::Left, Side::Right, Side::Above, Side::Below].map(HintKey::Place);
+        assert_eq!(
+            [ctrl(KeyCode::Left), ctrl(KeyCode::Right), ctrl(KeyCode::Up), ctrl(KeyCode::Down)],
+            sides.map(Some)
+        );
+        assert_eq!(keys.labels(&sides), "Ctrl+\u{2190} \u{2192} \u{2191} \u{2193}");
+        assert_eq!(keys.labels(&[HintKey::Left, HintKey::Right]), "\u{2190} \u{2192}");
+        assert_eq!(keys.labels(&[HintKey::Escape]), "Esc");
+        // a person's own keys: named as they are, one that is gone left out
+        let own = Bindings::from_json(r#"{"move-left":"Alt+h","move-up":"F12","copy":"Ctrl+Down"}"#).unwrap();
+        assert_eq!(own.labels(&sides), "Alt+h Ctrl+\u{2192} F12");
+    }
+
     #[test]
     fn view_is_f3_so_no_typed_letter_opens_it() {
         let keys = Bindings::default();

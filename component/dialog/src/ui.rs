@@ -6,6 +6,7 @@
 
 use crate::animation::Reel;
 use crate::app::{App, FolderShape, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, SETTINGS, WIDTH};
+use crate::display::screens::Side as Toward;
 use crate::files::{Pane, Side};
 use crate::grid::{Buffer, CellDiffOption, Color, Modifier, Rect, Style};
 use crate::page::Line as PageLine;
@@ -228,6 +229,8 @@ pub struct Drawn {
     pub film: Option<(u16, u16, u16, u16, Reel, std::time::Instant)>,
     /// The reply row's Undo (#196): its cells (x0, x1, y), for a click.
     pub reply_undo: Option<(u16, u16, u16)>,
+    /// The two controls of a change on trial (v0.167): each one's cells (x0, x1, y), and whether it keeps the change.
+    pub trial: Vec<(u16, u16, u16, bool)>,
     /// A value row's arrows (#175): each one's cells (x0, x1, y), its pick, and whether it steps the value up.
     pub steps: Vec<(u16, u16, u16, usize, bool)>,
     /// The dialog's own column, its first cell and the cell after its last (#131): a click's row is its list's only there.
@@ -394,6 +397,10 @@ impl Drawn {
         self.wave = self.wave.map(|(x, y, w, h)| (x + dx, y, w, h));
         self.film = self.film.map(|(x, y, w, h, r, t)| (x + dx, y, w, h, r, t));
         self.reply_undo = self.reply_undo.map(|(a, b, y)| (a + dx, b + dx, y));
+        for t in &mut self.trial {
+            t.0 += dx;
+            t.1 += dx;
+        }
         for st in &mut self.steps {
             st.0 += dx;
             st.1 += dx;
@@ -730,6 +737,10 @@ fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
             continue;
         }
         let group_start = x;
+        if app.trial_keys() && trials(&parts) {
+            x += width + 2; // the trial's for now: its place is kept
+            continue;
+        }
         for (text, key, actions) in parts {
             let start = x;
             x = if key {
@@ -776,17 +787,20 @@ pub(crate) fn key_groups(app: &App, pages: usize) -> Vec<KeyGroup> {
                     let named: Vec<_> = if key { t.split(' ').filter_map(key_of).collect() } else { vec![] };
                     // an action a person's own keys left with no key has no chip: its label goes with it
                     let actions: Vec<_> = named.iter().copied().filter(|a| !app.cfg.keys.label(*a).is_empty()).collect();
-                    let label = if named.is_empty() {
-                        t
-                    } else {
-                        actions.iter().map(|a| app.cfg.keys.label(*a)).collect::<Vec<_>>().join(" ")
-                    };
+                    let label = if named.is_empty() { t } else { app.cfg.keys.labels(&actions) };
                     (label, key, actions)
                 })
                 .collect()
         })
         .filter(|group: &KeyGroup| group.iter().all(|(t, k, _)| !*k || !t.is_empty()))
         .collect()
+}
+
+/// Whether a group of the key bar is one of the keys a change on trial takes: Enter, Esc.
+pub(crate) fn trials(group: &KeyGroup) -> bool {
+    group
+        .iter()
+        .any(|(_, _, actions)| actions.iter().any(|a| matches!(a, HintKey::Enter | HintKey::Escape)))
 }
 
 /// The action of a key named on a chip.
@@ -812,6 +826,10 @@ fn key_of(k: &str) -> Option<HintKey> {
         "F7" => HintKey::New,
         "F8" => HintKey::Trash,
         "F9" => HintKey::Actions,
+        "Ctrl+\u{2190}" => HintKey::Place(Toward::Left),
+        "Ctrl+\u{2192}" => HintKey::Place(Toward::Right),
+        "Ctrl+\u{2191}" => HintKey::Place(Toward::Above),
+        "Ctrl+\u{2193}" => HintKey::Place(Toward::Below),
         _ => return None,
     })
 }
@@ -869,6 +887,19 @@ fn tools(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) -> u16 {
 /// nothing to say. One row, cut to the window: it never moves the list, and nothing else is written between
 /// the keys and the list or among the list's rows.
 fn reply_row(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
+    // a change on trial: what it is and the seconds left, keep and back its two controls at the row's right
+    if let Some((said, left)) = app.trial_card() {
+        let mut x = pen.w.saturating_sub(2);
+        for (word, keep) in [("back", false), ("keep", true)] {
+            x = x.saturating_sub(cells(word) as u16 + 2);
+            let e = pen.control(x, y, word, true, false, false);
+            drawn.trial.push((x, e, y, keep));
+            x = x.saturating_sub(1);
+        }
+        let words = format!("{}{}{}", said, SEP, crate::scene::card::seconds(left));
+        pen.put(4, y, &cut_words(&words, x.saturating_sub(5) as usize), pen.pal.fg, false, false);
+        return;
+    }
     // an action on a thing, waited on out loud (the dialog design notes): an app opening shows the header's march with the
     // words once the wait is felt, a third of a second in, so a launch that answers at once shows its receipt alone
     if let (Some((_, op)), Some(since)) = (&app.apps.pending, app.apps.pending_since) {

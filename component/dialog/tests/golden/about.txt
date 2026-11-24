@@ -10,7 +10,7 @@
     project  github.com/forgewright-ai/spark-shell          
     license  MIT                                            
     credits  48 projects and their licenses                 
-    help     39 shortcuts                                   
+    help     40 shortcuts                                   
                                                             
     installed at ~/.spark-shell                             
                                                             

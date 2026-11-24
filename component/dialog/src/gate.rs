@@ -408,6 +408,7 @@ mod tests {
             back: false,
             choice: false,
             when_model: None,
+            map: None,
         };
         (
             vec![tool("wifi_connect", s), tool("out_level", lv)],
@@ -700,6 +701,7 @@ mod path_tests {
                 back: false,
                 choice: false,
                 when_model: None,
+                map: None,
             }],
             short: vec![],
             look_back: None,

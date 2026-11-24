@@ -15,7 +15,9 @@ use crate::palette::Palette;
 use crate::preferences::Spacing;
 use crate::scrub::{cells, cut, cut_middle};
 
+pub(crate) mod card;
 mod choice;
+mod screens;
 
 /// The text's measures: the cell of the text's own face and where its baseline stands under its line's top,
 /// then the same of the smaller face. Every length of the layout is said for a line 20 pixels tall and grows
@@ -97,6 +99,8 @@ pub enum Target {
     Home,
     /// The place above this one, on the location line.
     Back,
+    /// A place further up it: how many levels.
+    BackBy(usize),
     /// An app in the list beside its details: its details come.
     ListApp(String),
     /// A row of the details shown beside the list while the list holds the keys.
@@ -105,6 +109,11 @@ pub enum Target {
     Step(usize, bool),
     /// An option of a row of one setting (C3, v0.161): the row, and the option (App::option_at says which).
     Option(usize, usize),
+    /// A screen of the display page's map (v0.167): the map's row, and the screen's name. A press on it is the map's:
+    /// it may be a drag.
+    Screen(usize, String),
+    /// A change on trial: kept (true), or put back.
+    Trial(bool),
     /// A folder's name on the location line: its uri.
     Crumb(String),
     /// A row of the other pane of files, by its place among that pane's rows.
@@ -200,6 +209,8 @@ pub struct Scene {
     pub lists: Vec<ListBox>,
     /// What a file shows in its details: kept inside the list's box, as an icon is.
     pub pictures: Vec<PictureAt>,
+    /// How the display page's map is laid, where it is drawn: a drag on it is read by it.
+    pub map: Option<crate::display::screens::Fit>,
 }
 
 impl Scene {
@@ -236,7 +247,12 @@ pub enum Kind {
 pub fn kind(app: &App) -> Kind {
     match app.view {
         View::Home | View::Apps => kind_of(app, &app.list_items()),
-        View::Folder(..) if app.files_pane_view().is_some() || crate::appearance::gallery(&app.view) || crate::appearance::section(&app.view) => {
+        View::Folder(..)
+            if app.files_pane_view().is_some()
+                || crate::appearance::gallery(&app.view)
+                || crate::appearance::section(&app.view)
+                || crate::appearance::screen(&app.view) =>
+        {
             kind_of(app, &app.list_items())
         }
         View::Dest(d) if d == crate::app::SETTINGS_DEST => kind_of(app, &app.list_items()),
@@ -259,7 +275,12 @@ fn kind_of(app: &App, items: &[Item]) -> Kind {
         View::Apps if items.iter().all(known) => Kind::Apps,
         View::Folder(..) if app.files_pane_view().is_some() && items.iter().all(known) => Kind::Files,
         View::Dest(d) if d == crate::app::SETTINGS_DEST && items.iter().all(known) => Kind::Settings,
-        View::Folder(..) if (crate::appearance::gallery(&app.view) || crate::appearance::section(&app.view)) && items.iter().all(known) => Kind::Page,
+        View::Folder(..)
+            if (crate::appearance::gallery(&app.view) || crate::appearance::section(&app.view) || crate::appearance::screen(&app.view))
+                && items.iter().all(known) =>
+        {
+            Kind::Page
+        }
         View::Section(p) if items.iter().all(known) && app.providers.get(p).is_some_and(|x| PLACES.contains(&x.label.as_str())) => Kind::Place,
         View::Section(_) if items.iter().all(known) => Kind::Page,
         View::Help if items.iter().all(known) => Kind::Place,
@@ -386,9 +407,15 @@ impl Geo {
         let path = app.view != View::Home;
         // the grid's rows always keep the message's line, as the grid kept its status row: a list of files says
         // the lit file there. The rows in pixels give it room only while there is something to say
-        let status = k == Kind::Grid || message(app, k).is_some();
+        let trial = app.trial_card().is_some();
+        let status = k == Kind::Grid || trial || message(app, k).is_some();
         let top = if path { m.px(PATH_RULE) + 1.0 } else { m.px(HEAD) };
-        let bottom = (foot - if status { m.px(STATUS) } else { 0.0 }).max(top);
+        let room = match (trial, status) {
+            (true, _) => card::height(m),
+            (false, true) => m.px(STATUS),
+            (false, false) => 0.0,
+        };
+        let bottom = (foot - room).max(top);
         Geo {
             w,
             inset,
@@ -446,6 +473,11 @@ struct Pen<'a> {
     was: &'a [Scrolled],
     lists: Vec<ListBox>,
     pictures: Vec<PictureAt>,
+    /// Where the next list's second words stand, from its left edge, where its page says: the column its options have.
+    column: Option<f64>,
+    /// What a list draws over all of its rows: a screen that is dragged.
+    over: Vec<Step>,
+    map: Option<crate::display::screens::Fit>,
 }
 
 impl Pen<'_> {
@@ -540,6 +572,9 @@ pub fn build(app: &App, pal: &Palette, m: &Metrics, w: f64, h: f64, was: &[Scrol
         was,
         lists: vec![],
         pictures: vec![],
+        column: None,
+        over: vec![],
+        map: None,
     };
     line(app, &mut pen, &g);
     if g.path {
@@ -567,7 +602,9 @@ pub fn build(app: &App, pal: &Palette, m: &Metrics, w: f64, h: f64, was: &[Scrol
         Kind::Place => place(app, &mut pen, &g, &items),
         Kind::Calendar => calendar(app, &mut pen, &g, &items),
     }
-    if g.status {
+    if app.trial_card().is_some() {
+        card::draw(app, &mut pen, &g);
+    } else if g.status {
         status(app, &mut pen, &g, k);
     }
     g.keys.draw(&mut pen, &g);
@@ -576,6 +613,7 @@ pub fn build(app: &App, pal: &Palette, m: &Metrics, w: f64, h: f64, was: &[Scrol
     scene.icons = pen.icons;
     scene.lists = pen.lists;
     scene.pictures = pen.pictures;
+    scene.map = pen.map;
     scene
 }
 
@@ -789,6 +827,10 @@ fn path(app: &App, pen: &mut Pen, g: &Geo, items: &[Item], k: Kind) {
                 cut = true;
             }
         }
+    } else if let Some(screen) = crate::appearance::modes_of(app) {
+        names.push((place, Some(Target::BackBy(2))));
+        names.push((screen, Some(Target::Back)));
+        names.push((sub, None));
     } else if sub.trim().is_empty() {
         names.push((place, None));
     } else {
@@ -957,9 +999,11 @@ fn status(app: &App, pen: &mut Pen, g: &Geo, k: Kind) {
     pen.text(x, base, &words, Size::Small, if msg.muted { t.muted } else { t.ink }, false);
 }
 
-/// The key bar: each group its words and its key in a chip, Esc's first; a second line where one is too short.
+/// The key bar: each group its words and its key in a chip, Esc's first; a second line where one is too short. A key
+/// that is another's for now (Enter and Esc, a trial's) keeps its place, dimmed.
 struct Keys {
     groups: Vec<(f64, crate::ui::KeyGroup)>,
+    taken: bool,
     lines: usize,
     room: f64,
 }
@@ -981,7 +1025,12 @@ impl Keys {
             }
             x += w + m.px(20.0);
         }
-        Keys { groups, lines, room }
+        Keys {
+            groups,
+            taken: app.trial_keys(),
+            lines,
+            room,
+        }
     }
     /// A group's width: words, then a chip of the key's words with its air.
     fn span(m: &Metrics, parts: &crate::ui::KeyGroup) -> f64 {
@@ -1018,16 +1067,23 @@ impl Keys {
                 continue;
             }
             let start = x;
+            let dim = self.taken && crate::ui::trials(parts);
+            let ink = if dim { t.lit } else { t.ink };
             for (text, key, actions) in parts {
                 let from = x;
                 if *key {
                     let w = pen.width(text, Size::Small) + m.px(16.0);
-                    pen.fill(x, base - m.px(15.0), w, m.px(21.0), t.lit);
-                    pen.text(x + m.px(8.0), base, text, Size::Small, t.ink, false);
+                    if !dim {
+                        pen.fill(x, base - m.px(15.0), w, m.px(21.0), t.lit);
+                    }
+                    pen.text(x + m.px(8.0), base, text, Size::Small, ink, false);
                     x += w;
                 } else {
                     let words = text.trim_end().to_lowercase();
-                    x += pen.text(x, base, &words, Size::Small, t.ink, false) + m.px(8.0);
+                    x += pen.text(x, base, &words, Size::Small, ink, false) + m.px(8.0);
+                }
+                if dim {
+                    continue;
                 }
                 let n = actions.len() as f64;
                 for (i, action) in actions.iter().enumerate() {
@@ -1097,6 +1153,8 @@ enum K {
     Facts(Vec<(String, String)>),
     /// A setting in one row (C3, v0.161): its name, then its options side by side.
     Choice(choice::Choice),
+    /// The screens to scale (v0.167).
+    Map(Box<crate::display::screens::Map>),
     /// A file or a folder in a list of files, as an app's row is (v0.160): its name leads, and under it what it
     /// is, its size, its date and, where the row carries one, its own folder.
     File {
@@ -1145,6 +1203,8 @@ struct Shape {
     heads: bool,
     /// A row's key stands in the smaller text with no box around it: a page in large type.
     bare: bool,
+    /// Its small headings have air over them, so each stands nearer its own rows than the ones before it.
+    aired: bool,
     /// A setting is one row, its options side by side (C3, v0.161): a page of settings.
     c3: bool,
 }
@@ -1318,12 +1378,16 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
                 Some((one, plain("ask spark", words, false)))
             }
             Item::Row(..) | Item::Folder(_) if shape.c3 => app.row_ref(it).map(|row| {
-                if let Some((h, c)) = rhythm.as_ref().and_then(|r| choice::of(app, m, it, room, r)) {
+                if let Some(map) = &row.map {
+                    (screens::height(m, 0.0), K::Map(Box::new(map.clone())))
+                } else if let Some((h, c)) = rhythm.as_ref().and_then(|r| choice::of(app, m, it, room, r)) {
                     (h, K::Choice(c))
                 } else if row.id.starts_with("theme:detail:") {
                     (one, K::Fact(row.text.clone(), row.columns.join(crate::ui::SEP)))
                 } else if shape.two {
                     row_two(m, row, one)
+                } else if app.screen_off(row) {
+                    (one, of_row(&crate::model::Row { muted: true, ..row.clone() }))
                 } else {
                     (one, of_row(row))
                 }
@@ -1473,7 +1537,7 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
         };
         if let Some((h, kind)) = made {
             // a heading brings its own air over it
-            if matches!(kind, K::Head(..)) && matches!(out.last(), Some(Row { k: K::Gap(_), .. })) {
+            if matches!(kind, K::Head(..)) && !shape.aired && matches!(out.last(), Some(Row { k: K::Gap(_), .. })) {
                 out.pop();
             }
             out.push(Row {
@@ -1671,6 +1735,7 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
     });
     // each group lines its second words up: past its longest name
     let mut column = m.px(176.0);
+    let said = pen.column.take();
     // a list with a row checked (a pick list) keeps the check's room on every row, so its names stand in one line
     // and stay there as the check moves from group to group
     let checked = rows.iter().any(|r| matches!(&r.k, K::One { sign: "check", .. }));
@@ -1692,7 +1757,7 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                     _ => None,
                 })
                 .fold(0.0, f64::max);
-            column = (m.px(24.0) + names + m.px(24.0)).clamp(m.px(176.0), ((right - area.left) * 0.55).round().max(m.px(176.0)));
+            column = said.unwrap_or_else(|| (m.px(24.0) + names + m.px(24.0)).clamp(m.px(176.0), ((right - area.left) * 0.55).round().max(m.px(176.0))));
         }
         let (top, h) = (y, row.h);
         y += h;
@@ -1930,6 +1995,18 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                     focus,
                 },
             ),
+            K::Map(map) => screens::draw(
+                app,
+                pen,
+                map,
+                screens::At {
+                    top,
+                    h,
+                    area,
+                    pick: row.pick,
+                    on,
+                },
+            ),
             K::Name { icon, name, what } => {
                 let mut nx = x;
                 if let Some(icon) = icon {
@@ -2054,6 +2131,8 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
             }
         }
     }
+    let over = std::mem::take(&mut pen.over);
+    pen.steps.extend(over);
     pen.steps.push(Step::Unclip);
     off
 }
@@ -2090,6 +2169,7 @@ fn home(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         pad: 24.0,
         heads: false,
         bare: false,
+        aired: false,
         c3: false,
     };
     let rows = rows_of(app, pen, items, shape, area.right - area.left - pen.m.px(48.0));
@@ -2126,6 +2206,7 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         pad: 24.0,
         heads: false,
         bare: false,
+        aired: false,
         c3: false,
     };
     // the details beside the list: the list a narrow column of names, the details the rest
@@ -2166,6 +2247,7 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         pad: 24.0,
         heads: false,
         bare: false,
+        aired: false,
         c3: false,
     };
     let page = Shape {
@@ -2176,6 +2258,7 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         pad: 12.0,
         heads: false,
         bare: false,
+        aired: false,
         c3: false,
     };
     let room = |a: Area| a.right - a.left - m.px(36.0);
@@ -2369,7 +2452,7 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     };
     // a theme list names its groups small, in the accent, as the palette's columns are: its rows and the poster's
     // title carry the weight (v0.165.1)
-    let theme_list = crate::appearance::section(&app.view) || crate::appearance::gallery(&app.view);
+    let theme_list = crate::appearance::section(&app.view) || crate::appearance::gallery(&app.view) || crate::appearance::display(app);
     let shape = Shape {
         two: false,
         one: 44.0,
@@ -2378,6 +2461,7 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         pad: 24.0,
         heads: !theme_list,
         bare: true,
+        aired: crate::appearance::display(app),
         c3: true,
     };
     if matches!(&app.view, View::Folder(_, uri) if uri.starts_with(crate::appearance::PALETTES) || uri == crate::appearance::COLORS)
@@ -2407,6 +2491,15 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         items
     };
     let mut rows = rows_of(app, pen, items, shape, area.right - area.left - m.px(36.0));
+    for r in rows.iter_mut().filter(|r| matches!(r.k, K::Map(_))) {
+        r.h = screens::height(&m, area.bottom - area.top);
+    }
+    if crate::appearance::display(app) {
+        // the words of a row with no options stand at the options' column, where half the room is left for them
+        let room = area.right - area.left - m.px(36.0);
+        let column = choice::rhythm(app, &m, items, room).column;
+        pen.column = (column <= room / 2.0).then_some(m.px(24.0) + column);
+    }
     if candidate.is_none() && crate::appearance::gallery(&app.view) && app.input.is_empty() {
         if let Some((_, _, folder)) = &app.folder {
             if let Some(r) = folder.rows.first().filter(|r| r.id.starts_with("theme:apply:") && r.chip.len() >= 3) {
@@ -2561,6 +2654,7 @@ const PLACE_SHAPE: Shape = Shape {
     pad: 24.0,
     heads: true,
     bare: true,
+    aired: false,
     c3: true,
 };
 
@@ -2757,6 +2851,7 @@ fn settings(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         pad: 24.0,
         heads: true,
         bare: false,
+        aired: false,
         c3: false,
     };
     // a wide window (v0.161): the list keeps its column, the lit setting's page stands beside it in large type, as an
@@ -2795,14 +2890,17 @@ fn settings(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             what: crate::ui::setting_words(app, label, purpose),
         },
     }];
+    // the display page names its groups small, here as on its own
+    let small = label == "display";
     let still = Shape {
         two: false,
         one: 44.0,
         narrow: false,
         still: true,
         pad: 12.0,
-        heads: true,
+        heads: !small,
         bare: true,
+        aired: small,
         c3: true,
     };
     if let Some(p) = app.providers.iter().position(|p| p.label == label && p.dead.is_none()) {
@@ -3045,6 +3143,7 @@ fn file_page(app: &App, pen: &mut Pen, g: &Geo, area: Area, items: &[Item]) {
         pad: 12.0,
         heads: false,
         bare: true,
+        aired: false,
         c3: false,
     };
     let lines: Vec<Item> = if details {
@@ -3199,6 +3298,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         pad: 24.0,
         heads: true,
         bare: false,
+        aired: false,
         c3: false,
     };
     let room = |a: Area, s: Shape| a.right - a.left - m.px(s.pad) - m.px(12.0);
@@ -3285,6 +3385,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
                 pad: 24.0,
                 heads: false,
                 bare: false,
+                aired: false,
                 c3: false,
             };
             let rows = page_rows(pen, shape, act);
@@ -3381,6 +3482,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             pad: 12.0,
             heads: false,
             bare: false,
+            aired: false,
             c3: false,
         };
         let lines: Vec<Item> = if details {
@@ -3408,6 +3510,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             pad: 24.0,
             heads: false,
             bare: false,
+            aired: false,
             c3: false,
         };
         let rows = page_rows(pen, shape, whole);
