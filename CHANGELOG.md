@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.166.5
+
+- Your themes and Screens and art pick a file again. From a theme file,
+  from a picture, and each picture, loop and reel on Screens and art
+  opened the files to browse, and Enter on a file opened it instead of
+  taking it. Now the file is taken, and its page comes back.
+- The dialog is 0.166.5.
+
 ## v0.166.4
 
 - While sway reloads, at a bar hidden or shown or the tray switched, a
