@@ -28,15 +28,10 @@ pub(crate) fn section(view: &View) -> bool {
     matches!(view, View::Folder(_, uri) if uri.starts_with(LISTS))
 }
 
-/// A folder whose poster is the lit row: the frame keeps the status line while it shows, so the poster stands still
-/// as the row lit changes.
+/// A folder whose poster is the lit row: the poster says the row's line under its name, so the status line says
+/// nothing of it, and the poster stands still as the row lit changes.
 pub(crate) fn poster_lit(app: &App) -> bool {
     matches!(&app.view, View::Folder(_, uri) if browsing(uri)) && candidate(app).is_some()
-}
-
-/// The poster says the lit row's line already: a collection's description, under its name.
-pub(crate) fn poster_line(app: &App) -> bool {
-    poster_lit(app) && candidate(app).is_some_and(|(_, r)| r.id.starts_with("theme:room:"))
 }
 
 pub(crate) fn terminal_palette(app: &App) -> Option<(usize, String)> {

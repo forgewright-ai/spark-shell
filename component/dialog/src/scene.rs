@@ -384,7 +384,7 @@ impl Geo {
         let path = app.view != View::Home;
         // the grid's rows always keep the message's line, as the grid kept its status row: a list of files says
         // the lit file there. The rows in pixels give it room only while there is something to say
-        let status = k == Kind::Grid || message(app, k).is_some() || crate::appearance::poster_lit(app);
+        let status = k == Kind::Grid || message(app, k).is_some();
         let top = if path { m.px(PATH_RULE) + 1.0 } else { m.px(HEAD) };
         let bottom = (foot - if status { m.px(STATUS) } else { 0.0 }).max(top);
         Geo {
@@ -875,7 +875,7 @@ fn message(app: &App, k: Kind) -> Option<Message> {
         let note = app.target_label().or_else(|| match k {
             Kind::Apps => None,
             Kind::Files => app.files_checked_line(),
-            _ if crate::appearance::poster_line(app) => None,
+            _ if crate::appearance::poster_lit(app) => None,
             _ => app.selected_line(),
         })?;
         return Some(Message {
@@ -2489,13 +2489,16 @@ fn theme_poster(app: &App, pen: &mut Pen, whole: Area, row: &crate::model::Row) 
     let mut bottom = base;
     if !row.id.starts_with("theme:apply:") {
         bottom += m.px(23.0);
-        if room {
-            if let Some(description) = row.line.as_deref() {
-                let label = pen.fit(description, Size::Small, w);
-                pen.text(left, bottom, &label, Size::Small, pen.t.muted, false);
-            }
-        } else if let Some(reference) = page.and_then(|pg| pg.facts.get(1)) {
-            let label = pen.fit(&format!("Palette  {reference}"), Size::Small, w);
+        // a collection's description, a work's kind (pixel scene, dark): the lit row's line is the poster's;
+        // the theme in use, with none, says its palette
+        let line = row.line.clone().filter(|l| !l.is_empty()).or_else(|| {
+            (!room)
+                .then(|| page.and_then(|pg| pg.facts.get(1)))
+                .flatten()
+                .map(|reference| format!("Palette  {reference}"))
+        });
+        if let Some(line) = line {
+            let label = pen.fit(&line, Size::Small, w);
             pen.text(left, bottom, &label, Size::Small, pen.t.muted, false);
         }
     }
@@ -2527,13 +2530,16 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         from: 0.0,
         to: g.w,
     };
+    // a theme list names its groups small, in the accent, as the palette's columns are: its rows and the poster's
+    // title carry the weight (v0.165.1)
+    let theme_list = crate::appearance::section(&app.view) || crate::appearance::gallery(&app.view);
     let shape = Shape {
         two: false,
         one: 44.0,
         narrow: false,
         still: false,
         pad: 24.0,
-        heads: true,
+        heads: !theme_list,
         bare: true,
         c3: true,
     };
