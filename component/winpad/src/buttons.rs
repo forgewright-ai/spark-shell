@@ -53,10 +53,10 @@ pub enum Glyph {
 }
 
 /// The buttons' glyphs as pango character references, so every command and file stays ASCII: an X, a
-/// triangle pointing down, a square. spark-shell's template writes the same three (BAND_GLYPHS).
-pub const GLYPH_REFS: [&str; 3] = ["&#x2715;", "&#x25BD;", "&#x25A1;"];
+/// triangle pointing up, a square. spark-shell's template writes the same three (BAND_GLYPHS).
+pub const GLYPH_REFS: [&str; 3] = ["&#x2715;", "&#x25B3;", "&#x25A1;"];
 /// The same three as sway draws them, a space at each side of each: nine characters, to measure one by.
-pub const GLYPHS: &str = " \u{2715}  \u{25bd}  \u{25a1} ";
+pub const GLYPHS: &str = " \u{2715}  \u{25b3}  \u{25a1} ";
 /// Where a title starts inside its band: the template's titlebar_padding.
 pub const TITLE_PAD: i32 = 12;
 /// The mic at rest, a ring, and listening, a dot; the bars, eight heights.
@@ -498,10 +498,10 @@ mod tests {
     #[test]
     fn the_buttons_wear_the_title_color_with_the_focus_and_their_own_without() {
         let s = a_style(None);
-        assert_eq!(buttons(Kind::Focus, None, &s, None), " &#x2715;  &#x25BD;  &#x25A1; ");
+        assert_eq!(buttons(Kind::Focus, None, &s, None), " &#x2715;  &#x25B3;  &#x25A1; ");
         assert_eq!(
             buttons(Kind::Plain, None, &s, None),
-            " <span foreground='#bf616a'>&#x2715;</span>  <span foreground='#ebcb8b'>&#x25BD;</span>  <span foreground='#a3be8c'>&#x25A1;</span> "
+            " <span foreground='#bf616a'>&#x2715;</span>  <span foreground='#ebcb8b'>&#x25B3;</span>  <span foreground='#a3be8c'>&#x25A1;</span> "
         );
     }
 
@@ -511,22 +511,22 @@ mod tests {
         // close: its control color, the glyph in close's ink, with the focus and without
         assert_eq!(
             buttons(Kind::Focus, Some(Glyph::Close), &s, None),
-            "<span background='#bf616a' foreground='#eceff4'> &#x2715; </span> &#x25BD;  &#x25A1; "
+            "<span background='#bf616a' foreground='#eceff4'> &#x2715; </span> &#x25B3;  &#x25A1; "
         );
         assert!(buttons(Kind::Plain, Some(Glyph::Close), &s, None)
             .starts_with("<span background='#bf616a' foreground='#eceff4'> &#x2715; </span> <span foreground='#ebcb8b'>"));
         // the others keep their color at rest: the title's on the focused band's lit tone, their own on the others'
         assert_eq!(
             buttons(Kind::Focus, Some(Glyph::Min), &s, None),
-            " &#x2715; <span background='#9db0cc'> &#x25BD; </span> &#x25A1; "
+            " &#x2715; <span background='#9db0cc'> &#x25B3; </span> &#x25A1; "
         );
         assert_eq!(
             buttons(Kind::Focus, Some(Glyph::Fill), &s, None),
-            " &#x2715;  &#x25BD; <span background='#9db0cc'> &#x25A1; </span>"
+            " &#x2715;  &#x25B3; <span background='#9db0cc'> &#x25A1; </span>"
         );
         assert_eq!(
             buttons(Kind::Plain, Some(Glyph::Min), &s, None),
-            " <span foreground='#bf616a'>&#x2715;</span> <span background='#4c566a' foreground='#ebcb8b'> &#x25BD; </span> <span foreground='#a3be8c'>&#x25A1;</span> "
+            " <span foreground='#bf616a'>&#x2715;</span> <span background='#4c566a' foreground='#ebcb8b'> &#x25B3; </span> <span foreground='#a3be8c'>&#x25A1;</span> "
         );
     }
 
@@ -535,24 +535,24 @@ mod tests {
         let s = a_style(None);
         let rest = Mic::default();
         // at rest as on the band with the focus: close's own color is the urgent band's
-        assert_eq!(buttons(Kind::Urgent, None, &s, None), " &#x2715;  &#x25BD;  &#x25A1; ");
+        assert_eq!(buttons(Kind::Urgent, None, &s, None), " &#x2715;  &#x25B3;  &#x25A1; ");
         assert_eq!(buttons(Kind::Urgent, None, &s, Some(&rest)), buttons(Kind::Focus, None, &s, Some(&rest)));
         // under the pointer the chip is the urgent tone, close's too, and the glyph keeps the title's color
         assert_eq!(
             buttons(Kind::Urgent, Some(Glyph::Close), &s, None),
-            "<span background='#d08770'> &#x2715; </span> &#x25BD;  &#x25A1; "
+            "<span background='#d08770'> &#x2715; </span> &#x25B3;  &#x25A1; "
         );
         assert_eq!(
             buttons(Kind::Urgent, Some(Glyph::Min), &s, None),
-            " &#x2715; <span background='#d08770'> &#x25BD; </span> &#x25A1; "
+            " &#x2715; <span background='#d08770'> &#x25B3; </span> &#x25A1; "
         );
         assert_eq!(
             buttons(Kind::Urgent, Some(Glyph::Fill), &s, None),
-            " &#x2715;  &#x25BD; <span background='#d08770'> &#x25A1; </span>"
+            " &#x2715;  &#x25B3; <span background='#d08770'> &#x25A1; </span>"
         );
         assert_eq!(
             buttons(Kind::Urgent, Some(Glyph::Mic), &s, Some(&rest)),
-            " &#x2715;  &#x25BD;  &#x25A1; <span background='#d08770'> &#x25CB; </span>"
+            " &#x2715;  &#x25B3;  &#x25A1; <span background='#d08770'> &#x25CB; </span>"
         );
         for hover in [None, Some(Glyph::Close), Some(Glyph::Min), Some(Glyph::Fill), Some(Glyph::Mic)] {
             let m = buttons(Kind::Urgent, hover, &s, Some(&rest));
@@ -606,17 +606,17 @@ mod tests {
     fn the_mic_wears_the_title_color_and_takes_the_same_cells_at_rest_and_listening() {
         let s = a_style(None);
         let rest = Mic::default();
-        assert_eq!(buttons(Kind::Focus, None, &s, Some(&rest)), " &#x2715;  &#x25BD;  &#x25A1;  &#x25CB; ");
+        assert_eq!(buttons(Kind::Focus, None, &s, Some(&rest)), " &#x2715;  &#x25B3;  &#x25A1;  &#x25CB; ");
         assert!(buttons(Kind::Plain, None, &s, Some(&rest)).ends_with(" <span foreground='#a3be8c'>&#x25A1;</span>  &#x25CB; "));
         let live = Mic {
             listening: true,
             bars: [0, 2, 5, 7, 3, 1, 0, 6],
         };
-        assert_eq!(buttons(Kind::Focus, None, &s, Some(&live)), " &#x2715;  &#x25BD;  &#x25A1;  &#x25CF; ");
+        assert_eq!(buttons(Kind::Focus, None, &s, Some(&live)), " &#x2715;  &#x25B3;  &#x25A1;  &#x25CF; ");
         // under the pointer: the band's lit tone, never close's red
         assert_eq!(
             buttons(Kind::Focus, Some(Glyph::Mic), &s, Some(&live)),
-            " &#x2715;  &#x25BD;  &#x25A1; <span background='#9db0cc'> &#x25CF; </span>"
+            " &#x2715;  &#x25B3;  &#x25A1; <span background='#9db0cc'> &#x25CF; </span>"
         );
         assert!(buttons(Kind::Plain, Some(Glyph::Mic), &s, Some(&rest)).ends_with("<span background='#4c566a'> &#x25CB; </span>"));
         assert_eq!(cells(&buttons(Kind::Focus, None, &s, Some(&rest))), 12);
@@ -636,22 +636,22 @@ mod tests {
         let rest = Mic::default();
         assert_eq!(
             buttons(Kind::Focus, None, &s, Some(&rest)),
-            format!("{h}{h}&#x2715;{h}{h}{h}{h}&#x25BD;{h}{h}{h}{h}&#x25A1;{h}{h}{h}{h}&#x25CB;{h}{h}")
+            format!("{h}{h}&#x2715;{h}{h}{h}{h}&#x25B3;{h}{h}{h}{h}&#x25A1;{h}{h}{h}{h}&#x25CB;{h}{h}")
         );
         assert_eq!(
             buttons(Kind::Plain, None, &s, Some(&rest)),
             format!(
-                "{h}{h}<span foreground='#bf616a'>&#x2715;</span>{h}{h}{h}{h}<span foreground='#ebcb8b'>&#x25BD;</span>{h}{h}{h}{h}<span foreground='#a3be8c'>&#x25A1;</span>{h}{h}{h}{h}&#x25CB;{h}{h}"
+                "{h}{h}<span foreground='#bf616a'>&#x2715;</span>{h}{h}{h}{h}<span foreground='#ebcb8b'>&#x25B3;</span>{h}{h}{h}{h}<span foreground='#a3be8c'>&#x25A1;</span>{h}{h}{h}{h}&#x25CB;{h}{h}"
             )
         );
         // the chip takes the inner half at each side, the outer ones stay outside it
         assert_eq!(
             buttons(Kind::Focus, Some(Glyph::Close), &s, None),
-            format!("{h}<span background='#bf616a' foreground='#eceff4'>{h}&#x2715;{h}</span>{h}{h}{h}&#x25BD;{h}{h}{h}{h}&#x25A1;{h}{h}")
+            format!("{h}<span background='#bf616a' foreground='#eceff4'>{h}&#x2715;{h}</span>{h}{h}{h}&#x25B3;{h}{h}{h}{h}&#x25A1;{h}{h}")
         );
         assert_eq!(
             buttons(Kind::Focus, Some(Glyph::Min), &s, None),
-            format!("{h}{h}&#x2715;{h}{h}{h}<span background='#9db0cc'>{h}&#x25BD;{h}</span>{h}{h}{h}&#x25A1;{h}{h}")
+            format!("{h}{h}&#x2715;{h}{h}{h}<span background='#9db0cc'>{h}&#x25B3;{h}</span>{h}{h}{h}&#x25A1;{h}{h}")
         );
         assert!(buttons(Kind::Plain, Some(Glyph::Fill), &s, None)
             .ends_with(&format!("{h}<span background='#4c566a' foreground='#a3be8c'>{h}&#x25A1;{h}</span>{h}")));
@@ -702,7 +702,7 @@ mod tests {
 
     #[test]
     fn the_name_is_cut_to_its_room_and_the_meter_keeps_the_right_end() {
-        let btn = " &#x2715;  &#x25BD;  &#x25A1; ";
+        let btn = " &#x2715;  &#x25B3;  &#x25A1; ";
         let short = title(40, btn, "  %title", "notes", "");
         assert_eq!(cells(&short), 40 - METER);
         assert!(short.starts_with(&format!("{btn}  notes ")));
