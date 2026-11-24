@@ -1,7 +1,8 @@
 # shellcheck extended-analysis=false
 # sets: APPEARANCE_CURATION
 # reads: CONFIG_DIR CORE_DIR FONT_FACES GLYPH_FAMILIES OS PALETTE_DIR PANEL_SEP REPO SCENE_MAKE TAB TERM_NAME THEME_COLOR_WORDS THEME_KEYS THUMB_DIR TMP WALL_TYPES
-appearance_gallery_entries() {
+appearance_gallery_entries() {   # the colors and the index go by file: a thousand themes pass what one argument holds
+    theme_chips theme > "$TMP/theme.chips"
     {
         for gallery in "$CONFIG_DIR"/galleries/*.list; do
             [ -f "$gallery" ] || continue
@@ -24,8 +25,8 @@ appearance_gallery_entries() {
         done < "$CORE_DIR/themes.tsv"
         theme_saved_names | while IFS= read -r name; do printf 'saved\tsaved themes\t%s\t%s\n' "$name" "$name"; done
         palette_names | while IFS= read -r name; do printf 'palette\tpalettes\t%s\t%s\n' "$name" "$name"; done
-    } | jq -Rn --arg current "${THEME:-none}" --argjson chips "$(theme_chips theme)" '
-        [inputs | split("\t") | select(length == 4 and $chips[.[2]] != null)] as $entries
+    } | jq -Rn --arg current "${THEME:-none}" --slurpfile c "$TMP/theme.chips" '
+        $c[0] as $chips | [inputs | split("\t") | select(length == 4 and $chips[.[2]] != null)] as $entries
         | (any($entries[]; .[0] == "local")) as $multiple
         | reduce $entries[] as [$kind,$group,$id,$label] ({seen:{}, labels:{}, rows:[]};
               if .seen[$id] or ($kind == "palette" and .labels[$label]) then . else
@@ -47,7 +48,7 @@ def onview($name): (($c[0].dispositions // {})[$name].status // "exhibited") == 
 def works($names): [$names[] as $name | $all[] | select(.text == $name)];
 def lead($lead; $works): ([$works[] | select(.text == ($lead // ""))] + [$works[] | select(onview(.text))] + $works)[0];
 def count($works): ($works | length | tostring) + (if ($works | length) == 1 then " work" else " works" end);
-def words($k): ($idx[$k] // null) as $a
+def words($k): ($idx[0][$k] // null) as $a
     | if $a == null then null
       else ({vector: "vector", illustration: "illustrated scene", cinematic: "cinematic illustration", pixel: "pixel scene", picture: "picture", color: "plain ground"}[$a.media] // "plain ground")
            + " " + $sep + " " + $a.variant + ([$a.variants | keys[] | select(. != $a.variant) | " " + $sep + " has a " + . + " variant"] | join(""))
@@ -61,7 +62,8 @@ def collection($title; $state; $works):
              | sort_by(if .group == "supporting" then 1 else 0 end)};
 '
 appearance_gallery() {
-    appearance_gallery_entries | jq -c --slurpfile c "$CORE_DIR/curation.json" --argjson idx "$(art_index)" --arg sep "$PANEL_SEP" "$APPEARANCE_CURATION"'
+    art_index > "$TMP/theme.index"
+    appearance_gallery_entries | jq -c --slurpfile c "$CORE_DIR/curation.json" --slurpfile idx "$TMP/theme.index" --arg sep "$PANEL_SEP" "$APPEARANCE_CURATION"'
         [$c[0].sections[] as $s | works($s.works) as $w | lead($s.lead; $w) as $l
             | {id: ("theme:room:permanent:" + $s.id), text: $s.title, group: $c[0].title, columns: [count($w)], line: $s.description,
                children: ("spark-shell://theme/rows/gallery/collection/permanent/" + $s.id), page: $l.page, chip: $l.chip, choice: true, sign: "opens", _n: ($w | length)}] as $sections
@@ -86,7 +88,8 @@ appearance_gallery() {
 # One section, exhibition or collection of yours. A work keeps its id, preview,
 # palette and apply, and a theme of yours keeps its precedence by name.
 appearance_gallery_collection() {
-    appearance_gallery_entries | jq -ec --arg room "$1" --slurpfile c "$CORE_DIR/curation.json" --argjson idx "$(art_index)" --arg sep "$PANEL_SEP" "$APPEARANCE_CURATION"'
+    art_index > "$TMP/theme.index"
+    appearance_gallery_entries | jq -ec --arg room "$1" --slurpfile c "$CORE_DIR/curation.json" --slurpfile idx "$TMP/theme.index" --arg sep "$PANEL_SEP" "$APPEARANCE_CURATION"'
         if ($room | startswith("permanent/")) then
             ($c[0].sections[] | select(.id == ($room | ltrimstr("permanent/")))) as $s
             | collection($s.title; $s.description; works($s.works))
@@ -153,9 +156,10 @@ appearance_screens() {
 }
 appearance_pairs() {   # the themes in the other light, and none: Enter pairs it
     _apv=$(art_of "${THEME:-none}" | jq -r .variant)
-    appearance_gallery_entries | jq -c --argjson idx "$(art_index)" --arg v "$_apv" '{title: "Other variant", state: "", short: [],
+    art_index > "$TMP/theme.index"
+    appearance_gallery_entries | jq -c --slurpfile idx "$TMP/theme.index" --arg v "$_apv" '{title: "Other variant", state: "", short: [],
         rows: ([{id: "theme:pair:none", text: "none", tool: {name: "theme_pair", arguments: {name: "none"}}}]
-               + [.rows[] | (.id | ltrimstr("theme:entry:")) as $n | select(($idx[$n].variant // "") != $v and ($idx[$n].variant // "") != "")
+               + [.rows[] | (.id | ltrimstr("theme:entry:")) as $n | select(($idx[0][$n].variant // "") != $v and ($idx[0][$n].variant // "") != "")
                   | {id: ("theme:pair:" + $n), text, chip, page, quiet: true, tool: {name: "theme_pair", arguments: {name: $n}}}])}'
 }
 appearance_pointers() {   # default, then each cursor theme here at the size in use

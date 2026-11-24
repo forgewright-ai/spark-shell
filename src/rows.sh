@@ -22,9 +22,6 @@ SCRUB_UNSEEN='\u00ad\u061c\u115f\u1160\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2
 SCRUB_JQ='gsub("[\u0000-\u0008\u000b-\u001f\u007f-\u009f'"$SCRUB_UNSEEN"']"; "")'
 # the same on UTF-8 bytes, for an awk under LC_ALL=C; a tab goes too
 SCRUB_AWK='function clean(s) { gsub(/[\001-\037\177]|\302[\200-\237\255]|\330\234|\341\205[\237\240]|\341\240\216|\342\200[\213-\217\250-\256]|\342\201[\240-\251]|\343\205\244|\357\273\277|\357\276\240|\357\277[\271-\273]|\363\240[\200\201][\200-\277]/, "", s); return s }'
-scrub_plain() {   # scrub_plain WORDS -> them scrubbed; printable ASCII as it is, no process
-    case $1 in *[!\ -~]*) printf '%s' "$1" | scrub_text ;; *) printf '%s' "$1" ;; esac
-}
 tool_args_json() {   # tool_args_json TOOL VALUE -> the call's arguments as JSON; a plain value without jq
     tool_spec "$1" || return 1
     if [ -z "$_tp" ]; then printf '{}'; return 0; fi
@@ -369,9 +366,9 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
     ROWS_READ=$TMP/once; read_once_end   # asked once a read; none left from a read cut short
     _pr_keys='{}'; [ "$1" != window ] || _pr_keys=$(python3 "$REPO/lib/home.py" map "$(wm_config_template)")
     case $1 in window|layout) win_facts > "$TMP/win.facts"; WIN_FACTS_READ=1 ;; esac   # the tree read once a read
-    _pr_chips='{}'; _pr_size=''; _pr_anim=''; _pr_trn=0; _pr_tr=''
+    printf '{}' > "$TMP/rows.chips"; _pr_size=''; _pr_anim=''; _pr_trn=0; _pr_tr=''
     if [ "$1" = theme ]; then
-        _pr_chips=$(theme_chips theme); _pr_size=$(look_font_size); _pr_anim=$(anim_now)
+        theme_chips theme > "$TMP/rows.chips"; _pr_size=$(look_font_size); _pr_anim=$(anim_now)
         _pr_trn=$(transparency_of "$ALPHA"); if [ "$_pr_trn" -eq 0 ]; then _pr_tr=off; else _pr_tr="$_pr_trn%"; fi
     fi
     [ "$1" != theme ] || [ -s "$TMP/theme.type" ] || appearance_type > "$TMP/theme.type"   # what each typeface and family looks like: once for the provider's life
@@ -382,8 +379,8 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
         wifi_known | cut -f2 > "$TMP/wifi.known.ask"
         _asks=$(wifi_scan | awk -F '\t' '$3 == 1' | cut -f1 | grep -vxFf "$TMP/wifi.known.ask" | jq -R . | jq -cs . 2>/dev/null) || _asks='[]'
     fi
-    panel_rows "$1" | while IFS="$TAB" read -r _m _t _a _x; do case $1:$_a in 'layout:rename '*) continue ;; esac; provide_row_line "$1" "$_m" "$_t" "$_a" "$_x"; done > "$TMP/rows.short"   # the short form, and a more row that opens the rest
-    { panel_rows "$1" full | while IFS="$TAB" read -r _m _t _a _x; do case $1:$_a in 'window:close '*|'layout:rename '*) continue ;; esac; provide_row_line "$1" "$_m" "$_t" "$_a" "$_x"; done; grep "^$1:more$US" "$TMP/rows.short" || :; } \
+    panel_rows "$1" | rows_plain | while IFS="$TAB" read -r _m _t _a _x; do case $1:$_a in 'layout:rename '*) continue ;; esac; provide_row_line "$1" "$_m" "$_t" "$_a" "$_x"; done > "$TMP/rows.short"   # the short form, and a more row that opens the rest
+    { panel_rows "$1" full | rows_plain | while IFS="$TAB" read -r _m _t _a _x; do case $1:$_a in 'window:close '*|'layout:rename '*) continue ;; esac; provide_row_line "$1" "$_m" "$_t" "$_a" "$_x"; done; grep "^$1:more$US" "$TMP/rows.short" || :; } \
         | jq -Rn --arg s "$1" --arg u "spark-shell://$1/rows" --arg st "$(provide_title "$1")" --rawfile short "$TMP/rows.short" '
             [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], tool: (if .[3] == "" then null else {name: .[3], arguments: (.[4] | fromjson)} end), more: [],
                 columns: ((.[5] // "") | split("|") | .[1:2] | map(select(. != ""))),
@@ -393,8 +390,8 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                     if ($id | startswith("spark-shell-")) then {more: [{name:"reminders_done", arguments:{name:$id}, said:"done"}, {name:"reminders_snooze", arguments:{name:$id}, said:"again in 10 minutes"}, {name:"reminders_delete", arguments:{name:$id}, said:"delete"}]} else {} end
                    else {} end)] as $rows
             | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
-        | jq -c --argjson desktopkeys "$_pr_keys" --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$_pr_chips" --arg size "$_pr_size" --arg anim "$_pr_anim" --arg pointer "${POINTER:-default}" --arg glyphs "$BAR_GLYPHS" --arg icons "$DIALOG_ICONS" --arg spacing "$DIALOG_SPACING" --arg family "$GLYPH_FAMILY" --arg face "$(face_word "${FONT%%:*}" || :)" --arg motion "$WALLPAPER_MOTION" --argjson trn "$_pr_trn" --arg tr "$_pr_tr" --arg bartext "$BAR_TEXT" --arg barsize "$_pr_bar" --arg tray "$BAR_TRAY" --argjson type "$_pr_type" '
-            .rows |= map(
+        | jq -c --argjson desktopkeys "$_pr_keys" --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --slurpfile chipf "$TMP/rows.chips" --arg size "$_pr_size" --arg anim "$_pr_anim" --arg pointer "${POINTER:-default}" --arg glyphs "$BAR_GLYPHS" --arg icons "$DIALOG_ICONS" --arg spacing "$DIALOG_SPACING" --arg family "$GLYPH_FAMILY" --arg face "$(face_word "${FONT%%:*}" || :)" --arg motion "$WALLPAPER_MOTION" --argjson trn "$_pr_trn" --arg tr "$_pr_tr" --arg bartext "$BAR_TEXT" --arg barsize "$_pr_bar" --arg tray "$BAR_TRAY" --argjson type "$_pr_type" '
+            $chipf[0] as $chips | .rows |= map(
                 (if $s == "theme" and ((.group // "") | test("^(dark|light|custom)$")) and $chips[.text] != null then .chip = $chips[.text] else . end)
                 | (if $s == "theme" and ((.group // "") | test("^(dark|light)$")) and (.tool.name // "") == "theme_palette"
                    then .quiet = true | .look = {name: "theme_preview", arguments: {name: .tool.arguments.name}} else . end)   # kept in place, looked at while lit
@@ -579,7 +576,7 @@ provide_wall_rows() {   # -> the wallpaper list as a rows resource: the drawings
     _tp=$(thumb_palette)
     ( TMP=$(mktemp -d) && { wall_thumbs; rm -rf "$TMP"; } ) >/dev/null 2>&1 </dev/null 3>&- 4<&- 5>&- &   # the previews drawn in the background; a row without one yet draws none
     _gr=$(wall_ground); _cc=''; ! wall_color || _cc=$(wall_hex "$WALLPAPER")
-    panel_rows wallpapers full | while IFS="$TAB" read -r _m _t _a _x; do provide_row_line theme "$_m" "$_t" "$_a" "$_x"; done \
+    panel_rows wallpapers full | rows_plain | while IFS="$TAB" read -r _m _t _a _x; do provide_row_line theme "$_m" "$_t" "$_a" "$_x"; done \
         | jq -Rn --arg types "$WALL_TYPES" --arg dir "$THUMB_DIR" --arg tp "$_tp" --arg ground "$_gr" --arg color "$_cc" --arg theme "${THEME:-}" '
             [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], tool: (if .[3] == "" then null else {name: .[3], arguments: (.[4] | fromjson)} end), more: [],
                 columns: ((.[5] // "") | split("|") | .[1:2] | map(select(. != ""))), children: null, group: ((.[5] // "") | split("|") | .[0] | if . == "" or . == null then null else . end)}
@@ -608,26 +605,33 @@ theme_chips() {   # theme_chips SECTION -> {NAME: [nine colors]}, {} for any oth
     [ "$1" = theme ] || { printf '{}'; return 0; }
     dirs_cached theme.chips "$(THEME_DIRS)" theme_chips_now
 }
-theme_chips_now() {
-    theme_names | while IFS= read -r _n; do _c=$(palette_chip "$_n") && printf '%s\t%s\n' "$_n" "$_c"; done \
-        | jq -Rn '[inputs | split("\t") | {(.[0]): (.[1] | split(" ") | map(select(test("^#[0-9A-Fa-f]{6}$"))))}] | add // {}'
-}
+theme_chips_now() { theme_facts | jq -Rnc 'reduce (inputs | split("\t")) as $f ({}; .[$f[0]] = ($f[10:] | map(select(test("^#[0-9A-Fa-f]{6}$")))))'; }
 provide_in_use() {   # provide_in_use SECTION TOOL ARG -> 0 when ARG names what is in use: choosing it again is a receipt, not a refusal
     [ -n "$3" ] || return 1
     jq -e -s --arg id "$1:show:$3" 'any(.[].rows[]; .id == $id and .sign == "check")' "$TMP/rows.json" >/dev/null 2>&1 && return 0
     case $2 in theme_palette) [ "$3" = "${THEME:-}" ] ;; theme_wallpaper) [ "$3" = "$(wall_name)" ] ;; *) return 1 ;; esac
 }
-provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION [GROUP|COLUMN|DATE|SUFFIX] -> ID US SIGN US TEXT US TOOL US ARGUMENTS US EXTRAS; SUFFIX tells two rows with one step apart
+rows_plain() {   # stdin: panel_rows' lines -> the same scrubbed: all of them at once, and only where one holds more past its mark than printable ASCII
+    cat > "$TMP/rows.plain"
+    if LC_ALL=C awk '{ sub(/^[^\t]*\t/, "") } /[^ -~\t]/ { odd = 1; exit } END { exit !odd }' "$TMP/rows.plain"; then scrub_text < "$TMP/rows.plain"; else cat "$TMP/rows.plain"; fi
+}
+provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION [GROUP|COLUMN|DATE|SUFFIX] -> ID US SIGN US TEXT US TOOL US ARGUMENTS US EXTRAS; SUFFIX tells two rows with one step apart. The parts are scrubbed already (rows_plain), not the line: the scrubber drops US
     case $2 in "$PANEL_DOT") _sg="dot" ;; "$PANEL_RING") _sg="ring" ;; "$PANEL_TICK") _sg="check" ;; "$PANEL_CROSS") _sg="cross" ;; "$PANEL_GO") _sg="opens" ;; *) _sg="blank" ;; esac
-    _tx=$(scrub_plain "$3"); _ac=$(scrub_plain "$4"); _id="$1:$_ac"; _tn=''; _ag='{}'
+    _tx=$3; _ac=$4; _id="$1:$_ac"; _tn=''; _ag='{}'
     if [ "$_ac" = show ]; then _id="$1:show:$_tx"
     elif [ "$_ac" = more ]; then :   # the rest of the section: its children, no tool
-    elif action_tool "$1" "$_ac"; then _tn=$_tool; _ag=$(tool_args_json "$_tool" "$_tv"); fi
+    elif action_tool "$1" "$_ac"; then _tn=$_tool
+        case $_tool:$_tv in
+            theme_palette:|theme_palette:*[!A-Za-z0-9._-]*) _ag=$(tool_args_json "$_tool" "$_tv") ;;
+            theme_palette:*) _ag="{\"name\":\"$_tv\"}" ;;   # a theme's row, and there may be hundreds: no process
+            *) _ag=$(tool_args_json "$_tool" "$_tv") ;;
+        esac
+    fi
     _dt=''; _sx=''
     case ${5:-} in *'|'*'|'*) _dx=${5#*|}; _dx=${_dx#*|}; _dt=${_dx%%|*}; case $_dx in *'|'*) _dx=${_dx#*|}; _sx=${_dx%%|*} ;; esac ;; esac   # the third and fourth fields, no cut: a group alone has no pipe
     [ -z "$_dt" ] || _id="$_id:$_dt"   # a dated row's id is its own (two reminders may share a name)
     [ -z "$_sx" ] || _id="$_id:$_sx"
-    printf '%s\n' "$_id$US$_sg$US$_tx$US$_tn$US$_ag$US$(scrub_plain "${5:-}")"   # the parts scrubbed, never the line: the scrubber drops US
+    printf '%s\n' "$_id$US$_sg$US$_tx$US$_tn$US$_ag$US${5:-}"
 }
 provide_clock_rows() {
     jq -cn --arg state "$(time_zone), $(time_sync)" '{title: "clock", state: $state, rows: [{id: "clock:settings", sign: "opens", text: "time settings", tool: null, more: [], columns: [], children: "spark-shell://clock/rows/settings", group: null}], short: ["clock:settings"]}'

@@ -85,7 +85,9 @@ dirs_cached() {   # dirs_cached NAME "DIR..." CMD -> CMD's output, kept until a 
     fi
     panel_dir
     _dct=$_dcf.$$; case $TMP in */watch) _dct=${_dct}w ;; esac   # a temp of each writer's own
-    { printf '#%s\n' "$_dck"; eval "$3"; } > "$_dct" 2>/dev/null && mv "$_dct" "$_dcf" || { rm -f "$_dct"; eval "$3"; return; }
+    { : > "$_dct.at"; } 2>/dev/null || :   # its age is when the reading began: a file that changes meanwhile is newer than the answer
+    { printf '#%s\n' "$_dck"; eval "$3"; } > "$_dct" 2>/dev/null && touch -r "$_dct.at" "$_dct" && mv "$_dct" "$_dcf" || { rm -f "$_dct" "$_dct.at"; eval "$3"; return; }
+    rm -f "$_dct.at"
     sed 1d "$_dcf"
 }
 # ROWS_READ: the answers' file prefix while provide_rows runs; outside a read every probe asks afresh
