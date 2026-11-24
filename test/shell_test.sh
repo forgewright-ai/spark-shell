@@ -145,7 +145,7 @@ sections_of() {   # sections_of PART -- the sections a part holds
         bar) echo "20" ;;
         providers) echo "21 22 22b 23" ;;
         bar+providers) echo "20 21 22 22b 23" ;;
-        theme) echo "24 25" ;;
+        theme) echo "24 24b 25" ;;
         *) return 1 ;;
     esac
 }
@@ -9508,10 +9508,10 @@ if [ "$(uname -s)" != Darwin ]; then
     [ "$st" -eq 1 ] && printf '%s' "$out" | grep -q 'its GLYPH_FAMILY is not stone, star or banner' && grep -qx 'GLYPH_FAMILY=banner' "$cfg" \
         && ok "a saved theme naming a family not of the three is refused, nothing changed (#248)" || bad "theme family refuse" "st=$st $out"
     sh "$SH" theme dracula >/dev/null 2>&1; sh "$SH" theme delete barlook </dev/null >/dev/null 2>&1; sh "$SH" theme glyphs signs >/dev/null 2>&1; sh "$SH" theme family stone >/dev/null 2>&1
-    printf 'BAR_GLYPHS=letters\n' >> "$cfg"; st=0; out=$(sh "$SH" theme 2>&1) || st=$?
+    printf 'BAR_GLYPHS=letters\n' >> "$cfg"; st=0; out=$(sh "$SH" status 2>&1) || st=$?
     [ "$st" -eq 1 ] && printf '%s' "$out" | grep -q 'BAR_GLYPHS=letters in .*: signs or words' && ok "config: BAR_GLYPHS other than signs or words is refused in one line (#160)" || bad "bar glyphs refuse" "st=$st $out"
     sed -i.bak '/^BAR_GLYPHS=letters$/d' "$cfg"; rm -f "$cfg.bak"
-    printf 'GLYPH_FAMILY=runes\n' >> "$cfg"; st=0; out=$(sh "$SH" theme 2>&1) || st=$?
+    printf 'GLYPH_FAMILY=runes\n' >> "$cfg"; st=0; out=$(sh "$SH" status 2>&1) || st=$?
     [ "$st" -eq 1 ] && printf '%s' "$out" | grep -q 'GLYPH_FAMILY=runes in .*: stone, star or banner' && ok "config: GLYPH_FAMILY other than stone, star or banner is refused in one line (#248)" || bad "family refuse" "st=$st $out"
     sed -i.bak '/^GLYPH_FAMILY=runes$/d' "$cfg"; rm -f "$cfg.bak"
     printf 'BAR_WORKSPACES=numbers\n' >> "$cfg"; st=0; out=$(sh "$SH" theme family 2>&1) || st=$?
@@ -9566,7 +9566,7 @@ if [ "$(uname -s)" != Darwin ]; then
     grep -qx 'DIALOG_ICONS=off' "$th_dir/iconlook/look.env" && grep -qx 'DIALOG_ICONS=off' "$cfg" \
         && ok "theme save keeps the app icons, and the theme brings them back (#230)" || bad "icons look kept" "$(cat "$th_dir/iconlook/look.env" 2>&1; grep DIALOG_ICONS "$cfg")"
     sh "$SH" theme dracula >/dev/null 2>&1; sh "$SH" theme delete iconlook </dev/null >/dev/null 2>&1; sh "$SH" theme icons on >/dev/null 2>&1
-    printf 'DIALOG_ICONS=yes\n' >> "$cfg"; st=0; out=$(sh "$SH" theme 2>&1) || st=$?
+    printf 'DIALOG_ICONS=yes\n' >> "$cfg"; st=0; out=$(sh "$SH" status 2>&1) || st=$?
     [ "$st" -eq 1 ] && printf '%s' "$out" | grep -q 'DIALOG_ICONS=yes in .*: on or off' && ok "config: DIALOG_ICONS other than on or off is refused in one line (#230)" || bad "icons refuse" "st=$st $out"
     sed -i.bak '/^DIALOG_ICONS=yes$/d' "$cfg"; rm -f "$cfg.bak"
     # their space (#232): a value in Settings > theme that left and right change, groups to begin with; a step with its
@@ -9581,7 +9581,7 @@ if [ "$(uname -s)" != Darwin ]; then
     grep -qx 'DIALOG_SPACING=rows' "$th_dir/roomlook/look.env" && grep -qx 'DIALOG_SPACING=rows' "$cfg" \
         && ok "theme save keeps the app spacing, and the theme brings it back (#232)" || bad "spacing look kept" "$(cat "$th_dir/roomlook/look.env" 2>&1; grep DIALOG_SPACING "$cfg")"
     sh "$SH" theme dracula >/dev/null 2>&1; sh "$SH" theme delete roomlook </dev/null >/dev/null 2>&1; sh "$SH" theme spacing groups >/dev/null 2>&1
-    printf 'DIALOG_SPACING=lots\n' >> "$cfg"; st=0; out=$(sh "$SH" theme 2>&1) || st=$?
+    printf 'DIALOG_SPACING=lots\n' >> "$cfg"; st=0; out=$(sh "$SH" status 2>&1) || st=$?
     [ "$st" -eq 1 ] && printf '%s' "$out" | grep -q 'DIALOG_SPACING=lots in .*: none, groups or rows' && ok "config: DIALOG_SPACING other than none, groups or rows is refused in one line (#232)" || bad "spacing refuse" "st=$st $out"
     sed -i.bak '/^DIALOG_SPACING=lots$/d' "$cfg"; rm -f "$cfg.bak"
     # the moving wallpaper (#180): a value in Settings > theme that left and right change; a step with its undo, the same value
@@ -9599,7 +9599,7 @@ if [ "$(uname -s)" != Darwin ]; then
     rc=0; out=$(env -u SPARK_SHELL_WALLPAPER sh "$SH" theme motion on 2>&1) || rc=$?   # no player of the release's in this clone
     [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'the moving wallpaper needs .*spark-wallpaper' && grep -qx 'WALLPAPER_MOTION=off' "$cfg" \
         && ok "theme motion on: refused in one line where the wallpaper loop is not here, the setting left off (#180, #187)" || bad "motion skip" "rc=$rc $out"
-    printf 'WALLPAPER_MOTION=fast\n' >> "$cfg"; st=0; out=$(sh "$SH" theme 2>&1) || st=$?
+    printf 'WALLPAPER_MOTION=fast\n' >> "$cfg"; st=0; out=$(sh "$SH" status 2>&1) || st=$?
     [ "$st" -eq 1 ] && printf '%s' "$out" | grep -q 'WALLPAPER_MOTION=fast in .*: on or off' && ok "config: WALLPAPER_MOTION other than on or off is refused in one line (#180)" || bad "motion refuse" "st=$st $out"
     sed -i.bak '/^WALLPAPER_MOTION=fast$/d' "$cfg"; rm -f "$cfg.bak"
     sh "$SH" theme wallpaper dunes >/dev/null 2>&1
@@ -10016,6 +10016,218 @@ else
     printf '  note gallery: ssh-keygen or python3 not found; the gallery'"'"'s tests are skipped\n'
 fi
 
+fi
+
+# --- 24b. the themes' state: a full disk, a kill at any step, two verbs at once, odd names, and never a lie
+if want 24b; then
+fresh
+export SPARK_SHELL_NO_APPLY=1 SPARK_SHELL_MAC_FONTS=Menlo-Regular
+th=$HOME/.config/spark-shell/themes; cfg=$HOME/.config/spark-shell/config; st=$HOME/.local/state/spark-shell
+T() { sh "$SH" theme "$@" </dev/null 2>&1; }   # T WORD... -> what the theme verb says
+last() { printf '%s\n' "$1" | tail -n 1; }
+# the themes the cases start from: sea, in use, its picture the wallpaper, paired with day by its family; hill and day;
+# wave, a look not saved; a config with lines of the person's own
+mkdir -p "$th/sea" "$th/hill" "$th/day" "$st/looks/wave"; chmod 700 "$st" "$th"
+cp "$REPO/gallery/theme/nord.env" "$th/sea/palette.env"; cp "$REPO/gallery/theme/nord.env" "$th/hill/palette.env"; cp "$REPO/gallery/theme/solarized-light.env" "$th/day/palette.env"; cp "$REPO/gallery/theme/dracula.env" "$st/looks/wave/palette.env"
+a_picture "$th/sea/sea-landscape-1.png"
+printf 'FORMAT=2\nPALETTE=nord\nWALLPAPER=picture\nPICTURE=sea-landscape-1.png\nALPHA=0.9\nANIMATION=tide\n' > "$th/sea/look.env"
+printf 'FORMAT=2\nPALETTE=nord\nWALLPAPER=default\n' > "$th/hill/look.env"; printf 'FORMAT=2\nPALETTE=solarized-light\nWALLPAPER=default\n' > "$th/day/look.env"; printf 'FORMAT=2\nPALETTE=words\nWORDS=a wave\nWALLPAPER=default\n' > "$st/looks/wave/look.env"
+printf '{"format": 1, "id": "sea", "title": "sea", "media": "picture", "variants": {"dark": {"theme": "sea"}, "light": {"theme": "day"}}}\n' > "$th/sea/family.json"
+printf '# a line of my own\nKEYBOARD=us br\nBAR_PINS=out wifi\nTHEME=sea\nWALLPAPER=%s\n' "$th/sea/sea-landscape-1.png" > "$cfg"
+printf '1760000004\tsea\n1760000003\thill\n1760000002\tday\n1760000001\twave\n' > "$st/theme.history"
+T sea >/dev/null
+BASE=$H/base; mkdir "$BASE"; cp -a "$HOME/.config" "$HOME/.local/state" "$BASE/"
+reset() { rm -rf "$HOME/.config" "$HOME/.local/state"; cp -a "$BASE/.config" "$HOME/.config"; cp -a "$BASE/state" "$HOME/.local/state"; }
+whole() { [ -f "$1/palette.env" ] && [ "$(grep -c '^THEME_[A-Z_0-9]*=#' "$1/palette.env" 2>/dev/null)" -ge 20 ] && grep -q '^PALETTE=' "$1/look.env" 2>/dev/null; }   # whole FOLDER -- a theme with its colors and its look
+state_wrong() {   # state_wrong OP -> what is wrong with the state after OP, which may have made new, dropped hill or renamed sea; nothing when all is whole, and the next verb works and leaves nothing behind
+    out=$(T duplicate day again) || printf ' the next verb refuses: %s;' "$(last "$out")"
+    for _l in '# a line of my own' 'KEYBOARD=us br' 'BAR_PINS=out wifi'; do grep -qxF "$_l" "$cfg" 2>/dev/null || printf ' config lost: %s;' "$_l"; done
+    [ "$(grep -c '^THEME=' "$cfg")" = 1 ] || printf ' THEME lines;'
+    for _t in "$th"/*; do case ${_t##*/} in sea|hill|day|new|again) whole "$_t" || printf ' %s is not whole;' "${_t##*/}" ;; *) printf ' ghost %s;' "${_t##*/}" ;; esac; done
+    _t=$(sed -n 's/^THEME=//p' "$cfg"); whole "$th/$_t" || whole "$st/looks/$_t" || printf ' THEME=%s is not there;' "$_t"
+    _t=$(sed -n 's/^WALLPAPER=//p' "$cfg"); case $_t in /*) [ -f "$_t" ] || printf ' the wallpaper is not there: %s;' "${_t##*/themes/}" ;; esac
+    whole "$th/sea" || { [ "$1" = rename ] && whole "$th/new"; } || printf ' sea is lost;'
+    whole "$th/hill" || { [ "$1" = delete ] && [ ! -e "$th/hill" ]; } || { [ "$1" = restore ] && whole "$th/.deleted/hill"; } || printf ' hill is lost;'
+    whole "$th/day" || printf ' day is lost;'; whole "$st/looks/wave" || printf ' the look wave is lost;'
+    _l=$(find "$th" "$st" -mindepth 1 -maxdepth 1 \( -name '.*' ! -name .deleted -o -name theme.lock \)); [ -z "$_l" ] || printf ' left: %s;' "$_l"
+}
+# the tools that change files fail, or the program is killed, at the Nth of their calls that names the themes or the config
+mkdir "$H/fault"
+for _t in mv cp rm mkdir touch awk sed jq cat; do
+    printf '#!/bin/sh\nreal=%s; tool=%s\n. "%s/fault.run"\n' "$(command -v "$_t")" "$_t" "$H" > "$H/fault/$_t"; chmod +x "$H/fault/$_t"
+done
+cat > "$H/fault.run" <<'SHIM'
+case "$FAULT_TOOLS" in *" $tool "*) ;; *) exec "$real" "$@" ;; esac
+case "$*" in */spark-shell/themes/*|*/spark-shell/looks/*|*/spark-shell/config|*/spark-shell/.config.new*|*theme.history*) ;; *) exec "$real" "$@" ;; esac
+echo >> "$HOME/fault.n"; n=0; while read -r _; do n=$((n + 1)); done < "$HOME/fault.n"   # appended, for two tools of a pipe count at once
+[ "$n" = "$FAULT_AT" ] || exec "$real" "$@"
+if [ "$FAULT_HOW" = full ]; then
+    case $tool in awk|sed|jq|cat) "$real" "$@" 2>/dev/null | head -c 12 ;; esac
+    echo "$tool: write error: No space left on device" >&2; exit 1
+fi
+all=''; p=$PPID; while [ -n "$p" ] && [ "$p" -gt 1 ] && [ "$p" != "$FAULT_TOP" ]; do all="$all $p"; p=$(ps -o ppid= -p "$p" | tr -d ' '); done
+kill -9 $all
+exit 1
+SHIM
+fault() {   # fault HOW AT TOOLS WORD... -- the theme verb with a fault at its ATth call; _frc its status, ~/fault.out what it says
+    export FAULT_HOW="$1" FAULT_AT="$2" FAULT_TOOLS=" $3 "; shift 3; : > "$HOME/fault.n"; _frc=0
+    FAULT_TOP=$(exec sh -c 'echo "$PPID"'); export FAULT_TOP
+    { PATH="$H/fault:$PATH" sh "$SH" theme "$@" </dev/null > "$HOME/fault.out" 2>&1 || _frc=$?; } 2>/dev/null
+}
+sums() { find "$th" "$cfg" "$st/looks" -type f -exec cksum {} + | sort | cksum; }
+fault_every() {   # fault_every HOW TOOLS OP WORD... -- the verb with a fault at each call in turn; _fes how many, _few what is wrong, by step, _fel the steps where it said done and was not
+    _feh=$1; _fet=$2; _feo=$3; shift 3; _fea=0; _fes=0; _few=''; _fel=''
+    while [ "$_fea" -le "$_fes" ]; do   # none first, to count them
+        reset; [ "$_feo" != restore ] || { mkdir "$th/.deleted"; mv "$th/hill" "$th/.deleted/hill"; }
+        fault "$_feh" "$_fea" "$_fet" "$@"
+        if [ "$_fea" = 0 ]; then _fes=$(grep -c '' "$HOME/fault.n" || :); _fed=$(sums)
+        elif [ "$_feh" = full ] && [ "$_frc" = 0 ] && [ "$(sums)" != "$_fed" ]; then _fel="$_fel $_fea: $(last "$(cat "$HOME/fault.out")");"; fi
+        _fex=$(state_wrong "$_feo"); [ -z "$_fex" ] || _few="$_few step $_fea:$_fex"
+        _fea=$((_fea + 1))
+    done
+}
+if [ "$(uname -s)" != Darwin ]; then   # the same state on every system, and a Mac's runner has the least time
+    set -- 'save:save sea' 'rename:rename sea new' 'duplicate:duplicate sea new' 'delete:delete hill' 'restore:restore hill' 'color:color accent #ff0000' 'colors:colors dracula'
+    for _op; do   # each in a home of its own, all at once
+        ( _fh=$H/fault.${_op%%:*}; mkdir -p "$_fh/.local"; cp -a "$BASE" "$_fh/base"; BASE=$_fh/base; sed "s|$H/|$_fh/|" "$H/base/.config/spark-shell/config" > "$BASE/.config/spark-shell/config"
+          HOME=$_fh; XDG_CONFIG_HOME=$_fh/.config; XDG_STATE_HOME=$_fh/.local/state; XDG_DATA_HOME=$_fh/.local/share; th=$HOME/.config/spark-shell/themes; cfg=$HOME/.config/spark-shell/config; st=$HOME/.local/state/spark-shell
+          fault_every kill 'mv cp rm mkdir touch' "${_op%%:*}" ${_op#*:}; _fek=$_fes; _fekw=$_few
+          fault_every full 'mv cp mkdir awk sed jq cat' "${_op%%:*}" ${_op#*:}
+          if [ "$_fek" -ge 1 ] && [ "$_fes" -ge 1 ] && [ -z "$_fekw$_few$_fel" ]; then echo "ok $_fek $_fes"; else echo "kill, $_fek steps:$_fekw | full, $_fes steps:$_few | said done at:$_fel"; fi ) > "$H/fault.${_op%%:*}.said" 2>&1 &
+    done
+    wait
+    for _op; do
+        _o=$(cat "$H/fault.${_op%%:*}.said")
+        case $_o in "ok "*) _o=${_o#ok }; ok "theme ${_op#*:}, killed at each of ${_o% *} steps and a write failing at each of ${_o#* }: every theme and unsaved look whole, the config naming one that is there, nothing left, the next verb works; never said done when it is not" ;;
+            *) bad "faults in ${_op#*:}" "$_o" ;; esac
+    done
+fi
+# a full disk where every write fails: nothing changes, nothing is said to be done
+_fd=''
+for _op in 'text 14' 'save new' 'save sea' 'rename sea new' 'duplicate sea new' 'color accent #ff0000' 'colors dracula' 'pointer Adwaita 32' 'nord' 'face argon' 'restore hill'; do
+    reset; _was=$(sums)
+    _frc=0; ( trap '' XFSZ; ulimit -f 0; sh "$SH" theme $_op </dev/null >/dev/null 2>&1 ) || _frc=$?
+    [ "$_frc" != 0 ] && [ "$(sums)" = "$_was" ] || _fd="$_fd [$_op: rc=$_frc]"
+done
+[ -z "$_fd" ] && ok "a full disk: text, save, rename, duplicate, color, colors, pointer, a theme and the rest all refuse, the config and every theme as they were" || bad "full disk" "$_fd"
+# the dialog runs its steps with no set -e: a save whose cp fails is refused there too, the theme as it was; a step that ends early never takes the last call's status
+reset; mkdir "$H/fullcp"; printf '#!/bin/sh\nfor a; do l=$a; done\ncase $l in */.sea.new/palette.env) : > "$l"; echo "cp: No space left on device" >&2; exit 1 ;; esac\nexec %s "$@"\n' "$(command -v cp)" > "$H/fullcp/cp"; chmod +x "$H/fullcp/cp"
+_p=$PATH; PATH=$H/fullcp:$PATH; mcp theme "$(call 1 theme_save '{"name":"sea"}')"; PATH=$_p
+sleep 30 & _hold=$!; echo "$_hold" > "$cfg.lock"
+printf '%s\n' "$(call 2 theme_duplicate '{"name":"nord","to":"copy"}')" "$(call 3 theme_pointer '{"name":"Adwaita 32"}')" "$(call 4 theme_rename '{"name":"sea","to":"new"}')" | sh "$SH" provide theme > "$H/mcp2.out" 2>/dev/null
+kill "$_hold" 2>/dev/null; rm -f "$cfg.lock"
+[ "$(ans 1 | jq -r '[.result.isError, .result.content[0].text] | join(" ")')" = 'true spark-shell theme: could not keep the look: No space left on device' ] && whole "$th/sea" \
+    && [ "$(jq -r 'select(.id >= 2) | .result.isError' "$H/mcp2.out" | tr '\n' ' ')" = 'false true true ' ] && grep -q 'could not rename sea: another change holds the config' "$H/mcp2.out" && whole "$th/sea" && [ ! -e "$th/new" ] && grep -qx 'THEME=sea' "$cfg" \
+    && ok "the dialog: a save on a full disk, a pointer and a rename with the config held are refused with the reason, and all is as it was" || bad "dialog lies" "$(ans 1) $(cut -c1-300 "$H/mcp2.out") $(ls -A "$th")"
+# one name, one theme: a folder that is no theme is never written onto, a verb's word is no name, a name is never taken for another's
+reset; mkdir "$th/note"; echo mine > "$th/note/mine.txt"; echo mine > "$th/plain"; ln -s /nowhere "$th/link"
+_n=''; for _op in 'rename hill note' 'duplicate hill note' 'save note' 'rename hill plain' 'duplicate sea link' 'save none' 'save back' 'save list' 'rename hill save'; do _o=$(T $_op) && _n="$_n [$_op: $_o]"; done
+[ -z "$_n" ] && [ "$(cat "$th/note/mine.txt" "$th/plain")" = "$(printf 'mine\nmine')" ] && [ "$(readlink "$th/link")" = /nowhere ] && whole "$th/hill" && [ "$(T save none)" = 'spark-shell theme: none is a word of spark-shell theme, so no theme can go by it' ] \
+    && [ "$(T rename hill note)" = "spark-shell theme: $th/note is there and is no theme -- move it, or another name" ] \
+    && ok "rename, duplicate and save onto a folder, a file or a link that is no theme, or by a word of the verb's own: refused, what is there untouched" || bad "theme names" "$_n $(ls -lA "$th")"
+reset; cp -R "$th/hill" "$th/My.Theme"; cp -R "$th/hill" "$th/my-theme"; cp -R "$th/hill" "$th/with space"
+_o=$(sh "$SH" panel theme delete My.Theme 2>&1 </dev/null); _o2=$(T delete My.Themes) || :; _l=$(T list | sed -n '/^Saved/,/^Bundled/p')
+[ "$_o" = 'deleted My.Theme' ] && [ ! -e "$th/My.Theme" ] && whole "$th/my-theme" && [ "$_o2" = 'spark-shell theme: no saved theme named My.Themes -- spark-shell theme list shows them' ] && ! printf '%s' "$_l" | grep -q 'with ' \
+    && ok "theme delete My.Theme deletes that one, never my-theme; a folder no verb can name is not listed" || bad "delete name" "$_o | $_o2 | $_l"
+for _t in My.Palette solarized_light a-very-long-palette-name-that-goes-on-past-forty; do cp "$REPO/gallery/theme/nord.env" "$th/$_t.env"; done
+_n=''; for _t in My.Palette solarized_light a-very-long-palette-name-that-goes-on-past-forty; do T "$_t" >/dev/null; _o=$(T color accent '#ff8800') && grep -qx 'THEME_ACCENT=#ff8800' "$st/looks/$(sed -n 's/^THEME=//p' "$cfg")/palette.env" || _n="$_n [$_t: $_o]"; done
+[ -z "$_n" ] && ok "theme color on a palette file of yours with a dot, an underscore, a capital or a long name: kept" || bad "palette names" "$_n"
+# what the verb would do under --dry-run it says, or it refuses: never done
+reset; _was=$(find "$HOME/.config" "$HOME/.local/state" -type f -exec cksum {} + | sort | cksum); _n=''
+for _op in 'delete hill' 'rename hill new' 'duplicate hill new' 'save new' 'color accent #ff0000' 'colors nord' 'clock off' 'pair nord' 'portrait none' 'reel open none' 'text 14' 'pointer default' 'wallpaper default' 'restore hill' 'export sea spark-theme'; do
+    _o=$(T $_op --dry-run) && _n="$_n [$_op]"; [ "$_o" = "spark-shell theme: ${_op%% *} takes no --dry-run, so nothing was done" ] || _n="$_n [$_op: $_o]"
+done
+_o=$(T day --dry-run) && _o2=$(T back --dry-run) || _n="$_n day"; _o3=$(sh "$SH" panel theme delete hill --dry-run 2>&1 </dev/null) && _n="$_n panel"
+[ -z "$_n" ] && [ "$_o3" = 'spark-shell panel: a step takes no --dry-run, so nothing was done' ] && [ "$(find "$HOME/.config" "$HOME/.local/state" -type f -exec cksum {} + | sort | cksum)" = "$_was" ] \
+    && ok "--dry-run: a theme and back show what they would change; every other verb, and a step of the panel, refuses; not a byte written" || bad "theme dry-run" "$_n $_o3"
+# two verbs at once: one after the other, each whole
+reset; _n=''
+for _c in accent:#111111 text:#eeeeee red:#ff0000 blue:#0000ff; do T color "${_c%%:*}" "${_c#*:}" >/dev/null & done; wait
+grep -qx 'THEME_ACCENT=#111111' "$th/sea/palette.env" && grep -qx 'THEME_FG=#eeeeee' "$th/sea/palette.env" && grep -qx 'THEME_ANSI_1=#ff0000' "$th/sea/palette.env" && grep -qx 'THEME_ANSI_4=#0000ff' "$th/sea/palette.env" && whole "$th/sea" || _n="$_n colors"
+reset; T rename hill new > "$H/o1" & T rename day new > "$H/o2" & T duplicate sea new > "$H/o3" & wait
+[ "$(cat "$H/o1" "$H/o2" "$H/o3" | grep -c 'spark-shell theme: new is taken -- another name')" = 2 ] && whole "$th/new" && [ -z "$(find "$th" -mindepth 2 -type d)" ] && [ ! -e "$st/theme.lock" ] || _n="$_n renames: $(cat "$H/o1" "$H/o2" "$H/o3")"
+reset; T nord >/dev/null; T color accent '#111111' >/dev/null & T color text '#eeeeee' >/dev/null & wait
+_t=$st/looks/$(sed -n 's/^THEME=//p' "$cfg"); grep -qx 'THEME_ACCENT=#111111' "$_t/palette.env" && grep -qx 'THEME_FG=#eeeeee' "$_t/palette.env" && [ ! -e "$st/looks/nord-changed-2" ] || _n="$_n changed: $(ls "$st/looks")"
+reset; T rename sea new >/dev/null & T hill >/dev/null & wait
+[ "$(sed -n 's/^THEME=//p' "$cfg")" = hill ] || [ "$(sed -n 's/^THEME=//p' "$cfg")" = new ] || _n="$_n rename and apply"; [ -z "$(state_wrong rename)" ] || _n="$_n rename and apply: $(state_wrong rename)"
+[ -z "$_n" ] && ok "two verbs at once: four colors all kept, three verbs for one name give it to one, a changed palette is one look, a rename beside an apply leaves a theme that is there" || bad "at once" "$_n"
+# a lock whose holder is gone holds no one up: dead, empty, none of ours, or another process by now; one that is held is waited for
+reset; _n=''; _t0=$(date +%s)
+_i=20
+for _c in '999999' '' 'what is this' "$$
+an age ago"; do _i=$((_i + 1)); printf '%s\n' "$_c" > "$cfg.lock"; printf '%s\n' "$_c" > "$st/theme.lock"; _o=$(T pointer Adwaita "$_i") || _n="$_n [$_c: $_o]"; [ ! -e "$cfg.lock" ] && [ ! -e "$st/theme.lock" ] || _n="$_n [$_c: left]"; rm -rf "$cfg.lock" "$st/theme.lock"; done
+mkdir "$cfg.lock"; _o=$(T hill) || _n="$_n [folder: $_o]"; _t1=$(date +%s)
+[ -z "$_n" ] && [ $((_t1 - _t0)) -lt 25 ] && ok "a lock left by a dead holder, empty, of another's words, of a pid that is another process by now, or a folder: cleared in about a second, where a minute went by" || bad "stale locks" "$_n $((_t1 - _t0)) s"
+# what is not read is never written over; what is read only or a folder is refused in one line; a link stays a link
+reset; _n=''
+if [ "$(id -u)" != 0 ]; then
+    chmod 000 "$th/sea/palette.env"; _o=$(T color accent '#ff0000') && _n="$_n color"; chmod 600 "$th/sea/palette.env"; [ "$(grep -c '^THEME_' "$th/sea/palette.env")" = 20 ] || _n="$_n palette lost"
+    chmod 000 "$th/sea/look.env"; _o=$(T pointer Adwaita 32) && _n="$_n pointer"; chmod 600 "$th/sea/look.env"; grep -qx 'PICTURE=sea-landscape-1.png' "$th/sea/look.env" || _n="$_n look lost"
+    chmod 400 "$cfg"; _o=$(T nord) && _n="$_n read only"; [ "$_o" = "spark-shell: the config could not be written, so nothing was: it is read only ($cfg)" ] || _n="$_n [$_o]"; chmod 600 "$cfg"
+fi
+mv "$cfg" "$HOME/real.config"; ln -s "$HOME/real.config" "$cfg"; T text 14 >/dev/null; [ -L "$cfg" ] && grep -q '^FONT=.*size=14' "$HOME/real.config" && grep -qx '# a line of my own' "$HOME/real.config" || _n="$_n link"
+[ -z "$_n" ] && ok "an unreadable palette.env or look.env is never rewritten to one line; a read-only config is refused in one line; a config that is a link stays one, the file it names replaced whole" || bad "unread" "$_n"
+# unsaved looks stay: a second change of one palette is another look, and a lost history takes none with it
+reset; T nord >/dev/null; T color accent '#ff0000' >/dev/null; T dracula >/dev/null; T nord >/dev/null; T color text '#ffffff' >/dev/null
+[ "$(sed -n 's/^THEME_ACCENT=//p' "$st/looks/nord-changed/palette.env")" = '#ff0000' ] && [ "$(sed -n 's/^THEME_FG=//p' "$st/looks/nord-changed-2/palette.env")" = '#ffffff' ] && [ "$(T back | sed -n 1p)" = 'back to nord' ] \
+    && ok "theme color on a palette changed before: a look of its own (nord-changed-2), the first one whole and in the history" || bad "changed twice" "$(ls "$st/looks"; cat "$st/theme.history")"
+_n=''
+for _c in 'rm -f' ': >' 'rm -rf X; mkdir' 'printf "garbage\n\n\t\t\n" >' 'printf "notanumber\thill\n99999999999999\tday\n" >'; do
+    reset; eval "$(printf '%s' "$_c" | sed "s|X|\"$st/theme.history\"|") \"\$st/theme.history\""; _o=$(T nord) || _n="$_n [$_c: $_o]"; whole "$st/looks/wave" || _n="$_n [$_c: wave gone]"
+done
+reset; rm -f "$st/theme.history"; [ "$(T back | sed -n 1p)" = 'back to a wave' ] || _n="$_n back"
+[ -z "$_n" ] && ok "a history that is gone, empty, a folder or garbage: the looks not saved stay, and theme back still offers them" || bad "history lost" "$_n"
+# back steps from the look in use: a newer one deleted skips none
+reset; T hill >/dev/null; T day >/dev/null; T sea >/dev/null; T back >/dev/null; T delete hill >/dev/null 2>&1; T duplicate sea new >/dev/null; T sea >/dev/null; T new >/dev/null; T day >/dev/null; T back >/dev/null; T back >/dev/null; T delete new >/dev/null
+[ "$(sed -n 's/^THEME=//p' "$cfg")" = sea ] && [ "$(T back | sed -n 1p)" = 'back to a wave' ] && ok "theme back after a newer look is deleted: the one before this one, none skipped" || bad "back after delete" "$(sed -n 's/^THEME=//p' "$cfg") $(cat "$st/theme.history")"
+# a rename and a delete are followed: the config's theme and wallpaper, the families, the history; a look whose picture is the wallpaper is not pruned
+reset; T rename day noon >/dev/null; _f1=$(jq -r '.variants.light.theme' "$th/sea/family.json"); T rename sea coast >/dev/null; _c1=$(grep -E '^(THEME|WALLPAPER)=' "$cfg" | tr '\n' ' '); _h1=$(cut -f2 "$st/theme.history" | tr '\n' ' ')
+[ "$_f1" = noon ] && [ "$_c1" = "THEME=coast WALLPAPER=$th/coast/coast-landscape-1.png " ] && [ "$_h1" = 'coast hill noon wave ' ] && [ "$(jq -r '.id + " " + .variants.dark.theme' "$th/coast/family.json")" = 'coast coast' ] \
+    && ok "theme rename: the family that names the theme, the config's theme and wallpaper and the history follow" || bad "rename follows" "$_f1 | $_c1 | $_h1"
+reset; T nord >/dev/null; _o=$(T rename sea coast); _c1=$(sed -n 's/^WALLPAPER=//p' "$cfg"); _o=$(T delete coast); _c2=$(sed -n 's/^WALLPAPER=//p' "$cfg")
+reset; T hill >/dev/null; _o3=$(T delete day); _f3=$(jq -c '.variants | keys' "$th/sea/family.json"); _o4=$(T sea >/dev/null; T clock off); mkdir -p "$th/.deleted"
+reset; T hill >/dev/null; mcp theme "$(call 1 theme_delete '{"name":"day"}')"; _f5=$(jq -c '.variants | keys' "$th/sea/family.json"); mcp theme "$(call 1 theme_restore '{"name":"day"}')"; _f6=$(jq -c '.variants.light' "$th/sea/family.json")
+[ "$_c1" = "$th/coast/coast-landscape-1.png" ] && [ "$_c2" != "$_c1" ] && [ "$_o" = "deleted coast; its picture was the wallpaper, $_c2 is now" ] && [ "$_o3" = 'deleted day' ] && [ "$_f3" = '["dark"]' ] && [ "$_o4" = 'the clock over the art off' ] \
+    && [ "$_f5" = '["dark"]' ] && [ "$_f6" = '{"theme":"day"}' ] && whole "$th/day" && [ ! -e "$th/day/.families" ] \
+    && ok "theme delete: a wallpaper that was its picture is the theme in use's own, the families drop it and can be changed again; brought back by the dialog's undo, it is in them again" || bad "delete follows" "$_c1 | $_c2 | $_o | $_o3 $_f3 $_o4 | $_f5 $_f6"
+reset; T sea >/dev/null; rm -rf "$th/day"; _o=$(T clock off) || :; _o2=$(T pair none) || :
+[ "$_o" = 'the clock over the art off' ] && [ "$_o2" = 'no other variant' ] && ok "a family whose other variant was removed by hand is read without it, and changed" || bad "variant gone" "$_o | $_o2"
+reset; mkdir -p "$st/looks/trip"; cp "$st/looks/wave/palette.env" "$st/looks/trip/palette.env"; a_picture "$st/looks/trip/trip.png"; printf 'FORMAT=2\nPALETTE=picture\nWALLPAPER=picture\nPICTURE=trip.png\n' > "$st/looks/trip/look.env"
+T trip >/dev/null; for _t in nord dracula gruvbox-dark rose-pine one-light solarized-light tokyonight-night everforest-dark catppuccin-mocha catppuccin-latte tokyonight-day; do T "$_t" >/dev/null; done
+[ "$(sed -n 's/^WALLPAPER=//p' "$cfg")" = "$st/looks/trip/trip.png" ] && whole "$st/looks/trip" && [ ! -e "$st/looks/wave" ] && ok "a look that left the history goes, but for the one whose picture is the wallpaper" || bad "prune" "$(ls "$st/looks"; grep WALLPAPER "$cfg")"
+# what a killed save of v0.166 left (NAME.new) is no theme: cleared beside its theme, put back where it is the only copy; a half-done swap is settled
+reset; cp -R "$th/hill" "$th/hill.new"; rm "$th/hill.new/look.env"; mv "$th/day" "$th/day.new"; mkdir "$th/part.new"; cp "$th/hill/palette.env" "$th/part.new/"; mv "$th/sea" "$th/.sea.old"; mkdir "$th/.sea.new" "$th/.old.gone"; cp -R "$th/hill" "$th/.hill.old"; rm "$th/.hill.old/palette.env"
+_l=$(T list | sed -n '/^Saved/,/^Bundled/p' | sed -n 's/^  \([^ ]*\).*/\1/p' | tr '\n' ' ')
+[ "$_l" = 'day hill sea ' ] && whole "$th/day" && whole "$th/sea" && whole "$th/hill" && [ "$(ls -A "$th" | tr '\n' ' ')" = 'day hill part.new sea ' ] \
+    && ok "what a killed change left: listed as no theme, the only copy put back, the rest cleared; a part that is neither is left alone" || bad "recovery" "$_l | $(ls -A "$th" | tr '\n' ' ')"
+# a bad look value never blocks the verb that sets it; every other verb still refuses the config
+_n=''
+for _c in 'GLYPH_FAMILY=moss|family stone' 'DIALOG_ANIMATION=sparkle|animation moon' 'ALPHA=7|transparency 10' 'WALLPAPER=mountainz|wallpaper default' 'POINTER=x y z|pointer default' 'BAR_GLYPHS=runes|glyphs signs' 'WALLPAPER_MOTION=maybe|motion off' 'DIALOG_ICONS=x|icons on' 'DIALOG_SPACING=x|spacing groups' 'FONT=(;|face neon' 'FONT=Monaspace Neon:size=99999|text 12' 'THEME=a b/../c|nord'; do
+    reset; _k=${_c%%=*}; grep -v "^$_k=" "$cfg" > "$cfg.x"; printf 'DESKTOP=sway\n%s\n' "${_c%%|*}" >> "$cfg.x"; mv "$cfg.x" "$cfg"
+    rc=0; sh "$SH" status >/dev/null 2>&1 || rc=$?; [ "$rc" = 1 ] || _n="$_n [$_c: status $rc]"
+    [ "$(uname -s)" != Darwin ] || case $_k in WALLPAPER|FONT|WALLPAPER_MOTION) continue ;; esac
+    _o=$(unset FONT; T ${_c#*|}) || _n="$_n [$_c: $_o]"; rc=0; _o=$(sh "$SH" status 2>&1) || rc=$?; [ "$rc" = 0 ] || _n="$_n [$_c: not set: $(sed -n "s/^$_k=/&/p" "$cfg")]"
+done
+reset; sed 's/$/\r/' "$cfg" > "$cfg.x"; mv "$cfg.x" "$cfg"; _o=$(T nord) || _n="$_n [CRLF: $_o]"
+[ -z "$_n" ] && ok "a bad look value in the config: the theme's verbs go on with its default, say so, and the verb that sets it sets it; status refuses it still; a config with Windows line ends is read" || bad "bad look value" "$_n"
+# a picture that is empty is no wallpaper and no theme's
+reset; : > "$HOME/zero.png"; printf 'DESKTOP=sway\n' >> "$cfg"; _n=''
+if [ "$(uname -s)" != Darwin ]; then _o=$(T wallpaper "$HOME/zero.png") && _n="$_n wallpaper"; [ "$_o" = 'spark-shell theme: zero.png is empty or no picture' ] || _n="$_n [$_o]"; fi
+_o=$(T picture "$HOME/zero.png") && _n="$_n picture"; [ "$_o" = 'spark-shell theme: zero.png is empty or no picture' ] || [ "${_o#*python3}" != "$_o" ] || _n="$_n [$_o]"
+T hill >/dev/null; : > "$th/sea/sea-landscape-1.png"; _o=$(T sea) && _n="$_n theme"; [ "$_o" = 'spark-shell theme: sea cannot be used: its PICTURE, sea-landscape-1.png, is empty or no picture. Nothing was changed' ] || _n="$_n [$_o]"
+[ -z "$_n" ] && ok "an empty picture: refused as a wallpaper, as a theme to make and as a theme's own, in one line each" || bad "empty picture" "$_n"
+# the words of a refusal are true: a theme that is gone, no jq, the panel's undo of its own delete
+reset; _o=$(T export ghost spark-theme) || :; printf '%s\n' "$(sed 's/^THEME=.*/THEME=ghost/' "$cfg")" > "$cfg"; _o2=$(T variant dark) || :; _o3=$(T color accent '#ff0000') || :
+[ "$_o" = 'spark-shell theme: no theme named ghost -- spark-shell theme list shows them' ] && [ "$_o2" = 'spark-shell theme: ghost, the theme in use, is no longer here -- spark-shell theme NAME first' ] && [ "$_o3" = "$_o2" ] \
+    && ok "a theme that is not here is said to be not here, by export, variant and color" || bad "ghost words" "$_o | $_o2 | $_o3"
+reset; _o=$(sh "$SH" panel theme delete hill 2>&1 </dev/null); _o2=$(sh "$SH" panel undo all 2>&1 </dev/null); _o3=$(sh "$SH" panel theme delete hill >/dev/null 2>&1 </dev/null; touch -t 202001010000 "$th/.deleted/hill"; T sea >/dev/null; ls -A "$th/.deleted")
+[ "$_o" = 'deleted hill' ] && printf '%s' "$_o2" | grep -q 'hill is back' && [ -z "$_o3" ] && ok "panel theme delete, then panel undo: the theme is back; one deleted over a day ago is dropped" || bad "panel undo" "$_o | $_o2 | $_o3"
+if [ -n "${fixture_python:-}" ] && [ "$(uname -s)" != Darwin ]; then
+    reset; without_tools "$H/nojq" jq; _n=''
+    for _op in 'clock off' 'pair day' 'rename sea new' 'duplicate sea new'; do _o=$(PATH=$H/nojq T $_op) && _n="$_n [$_op]"; case $_o in *'jq is not installed, and it reads the theme'*) [ "$(printf '%s\n' "$_o" | grep -c '')" = 1 ] || _n="$_n [$_op: $_o]" ;; *) _n="$_n [$_op: $_o]" ;; esac; done
+    [ -z "$_n" ] && whole "$th/sea" && [ ! -e "$th/new" ] && ok "with no jq: the verbs that read a family say so in one line and change nothing" || bad "no jq" "$_n"
+fi
+rm -rf "$H"
 fi
 
 # --- 25. the notifications, the drives and the power (#71, #72, #73) ------
