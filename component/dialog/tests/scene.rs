@@ -673,8 +673,9 @@ fn bar_sizes() -> Vec<serde_json::Value> {
 }
 
 /// The bar's text size (the owner's report of 2026-11-23): the A's stand still at 10, 12, 14 and 16 whatever size is in
-/// use, the size in use after them; Right and Left step one size, from auto the size beside auto's own, and Left from
-/// the smallest is auto. A step held while it is set stays on the size it sent: the list keeps one shape.
+/// use, each over its number; a size in use that is none of these stands after them, in the accent as any option in
+/// use is (v0.167). Right and Left step one size, from auto the size beside auto's own, and Left from the smallest is
+/// auto. A step held while it is set stays on the size it sent: the list keeps one shape.
 #[test]
 fn the_bars_text_size_stands_still_and_steps_one_size() {
     let page = |at: usize| {
@@ -705,14 +706,31 @@ fn the_bars_text_size_stands_still_and_steps_one_size() {
         a_s(&at_auto).iter().map(|a| a.1).collect::<Vec<_>>(),
         [Size::Small, Size::Main, Size::Lead, Size::Head]
     );
-    word(&at_auto, "auto");
-    word(&at_auto, "11");
-    // the A's stand where they stood at any size in use: 12, one of them; 23 and 6, none of them
+    // auto over the size it picks, each A over its own: a caption stands under its option, from the same edge
+    for (option, caption) in [("auto", "11"), ("A", "10"), ("A", "16")] {
+        let under = word(&at_auto, caption);
+        assert_eq!(under.2, Size::Small);
+        assert!(
+            words(&at_auto).iter().any(|w| w.0 == option && w.1 == under.0 && w.2 < under.1),
+            "{option} over {caption}"
+        );
+    }
+    // the A's stand where they stood at any size in use: 12, one of them; 23 and 6, none of them, after them
     for size in ["12", "23", "6"] {
         let mut a = page(index(size));
         let s = scene(&mut a, 600.0, 800.0);
-        assert_eq!(a_s(&s), a_s(&at_auto), "at {size} the A's moved");
-        word(&s, size);
+        let drawn = a_s(&s);
+        assert_eq!(drawn[..4], a_s(&at_auto)[..], "at {size} the A's moved");
+        assert_eq!(drawn.len(), if size == "12" { 4 } else { 5 });
+        let caption = word(&s, size);
+        assert!(
+            fills(&s, ACCENT).iter().any(|f| f.0 == caption.0 && f.3 == 2.0),
+            "{size} is the one in use: its A wears the line"
+        );
+        assert_eq!(drawn.iter().filter(|a| a.0 == caption.0).count(), 1, "one option, its number under it");
+        if drawn.len() == 5 {
+            assert!(caption.0 > drawn[3].0, "after the four");
+        }
     }
     // the option an A takes is its own size
     let hits: Vec<usize> = at_auto

@@ -985,6 +985,9 @@ pub struct App {
     pub pane_wide: bool,
     /// The window holds two panes of files and the lit file's page beside them (scene::wide3).
     pub wide3: bool,
+    /// The families a typeface's specimen was asked for, each with the width of its letters in this window's text;
+    /// none where no font here is the family's own, and the value is its word. main.rs fills it.
+    pub faces: std::collections::HashMap<String, Option<f64>>,
     /// The details beside the list of files were opened by the window's width: they close when it no longer holds
     /// them.
     pub files_pane_wide: bool,
@@ -1144,6 +1147,7 @@ impl App {
             wide: false,
             pane_wide: false,
             wide3: false,
+            faces: Default::default(),
             files_pane_wide: false,
             preview: None,
             quiet: vec![],
@@ -2609,8 +2613,8 @@ impl App {
                     continue;
                 }
             }
-            if i + 1 == rows.rows.len() && i > 0 && r.tool.is_none() && r.children.is_none() && r.page.is_none() {
-                list.push(Item::Blank); // the summary at the end stands apart
+            if i + 1 == rows.rows.len() && i > 0 && r.tool.is_none() && r.children.is_none() && r.page.is_none() && r.step.is_none() && r.switch.is_none() {
+                list.push(Item::Blank); // the summary at the end stands apart; a setting is no summary
             }
             // a group starts under its heading, with air above it, as in a section
             let prev = rows.rows[..i].iter().rev().find(|q| shown(q)).map(|q| q.group.clone());
@@ -7031,6 +7035,20 @@ impl App {
             }
             _ => vec![],
         }
+    }
+
+    /// The families the rows on screen show a specimen of and the window was not asked for yet: 64 at most are kept,
+    /// and past them a typeface is its word.
+    pub fn faces_wanted(&self) -> Vec<String> {
+        let mut v: Vec<String> = vec![];
+        for value in self.view_rows().into_iter().flat_map(|r| &r.step).flat_map(|s| &s.values) {
+            if let Some(model::Specimen::Face(f)) = &value.specimen {
+                if self.faces.len() + v.len() < 64 && !self.faces.contains_key(f) && !v.contains(f) {
+                    v.push(f.clone());
+                }
+            }
+        }
+        v
     }
 
     /// The provider row an item stands for (a section's row, or a folder's).

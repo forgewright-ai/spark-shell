@@ -4,10 +4,12 @@
 
 use serde_json::{json, Value};
 use spark_dialog::app::{App, Config};
+use spark_dialog::draw::{Size, Step};
 use spark_dialog::grid::{Buffer, CellDiffOption};
 use spark_dialog::grid::{Color, Modifier};
 use spark_dialog::mcp::{Incoming, Server};
 use spark_dialog::palette::Palette;
+use spark_dialog::scene::{self, Metrics, Scene};
 use spark_dialog::scrub::cells;
 use std::io::{BufRead, BufReader, Write};
 use std::sync::mpsc::{sync_channel, Receiver};
@@ -91,6 +93,60 @@ pub fn app_with(labels: &[&str]) -> (App, Receiver<Incoming>, std::sync::mpsc::S
     };
     let app = App::new(cfg, &labels.iter().map(|s| s.to_string()).collect::<Vec<_>>());
     (app, rx, tx)
+}
+
+/// Nord as the dialog wears it, and the measures of its sheets: a page in pixels is read at them.
+pub fn nord() -> Palette {
+    let t = [
+        ("HEX_FG", "d8dee9"),
+        ("HEX_ACCENT", "88c0d0"),
+        ("PANEL_MUTED", "aeb5c2"),
+        ("PANEL_BG", "3d434f"),
+        ("PANEL_HI", "4c525e"),
+        ("HEX_ANSI_1", "bf616a"),
+        ("HEX_ANSI_2", "a3be8c"),
+    ];
+    Palette::from(|k| t.iter().find(|(a, _)| *a == k).map(|(_, v)| v.to_string()))
+}
+
+pub const M: Metrics = Metrics::SHEET;
+pub const ACCENT: [u8; 3] = [0x88, 0xc0, 0xd0];
+pub const MUTED: [u8; 3] = [0xae, 0xb5, 0xc2];
+pub const LIT: [u8; 3] = [0x4c, 0x52, 0x5e];
+
+/// The app's frame in a window of its own, `w` by `h` pixels.
+pub fn frame(a: &mut App, w: f64, h: f64) -> Scene {
+    a.size = scene::size(a, &M, w, h);
+    scene::build(a, &nord(), &M, w, h, &[])
+}
+
+/// The words drawn: each with its left edge, its line's top, its size, its color.
+pub fn words(s: &Scene) -> Vec<(String, f64, f64, Size, [u8; 3])> {
+    s.steps
+        .iter()
+        .filter_map(|st| match st {
+            Step::Text { x, y, text, size, color, .. } => Some((text.clone(), *x, *y, *size, *color)),
+            _ => None,
+        })
+        .collect()
+}
+
+pub fn word(s: &Scene, text: &str) -> (f64, f64, Size, [u8; 3]) {
+    words(s)
+        .into_iter()
+        .find(|w| w.0 == text)
+        .map(|w| (w.1, w.2, w.3, w.4))
+        .unwrap_or_else(|| panic!("no words {text:?} among {:?}", words(s).iter().map(|w| &w.0).collect::<Vec<_>>()))
+}
+
+pub fn fills(s: &Scene, color: [u8; 3]) -> Vec<(f64, f64, f64, f64)> {
+    s.steps
+        .iter()
+        .filter_map(|st| match st {
+            Step::Fill { x, y, w, h, color: c } if *c == color => Some((*x, *y, *w, *h)),
+            _ => None,
+        })
+        .collect()
 }
 
 /// How long a wait for a state may last: a guard so a test that hangs ends, never a guess at how long

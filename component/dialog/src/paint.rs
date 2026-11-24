@@ -5,7 +5,9 @@
 
 use crate::draw::{Cell, Rgb, Size, Step};
 use libloading::Library;
-use std::ffi::{c_char, c_int, c_void, CString};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::ffi::{c_char, c_int, c_void, CStr, CString};
 
 #[repr(C)]
 struct CairoSurface {
@@ -61,6 +63,12 @@ pub struct Lib {
     font_description_get_size_is_absolute: unsafe extern "C" fn(*const FontDesc) -> c_int,
     font_description_set_size: unsafe extern "C" fn(*mut FontDesc, c_int),
     font_description_set_absolute_size: unsafe extern "C" fn(*mut FontDesc, f64),
+    font_description_set_family: unsafe extern "C" fn(*mut FontDesc, *const c_char),
+    font_description_get_family: unsafe extern "C" fn(*const FontDesc) -> *const c_char,
+    font_description_copy: unsafe extern "C" fn(*const FontDesc) -> *mut FontDesc,
+    font_describe: unsafe extern "C" fn(*mut c_void) -> *mut FontDesc,
+    context_load_font: unsafe extern "C" fn(*mut c_void, *const FontDesc) -> *mut c_void,
+    layout_get_context: unsafe extern "C" fn(*mut PangoLayout) -> *mut c_void,
     layout_set_font_description: unsafe extern "C" fn(*mut PangoLayout, *mut FontDesc),
     layout_set_text: unsafe extern "C" fn(*mut PangoLayout, *const c_char, c_int),
     layout_get_pixel_size: unsafe extern "C" fn(*mut PangoLayout, *mut c_int, *mut c_int),
@@ -122,6 +130,12 @@ impl Lib {
             font_description_get_size_is_absolute: sym!(pango, p, "pango_font_description_get_size_is_absolute"),
             font_description_set_size: sym!(pango, p, "pango_font_description_set_size"),
             font_description_set_absolute_size: sym!(pango, p, "pango_font_description_set_absolute_size"),
+            font_description_set_family: sym!(pango, p, "pango_font_description_set_family"),
+            font_description_get_family: sym!(pango, p, "pango_font_description_get_family"),
+            font_description_copy: sym!(pango, p, "pango_font_description_copy"),
+            font_describe: sym!(pango, p, "pango_font_describe"),
+            context_load_font: sym!(pango, p, "pango_context_load_font"),
+            layout_get_context: sym!(pango, p, "pango_layout_get_context"),
             layout_set_font_description: sym!(pango, p, "pango_layout_set_font_description"),
             layout_set_text: sym!(pango, p, "pango_layout_set_text"),
             layout_get_pixel_size: sym!(pango, p, "pango_layout_get_pixel_size"),
@@ -154,7 +168,12 @@ pub struct Font {
     pub small_cell: Cell,
     /// The baseline under the line's top: the text's own face, the smaller one.
     pub ascent: (f64, f64),
+    /// The other families drawn so far, a specimen each: made when one is first drawn, FACES_MOST at most.
+    faces: RefCell<HashMap<(String, Size), *mut FontDesc>>,
 }
+
+/// The most families kept for specimens: a list of values holds 64 at most, and one look at a page is enough of them.
+const FACES_MOST: usize = 64;
 
 impl Font {
     /// A face by pango's own words for one ("Monaspace Neon 12"); its cell measured once. None when no cell comes
@@ -189,6 +208,7 @@ impl Font {
                 cell: Cell { w: 0.0, h: 0.0 },
                 small_cell: Cell { w: 0.0, h: 0.0 },
                 ascent: (0.0, 0.0),
+                faces: RefCell::default(),
             };
             let surface = (lib.image_surface_create)(CAIRO_FORMAT_ARGB32, 1, 1);
             let cr = (lib.create)(surface);
@@ -223,9 +243,64 @@ impl Font {
 
     pub fn free(&self, lib: &Lib) {
         unsafe {
-            for d in [self.regular, self.bold, self.small, self.small_bold].into_iter().chain(self.big) {
+            let faces = std::mem::take(&mut *self.faces.borrow_mut());
+            for d in [self.regular, self.bold, self.small, self.small_bold]
+                .into_iter()
+                .chain(self.big)
+                .chain(faces.into_values())
+            {
                 (lib.font_description_free)(d);
             }
+        }
+    }
+
+    /// Another family at one of the text's sizes: the text's own description with its family named.
+    fn other(&self, lib: &Lib, family: &str, size: Size) -> Option<*mut FontDesc> {
+        let key = (family.to_string(), size);
+        if let Some(d) = self.faces.borrow().get(&key) {
+            return Some(*d);
+        }
+        let name = CString::new(family).ok()?;
+        let mut faces = self.faces.borrow_mut();
+        unsafe {
+            if faces.len() >= FACES_MOST {
+                for d in std::mem::take(&mut *faces).into_values() {
+                    (lib.font_description_free)(d);
+                }
+            }
+            let d = (lib.font_description_copy)(self.face(size, false));
+            (lib.font_description_set_family)(d, name.as_ptr());
+            faces.insert(key, d);
+            Some(d)
+        }
+    }
+
+    /// The width of the letters a typeface is shown by (draw::LETTERS) in this family: none where no font here is
+    /// the family's own, since pango would draw another in its place and the specimen would lie.
+    pub fn letters(&self, lib: &Lib, family: &str) -> Option<f64> {
+        let d = self.other(lib, family, Size::LETTERS)?;
+        let text = CString::new(crate::draw::LETTERS).ok()?;
+        unsafe {
+            let surface = (lib.image_surface_create)(CAIRO_FORMAT_ARGB32, 1, 1);
+            let cr = (lib.create)(surface);
+            let l = (lib.cairo_create_layout)(cr);
+            let font = (lib.context_load_font)((lib.layout_get_context)(l), d);
+            let own = !font.is_null() && {
+                let found = (lib.font_describe)(font);
+                let name = (lib.font_description_get_family)(found);
+                let own = !name.is_null() && CStr::from_ptr(name).to_string_lossy().eq_ignore_ascii_case(family);
+                (lib.font_description_free)(found);
+                (lib.object_unref)(font);
+                own
+            };
+            (lib.layout_set_font_description)(l, d);
+            (lib.layout_set_text)(l, text.as_ptr(), -1);
+            let (mut w, mut h) = (0, 0);
+            (lib.layout_get_pixel_size)(l, &mut w, &mut h);
+            (lib.object_unref)(l as *mut c_void);
+            (lib.destroy)(cr);
+            (lib.surface_destroy)(surface);
+            (own && w > 0).then_some(w as f64)
         }
     }
 
@@ -279,6 +354,35 @@ unsafe fn run(lib: &Lib, font: &Font, surface: *mut CairoSurface, scale: f64, st
                 (lib.layout_set_text)(layout, t.as_ptr(), -1);
                 ink(*color);
                 (lib.move_to)(cr, *x, *y);
+                (lib.cairo_show_layout)(cr, layout);
+            }
+            Step::Cover { .. } => {} // a picture that was not put in its place: its surface shows
+            Step::Shade { x, y, w, h, color } => {
+                // a line a pixel, each as clear as its height says: 92 parts of a hundred at the foot
+                let rows = h.round().clamp(0.0, 512.0) as u32;
+                for k in 0..rows {
+                    let share = (k + 1) as f64 / rows as f64;
+                    let alpha = 0.92 * share * (2.0 - share);
+                    (lib.set_source_rgba)(cr, channel(color[0]), channel(color[1]), channel(color[2]), alpha);
+                    (lib.rectangle)(cr, *x, *y + k as f64, *w, 1.0);
+                    (lib.fill)(cr);
+                }
+            }
+            Step::Specimen {
+                x,
+                base,
+                text,
+                face,
+                size,
+                color,
+            } => {
+                let Ok(t) = CString::new(text.replace('\0', "")) else { continue };
+                let Some(d) = font.other(lib, face, *size) else { continue };
+                (lib.layout_set_font_description)(layout, d);
+                (lib.layout_set_text)(layout, t.as_ptr(), -1);
+                ink(*color);
+                // every face stands on the same line: its own baseline is put there
+                (lib.move_to)(cr, *x, *base - (lib.layout_get_baseline)(layout) as f64 / PANGO_SCALE);
                 (lib.cairo_show_layout)(cr, layout);
             }
             Step::Clip { x, y, w, h } => {

@@ -83,7 +83,12 @@ enum Cmd {
     Pointer(&'static str),
     Paste(bool),
     Drawn,
+    /// A family asked about, and who waits for the word on it.
+    Face(String, mpsc::Sender<Option<f64>>),
 }
+
+/// How long a family is waited for: pango finds one in a few milliseconds, behind a frame being painted at most.
+const FACE_WAIT: Duration = Duration::from_secs(1);
 
 /// The most a paste brings: a megabyte of text.
 const PASTE_MOST: u64 = 1 << 20;
@@ -140,6 +145,13 @@ impl Handle {
     /// (Event::Paste), when there is text to take.
     pub fn paste(&self, primary: bool) {
         let _ = self.tx.send(Cmd::Paste(primary));
+    }
+    /// The width of a typeface's specimen in this family (Font::letters), where a font here is the family's own: asked
+    /// once a family, before the frame that first shows it.
+    pub fn face(&self, family: &str) -> Option<f64> {
+        let (tx, rx) = mpsc::channel();
+        self.tx.send(Cmd::Face(family.to_string(), tx)).ok()?;
+        rx.recv_timeout(FACE_WAIT).ok().flatten()
     }
     /// Asks the window to say (Out::Drawn) when the frames handed over so far are with the compositor. A window
     /// mapped unseen is shown on that word, never on a guess of how long a frame takes to paint.
@@ -309,6 +321,9 @@ impl State {
                     s.stale = true;
                 }
                 Msg::Msg(Cmd::Drawn) => s.ask_drawn = true,
+                Msg::Msg(Cmd::Face(family, answer)) => {
+                    let _ = answer.send(s.font.letters(&s.lib, &family));
+                }
                 Msg::Msg(Cmd::Title(t)) => s.window.set_title(t),
                 Msg::Msg(Cmd::Pointer(name)) => {
                     s.shape = match name {

@@ -28,6 +28,17 @@ pub(crate) fn section(view: &View) -> bool {
     matches!(view, View::Folder(_, uri) if uri.starts_with(LISTS))
 }
 
+/// A screen's own page, and the lists under it: its resolutions (v0.167).
+const SCREENS: &str = "spark-shell://display/rows/";
+pub(crate) fn screen(view: &View) -> bool {
+    matches!(view, View::Folder(_, uri) if uri.starts_with(SCREENS))
+}
+
+/// The display section, and a screen's pages: their groups are named small, as a theme list's are.
+pub(crate) fn display(app: &App) -> bool {
+    screen(&app.view) || matches!(&app.view, View::Section(p) if app.providers.get(*p).is_some_and(|x| x.label == "display"))
+}
+
 /// A folder whose poster is the lit row: the poster says the row's line under its name, so the status line says
 /// nothing of it, and the poster stands still as the row lit changes.
 pub(crate) fn poster_lit(app: &App) -> bool {

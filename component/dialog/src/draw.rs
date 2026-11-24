@@ -79,7 +79,7 @@ impl Pic {
 /// A text's size: the text's own, the smaller one a row's second words are set in, or one of the large ones a
 /// heading and a name are set in (v0.160): a group's heading, the line under a name, and a name at three sizes,
 /// the largest for a short one.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Size {
     Main,
     Small,
@@ -90,7 +90,12 @@ pub enum Size {
     Title3,
 }
 
+/// The letters a typeface is shown by: the ones Monaspace's five faces draw most unlike each other.
+pub const LETTERS: &str = "Agl";
+
 impl Size {
+    /// The size LETTERS are set in.
+    pub const LETTERS: Size = Size::Lead;
     /// The large sizes, in the order every table of them keeps.
     pub const BIG: [Size; 5] = [Size::Head, Size::Lead, Size::Title, Size::Title2, Size::Title3];
     /// A large size's place in BIG; none for the text's own two.
@@ -156,6 +161,34 @@ pub enum Step {
         color: Rgb,
         bold: bool,
     },
+    /// Words in a family that is not the text's own, from `x`, on the baseline at `base`: a typeface's specimen. Only
+    /// a family the window was asked for and resolved (Handle::face).
+    Specimen {
+        x: f64,
+        base: f64,
+        text: String,
+        face: String,
+        size: Size,
+        color: Rgb,
+    },
+    /// A picture file over the whole of a box, its middle where the shapes differ: thumbs.rs puts its pixels in the
+    /// step's place before it is painted.
+    Cover {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        file: String,
+    },
+    /// A shade of one color, from clear at the box's top to nearly solid at its foot: words are read over a picture
+    /// there.
+    Shade {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        color: Rgb,
+    },
     /// What follows is drawn inside this box alone, until Unclip: a list that scrolls under its frame.
     Clip {
         x: f64,
@@ -212,6 +245,35 @@ pub fn moved(steps: Vec<Step>, dx: f64, dy: f64) -> Vec<Step> {
                 size,
                 color,
                 bold,
+            },
+            Step::Specimen {
+                x,
+                base,
+                text,
+                face,
+                size,
+                color,
+            } => Step::Specimen {
+                x: x + dx,
+                base: base + dy,
+                text,
+                face,
+                size,
+                color,
+            },
+            Step::Cover { x, y, w, h, file } => Step::Cover {
+                x: x + dx,
+                y: y + dy,
+                w,
+                h,
+                file,
+            },
+            Step::Shade { x, y, w, h, color } => Step::Shade {
+                x: x + dx,
+                y: y + dy,
+                w,
+                h,
+                color,
             },
             Step::Clip { x, y, w, h } => Step::Clip { x: x + dx, y: y + dy, w, h },
             Step::Unclip => Step::Unclip,

@@ -82,13 +82,29 @@ impl Row {
     }
 }
 
+/// A value of a step: as it is shown, as the tool takes it, and where its row draws it as what it is (v0.167), what
+/// it looks like.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StepValue {
+    pub shown: String,
+    pub sent: String,
+    pub specimen: Option<Specimen>,
+}
+
+/// What a value looks like: a typeface by its family, or signs in the text's own face.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Specimen {
+    Face(String),
+    Signs(String),
+}
+
 /// A value left and right change (#112), every value it takes known (#183): the dialog shows the next one
 /// the moment a key is pressed and sets it after, so nothing waits on the provider; an end of the list has
 /// no step past it, and its arrow is dimmed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Step {
-    /// Each value as shown and as the tool takes it, in order: the smallest first.
-    pub values: Vec<(String, String)>,
+    /// Each value, in order: the smallest first.
+    pub values: Vec<StepValue>,
     /// The value in use.
     pub at: usize,
     /// The tool that sets a value, and the argument the value goes under.
@@ -101,24 +117,28 @@ pub struct Step {
 impl Step {
     /// The value in use, as shown.
     pub fn value(&self) -> &str {
-        self.values.get(self.at).map(|v| v.0.as_str()).unwrap_or("")
+        self.values.get(self.at).map(|v| v.shown.as_str()).unwrap_or("")
     }
 
     /// The call that sets the value at `i`.
     pub fn call_at(&self, i: usize) -> Option<Call> {
-        let (_, sent) = self.values.get(i)?;
+        let sent = self.values.get(i)?.sent.clone();
         let mut c = self.set.clone();
-        c.arguments.insert(self.key.clone(), Value::String(sent.clone()));
+        c.arguments.insert(self.key.clone(), Value::String(sent));
         Some(c)
     }
 
     /// Where a step down (`up` false) or up goes from the value in use: the value beside it; from a size's auto
     /// ("auto 12"), the size beside auto's own, 11 or 13, so the step changes the size. None at an end.
     pub fn beside(&self, up: bool) -> Option<usize> {
-        let auto = self.values.get(self.at).filter(|v| v.1 == "auto").and_then(|v| v.0.strip_prefix("auto "));
+        let auto = self
+            .values
+            .get(self.at)
+            .filter(|v| v.sent == "auto")
+            .and_then(|v| v.shown.strip_prefix("auto "));
         if let Some(n) = auto.and_then(|s| s.trim().parse::<i64>().ok()) {
             let want = (if up { n + 1 } else { n - 1 }).to_string();
-            if let Some(i) = self.values.iter().position(|v| v.1 == want) {
+            if let Some(i) = self.values.iter().position(|v| v.sent == want) {
                 return Some(i);
             }
         }
@@ -146,7 +166,7 @@ impl Step {
 
     /// The widest value, in cells: the arrows stand still as the value changes.
     pub fn width(&self) -> usize {
-        self.values.iter().map(|v| crate::scrub::cells(&v.0)).max().unwrap_or(0)
+        self.values.iter().map(|v| crate::scrub::cells(&v.shown)).max().unwrap_or(0)
     }
 }
 
@@ -189,6 +209,18 @@ fn chip(v: Option<&Value>) -> Vec<[u8; 3]> {
         .unwrap_or_default()
 }
 
+/// What a value looks like: a family of letters, digits and single spaces, 40 at most, or 1 to 8 cells of signs.
+/// Any other shape is none, and the value is its word.
+fn specimen(v: &Value) -> Option<Specimen> {
+    let word = |k: &str| v.get(k).and_then(Value::as_str);
+    let family = |f: &&str| f.len() <= 40 && !f.is_empty() && f.split(' ').all(|w| !w.is_empty() && w.bytes().all(|b| b.is_ascii_alphanumeric()));
+    if let Some(f) = word("face").filter(family) {
+        return Some(Specimen::Face(f.to_string()));
+    }
+    let signs = scrub(word("sample")?);
+    ((1..=8).contains(&crate::scrub::cells(&signs)) && signs.len() <= 64).then_some(Specimen::Signs(signs))
+}
+
 /// A step: every value as shown and as sent, the one in use, the tool and its argument; a value far too
 /// long, a list too long or an index past its end is no step.
 fn step(v: Option<&Value>) -> Option<Step> {
@@ -202,11 +234,17 @@ fn step(v: Option<&Value>) -> Option<Step> {
             .filter(|w| !w.is_empty() && w.len() <= 12)
             .unwrap_or_else(|| d.to_string())
     };
-    let values: Vec<(String, String)> = v
+    let values: Vec<StepValue> = v
         .get("values")?
         .as_array()?
         .iter()
-        .map(|x| Some((scrub(x.get("shown")?.as_str()?), x.get("sent")?.as_str()?.to_string())))
+        .map(|x| {
+            Some(StepValue {
+                shown: scrub(x.get("shown")?.as_str()?),
+                sent: x.get("sent")?.as_str()?.to_string(),
+                specimen: specimen(x),
+            })
+        })
         .collect::<Option<_>>()?;
     let at = usize::try_from(v.get("at")?.as_u64()?).ok()?;
     let key = v.get("key")?.as_str()?.to_string();
@@ -215,7 +253,7 @@ fn step(v: Option<&Value>) -> Option<Step> {
         && at < values.len()
         && values
             .iter()
-            .all(|(shown, sent)| !shown.is_empty() && shown.len() <= 12 && !sent.is_empty() && sent.len() <= 32 && !sent.chars().any(char::is_control))
+            .all(|v| !v.shown.is_empty() && v.shown.len() <= 12 && !v.sent.is_empty() && v.sent.len() <= 32 && !v.sent.chars().any(char::is_control))
         && !key.is_empty()
         && key.bytes().all(|b| b.is_ascii_lowercase() || b == b'_');
     if !ok {
@@ -619,6 +657,42 @@ mod tests {
             r.rows[1].preview.is_none() && r.rows[2].preview.is_none() && r.rows[3].preview.is_none(),
             "a picture is a whole path to a PNG, no step up"
         );
+    }
+
+    #[test]
+    fn a_value_says_what_it_looks_like_only_in_a_shape_that_is_safe_to_draw() {
+        let of = |extra: serde_json::Value| {
+            let mut v = json!({"shown": "neon", "sent": "neon"});
+            v.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            let text = json!({"rows": [{"id": "a", "step": {"values": [v], "at": 0, "set": {"name": "theme_face"}, "key": "face"}}]}).to_string();
+            rows(&text).unwrap().rows[0].step.as_ref().map(|s| s.values[0].specimen.clone())
+        };
+        let face = |f: &str| Some(Some(Specimen::Face(f.to_string())));
+        assert_eq!(of(json!({"face": "Monaspace Neon"})), face("Monaspace Neon"));
+        for bad in [
+            json!(""),
+            json!(" "),
+            json!("Monaspace  Neon"),
+            json!("Monaspace Neon, Sans"),
+            json!("Neon\n"),
+            json!("N\u{e9}on"),
+            json!("x".repeat(41)),
+            json!(7),
+        ] {
+            assert_eq!(of(json!({ "face": bad })), Some(None), "{bad}: no family, and the value is its word");
+        }
+        let signs = |t: &str| Some(Some(Specimen::Signs(t.to_string())));
+        assert_eq!(of(json!({"sample": "\u{25b0}\u{25b1}"})), signs("\u{25b0}\u{25b1}"));
+        assert_eq!(of(json!({"sample": "a\u{1b}[2Jb"})), signs("a[2Jb"), "scrubbed");
+        assert_eq!(of(json!({"sample": "123456789"})), Some(None), "over eight cells");
+        assert_eq!(of(json!({"sample": ""})), Some(None));
+        assert_eq!(
+            of(json!({"sample": format!("a{}", "\u{301}".repeat(40))})),
+            Some(None),
+            "marks that take no cell are bounded too"
+        );
+        assert_eq!(of(json!({"face": "Neon", "sample": "ab"})), face("Neon"), "a face goes first");
+        assert_eq!(of(json!({"face": "Ne-on", "sample": "ab"})), signs("ab"));
     }
 
     #[test]

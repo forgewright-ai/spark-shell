@@ -156,3 +156,101 @@ fn a_picture_is_painted_where_it_stands_over_the_ground_at_its_scale() {
     assert_eq!(pixel(&data, stride, 4, 8), ground, "and two high");
     font.free(&lib);
 }
+
+#[test]
+fn a_typefaces_specimen_is_drawn_only_in_a_family_that_is_here() {
+    use spark_dialog::draw::{Size, Step, LETTERS};
+    let Ok(lib) = Lib::open() else {
+        eprintln!("  NOTICE: cairo or pango is not here -- the painter is not exercised");
+        return;
+    };
+    let Some(font) = Font::new(&lib, &face()) else {
+        eprintln!("  NOTICE: no font {:?} here -- the painter is not exercised", face());
+        return;
+    };
+    assert_eq!(font.letters(&lib, "No Such Family Of Type"), None, "pango would draw another in its place");
+    assert_eq!(
+        font.letters(&lib, "Monospace"),
+        None,
+        "a word fontconfig stands another family for is no family"
+    );
+    let painted = |step: Step| {
+        let mut data = vec![0u8; 120 * 60 * 4];
+        let px = Pixels {
+            data: &mut data,
+            w: 120,
+            h: 60,
+            stride: 120 * 4,
+            scale: 1.0,
+        };
+        assert!(paint(&lib, &font, px, &[step]));
+        // the rows with ink on them
+        let rows: Vec<usize> = (0..60).filter(|y| (0..120).any(|x| pixel(&data, 480, x, *y) != [0, 0, 0])).collect();
+        rows
+    };
+    // a family that is here, whatever it is: its letters stand on the baseline asked, whatever its own line is
+    for family in ["Monaspace Neon", "Monaspace Radon", "DejaVu Sans Mono", "Noto Sans Mono", "Liberation Mono"] {
+        let Some(w) = font.letters(&lib, family) else { continue };
+        assert!(w > 0.0 && font.letters(&lib, family) == Some(w));
+        let rows = painted(Step::Specimen {
+            x: 4.0,
+            base: 40.0,
+            text: "A".into(),
+            face: family.into(),
+            size: Size::LETTERS,
+            color: [255, 255, 255],
+        });
+        let foot = *rows.last().unwrap();
+        assert!((38..=41).contains(&foot), "{family}: its foot at {foot}");
+        assert!(LETTERS.contains('A'));
+    }
+    font.free(&lib);
+}
+
+#[test]
+fn a_shade_is_clear_at_its_top_and_nearly_solid_at_its_foot() {
+    use spark_dialog::draw::Step;
+    let Ok(lib) = Lib::open() else {
+        eprintln!("  NOTICE: cairo or pango is not here -- the painter is not exercised");
+        return;
+    };
+    let Some(font) = Font::new(&lib, &face()) else {
+        eprintln!("  NOTICE: no font {:?} here -- the painter is not exercised", face());
+        return;
+    };
+    let mut data = vec![0u8; 8 * 24 * 4];
+    let px = Pixels {
+        data: &mut data,
+        w: 8,
+        h: 24,
+        stride: 32,
+        scale: 1.0,
+    };
+    let of = |x: f64, y: f64, w: f64, h: f64, color: [u8; 3]| Step::Fill { x, y, w, h, color };
+    let steps = [
+        of(0.0, 0.0, 8.0, 24.0, [200, 0, 0]),
+        Step::Shade {
+            x: 0.0,
+            y: 4.0,
+            w: 4.0,
+            h: 20.0,
+            color: [0, 0, 200],
+        },
+        // a picture that was not put in its place draws nothing
+        Step::Cover {
+            x: 4.0,
+            y: 0.0,
+            w: 4.0,
+            h: 24.0,
+            file: "/srv/none.png".into(),
+        },
+    ];
+    assert!(paint(&lib, &font, px, &steps));
+    let at = |x: usize, y: usize| pixel(&data, 32, x, y);
+    assert_eq!(at(1, 3), [200, 0, 0], "nothing over it");
+    let blues: Vec<u8> = (4..24).map(|y| at(1, y)[2]).collect();
+    assert!(blues.windows(2).all(|w| w[0] <= w[1]), "darker all the way down: {blues:?}");
+    assert!(blues[0] < 30 && blues[19] > 175, "{blues:?}");
+    assert_eq!(at(6, 20), [200, 0, 0]);
+    font.free(&lib);
+}

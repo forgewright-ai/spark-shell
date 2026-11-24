@@ -15,6 +15,8 @@ use crate::palette::Palette;
 use crate::preferences::Spacing;
 use crate::scrub::{cells, cut, cut_middle};
 
+mod choice;
+
 /// The text's measures: the cell of the text's own face and where its baseline stands under its line's top,
 /// then the same of the smaller face. Every length of the layout is said for a line 20 pixels tall and grows
 /// with the line.
@@ -1093,14 +1095,8 @@ enum K {
     },
     /// Facts side by side: each one's word in the smaller face, its value under it.
     Facts(Vec<(String, String)>),
-    /// A setting in one row (C3, v0.161): its name, then its options side by side; then a word after them (a size's
-    /// number).
-    Choice {
-        name: String,
-        opts: Vec<PlacedOption>,
-        after: String,
-        end: (f64, f64),
-    },
+    /// A setting in one row (C3, v0.161): its name, then its options side by side.
+    Choice(choice::Choice),
     /// A file or a folder in a list of files, as an app's row is (v0.160): its name leads, and under it what it
     /// is, its size, its date and, where the row carries one, its own folder.
     File {
@@ -1121,25 +1117,6 @@ enum K {
         /// a sound's waveform as a strip, the lines in the text's own size.
         large: bool,
     },
-}
-
-/// An option of a row of one setting: its words, their size, the option App::option_at takes, whether it is the one in
-/// use, and whether it is a word of the step (less, more) rather than a value.
-#[derive(Clone, Debug, PartialEq)]
-struct Opt {
-    word: String,
-    size: Size,
-    k: usize,
-    on: bool,
-    verb: bool,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-struct PlacedOption {
-    opt: Opt,
-    x: f64,
-    y: f64,
-    width: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1287,6 +1264,7 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
     let picks: Vec<usize> = items.iter().enumerate().filter(|(_, it)| app.pickable_item(it)).map(|(i, _)| i).collect();
     let pick = |k: usize| picks.iter().position(|p| *p == k);
     let one = m.px(shape.one);
+    let rhythm = shape.c3.then(|| choice::rhythm(app, m, items, room));
     let mut out: Vec<Row> = vec![];
     let gap = |out: &mut Vec<Row>, h: f64| {
         if !out.is_empty() && !matches!(out.last(), Some(Row { k: K::Gap(_), .. })) {
@@ -1340,8 +1318,8 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
                 Some((one, plain("ask spark", words, false)))
             }
             Item::Row(..) | Item::Folder(_) if shape.c3 => app.row_ref(it).map(|row| {
-                if let Some(choice) = choice_of(app, m, it, room) {
-                    choice
+                if let Some((h, c)) = rhythm.as_ref().and_then(|r| choice::of(app, m, it, room, r)) {
+                    (h, K::Choice(c))
                 } else if row.id.starts_with("theme:detail:") {
                     (one, K::Fact(row.text.clone(), row.columns.join(crate::ui::SEP)))
                 } else if shape.two {
@@ -1940,46 +1918,18 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                 let n = ((end - x - w - m.px(16.0)) / m.sw).floor().max(4.0) as usize;
                 pen.text_end(end, base, &cut_middle(value, n), Size::Small, t.ink, false);
             }
-            K::Choice { name, opts, after, end } => {
-                let base = top + m.px(28.0);
-                let w = pen.text(x, base, name, Size::Main, t.ink, on);
-                if on && focus {
-                    pen.fill(x, base + m.px(5.0), w, 2.0, t.accent);
-                }
-                // the options from a column of their own, each a target a finger hits: 44 pixels at least
-                for placed in opts {
-                    let o = &placed.opt;
-                    let ox = x + placed.x;
-                    let target_y = top + placed.y;
-                    let tw = placed.width;
-                    let ow = pen.width(&o.word, o.size);
-                    let tx = ox + ((tw - m.px(16.0) - ow) / 2.0).max(0.0);
-                    let color = if o.on && !o.verb {
-                        t.accent
-                    } else if o.verb || o.size != Size::Main {
-                        t.ink
-                    } else {
-                        t.muted
-                    };
-                    let ob = base + placed.y + if o.size == Size::Main { 0.0 } else { m.px(2.0) };
-                    let drawn = pen.text(tx, ob, &o.word, o.size, color, false);
-                    if o.on && !o.verb {
-                        pen.fill(tx, ob + m.px(5.0), drawn, 2.0, t.accent);
-                    }
-                    if let Some(n) = row.pick {
-                        pen.hit(
-                            ox - m.px(8.0),
-                            target_y.max(area.top),
-                            tw,
-                            (target_y + m.px(44.0)).min(area.bottom) - target_y.max(area.top),
-                            Target::Option(n, o.k),
-                        );
-                    }
-                }
-                if !after.is_empty() {
-                    pen.text(x + end.0, base + end.1, after, Size::Small, t.muted, false);
-                }
-            }
+            K::Choice(c) => choice::draw(
+                pen,
+                c,
+                choice::At {
+                    x,
+                    top,
+                    area,
+                    pick: row.pick,
+                    on,
+                    focus,
+                },
+            ),
             K::Name { icon, name, what } => {
                 let mut nx = x;
                 if let Some(icon) = icon {
@@ -2285,121 +2235,6 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             list(app, pen, &rows, whole, lit(app), list_focus(app), full, app.scroll, own);
         }
     }
-}
-
-/// A row of one setting (C3, v0.161), where the row is one: a group of picks (its name, its picks side by side), a
-/// switch (on, off), a size (auto, then an A at each size around the one in use: T3), a value of a few short
-/// choices (side by side), else a value between its two words (less 35% more). None for any other row.
-fn choice_of(app: &App, m: &Metrics, item: &Item, room: f64) -> Option<(f64, K)> {
-    let row = app.row_ref(item)?;
-    let opt = |word: &str, k: usize, on: bool| Opt {
-        word: word.to_string(),
-        size: Size::Main,
-        k,
-        on,
-        verb: false,
-    };
-    if let Item::Row(p, r) = item {
-        if let Some(run) = app.choice_group(*p, *r) {
-            let rows = &app.providers[*p].rows.rows;
-            let opts = run.iter().enumerate().map(|(k, i)| opt(&rows[*i].text, k, rows[*i].sign == "check")).collect();
-            return Some(choice_layout(m, room, row.group.as_deref().unwrap_or_default(), opts, String::new()));
-        }
-    }
-    if let Some(sw) = &row.switch {
-        return Some(choice_layout(
-            m,
-            room,
-            &row.text,
-            vec![opt("on", 0, sw.on), opt("off", 1, !sw.on)],
-            String::new(),
-        ));
-    }
-    let st = row.step.as_ref()?;
-    let n = st.values.len();
-    if st.words.0 == "smaller" {
-        // a size: auto where it is one, then an A at each of four sizes, larger and larger, that stand still whatever
-        // is in use (nothing moves when a state changes): 10, 12, 14 and 16 where the list holds them, else its first
-        // four; the size in use after them
-        let auto = st.values.iter().position(|v| v.1 == "auto");
-        let sizes: Vec<usize> = (0..n).filter(|i| Some(*i) != auto).collect();
-        let usual: Vec<usize> = ["10", "12", "14", "16"]
-            .iter()
-            .filter_map(|s| sizes.iter().copied().find(|i| st.values[*i].1 == *s))
-            .collect();
-        let shown: Vec<usize> = if usual.len() == 4 { usual } else { sizes.into_iter().take(4).collect() };
-        let now = st.values.get(st.at).map(|v| v.0.trim_start_matches("auto ").to_string()).unwrap_or_default();
-        let mut opts: Vec<Opt> = auto.map(|a| vec![opt("auto", a, st.at == a)]).unwrap_or_default();
-        for (j, i) in shown.iter().enumerate() {
-            opts.push(Opt {
-                word: "A".to_string(),
-                size: [Size::Small, Size::Main, Size::Lead, Size::Head][j],
-                k: *i,
-                on: *i == st.at,
-                verb: false,
-            });
-        }
-        return Some(choice_layout(m, room, &row.text, opts, now));
-    }
-    let name_w = cells(&row.text) as f64 * m.cw;
-    let need: f64 = st
-        .values
-        .iter()
-        .map(|v| (cells(&v.0) as f64 * m.cw + m.px(16.0)).max(m.px(44.0)) + m.px(8.0))
-        .sum();
-    let short_theme_list =
-        matches!(&app.view, View::Folder(_, uri) if uri.starts_with("spark-shell://theme/rows/settings/")) && st.values.iter().all(|v| cells(&v.0) <= 14);
-    if n <= 6 && (short_theme_list || need <= room - (name_w + m.px(24.0)).max(m.px(200.0))) {
-        let opts = st.values.iter().enumerate().map(|(k, v)| opt(&v.0, k, k == st.at)).collect();
-        return Some(choice_layout(m, room, &row.text, opts, String::new()));
-    }
-    let verb = |word: &str, k: usize| Opt {
-        word: word.to_string(),
-        size: Size::Main,
-        k,
-        on: false,
-        verb: true,
-    };
-    let opts = vec![
-        verb(&st.words.0, st.at.saturating_sub(1)),
-        opt(st.value(), st.at, true),
-        verb(&st.words.1, (st.at + 1).min(n.saturating_sub(1))),
-    ];
-    Some(choice_layout(m, room, &row.text, opts, String::new()))
-}
-
-fn choice_layout(m: &Metrics, room: f64, name: &str, options: Vec<Opt>, after: String) -> (f64, K) {
-    let target = m.px(44.0);
-    let gap = m.px(8.0);
-    let width = |o: &Opt| (cells(&o.word) as f64 * m.adv(o.size) + 2.0 * gap).max(target);
-    let column = (cells(name) as f64 * m.cw + m.px(24.0)).max(m.px(200.0));
-    let trailing = if after.is_empty() { 0.0 } else { cells(&after) as f64 * m.sw + gap };
-    let need = options.iter().map(|o| width(o) + gap).sum::<f64>() + trailing;
-    // Keep every option visible on a narrow screen. Its hit box follows it onto the next line.
-    let (mut x, mut y) = if column + need <= room { (column, 0.0) } else { (0.0, target) };
-    let mut opts = Vec::with_capacity(options.len());
-    for opt in options {
-        let w = width(&opt);
-        if x > 0.0 && x + w > room {
-            x = 0.0;
-            y += target;
-        }
-        opts.push(PlacedOption { opt, x, y, width: w });
-        x += w + gap;
-    }
-    if trailing > 0.0 && x + trailing > room {
-        x = 0.0;
-        y += target;
-    }
-    (
-        y + target,
-        K::Choice {
-            name: name.into(),
-            opts,
-            after,
-            end: (x + m.px(4.0), y),
-        },
-    )
 }
 
 /// Keep the poster in view while the list scrolls. A wide frame gives each its own column.

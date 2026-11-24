@@ -184,6 +184,9 @@ impl Window {
     }
     fn paste(&self, _: bool) {}
     fn when_drawn(&self) {}
+    fn face(&self, _: &str) -> Option<f64> {
+        None
+    }
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -1014,6 +1017,11 @@ fn main() {
                     app.pane_fits = scene::splits(&m, window_px.0);
                     app.wide = scene::wide(&m, window_px.0);
                     app.wide3 = scene::wide3(&m, window_px.0);
+                    // a typeface's specimen: its family asked of the window once, before the frame that draws it
+                    for family in app.faces_wanted() {
+                        let width = w.face(&family);
+                        app.faces.insert(family, width);
+                    }
                     app.size = scene::size(&app, &m, window_px.0, window_px.1);
                     let sc = scene::build(&app, &pal, &m, window_px.0, window_px.1, &scrolls);
                     scrolls = sc.lists.iter().map(|l| l.at.clone()).collect();
