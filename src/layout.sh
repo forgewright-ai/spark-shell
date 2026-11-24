@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the layouts
-# sets: LAYOUTS_DIR LAYOUT_LAST LAYOUT_PENDING LAYOUT_SMALL_WORDS LAYOUT_VERBS LAYOUT_WAIT REFUSE_AS
-# reads: APPS CONFIG_DIR DIALOG_BIN KEPT_LAYOUTS LAYOUT_NOT_APPS LAYOUT_ON NOTES_DIR OS PANEL_APP REPO STATE_DIR TAB TERM_NAME TERM_OWN TMP VERBOSE WM_NAME WM_OWN
+# sets: KEPT LAYOUTS_DIR LAYOUT_LAST LAYOUT_NAMED LAYOUT_PENDING LAYOUT_SMALL_WORDS LAYOUT_VERBS LAYOUT_WAIT REFUSE_AS
+# reads: APPS CONFIG_DIR DIALOG_BIN KEPT_LAYOUTS LAYOUT_NOT_APPS LAYOUT_ON LAYOUT_SHELLS NOTES_DIR OS PANEL_APP REPO SCRUB_JQ STATE_DIR TAB TERM_NAME TERM_OWN TMP VERBOSE WM_NAME WM_OWN
 # every rendered line passes the gate before sway sees it
 LAYOUTS_DIR=$CONFIG_DIR/layouts
 LAYOUT_LAST=$STATE_DIR/layout.last
@@ -13,10 +13,16 @@ layout_state_names() {   # the state files were desk.last and desk.pending throu
 }
 layout_state_names
 LAYOUT_VERBS="workspace rename splith splitv layout resize focus move floating fullscreen exec session window window-rule"   # session and window: the tmux lines
+LAYOUT_NAMED='named in the need, terminal'                        # the words of a program the list lacks and the need names
+KEPT=''                                                           # 1 while a layout of yours opens, never from the environment
 LAYOUT_WAIT=30                                                    # seconds for a window to map
 
 
 apps_marked() { [ -f "$APPS" ] && grep -q '^[A-Za-z0-9]' "$APPS"; }
+layout_need_words() { printf '%s\n' "$1" | tr 'A-Z\t' 'a-z ' | tr -cd 'a-z0-9_. \n-'; }   # layout_need_words WORDS -> them lowercase, in the characters of a program name: no glob is left to expand
+layout_not_app() {   # layout_not_app NAME -> 0 for a name of LAYOUT_NOT_APPS, with its version or without (python3.12)
+    case " $LAYOUT_NOT_APPS " in *" $1 "*|*" ${1%"${1##*[!0-9.-]}"} "*) return 0 ;; *) return 1 ;; esac
+}
 layout_apps() {   # layout_apps NEED -> the lines
     sbom_entries
     awk -F'\t' '{print $1 "\t" $6}' "$TMP/entries" > "$TMP/exec"
@@ -35,19 +41,18 @@ layout_apps() {   # layout_apps NEED -> the lines
                         done
                     fi
                 fi
-                layout_on_path "$n" || [ -n "$e" ] || continue
+                [ -n "$e" ] || { layout_on_path "$n" && ! layout_not_app "$n"; } || continue
                 [ -z "$note" ] || what=$note
                 [ "$term" = yes ] && printf '%s: %s, terminal\n' "$n" "${what:-$n}" || printf '%s: %s\n' "$n" "${what:-$n}"
             done
         else
             awk -F'\t' '{printf "%s: %s%s\n", $1, $3, ($4 == "yes" ? ", terminal" : "")}' "$TMP/entries"
         fi
-        for w in $1; do
-            w=$(printf '%s' "$w" | tr -cd 'A-Za-z0-9_.-' | tr 'A-Z' 'a-z')
-            [ -z "$w" ] || ! layout_on_path "$w" || printf '%s: named in the need, terminal\n' "$w"
+        for w in $(layout_need_words "$1"); do
+            ! layout_on_path "$w" || layout_not_app "$w" || printf '%s: %s\n' "$w" "$LAYOUT_NAMED"
         done
         echo "shell: a terminal with a prompt, terminal"   # a layout word, not an app
-    } | grep -v "^\\($(printf '%s' "$WM_OWN $TERM_OWN xdg-open $LAYOUT_NOT_APPS" | sed 's/ /\\|/g')\\):" \
+    } | grep -v "^\\($(printf '%s' "$WM_OWN $TERM_OWN xdg-open $LAYOUT_SHELLS" | sed 's/ /\\|/g')\\):" \
       | sort -t: -s -u -k1,1   # the desktop itself: not apps
 }
 REFUSE_AS=desktop   # the verb a refusal names
@@ -145,10 +150,12 @@ cmd_apps_verb() {   # spark-shell apps: the picker
     cmd_apps
 }
 layout_on_path() { case $(command -v "$1" 2>/dev/null) in /*) return 0 ;; *) return 1 ;; esac; }   # a program, not a keyword or builtin
-layout_app_known() { grep -q "^$1: " "$TMP/apps"; }                       # layout_app_known NAME
-layout_app_term() { grep "^$1: " "$TMP/apps" | grep -q ', terminal$'; }   # layout_app_term NAME
+layout_app_line() { N="$1: " awk 'index($0, ENVIRON["N"]) == 1 { print; exit }' "$TMP/apps"; }   # layout_app_line NAME -> its line, by the whole name
+layout_app_known() { [ -n "$(layout_app_line "$1")" ]; }
+layout_app_term() { case $(layout_app_line "$1") in *', terminal') return 0 ;; *) return 1 ;; esac; }
+layout_app_exec() { [ ! -f "$TMP/exec" ] || N=$1 awk -F '\t' '$1 == ENVIRON["N"] { print substr($0, length($1) + 2); exit }' "$TMP/exec"; }   # layout_app_exec NAME -> its desktop entry's launch line
 layout_launch() {   # layout_launch NAME ARGS -> the command line
-    _l=$(grep "^$1	" "$TMP/exec" 2>/dev/null | head -1 | cut -f2-)
+    _l=$(layout_app_exec "$1")
     [ -n "$_l" ] || _l="$1 %U"
     case $_l in *%[fFuU]*) _l="${_l%%"%"[fFuU]*}$2${_l#*"%"[fFuU]}" ;; *) _l="$_l $2" ;; esac
     printf '%s' "$_l" | sed 's/  */ /g; s/ *$//'
@@ -208,19 +215,36 @@ layout_gate() {   # the gate: layout_gate LINE -> '' or why not
     [ -n "${KEPT:-}" ] || case ${1:-} in */*) echo "an app is named, not a path"; return ;; esac
     app=${1:-}; app=${app##*/}
     [ -n "$app" ] || { echo "exec of nothing"; return; }
-    case " $LAYOUT_NOT_APPS " in *" $app "*) echo "$app is not an app"; return ;; esac
-    # the model's answer stays in its list
-    if [ -n "${KEPT:-}" ]; then layout_on_path "$app" || layout_app_known "$app" || echo "$app is not on this machine"
-    elif layout_app_known "$app"; then shift; layout_args_ok "$app" "$@"
-    elif layout_on_path "$app"; then echo "$app is not one of the allowed apps (spark-shell apps adds it)"
-    else echo "$app is not on this machine"; fi
+    case " $LAYOUT_SHELLS " in *" $app "*) echo "$app is not an app"; return ;; esac
+    if [ -z "${KEPT:-}" ]; then layout_gate_model "$@"
+    else layout_on_path "$app" || layout_app_known "$app" || echo "$app is not on this machine"; fi
 }
-layout_args_ok() {   # layout_args_ok APP WORD... -> '' when no word is a new flag
-    _dwa=$1; shift
-    _dwo=" $(grep "^$_dwa	" "$TMP/exec" 2>/dev/null | head -1 | cut -f2-) ${ED:-} "
-    for _dw in "$@"; do
-        case $_dw in -*|*\"*) case $_dwo in *" $_dw "*) ;; *) echo "a page or a file, not a flag"; return ;; esac ;; esac
+layout_gate_model() {   # layout_gate_model APP WORD... -> '' when a window of the model's may open so, else why not
+    if ! layout_app_known "$1"; then
+        if layout_not_app "$1"; then echo "$1 is not an app"
+        elif layout_on_path "$1"; then echo "$1 is not one of the allowed apps (spark-shell apps adds it)"
+        else echo "$1 is not on this machine"; fi
+        return
+    fi
+    [ "$*" != "$(layout_launch "$1" '')" ] || return 0
+    _gmw=$(layout_bare_why "$1"); [ -z "$_gmw" ] || { echo "$_gmw"; return; }
+    _gmo=" $(layout_app_exec "$1") ${ED:-} "; shift
+    for _gm in "$@"; do   # a flag, a command of an editor's (+, :, term://) or of the app's own address, a word sh could make one of
+        case $_gm in
+            *\"*|[-+?:[]*|term:*|exec:*|javascript:*|data:*) ;;
+            http://*|https://*|file://*|ftp://*|gemini://*|gopher://*) continue ;;
+            *://*) ;;
+            *) continue ;;
+        esac
+        case $_gmo in *" $_gm "*) ;; *) echo "a page or a file, not a flag"; return ;; esac
     done
+}
+layout_bare_why() {   # layout_bare_why APP -> why a model's window of it takes nothing after its name; nothing when it takes a page or a file
+    _lbx=$(layout_app_exec "$1"); _lbe=${ED:-}
+    if layout_not_app "$1" || [ "$1" = tmux ]; then echo "$1 opens with nothing after its name"   # tmux runs what follows its name
+    elif [ "$1" = "${_lbe%% *}" ]; then :
+    elif [ -n "$_lbx" ]; then case $_lbx in *%[fFuU]*) ;; *) echo "$1 opens with nothing after its name" ;; esac
+    elif [ "$(layout_app_line "$1")" = "$1: $LAYOUT_NAMED" ]; then echo "$1 is not one of the allowed apps, so it opens bare (spark-shell apps adds it)"; fi
 }
 
 # `workspace number N`, never `workspace N output`, which would pin
@@ -315,7 +339,7 @@ layout_play_rooms() {   # layout_play_rooms FILE -> true when a room ran
     while IFS= read -r line || [ -n "$line" ]; do
         case $line in ''|'#'*) continue ;; esac
         why=$(layout_gate "$line")
-        if [ -n "$why" ]; then echo "  refused  $line  ($why)"; continue; fi
+        if [ -n "$why" ]; then printf '  refused  %s  (%s)\n' "$line" "$why"; continue; fi
         [ "$VERBOSE" != 1 ] || echo "  $line"
         case $line in 'session '*) continue ;; esac
         set -f; set -- $line; set +f   # its words, never the files of the folder: tmux hands them to sh -c
@@ -426,7 +450,7 @@ layout_play() {   # layout_play FILE -> the lines sent to sway
     while IFS= read -r line || [ -n "$line" ]; do
         case $line in ''|'#'*) continue ;; exec*) _new_id='' ;; esac
         why=$(layout_gate "$line")
-        if [ -n "$why" ]; then echo "  refused  $line  ($why)"; _dp_failed=1; case $line in exec*) nowin=1 ;; esac; continue; fi
+        if [ -n "$why" ]; then printf '  refused  %s  (%s)\n' "$line" "$why"; _dp_failed=1; case $line in exec*) nowin=1 ;; esac; continue; fi
         # a split with no window would cut the one before it
         case $line in split*) [ "$nowin" = 0 ] || { [ "$VERBOSE" != 1 ] || echo "  skipped  $line  (no window to split)"; nowin=0; continue; } ;; esac
         [ "$VERBOSE" != 1 ] || echo "  $line"
@@ -476,8 +500,9 @@ layout_make() {   # layout_make NEED -> the layout laid out
     layout_pulse_stop
     [ "$st" -eq 0 ] || refuse "spark did not answer: $(head -1 "$TMP/layout.err")"
     jq -e '.main.app | strings' "$TMP/layout.json" >/dev/null 2>&1 || refuse "the answer was not a layout (spark-shell layout -v shows it)"
-    # never the model's: window rules and minimum sizes
-    jq '.main |= del(.floating, .border, .min_columns, .min_rows) | .side = ((.side // []) | map(del(.floating, .border, .min_columns, .min_rows)))' "$TMP/layout.json" > "$TMP/layout.clean"
+    # never the model's: the need's words, the mark, what was suggested, window rules and minimum sizes; each of its texts is one plain line
+    jq 'def window: del(.floating, .border, .min_columns, .min_rows);
+        (.. | strings) |= (gsub("[\t\n]"; " ") | '"$SCRUB_JQ"') | del(.words, .by, .suggested) | .main |= window | .side = [.side[]? | objects | window]' "$TMP/layout.json" > "$TMP/layout.clean"
     mv "$TMP/layout.clean" "$TMP/layout.json"
     ED=$(layout_editor) || ED=''
     answer=$(layout_set "$TMP/layout.json")
@@ -488,8 +513,8 @@ layout_make() {   # layout_make NEED -> the layout laid out
     for a in $(jq -r '[.main] + (.side // []) | .[].app' "$TMP/layout.json"); do
         [ "$a" != editor ] || continue   # a layout word, not an app
         layout_app_known "$a" && continue
-        if layout_on_path "$a"; then echo "  $a is not one of the allowed apps -- laid out without it (spark-shell apps adds it)"
-        else echo "  $a is not on this machine -- laid out without it"; fi
+        if layout_on_path "$a"; then printf '  %s is not one of the allowed apps -- laid out without it (spark-shell apps adds it)\n' "$a"
+        else printf '  %s is not on this machine -- laid out without it\n' "$a"; fi
     done
     cat "$TMP/named.say"
     mkdir_private "$(dirname "$LAYOUT_LAST")"

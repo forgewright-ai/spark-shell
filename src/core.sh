@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- core: the paths, the rows, the flags, the temp folder and the traps
-# sets: CONFIG CONFIG_DIR LAYOUT_NOT_APPS LAYOUT_ON MODE NL OS PULSE ROOT SPARK_CONFIG_DIR STATE_DIR TAB THEME_ENV TMP VERBOSE YES
+# sets: CONFIG CONFIG_DIR LAYOUT_NOT_APPS LAYOUT_ON LAYOUT_SHELLS MODE NL OS PULSE ROOT SPARK_CONFIG_DIR STATE_DIR TAB THEME_ENV TMP VERBOSE YES
 OS=$(uname -s)
 CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/spark-shell
 CONFIG=$CONFIG_DIR/config
@@ -39,7 +39,16 @@ need() {
     acting=1
     return 0
 }
-LAYOUT_NOT_APPS="sh bash zsh dash fish ksh sudo doas su pkexec"   # a shell or a way to root: never an app of a layout
+LAYOUT_SHELLS="sh bash zsh dash fish ksh sudo doas su pkexec"     # a shell or a way to root: in no layout
+# what runs, writes, sends or ends what its arguments name, and is often a need's own word (watch, find, time): never the
+# model's to open; a desktop entry that starts with one opens as the entry says
+LAYOUT_NOT_APPS="$LAYOUT_SHELLS ash csh tcsh mksh yash rbash nu pwsh busybox run0 runuser sg newgrp chroot unshare nsenter bwrap setpriv \
+flatpak-spawn distrobox-enter toolbox watch watchexec entr env xargs parallel nohup timeout time setsid nice ionice chrt taskset stdbuf \
+unbuffer script expect flock strace ltrace gdb screen dtach abduco at batch crontab systemd-run systemctl loginctl busctl gdbus gio dex \
+gtk-launch dbus-run-session dbus-launch dbus-send start-stop-daemon sv find fd rm rmdir unlink shred mv cp dd ln tee truncate install \
+mkdir touch mkfifo mknod chmod chown chgrp split csplit tar unzip curl wget aria2c ssh sshpass scp sftp rsync nc ncat netcat socat telnet \
+ftp openssl python python2 python3 pypy perl ruby node deno bun php lua luajit awk gawk mawk nawk sed tclsh wish guile java R Rscript julia ghci make \
+cmake ninja cargo rustc go gcc cc clang git npm npx pnpm yarn pip pipx uv uvx kill pkill killall reboot poweroff halt shutdown zzz"
 as_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }
 sudo_upfront() {
     # ask once, before anything is touched
