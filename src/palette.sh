@@ -55,7 +55,7 @@ look_ok() {   # look_ok DIR -> 0, or why and 1
     [ -f "$_lf" ] || return 0
     _lb=$(grep -nEv '^[[:space:]]*(#|$)|^[A-Z_0-9]+=[^;`$()|&<>]*$' "$_lf" | head -1 | cut -d: -f1)
     [ -z "$_lb" ] || { echo "line $_lb of its look.env is not KEY=value"; return 1; }
-    ! LC_ALL=C grep -q '[[:cntrl:]]' "$_lf" || { echo "its look.env holds a control character"; return 1; }
+    [ "$(LC_ALL=C tr -d '\n -~\200-\377' < "$_lf" | wc -c)" -eq 0 ] || { echo "its look.env holds a control character"; return 1; }   # counted: to grep a NUL ends the line
     _lv=$(look_get "$1" FORMAT); case $_lv in ''|1|2) ;; [1-9]|[1-9][0-9]) echo "it was made by a newer spark-shell (format $_lv, this one reads $LOOK_FORMAT) -- spark-shell update"; return 1 ;; *) echo "its FORMAT is not a number"; return 1 ;; esac
     _lv=$(look_get "$1" FONT); [ -z "$_lv" ] || font_ok "$_lv" || { echo "its FONT is not a face and a size (letters, digits, spaces and : = . + _ -)"; return 1; }
     _lv=$(look_get "$1" FACE); case $_lv in *[!a-z]*) _lv=-- ;; esac; case " $FONT_FACES " in *" ${_lv:-neon} "*) ;; *) echo "its FACE is not neon, argon, xenon, radon or krypton"; return 1 ;; esac
@@ -77,6 +77,7 @@ look_ok() {   # look_ok DIR -> 0, or why and 1
         picture) _lp=$(look_get "$1" PICTURE)
             case $_lp in ''|.*|*/*) echo "its PICTURE is not a file name in the folder"; return 1 ;; esac
             path_ok "$1/$_lp" && [ -f "$1/$_lp" ] && [ ! -L "$1/$_lp" ] || { echo "its PICTURE is not a file of the folder's own"; return 1; }
+            pic_magic "$1/$_lp" || { echo "its $_lp is not a PNG, a JPEG, a WebP or a GIF"; return 1; }
             case " $WALL_TYPES " in *" $(printf '%s' "${_lp##*.}" | tr 'A-Z' 'a-z') "*) ;; *) echo "its PICTURE is not a picture ($WALL_TYPES)"; return 1 ;; esac ;;
         *) wall_value_ok "$_lv" || { echo "its WALLPAPER is not default, a drawing's name, #rrggbb or a picture's full path with $PATH_SAID"; return 1; } ;;
     esac

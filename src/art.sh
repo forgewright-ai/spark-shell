@@ -51,6 +51,7 @@ def problems:
      end)
   ] end;
 problems | first // empty'
+jq_need() { command -v jq >/dev/null 2>&1 || refuse_in theme "jq is not installed, and it reads a theme's family"; }   # before a word that reads or writes one
 family_files() {   # -> the family files, yours first, one a line; an id once: a theme's own (family.json in its folder, its id the folder's name), then the shared
     for _ff in "$PALETTE_DIR"/*/family.json "$LOOKS_DIR"/*/family.json "$CORE_DIR"/*/family.json "$CONFIG_DIR"/families/*.json "$FAMILY_CORE"/*.json; do [ -f "$_ff" ] && printf '%s\n' "$_ff"; done \
         | awk -F/ '{ k = ($NF == "family.json") ? $(NF - 1) ".json" : $NF } !seen[k]++'
@@ -58,8 +59,10 @@ family_files() {   # -> the family files, yours first, one a line; an id once: a
 family_why() {   # family_why FILE -> nothing and 0 for a family this spark-shell reads; else why in one line and 1
     [ -f "$1" ] && [ ! -L "$1" ] || { echo "it is not a plain file"; return 1; }
     [ "$(wc -c < "$1" | tr -d ' ')" -le "$FAMILY_MAX" ] || { echo "it is over $((FAMILY_MAX / 1024)) KiB"; return 1; }
-    ! LC_ALL=C grep -q "[^ -~$TAB]" "$1" || { echo "it holds a byte that is not plain text"; return 1; }
+    [ "$(LC_ALL=C tr -d '\n\t -~' < "$1" | wc -c)" -eq 0 ] || { echo "it holds a byte that is not plain text"; return 1; }   # counted: to grep a NUL ends the line
+    command -v jq >/dev/null 2>&1 || { echo "jq is not installed, and it reads a family"; return 1; }
     _fw=$(jq -r --argjson fmt "$ART_FORMAT" "$FAMILY_RULES" "$1" 2>/dev/null) || { echo "it is not JSON"; return 1; }
+    _fw=$(printf '%s\n' "$_fw" | scrub_text | sed -n 1p | cut -c1-200)   # a key of its own may be in it
     [ -z "$_fw" ] || { echo "$_fw"; return 1; }
     _fi=${1##*/}; [ "$_fi" != family.json ] || { _fi=${1%/family.json}; _fi=${_fi##*/}.json; }
     [ "$_fi" = "$(jq -r .id "$1").json" ] || { echo "its id is not its file's name"; return 1; }
@@ -80,9 +83,10 @@ family_why() {   # family_why FILE -> nothing and 0 for a family this spark-shel
         _fq=$(gallery_picture_ok "$_fd/$_fp" "$THEME_FILE_PICTURE_MAX") || { echo "its $_fv variant names $_fp: ${_fq#its picture is }"; return 1; }
     done < "$TMP/family.files"
 }
-family_for() {   # family_for THEME -> the file of the family it is a variant of, or false
+family_for() {   # family_for THEME -> the file of the family it is a variant of, or false; a theme's own file speaks for that theme alone, whatever it names
     _fl=$(theme_label "$1")
     family_files | while IFS= read -r _ff; do
+        case $_ff in */"$1"/family.json) ;; */family.json) continue ;; esac
         grep -qF -e "\"$_fl\"" -e "\"core-$_fl\"" -e "\"$1\"" "$_ff" 2>/dev/null || continue   # no mention, no jq
         jq -e --arg t "$1" --arg l "$_fl" 'any(.variants[]?; (.theme? // "") as $k | $k == $t or $k == $l or ($k | ltrimstr("core-")) == $l)' "$_ff" >/dev/null 2>&1 || continue
         family_why "$_ff" >/dev/null || continue
@@ -155,11 +159,14 @@ theme_variant() {   # theme_variant [dark|light] -- the theme in use in its othe
 }
 art_index() { dirs_cached art.index "$(THEME_DIRS) $LOOKS_DIR $FAMILY_CORE $CONFIG_DIR/families" art_index_now; }   # -> {THEME: {family, title, media, variant, variants}} for every theme here, kept until a theme or family file changes
 art_index_now() {
-    family_files | while IFS= read -r _aif; do family_why "$_aif" >/dev/null && cat "$_aif"; done | jq -cs . > "$TMP/art.families"
+    family_files | while IFS= read -r _aif; do   # a theme's own file: that theme alone
+        family_why "$_aif" >/dev/null || continue
+        case $_aif in */family.json) jq -c '. + {own: .id}' "$_aif" ;; *) cat "$_aif" ;; esac
+    done | jq -cs . > "$TMP/art.families"
     theme_names | while IFS= read -r _aik; do
         _aiw=$(art_wall "$_aik"); printf '%s\t%s\t%s\t%s\n' "$_aik" "$(theme_label "$_aik")" "$(art_media "$_aiw")" "$(art_variant "$_aik")"
     done | jq -Rnc --slurpfile f "$TMP/art.families" '
-        ([$f[0][] | . as $x | .variants | to_entries[] | {key: .value.theme, value: {family: $x.id, title: $x.title, media: $x.media, variant: .key,
+        ([$f[0][] | . as $x | .variants | to_entries[] | select($x.own == null or .value.theme == $x.own) | {key: .value.theme, value: {family: $x.id, title: $x.title, media: $x.media, variant: .key,
             variants: ($x.variants | map_values(.theme))}}] | from_entries) as $fam
         | reduce (inputs | split("\t")) as [$k, $l, $m, $v] ({};
             .[$k] = ($fam[$k] // $fam[$l] // $fam["core-" + $l] // {family: null, title: $l, media: $m, variant: $v, variants: {($v): $k}}))'
@@ -265,7 +272,7 @@ art_screens() {   # [OUTPUTS-JSON-FILE] -> NAME<tab>ID<tab>AT<tab>TURN<tab>WxH<t
 }
 art_stills() {   # -> the theme's own landscape pictures, full paths, one a line: its picture, then its panels'
     _ast=$(theme_dir "${THEME:-none}"); [ -n "$_ast" ] || return 0
-    { printf '%s\n' "$(look_get "$_ast" PICTURE)"; art_of "$THEME" | jq -r '.panels[][] | .landscape // empty'; } \
+    { printf '%s\n' "$(look_get "$_ast" PICTURE)"; ! command -v jq >/dev/null 2>&1 || art_of "$THEME" | jq -r '.panels[][] | .landscape // empty'; } \
         | awk 'NF && !seen[$0]++' | while IFS= read -r _asf; do [ ! -f "$_ast/$_asf" ] || printf '%s\n' "$_ast/$_asf"; done
 }
 art_still() {   # art_still NAME -> the theme's own landscape picture NAME (its file's name with or without the extension, or its role: landscape-2), full path; else false
@@ -285,23 +292,31 @@ art_wall_theirs() {   # -> 0 when the wallpaper is a picture or a color of the p
     if [ -n "$_awt" ]; then case ${WALLPAPER:-} in "$_awt"/*) return 1 ;; esac; fi
     wall_yours || wall_color
 }
-media_ok() {   # media_ok FILE mp4|webp -> nothing and 0 for a plain MP4 (ftyp, H.264 where ffprobe can say, 7680 by 4320 and 64 MiB at most) or an animated WebP (16 MiB at most); else why in one line and 1
+file_named() { printf '%s' "${1##*/}" | tr -d '\001-\037\177' | cut -c1-80; }   # file_named PATH -> its name, as plain words: it may be a stranger's
+pic_why() {   # pic_why FILE -> nothing and 0 for a whole picture a screen can show (a PNG, JPEG, WebP or GIF, none that takes too long to show); else "FILE is why" in one line and 1
+    _pwn=$(file_named "$1"); [ -f "$1" ] && [ -r "$1" ] || { echo "$_pwn is not a file that can be read"; return 1; }
+    pic_magic "$1" || { echo "$_pwn is not a PNG, a JPEG, a WebP or a GIF"; return 1; }
+    command -v python3 >/dev/null 2>&1 || return 0   # its first bytes alone, then
+    _pwo=$(python3 -I "$REPO/lib/look.py" shown "$1" 2>&1) || { echo "$_pwn is $(media_why "$_pwo")"; return 1; }
+}
+media_ok() {   # media_ok FILE mp4|webp -> nothing and 0 for a loop (an MP4 of one H.264 video, every byte of it in the file, 7680 by 4320 and 64 MiB at most) or a reel (an animated WebP of frames the size they say, 16 MiB at most); else why in one line and 1
     [ -f "$1" ] && [ ! -L "$1" ] && [ -r "$1" ] || { echo "it is not a plain file"; return 1; }
+    command -v python3 >/dev/null 2>&1 || { echo "python3 is not installed, and it reads a loop and a reel"; return 1; }
     _mos=$(wc -c < "$1" | tr -d ' ')
     case $2 in
         mp4) [ "$_mos" -le 67108864 ] || { echo "a loop is 64 MiB at most"; return 1; }
-            [ "$(od -An -c -j4 -N4 "$1" | tr -d ' \n')" = ftyp ] || { echo "it is no MP4"; return 1; }
+            _moc=$(python3 -I "$REPO/lib/look.py" loop "$1" 2>&1) || { echo "it is $(media_why "$_moc")"; return 1; }
             command -v ffprobe >/dev/null 2>&1 || return 0
             _moc=$(ffprobe -v error -protocol_whitelist file -select_streams v:0 -show_entries stream=codec_name,width,height -of csv=p=0 "$1" 2>/dev/null | head -1)
             case $_moc in h264,[0-9]*,[0-9]*) ;; *) echo "its video is not H.264"; return 1 ;; esac
             _mow=${_moc#h264,}; _mow=${_mow%%,*}; _moh=${_moc##*,}
             [ "$_mow" -le 7680 ] && [ "$_moh" -le 7680 ] && [ $((_mow * _moh)) -le $((7680 * 4320)) ] || { echo "it is ${_mow}x$_moh, past 7680x4320"; return 1; } ;;
         webp) [ "$_mos" -le 16777216 ] || { echo "a reel is 16 MiB at most"; return 1; }
-            [ "$(od -An -c -N4 "$1" | tr -d ' \n')" = RIFF ] && [ "$(od -An -c -j8 -N4 "$1" | tr -d ' \n')" = WEBP ] || { echo "it is no WebP"; return 1; }
-            od -An -c -j12 -N36 "$1" | tr -d ' \n' | grep -q ANIM || { echo "it is a still WebP, no animation"; return 1; } ;;
+            _moc=$(python3 -I "$REPO/lib/look.py" reel "$1" 2>&1) || { echo "it is $(media_why "$_moc")"; return 1; } ;;
         *) echo "no such kind"; return 1 ;;
     esac
 }
+media_why() { printf '%s\n' "$1" | scrub_text | sed -n 1p | cut -c1-120; }   # media_why WHAT look.py SAID -> its first line, as plain words
 art_loop_of() {   # art_loop_of PICTURE -> the loop beside a picture of the theme's own (NAME.mp4 beside NAME.jpg), a plain MP4; else false
     _ald=$(theme_dir "${THEME:-none}"); [ -n "$_ald" ] || return 1
     case $1 in "$_ald"/*) ;; *) return 1 ;; esac

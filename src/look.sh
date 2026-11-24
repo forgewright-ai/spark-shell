@@ -221,6 +221,7 @@ wall_picture_ok() {   # wall_picture_ok PATH -> its real path (no link, under ho
     [ -f "$_rp" ] && [ -r "$_rp" ] || { echo "wallpaper: $1 is not a file that can be read"; return 1; }
     case " $WALL_TYPES " in *" $(printf '%s' "${_rp##*.}" | tr 'A-Z' 'a-z') "*) ;; *) echo "wallpaper: a picture is $WALL_TYPES"; return 1 ;; esac
     path_ok "$_rp" || { echo "wallpaper: $PATH_REFUSED"; return 1; }   # the config's shape, before any write
+    _rw=$(pic_why "$_rp") || { echo "wallpaper: $_rw"; return 1; }
     printf '%s\n' "$_rp"
 }
 WALL_TYPES='jpg jpeg png webp'   # the picker's types
