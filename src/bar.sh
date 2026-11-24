@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # ---------------------------------------------------------------- the bar
 # sets: BAR_BT BAR_BT_OFF BAR_DEV BAR_DND BAR_DND_PLAIN BAR_DUE BAR_DUE_PLAIN BAR_FULL BAR_GAP BAR_GROUP_GAP BAR_KB BAR_KB_PLAIN BAR_LAN BAR_LIGHT BAR_MIC BAR_MIC_OFF BAR_NOTE BAR_OUT BAR_OUT_OFF BAR_PAD BAR_PALETTE BAR_PID BAR_PROC BAR_SHADE BAR_STEPS BAR_SYS BAR_WIFI BAR_WS_ORDER
-# reads: BAR_ASOUNDRC BAR_LEVELS BAR_MODULES CONFIG GLYPH_FAMILIES LAYOUT_ON NOTIFY_MODE OS PANEL_DOT PANEL_PROMPT PANEL_SEP PANEL_WARN REPO STATE_DIR TAB THEME_KEYS TMP
+# reads: BAR_ASOUNDRC BAR_LEVELS BAR_MODULES CONFIG GLYPH_FAMILIES LAYOUT_ON NOTIFY_MODE OS PANEL_DOT PANEL_PROMPT PANEL_SEP PANEL_WARN REPO STATE_DIR TAB THEME_KEYS TMP WM_TRAY
 # spark's bar, or sway's own where it cannot run, reads `spark-shell bar status`:
 # i3bar JSON every 15 s and on SIGUSR1 to the pid in STATE_DIR/bar.pid
 BAR_SYS=${SPARK_SHELL_SYS:-/sys}      # tests: a fixture /sys and /proc
@@ -888,19 +888,34 @@ bar_desktop() {   # bar_desktop [on|off] WHICH
     if [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ]; then [ "$2" = both ] || refuse_in bar "no desktop here (spark-shell on desktop)"; return 0; fi
     case $1 in
         on|off) want=yes; [ "$1" = on ] || want=no
+            _bdb=$(bar_shape)
             config_set DESKTOP_BAR "$want"; DESKTOP_BAR=$want; export DESKTOP_BAR
-            theme_load; EXPR=$(render_expr); desktop_look_apply
+            bar_follow "$_bdb"
             if [ "$want" = yes ]; then echo "bar: shown $(bar_place_words "$BAR_POSITION") (spark-shell bar off --desktop hides it)"; else echo "bar: hidden (spark-shell bar on --desktop shows it)"; fi ;;
         *) if [ "$DESKTOP_BAR" = yes ]; then echo "bar: shown $(bar_place_words "$BAR_POSITION") -- $(bar_names) (spark-shell bar off --desktop hides it)"; else echo "bar: hidden (spark-shell bar on --desktop shows it)"; fi ;;
     esac
 }
 bar_desktop_here() { [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || refuse_in bar "no desktop here (spark-shell on desktop)"; }
+bar_shape() { printf '%s %s' "$(bar_place)" "$BAR_TRAY"; }   # -> the bar's place and its tray, what bar_follow brings the session to
+# off, on, top, bottom and tray never reload sway: a reload draws every wallpaper again, runs each window's rules again
+# and starts the bar and the pad again. The files are written for the next start, and the running session is brought to them
+bar_follow() {   # bar_follow BEFORE -- the files, and the running session, as the config has the bar now; BEFORE is bar_shape before the change
+    theme_load; EXPR=$(render_expr); desktop_files
+    [ "$1" != "$(bar_shape)" ] || ! sparkbar_stands || return 0   # as it stands
+    wm_up || return 0   # a shell that cannot reach the session: its next start has it
+    case $1:$(bar_place) in 'hidden '*:hidden) ! sparkbar_stands || { wm_bar_follow || :; return 0; } ;; esac   # the tray of a hidden bar: nothing on the screen changes
+    _winpad_again=''; winpad_pause   # the pad ended before the bar goes and started after the bar: it never stands on a bar that is going
+    wm_bar_end "$WM_TRAY" || :   # the tray's host goes with the bar and comes with it
+    wm_bar_follow || :
+    sparkbar_follow
+    sparkbar_tray_place || :
+    winpad_again
+    layout_refit_soon   # the windows the keys placed take their places on the area the bar leaves them, once it stands
+}
 bar_where() {   # bar_where top|bottom
-    bar_desktop_here; _bwo=$(bar_place)
+    bar_desktop_here; _bwo=$(bar_shape)
     config_set BAR_POSITION "$1"; BAR_POSITION=$1; config_set DESKTOP_BAR yes; DESKTOP_BAR=yes; export BAR_POSITION DESKTOP_BAR
-    [ "$_bwo" = "$1" ] || { winpad_pause; sparkbar_again; }   # spark's bar takes its place at its start; the pad is ended before the bar goes and started by the look's last step, after the bar: it never stands on a bar that is going
-    theme_load; EXPR=$(render_expr); desktop_look_apply
-    [ "$_bwo" = "$1" ] || layout_refit_soon   # the bar moved: the windows the keys placed take their places on the area it leaves them, once it stands
+    bar_follow "$_bwo"
     echo "bar: shown $(bar_place_words "$1") (spark-shell bar off --desktop hides it)"
 }
 bar_text() {   # bar_text [auto|N|bigger|smaller]
@@ -938,14 +953,15 @@ bar_tray() {   # bar_tray [on|off]
     case ${1:-} in
         '') if [ "$BAR_TRAY" = yes ]; then echo "tray: the apps' icons show at the bar's end (spark-shell bar tray off hides them)"; else echo "tray: off, the bar wears its own glyphs alone (spark-shell bar tray on shows the apps' icons)"; fi ;;
         on|off) bar_tray_step "$1" ;;
-        --place) sparkbar_tray_place ;;   # sway's, at login and at each reload
+        --place) sparkbar_tray_place || : ;;   # sway's, at login and at each reload
         *) refuse_in bar "tray takes on or off" ;;
     esac
 }
 bar_tray_step() {   # bar_tray_step on|off -> the receipt
     _btw=no; [ "$1" != on ] || _btw=yes
+    _bto=$(bar_shape)
     config_set BAR_TRAY "$_btw" >/dev/null; BAR_TRAY=$_btw; export BAR_TRAY
-    theme_load; EXPR=$(render_expr); desktop_look_apply >/dev/null
+    bar_follow "$_bto" >/dev/null
     if [ "$_btw" = yes ]; then echo "tray on $PANEL_SEP the apps' icons show at the bar's end"; else echo "tray off $PANEL_SEP the apps keep running; their icons stay off the bar"; fi
 }
 bar_module_words() {   # bar_module_words NAME -> what the module shows

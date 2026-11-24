@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --------------------------------------------------------------- renders
 # sets: DESKTOP_RENDERED RENDERED USER_DIRS USER_DIRS_ROLES
-# reads: CONFIG_DIR HEX_KEYS MODE NEON NEON_OLD NL OS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_SEEN POINTER_THEMES REPO SCREENS_CONF SLOT_KEYS STATE_DIR TAB TERM_APP_RE TERM_CONFIG_REL TERM_DIALOG_REL TERM_NAME THEME_KEYS TMP WALL_COVER WALL_KEYS WIN_KEYS WM_CONFIG_REL WM_NAME WM_TRAY
+# reads: CONFIG_DIR HEX_KEYS MODE NEON NEON_OLD NL OS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_SEEN POINTER_THEMES REPO SCREENS_CONF SLOT_KEYS STATE_DIR TAB TERM_APP_RE TERM_CONFIG_REL TERM_DIALOG_REL TERM_NAME THEME_KEYS TMP WALL_COVER WALL_KEYS WIN_KEYS WM_CONFIG_REL WM_LINE WM_NAME
 # a symlink for a file used as-is, a rendered file where a value is baked
 # in. A file marked `rendered by spark-shell` is ours to render again; any
 # other is yours and moves to <path>.bak. The first .bak stays for off; a
@@ -84,7 +84,7 @@ render_expr() {   # -> the sed script that renders a template, one s command a l
     _rbh='/^@BAR_HOST@/d'
     if sparkbar_draws; then e="$e${NL}s|^@BAR_OWN@||${NL}/^@BAR_SWAY@/d"; [ "$BAR_TRAY" != yes ] || _rbh='s|^@BAR_HOST@||'
     else e="$e${NL}/^@BAR_OWN@/d${NL}s|^@BAR_SWAY@||"; fi
-    e="$e${NL}$_rbh${NL}s|@WM_TRAY@|$WM_TRAY|g"
+    e="$e${NL}$_rbh${NL}s|@WM_LINE@|$WM_LINE|g"
     e="$e${NL}s|@FOOT_COLORS@|$(term_colors_section)|g${NL}s|@FOOT_FILL@|$(term_fill)|g${NL}s|@FOOT_SECURITY_SECTION@|$(term_security_section)|g${NL}s|@FOOT_SECURITY@|$(term_security)|g${NL}s|@TERM_APPS@|$(esc "$TERM_APP_RE")|g"
     if desktop_wanted; then e="$e${NL}s|@LAYOUT_SLOTS@|yes|g"; else e="$e${NL}s|@LAYOUT_SLOTS@|no|g"; fi   # sgr.sh: the five slots in foot only where the desktop's foot.ini sets them
     e="$e${NL}s|@SCREENS_CONF@|$(esc "$SCREENS_CONF")|g${NL}s|@IDLE_EXEC@|$(esc "$(idle_exec)")|g${NL}s|@KB_LAYOUT@|$(esc "$(kb_line layout)")|g${NL}s|@KB_VARIANT@|$(esc "$(kb_line variant)")|g"
@@ -180,7 +180,7 @@ desktop_reload() {   # desktop_reload [WHY] -- a running sway reads its new conf
     # a reload gives the gaps to new workspaces only: the ones open take them now
     [ -z "${GAPS_INNER:-}" ] || { wm_cmd "gaps inner all set $GAPS_INNER" >/dev/null 2>&1; wm_cmd "gaps outer all set $GAPS_OUTER" >/dev/null 2>&1; } || :
     [ -z "${BORDER:-}" ] || wm_act "tiling" "border $BORDER" >/dev/null 2>&1 || :   # and the windows open now their border (a reload gives it to new ones only)
-    layout_refit_soon   # a bar moved or another gap: the windows the keys placed take their places on the new area
+    layout_refit_soon   # another gap, or a bar of sway's own come or gone: the windows the keys placed take their places on the new area
     if [ -n "${1:-}" ]; then row ok "$WM_NAME" "reloaded ($1)"; else row ok "$WM_NAME" "reloaded (~/$WM_CONFIG_REL)"; fi
 }
 wall_missing() {   # a todo row when the picture the config names is not there: the ground instead

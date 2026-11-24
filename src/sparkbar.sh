@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- sparkbar: spark's own bar (spark-bar), pinned like the pad; it runs `spark-shell bar status` and draws its line
 # sets: SPARKBAR_BIN SPARKBAR_KEEP SPARKBAR_TRAY_SLOTS
-# reads: DIALOG_URL MODE OS REPO STATE_DIR TMP
+# reads: DIALOG_URL MODE OS REPO STATE_DIR TMP WM_TRAY
 SPARKBAR_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-bar
 SPARKBAR_TRAY_SLOTS=4   # the apps' icons the strip at the bar's end holds
 sparkbar_file() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-bar.$1"; }   # sparkbar_file pid|state|log|font|tray -> the bar's file of that kind, in the runtime folder
@@ -40,9 +40,8 @@ sparkbar_session() {   # on desktop's last bar row: sway starts the bar at login
     ! sparkbar_pid >/dev/null || return 0
     [ -z "${_sparkbar_started:-}" ] || return 0   # this run started one already (sparkbar_again), its lock not taken yet
     need bar "start the bar for this session, through sway as at login" || return 0
-    wm_exec "$REPO/spark-shell bar start" >/dev/null 2>&1 || { row todo bar "sway did not start the bar -- it starts at the next login"; return 0; }
+    sparkbar_start || { row todo bar "sway did not start the bar -- it starts at the next login"; return 0; }
     ok bar "the bar runs for this session now"
-    sparkbar_settle
 }
 sparkbar_pid() {   # -> the running bar's pid, from its lock; false when none runs
     _sbl=$(sparkbar_file pid); [ -s "$_sbl" ] || return 1
@@ -92,16 +91,21 @@ sparkbar_stop() {   # sparkbar_stop PID -- the bar told to end (it leaves with 0
 }
 sparkbar_wait() { _sbi=0; while [ "$_sbi" -lt 20 ] && ! sparkbar_pid >/dev/null; do sleep 0.1; _sbi=$((_sbi + 1)); done; }   # the bar's lock, waited for two seconds at most
 sparkbar_settle() { sparkbar_wait; _winpad_again=''; winpad_again; }   # the new bar has its lock, then the pad starts again: a pad keeping its strip starts after the bar, so the bar is not inside that strip
-sparkbar_again() {   # the bar as the config has it now: a running one ended, so the next takes a new place or text, and one started where it draws, through sway as at login, so it is sway's child in the session's environment; once a run
-    [ -z "${_sparkbar_again:-}" ] || return 0; _sparkbar_again=1
-    _sbo=$(sparkbar_pid) || _sbo=''; _sbd=''; ! sparkbar_draws || _sbd=1
-    [ -n "$_sbo$_sbd" ] || return 0   # none runs and none draws here: sway is not asked
-    wm_up || return 0   # a shell that cannot reach the session (ssh, a socket that is gone) would end the bar and start none: the bar stays
-    [ -z "$_sbo" ] || sparkbar_stop "$_sbo"
-    [ -n "$_sbd" ] && wm_exec "$REPO/spark-shell bar start" >/dev/null 2>&1 || return 0
+sparkbar_start() {   # the bar started through sway as at login, so it is sway's child in the session's environment, then the pad; false where sway does not answer
+    wm_exec "$REPO/spark-shell bar start" >/dev/null 2>&1 || return 1
     _sparkbar_started=1   # sparkbar_session asks for no second one before this one takes its lock
     sparkbar_settle
 }
+sparkbar_follow() {   # the bar as the config has it now: a running one ended, so the next takes a new place, text or room for the tray, and one started where it draws
+    ! _sbo=$(sparkbar_pid) || sparkbar_stop "$_sbo"
+    ! sparkbar_draws || sparkbar_start || :
+}
+sparkbar_again() {   # sparkbar_follow from anywhere, once a run
+    [ -z "${_sparkbar_again:-}" ] || return 0; _sparkbar_again=1
+    sparkbar_pid >/dev/null || sparkbar_draws || return 0   # none runs and none draws here: sway is not asked
+    ! wm_up || sparkbar_follow   # a shell that cannot reach the session (ssh, a socket that is gone) would end the bar and start none: the bar stays
+}
+sparkbar_stands() { if sparkbar_draws; then sparkbar_pid >/dev/null; else ! sparkbar_pid >/dev/null; fi; }   # 0 when it runs where it draws, and only there
 sparkbar_font_again() {   # sparkbar_font_again FONT -- the status loop's: its bar started again for the screen's font, apart, so the restart outlives the loop; once for a font, whatever the new bar is handed
     [ "$1" != "$(cat "$(sparkbar_file font)" 2>/dev/null)" ] || return 0
     printf '%s\n' "$1" > "$(sparkbar_file font)"
@@ -120,25 +124,25 @@ sparkbar_keys() {   # Super+equal: the keyboard on the bar
     kill -USR1 "$_sbp" 2>/dev/null || :
     echo "the bar has the keys: the arrows move, Enter acts, Esc leaves"
 }
-# the tray: sway's own bar hosts the apps' icons alone, over the strip spark-bar leaves clear at its right end, on the
-# first screen. Its width is set while it runs: a host wider than its screen ends, and only a reload starts it again
+# the tray: a bar of sway's own hosts the apps' icons alone, over the strip spark-bar leaves clear at its right end, on
+# the first screen. It is made where the bar stands, at login, after a reload, which drops it, and by the verbs; a change
+# of the screen or of the bar's height makes another
 sparkbar_tray_screen() { wm_live && wm_here || return 1; wm_outputs | jq -r '[.[] | select(.active)][0] | "\(.name) \(.rect.width)"' 2>/dev/null | grep -x '[^ ]* [0-9][0-9]*'; }   # -> the first screen on: NAME WIDTH
-sparkbar_tray_place() {   # the host placed: sway's, at login and after each reload
-    [ "$BAR_TRAY" = yes ] && sparkbar_draws || return 0
+sparkbar_tray_place() {   # the host at its place, made anew; none where the tray is off, or the bar hidden
+    [ "$BAR_TRAY" = yes ] && sparkbar_draws || { wm_bar_end "$WM_TRAY"; return 0; }
     _sts=$(sparkbar_tray_screen) || return 0
-    _sth=$(sparkbar_height); _stl=$(( ${_sts#* } - _sth * SPARKBAR_TRAY_SLOTS )); [ "$_stl" -ge 0 ] || return 0
-    wm_tray_place "${_sts% *}" "$_stl" "$_sth" "$(( (_sth + 3) / 6 ))" || return 0   # the icons one and a half times the text, as the pad's are: 24 px in a bar of 36
-    printf '%s %s\n' "$_sts" "$_sth" > "$(sparkbar_file tray)"
+    _sth=$(sparkbar_height); _stl=$(( ${_sts#* } - _sth * SPARKBAR_TRAY_SLOTS ))
+    printf '%s %s\n' "$_sts" "$_sth" > "$(sparkbar_file tray)"   # first: the status loop, which follows the screen, makes none of its own
+    [ "$_stl" -ge 0 ] || { wm_bar_end "$WM_TRAY"; return 0; }   # a screen narrower than the strip
+    wm_tray_make "${_sts% *}" "$_stl" "$_sth" "$(( (_sth + 3) / 6 ))" "$BAR_POSITION" || return 0   # the icons one and a half times the text, as the pad's are: 24 px in a bar of 36
 }
 sparkbar_tray_follow() {   # the status loop's: the host follows its screen's width and the bar's height; kept once for each, so nothing repeats
     [ "$(bar_style BAR_TRAY no)" = yes ] || return 0
     _stn=$(sparkbar_tray_screen) || return 0
     _stn="$_stn $(sparkbar_height)"; _sto=$(cat "$(sparkbar_file tray)" 2>/dev/null) || _sto=''
     [ "$_stn" != "$_sto" ] || return 0
-    printf '%s\n' "$_stn" > "$(sparkbar_file tray)"
     set -- $_stn ${_sto:-- 0 0}
-    if [ "$1" = "$4" ] && [ "$2" -lt "$5" ]; then wm_reload >/dev/null 2>&1 || :   # a narrower screen ended the host: the reload starts it, and places it
-    else BAR_TRAY=yes sparkbar_tray_place; fi
+    BAR_TRAY=yes sparkbar_tray_place || :
     [ "$1" = "$4" ] || [ "$4" = - ] || sparkbar_font_again "screen $1"   # another screen is the first: the bar clears its strip there
 }
 sparkbar_off() {   # off, off desktop: the bar ended, its binary and its runtime files gone
@@ -146,6 +150,7 @@ sparkbar_off() {   # off, off desktop: the bar ended, its binary and its runtime
     [ -n "$_sbo" ] || [ -e "$SPARKBAR_BIN" ] || return 0
     if [ "$MODE" = dry ]; then row would bar "spark-bar ended and removed ($SPARKBAR_BIN)"; return 0; fi
     [ -z "$_sbo" ] || sparkbar_stop "$_sbo"
+    wm_bar_end "$WM_TRAY" || :
     rm -f "$SPARKBAR_BIN"
     for _sbx in pid state log font tray failed.out failed.mic; do rm -f "$(sparkbar_file "$_sbx")"; done
     [ -z "${XDG_RUNTIME_DIR:-}" ] || rm -rf "${XDG_RUNTIME_DIR:?}/spark-shell-bar.icons"   # the logo spark-bar drew and kept

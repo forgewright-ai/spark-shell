@@ -1,12 +1,13 @@
 # shellcheck extended-analysis=false
 # --- the compositor: the one module that names it (sway)
-# sets: WM_CONFIG_REL WM_LOGIN_CONF WM_NAME WM_OWN WM_TRAY
+# sets: WM_CONFIG_REL WM_LINE WM_LOGIN_CONF WM_NAME WM_OWN WM_TRAY
 # reads: BAR_PROC REPO TAB
 WM_NAME=sway
 WM_OWN='sway swaybar swaybg swaymsg swaylock swayidle'   # its own processes: never apps, never ended
 WM_CONFIG_REL=.config/sway/config
+WM_TRAY=spark-tray   # its bar that hosts the apps' icons alone, beside spark's bar: that id, or spark-tray.2 and on
+WM_LINE=spark-line   # its bar that runs spark-shell bar status where spark's bar draws none: the id the template gives it, or spark-line.2 and on
 WM_LOGIN_CONF=sway.conf   # the login screen's own config for it, in template/login
-WM_TRAY=spark-tray   # its bar that hosts the apps' icons alone, beside spark's bar: the id the template gives it
 
 wm_session() { [ -n "${SWAYSOCK:-}" ]; }         # inside a session
 wm_live() { [ -S "${SWAYSOCK:-}" ]; }            # its socket is open
@@ -21,8 +22,8 @@ wm_background_pid() {   # -> the session's newest background drawer (swaybg, a c
         | sort -n | tail -1 | cut -d' ' -f2 | grep .   # its children read from /proc: an image may have no pgrep
 }
 wm_env_name() { printf 'SWAYSOCK'; }             # the session's variable, for a bus or a service manager
-wm_proc_has() {   # wm_proc_has PID NAME=VALUE... -> 0 when that process was started with each of them; false where its environment cannot be read
-    _wph=$(tr '\n\0' ' \n' 2>/dev/null < "$BAR_PROC/$1/environ") || return 1
+wm_proc_has() {   # wm_proc_has /proc/PID NAME=VALUE... -> 0 when that process was started with each of them; false where its environment cannot be read
+    _wph=$(tr '\n\0' ' \n' 2>/dev/null < "$1/environ") || return 1
     shift; for _wpv in "$@"; do printf '%s\n' "$_wph" | grep -qxF -- "$_wpv" || return 1; done
 }
 wm_config_file() { printf '%s\n' "$HOME/$WM_CONFIG_REL"; }
@@ -39,10 +40,60 @@ wm_workspaces() { swaymsg -t get_workspaces 2>/dev/null; }
 wm_inputs() { swaymsg -t get_inputs 2>/dev/null; }
 wm_version() { swaymsg -t get_version 2>/dev/null; }
 wm_bar_config() { swaymsg -t get_bar_config "$@" 2>/dev/null; }
-wm_bar_id() { swaymsg -t get_bar_config 2>/dev/null | tr -d '[]" \n' | tr ',' '\n' | grep -vx "$WM_TRAY" | sed -n 1p; }   # -> the bar it draws itself, never the tray's host
-wm_tray_place() { swaymsg -- "bar $WM_TRAY output $1; bar $WM_TRAY tray_output $1; bar $WM_TRAY height $3; bar $WM_TRAY tray_padding $4; bar $WM_TRAY gaps 0 0 0 $2; bar $WM_TRAY mode hide" >/dev/null 2>&1; }   # wm_tray_place OUTPUT LEFT HEIGHT PADDING -- the tray's host shown, LEFT pixels in from the screen's left edge
 wm_events() { swaymsg -r -t subscribe -m "$1" 2>/dev/null; }   # wm_events '["window"]' -> one event a line
 wm_events_for() { exec timeout "$1" swaymsg -r -t subscribe -m "$2" 2>/dev/null; }   # wm_events_for SECONDS EVENTS, in the background: the job becomes the watcher
+
+# its own bars (swaybar), a name each: the line's, which runs spark-shell bar status where spark's bar draws none, shown
+# or hidden, and the tray's host beside spark's; a person's own, in config.d, has another id and is never touched. The
+# first `bar ID SUBCOMMAND` for an id it does not know makes that bar and starts its program, which reads what the one
+# message said; once the program ended nothing but a reload starts it, so the next bar takes a fresh id, and a reload
+# drops each bar the config does not have (sway 1.9 to 1.12). A bar is made whole and never changed as it runs: going
+# invisible would stop its line, one that had no tray takes none, and one held to a screen of several ends where a
+# screen has no maker's name (a headless one)
+wm_bar_ids() { wm_bar_config | tr -d '[]" \n' | tr ',' '\n'; }
+wm_bar_newest() { wm_bar_ids | awk -v n="$1" '$0 == n || index($0, n ".") == 1 { id = $0 } END { if (id != "") print id }'; }   # wm_bar_newest NAME -> the id made last under NAME, its program running or ended; nothing for none
+wm_bar_id() {   # -> the bar it draws itself, never the tray's host: the one made last in this session, else the first
+    wm_bar_ids | awk -v tray="$WM_TRAY" -v line="$WM_LINE" '
+        function named(n) { return $0 == n || index($0, n ".") == 1 }
+        named(tray) { next } named(line) { made = $0 } first == "" { first = $0 }
+        END { if (made != "") first = made; if (first != "") print first }'
+}
+wm_bar_running() {   # wm_bar_running NAME -> PID:ID for each of NAME's bars whose program runs in this session, from /proc: an image may have no pgrep, and the program is sway's child from 1.11 on alone
+    for _wbp in /proc/[0-9]*; do
+        _wbc=''; { read -r _wbc < "$_wbp/comm"; } 2>/dev/null || continue
+        [ "$_wbc" = swaybar ] && wm_proc_has "$_wbp" "SWAYSOCK=${SWAYSOCK:-}" || continue
+        _wbc=$(tr '\0' '\n' 2>/dev/null < "$_wbp/cmdline" | sed -n '/^-b$/{n;p;}')
+        case $_wbc in "$1"|"$1".[0-9]*) printf '%s:%s\n' "${_wbp##*/}" "$_wbc" ;; esac
+    done
+}
+wm_bar_end() {   # wm_bar_end NAME [ID] -- the programs of NAME's bars ended, but for ID's, waited for two seconds at most; no subcommand goes to a bar a reload may have dropped: it would make one
+    for _wbe in $(wm_bar_running "$1"); do
+        [ "${_wbe#*:}" != "${2:-}" ] || continue
+        kill "${_wbe%%:*}" 2>/dev/null
+        _wbn=0; while [ "$_wbn" -lt 20 ] && grep -q . "/proc/${_wbe%%:*}/cmdline" 2>/dev/null; do sleep 0.1; _wbn=$((_wbn + 1)); done
+    done
+}
+wm_bar_make() {   # wm_bar_make NAME SUBCOMMANDS -- a bar made whole, its subcommands, a line each, in one message, under the first id of NAME's that sway has none of
+    _wmi=$1; _wmn=1
+    while wm_bar_ids | grep -qxF -- "$_wmi"; do _wmn=$((_wmn + 1)); _wmi=$1.$_wmn; done
+    swaymsg -- "$(printf '%s\n' "$2" | awk -v bar="bar $_wmi " '{ printf "%s%s%s", (NR > 1 ? "; " : ""), bar, $0 }')" >/dev/null 2>&1
+}
+wm_config_bar() {   # -> the bar its config has, a subcommand a line, the mode first, its id left out; nothing for none
+    awk '/^bar \{$/ { on = 1; next } !on { next } /^\}$/ { exit }
+        { sub(/^[ \t]+/, "") }
+        /^#/ || /^id / || $0 == "" { next } /\{$/ { group = $1 " "; next } /^\}$/ { group = ""; next }
+        $1 == "mode" { print; next } { rest = rest group $0 "\n" }
+        END { printf "%s", rest }' "$(wm_config_file)" 2>/dev/null
+}
+wm_bar_follow() {   # the line's bar in the running session as its config has it now, with no reload: the one that runs ended, the config's made
+    wm_bar_end "$WM_LINE"
+    _wfb=$(wm_config_bar); [ -z "$_wfb" ] || wm_bar_make "$WM_LINE" "$_wfb"
+}
+wm_tray_make() {   # wm_tray_make OUTPUT LEFT HEIGHT PADDING top|bottom -- the tray's host on that screen, LEFT pixels in from its left edge, its ground clear, unseen until it is whole; the newest alone stays, whoever made one at the same moment
+    wm_bar_make "$WM_TRAY" "$(printf '%s\n' 'mode invisible' 'hidden_state show' 'modifier none' "position $5" "output $1" "tray_output $1" "height $3" \
+        "tray_padding $4" "gaps 0 0 0 $2" 'workspace_buttons no' 'binding_mode_indicator no' 'colors background #00000000' 'mode hide')" || return 1
+    wm_bar_end "$WM_TRAY" "$(wm_bar_newest "$WM_TRAY")"
+}
 
 # the commands, in its own language; send and on end the options first, cmd and act do not (a stub sees the difference)
 wm_cmd() { swaymsg "$@"; }
@@ -79,7 +130,7 @@ wm_lock_here() { command -v swaylock >/dev/null 2>&1; }
 wm_lock_running() {
     if [ -n "${WAYLAND_DISPLAY:-}" ]; then set -- "WAYLAND_DISPLAY=$WAYLAND_DISPLAY" "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-}"
     else set -- "$(wm_env_name)=$(wm_socket_of "$(wm_pid)")"; fi
-    for _wlp in $(pgrep -u "$(id -u)" -x swaylock 2>/dev/null); do ! wm_proc_has "$_wlp" "$@" || return 0; done
+    for _wlp in $(pgrep -u "$(id -u)" -x swaylock 2>/dev/null); do ! wm_proc_has "$BAR_PROC/$_wlp" "$@" || return 0; done
     return 1
 }
 wm_lock() { exec swaylock --daemonize "$@"; }

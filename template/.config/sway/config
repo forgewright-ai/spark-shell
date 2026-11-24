@@ -82,36 +82,27 @@ client.urgent           #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@PANEL_INK_URGENT@ #@HEX_AN
 # brightness, the keyboard's layout, battery, the time and the
 # notifications.
 # spark-bar draws it from spark-shell bar status, a line every 15 s and
-# at once after a click; where spark-bar cannot run, or the bar is
-# hidden, sway's own bar runs the same command and draws its blocks.
+# at once after a click; where spark-bar cannot run, sway's own bar runs
+# the same command and draws its blocks, and where the bar is hidden it
+# runs the command unseen.
 # Sound's sign mutes, its gauge takes a click and the wheel, its number
 # opens the section. The keyboard's sign goes to the next layout, the
 # pad's hides the pad or shows it; a click on any other sign opens its
 # section.
 # spark-shell bar pin and unpin put a level's gauge and number on the
 # bar or take them off, bar hide and show choose its modules, bar
-# top|bottom moves it, bar off --desktop hides it. Its motion is off
-# with BAR_MOTION=no. Its text is BAR_TEXT's size, or the text size made
-# larger on a screen of many pixels (auto). The apps' own icons (the
-# tray) are off unless BAR_TRAY=yes: beside spark-bar, sway's bar hosts
-# them alone, over the strip spark-bar leaves clear at its right end on
-# the first screen, placed by spark-shell bar tray --place once it runs.
+# top|bottom moves it, bar off --desktop hides it, in the running
+# session too, with no reload. Its motion is off with BAR_MOTION=no. Its
+# text is BAR_TEXT's size, or the text size made larger on a screen of
+# many pixels (auto). The apps' own icons (the tray) are off unless
+# BAR_TRAY=yes: beside spark-bar, a bar of sway's hosts them alone, over
+# the strip spark-bar leaves clear at its right end on the first screen;
+# spark-shell bar tray --place makes it, at login and after a reload,
+# which drops it.
 @BAR_OWN@exec @REPO@/spark-shell bar start
-@BAR_HOST@bar {
-@BAR_HOST@    id @WM_TRAY@
-@BAR_HOST@    position @BAR_POSITION@
-@BAR_HOST@    mode invisible
-@BAR_HOST@    hidden_state show
-@BAR_HOST@    modifier none
-@BAR_HOST@    tray_output @BAR_TRAY@
-@BAR_HOST@    workspace_buttons no
-@BAR_HOST@    binding_mode_indicator no
-@BAR_HOST@    colors {
-@BAR_HOST@        background #@HEX_BG@00
-@BAR_HOST@    }
-@BAR_HOST@}
 @BAR_HOST@exec_always @REPO@/spark-shell bar tray --place
 @BAR_SWAY@bar {
+@BAR_SWAY@    id @WM_LINE@
 @BAR_SWAY@    position @BAR_POSITION@
 @BAR_SWAY@    mode @BAR_MODE@
 @BAR_SWAY@    font pango:@BAR_LINE_FONT@
