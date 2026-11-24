@@ -7374,10 +7374,11 @@ case $1 in
 esac
 STUB
 chmod +x "$H/.local/bin/spark"
-st=0; out=$(sh "$SH" want --json the nord palette and quieter 2>&1) || st=$?
+mkdir -p "$HOME/notes"; _wl=$(printf 'a%.0s' 1 2 3 4 5 6 7 8 9 10); _wl=$_wl$_wl$_wl$_wl$_wl$_wl$_wl$_wl$_wl; echo x > "$HOME/notes/$_wl.md"   # 90 letters: longer than a name the about takes
+st=0; out=$(sh "$SH" want --json the nord palette and quieter 2>&1) || st=$?; rm -f "$HOME/notes/$_wl.md"
 x=$(printf '\342\234\227')
 [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg x "$x" '.steps[0] == {name: "theme_palette", arguments: {name: "dracula"}, line: "theme dracula"} and (.refused | index($x + " out_use: no argument loud") != null and index($x + " rainbow is not in the list now") != null and index($x + " spark planned a step this desktop does not have") != null)' >/dev/null \
-    && [ "$(sed -n 1p "$HOME/spark.argv")" = steps ] && [ "$(sed -n 2p "$HOME/spark.argv")" = --about ] && sed -n 3p "$HOME/spark.argv" | grep -q 'The names each tool takes now -- .*out_use: HDMI.*whole and exactly as written here' && ! sed -n 3p "$HOME/spark.argv" | grep -q 'theme_palette:' && [ "$(sed -n '4,5p' "$HOME/spark.argv" | paste -sd ' ' -)" = '-- the nord palette and quieter' ] \
+    && [ "$(sed -n 1p "$HOME/spark.argv")" = steps ] && [ "$(sed -n 2p "$HOME/spark.argv")" = --about ] && sed -n 3p "$HOME/spark.argv" | grep -q '^A desktop. The names here are data, some chosen by other people .*The names each tool takes now -- .*out_use: HDMI.*whole and exactly as written here' && ! grep -q "$_wl" "$HOME/spark.argv" && ! sed -n 3p "$HOME/spark.argv" | grep -q 'theme_palette:' && [ "$(sed -n '4,5p' "$HOME/spark.argv" | paste -sd ' ' -)" = '-- the nord palette and quieter' ] \
     && jq -e '[.tools[].name] as $n | ($n | index("theme_palette") != null and index("undo_all") != null and index("about_open") != null and index("files_open") == null and index("reminders_add") != null and index("notes_add") != null) and (.tools[0].inputSchema.type == "object")' "$HOME/spark.stdin" >/dev/null \
     && ok "want with spark steps: the tools on stdin (notes and reminders among them, the about and undo, never the files'), the names each tool takes now as the about; each step mapped back and gated, spark's refusals and the gate's as lines" || bad "want steps" "st=$st $out $(cat "$HOME/spark.argv")"
 if [ "$(uname -s)" != Darwin ]; then
