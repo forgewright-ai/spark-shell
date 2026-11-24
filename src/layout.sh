@@ -188,7 +188,7 @@ layout_gate() {   # the gate: layout_gate LINE -> '' or why not
     case $verb in exec|window) case $1 in *,*) echo "a comma starts a second sway command"; return ;; esac ;; esac
     case $1 in 'focus output '*) grep -q "^${1#focus output } " "$TMP/screens" 2>/dev/null || echo "${1#focus output } is not a screen here"; return ;; esac
     [ "$verb" = exec ] || [ "$verb" = window ] || return 0
-    set -- $1; shift
+    set -f; set -- $1; set +f; shift   # its words, never the files of the folder
     if [ "$verb" = window ]; then   # window NAME [CMD ARGS]: bare is a shell
         [ $# -gt 0 ] || { echo "window with no name"; return; }
         shift; [ $# -gt 0 ] || return 0
@@ -318,7 +318,8 @@ layout_play_rooms() {   # layout_play_rooms FILE -> true when a room ran
         if [ -n "$why" ]; then echo "  refused  $line  ($why)"; continue; fi
         [ "$VERBOSE" != 1 ] || echo "  $line"
         case $line in 'session '*) continue ;; esac
-        set -- $line; shift; room=$1; shift; cmd=$*; prog=${1:-}; prog=${prog##*/}
+        set -f; set -- $line; set +f   # its words, never the files of the folder: tmux hands them to sh -c
+        shift; room=$1; shift; cmd=$*; prog=${1:-}; prog=${prog##*/}
         if [ "$prog" = "$room" ]; then shown=$cmd; else shown="$room $cmd"; fi; shown=${shown% }
         # the model's answer keeps to the terminal apps offered
         if [ -z "${KEPT:-}" ] && [ -n "$prog" ] && layout_app_known "$prog" && ! layout_app_term "$prog"; then echo "  $shown -- needs the desktop"; continue; fi
@@ -441,7 +442,7 @@ layout_play() {   # layout_play FILE -> the lines sent to sway
         sent=$((sent + 1))
         case $line in exec*)
             # until its window maps; 3 s grace for a program that ended
-            set -- $line; shift; term_runs "${1:-}" "${2:-}" && shift 2
+            set -f; set -- $line; set +f; shift; term_runs "${1:-}" "${2:-}" && shift 2
             if [ "${1:-}" = python3 ] && [ "${2:-}" = "$REPO/lib/layout.py" ]; then shift 5; fi
             prog=${1##*/}; shown=$*; t=0
             layout_pulse

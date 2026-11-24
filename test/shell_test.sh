@@ -2311,6 +2311,12 @@ printf '%s\n' "$out" | grep -q 'vi to write, btop to watch' && bad "named: the m
 printf '{"main": {"app": "vi", "args": ""}, "side": [{"app": "X=/vi", "args": "sh -c id", "quote": "the prompt shell"}]}\n' > "$H/answer.json"
 : > "$tlog"; st=0; out=$(sh "$SH" layout "writing with vi and the prompt shell" 2>&1) || st=$?
 ! grep -q 'X=/vi' "$tlog" && printf '%s\n' "$out" | grep -qF '(a variable before a program is shell syntax)' && ok "gate: a room's first word with a = is refused too" || bad "gate room" "st=$st $out $(cat "$tlog")"
+# a word of the answer is never a pattern over the folder the command was typed in: a file's name there is no shell code
+mkdir -p "$H/globs"; : > "$H/globs/a;touch pwned;b"
+printf '{"main": {"app": "micro", "args": "a?touch?pwned?b", "quote": "notes"}}\n' > "$H/answer.json"
+: > "$tlog"; st=0; out=$(cd "$H/globs" && sh "$SH" layout "notes in micro" 2>&1) || st=$?
+[ "$st" -eq 0 ] && grep -qx 'new-session -d -s notes-in-micro -n micro micro a?touch?pwned?b' "$tlog" && ! grep -qF ';' "$tlog" \
+    && ok "rooms: a ? in the answer reaches tmux as it is, never as a file name of the folder" || bad "rooms glob" "st=$st $out $(cat "$tlog")"
 printf '{"main": {"app": "btop", "args": "", "width": 60}, "side": [{"app": "newsboat", "args": ""}, {"app": "shell", "args": ""}, {"app": "micro", "args": ""}]}\n' > "$H/answer.json"
 dname=the-feeds-in-newsboat-and-a-shell; : > "$tlog"
 st=0; out=$(sh "$SH" layout "the feeds in Newsboat and a shell" 2>&1) || st=$?
