@@ -6509,6 +6509,17 @@ ans 9 | jq -e '.result.tools[] | select(.name == "layout_delete") | .annotations
     && [ "$(ans 5 | jq -r '.result.content[0].text')" = 'spark-shell layout: webdev is a layout already: pick another name' ] \
     && [ "$(jq -r .arrange "$HOME/.config/spark-shell/layouts/tabbed")" = tabs ] \
     && ok "provide layout: a row with its apps and its reason, the status line; rename and delete with undo, no typed yes; a save keeps how the workspace stands" || bad "workspace layouts" "$_l $(cut -c1-300 "$H/mcp.out")"
+# a restore names a layout, never a path, and goes over none; so does a row's page
+printf '{"words":"gone","main":{"app":"foot"}}\n' > "$HOME/.config/spark-shell/layouts/goner"
+printf '{"words":"a secret","main":{"app":"secret"}}\n' > "$HOME/.config/spark-shell/not-a-layout"
+_lpg=$(printf 'layout:open ../not-a-layout' | base64 | tr -d '\n=' | tr '+/' '-_')
+mcp layout "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(rq 21 resources/read '{"uri":"spark-shell://layout/rows"}')" "$(call 2 layout_delete '{"name":"goner"}')" "$(call 3 layout_restore '{"name":"../rows.last"}')" \
+    "$(call 4 layout_restore '{"name":"../../x"}')" "$(call 5 layout_save '{"name":"goner"}')" "$(call 6 layout_restore '{"name":"goner"}')" "$(rq 7 resources/read "$(jq -cn --arg p "$_lpg" '{uri: ("spark-shell://layout/page/" + $p)}')")" "$(call 8 layout_delete '{"name":"../not-a-layout"}')"
+[ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'deleted goner' ] && [ "$(ans 3 | jq -r '.result.content[0].text')" = 'rows-last can no longer come back' ] && [ ! -e "$HOME/.config/spark-shell/rows.last" ] \
+    && [ "$(ans 4 | jq -r '.result.isError')" = true ] && [ "$(ans 6 | jq -r '.result.content[0].text')" = 'goner is a layout already: rename it, or delete it first' ] && [ "$(jq -r .words "$HOME/.config/spark-shell/layouts/goner")" = goner ] \
+    && [ "$(ans 7 | jq -r '.error.code')" = -32002 ] && [ "$(ans 8 | jq -r '.result.isError')" = true ] && [ -f "$HOME/.config/spark-shell/not-a-layout" ] \
+    && ok "provide layout: restore takes a layout's name, never a path, and goes over none; a path is no page and no layout to delete" || bad "layout restore path" "$(cut -c1-400 "$H/mcp.out") $(ls "$HOME/.config/spark-shell" "$HOME/.config/spark-shell/layouts")"
+rm -f "$HOME/.config/spark-shell/layouts/goner" "$HOME/.config/spark-shell/not-a-layout"
 printf '21\n' > "$HOME/ls.aside"
 SPARK_SHELL_ASIDE="$HOME/ls.aside"; export SPARK_SHELL_ASIDE
 mcp window "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(rq 31 resources/read '{"uri":"spark-shell://window/rows"}')" "$(call 32 window_place '{"name":"22","how":"tiled"}')" "$(call 33 window_place '{"name":"21","how":"tiled"}')"

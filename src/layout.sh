@@ -645,6 +645,13 @@ layout_delete() {   # layout_delete NAME...
     _kh=$(kept_hist layout); [ ! -f "$_kh" ] || { awk -F '\t' -v n="$name" '$2 != n' "$_kh" > "$_kh.new" && mv "$_kh.new" "$_kh"; }; kept_prune layout
     echo "deleted $name"
 }
+layout_restore() {   # layout_restore NAME -- a layout deleted from the dialog, back: its undo
+    _lrn=$(layout_name_of "$1")
+    [ -n "$_lrn" ] && [ -n "${LAYOUT_DELETED:-}" ] && [ -f "$LAYOUT_DELETED/$_lrn" ] || { echo "$1 can no longer come back"; return 1; }
+    [ ! -e "$LAYOUTS_DIR/$_lrn" ] || { echo "$_lrn is a layout already: rename it, or delete it first"; return 1; }
+    mkdir -p "$LAYOUTS_DIR" && mv "$LAYOUT_DELETED/$_lrn" "$LAYOUTS_DIR/$_lrn" || { echo "could not bring $_lrn back"; return 1; }
+    echo "$_lrn is back"
+}
 layout_rename() {   # layout_rename NAME NEW... -- its history lines follow
     _ro=$(layout_name_of "${1:-}"); [ $# -eq 0 ] || shift
     _rn=$(layout_name_of "$*")

@@ -243,9 +243,7 @@ panel_act_layout() {   # the layout steps: open, delete, restore, rename, back, 
         open) layout_kept_file "$_arg" >/dev/null || { echo "no saved layout named $_arg"; return 1; }
             ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; KEPT_ALSO=1 layout_need "$_arg" ) ;;
         delete) ( REFUSE_AS=layout; layout_delete "$_arg" ) </dev/null ;;
-        restore) [ -n "${LAYOUT_DELETED:-}" ] && [ -f "$LAYOUT_DELETED/$_arg" ] || { echo "$_arg can no longer come back"; return 1; }
-            mkdir -p "$LAYOUTS_DIR" && mv "$LAYOUT_DELETED/$_arg" "$LAYOUTS_DIR/$_arg" || { echo "could not bring $_arg back"; return 1; }
-            echo "$_arg is back" ;;
+        restore) layout_restore "$_arg" ;;
         rename) _rn=''; case $_arg in *' to='*) _rn=${_arg#* to=} ;; esac
             ( REFUSE_AS=layout; layout_rename "${_arg%% *}" "$_rn" ) </dev/null ;;
         back) ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; layout_back ) ;;

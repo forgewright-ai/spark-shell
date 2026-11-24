@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- undo: the step and its journal
-# reads: ANIMATION_NAMES BAR_FULL BAR_SYS CONFIG FONT_FACES GLYPH_FAMILIES KEPT_LAYOUTS LAYOUTS_DIR LAYOUT_LAST MODE OS ROOT TAB THEME_COLOR_WORDS TMP US WALL_NAMES WORDS_TAKE YES
+# reads: ANIMATION_NAMES BAR_FULL BAR_SYS CONFIG FONT_FACES GLYPH_FAMILIES LAYOUTS_DIR LAYOUT_LAST MODE OS ROOT TAB THEME_COLOR_WORDS TMP US WALL_NAMES WORDS_TAKE YES
 panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORDS" that takes the step back, or nothing
     _p=$1; _a=$2; shift 2; _arg=$*
     case $_p:$_a in
@@ -265,7 +265,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         window:restore) case ${3%% *}:${3##* now=} in split:split|split:tabs|split:stacked|tabs:split|tabs:tabs|tabs:stacked|stacked:split|stacked:tabs|stacked:stacked) echo "$3"; return 0 ;; esac; echo 'restore takes split, tabs or stacked'; return 1 ;;
         window:capture) case ${3%% *} in screen|area|window) ;; *) echo 'capture takes screen, area or window'; return 1 ;; esac
             case $3 in *' name='*) _n=$(win_named "${3##* name=}") || { echo 'that window is no longer open'; return 1; }; echo "${3%% *} name=$_n" ;; *) echo "${3%% *}" ;; esac; return 0 ;;
-        layout:restore) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo 'layout: restore takes the name'; return 1 ;;
+        layout:restore) _n=$(layout_name_of "${3:-}"); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo 'layout: restore takes the name'; return 1 ;;
         window:close|window:focus|apps:close|apps:focus) if _n=$(win_named "${3:-}"); then echo "$_n"; return 0; fi; echo "window: no unique window named ${3:-?} is open; select it in Workspace"; return 1 ;;
         out:level|mic:level) case $3 in [0-9]|[1-9][0-9]|100) snd_settable "$1" || return 1; echo "$3"; return 0 ;; *) echo "$1: level takes 0 to 100"; return 1 ;; esac ;;
         out:adjust|mic:adjust) case $3 in [0-9]|[1-9][0-9]|100|-[0-9]|-[1-9][0-9]|-100) snd_settable "$1" || return 1; echo "$3"; return 0 ;; *) echo "$1: adjust takes a whole number of percentage points, -100 to 100"; return 1 ;; esac ;;
@@ -294,8 +294,8 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         theme:duplicate) case $(theme_kind "${3%% *}") in ''|none) echo "theme: no theme named ${3%% *}"; return 1 ;; *) echo "$3"; return 0 ;; esac ;;
         theme:back) [ -s "$(kept_hist theme)" ] && { echo ''; return 0; }; echo "theme: no look before this one"; return 1 ;;
         theme:words) case $3 in *[!a-z0-9=\ -]*) echo "$WORDS_TAKE"; return 1 ;; [a-z]*' accent='[a-z]*' warmth='[a-z]*' contrast='[a-z]*' light='[a-z]*|[a-z]*' accent='[a-z]*' warmth='[a-z]*' contrast='[a-z]*' light='[a-z]*' name='*) echo "$3"; return 0 ;; *) echo "theme: words take a hue, then accent, warmth, contrast and light"; return 1 ;; esac ;;
-        layout:delete) { [ -f "$LAYOUTS_DIR/${3:-}" ] || kept_names layout | grep -qxF -- "${3:-}"; } && { echo "$3"; return 0; }; echo "layout: no saved or recent layout named ${3:-?}"; return 1 ;;
-        layout:rename) _ro=${3%% *}; [ -n "$_ro" ] && { [ -f "$LAYOUTS_DIR/$_ro" ] || [ -f "$KEPT_LAYOUTS/$_ro" ]; } && { echo "$3"; return 0; }; echo "layout: no saved or recent layout named ${_ro:-?}"; return 1 ;;
+        layout:delete) { layout_kept_file "${3:-}" >/dev/null || kept_names layout | grep -qxF -- "${3:-}"; } && { echo "$3"; return 0; }; echo "layout: no saved or recent layout named ${3:-?}"; return 1 ;;
+        layout:rename) _ro=${3%% *}; layout_kept_file "$_ro" >/dev/null && { echo "$3"; return 0; }; echo "layout: no saved or recent layout named ${_ro:-?}"; return 1 ;;
         layout:back) [ -s "$(kept_hist layout)" ] && { echo ''; return 0; }; echo "layout: no layout before this one"; return 1 ;;
         theme:alpha) case $3 in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) echo "$3"; return 0 ;; *) echo "theme: alpha takes 0 to 1"; return 1 ;; esac ;;
         notes:new) echo ''; return 0 ;;
