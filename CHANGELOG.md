@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.166.4
+
+- While sway reloads, at a bar hidden or shown or the tray switched, a
+  turned screen keeps its own picture. It showed the landscape picture
+  for a moment.
+
 ## v0.166.3
 
 - Atlas Awakening has new paintings for its second landscape and its
