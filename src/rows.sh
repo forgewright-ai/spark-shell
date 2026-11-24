@@ -364,7 +364,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
         _pr_chips=$(theme_chips theme); _pr_size=$(look_font_size); _pr_anim=$(anim_now)
         _pr_trn=$(transparency_of "$ALPHA"); if [ "$_pr_trn" -eq 0 ]; then _pr_tr=off; else _pr_tr="$_pr_trn%"; fi
     fi
-    _pr_bar=''; [ "$1" != bar ] || { _pr_bar=$(bar_line_font "$(font_spec)"); _pr_bar=${_pr_bar##* }; _pr_bar=${_pr_bar%px}; _pr_bar=${_pr_bar%%.*}; }   # the bar's size now, auto's included
+    _pr_bar=''; [ "$1" != bar ] || { _pr_bar=$(BAR_TEXT=auto; bar_line_font "$(font_spec)"); _pr_bar=${_pr_bar##* }; _pr_bar=${_pr_bar%px}; _pr_bar=${_pr_bar%%.*}; }   # auto's own size, whatever size is in use
     _asks='[]'
     if [ "$1" = wifi ] && [ -n "$(wifi_tool)" ]; then   # a secured network not saved yet: its password is asked, masked
         wifi_known | cut -f2 > "$TMP/wifi.known.ask"
@@ -405,10 +405,10 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                      | .text = "Typeface" | .step = {values: [$v[] | {shown: ., sent: .}], at: ($v | index($face)), set: {name: "theme_face", arguments: {}}, key: "to", words: ["back", "next"]}
                    elif $s == "theme" and .id == "theme:show:Text face" then .text = "Typeface" | .columns = ["yours"]   # a face of your own: no step
                    elif $s == "theme" and .id == "theme:show:Moving wallpaper" then .text = "Wallpaper motion" | .switch = {on: ($motion == "on"), turn_on: {name: "theme_motion", arguments: {to: "on"}}, turn_off: {name: "theme_motion", arguments: {to: "off"}}}
-                   elif $s == "bar" and .id == "bar:show:Text size" then   # auto stands where its size is
+                   elif $s == "bar" and .id == "bar:show:Text size" then   # auto first, with its own size, then every size: one list whatever is in use
                      (($barsize | tonumber? // 11) | if . < 6 then 6 elif . > 40 then 40 else . end) as $a
-                     | ([range(6; $a) | tostring | {shown: ., sent: .}] + [{shown: "auto \($a)", sent: "auto"}] + [range($a; 41) | tostring | {shown: ., sent: .}]) as $v
-                     | .step = {values: $v, at: (if $bartext == "auto" then $a - 6 else ($v | map(.sent) | index($bartext)) // ($a - 6) end), set: {name: "bar_text", arguments: {}}, key: "size", words: ["smaller", "bigger"]}
+                     | ([{shown: "auto \($a)", sent: "auto"}] + [range(6; 41) | tostring | {shown: ., sent: .}]) as $v
+                     | .step = {values: $v, at: (($v | map(.sent) | index($bartext)) // 0), set: {name: "bar_text", arguments: {}}, key: "size", words: ["smaller", "bigger"]}
                    elif $s == "bar" and .id == "bar:show:App icons (the tray)" then .switch = {on: ($tray == "yes"), turn_on: {name: "bar_tray", arguments: {state: "on"}}, turn_off: {name: "bar_tray", arguments: {state: "off"}}}
                    else . end))
             | (if $s == "theme" then .look_back = {name: "theme_preview", arguments: {name: "off"}}

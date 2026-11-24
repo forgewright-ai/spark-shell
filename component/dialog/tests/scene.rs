@@ -503,7 +503,8 @@ fn theme_browsing_keeps_search_and_separates_inspection_from_apply() {
 }
 
 /// Settings (v0.161): its groups named at 28 pixels, as apps' and files' are; a setting two lines, its name over
-/// what it is set to now. Look is named appearance, and notifications is a group of its own.
+/// what it is set to now. Look is named appearance, and notifications is a group of its own. Appearance comes first
+/// (v0.166).
 #[test]
 fn settings_are_rows_of_two_lines_under_their_groups() {
     let mut a = home();
@@ -522,10 +523,10 @@ fn settings_are_rows_of_two_lines_under_their_groups() {
     let s = scene(&mut a, 600.0, 800.0);
     assert!(s.grid.is_none(), "settings are drawn in pixels");
     let heads: Vec<_> = words(&s).into_iter().filter(|w| w.3 == Size::Head).map(|w| w.0).collect();
-    assert_eq!(heads, ["sound", "network", "appearance", "notifications", "power", "spark"]);
-    assert_eq!(heading(&s, "sound"), (48.0, 97.0 + 32.0 - M.big[0].1));
+    assert_eq!(heads, ["appearance", "sound", "network", "notifications", "power", "spark"]);
+    assert_eq!(heading(&s, "appearance"), (48.0, 97.0 + 32.0 - M.big[0].1), "appearance first (v0.166)");
     // the first setting under its group: its name, then what it is set to in the smaller text under it
-    let name = words(&s).into_iter().find(|w| w.0 == "sound" && w.3 == Size::Main).expect("the sound setting");
+    let name = words(&s).into_iter().find(|w| w.0 == "theme" && w.3 == Size::Main).expect("the theme setting");
     assert_eq!((name.1, name.2), (48.0, 97.0 + 44.0 + 21.0 - M.up));
     assert!(name.4, "the lit setting's name is bold");
     assert!(fills(&s, LIT).contains(&(0.0, 97.0 + 44.0, 600.0, 52.0)), "{:?}", fills(&s, LIT));
@@ -545,18 +546,14 @@ fn a_setting_is_one_row_its_options_side_by_side() {
     let mut a = home();
     let mut p = Provider::new("bar");
     p.ready = true;
-    let sizes: Vec<serde_json::Value> = (6..11)
-        .map(|n| json!({"shown": n.to_string(), "sent": n.to_string()}))
-        .chain([json!({"shown": "auto 11", "sent": "auto"})])
-        .chain((11..15).map(|n| json!({"shown": n.to_string(), "sent": n.to_string()})))
-        .collect();
+    let sizes = bar_sizes();
     p.rows = spark_dialog::model::rows(
         &json!({"title": "bar", "rows": [
             {"id": "bar:show:top", "sign": "check", "text": "top", "tool": null, "group": "place"},
             {"id": "bar:bottom", "sign": "blank", "text": "bottom", "tool": {"name": "bar_bottom", "arguments": {}}, "group": "place"},
             {"id": "bar:off", "sign": "blank", "text": "hidden", "tool": {"name": "bar_off", "arguments": {}}, "group": "place"},
             {"id": "bar:show:Text size", "sign": "blank", "text": "Text size", "tool": null, "group": "appearance",
-             "step": {"values": sizes, "at": 5, "set": {"name": "bar_text", "arguments": {}}, "key": "size", "words": ["smaller", "bigger"]}},
+             "step": {"values": sizes, "at": 0, "set": {"name": "bar_text", "arguments": {}}, "key": "size", "words": ["smaller", "bigger"]}},
             {"id": "bar:show:App icons", "sign": "blank", "text": "App icons", "tool": null, "group": "appearance",
              "switch": {"on": false, "turn_on": {"name": "bar_tray", "arguments": {"state": "on"}}, "turn_off": {"name": "bar_tray", "arguments": {"state": "off"}}}}
         ]})
@@ -603,6 +600,76 @@ fn a_setting_is_one_row_its_options_side_by_side() {
     // its step goes to the provider (none runs here, so the dialog says the part that does it stopped)
     assert_eq!(a.mode, spark_dialog::app::Mode::Normal, "no question for a setting");
     assert!(a.reply.as_ref().is_some_and(|r| r.text.contains("stopped")), "{:?}", a.reply);
+}
+
+/// The bar's sizes as its provider lists them (v0.166): auto first, with its own size, then every size from 6 to 40.
+fn bar_sizes() -> Vec<serde_json::Value> {
+    std::iter::once(json!({"shown": "auto 11", "sent": "auto"}))
+        .chain((6..41).map(|n| json!({"shown": n.to_string(), "sent": n.to_string()})))
+        .collect()
+}
+
+/// The bar's text size (the owner's report of 2026-11-23): the A's stand still at 10, 12, 14 and 16 whatever size is in
+/// use, the size in use after them; Right and Left step one size, from auto the size beside auto's own, and Left from
+/// the smallest is auto. A step held while it is set stays on the size it sent: the list keeps one shape.
+#[test]
+fn the_bars_text_size_stands_still_and_steps_one_size() {
+    let page = |at: usize| {
+        let mut a = home();
+        let mut p = Provider::new("bar");
+        p.ready = true;
+        p.rows = spark_dialog::model::rows(
+            &json!({"title": "bar", "rows": [
+                {"id": "bar:show:Text size", "sign": "blank", "text": "Text size", "tool": null, "group": "appearance",
+                 "step": {"values": bar_sizes(), "at": at, "set": {"name": "bar_text", "arguments": {}}, "key": "size", "words": ["smaller", "bigger"]}}
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+        let tool = json!({"name": "bar_text", "title": "bar text SIZE", "description": "d", "inputSchema": {"type": "object", "properties": {"size": {"type": "string"}}}, "annotations": {"destructiveHint": false}});
+        p.tools = spark_dialog::model::tools(&json!({"tools": [tool]}));
+        a.providers = vec![p];
+        a.view = View::Section(0);
+        a.came_from = vec![View::Home];
+        (a.in_list, a.sel) = (true, 0);
+        a
+    };
+    let index = |size: &str| bar_sizes().iter().position(|v| v["sent"] == size).unwrap();
+    let a_s = |s: &Scene| words(s).into_iter().filter(|w| w.0 == "A").map(|w| (w.1, w.3)).collect::<Vec<_>>();
+    let mut auto = page(0);
+    let at_auto = scene(&mut auto, 600.0, 800.0);
+    assert_eq!(
+        a_s(&at_auto).iter().map(|a| a.1).collect::<Vec<_>>(),
+        [Size::Small, Size::Main, Size::Lead, Size::Head]
+    );
+    word(&at_auto, "auto");
+    word(&at_auto, "11");
+    // the A's stand where they stood at any size in use: 12, one of them; 23 and 6, none of them
+    for size in ["12", "23", "6"] {
+        let mut a = page(index(size));
+        let s = scene(&mut a, 600.0, 800.0);
+        assert_eq!(a_s(&s), a_s(&at_auto), "at {size} the A's moved");
+        word(&s, size);
+    }
+    // the option an A takes is its own size
+    let hits: Vec<usize> = at_auto
+        .hits
+        .iter()
+        .filter_map(|h| match h.target {
+            Target::Option(0, k) => Some(k),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(hits, [0, index("10"), index("12"), index("14"), index("16")]);
+    // Right from auto: one size bigger than auto's own; Left: one smaller
+    let st = auto.providers[0].rows.rows[0].step.clone().unwrap();
+    assert_eq!((st.beside(true), st.beside(false)), (Some(index("12")), Some(index("10"))));
+    auto.right();
+    assert_eq!(auto.keep_lit.as_deref(), Some("bar:show:Text size"), "Right changes the row in place");
+    // from a size, the size beside; Left from 6 is auto, Right from 40 nothing
+    let at = |size: &str| page(index(size)).providers[0].rows.rows[0].step.clone().unwrap();
+    assert_eq!((at("13").beside(true), at("13").beside(false)), (Some(index("14")), Some(index("12"))));
+    assert_eq!((at("6").beside(false), at("40").beside(true)), (Some(0), None));
 }
 
 #[test]

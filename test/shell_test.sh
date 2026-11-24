@@ -4007,9 +4007,10 @@ _pdl() { XDG_RUNTIME_DIR=$H/run SPARK_SHELL_WINPAD=$H/padbin/spark-winpad SWAYSO
 _pdf() { SPARK_BAR=1 XDG_RUNTIME_DIR=$H/run SPARK_SHELL_WINPAD=$H/padbin/spark-winpad SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null | jq -r '.[1] | [.name, .group, .sign, .text, .cells, .bold, .state, (.level // "-"), .set, .pinned, .label, .toggle] | map(tostring) | join("|")' || echo unread; }   # -> the first module of spark's bar's line, its fields with a bar between
 padsign=$(printf '\342\212\237')
 # the pad ships on the bar (v0.149), where it says itself: spark's bar's line has no module for it while it is in sight
-# there. The rest of this block is a pad at an edge
+# there, only its room, drawn as nothing, which the bar keeps before its own modules (v0.166). The rest of this block
+# is a pad at an edge
 _pf0=$(_pdf); printf 'WINPAD_PLACE=bottom center\n' >> "$HOME/.config/spark-shell/config"
-[ -n "$_pf0" ] && [ "${_pf0%%|*}" != pad ] && ok "spark's bar, the pad on the bar (v0.149): in sight there it says itself, and the line has no pad module" || bad "facts pad on the bar" "$_pf0"
+[ "$_pf0" = "room|pad|||0|false|ok|-|false|false|the pad on the bar, 2 windows|false" ] && ok "spark's bar, the pad on the bar (v0.149): in sight there it says itself, the line has no pad module, only the room it keeps (v0.166)" || bad "facts pad on the bar" "$_pf0"
 line=$(_pdl); _pf1=$(_pdf)
 [ "$(printf '%s' "$line" | jq -r '.[0].name')" = pad ] && [ "$(printf '%s' "$line" | jq -r '.[0].full_text')" = "<span foreground='#555555'>$padsign</span> 2" ] \
     && ok "bar: the pad's block first while windows wait on it, its sign muted while the pad is in sight, and how many (v0.133)" || bad "bar pad shown" "$line"
@@ -8708,18 +8709,20 @@ if [ "$(uname -s)" != Darwin ]; then
         && ans 6 | jq -e '.error != null' >/dev/null && grep -qx 'BAR_GLYPHS=words' "$cfg" && grep -qx 'GLYPH_FAMILY=star' "$cfg" \
         && ok "provide theme_glyphs and theme_family (#160, #248): each a step with its receipt and undo, kept in the config, the family in the palette the dialog wears; the same value again refused, a family not of the three refused, theme_workspaces gone" || bad "bar steps" "$(cut -c1-400 "$H/mcp.out")"
     # the bar's own section: where it sits, a check on the place it has; its text size a value left and right change,
-    # auto standing where its size is; the tray a switch, off
+    # auto first with its own size, then every size, one list whatever is in use (v0.166); the tray a switch, off
     mcp bar "$(rq 1 resources/read '{"uri":"spark-shell://bar/rows"}')"; ans 1 | jq -r '.result.contents[0].text' > "$H/brows.json"
     jq -e '(.rows[0] | .id == "bar:show:top" and .text == "top" and .sign == "check" and .group == "place")
         and (.rows[1] | .tool == {name: "bar_bottom", arguments: {}} and .group == "place") and (.rows[2] | .text == "hidden" and .tool == {name: "bar_off", arguments: {}})
-        and (.rows[] | select(.id == "bar:show:Text size") | (.step.values | length) == 36 and .step.values[.step.at].sent == "auto" and (.step.values[.step.at].shown | test("^auto [0-9]+$"))
-            and .step.values[.step.at - 1].sent == ((.step.values[.step.at].shown | ltrimstr("auto ") | tonumber) - 1 | tostring) and .step.set == {name: "bar_text", arguments: {}} and .step.key == "size")
+        and (.rows[] | select(.id == "bar:show:Text size") | (.step.values | length) == 36 and .step.at == 0 and .step.values[0].sent == "auto" and (.step.values[0].shown | test("^auto [0-9]+$"))
+            and .step.values[1].sent == "6" and .step.values[35].sent == "40" and .step.set == {name: "bar_text", arguments: {}} and .step.key == "size")
         and (.rows[] | select(.id == "bar:show:App icons (the tray)") | .switch == {on: false, turn_on: {name: "bar_tray", arguments: {state: "on"}}, turn_off: {name: "bar_tray", arguments: {state: "off"}}})' "$H/brows.json" >/dev/null \
-        && ok "provide bar rows: the top checked, the bottom and hidden a tool each; the text size a step, auto where its size is; the tray a switch, off" || bad "bar section rows" "$(cut -c1-600 "$H/brows.json")"
-    mcp bar "$(call 1 bar_text '{"size":"14"}')" "$(call 2 bar_text '{"size":"huge"}')"
+        && ok "provide bar rows: the top checked, the bottom and hidden a tool each; the text size a step, auto first with its own size, then 6 to 40; the tray a switch, off" || bad "bar section rows" "$(cut -c1-600 "$H/brows.json")"
+    _bauto=$(jq -r '.rows[] | select(.id == "bar:show:Text size") | .step.values[0].shown' "$H/brows.json")
+    mcp bar "$(call 1 bar_text '{"size":"14"}')" "$(call 2 bar_text '{"size":"huge"}')" "$(rq 3 resources/read '{"uri":"spark-shell://bar/rows"}')"
     [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'bar text 14' ] && ans 1 | jq -e '.result.structuredContent.undo == {name: "bar_text", arguments: {size: "auto"}}' >/dev/null && grep -qx 'BAR_TEXT=14' "$cfg" \
         && ans 2 | jq -e '.error.message | startswith("bar_text: size is one of auto, bigger, smaller, 6")' >/dev/null \
-        && ok "provide bar_text: a size kept in the config, its undo back to auto; a word that is no size refused" || bad "bar_text call" "$(cut -c1-400 "$H/mcp.out")"
+        && ans 3 | jq -r '.result.contents[0].text' | jq -e --arg auto "$_bauto" '.rows[] | select(.id == "bar:show:Text size") | .step.values[.step.at].sent == "14" and .step.values[0].shown == $auto and (.step.values | length) == 36' >/dev/null \
+        && ok "provide bar_text: a size kept in the config, its undo back to auto, the list the same with 14 in use and auto still its own size; a word that is no size refused" || bad "bar_text call" "$(cut -c1-400 "$H/mcp.out")"
     sh "$SH" bar text auto >/dev/null 2>&1 || :
     sh "$SH" theme save barlook >/dev/null 2>&1; sh "$SH" theme glyphs signs >/dev/null 2>&1; sh "$SH" theme family stone >/dev/null 2>&1; sh "$SH" theme barlook >/dev/null 2>&1
     grep -qx 'BAR_GLYPHS=words' "$th_dir/barlook/look.env" && grep -qx 'GLYPH_FAMILY=star' "$th_dir/barlook/look.env" && ! grep -q '^BAR_WORKSPACES=' "$th_dir/barlook/look.env" && grep -qx 'BAR_GLYPHS=words' "$cfg" && grep -qx 'GLYPH_FAMILY=star' "$cfg" \

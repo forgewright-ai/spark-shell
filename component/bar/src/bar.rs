@@ -11,6 +11,9 @@ use serde_json::Value;
 pub const LOGO: &str = "logo";
 /// The object that is the look, by its name: never a module or a target.
 pub const LOOK: &str = "look";
+/// The module that says windows wait on the pad and its place is this bar: nothing is drawn for it, and the bar
+/// keeps the pad's room (its grip and one cell) before any module of its own (v0.166).
+pub const PAD_ROOM: &str = "room";
 /// The group of the time and the notifications' sign: a hairline stands before it, and it stays on a bar
 /// short of width.
 pub const TIME: &str = "time";
@@ -1103,7 +1106,8 @@ fn drop_order(pieces: &[Piece], overflow: &[String]) -> Vec<String> {
 ///
 /// The room for the pad's windows (Apps) begins one cell after the run and ends four cells before the
 /// status, or one cell before the mode's name: the pad stands there when it is on the bar, and the bar
-/// draws nothing in it.
+/// draws nothing in it. While the line says the pad stands on the bar (PAD_ROOM), that room is the pad's grip
+/// and one cell at least: the numbers, the gauges and the modules leave first, so the pad never leaves the bar.
 pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
     let (cell, h) = (m.cell.max(1), m.height);
     let mut lay = Layout {
@@ -1157,7 +1161,7 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
     let right = (scene.width - prefs.tray_on(scene.output)).max(0) - EDGE_CELLS * cell;
     let mut pieces: Vec<Piece> = vec![];
     if scene.status == Status::Ok {
-        for module in scene.modules.iter().filter(|module| module.name != LOGO) {
+        for module in scene.modules.iter().filter(|module| module.name != LOGO && module.name != PAD_ROOM) {
             let level = scene.levels.level(&module.name).or(module.level);
             let control = module.pinned && level.is_some();
             let icon = crate::icons::shapes(&module.icon).is_some();
@@ -1174,7 +1178,11 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
             }
         }
     }
-    let fits = |cells: i32| cells == 0 || run_end + (GROUP_GAP + cells) * cell <= right;
+    // the pad's room, while it stands here: one cell after the run, then its grip and one cell (the pad's lengths at
+    // the bar's text, 20 and 36 at 16 px, as the bar is 36 high: 14 ninths of the height, and 2 for their rounding)
+    let pad = scene.status == Status::Ok && scene.modules.iter().any(|module| module.name == PAD_ROOM);
+    let keep = if pad { cell + (h * 14 + 8) / 9 + 2 } else { 0 };
+    let fits = |cells: i32| cells == 0 || run_end + keep + (GROUP_GAP + cells) * cell <= right;
     let mut dropped: Vec<String> = vec![];
     let mut more = false;
     if !fits(status_cells(&pieces, more)) {
@@ -5239,6 +5247,29 @@ mod tests {
         }];
         let text = state_text(Status::Ok, None, &Levels::default(), &[], &bars);
         assert!(text.contains("output\tA\t1200\t36\ttop\t1\napps\tA\t354\t306\ntarget\tA\tmark\t"), "{text}");
+    }
+
+    /// v0.166: while windows wait on a pad whose place is the bar, the line says so (PAD_ROOM) and the bar keeps the
+    /// pad's grip and one cell, 56 px at 36 high, before its own numbers, gauges and modules: the pad never leaves the
+    /// bar for want of room. Nothing is drawn for it, and with no such module the bar is as it was.
+    #[test]
+    fn the_bar_keeps_the_pads_room_while_the_pad_stands_on_it() {
+        let room = SHEET.replacen(
+            r#"{"name":"lan""#,
+            r#"{"name":"room","group":"pad","sign":"","text":"","cells":0,"bold":false,"state":"ok","set":false,"pinned":false,"label":"the pad on the bar, 1 windows"},{"name":"lan""#,
+            1,
+        );
+        let need = 20 + 36;
+        for width in [884, 900, 950, 1000, 1200] {
+            let kept = lay(width, &mods(&room), &five());
+            assert!(kept.apps.w >= need, "{width}: the pad's room is {} px", kept.apps.w);
+            assert!(!kept.targets.iter().any(|t| t.name == "room"), "{width}: nothing is drawn for it");
+        }
+        // where the sheet already leaves the room, nothing of the bar's leaves for it
+        assert_eq!(lay(1200, &mods(&room), &five()).dropped, sheet(1200).dropped);
+        // at 884 the sheet leaves none: the bar's own parts leave first
+        assert_eq!(sheet(884).apps.w, 0);
+        assert!(lay(884, &mods(&room), &five()).dropped.len() > sheet(884).dropped.len());
     }
 
     #[test]

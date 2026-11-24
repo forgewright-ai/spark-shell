@@ -521,9 +521,12 @@ bar_fact() {   # bar_fact NAME GROUP SIGN TEXT CELLS STATE LABEL [LEVEL [SET]] -
     bar_str "$3"; _bfs=$_bs; bar_str "$4"; _bft=$_bs; bar_str "$7"
     line="$line,{\"name\":\"$1\",\"group\":\"$2\",\"sign\":\"$_bfs\",\"icon\":\"$_bfi\",\"text\":\"$_bft\",\"cells\":$5,\"bold\":$_bfb,\"state\":\"$6\"$_bfl,\"set\":${9:-false},\"pinned\":$_bfp,\"label\":\"$_bs\",\"toggle\":$_bfg}"
 }
-bar_fact_pad() {   # the windows that wait on the pad, and how many; off while the pad is hidden. Nothing while the pad is on the bar and in sight: it says itself there
+bar_fact_pad() {   # the windows that wait on the pad, and how many; off while the pad is hidden. While the pad is on the bar and in sight it says itself there, and spark's bar is told to keep its room (v0.166)
     _pdn=$(winpad_count); [ "${_pdn:-0}" -gt 0 ] 2>/dev/null || return 0
-    [ "$(bar_style WINPAD_PLACE bar)" != bar ] || winpad_hidden || return 0   # the place as the config has it now: a drag changes it while this loop runs
+    if [ "$(bar_style WINPAD_PLACE bar)" = bar ] && ! winpad_hidden; then   # the place as the config has it now: a drag changes it while this loop runs
+        [ -z "${SPARK_BAR:-}" ] || bar_fact room pad '' '' 0 ok "the pad on the bar, $_pdn windows"   # drawn as nothing: its grip and one cell kept before the bar's own modules
+        return 0
+    fi
     bar_sign "$BAR_PAD" pad pad; _pdw=2; [ "${#_pdn}" -le 2 ] || _pdw=${#_pdn}
     if winpad_hidden; then bar_fact pad windows "$_bg" "$_pdn" "$_pdw" off "pad hidden, $_pdn windows"
     else bar_fact pad windows "$_bg" "$_pdn" "$_pdw" ok "pad, $_pdn windows"; fi
@@ -917,8 +920,9 @@ bar_text_step() {   # bar_text_step auto|N|bigger|smaller -> the receipt, or exi
     [ "$_btn" = auto ] || { [ "$_btn" -ge 6 ] && [ "$_btn" -le 40 ]; } || { echo "bar text $_bts stays (6 to 40)"; return 1; }
     config_set BAR_TEXT "$_btn" >/dev/null; BAR_TEXT=$_btn; export BAR_TEXT
     theme_load; EXPR=$(render_expr); desktop_files >/dev/null
-    _btb=$(wm_bar_id) || _btb=''
-    [ -z "$_btb" ] || ! wm_session || wm_send "bar $_btb font pango:$(bar_line_font "$(font_spec)")" >/dev/null 2>&1 || :
+    _btb=$(wm_bar_id) || _btb=''; _btf=$(bar_line_font "$(font_spec)")
+    [ -z "$_btb" ] || ! wm_session || wm_send "bar $_btb font pango:$_btf" >/dev/null 2>&1 || :
+    ! wm_session || wm_send "font pango:$_btf" >/dev/null 2>&1 || :   # the windows' titles wear the bar's font (desktop_live_cmd): the pad started again measures them at it
     sparkbar_again   # spark's bar takes its text at its start
     winpad_again   # the pad's text follows
     layout_refit_soon   # the bar's height changed

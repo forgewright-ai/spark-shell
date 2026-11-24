@@ -193,8 +193,11 @@ const WORKSPACE_SAYS: [&str; 13] = [
     "layout_add",
 ];
 /// Settings: a section each, then Talk and Connections, in this order, under their groups (#137); About is a
-/// row of the system place since v0.153 (a place of the home from v0.114, #136).
+/// row of the system place since v0.153 (a place of the home from v0.114, #136). Appearance first since v0.166.
 pub const SETTINGS: [(&str, &str, &str); 17] = [
+    ("theme", "theme", "palette, wallpaper and text"),
+    ("wallpaper", "wallpaper", "the desktop picture"),
+    ("bar", "bar", "the status bar"),
     ("out", "sound", "output and volume"),
     ("mic", "microphone", "input and level"),
     ("wifi", "Wi-Fi", "networks"),
@@ -204,9 +207,6 @@ pub const SETTINGS: [(&str, &str, &str); 17] = [
     ("display", "display", "screens, brightness, lock"),
     ("keyboard", "keyboard", "layouts and key repeat"),
     ("pointer", "pointer", "mouse and touchpad"),
-    ("theme", "theme", "palette, wallpaper and text"),
-    ("wallpaper", "wallpaper", "the desktop picture"),
-    ("bar", "bar", "the status bar"),
     ("notifications", "notifications", "do not disturb, the last few"),
     ("power", "power", "lock, suspend, restart"),
     ("bat", "battery", "charge"),
@@ -7138,14 +7138,9 @@ impl App {
         let Some((prov, row)) = self.lit_row() else { return false };
         let Some(st) = row.step else { return false };
         self.keep_lit = Some(row.id.clone());
-        // the next value in the list, on the screen now and set behind it; an end of the list does nothing,
-        // its arrow dimmed (#183)
-        let next = if up {
-            Some(st.at + 1).filter(|i| *i < st.values.len())
-        } else {
-            st.at.checked_sub(1)
-        };
-        if let Some((i, call)) = next.and_then(|i| st.call_at(i).map(|c| (i, c))) {
+        // the value beside, on the screen now and set behind it; an end of the list does nothing, its arrow
+        // dimmed (#183); from a size's auto, the size beside auto's own
+        if let Some((i, call)) = st.beside(up).and_then(|i| st.call_at(i).map(|c| (i, c))) {
             self.set_value(prov, &row.id, Held::At(i), call);
         }
         true

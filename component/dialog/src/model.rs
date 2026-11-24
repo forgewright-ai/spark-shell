@@ -112,14 +112,31 @@ impl Step {
         Some(c)
     }
 
+    /// Where a step down (`up` false) or up goes from the value in use: the value beside it; from a size's auto
+    /// ("auto 12"), the size beside auto's own, 11 or 13, so the step changes the size. None at an end.
+    pub fn beside(&self, up: bool) -> Option<usize> {
+        let auto = self.values.get(self.at).filter(|v| v.1 == "auto").and_then(|v| v.0.strip_prefix("auto "));
+        if let Some(n) = auto.and_then(|s| s.trim().parse::<i64>().ok()) {
+            let want = (if up { n + 1 } else { n - 1 }).to_string();
+            if let Some(i) = self.values.iter().position(|v| v.1 == want) {
+                return Some(i);
+            }
+        }
+        if up {
+            Some(self.at + 1).filter(|i| *i < self.values.len())
+        } else {
+            self.at.checked_sub(1)
+        }
+    }
+
     /// The step down, none at the start of the list.
     pub fn less(&self) -> Option<Call> {
-        self.at.checked_sub(1).and_then(|i| self.call_at(i))
+        self.beside(false).and_then(|i| self.call_at(i))
     }
 
     /// The step up, none at the end of the list.
     pub fn more(&self) -> Option<Call> {
-        self.call_at(self.at + 1)
+        self.beside(true).and_then(|i| self.call_at(i))
     }
 
     /// Every call the row offers: one for each value.

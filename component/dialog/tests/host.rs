@@ -2789,7 +2789,7 @@ fn settings_stand_in_groups_and_the_home_ends_with_system_help_and_power() {
             _ => None,
         })
         .collect();
-    assert_eq!(heads, vec!["sound", "network", "appearance", "power", "spark"], "{:?}", items);
+    assert_eq!(heads, vec!["appearance", "sound", "network", "power", "spark"], "{:?}", items);
     assert!(
         !items
             .iter()

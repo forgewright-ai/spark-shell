@@ -273,7 +273,7 @@ fn enter_on_a_place_a_setting_or_a_list_found_by_meaning_opens_it_at_once() {
     // the sound's devices row is its second
     let cases = [
         ("when is my dentist appointment", Item::Dest(CALENDAR_DEST), View::Dest(CALENDAR_DEST)),
-        ("the speakers are too loud", Item::Setting(0), View::Section(0)),
+        ("the speakers are too loud", sound_setting(), View::Section(0)),
         (
             "which speakers do I have",
             Item::Row(0, 1),
@@ -559,6 +559,10 @@ fn theme_setting() -> Item {
     Item::Setting(spark_dialog::app::SETTINGS.iter().position(|s| s.0 == "theme").unwrap())
 }
 
+fn sound_setting() -> Item {
+    Item::Setting(spark_dialog::app::SETTINGS.iter().position(|s| s.0 == "out").unwrap())
+}
+
 /// The list of apps, opened from Home, with two apps read: words typed there search the apps by name (#250).
 fn in_apps(app: &mut App) {
     app.view = View::Apps;
@@ -700,7 +704,7 @@ fn a_near_tie_within_a_section_lights_the_sections_own_setting() {
     );
     let (lit_now, nord) = scores(0.85, theme_setting(), 0.821);
     assert_eq!(lit_now, Some(nord), "further than the tie: the row keeps the light");
-    let (lit_now, nord) = scores(0.828, Item::Setting(0), 0.825);
+    let (lit_now, nord) = scores(0.828, sound_setting(), 0.825);
     assert_eq!(lit_now, Some(nord), "another section's setting never takes it");
 }
 

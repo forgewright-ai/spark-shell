@@ -2305,14 +2305,19 @@ fn choice_of(app: &App, m: &Metrics, item: &Item, room: f64) -> Option<(f64, K)>
     let st = row.step.as_ref()?;
     let n = st.values.len();
     if st.words.0 == "smaller" {
-        // a size: auto where it is one, then four sizes from the one before the one in use, an A each, larger and larger
+        // a size: auto where it is one, then an A at each of four sizes, larger and larger, that stand still whatever
+        // is in use (nothing moves when a state changes): 10, 12, 14 and 16 where the list holds them, else its first
+        // four; the size in use after them
         let auto = st.values.iter().position(|v| v.1 == "auto");
         let sizes: Vec<usize> = (0..n).filter(|i| Some(*i) != auto).collect();
+        let usual: Vec<usize> = ["10", "12", "14", "16"]
+            .iter()
+            .filter_map(|s| sizes.iter().copied().find(|i| st.values[*i].1 == *s))
+            .collect();
+        let shown: Vec<usize> = if usual.len() == 4 { usual } else { sizes.into_iter().take(4).collect() };
         let now = st.values.get(st.at).map(|v| v.0.trim_start_matches("auto ").to_string()).unwrap_or_default();
-        let here = sizes.iter().position(|i| st.values[*i].0 == now).unwrap_or(0);
-        let from = here.saturating_sub(1).min(sizes.len().saturating_sub(4));
         let mut opts: Vec<Opt> = auto.map(|a| vec![opt("auto", a, st.at == a)]).unwrap_or_default();
-        for (j, i) in sizes.iter().skip(from).take(4).enumerate() {
+        for (j, i) in shown.iter().enumerate() {
             opts.push(Opt {
                 word: "A".to_string(),
                 size: [Size::Small, Size::Main, Size::Lead, Size::Head][j],
