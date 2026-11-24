@@ -8,6 +8,9 @@
   more gently.
 - A theme changed from Atlas Awakening keeps its own copies of the
   pictures: `spark-shell theme atlas-awakening` brings the new ones.
+- Screens and art takes a picture up to 16 MiB, as a theme file does,
+  so a 4K picture fits. It refused one over 4 MiB, such as Atlas
+  Awakening's new portrait.
 
 ## v0.166.2
 
