@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.166.2
+
+- Home stays in sight when the bar is hidden or shown, or the tray
+  switched, while it is open. Each of these reloads sway, and sway then
+  ran the dialog's window rule again at the next change of home's title:
+  home went unseen, still focused, until Esc closed it. The rule now
+  takes a window only as it opens, and the preview's too.
+
 ## v0.166.1
 
 - With a theme's own picture on the screen, such as Atlas Awakening's,
