@@ -61,12 +61,12 @@ tool_spec() {
 }
 tool_spec_network() {   # the lan and wifi tools
     case $1 in
-        lan_address|wifi_address) _ts=${1%%_*} _ta=address _tp=device _tk=string _te='address:net gateway:net' _th=f _tt="$_ts address DEVICE" _td='Set a fixed IPv4 address with prefix and gateway (or none) through the active native manager. The connection may drop.' ;;
-        lan_auto|wifi_auto) _ts=${1%%_*} _ta=auto _tp=device _tk=string _th=f _tt="$_ts auto DEVICE" _td='Use an automatic IPv4 address through the active native manager. The connection may drop.' ;;
-        lan_dns|wifi_dns) _ts=${1%%_*} _ta=dns _tp=device _tk=string _te='servers:net' _th=f _tt="$_ts dns DEVICE" _td='Set IPv4 DNS servers (comma separated), or auto for the native default.' ;;
-        lan_restore|wifi_restore) _ts=${1%%_*} _ta=restore _tp=receipt _tk=string _th=f _tt="$_ts restore RECEIPT" _td='Restore the native IPv4 settings from a network undo receipt, unless they changed since.' ;;
+        lan_address|wifi_address) _ts=${1%%_*} _ta=address _tp=device _tk=string _te='address:net gateway:net' _th=fd _tt="$_ts address DEVICE" _td='Set a fixed IPv4 address with prefix and gateway (or none) through the active native manager. The connection may drop.' ;;
+        lan_auto|wifi_auto) _ts=${1%%_*} _ta=auto _tp=device _tk=string _th=fd _tt="$_ts auto DEVICE" _td='Use an automatic IPv4 address through the active native manager. The connection may drop.' ;;
+        lan_dns|wifi_dns) _ts=${1%%_*} _ta=dns _tp=device _tk=string _te='servers:net' _th=fd _tt="$_ts dns DEVICE" _td='Set IPv4 DNS servers (comma separated), or auto for the native default. A wrong server stops sites from loading.' ;;
+        lan_restore|wifi_restore) _ts=${1%%_*} _ta=restore _tp=receipt _tk=string _th=fd _tt="$_ts restore RECEIPT" _td='Restore the native IPv4 settings from a network undo receipt, unless they changed since. The connection may drop.' ;;
         wifi_setup)        _ts=wifi _ta=setup _th=d _tt='wifi setup' _td='Install and enable the native network manager only when none is already installed or configured.' ;;
-        wifi_hidden)       _ts=wifi _ta=hidden _tp=name _tk=string _tq=password _th=if _tt='wifi hidden NAME' _td='Join a hidden network by its exact name. An empty password is an open network.' ;;
+        wifi_hidden)       _ts=wifi _ta=hidden _tp=name _tk=string _tq=password _th=ifd _tt='wifi hidden NAME' _td='Join a hidden network by its exact name. An empty password is an open network. The network in use is left.' ;;
         wifi_connect)      _ts=wifi _ta=connect _tp=name _tk=string _tq=password _th=i _tt='wifi connect NAME' _td='Connect to a network around, or a saved one.' ;;
         wifi_disconnect)   _ts=wifi _ta=disconnect _th=i _tt='wifi disconnect' _td='Leave the network in use.' ;;
         wifi_forget)       _ts=wifi _ta=forget _tp=name _tk=string _th=di _tt='wifi forget NAME' _td='Forget a saved network and its password.' ;;
@@ -202,7 +202,7 @@ tool_spec_display() {   # the display and clock tools
         display_off) _ts=display _ta=screen-off _tp=screen _tk=string _th=if _tt='screen off' _td='Disable a connected screen now and at the next login; the last active screen stays on.' ;;
         clock_format) _ts=clock _ta=format _tp=format _tk='12|24' _th=if _tt='clock format' _td='Show a 12 or 24 hour clock on the bar, Calendar and idle screen.' ;;
         clock_week) _ts=clock _ta=week _tp=day _tk='sunday|monday' _th=if _tt='first weekday' _td='Start the Calendar week on Sunday or Monday.' ;;
-        clock_zone) _ts=clock _ta=zone _tp=zone _tk=string _th=if _tt='time zone' _td='Change the machine time zone through its native settings; undo puts the one before back. Requires system permission.' ;;
+        clock_zone) _ts=clock _ta=zone _tp=zone _tk=string _th=ifd _tt='time zone' _td='Change the machine time zone through its native settings; undo puts the one before back. Requires system permission.' ;;
         *) return 1 ;;
     esac
 }
