@@ -4,6 +4,8 @@ use crate::model::{Row, Rows};
 pub(crate) const GALLERY: &str = "spark-shell://theme/rows/gallery";
 pub(crate) const PALETTES: &str = "spark-shell://theme/rows/palette/";
 pub(crate) const EXPORTS: &str = "spark-shell://theme/rows/exports/";
+pub(crate) const COLORS: &str = "spark-shell://theme/rows/colors";
+const LISTS: &str = "spark-shell://theme/rows/";
 
 pub(crate) fn gallery(view: &View) -> bool {
     matches!(view, View::Folder(_, uri) if uri == GALLERY || uri.strip_prefix(GALLERY).is_some_and(|tail| tail.starts_with('/')))
@@ -20,8 +22,21 @@ fn browsing(uri: &str) -> bool {
     uri == GALLERY || uri.strip_prefix(GALLERY).is_some_and(|tail| tail.starts_with("/collection/")) || compositions(uri)
 }
 
+/// Every list of the theme's is a page in the new type: its settings, the palette and its exports, the colors, the
+/// screens, your themes and the pickers (v0.165.1; the lists v0.165 added were drawn in the grid).
 pub(crate) fn section(view: &View) -> bool {
-    matches!(view, View::Folder(_, uri) if uri.starts_with("spark-shell://theme/rows/settings/") || uri.starts_with(PALETTES) || uri.starts_with(EXPORTS))
+    matches!(view, View::Folder(_, uri) if uri.starts_with(LISTS))
+}
+
+/// A folder whose poster is the lit row: the frame keeps the status line while it shows, so the poster stands still
+/// as the row lit changes.
+pub(crate) fn poster_lit(app: &App) -> bool {
+    matches!(&app.view, View::Folder(_, uri) if browsing(uri)) && candidate(app).is_some()
+}
+
+/// The poster says the lit row's line already: a collection's description, under its name.
+pub(crate) fn poster_line(app: &App) -> bool {
+    poster_lit(app) && candidate(app).is_some_and(|(_, r)| r.id.starts_with("theme:room:"))
 }
 
 pub(crate) fn terminal_palette(app: &App) -> Option<(usize, String)> {

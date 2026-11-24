@@ -384,7 +384,7 @@ impl Geo {
         let path = app.view != View::Home;
         // the grid's rows always keep the message's line, as the grid kept its status row: a list of files says
         // the lit file there. The rows in pixels give it room only while there is something to say
-        let status = k == Kind::Grid || message(app, k).is_some();
+        let status = k == Kind::Grid || message(app, k).is_some() || crate::appearance::poster_lit(app);
         let top = if path { m.px(PATH_RULE) + 1.0 } else { m.px(HEAD) };
         let bottom = (foot - if status { m.px(STATUS) } else { 0.0 }).max(top);
         Geo {
@@ -875,6 +875,7 @@ fn message(app: &App, k: Kind) -> Option<Message> {
         let note = app.target_label().or_else(|| match k {
             Kind::Apps => None,
             Kind::Files => app.files_checked_line(),
+            _ if crate::appearance::poster_line(app) => None,
             _ => app.selected_line(),
         })?;
         return Some(Message {
@@ -1692,15 +1693,23 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
     });
     // each group lines its second words up: past its longest name
     let mut column = m.px(176.0);
+    // a group with a row checked (a pick list) keeps the check's room on every row, so its names stand in one line
+    let mut checked = false;
     let mut y = area.top - off;
     for (at, row) in rows.iter().enumerate() {
         if matches!(row.k, K::Head(..)) || at == 0 {
-            let names = rows[at..]
-                .iter()
-                .skip(usize::from(matches!(row.k, K::Head(..))))
-                .take_while(|r| !matches!(r.k, K::Head(..)))
+            let group = || {
+                rows[at..]
+                    .iter()
+                    .skip(usize::from(matches!(row.k, K::Head(..))))
+                    .take_while(|r| !matches!(r.k, K::Head(..)))
+            };
+            checked = group().any(|r| matches!(&r.k, K::One { sign: "check", .. }));
+            let names = group()
                 .filter_map(|r| match &r.k {
-                    K::One { name, icon, .. } => Some(cells(name) as f64 * m.cw + if icon.is_some() { m.px(36.0) } else { 0.0 }),
+                    K::One { name, icon, sign, .. } => Some(
+                        cells(name) as f64 * m.cw + if icon.is_some() { m.px(36.0) } else { 0.0 } + if !sign.is_empty() || checked { 2.0 * m.cw } else { 0.0 },
+                    ),
                     K::Dest(name, _) => Some(cells(name) as f64 * m.cw),
                     _ => None,
                 })
@@ -1848,6 +1857,8 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                         _ => (" ", t.ink),
                     };
                     pen.text(nx, base, glyph, Size::Main, color, false);
+                    nx += 2.0 * m.cw;
+                } else if checked {
                     nx += 2.0 * m.cw;
                 }
                 if !swatch.is_empty() {
@@ -2526,7 +2537,7 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         bare: true,
         c3: true,
     };
-    if matches!(&app.view, View::Folder(_, uri) if uri.starts_with(crate::appearance::PALETTES))
+    if matches!(&app.view, View::Folder(_, uri) if uri.starts_with(crate::appearance::PALETTES) || uri == crate::appearance::COLORS)
         && app.input.is_empty()
         && whole.right - whole.left >= m.px(460.0)
         && whole.bottom - whole.top >= m.px(580.0)
@@ -2596,7 +2607,7 @@ fn terminal_colors(app: &App, pen: &mut Pen, whole: Area, shape: Shape) {
             k: of_row(r),
         };
         match r.id.as_str() {
-            "theme:palette:export" => export.push(row),
+            "theme:palette:export" | "theme:colors:from" => export.push(row),
             "theme:color:BG" | "theme:color:FG" => columns[0].push(row),
             "theme:color:ACCENT" | "theme:color:MUTED" => columns[1].push(row),
             id => {

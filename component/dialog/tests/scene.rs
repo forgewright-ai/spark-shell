@@ -502,6 +502,69 @@ fn theme_browsing_keeps_search_and_separates_inspection_from_apply() {
     }
 }
 
+/// Every list of the theme's is a page in pixels (v0.165.1; v0.165's were drawn in the grid): Colors in the terminal
+/// palette's two columns, and a pick list's names in one line, the one checked as the rest.
+#[test]
+fn every_theme_list_is_a_page() {
+    let parse = |value: serde_json::Value| spark_dialog::model::rows(&value.to_string()).unwrap();
+    let mut a = home();
+    let mut theme = Provider::new("theme");
+    theme.ready = true;
+    a.providers = vec![theme];
+    a.came_from = vec![View::Home];
+    let open = |a: &mut App, uri: &str, rows: serde_json::Value| {
+        a.view = View::Folder(0, uri.into());
+        a.folder = Some((0, uri.into(), parse(rows)));
+        (a.in_list, a.sel) = (true, 0);
+    };
+    for list in [
+        "colors",
+        "colors/from",
+        "screens",
+        "screens/pair",
+        "yours",
+        "wallpapers",
+        "animations",
+        "pointers",
+    ] {
+        open(
+            &mut a,
+            &format!("spark-shell://theme/rows/{list}"),
+            json!({"title": list, "rows": [{"id": "x", "text": "x", "group": "g"}]}),
+        );
+        assert_eq!(kind(&a), Kind::Page, "{list}");
+    }
+    open(
+        &mut a,
+        "spark-shell://theme/rows/animations",
+        json!({"title": "animation", "rows": [
+            {"id": "a:moon", "text": "moon", "sign": "blank"},
+            {"id": "a:none", "text": "none", "sign": "check", "columns": ["no motion"]}
+        ]}),
+    );
+    let s = scene(&mut a, 600.0, 800.0);
+    assert!(s.grid.is_none());
+    assert_eq!(word(&s, "moon").0, word(&s, "none").0, "the names in one line");
+    let color = |k: &str, hex: &str| {
+        json!({"id": format!("theme:color:{k}"), "text": k, "swatch": hex, "columns": [hex],
+               "tool": {"name": "theme_color", "arguments": {"word": k}, "ask": ["color"]}})
+    };
+    open(
+        &mut a,
+        "spark-shell://theme/rows/colors",
+        json!({"title": "Colors", "rows": [
+            {"id": "theme:colors:from", "text": "another theme's colors", "sign": "opens", "children": "spark-shell://theme/rows/colors/from"},
+            color("BG", "#1c2526"), color("FG", "#e2d6c8"), color("ACCENT", "#d08a52"), color("MUTED", "#8197a0"),
+            color("ANSI_0", "#2a3638"), color("ANSI_8", "#64777a")
+        ]}),
+    );
+    let s = scene(&mut a, 600.0, 800.0);
+    for w in ["another theme's colors", "Base colors", "Accents", "ANSI regular", "ANSI bright"] {
+        word(&s, w);
+    }
+    assert!(word(&s, "ACCENT").0 > word(&s, "BG").0, "the accents in the second column");
+}
+
 /// Settings (v0.161): its groups named at 28 pixels, as apps' and files' are; a setting two lines, its name over
 /// what it is set to now. Look is named appearance, and notifications is a group of its own. Appearance comes first
 /// (v0.166).

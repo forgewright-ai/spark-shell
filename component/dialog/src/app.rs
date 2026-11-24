@@ -6972,6 +6972,9 @@ impl App {
             View::Folder(_, uri) if uri.starts_with(crate::appearance::EXPORTS) => {
                 add(&mut v, "Save", "Enter");
             }
+            View::Folder(_, uri) if uri == crate::appearance::COLORS => {
+                add(&mut v, "Change", "Enter");
+            }
             View::Dest(_) | View::Section(_) | View::Folder(..) | View::Found(..) => {
                 let rows = self.view_rows();
                 if rows.iter().any(|r| !r.more.is_empty()) {
