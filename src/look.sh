@@ -153,7 +153,7 @@ svg_png() {   # svg_png SVG OUT WIDTH -> a PNG WIDTH wide, whole or not there
     esac && file_commit "$2" || { file_unstage "$2"; return 1; }
 }
 pic_magic() {   # pic_magic FILE -> 0 for PNG, JPEG, GIF or WebP magic
-    case $(od -An -tx1 -N12 < "$1" 2>/dev/null | tr -d ' \n') in 89504e470d0a1a0a*|ffd8ff*|47494638*|52494646????????57454250) return 0 ;; *) return 1 ;; esac
+    case $({ od -An -tx1 -N12 < "$1"; } 2>/dev/null | tr -d ' \n') in 89504e470d0a1a0a*|ffd8ff*|47494638*|52494646????????57454250) return 0 ;; *) return 1 ;; esac
 }
 png_size() {   # png_size FILE -> "W H" from the PNG header, else nothing
     [ "$(od -An -tx1 -N8 < "$1" 2>/dev/null | tr -d ' \n')" = 89504e470d0a1a0a ] || return 0

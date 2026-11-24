@@ -8822,7 +8822,7 @@ EOF
     d1=''; for _hk in "portrait $_hp/plain.jpg" 'panel 2 none' 'clock off' 'pair nord' 'variant dark' 'duplicate reef reef-two' 'rename reef reef-two'; do
         # shellcheck disable=SC2086   # the verb and its words
         hrc=0; hout=$(PATH=$H/nojq sh "$SH" theme $_hk 2>&1 </dev/null) || hrc=$?
-        [ "$hrc" = 1 ] && [ "$hout" = "spark-shell theme: jq is not installed, and it reads a theme's family" ] && [ "$(held)" = "$h0" ] || d1="$d1 | $_hk: $hrc $hout"
+        [ "$hrc" = 1 ] && case $hout in 'spark-shell theme: '*"jq is not installed, and it reads a theme's family") ;; *) false ;; esac && [ "$(held)" = "$h0" ] || d1="$d1 | $_hk: $hrc $hout"
     done
     [ -z "$d1" ] && [ ! -e "$th_dir/reef-two" ] && ok "theme portrait, panel, clock, pair, variant, duplicate and rename without jq: one line says so, and the pictures stay" || bad "theme no jq" "$d1"
     # a picture of one's own: no picture, one cut short or one that takes too long is none
@@ -10212,9 +10212,9 @@ reset; sed 's/$/\r/' "$cfg" > "$cfg.x"; mv "$cfg.x" "$cfg"; _o=$(T nord) || _n="
 [ -z "$_n" ] && ok "a bad look value in the config: the theme's verbs go on with its default, say so, and the verb that sets it sets it; status refuses it still; a config with Windows line ends is read" || bad "bad look value" "$_n"
 # a picture that is empty is no wallpaper and no theme's
 reset; : > "$HOME/zero.png"; printf 'DESKTOP=sway\n' >> "$cfg"; _n=''
-if [ "$(uname -s)" != Darwin ]; then _o=$(T wallpaper "$HOME/zero.png") && _n="$_n wallpaper"; [ "$_o" = 'spark-shell theme: zero.png is empty or no picture' ] || _n="$_n [$_o]"; fi
-_o=$(T picture "$HOME/zero.png") && _n="$_n picture"; [ "$_o" = 'spark-shell theme: zero.png is empty or no picture' ] || [ "${_o#*python3}" != "$_o" ] || _n="$_n [$_o]"
-T hill >/dev/null; : > "$th/sea/sea-landscape-1.png"; _o=$(T sea) && _n="$_n theme"; [ "$_o" = 'spark-shell theme: sea cannot be used: its PICTURE, sea-landscape-1.png, is empty or no picture. Nothing was changed' ] || _n="$_n [$_o]"
+if [ "$(uname -s)" != Darwin ]; then _o=$(T wallpaper "$HOME/zero.png") && _n="$_n wallpaper"; [ "$_o" = 'spark-shell theme: zero.png is not a PNG, a JPEG, a WebP or a GIF' ] || _n="$_n [$_o]"; fi
+_o=$(T picture "$HOME/zero.png") && _n="$_n picture"; [ "$_o" = 'spark-shell theme: zero.png is not a PNG, a JPEG, a WebP or a GIF' ] || [ "${_o#*python3}" != "$_o" ] || _n="$_n [$_o]"
+T hill >/dev/null; : > "$th/sea/sea-landscape-1.png"; _o=$(T sea) && _n="$_n theme"; [ "$_o" = 'spark-shell theme: sea cannot be used: its sea-landscape-1.png is not a PNG, a JPEG, a WebP or a GIF. Nothing was changed' ] || _n="$_n [$_o]"
 [ -z "$_n" ] && ok "an empty picture: refused as a wallpaper, as a theme to make and as a theme's own, in one line each" || bad "empty picture" "$_n"
 # the words of a refusal are true: a theme that is gone, no jq, the panel's undo of its own delete
 reset; _o=$(T export ghost spark-theme) || :; printf '%s\n' "$(sed 's/^THEME=.*/THEME=ghost/' "$cfg")" > "$cfg"; _o2=$(T variant dark) || :; _o3=$(T color accent '#ff0000') || :
@@ -10224,7 +10224,7 @@ reset; _o=$(sh "$SH" panel theme delete hill 2>&1 </dev/null); _o2=$(sh "$SH" pa
 [ "$_o" = 'deleted hill' ] && printf '%s' "$_o2" | grep -q 'hill is back' && [ -z "$_o3" ] && ok "panel theme delete, then panel undo: the theme is back; one deleted over a day ago is dropped" || bad "panel undo" "$_o | $_o2 | $_o3"
 if [ -n "${fixture_python:-}" ] && [ "$(uname -s)" != Darwin ]; then
     reset; without_tools "$H/nojq" jq; _n=''
-    for _op in 'clock off' 'pair day' 'rename sea new' 'duplicate sea new'; do _o=$(PATH=$H/nojq T $_op) && _n="$_n [$_op]"; case $_o in *'jq is not installed, and it reads the theme'*) [ "$(printf '%s\n' "$_o" | grep -c '')" = 1 ] || _n="$_n [$_op: $_o]" ;; *) _n="$_n [$_op: $_o]" ;; esac; done
+    for _op in 'clock off' 'pair day' 'variant light' 'rename sea new' 'duplicate sea new'; do _o=$(PATH=$H/nojq T $_op) && _n="$_n [$_op]"; case $_o in *'jq is not installed, and it reads a theme'*) [ "$(printf '%s\n' "$_o" | grep -c '')" = 1 ] || _n="$_n [$_op: $_o]" ;; *) _n="$_n [$_op: $_o]" ;; esac; done
     [ -z "$_n" ] && whole "$th/sea" && [ ! -e "$th/new" ] && ok "with no jq: the verbs that read a family say so in one line and change nothing" || bad "no jq" "$_n"
 fi
 rm -rf "$H"

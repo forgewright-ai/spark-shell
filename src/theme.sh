@@ -126,7 +126,7 @@ theme_apply() {   # theme_apply NAME|none [back] -- back keeps the history
             [ "$_k" != FONT ] || case $_v:$FONT in "$NEON_OLD"*:"$NEON"*) _v="$NEON${_v#"$NEON_OLD"}" ;; esac   # the old face renamed, its size kept
             [ "$_k" != FONT ] || [ -z "$_v" ] || face_word "${_v%%:*}" >/dev/null || _v="${FONT%%:*}${_v#"${_v%%:*}"}"   # a curated face only; the size always
             [ -n "$_v" ] || [ "$_k" = POINTER ] || continue
-            [ "$_k" != POINTER ] || grep -q '^POINTER=' "$_td/look.env" || continue   # no POINTER line: yours stays
+            [ "$_k" != POINTER ] || grep -q '^POINTER=' "$_td/look.env" 2>/dev/null || continue   # no POINTER line: yours stays
             look_take "$_k" "$_v"
         done
         for _k in BAR_GLYPHS GLYPH_FAMILY DIALOG_ICONS DIALOG_SPACING WALLPAPER_MOTION; do
@@ -371,7 +371,7 @@ theme_new_name() {   # theme_new_name WORDS... -- _tnn the name a new theme of y
 }
 theme_copy() {   # theme_copy DIR NEWDIR NEW -- a theme's plain files alone in NEWDIR, its own (DIR's name-*) named NEW-*, its look and family saying so; 1 when one cannot be
     _tco=${1##*/}
-    [ ! -f "$1/family.json" ] || command -v jq >/dev/null 2>&1 || { echo "jq is not installed, and it reads the theme's family (spark-shell on)" > "$TMP/store.why"; return 1; }
+    [ ! -f "$1/family.json" ] || command -v jq >/dev/null 2>&1 || { echo "jq is not installed, and it reads a theme's family" > "$TMP/store.why"; return 1; }
     for _tcf in "$1"/*; do
         [ -f "$_tcf" ] && [ ! -L "$_tcf" ] || continue
         _tcb=${_tcf##*/}; case $_tcb in "$_tco"-*) _tcb=$3-${_tcb#"$_tco"-} ;; esac
@@ -442,7 +442,6 @@ theme_pointer() {   # theme_pointer NAME [SIZE]|default -- the pointer of the lo
     echo "pointer ${_tpv:-default}"
 }
 theme_family_edit() {   # theme_family_edit JQ [JQ ARGS...] -- the theme in use's own family file changed by JQ ($me its name, $v its variant), made first with the theme its one variant; refused whole when it is no family this spark-shell reads
-    command -v jq >/dev/null 2>&1 || refuse_in theme "jq is not installed, and it reads the theme's family (spark-shell on)"
     theme_editable; _tff=$_ted/family.json; _tfn=${_ted##*/}; _tfj=$1; shift
     _tfa=$(art_of "$THEME"); _tfv=$(printf '%s' "$_tfa" | jq -r .variant)
     file_stage "$_tff" theme_family_lines "$@" --arg me "$_tfn" --arg v "$_tfv" "$_tfj" || refuse_in theme "could not change the theme's family$(store_said)"
@@ -460,7 +459,6 @@ theme_clock() {   # theme_clock on|off -- the clock over the art on the idle scr
     echo "the clock over the art $1"
 }
 theme_pair() {   # theme_pair NAME|none -- the theme in use's other variant: a theme here in the other light, or none
-    command -v jq >/dev/null 2>&1 || refuse_in theme "jq is not installed, and it reads the theme's family (spark-shell on)"
     case ${1:-} in '') refuse_in theme "pair takes a theme in the other light, or none" ;; none) _tpo=''; _tpw='' ;; *) _tpo=$1
         case $(theme_kind "$_tpo") in ''|none) refuse_in theme "no theme named $_tpo -- spark-shell theme list shows them" ;; esac
         _tpw=$(art_variant "$_tpo")
@@ -588,7 +586,7 @@ theme_back() {   # one look further back each call
     theme_apply "$_n" back
 }
 theme_place() {   # theme_place DIR NAME RECEIPT -- a theme from elsewhere, checked, put in place as NAME and used; the gallery's own newer one over its older
-    [ -n "$(look_get "$PALETTE_DIR/$2" GALLERY)" ] || ! dir_there "$PALETTE_DIR/$2" || refuse_in theme "$2 is taken -- another name"
+    { [ -n "$(look_get "$1" GALLERY)" ] && [ -n "$(look_get "$PALETTE_DIR/$2" GALLERY)" ]; } || ! dir_there "$PALETTE_DIR/$2" || refuse_in theme "$2 is taken -- another name"
     theme_make "$2" theme_place_files "$1" || refuse_in theme "could not put $2 in place$(store_said)"
     echo "$3"
     theme_apply "$2"
@@ -888,7 +886,6 @@ alpha_step() {   # alpha_step N|more|less -> the receipt; 1 when refused
     _st=$(transparency_of "$_new"); if [ "$_st" -eq 0 ]; then echo "transparency off"; else echo "transparency at $_st%"; fi
 }
 look_small() {   # look_small PICTURE -> a small PNG, or the PNG itself
-    pic_magic "$1" || { echo "${1##*/} is empty or no picture"; return 1; }
     if pic_small "$1" "$TMP/small.png"; then printf '%s' "$TMP/small.png"; return 0; fi
     case $(printf '%s' "${1##*.}" | tr 'A-Z' 'a-z') in png) printf '%s' "$1"; return 0 ;; esac
     [ -z "$(svg_tool)" ] || { echo "${1##*/} could not be read"; return 1; }
