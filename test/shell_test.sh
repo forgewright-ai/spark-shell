@@ -9075,7 +9075,7 @@ if [ "$(uname -s)" != Darwin ]; then
     mkdir -p "$H/rsvg"; printf '#!/bin/sh\necho "rsvg-convert $*" >> "$HOME/rsvg.log"\nwhile [ $# -gt 0 ]; do case $1 in -o) cp "%s" "$2"; shift ;; esac; shift; done\n' "$REPO/gallery/wallpaper/skyline.png" > "$H/rsvg/rsvg-convert"; chmod +x "$H/rsvg/rsvg-convert"
     rm -rf "$st_dir/wallpapers"; : > "$H/rsvg.log"
     rc=0; out=$(SPARK_SHELL_NO_THUMB=1 PATH=$H/rsvg:$H/.local/bin:$sys sh "$SH" theme wallpaper skyline 2>&1) || rc=$?
-    [ "$rc" = 0 ] && grep -qx "rsvg-convert -w 3840 -o $st_dir/wallpapers/skyline-nord.png.new $st_dir/wallpapers/skyline-nord.svg" "$H/rsvg.log" && [ -f "$st_dir/wallpapers/skyline-nord.png" ] \
+    [ "$rc" = 0 ] && grep -qE "^rsvg-convert -w 3840 -o $st_dir/wallpapers/[.]skyline-nord[.]png[.]new[.][0-9]+ $st_dir/wallpapers/skyline-nord[.]svg$" "$H/rsvg.log" && [ -f "$st_dir/wallpapers/skyline-nord.png" ] \
         && grep -qF "output * bg \"$st_dir/wallpapers/skyline-nord.png\" fill" "$sway" && ok "theme wallpaper skyline under nord through rsvg-convert: drawn 3840 wide from the recolored SVG, sway shows it" || bad "rsvg drawing" "rc=$rc $out $(cat "$H/rsvg.log")"
     rm -rf "$st_dir/wallpapers"
     rc=0; out=$(SPARK_SHELL_NO_SVG=1 sh "$SH" theme wallpaper skyline 2>&1) || rc=$?
@@ -10049,7 +10049,7 @@ state_wrong() {   # state_wrong OP -> what is wrong with the state after OP, whi
     whole "$th/sea" || { [ "$1" = rename ] && whole "$th/new"; } || printf ' sea is lost;'
     whole "$th/hill" || { [ "$1" = delete ] && [ ! -e "$th/hill" ]; } || { [ "$1" = restore ] && whole "$th/.deleted/hill"; } || printf ' hill is lost;'
     whole "$th/day" || printf ' day is lost;'; whole "$st/looks/wave" || printf ' the look wave is lost;'
-    _l=$(find "$th" "$st" -mindepth 1 -maxdepth 1 \( -name '.*' ! -name .deleted -o -name theme.lock \)); [ -z "$_l" ] || printf ' left: %s;' "$_l"
+    _l=$(find "$th" -mindepth 1 -maxdepth 1 -name '.*' ! -name .deleted; find "$st" -maxdepth 1 -name theme.lock); [ -z "$_l" ] || printf ' left: %s;' "$_l"
 }
 # the tools that change files fail, or the program is killed, at the Nth of their calls that names the themes or the config
 mkdir "$H/fault"
