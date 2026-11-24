@@ -124,6 +124,8 @@ bar_ws_watch() {   # on sway's workspace events: the labels again; on its output
 bar_timeout() { if command -v timeout >/dev/null 2>&1; then timeout 3 "$@"; else "$@"; fi; }
 
 # --- the hardware
+# what another program says, a network's name in it, reaches no arithmetic before this: bash runs a command written in an operand, as a[$(command)]
+bar_whole() { [ "${#1}" -le 10 ] && case ${1#-} in ''|0?*|*[!0-9]*) return 1 ;; esac; }   # bar_whole VALUE -> 0 for a whole number, a minus before it or none
 bar_addr() { ip -4 -o addr show dev "$1" scope global 2>/dev/null | awk '{print $4; exit}' | cut -d/ -f1; }   # bar_addr IFACE -> a.b.c.d or nothing
 on_battery() {   # -> 0 when a battery runs the machine: one discharging, no mains or USB power online
     _obt=1
@@ -159,12 +161,12 @@ bar_wifi_pct() {   # -> "PERCENT ADDR", else nothing
         [ "$(cat "$BAR_SYS/class/net/$i/operstate" 2>/dev/null)" = up ] || continue
         lvl=''
         if command -v iw >/dev/null 2>&1; then   # -100 dBm 0, -50 dBm 100
-            dbm=$(iw dev "$i" link 2>/dev/null | awk '/signal:/ {print $2; exit}')
-            [ -z "$dbm" ] || lvl=$(( (dbm + 100) * 2 ))
+            dbm=$(iw dev "$i" link 2>/dev/null | awk '$1 == "signal:" {print $2; exit}')   # the line's first word: a network's name may hold it
+            ! bar_whole "$dbm" || lvl=$(( (dbm + 100) * 2 ))
         fi
         if [ -z "$lvl" ]; then   # link quality, out of 70
             q=$(awk -v i="$i:" '$1 == i {gsub(/\./, "", $3); print $3; exit}' "$BAR_PROC/net/wireless" 2>/dev/null)
-            [ -z "$q" ] || lvl=$(( q * 100 / 70 ))
+            ! bar_whole "$q" || lvl=$(( q * 100 / 70 ))
         fi
         [ -n "$lvl" ] || lvl=0; [ "$lvl" -ge 0 ] || lvl=0; [ "$lvl" -le 100 ] || lvl=100
         printf '%s %s\n' "$lvl" "$(bar_addr "$i")"
@@ -196,7 +198,8 @@ bar_power() {   # -> "CAPACITY STATUS", or nothing
     for b in "$BAR_SYS"/class/power_supply/*; do
         [ -f "$b/capacity" ] || continue
         [ ! -f "$b/type" ] || [ "$(cat "$b/type")" = Battery ] || continue
-        printf '%s %s\n' "$(cat "$b/capacity")" "$(cat "$b/status" 2>/dev/null || echo Unknown)"; return
+        _bcp=$(cat "$b/capacity" 2>/dev/null); bar_whole "$_bcp" || continue
+        printf '%s %s\n' "$_bcp" "$(cat "$b/status" 2>/dev/null || echo Unknown)"; return
     done
     return 0
 }
@@ -434,7 +437,7 @@ light_get_now() {
 }
 light_set() {   # light_set N|up|down|+5|-5 -> one line
     _t=$(light_tool); [ -n "$_t" ] || { echo "no brightness to set here (a laptop's backlight, or a screen that speaks DDC/CI)"; return 1; }
-    _now=$(light_get); [ -n "$_now" ] || _now=50
+    _now=$(light_get); bar_whole "$_now" || _now=50
     case ${1:-} in
         up|+5) _to=$((_now + 5)) ;; down|-5) _to=$((_now - 5)) ;;
         [0-9]|[0-9][0-9]|100) _to=$1 ;;
@@ -452,7 +455,7 @@ light_set() {   # light_set N|up|down|+5|-5 -> one line
 kb_active() { read_once kb.active kb_active_now; }   # -> the layout in use, by its KEYBOARD word
 kb_active_now() {
     [ "$(printf '%s\n' $KEYBOARD | grep -c .)" -gt 1 ] || return 0
-    _i=$(kb_names | cut -f1); [ -n "$_i" ] || _i=0
+    _i=$(kb_names | cut -f1); bar_whole "$_i" || _i=0
     printf '%s\n' $KEYBOARD | sed -n "$((_i + 1))p"
 }
 
@@ -685,7 +688,7 @@ bar_line() {   # -> a refresh's JSON array: the facts for spark's bar, the block
     fi
     # the seat
     lt=$(light_get)
-    if [ -n "$lt" ]; then
+    if bar_whole "$lt"; then
         bar_kw "$k_light"
         bar_add "$(bar_block light name "$(bar_span "$HEX_ACCENT" "$k_light")" "$_kw" "brightness $lt%" 6)"
         bar_add "$(bar_block light gauge "$(bar_gauge "$lt" 0)" 5 "brightness $lt%" '' control=level)"
@@ -715,11 +718,12 @@ bar_line() {   # -> a refresh's JSON array: the facts for spark's bar, the block
 }
 # a click, from either bar. INSTANCE is the part: on spark's bar name (the sign), gauge, pct (the number) or text
 bar_click() {   # bar_click NAME INSTANCE BUTTON RELX WIDTH X; 4 and 5 are the wheel
+    bar_whole "$4" && bar_whole "$5" || return 0
     case $1:$2:$3 in
         div:*) ;;
-        out:gauge:1|mic:gauge:1) [ "$5" -gt 0 ] 2>/dev/null || return 0; l=$(( ($4 * 100 / $5 + 2) / 5 * 5 )); [ "$l" -le 100 ] || l=100; [ "$l" -ge 0 ] || l=0; bar_snd "$1" "$l" ;;
+        out:gauge:1|mic:gauge:1) [ "$5" -gt 0 ] || return 0; l=$(( ($4 * 100 / $5 + 2) / 5 * 5 )); [ "$l" -le 100 ] || l=100; [ "$l" -ge 0 ] || l=0; bar_snd "$1" "$l" ;;
         out:name:1) if [ -n "${SPARK_BAR:-}" ]; then bar_snd out mute; else bar_panel_open out; fi ;;   # on spark's bar the sign mutes and the number opens the section
-        light:gauge:1) [ "$5" -gt 0 ] 2>/dev/null || return 0; l=$(( ($4 * 100 / $5 + 2) / 5 * 5 )); [ "$l" -le 100 ] || l=100; light_set "$l" >/dev/null || : ;;
+        light:gauge:1) [ "$5" -gt 0 ] || return 0; l=$(( ($4 * 100 / $5 + 2) / 5 * 5 )); [ "$l" -le 100 ] || l=100; light_set "$l" >/dev/null || : ;;
         light:*:4) light_set up >/dev/null || : ;;
         light:*:5) light_set down >/dev/null || : ;;
         light:*:1) bar_panel_open display ;;   # its sign and its number

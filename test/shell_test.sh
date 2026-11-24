@@ -4892,6 +4892,21 @@ else
     echo down > "$S/class/net/wlan0/operstate"; line=$(sh "$SH" bar status --once)
     [ "$(t wifi name)" = "<span foreground='#555555'>$(printf '\342\227\240')</span>" ] && [ -z "$(t wifi gauge)" ] && ok "wifi off: the half circle alone, muted, no gauge" || bad "wifi off" "$(t wifi name) / $(t wifi gauge)"
     echo up > "$S/class/net/wlan0/operstate"
+    # iw's answer holds the network's name, anyone's words: the level is the number of its signal line, and a word in the
+    # name's place reaches no arithmetic, where bash runs a command written in an operand. With no number, the link's quality
+    mkdir -p "$H/iwbin" "$H/iwcwd"
+    printf '#!/bin/sh\n[ "$*" = "dev wlan0 link" ] || exit 1\ncat "$HOME/iw.out"\n' > "$H/iwbin/iw"; chmod +x "$H/iwbin/iw"
+    _iwn='x[$(>ran)] signal:'; _iwt=''
+    for _iws in sh bash; do
+        command -v "$_iws" >/dev/null 2>&1 || continue
+        printf 'Connected to 02:00:00:00:00:01 (on wlan0)\n\tSSID: %s\n\tfreq: 5180\n\tsignal: -60 dBm\n' "$_iwn" > "$H/iw.out"
+        line=$(cd "$H/iwcwd" && PATH="$H/iwbin:$PATH" "$_iws" "$SH" bar status --once); _iwt="$_iwt $(printf '%s' "$line" | jq -r '.[] | select(.name == "wifi" and .instance == "gauge") | .label' | grep -o '80%' || :)"
+        printf 'Connected to 02:00:00:00:00:01 (on wlan0)\n\tSSID: x\n\tsignal: x[$(>ran)] dBm\n' > "$H/iw.out"
+        line=$(cd "$H/iwcwd" && PATH="$H/iwbin:$PATH" "$_iws" "$SH" bar status --once); _iwt="$_iwt $(printf '%s' "$line" | jq -r '.[] | select(.name == "wifi" and .instance == "gauge") | .label' | grep -o '70%' || :)"
+    done
+    case $_iwt in ' 80% 70%'|' 80% 70% 80% 70%') _iwo=1 ;; *) _iwo='' ;; esac
+    [ -n "$_iwo" ] && [ ! -e "$H/iwcwd/ran" ] && ok "wifi's level is iw's signal line, under dash and bash: a network named like one is a name, and what is no number is not read" || bad "wifi name" "$_iwt $(ls "$H/iwcwd") $line"
+    rm -rf "$H/iwbin" "$H/iwcwd" "$H/iw.out"
     # the words set (#160): the kind words where the signs were, in the colors the signs take (the accent for what is on and
     # connected), the gauges as they were, the battery its word and its number
     printf 'BAR_GLYPHS=words\n' >> "$HOME/.config/spark-shell/config"; line=$(sh "$SH" bar status --once)
