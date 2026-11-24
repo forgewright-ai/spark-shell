@@ -1986,7 +1986,7 @@ EOF
     sway=$HOME/.config/sway/config
     grep -qF "bindsym --no-repeat Mod4+space exec $REPO/spark-shell desktop voice press" "$sway" && grep -qx 'initial-window-size-chars=60x40'  "$HOME/.config/foot/dialog.ini" && grep -qx 'background=0f0f0f' "$HOME/.config/foot/dialog.ini" \
         && ok "sway render: Super+space opens the dialog (the clone's spark-shell) in foot with dialog.ini: 60x40 with air and the surface a shade of black towards the text (no theme: 0f0f0f)" || bad "sway render bind" "$(grep -n 'mod+d' "$sway"; cat "$HOME/.config/foot/dialog.ini" 2>&1)"
-    grep -qxF "for_window [app_id=\"spark-dialog\"] floating enable, border $(sed -n 's/^default_border //p' "$sway"), move position center, opacity 0" "$sway" && ok "sway render: the dialog floats in the middle, under the band every window wears, and maps unseen until its opening is drawn (#167)" || bad "sway render for_window" "$(grep -n spark-dialog "$sway")"
+    grep -qxF "for_window [app_id=\"spark-dialog\" tiling] floating enable, border $(sed -n 's/^default_border //p' "$sway"), move position center, opacity 0" "$sway" && ok "sway render: the dialog floats in the middle, under the band every window wears, and maps unseen until its opening is drawn (#167)" || bad "sway render for_window" "$(grep -n spark-dialog "$sway")"
     l_p=$(grep -nF "exec $REPO/spark-shell desktop --pending" "$sway" | head -1 | cut -d: -f1); l_t=$(grep -n "^exec sh -c '" "$sway" | tail -1 | cut -d: -f1)
     [ -n "$l_p" ] && [ -n "$l_t" ] && [ "$l_p" -lt "$l_t" ] && ok "sway render: desktop --pending runs before the first terminal" || bad "sway render pending" "pending $l_p terminal $l_t"
     unset SWAYSOCK WAYLAND_DISPLAY
@@ -4765,7 +4765,7 @@ else
         && ok "sway: the bar's colors are the palette's, the background with the picture's alpha (f2 = 0.95)" || bad "bar colors" "$(grep -n 'background\|_workspace' "$sway")"
     grep -q "^bindsym XF86AudioRaiseVolume exec $REPO/spark-shell bar volume up\$" "$sway" && grep -q "^bindsym XF86AudioMicMute exec $REPO/spark-shell bar volume mic\$" "$sway" \
         && ok "sway: the volume keys and the mic mute key run spark-shell bar volume" || bad "volume keys" "$(grep -n XF86 "$sway")"
-    ! grep -q 'mod+p ' "$sway" && grep -qxF "for_window [app_id=\"spark-dialog\"] floating enable, border $(sed -n 's/^default_border //p' "$sway"), move position center, opacity 0" "$sway" \
+    ! grep -q 'mod+p ' "$sway" && grep -qxF "for_window [app_id=\"spark-dialog\" tiling] floating enable, border $(sed -n 's/^default_border //p' "$sway"), move position center, opacity 0" "$sway" \
         && ok "sway: no Super+p any more; the dialog's window floats in the middle, under the band every window wears, unseen until its opening is drawn (#167)" || bad "panel key" "$(grep -n 'spark-dialog\|mod+p' "$sway")"
     printf 'DESKTOP=sway\nFONT=Test Mono:pixelsize=14\nWALLPAPER=none\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" on --yes >/dev/null
@@ -6923,7 +6923,7 @@ rm -f "$F2/swaymsg.log"; _t0=$(date +%s)
 [ $((_t1 - _t0)) -le 4 ] && [ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'playing clip.webm' ] \
     && ok "provide files: full screen, the step answers at once while the video plays on, and the provider ends: nothing waits for the play (#172)" \
     || bad "preview video full screen held" "$((_t1 - _t0)) s $(ans 5)"
-grep -qxF 'no_focus [app_id="spark-preview"]' "$REPO/template/.config/sway/config" && grep -qxF 'for_window [app_id="spark-preview"] floating enable, border none, opacity 0' "$REPO/template/.config/sway/config" \
+grep -qxF 'no_focus [app_id="spark-preview"]' "$REPO/template/.config/sway/config" && grep -qxF 'for_window [app_id="spark-preview" tiling] floating enable, border none, opacity 0' "$REPO/template/.config/sway/config" \
     && ok "sway template: a video a preview plays floats with no border, maps unseen until it is placed (#157) and never takes the focus: the keys stay in the dialog (#125)" || bad "sway preview rules" "$(grep spark-preview "$REPO/template/.config/sway/config")"
 # the dialog's transitions (#122): the theme's row, the verb, the key the config holds
 printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"

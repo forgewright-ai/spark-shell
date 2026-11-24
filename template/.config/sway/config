@@ -154,11 +154,14 @@ bindsym --no-repeat $mod+period exec @REPO@/spark-shell desktop voice press wrap
 bindsym --release $mod+period exec @REPO@/spark-shell desktop voice release wrap
 # the dialog's window wears the band every window wears: its buttons, its
 # name, a drag by it. It maps unseen, band and all, and the dialog shows it
-# once its opening is drawn, so nothing comes before the animation (#167)
-for_window [app_id="spark-dialog"] floating enable, border @BORDER@, move position center, opacity 0
+# once its opening is drawn, so nothing comes before the animation (#167).
+# Only while it tiles, as every window maps: after a reload sway runs a
+# rule again when a window's title changes, and this one made an open
+# dialog unseen (v0.166)
+for_window [app_id="spark-dialog" tiling] floating enable, border @BORDER@, move position center, opacity 0
 # a video a preview plays (#125): laid over its frame, never taking the keys from the dialog; it maps unseen and is
-# shown where it plays, in one command (#157)
-for_window [app_id="spark-preview"] floating enable, border none, opacity 0
+# shown where it plays, in one command (#157); only while it tiles, as the dialog's
+for_window [app_id="spark-preview" tiling] floating enable, border none, opacity 0
 no_focus [app_id="spark-preview"]
 # key: Super+q closes the window.
 # action: window.close
