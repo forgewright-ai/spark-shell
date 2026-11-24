@@ -8126,7 +8126,7 @@ else
     rm -f "$H/root/etc/sudoers.d/spark-shell-login"; LC on login --yes >/dev/null 2>&1 || :   # gone, so it is written again: its mode lets no one write over it
     _vs=$(tail -1 "$H/root/etc/sudoers.d/spark-shell-login") _vbo=$(tail -1 "$ll/login-boot")
     cp "$H/window.keep" "$C/src/window.sh"; rm -f "$H/root/etc/sudoers.d/spark-shell-login"; LC on login --yes >/dev/null 2>&1 || :
-    [ "$_vs" = '_greeter ALL=(root) NOPASSWD: /usr/bin/reboot, /usr/bin/poweroff' ] && [ "$_vbo" = 'exit 0' ] \
+    [ "$_vs" = '_greeter ALL=(root) NOPASSWD: /usr/bin/reboot "", /usr/bin/poweroff ""' ] && [ "$_vbo" = 'exit 0' ] \
         && ok "Void: sudoers and the boot hook are rendered from the login's own two values, whatever the look's script holds" || bad "void render" "$_vs | $_vbo"
     grep -q '^_seatd:x:990:_greeter$' "$H/root/etc/group" && [ -e "$le/seatd.group" ] && ok "Void: _greeter joins _seatd, recorded" || bad "void seatd" "$(cat "$H/root/etc/group")"
     [ "$(cat "$le/boot")" = on ] && grep -q '/usr/local/lib/spark-shell/login-boot #spark-shell-login#$' "$H/root/etc/rc.local" \
