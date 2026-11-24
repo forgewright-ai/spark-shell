@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- the sections: a title, the rows and the act each
-# reads: APPS BAR_SYS LAYOUTS_DIR LAYOUT_LAST OS PALETTE_DIR PANEL_CACHE PANEL_DOT PANEL_GO PANEL_MARK PANEL_RING PANEL_SEP PANEL_TICK PANEL_WARN SAVER_NAMES SAVER_OWN TAB TMP US WALL_GROUND_SAID
+# reads: APPS BAR_SYS LAYOUTS_DIR LAYOUT_LAST OS PANEL_CACHE PANEL_DOT PANEL_GO PANEL_MARK PANEL_RING PANEL_SEP PANEL_TICK PANEL_WARN SAVER_NAMES SAVER_OWN TAB TMP US WALL_GROUND_SAID
 # a row is MARK<tab>TEXT<tab>ACTION [ARG]: the mark a sign or -, a
 # look-only row carries `show`
 panel_title() {   # panel_title SECTION -> the lines that say what opened the panel; glance: the date, the facts, an alarm line
@@ -214,25 +214,19 @@ panel_rows_bat() {   # the charge and its state, the time left, then health, cyc
 panel_rows_theme() {   # the look: the palettes, the saved themes, the custom rows, then the settings; one `more` row unless full
     _sz=$(look_font_size)
     [ "${2:-}" = full ] || { printf -- '-\t%s %s more\tmore\n' "$(panel_title theme | sed "s/^theme *//")" "$PANEL_SEP"; return 0; }   # one row in the list; typing finds every row below
-    # the palettes first, dark beside light, each its own step, the one in use too
-    palette_names > "$TMP/pal.names"; _darks=" $(palette_darks | tr '\n' ' ') "   # the dark ones, a word each: no process a palette
-    for _g in dark light; do
-        while IFS= read -r n; do
-            case $_darks in *" $n "*) [ "$_g" = dark ] || continue ;; *) [ "$_g" = light ] || continue ;; esac
-            if [ "$n" = "${THEME:-}" ]; then printf '%s\t%s\t%s\t%s\n' "$PANEL_TICK" "$n" "$n" "$_g"; else printf -- '-\t%s\t%s\t%s\n' "$n" "$n" "$_g"; fi
-        done < "$TMP/pal.names"
-    done
-    core_theme_ids | while IFS= read -r n; do
-        [ "$(theme_kind "$n")" = bundled ] || continue
-        _extra=themes
-        case $n in core-*) _extra="themes|$(look_get "$(theme_dir "$n")" ANIMATION)" ;; esac
-        printf -- '-\t%s\t%s\t%s\n' "$(theme_label "$n")" "$n" "$_extra"
-    done
-    for n in $(theme_saved_names); do   # custom: the themes kept as folders, the one in use a check
-        _td=$PALETTE_DIR/$n; _wl=$(look_get "$_td" WALLPAPER); [ "$_wl" != picture ] || _wl=$(look_get "$_td" PICTURE)
-        if [ "$n" = "${THEME:-}" ]; then printf '%s\t%s\tshow\tcustom|%s %s %s\n' "$PANEL_TICK" "$n" "$(theme_source_of "$_td")" "$PANEL_SEP" "${_wl:-default}"
-        else printf -- '-\t%s\t%s\tcustom|%s %s %s\n' "$n" "$n" "$(theme_source_of "$_td")" "$PANEL_SEP" "${_wl:-default}"; fi
-    done
+    # in one pass over every theme: the palettes first, dark beside light, each its own step, the one in use too; the
+    # bundled themes; then custom, the themes kept as folders, the one in use a check
+    { theme_facts; palette_names | sed 's/^/ palette /'; core_theme_ids | sed 's/^/ core /'; } | awk -F '\t' -v now="${THEME:-}" -v tick="$PANEL_TICK" -v sep="$PANEL_SEP" '
+        NF > 1 { kind[$1] = $2; label[$1] = $3; ground[$1] = $5; from[$1] = $6 == "words" ? $7 : $6 == "picture" ? $9 : $6; wall[$1] = $8 == "picture" ? $9 : $8; moves[$1] = $10; if ($2 == "saved") saved[++ns] = $1; next }
+        sub(/^ palette /, "") { if ($0 in kind) pal[++np] = $0; next }
+        sub(/^ core /, "") { if (kind[$0] == "bundled") core[++nc] = $0 }
+        function mark(n) { return n == now ? tick : "-" }
+        END {
+            for (i = 1; i <= np; i++) if (ground[pal[i]] == "dark") print mark(pal[i]) "\t" pal[i] "\t" pal[i] "\tdark"
+            for (i = 1; i <= np; i++) if (ground[pal[i]] != "dark") print mark(pal[i]) "\t" pal[i] "\t" pal[i] "\tlight"
+            for (i = 1; i <= nc; i++) { n = core[i]; print "-\t" label[n] "\t" n "\tthemes" (n ~ /^core-/ ? "|" (moves[n] == "-" ? "" : moves[n]) : "") }
+            for (i = 1; i <= ns; i++) { n = saved[i]; print mark(n) "\t" n "\t" (n == now ? "show" : n) "\tcustom|" (from[n] == "-" ? "palette" : from[n]) " " sep " " (wall[n] == "-" ? "default" : wall[n]) }
+        }'
     [ "$(theme_kind "${THEME:-}")" != look ] || printf '%s\t%s\tshow\tcustom|not saved\n' "$PANEL_TICK" "$(theme_words_of "$THEME")"   # a look from words or a picture stays here until it is saved
     printf -- '-\tsave this look as\tsave\tcustom\n'
     [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || printf -- '-\ta theme from a picture\tpicture\tcustom\n'   # the files, to pick a picture from (the dialog's)

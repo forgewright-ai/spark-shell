@@ -634,7 +634,7 @@ layout_save() {   # layout_save [NAME...] -- under its words by default
 layout_delete() {   # layout_delete NAME...
     name=$(layout_name_of "$*"); [ -n "$name" ] || refuse "delete NAME -- which layout?"
     if [ ! -f "$LAYOUTS_DIR/$name" ] && kept_names layout | grep -qxF -- "$name"; then   # a recent one forgotten
-        _kh=$(kept_hist layout); awk -F '\t' -v n="$name" '$2 != n' "$_kh" > "$_kh.new" && mv "$_kh.new" "$_kh"; kept_prune layout
+        kept_drop layout "$name" && kept_gone layout "$name"
         echo "forgot $name"; return 0
     fi
     [ -f "$LAYOUTS_DIR/$name" ] || refuse "no saved layout named $name"
@@ -642,7 +642,7 @@ layout_delete() {   # layout_delete NAME...
     kept_delete_ok layout "$name" || return 0
     if [ -n "${LAYOUT_DELETED:-}" ]; then mkdir -p "$LAYOUT_DELETED" && mv "$LAYOUTS_DIR/$name" "$LAYOUT_DELETED/$name" || refuse "could not delete $name"   # the dialog's undo brings it back
     else rm -f "${LAYOUTS_DIR:?}/${name:?}"; fi
-    _kh=$(kept_hist layout); [ ! -f "$_kh" ] || { awk -F '\t' -v n="$name" '$2 != n' "$_kh" > "$_kh.new" && mv "$_kh.new" "$_kh"; }; kept_prune layout
+    kept_drop layout "$name" || :; kept_gone layout "$name"
     echo "deleted $name"
 }
 layout_restore() {   # layout_restore NAME -- a layout deleted from the dialog, back: its undo
@@ -666,7 +666,7 @@ layout_rename() {   # layout_rename NAME NEW... -- its history lines follow
     [ "$_rn" != "$_ro" ] || refuse "$_ro is its name already"
     [ ! -e "$LAYOUTS_DIR/$_rn" ] || refuse "$_rn is a layout already: pick another name"
     mv "$LAYOUTS_DIR/$_ro" "$LAYOUTS_DIR/$_rn"
-    _kh=$(kept_hist layout); [ ! -f "$_kh" ] || { awk -F '\t' -v o="$_ro" -v n="$_rn" 'BEGIN { OFS = "\t" } $2 == o { $2 = n } { print }' "$_kh" > "$_kh.new" && mv "$_kh.new" "$_kh"; }
+    kept_rename layout "$_ro" "$_rn" || :
     echo "$_ro renamed to $_rn"
 }
 layout_label() {   # layout_label FILE -> its words when the name is only those
@@ -709,7 +709,7 @@ layout_pending() {   # at the desktop's start
     # search ranks by meaning
     ( semantic_start ) </dev/null >/dev/null 2>&1 &
     # a command's words out of the history
-    _kh=$(kept_hist layout); [ ! -f "$_kh" ] || { awk -F '\t' '$2 !~ /^(layout-(delete|rename|save|back|help)(-|$)|-|help$)/' "$_kh" > "$_kh.new" && mv "$_kh.new" "$_kh"; kept_prune layout; }
+    kept_names layout | grep -E '^(layout-(delete|rename|save|back|help)(-|$)|-|help$)' | while IFS= read -r _lpn; do kept_drop layout "$_lpn" && kept_gone layout "$_lpn"; done || :
     # for spark's prompt line and spark mcp
     if machine_live; then machine_start </dev/null >/dev/null 2>&1 & fi
     [ -f "$LAYOUT_PENDING" ] || return 0

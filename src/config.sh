@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the config: the readers of the settings and the theme
-# sets: ANIMATION_NAMES ANIM_PAINTED ANIM_PAIRED BAR_LEVELS BAR_MODULES CONFIG_UNSET GLYPH_FAMILIES KB_RE PATH_REFUSED PATH_SAID SAVER_NAMES SAVER_OWN THEME_KEYS
-# reads: CONFIG CONFIG_DIR OS REPO TERM_NAME TMP
+# sets: ANIMATION_NAMES ANIM_PAINTED ANIM_PAIRED BAR_LEVELS BAR_MODULES CONFIG_BAD CONFIG_MEND CONFIG_UNSET GLYPH_FAMILIES KB_RE LOOK_KEYS PATH_REFUSED PATH_SAID SAVER_NAMES SAVER_OWN THEME_KEYS
+# reads: CONFIG CONFIG_DIR LOOKS_DIR MODE OS PALETTE_DIR REPO TERM_NAME
 GLYPH_FAMILIES='stone star banner'
 BAR_MODULES='workspaces pad lan bt wifi out mic due light kb bat clock notifications'   # what the bar can show, in its order; the workspaces are the bar's own and stay, the rest are its line's modules
 BAR_LEVELS='out mic light wifi'   # the modules with a level: a pin puts its control, a gauge and a number, on the bar
@@ -9,15 +9,20 @@ BAR_LEVELS='out mic light wifi'   # the modules with a level: a pin puts its con
 # environment (sway's children inherit login's keys), `env` keeps a set key
 load_env() {
     [ -f "$1" ] || return 0
-    bad=$(grep -nEv '^[[:space:]]*(#|$)|^[A-Z_0-9]+=[^;`$()|&<>]*$' "$1" || true)
+    [ -r "$1" ] || { printf 'spark-shell: %s cannot be read\n' "$1" >&2; return 1; }
+    cr=$(printf '\r')
+    bad=$(tr -d '\000' < "$1" | LC_ALL=C grep -nEv '^[[:space:]]*(#|$)|^[A-Z_0-9]+=[^;`$()|&<>]*$' || true)   # a NUL made the file binary to grep, its lines unseen
+    [ -z "$bad" ] || [ -z "$CONFIG_MEND" ] || [ "$1" != "$CONFIG" ] || bad=$(config_bad_lines "$bad")
     if [ -n "$bad" ]; then
         printf 'spark-shell: %s: refused, these lines are not KEY=value:\n%s\n' "$1" "$bad" >&2
         return 1
     fi
     while IFS= read -r line || [ -n "$line" ]; do
+        line=${line%"$cr"}   # a file written on Windows
         case $line in ''|'#'*|' '*|'	'*) continue ;; esac
         key=${line%%=*}
         val=${line#*=}
+        case $val in *[';`$()|&<>']*) CONFIG_BAD="$CONFIG_BAD $key"; continue ;; esac   # a look's own, past config_bad_lines: as if it were not there
         case $val in \"*\") val=${val#\"}; val=${val%\"} ;; esac
         tilde='~'
         case $val in "$tilde"|"$tilde/"*) val=$HOME${val#"$tilde"} ;; esac
@@ -38,9 +43,28 @@ short_host() {
     printf '%s' "$_host"
 }
 
+# a value no key takes refuses the config, but in a theme's verb (CONFIG_MEND): there a look's key is its default, said
+# once, or the verb that sets the key could never run. It stays in CONFIG_BAD until it is set
+LOOK_KEYS='THEME WALLPAPER FONT ALPHA POINTER DIALOG_ANIMATION DIALOG_ICONS DIALOG_SPACING BAR_GLYPHS GLYPH_FAMILY WALLPAPER_MOTION'
+CONFIG_MEND=''
+CONFIG_BAD=''
+config_bad() {   # config_bad KEY DEFAULT WHY -- KEY's value is none it takes
+    eval "v=\$$1"
+    # shellcheck disable=SC2154   # v is set by the eval above
+    [ -n "$CONFIG_MEND" ] || { echo "spark-shell: $1=$v in $CONFIG: $3" >&2; exit 1; }
+    case " ${CONFIG_SAID:-} " in *" $1 "*) ;; *) CONFIG_SAID="${CONFIG_SAID:-} $1"; echo "spark-shell: $1=$v in $CONFIG: $3 -- ${2:-its default} until it is set" >&2 ;; esac
+    CONFIG_BAD="$CONFIG_BAD $1"; eval "$1=\$2"
+}
+config_bad_lines() {   # config_bad_lines "N:LINE..." -> the lines that are no look's key; a look's is read past
+    printf '%s\n' "$1" | while IFS= read -r line; do
+        key=${line#*:}; case " $LOOK_KEYS " in *" ${key%%=*} "*) echo "spark-shell: $CONFIG: line ${line%%:*} is not KEY=value -- its default until it is set" >&2 ;; *) printf '%s\n' "$line" ;; esac
+    done
+}
+config_is() { eval "v=\$$1"; [ "$v" = "$2" ] && case " $CONFIG_BAD " in *" $1 "*) return 1 ;; esac; }   # config_is KEY VALUE -> the config's own KEY is VALUE, not a default in a bad value's place
+
 # the shapes a look's values take: each lands in a line foot, sway or the
 # idle screen parses, so no quote, comma, backslash or control character
-font_ok() { case $1 in [A-Za-z0-9]*) ;; *) return 1 ;; esac; case $1 in *[!A-Za-z0-9\ :=.+_-]*) return 1 ;; esac; [ ${#1} -le 128 ]; }   # font_ok FONT -> 0 for a face and foot's options (Monaspace Neon:size=11)
+font_ok() { case $1 in [A-Za-z0-9]*) ;; *) return 1 ;; esac; case $1 in *[!A-Za-z0-9\ :=.+_-]*|*size=[0-9][0-9][0-9][0-9]*) return 1 ;; esac; [ ${#1} -le 128 ]; }   # font_ok FONT -> 0 for a face and foot's options (Monaspace Neon:size=11)
 alpha_ok() { case $1 in 0|1|0.[0-9]|0.[0-9][0-9]|1.0) return 0 ;; *) return 1 ;; esac; }   # alpha_ok ALPHA -> 0 for 0 to 1, two places at most
 pointer_ok() { [ -z "$1" ] || printf '%s\n' "$1" | grep -qE '^[A-Za-z0-9._-]+( [1-9][0-9]{0,2})?$'; }   # pointer_ok POINTER -> 0 for nothing, or a cursor theme's NAME and its SIZE in pixels
 path_ok() {   # path_ok PATH -> 0 for a full path a wallpaper may name: PATH_SAID's shape
@@ -53,6 +77,7 @@ PATH_REFUSED='a path with one of ; ` $ ( ) | & < >, a quote, a backslash or a co
 wall_value_ok() { case $1 in default|none) return 0 ;; esac; wall_shipped "$1" || hex_rgb "$1" >/dev/null || path_ok "$1"; }   # wall_value_ok WALLPAPER -> 0 for default, none, a drawing's name, #rrggbb or a picture's full path in path_ok's shape
 
 config_load() {
+    CONFIG_BAD=''
     load_env "$CONFIG" || exit 1
     : "${PROMPT:=starship}"
     : "${PROMPT_STYLE:=minimal}"
@@ -78,40 +103,42 @@ config_load() {
     [ "$BAR_PINS" = none ] || words_in "$BAR_PINS" "$BAR_MODULES" || { echo "spark-shell: BAR_PINS=$BAR_PINS in $CONFIG: levels of the bar, a space between ($BAR_LEVELS), or none" >&2; exit 1; }
     words_in "$BAR_HIDE" "${BAR_MODULES#workspaces }" || { echo "spark-shell: BAR_HIDE=$BAR_HIDE in $CONFIG: modules of the bar, a space between (${BAR_MODULES#workspaces }), or nothing" >&2; exit 1; }
     words_in "$BAR_OVERFLOW" "${BAR_MODULES#workspaces }" || { echo "spark-shell: BAR_OVERFLOW=$BAR_OVERFLOW in $CONFIG: modules of the bar, a space between, the first to leave first (${BAR_MODULES#workspaces })" >&2; exit 1; }
-    alpha_ok "$ALPHA" || { echo "spark-shell: ALPHA=$ALPHA in $CONFIG: 0 to 1 (0.95)" >&2; exit 1; }
-    font_ok "$FONT" || { echo "spark-shell: FONT=$FONT in $CONFIG: a face and its size as $TERM_NAME takes them (Monaspace Neon:size=11): letters, digits, spaces and : = . + _ -" >&2; exit 1; }
-    wall_value_ok "$WALLPAPER" || { echo "spark-shell: WALLPAPER=$WALLPAPER in $CONFIG: default, a drawing's name, #rrggbb or a picture's full path, with $PATH_SAID" >&2; exit 1; }
+    alpha_ok "$ALPHA" || config_bad ALPHA 0.95 "0 to 1 (0.95)"
+    font_ok "$FONT" || config_bad FONT 'Monaspace Neon:size=11' "a face and its size as $TERM_NAME takes them (Monaspace Neon:size=11): letters, digits, spaces and : = . + _ -"
+    wall_value_ok "$WALLPAPER" || config_bad WALLPAPER default "default, a drawing's name, #rrggbb or a picture's full path, with $PATH_SAID"
     case $DESKTOP in none|sway) ;;
         *) echo "spark-shell: DESKTOP=$DESKTOP in $CONFIG: none or sway" >&2; exit 1 ;; esac
     # the console's four: a palette's name, "FACE SIZE", and two switches
     : "${THEME:=}" "${CONSOLE_FONT:=}" "${QUIET_LOGIN:=no}" "${QUIET_BOOT:=no}"
-    case $THEME in .*|*[!A-Za-z0-9._-]*) echo "spark-shell: THEME=$THEME in $CONFIG: a palette's name or none (spark-shell theme list)" >&2; exit 1 ;; esac
+    case $THEME in .*|*[!A-Za-z0-9._-]*) config_bad THEME '' "a palette's name or none (spark-shell theme list)" ;; esac
+    # the theme in use is not in its place: a change of it was killed between its two steps
+    if dir_there "$PALETTE_DIR/.$THEME.old" || dir_there "$LOOKS_DIR/.$THEME.old"; then themes_settle; fi
     # a picture of the theme's own that an update renamed (Atlas Awakening's, v0.165): the theme's picture, kept so once
     if [ ! -e "$WALLPAPER" ] && _cld=$(theme_dir "$THEME" 2>/dev/null) && [ -n "$_cld" ]; then
         case $WALLPAPER in "$_cld"/*)
             _clp=$(look_get "$_cld" PICTURE)
-            if [ -n "$_clp" ] && [ -f "$_cld/$_clp" ]; then WALLPAPER=$_cld/$_clp; config_locked config_edit WALLPAPER "$WALLPAPER" 2>/dev/null || :; fi ;;
+            if [ -n "$_clp" ] && [ -f "$_cld/$_clp" ]; then WALLPAPER=$_cld/$_clp; [ "$MODE" = dry ] || config_locked config_edit WALLPAPER "$WALLPAPER" 2>/dev/null || :; fi ;;
         esac
     fi
     if [ -n "$CONSOLE_FONT" ] && ! printf '%s' "$CONSOLE_FONT" | grep -qE '^[A-Za-z0-9._-]+ [0-9][0-9x.]*$'; then
         echo "spark-shell: CONSOLE_FONT=$CONSOLE_FONT in $CONFIG: FACE SIZE (spark-shell font list)" >&2; exit 1
     fi
-    pointer_ok "$POINTER" || { echo "spark-shell: POINTER=$POINTER in $CONFIG: a cursor theme's NAME and, after a space, its SIZE in pixels (spark-white 24, spark-black 32, Adwaita)" >&2; exit 1; }
+    pointer_ok "$POINTER" || config_bad POINTER '' "a cursor theme's NAME and, after a space, its SIZE in pixels (spark-white 24, spark-black 32, Adwaita)"
     # the dialog's composer: plus and the file types it attaches, the model chip, talk
     : "${DIALOG_ATTACH:=yes}" "${DIALOG_ATTACH_TYPES:=txt md}" "${DIALOG_MODEL:=yes}" "${DIALOG_TALK:=yes}"
     : "${DIALOG_SEMANTIC:=yes}"   # the dialog's rows ranked by meaning, with spark; no keeps the word search
     : "${DIALOG_ANIMATION:=}"   # the dialog's transitions: a piece of gallery/animation, none, or empty for the palette's own
-    [ -z "$DIALOG_ANIMATION" ] || case " none own $ANIMATION_NAMES " in *" $DIALOG_ANIMATION "*) ;; *) echo "spark-shell: DIALOG_ANIMATION=$DIALOG_ANIMATION in $CONFIG: none or one of $ANIMATION_NAMES" >&2; exit 1 ;; esac
+    [ -z "$DIALOG_ANIMATION" ] || case " none own $ANIMATION_NAMES " in *" $DIALOG_ANIMATION "*) ;; *) config_bad DIALOG_ANIMATION '' "none or one of $ANIMATION_NAMES" ;; esac
     : "${DIALOG_ICONS:=on}"   # each app's icon before its name in home's apps; the dialog reads it each second
-    case $DIALOG_ICONS in on|off) ;; *) echo "spark-shell: DIALOG_ICONS=$DIALOG_ICONS in $CONFIG: on or off" >&2; exit 1 ;; esac
+    case $DIALOG_ICONS in on|off) ;; *) config_bad DIALOG_ICONS on "on or off" ;; esac
     : "${DIALOG_SPACING:=groups}"   # the space around the apps with their icons: none, groups, rows
-    case $DIALOG_SPACING in none|groups|rows) ;; *) echo "spark-shell: DIALOG_SPACING=$DIALOG_SPACING in $CONFIG: none, groups or rows" >&2; exit 1 ;; esac
+    case $DIALOG_SPACING in none|groups|rows) ;; *) config_bad DIALOG_SPACING groups "none, groups or rows" ;; esac
     : "${BAR_GLYPHS:=signs}"   # the bar's glyphs: signs or words
-    case $BAR_GLYPHS in signs|words) ;; *) echo "spark-shell: BAR_GLYPHS=$BAR_GLYPHS in $CONFIG: signs or words" >&2; exit 1 ;; esac
+    case $BAR_GLYPHS in signs|words) ;; *) config_bad BAR_GLYPHS signs "signs or words" ;; esac
     : "${GLYPH_FAMILY:=stone}"   # the theme's glyph family: the dialog's signs and waits, the bar's gauges and workspaces; BAR_WORKSPACES is ignored
-    case " $GLYPH_FAMILIES " in *" $GLYPH_FAMILY "*) ;; *) echo "spark-shell: GLYPH_FAMILY=$GLYPH_FAMILY in $CONFIG: stone, star or banner" >&2; exit 1 ;; esac
+    case " $GLYPH_FAMILIES " in *" $GLYPH_FAMILY "*) ;; *) config_bad GLYPH_FAMILY stone "stone, star or banner" ;; esac
     : "${WALLPAPER_MOTION:=off}"   # a moving wallpaper where the drawing has one: on or off
-    case $WALLPAPER_MOTION in on|off) ;; *) echo "spark-shell: WALLPAPER_MOTION=$WALLPAPER_MOTION in $CONFIG: on or off" >&2; exit 1 ;; esac
+    case $WALLPAPER_MOTION in on|off) ;; *) config_bad WALLPAPER_MOTION off "on or off" ;; esac
     : "${VOICE:=yes}"   # the ear on the terminal's band and under Super+Space held; no leaves it out
     : "${VOICE_ENGINE:=}"   # your own engine's command, speaking the ear's contract; empty: spark-ear
     : "${VOICE_PREFIX:=}" "${VOICE_SUFFIX:=}"   # typed before the first words and after the last, to open a prompt of your own
@@ -197,79 +224,46 @@ KB_RE='^[a-z]{2,10}(\+[a-z0-9_-]{1,24})?( [a-z]{2,10}(\+[a-z0-9_-]{1,24})?){0,7}
 config_renames() {   # spark-shell on: the pad's settings a config from v0.142 or before names PAD_*, written once under their WINPAD_* names
     [ -f "$CONFIG" ] && _crn=$(grep -cE '^PAD_(PLACE|WIDTH|SIDE_WIDTH|HEIGHT|VIEW|BAND)=' "$CONFIG") || return 0
     need config "$_crn settings of the pad take their WINPAD_ names, PAD_ before ($CONFIG)" || return 0
-    config_locked config_rename || exit 1
+    config_locked config_put config_renamed || exit 1
     ok config "$_crn settings of the pad are WINPAD_ now ($CONFIG)"
 }
-config_rename() {   # under the lock: a setting the config already holds under its new name keeps that line; the old one goes
+config_renamed() {   # -> the config's lines, the pad's settings by their WINPAD_* names; one the config already holds under its new name keeps that line; the old one goes
     awk 'NR == FNR { if ($0 ~ /^WINPAD_[A-Z_]*=/) { k = $0; sub(/=.*/, "", k); have[k] = 1 }; next }
         /^PAD_(PLACE|WIDTH|SIDE_WIDTH|HEIGHT|VIEW|BAND)=/ { k = $0; sub(/=.*/, "", k); if (!(("WIN" k) in have)) print "WIN" $0; next }
-        { print }' "$CONFIG" "$CONFIG" > "$TMP/config" && config_put "$TMP/config"
+        { print }' "$CONFIG" "$CONFIG"
 }
-put_whole() {   # put_whole SRC DST -- SRC's bytes become DST in one step: written beside it and moved onto it, so whoever reads DST meets the old file or the new one. cp emptied a file before it wrote it, and a reader in that moment met no setting at all. A DST that is a link stays a link: written through it, as before
-    if [ -L "$2" ]; then cp "$1" "$2"; return; fi
-    _pwn=$2.new.$$
-    { [ ! -f "$2" ] || cp "$2" "$_pwn"; } && cat "$1" > "$_pwn" && mv "$_pwn" "$2" || { rm -f "$_pwn"; return 1; }   # the copy first: the new file keeps the old one's mode
-}
-config_put() {   # config_put FILE -- FILE's lines become the config in one step; the caller holds the lock (config_locked). SPARK_SHELL_CONFIG_HOLD=PATH (tests only) pauses before that step: PATH.here gets the lines, PATH.go ends the pause, and so do 10 seconds
+# every change of the config holds its lock from its read to the move (#31): two changes at once read the same lines, so
+# the second one's file dropped the first one's key, and both said ok
+config_locked() { locked "$CONFIG.lock" config 3 "$@"; }   # config_locked CMD ARG... -- CMD run while holding the config's lock; 1 and one line when it is not free within 3 seconds
+config_put() {   # config_put CMD ARG... -- what CMD prints becomes the config in one step; the caller holds the lock. SPARK_SHELL_CONFIG_HOLD=PATH (tests only) pauses before that step: PATH.here gets the lines, PATH.go ends the pause, and so do 10 seconds
+    file_stage "$CONFIG" "$@" || { config_kept_not; return 1; }
     if [ -n "${SPARK_SHELL_CONFIG_HOLD:-}" ]; then
-        cp "$1" "$SPARK_SHELL_CONFIG_HOLD.new" && mv "$SPARK_SHELL_CONFIG_HOLD.new" "$SPARK_SHELL_CONFIG_HOLD.here"; _cph=0
+        stage_of "$CONFIG"; cp "$_sgn" "$SPARK_SHELL_CONFIG_HOLD.new" && mv "$SPARK_SHELL_CONFIG_HOLD.new" "$SPARK_SHELL_CONFIG_HOLD.here"; _cph=0
         until [ -e "$SPARK_SHELL_CONFIG_HOLD.go" ] || [ "$_cph" -ge 200 ]; do sleep 0.05; _cph=$((_cph + 1)); done
     fi
-    put_whole "$1" "$CONFIG"
+    file_commit "$CONFIG" || { config_kept_not; return 1; }
 }
-# the config's lock (#31). A change reads the config, writes the new lines to a file and moves it onto the config. Two
-# changes at once read the same lines, so the second one's file dropped the first one's key, and both said ok. A writer
-# now holds $CONFIG.lock from its read to the move. The lock is a file made with O_EXCL (set -C; console.sh says why not
-# mkdir) and holds its holder's pid. A writer that finds it held tries for 3 seconds, then refuses in one line. The next
-# writer clears a lock whose holder is gone (kill -9, a crash)
-config_lock_gone() {   # config_lock_gone LOCK -> 0 when its holder is gone: no process has the pid in it, or it is over a minute old (a writer holds it for milliseconds; after a restart another process can have the pid)
-    _clg=''; read -r _clg 2>/dev/null < "$1" || :
-    case $_clg in ''|*[!0-9]*) ;; *) kill -0 "$_clg" 2>/dev/null || return 0 ;; esac
-    [ -n "$(find "$1" -mmin +1 2>/dev/null)" ]
+config_kept_not() { printf 'spark-shell: the config could not be written, so nothing was%s (%s)\n' "$(store_said)" "$CONFIG" >&2; }
+config_edit() {   # config_edit KEY VALUE... -- under the lock: each KEY's line replaced or added, in one step
+    if [ -f "$CONFIG" ]; then config_put env_with "$CONFIG" "$@"; else config_put config_first "$@"; fi
 }
-config_locked() (   # config_locked CMD ARG... -- CMD run while holding the lock; 1 and one line when the lock is not free within 3 seconds. A subshell: its own traps release the lock on every exit, a signal included, and the caller's traps stay as they are
-    _clk=$CONFIG.lock; _clp=$(exec sh -c 'echo "$PPID"'); _clw=0; _cld=''   # the subshell's pid, not $$: the caller can die while this one still writes
-    trap 'read -r _cld 2>/dev/null < "$_clk" || :; [ "$_cld" != "$_clp" ] || rm -f "$_clk"' EXIT   # release only a lock that holds this pid
-    trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 141' PIPE
-    until set -C; { printf '%s\n' "$_clp" > "$_clk"; } 2>/dev/null; do   # created and written by one command of this process: no trap runs in between
-        set +C
-        if [ "$_clw" -ge 60 ]; then   # 60 tries, 50 ms apart
-            if [ -e "$_clk" ]; then printf 'spark-shell: another change holds the config, so nothing was written. Try again (%s)\n' "$_clk" >&2
-            else printf "spark-shell: the config's lock could not be made, so nothing was written (%s)\n" "$_clk" >&2; fi
-            exit 1
-        fi
-        _clw=$((_clw + 1))
-        [ -z "${SPARK_SHELL_CONFIG_HOLD:-}" ] || : > "$SPARK_SHELL_CONFIG_HOLD.waits"   # tests only: this writer waits for the lock
-        if config_lock_gone "$_clk"; then   # one writer clears at a time (.clear) and checks again once it holds .clear: a lock taken meanwhile is never removed
-            ! config_lock_gone "$_clk.clear" || lock_drop "$_clk.clear"   # a clearer that died left .clear behind
-            ( trap '' HUP INT TERM PIPE; lock_take "$_clk.clear" || exit 1; ! config_lock_gone "$_clk" || lock_drop "$_clk"; lock_drop "$_clk.clear" ) && continue
-        fi
-        sleep 0.05
-    done
-    set +C
-    "$@"
-)
-config_set() {   # config_set KEY VALUE -- one line replaced or added, under the lock; a value load_env would refuse is refused first
-    case $2 in *[';`$()|&<>']*) printf 'spark-shell: %s=%s cannot be kept: a value holds none of ; ` $ ( ) | & < >\n' "$1" "$2" >&2; exit 1 ;; esac
-    [ "$(printf '%s' "$2" | tr -d '\001-\037\177')" = "$2" ] || { printf 'spark-shell: %s cannot be kept: a value holds no control character, a new line included\n' "$1" >&2; exit 1; }   # a new line would be a second line of the config
+config_first() { echo '# spark-shell config -- KEY=value (config.example shows the keys)' && env_with "$CONFIG" "$@"; }   # config_first KEY VALUE... -> a first config's lines
+config_takes() {   # config_takes KEY VALUE -> 0 when the config takes VALUE, or one line and 1: one load_env would refuse is never written
+    case $2 in *[';`$()|&<>']*) printf 'spark-shell: %s=%s cannot be kept: a value holds none of ; ` $ ( ) | & < >\n' "$1" "$2" >&2; return 1 ;; esac
+    [ "$(printf '%s' "$2" | tr -d '\001-\037\177')" = "$2" ] || { printf 'spark-shell: %s cannot be kept: a value holds no control character, a new line included\n' "$1" >&2; return 1; }   # a new line would be a second line of the config
     case $1 in
-        FONT) font_ok "$2" || { printf 'spark-shell: FONT=%s cannot be kept: letters, digits, spaces and : = . + _ -\n' "$2" >&2; exit 1; } ;;
-        WALLPAPER) wall_value_ok "$2" || { printf 'spark-shell: WALLPAPER=%s cannot be kept: %s\n' "$2" "$PATH_SAID" >&2; exit 1; } ;;
+        FONT) font_ok "$2" || { printf 'spark-shell: FONT=%s cannot be kept: letters, digits, spaces and : = . + _ -\n' "$2" >&2; return 1; } ;;
+        WALLPAPER) wall_value_ok "$2" || { printf 'spark-shell: WALLPAPER=%s cannot be kept: %s\n' "$2" "$PATH_SAID" >&2; return 1; } ;;
     esac
-    mkdir -p "$CONFIG_DIR"
-    config_locked config_edit "$1" "$2" || exit 1
-    row ok config "$1=$2 ($CONFIG)"
 }
-config_edit() {   # config_edit KEY VALUE -- under the lock: the config as it is now, KEY's line replaced or added, the result moved onto it
-    if [ -f "$CONFIG" ] && grep -q "^$1=" "$CONFIG"; then
-        sed "s|^$1=.*|$1=$(esc "$2")|" "$CONFIG" > "$TMP/config" || return 1
-    else
-        # the lines there, the last one ended if it was not (a key added after it was glued onto it: FONT=...LOGIN=yes), then the new one
-        if [ -f "$CONFIG" ]; then { cat "$CONFIG"; [ -z "$(tail -c 1 "$CONFIG")" ] || echo; } > "$TMP/config" || return 1
-        else printf '# spark-shell config -- KEY=value (config.example shows the keys)\n' > "$TMP/config"; fi
-        printf '%s=%s\n' "$1" "$2" >> "$TMP/config"
-    fi
-    config_put "$TMP/config"
+config_keep() {   # config_keep KEY VALUE... -- those lines of the config, together, under the lock; 1 and one line with none of them written
+    _ckn=$#
+    while [ "$_ckn" -ge 2 ]; do config_takes "$1" "$2" || return 1; set -- "$@" "$1" "$2"; shift 2; _ckn=$((_ckn - 2)); done
+    mkdir -p "$CONFIG_DIR" && config_locked config_edit "$@"
+}
+config_set() {   # config_set KEY VALUE -- one line replaced or added, and its row; a value load_env would refuse is refused first
+    config_keep "$1" "$2" || exit 1
+    row ok config "$1=$2 ($CONFIG)"
 }
 
 THEME_KEYS="THEME_BG THEME_FG THEME_ACCENT THEME_MUTED THEME_ANSI_0 THEME_ANSI_1 THEME_ANSI_2 THEME_ANSI_3 THEME_ANSI_4 THEME_ANSI_5 THEME_ANSI_6 THEME_ANSI_7 THEME_ANSI_8 THEME_ANSI_9 THEME_ANSI_10 THEME_ANSI_11 THEME_ANSI_12 THEME_ANSI_13 THEME_ANSI_14 THEME_ANSI_15"

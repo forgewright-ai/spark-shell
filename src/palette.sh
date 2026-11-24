@@ -1,58 +1,63 @@
 # shellcheck extended-analysis=false
 # ------------------------------------------------------------ the palette
-# sets: CONSOLE_NOW CORE_DIR KEPT_LAYOUTS KEPT_MAX LOOKS_DIR LOOK_FORMAT PALETTE_DIR PTS_DIR VT_SYSFS WALL_CACHE WALL_COVER
-# reads: ANIMATION_NAMES CONFIG_DIR CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GLYPH_FAMILIES MODE OS PALETTE_MARK PATH_SAID REPO ROOT STATE_DIR TAB TERMINAL_SEEN TERM_NAME TERM_PALETTE_FORMATS THEME_ENV THEME_KEYS TMP VGA_HEX WALL_TYPES
+# sets: CONSOLE_NOW CORE_DIR KEPT_LAYOUTS KEPT_MAX LOOKS_DIR LOOK_FORMAT PALETTE_DIR PALETTE_WHY PTS_DIR THEME_TRASH VT_SYSFS WALL_CACHE WALL_COVER
+# reads: ANIMATION_NAMES CONFIG_DIR CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GLYPH_FAMILIES MODE NL OS PALETTE_MARK PATH_SAID REPO ROOT STATE_DIR TAB TERMINAL_SEEN TERM_NAME TERM_PALETTE_FORMATS THEME_ENV THEME_KEYS THEME_WORDS TMP VGA_HEX WALL_TYPES
 PALETTE_DIR=$CONFIG_DIR/themes
 CORE_DIR=$REPO/gallery/core
+THEME_TRASH=$PALETTE_DIR/.deleted   # a theme deleted where undo is offered, for a day
+PALETTE_WHY=''
 # theme.env, rendered from the palette, is what spark and every render read
-palette_file() {   # palette_file NAME -> the palette's file; false when none
-    case $1 in ''|.*|*[!A-Za-z0-9._-]*) return 1 ;; esac
-    for _p in "$PALETTE_DIR/$1/palette.env" "$LOOKS_DIR/$1/palette.env" "$PALETTE_DIR/$1.env" "$REPO/gallery/theme/$1.env" "$CORE_DIR/$1/palette.env"; do
-        [ -f "$_p" ] && { printf '%s' "$_p"; return 0; }
-    done
-    # A curated variant can reuse the stock colors under its own key.
-    case $1 in core-*) _p=$REPO/gallery/theme/${1#core-}.env
-        if [ -f "$CORE_DIR/$1/look.env" ] && [ -f "$_p" ]; then printf '%s' "$_p"; return 0; fi ;;
-    esac
-    return 1
+theme_at() {   # theme_at NAME -> _tak its kind (saved, look, yours, shipped, bundled, none), _tad its folder, _tap its palette's file, each empty where it has none; no process, for it runs over every theme. False when NAME is none
+    _tak=''; _tad=''; _tap=''
+    case $1 in none) _tak=none; return 0 ;; ''|.*|*[!A-Za-z0-9._-]*) return 1 ;; esac
+    if [ -f "$PALETTE_DIR/$1/palette.env" ]; then _tak=saved; _tad=$PALETTE_DIR/$1; _tap=$_tad/palette.env
+    elif [ -f "$LOOKS_DIR/$1/palette.env" ]; then _tak=look; _tad=$LOOKS_DIR/$1; _tap=$_tad/palette.env
+    elif [ -f "$PALETTE_DIR/$1.env" ]; then _tak=yours; _tap=$PALETTE_DIR/$1.env
+    else
+        [ ! -f "$CORE_DIR/$1/look.env" ] || { _tak=bundled; _tad=$CORE_DIR/$1; }
+        if [ -f "$REPO/gallery/theme/$1.env" ]; then _tak=shipped; _tap=$REPO/gallery/theme/$1.env
+        elif [ -f "$CORE_DIR/$1/palette.env" ]; then _tap=$CORE_DIR/$1/palette.env
+        elif [ "$_tak" = bundled ] && [ "${1#core-}" != "$1" ] && [ -f "$REPO/gallery/theme/${1#core-}.env" ]; then _tap=$REPO/gallery/theme/${1#core-}.env; fi   # a curated variant can reuse the stock colors under its own key
+    fi
+    [ -n "$_tak" ]
 }
+palette_file() { theme_at "$1" && [ -n "$_tap" ] && printf '%s' "$_tap"; }   # palette_file NAME -> the palette's file; false when none
+theme_dir() { ! theme_at "$1" || printf '%s' "$_tad"; }   # theme_dir NAME -> its folder, or nothing
+theme_kind() { ! theme_at "$1" || printf '%s\n' "$_tak"; }   # theme_kind NAME -> saved | look | yours | shipped | bundled | none, or nothing
 # look.env format 1 (no FORMAT line) has FONT for FACE and TEXT_SIZE
 LOOK_FORMAT=2   # a newer format is refused, not half read
-theme_dir() {   # theme_dir NAME -> its folder, or nothing
-    case $1 in ''|.*|*[!A-Za-z0-9._-]*) return 0 ;; esac
-    for _d in "$PALETTE_DIR/$1" "$LOOKS_DIR/$1"; do [ -f "$_d/palette.env" ] && { printf '%s' "$_d"; return 0; }; done
-    if [ ! -f "$PALETTE_DIR/$1.env" ] && [ -f "$CORE_DIR/$1/look.env" ]; then printf '%s' "$CORE_DIR/$1"; fi
-    return 0
+theme_saved_names() {   # -> the themes kept as folders; one whose name no verb takes, and what a save of v0.166 left when killed (NAME.new), are none
+    for _d in "$PALETTE_DIR"/*/; do
+        _d=${_d%/}; _n=${_d##*/}
+        case $_n in *[!A-Za-z0-9._-]*|*.new) continue ;; esac
+        [ ! -f "$_d/palette.env" ] || printf '%s\n' "$_n"
+    done | sort
 }
-theme_kind() {   # theme_kind NAME -> saved | look | yours | shipped | bundled | none
-    case $1 in none) echo none; return ;; ''|.*|*[!A-Za-z0-9._-]*) return 0 ;; esac
-    if [ -f "$PALETTE_DIR/$1/palette.env" ]; then echo saved
-    elif [ -f "$LOOKS_DIR/$1/palette.env" ]; then echo look
-    elif [ -f "$PALETTE_DIR/$1.env" ]; then echo yours
-    elif [ -f "$REPO/gallery/theme/$1.env" ]; then echo shipped
-    elif [ -f "$CORE_DIR/$1/look.env" ]; then echo bundled; fi
-}
-theme_saved_names() { for _d in "$PALETTE_DIR"/*/; do [ -f "${_d}palette.env" ] || continue; _d=${_d%/}; printf '%s\n' "${_d##*/}"; done | sort; }
 core_theme_ids() { awk -F '\t' '{print (NF == 2 ? $2 : $1)}' "$CORE_DIR/themes.tsv"; }
 theme_names() { { palette_names; theme_saved_names; core_theme_ids; } | LC_ALL=C sort -u; }
-theme_label() {
+theme_label_of() {   # theme_label_of NAME -> _tal, the name it is shown by
+    _tal=$1
     case $1 in
-        core-*) [ ! -f "$CORE_DIR/$1/look.env" ] || { printf '%s' "${1#core-}"; return; } ;;
+        core-*) [ ! -f "$CORE_DIR/$1/look.env" ] || _tal=${1#core-} ;;
         first-*) if [ -f "$CORE_DIR/core-${1#first-}/look.env" ] &&
-            grep -qxF "$1" "$CONFIG_DIR/galleries/first-gallery.list" 2>/dev/null; then printf '%s' "${1#first-}"; return; fi ;;
+            grep -qxF "$1" "$CONFIG_DIR/galleries/first-gallery.list" 2>/dev/null; then _tal=${1#first-}; fi ;;
     esac
-    printf '%s' "$1"
 }
+theme_label() { theme_label_of "$1"; printf '%s' "$_tal"; }
 theme_enum() { dirs_cached theme.enum "$(THEME_DIRS)" theme_enum_now; }   # -> the schema's enum, a|b|c
 theme_enum_now() { { theme_names; echo none; } | LC_ALL=C grep -E '^[A-Za-z0-9._-]+$' | sort -u | paste -sd'|' -; }
-look_get() { sed -n "s/^$2=//p" "$1/look.env" 2>/dev/null | head -1 | tr -d '\001-\037\177'; }   # look_get DIR KEY -> the value, control characters dropped
-look_set() {   # look_set DIR KEY VALUE
-    mkdir -p "$1"; { [ ! -f "$1/look.env" ] || grep -v "^$2=" "$1/look.env"; printf '%s=%s\n' "$2" "$3"; } > "$1/look.env.new" && mv "$1/look.env.new" "$1/look.env"
+look_get() {   # look_get DIR KEY -> the value, control characters dropped
+    [ -f "$1/look.env" ] && [ -r "$1/look.env" ] || return 0
+    while IFS= read -r _lgl || [ -n "$_lgl" ]; do
+        case $_lgl in "$2="*) _lgl=${_lgl#*=}; case $_lgl in *[!\ -~]*) _lgl=$(printf '%s' "$_lgl" | tr -d '\001-\037\177') ;; esac; printf '%s' "$_lgl"; return 0 ;; esac
+    done < "$1/look.env"
 }
+look_set() { env_put "$1/look.env" "$2" "$3"; }   # look_set DIR KEY VALUE -- in one step; 1 with look.env as it was
 # a saved theme may come from another machine
 look_ok() {   # look_ok DIR -> 0, or why and 1
     _lf=$1/look.env
-    [ -f "$_lf" ] || return 0
+    [ -f "$_lf" ] || { ! dir_there "$_lf" || { echo "its look.env is not a file"; return 1; }; return 0; }
+    [ -r "$_lf" ] || { echo "its look.env cannot be read"; return 1; }
     _lb=$(grep -nEv '^[[:space:]]*(#|$)|^[A-Z_0-9]+=[^;`$()|&<>]*$' "$_lf" | head -1 | cut -d: -f1)
     [ -z "$_lb" ] || { echo "line $_lb of its look.env is not KEY=value"; return 1; }
     [ "$(LC_ALL=C tr -d '\n -~\200-\377' < "$_lf" | wc -c)" -eq 0 ] || { echo "its look.env holds a control character"; return 1; }   # counted: to grep a NUL ends the line
@@ -82,15 +87,82 @@ look_ok() {   # look_ok DIR -> 0, or why and 1
         *) wall_value_ok "$_lv" || { echo "its WALLPAPER is not default, a drawing's name, #rrggbb or a picture's full path with $PATH_SAID"; return 1; } ;;
     esac
 }
-theme_source_of() {   # theme_source_of DIR -> palette name, words or picture
-    _ps=$(look_get "$1" PALETTE)
-    case $_ps in words) _ps=$(look_get "$1" WORDS) ;; picture) _ps=$(look_get "$1" PICTURE) ;; esac
-    printf '%s' "${_ps:-palette}"
+theme_usable() {   # theme_usable NAME -> 0 when it can be used (palette_render's files made), or why in one line and 1
+    theme_at "$1" || { echo "no palette named $1 (spark-shell theme list)"; return 1; }
+    [ -z "$_tad" ] || look_ok "$_tad" || return 1
+    palette_render "$1" || { echo "$PALETTE_WHY"; return 1; }
+}
+# every theme here in one pass, kept until one changes: a line each, its fields a tab apart, an empty one -
+#   NAME KIND LABEL FOLDER dark|light PALETTE WORDS WALLPAPER PICTURE ANIMATION, then its nine colors (palette_chip's)
+theme_facts() { dirs_cached theme.facts "$(THEME_DIRS)" theme_facts_now; }
+theme_facts_now() {
+    theme_names | while IFS= read -r _tfn; do
+        theme_at "$_tfn" && [ -n "$_tap" ] || continue
+        theme_label_of "$_tfn"; printf '%s\t%s\t%s\t%s\t%s\n' "$_tfn" "$_tak" "$_tal" "${_tad:--}" "$_tap"
+    done | LC_ALL=C awk -F '\t' '
+        function hx(s, i) { return (index("0123456789abcdef", substr(s, i, 1)) - 1) * 16 + index("0123456789abcdef", substr(s, i + 1, 1)) - 1 }
+        function plain(s) { gsub(/[\001-\037\177]/, "", s); return s == "" ? "-" : s }
+        function env(file, first,   l, k) {   # KEY=value lines into v; the last of a key wins, the first in a look
+            split("", v)
+            while ((getline l < file) > 0) { k = l; if (!sub(/=.*/, "", k) || (first && k in v)) continue; sub(/^[^=]*=/, "", l); v[k] = l }
+            close(file)
+        }
+        {
+            env($5, 0); n = split("BG FG ACCENT ANSI_1 ANSI_2 ANSI_3 ANSI_4 ANSI_5 ANSI_6", key, " "); chips = ""
+            for (i = 1; i <= n; i++) { c = v["THEME_" key[i]]; gsub(/["\r]/, "", c); chips = chips "\t" plain(c); if (i == 1) bg = tolower(c) }
+            sub(/^#/, "", bg); dark = (hx(bg, 1) * 299 + hx(bg, 3) * 587 + hx(bg, 5) * 114) / 1000 < 128 ? "dark" : "light"
+            if ($4 == "-") split("", v); else env($4 "/look.env", 1)
+            print $1 "\t" $2 "\t" $3 "\t" $4 "\t" dark "\t" plain(v["PALETTE"]) "\t" plain(v["WORDS"]) "\t" plain(v["WALLPAPER"]) "\t" plain(v["PICTURE"]) "\t" plain(v["ANIMATION"]) chips
+        }'
+}
+theme_saved_lines() {   # -> NAME<tab>where its colors come from<tab>its wallpaper, a line a saved theme
+    theme_facts | awk -F '\t' '$2 == "saved" {
+        from = $6 == "words" ? $7 : $6 == "picture" ? $9 : $6; wall = $8 == "picture" ? $9 : $8
+        print $1 "\t" (from == "-" ? "palette" : from) "\t" (wall == "-" ? "default" : wall) }'
 }
 theme_words_of() {   # theme_words_of NAME -> its words, else NAME
     _td=$(theme_dir "$1"); _tw=''
     case $_td in "$LOOKS_DIR"/*) _tw=$(look_get "$_td" WORDS) ;; esac
     if [ -n "$_tw" ]; then printf '%s' "$_tw"; else theme_label "$1"; fi
+}
+# one change of the themes at a time: every verb that writes one, the config's look or the history
+theme_locked() {   # theme_locked CMD ARG... -- CMD alone with the themes, what a killed change left settled first and the config read as it is now; 1 and one line when another change is not over in 20 seconds
+    if [ -n "${THEME_LOCKED:-}" ] || [ "$MODE" = dry ]; then "$@"; return; fi
+    mkdir_private "$STATE_DIR" 2>/dev/null || :
+    locked "$STATE_DIR/theme.lock" theme 20 theme_alone "$@"
+}
+theme_alone() { THEME_LOCKED=1; themes_recover; config_load; "$@"; }
+themes_settle() {   # what a killed change left, finished or undone; nothing while a change is under way
+    [ "$MODE" != dry ] || return 0
+    for _tsl in "$PALETTE_DIR"/.*.new "$PALETTE_DIR"/.*.old "$PALETTE_DIR"/.*.gone "$LOOKS_DIR"/.*.new "$LOOKS_DIR"/.*.old "$LOOKS_DIR"/.*.gone "$PALETTE_DIR"/*.new "$LOOKS_DIR"/*.new; do
+        dir_there "$_tsl" || continue
+        if [ -n "${THEME_LOCKED:-}" ]; then themes_recover
+        else locked "$STATE_DIR/theme.lock" theme 0 themes_recover 2>/dev/null || :; fi
+        return 0
+    done
+}
+themes_recover() {   # the caller holds the themes' lock
+    [ ! -d "$THEME_TRASH" ] || find "$THEME_TRASH" -mindepth 1 -maxdepth 1 -mmin +1440 -exec rm -rf {} + 2>/dev/null || :
+    for _trp in "$PALETTE_DIR" "$LOOKS_DIR"; do
+        dirs_recover "$_trp" palette.env
+        for _trl in "$_trp"/*.new; do   # as v0.166 and before left them: NAME.new, the only copy where NAME is not there
+            [ -d "$_trl" ] && [ ! -L "$_trl" ] || continue
+            _trn=$_trl; while case $_trn in *.new) true ;; *) false ;; esac; do _trn=${_trn%.new}; done
+            if [ -f "$_trn/palette.env" ]; then rm -rf "$_trl"
+            elif ! dir_there "$_trn" && [ -f "$_trl/palette.env" ] && [ -f "$_trl/look.env" ] && [ "$(grep -c '^THEME_[A-Z_0-9]*=#' "$_trl/palette.env")" -ge 20 ] && look_ok "$_trl" >/dev/null; then mv "$_trl" "$_trn"; fi
+        done
+    done
+}
+theme_name_free() {   # theme_name_free NAME -> 0 when a theme can be made by that name, or why not in one line and 1
+    case " $THEME_WORDS " in *" $1 "*) echo "$1 is a word of spark-shell theme, so no theme can go by it"; return 1 ;; esac
+    [ -z "$(theme_kind "$1")" ] || { echo "$1 is taken -- another name"; return 1; }
+    ! dir_there "$PALETTE_DIR/$1" || { echo "$PALETTE_DIR/$1 is there and is no theme -- move it, or another name"; return 1; }
+}
+look_free() {   # look_free WORDS -> the name of a look nothing here has: the words, NAME-look where that is a theme's, NAME-2 and on after a look's
+    _lfn=$(layout_name_of "$1" | cut -c1-32); _lfn=${_lfn%-}; _lfn=${_lfn:-look}; _lfb=$_lfn; _lfi=1
+    case $(theme_kind "$_lfn") in look) ;; *) theme_name_free "$_lfn" >/dev/null || { _lfn=$_lfn-look; _lfb=$_lfn; } ;; esac
+    while ! theme_name_free "$_lfn" >/dev/null || dir_there "$LOOKS_DIR/$_lfn"; do _lfi=$((_lfi + 1)); _lfn=$_lfb-$_lfi; done
+    printf '%s' "$_lfn"
 }
 # a kept kind: the last ten applied, in KIND.history
 LOOKS_DIR=$STATE_DIR/looks            # looks not saved
@@ -98,34 +170,36 @@ KEPT_LAYOUTS=$STATE_DIR/layouts       # layouts not saved
 WALL_CACHE=$STATE_DIR/wallpapers      # DRAWING-PALETTE.svg and .png
 KEPT_MAX=10
 kept_hist() { printf '%s/%s.history' "$STATE_DIR" "$1"; }   # kept_hist KIND -> its file
-kept_history() { [ ! -f "$(kept_hist "$1")" ] || cat "$(kept_hist "$1")"; }   # kept_history KIND -> "EPOCH<tab>NAME" lines, newest first
+kept_dir() { if [ "$1" = theme ]; then printf '%s' "$LOOKS_DIR"; else printf '%s' "$KEPT_LAYOUTS"; fi; }   # kept_dir KIND -> where its unsaved ones are
+kept_history() {   # kept_history KIND -> "EPOCH<tab>NAME" lines, newest first, a name once; a line of another shape is none
+    _khh=$(kept_hist "$1"); [ -f "$_khh" ] && [ -r "$_khh" ] || return 0
+    LC_ALL=C awk -F '\t' '{ sub(/\r$/, "") } NF == 2 && $1 ~ /^[0-9]+$/ && length($1) < 12 && $2 ~ /^[A-Za-z0-9._-]+$/ && !seen[$2]++' "$_khh"
+}
 kept_names() { kept_history "$1" | cut -f2; }
-kept_note() {   # kept_note KIND NAME -- NAME newest; the back cursor reset
-    _kh=$(kept_hist "$1"); mkdir_private "$STATE_DIR"
-    { printf '%s\t%s\n' "$(date +%s)" "$2"; [ ! -f "$_kh" ] || awk -F '\t' -v n="$2" '$2 != n' "$_kh"; } | head -n "$KEPT_MAX" > "$_kh.new" && mv "$_kh.new" "$_kh"
-    rm -f "$_kh.back"
-    kept_prune "$1"
+kept_known() {   # kept_known KIND -> the history, then the unsaved ones it does not name, the newest first: one that is lost or cut short costs no look
+    { kept_history "$1"; ls -t "$(kept_dir "$1")" 2>/dev/null | sed "s/^/0$TAB/"; } | LC_ALL=C awk -F '\t' '$2 ~ /^[A-Za-z0-9._-]+$/ && !seen[$2]++'
 }
-kept_prune() {   # kept_prune KIND -- the theme in use stays
-    if [ "$1" = theme ]; then _kd=$LOOKS_DIR; else _kd=$KEPT_LAYOUTS; fi
-    [ -d "$_kd" ] || return 0
-    kept_names "$1" > "$TMP/kept.names"
-    for _f in "$_kd"/*; do
-        [ -e "$_f" ] || continue
-        _n=${_f##*/}
-        grep -qxF -- "$_n" "$TMP/kept.names" && continue
-        [ "$1" = theme ] && [ "$_n" = "${THEME:-}" ] && continue
-        rm -rf "$_f"
-    done
+kept_note() {   # kept_note KIND NAME -- NAME newest; the back cursor reset; the ones past the last ten go
+    mkdir_private "$STATE_DIR"
+    _knk=$(kept_known "$1" | awk -F '\t' -v n="$2" '$2 != n')
+    write_whole "$(kept_hist "$1")" printf '%s\n' "$(date +%s)$TAB$2" ${_knk:+"$(printf '%s\n' "$_knk" | head -n $((KEPT_MAX - 1)))"} || return 1
+    rm -f "$(kept_hist "$1").back"
+    for _knn in $(printf '%s\n' "$_knk" | tail -n +"$KEPT_MAX" | cut -f2); do kept_gone "$1" "$_knn"; done   # by name, never by what a reading left out
 }
-kept_back() {   # kept_back KIND [CURRENT] -> the previous name, one further each call
-    _kh=$(kept_hist "$1"); [ -f "$_kh" ] || return 1
-    if [ -f "$_kh.back" ]; then _i=$(cat "$_kh.back")
-    elif [ $# -ge 2 ] && [ "$(sed -n 1p "$_kh" | cut -f2)" != "$2" ]; then _i=0
-    else _i=1; fi
-    _i=$((_i + 1))
-    _n=$(sed -n "${_i}p" "$_kh" | cut -f2); [ -n "$_n" ] || return 1
-    printf '%s' "$_i" > "$_kh.back"; printf '%s' "$_n"
+kept_gone() {   # kept_gone KIND NAME -- the unsaved one by that name removed; the theme in use and the one whose picture is the wallpaper stay
+    _kgf=$(kept_dir "$1")/$2
+    [ "$1" = theme ] && { [ "$2" = "${THEME:-}" ] || [ "${WALLPAPER#"$_kgf"/}" != "$WALLPAPER" ]; } && return 0
+    ! dir_there "$_kgf" || dir_drop "$_kgf" || :
+}
+kept_drop() { [ ! -f "$(kept_hist "$1")" ] || write_whole "$(kept_hist "$1")" awk -F '\t' -v n="$2" '{ sub(/\r$/, "") } $2 != n' "$(kept_hist "$1")"; }   # kept_drop KIND NAME -- out of the history
+kept_rename() { [ ! -f "$(kept_hist "$1")" ] || write_whole "$(kept_hist "$1")" awk -F '\t' -v OFS='\t' -v o="$2" -v n="$3" '{ sub(/\r$/, "") } $2 == o { $2 = n } 1' "$(kept_hist "$1")"; }   # kept_rename KIND OLD NEW -- in the history
+kept_back() {   # kept_back KIND [NAME] -> the one before NAME in the history (the newest where it is not there); with no NAME, before the last one gone back to
+    _kbf=$(kept_hist "$1").back; _kbn=${2-$(sed -n 1p "$_kbf" 2>/dev/null || :)}
+    _kbl=$(kept_known "$1" | cut -f2)
+    [ $# -ge 2 ] || printf '%s\n' "$_kbl" | grep -qxF -e "$_kbn" || _kbn=${_kbl%%"$NL"*}
+    _kbn=$(printf '%s\n' "$_kbl" | awk -v n="$_kbn" '{ l[NR] = $0; if ($0 == n) at = NR } END { print l[at + 1] }'); [ -n "$_kbn" ] || return 1
+    [ $# -ge 2 ] || { printf '%s\n' "$_kbn" > "$_kbf"; } 2>/dev/null || :
+    printf '%s' "$_kbn"
 }
 kept_when() {   # kept_when EPOCH -> today 10:12, yesterday 18:40, monday 09:15, else 3 oct
     _kd=$(when_of "$1" %Y%m%d); _kt=$(when_of "$1" %H:%M); _now=$(date +%s)
@@ -143,11 +217,7 @@ palette_names() { for _p in "$REPO"/gallery/theme/*.env "$PALETTE_DIR"/*.env; do
 palette_get() { sed -n "s/^$2=//p" "$1" | tail -1 | tr -d '"\r'; }   # palette_get FILE KEY
 PALETTE_NONE="terminal default colors"   # palette none's row
 palette_darks() { dirs_cached theme.darks "$(THEME_DIRS)" palette_darks_now; }   # -> the dark palettes
-palette_darks_now() {   # the background's luminance under half
-    palette_names | while IFS= read -r _n; do _f=$(palette_file "$_n") && printf '%s\t%s\n' "$_n" "$(palette_get "$_f" THEME_BG)"; done \
-        | awk -F '\t' 'function hx(s, i) { return (index("0123456789abcdef", substr(s, i, 1)) - 1) * 16 + index("0123456789abcdef", substr(s, i + 1, 1)) - 1 }
-            { c = tolower($2); sub(/^#/, "", c); if ((hx(c, 1) * 299 + hx(c, 3) * 587 + hx(c, 5) * 114) / 1000 < 128) print $1 }'
-}
+palette_darks_now() { { theme_facts; palette_names; } | awk -F '\t' 'NF > 1 { dark[$1] = $5 == "dark"; next } dark[$1]'; }   # the background's luminance under half
 palette_chip() {   # palette_chip NAME -> bg, fg, accent, ANSI 1 to 6; false when none
     _f=$(palette_file "$1") || return 1
     awk -F= '{ v[$1] = $2; gsub(/["\r]/, "", v[$1]) } END { printf "%s %s %s %s %s %s %s %s %s\n", v["THEME_BG"], v["THEME_FG"], v["THEME_ACCENT"], v["THEME_ANSI_1"], v["THEME_ANSI_2"], v["THEME_ANSI_3"], v["THEME_ANSI_4"], v["THEME_ANSI_5"], v["THEME_ANSI_6"] }' "$_f"
@@ -179,39 +249,40 @@ palette_export() (
     case ${2:-env} in env|"$TERM_NAME"|kitty|ghostty|alacritty) ;; *) echo "choose a palette format: $TERM_PALETTE_FORMATS" >&2; return 1 ;; esac
     TMP=$TMP/terminal-palette
     mkdir -p "$TMP" || return 1
-    palette_render "$1" || { cat "$TMP/palette.why" >&2; return 1; }
+    palette_render "$1" || { echo "$PALETTE_WHY" >&2; return 1; }
     _section=''; [ "${2:-env}" != "$TERM_NAME" ] || _section=$(term_colors_section)
     printf '# Palette reference: %s\n' "$(palette_reference "$1")"
     awk -v format="${2:-env}" -v native="$TERM_NAME" -v section="$_section" -v theme="$(theme_label "$1")" -f "$REPO/lib/terminal-palette.awk" "$TMP/theme.env"
 )
 console_render() {   # console_render RRGGBB... (16) -> $TMP/console-colors and $TMP/console-colors.rgb
-    _i=0; _esc=''; _r=''; _g=''; _b=''
-    for _h in "$@"; do
-        _esc="$_esc$(printf '\033]P%x%s' "$_i" "$_h")"
-        rgb_of "#$_h"
+    _esc=''; _r=''; _g=''; _b=''
+    for _i in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
+        rgb_of "#$1"; _esc="$_esc $_i $1"; shift
         _r="$_r,$_R"; _g="$_g,$_G"; _b="$_b,$_B"
-        _i=$((_i + 1))
     done
-    printf '%s' "$_esc" > "$TMP/console-colors"
-    printf '%s\n%s\n%s\n' "${_r#,}" "${_g#,}" "${_b#,}" > "$TMP/console-colors.rgb"
+    # shellcheck disable=SC2086   # an index and a color, sixteen times
+    printf '\033]P%s%s' $_esc > "$TMP/console-colors" && printf '%s\n%s\n%s\n' "${_r#,}" "${_g#,}" "${_b#,}" > "$TMP/console-colors.rgb"
 }
-palette_render() {   # palette_render NAME -> $TMP's three files, or why not in $TMP/palette.why
-    if ! _f=$(palette_file "$1"); then echo "no palette named $1 (spark-shell theme list)" > "$TMP/palette.why"; return 1; fi
-    printf '# rendered by spark-shell from the palette %s -- spark-shell theme NAME changes it\n' "$1" > "$TMP/theme.env"
-    awk -F= '{ k = $1; sub(/^[^=]*=/, ""); gsub(/["\r]/, ""); v[k] = $0 } END { for (k in v) print k "=" v[k] }' "$_f" > "$TMP/palette.kv"   # the last line of a key wins
-    _hexes=''
-    for _k in $THEME_KEYS; do
-        _v=$(sed -n "s/^$_k=//p" "$TMP/palette.kv")
-        hex_rgb "$_v" >/dev/null || { echo "$_f: $_k is not #rrggbb" > "$TMP/palette.why"; return 1; }
-        printf '%s=%s\n' "$_k" "$_v" >> "$TMP/theme.env"
-        # shellcheck disable=SC2154   # _hv is set by hex_put
-        case $_k in THEME_ANSI_*) hex_put _hv "$_v" ''; _hexes="$_hexes $_hv" ;; esac
-    done
-    _v=$(sed -n 's/^THEME_LOGO=//p' "$TMP/palette.kv")
-    case $_v in '') ;; *[!A-Za-z0-9\ _.#-]*) echo "$_f: THEME_LOGO holds more than names and colors" > "$TMP/palette.why"; return 1 ;;
-        *) printf 'THEME_LOGO=%s\n' "$_v" >> "$TMP/theme.env" ;; esac
-    # shellcheck disable=SC2086   # sixteen words, split on purpose
-    console_render $_hexes
+palette_render() {   # palette_render NAME -> $TMP's three files; 1 and PALETTE_WHY when they cannot be
+    if ! _f=$(palette_file "$1"); then PALETTE_WHY="no palette named $1 (spark-shell theme list)"; return 1; fi
+    if [ ! -r "$_f" ]; then PALETTE_WHY="$_f cannot be read"; return 1; fi
+    _prk=$(palette_lines "$1" "$_f") || { PALETTE_WHY="$_f: $_prk"; return 1; }
+    # shellcheck disable=SC2046   # sixteen colors, split on purpose
+    { printf '%s\n' "$_prk" > "$TMP/theme.env" && console_render $(printf '%s\n' "$_prk" | sed -n 's/^THEME_ANSI_[0-9]*=#//p' | tr 'A-F' 'a-f'); } 2>/dev/null \
+        || { PALETTE_WHY="$TMP takes no file, so the palette could not be made: is the disk full?"; return 1; }
+}
+palette_lines() {   # palette_lines NAME FILE -> theme.env's lines, or why not in one line and 1; the last line of a key wins
+    awk -v keys="$THEME_KEYS" -v name="$1" '
+        index($0, "=") { k = $0; sub(/=.*/, "", k); sub(/^[^=]*=/, ""); gsub(/["\r]/, ""); v[k] = $0 }
+        END {
+            n = split(keys, key, " "); lines = ""
+            for (i = 1; i <= n; i++) {
+                if (v[key[i]] !~ /^#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]$/) { print key[i] " is not #rrggbb"; exit 1 }
+                lines = lines "\n" key[i] "=" v[key[i]]
+            }
+            if (v["THEME_LOGO"] ~ /[^A-Za-z0-9 _.#-]/) { print "THEME_LOGO holds more than names and colors"; exit 1 }
+            print "# rendered by spark-shell from the palette " name " -- spark-shell theme NAME changes it" lines (v["THEME_LOGO"] == "" ? "" : "\nTHEME_LOGO=" v["THEME_LOGO"])
+        }' "$2"
 }
 theme_ours() { [ -f "$THEME_ENV" ] && grep -q 'rendered by spark-shell' "$THEME_ENV"; }
 console_send() {   # console_send FILE -- a tty console only
@@ -243,13 +314,13 @@ theme_files() {   # the three files, as THEME says
         fi
         return 0
     fi
-    if [ "${PALETTE_RENDERED:-}" != "$THEME" ] && ! palette_render "$THEME"; then row todo theme "THEME=$THEME: $(cat "$TMP/palette.why")"; return 0; fi
+    if [ "${PALETTE_RENDERED:-}" != "$THEME" ] && ! palette_render "$THEME"; then row todo theme "THEME=$THEME: $PALETTE_WHY"; return 0; fi
     for _f in theme.env console-colors console-colors.rgb; do
         case $_f in theme.env) _d=$THEME_ENV ;; *) _d=$CONFIG_DIR/$_f ;; esac
         if [ -f "$_d" ] && cmp -s "$TMP/$_f" "$_d"; then ok theme "$THEME ($_d)"; continue; fi
         changes=$((changes + 1))
         need theme "$THEME: write $_d" || continue
-        mkdir -p "$(dirname "$_d")"; put_whole "$TMP/$_f" "$_d" || { row todo theme "$THEME: $_d could not be written"; continue; }   # in one step: a shell that starts now reads the old palette or the new one, never an emptied file
+        mkdir -p "$(dirname "$_d")" 2>/dev/null && write_whole "$_d" cat "$TMP/$_f" || { write_failed theme "$THEME: $_d could not be written$(store_said)"; continue; }   # in one step: a shell that starts now reads the old palette or the new one, never an emptied file
         [ "$_f" != console-colors ] || CONSOLE_NOW=$_d
         ok theme "$THEME: $_d written"
     done
@@ -471,7 +542,7 @@ theme_preview() (   # theme_preview NAME|off -- nothing written; a subshell: the
     if [ "$1" = off ]; then config_load; theme_load
     else
         [ "$1" != none ] || { echo "none has no colors to show"; exit 1; }
-        palette_render "$1" || { cat "$TMP/palette.why"; exit 1; }
+        palette_render "$1" || { echo "$PALETTE_WHY"; exit 1; }
         [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || wall_yours || ! _pw=$(wall_for_palette "$1") || WALLPAPER=$_pw   # its own drawing, unless your picture is on
         for _k in $THEME_KEYS; do unset "$_k"; done
         THEME=$1; THEME_ENV=$TMP/theme.env; theme_load

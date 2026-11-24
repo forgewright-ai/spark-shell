@@ -20,6 +20,8 @@ todo=0
 would=0   # the would rows printed: a dry run's last line counts them
 acting=0
 todos=0   # the todo rows printed: a verb's closing line says when one is left
+failed=0    # the writes that failed, and what the first of them says: no receipt is said over one
+failed_said=''
 row_part=''   # the part the step under way names in its rows: a write as root that fails is said under it
 run_verb=''   # an on or an off under way, as it was asked ("on desktop"): when it stops at a failure its last lines say the ways on
 root_why=''   # the system's last words on a write as root that failed
@@ -28,6 +30,7 @@ row() {
     [ "$1" != would ] || would=$((would + 1))
     [ "$1" != todo ] || todos=$((todos + 1))
 }
+write_failed() { row todo "$1" "$2"; [ "$failed" -gt 0 ] || failed_said=$2; failed=$((failed + 1)); }   # write_failed PART WORDS
 dry_close() { if [ "$would" -eq 0 ]; then echo "Nothing to do"; else echo "$would to do"; fi; }
 loud() { [ "$MODE" = dry ] || [ "$VERBOSE" = 1 ]; }
 ok() { if loud || [ "$acting" = 1 ]; then row ok "$1" "${2:-}"; fi; acting=0; }
