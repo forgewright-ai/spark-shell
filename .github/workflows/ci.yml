@@ -339,7 +339,9 @@ jobs:
     container: opensuse/tumbleweed:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Tumbleweed there is, and zypper dup moves it to today anyway
     timeout-minutes: 15
     steps:
-      - run: zypper --non-interactive --quiet install python3 git ShellCheck diffutils findutils jq openssh-clients curl gawk tar gzip libstdc++6 >/dev/null
+      # the image is one snapshot and the repository another: dup puts them on one first, as the desktop job's row does
+      # (the image of 2026-11-24 15:17 UTC refused a plain install against the repository of 2026-11-22)
+      - run: zypper --non-interactive refresh >/dev/null; zypper --non-interactive dup >/dev/null; zypper --non-interactive --quiet install python3 git ShellCheck diffutils findutils jq openssh-clients curl gawk tar gzip libstdc++6 >/dev/null
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           persist-credentials: false
