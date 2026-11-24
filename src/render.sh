@@ -32,7 +32,7 @@ link_one() {   # link_one SRC DST
     ln -sfn "$1" "$2"
     row link rc "$2"
 }
-esc() { printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'; }
+esc() { case $1 in *[\\\&\|]*) printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g' ;; *) printf '%s' "$1" ;; esac; }   # esc TEXT -> it as a sed replacement
 bar_mode() { if [ "$DESKTOP_BAR" = yes ]; then echo dock; else echo invisible; fi; }   # sway bar mode: shown, or there but never drawn
 bar_tray_output() { if [ "$BAR_TRAY" = yes ]; then echo '*'; else echo none; fi; }   # sway's tray_output: every screen's bar, or none
 bar_place() { if [ "$DESKTOP_BAR" != yes ]; then echo hidden; else echo "$BAR_POSITION"; fi; }   # -> top, bottom or hidden: the one place the bar's section and its verb say
@@ -66,7 +66,7 @@ render_expr() {   # -> the sed script that renders a template, one s command a l
     for k in $THEME_KEYS $SLOT_KEYS $HEX_KEYS $WALL_KEYS $PANEL_KEYS $WIN_KEYS $POINTER_KEYS; do
         eval "v=\$$k"
         # shellcheck disable=SC2154   # v is set by the eval above
-        case $v in *[\\\&\|]*) v=$(esc "$v") ;; esac   # a process only where there is something to escape: a hundred keys pass here
+        case $v in *[\\\&\|]*) v=$(esc "$v") ;; esac   # no subshell for the rest: a hundred keys pass here
         e="$e${NL}s|@$k@|$v|g"
     done
     _fs=$(font_spec)   # FONT as foot can draw it: the old face until Monaspace Neon is installed
@@ -102,32 +102,38 @@ render_tmp() {   # render_tmp SRC DST -- the template through EXPR, every placeh
         exit 1
     fi
 }
-# a render changed by hand: each render's checksum is kept in the state; a file of ours that no
-# longer matches was edited since, and is kept as .bak before the new render
-render_sum() { { cksum < "$1"; } 2>/dev/null | awk '{ print $1 "-" $2 }'; }   # render_sum FILE -> its checksum and size
-render_by_hand() {   # render_by_hand DST -> true when DST is a render whose kept checksum it no longer has
-    [ -f "$STATE_DIR/renders" ] || return 1
-    _rbh=$(awk -F '\t' -v p="$1" '$1 == p { s = $2 } END { print s }' "$STATE_DIR/renders")
-    [ -n "$_rbh" ] && [ "$_rbh" != "$(render_sum "$1")" ]
+# a render changed by hand: each render's checksum is kept in the state, a line added for each, the last of a path its
+# own; a file of ours that no longer matches was edited since, and is kept as .bak before the new render
+render_sum() { set -- $({ cksum < "$1"; } 2>/dev/null); printf '%s' "${1:+$1-$2}"; }   # render_sum FILE -> its checksum and size
+render_kept() {   # render_kept DST -> _rkd its kept checksum, _rkl the whole list
+    _rkl=$NL$(cat "$STATE_DIR/renders" 2>/dev/null || :); _rkd=''
+    case $_rkl in *"$NL$1$TAB"*) _rkd=${_rkl##*"$NL$1$TAB"}; _rkd=${_rkd%%"$NL"*} ;; esac
 }
+render_by_hand() { render_kept "$1"; [ -n "$_rkd" ] && [ "$_rkd" != "$(render_sum "$1")" ]; }   # render_by_hand DST -> true when DST is a render whose kept checksum it no longer has
 render_sum_keep() {   # render_sum_keep DST -- its checksum now, in place of the one kept before
     [ "$MODE" != dry ] || return 0
-    _rsk=$(render_sum "$1")
-    ! grep -qxF "$1$TAB$_rsk" "$STATE_DIR/renders" 2>/dev/null || return 0
-    mkdir_private "$STATE_DIR"
-    { [ ! -f "$STATE_DIR/renders" ] || awk -F '\t' -v p="$1" '$1 != p' "$STATE_DIR/renders"; printf '%s\t%s\n' "$1" "$_rsk"; } > "$TMP/renders" \
-        && cp "$TMP/renders" "$STATE_DIR/renders" && chmod 0600 "$STATE_DIR/renders"
+    _rsk=$(render_sum "$1"); render_kept "$1"
+    [ "$_rkd" != "$_rsk" ] || return 0
+    [ -f "$STATE_DIR/renders" ] || { mkdir_private "$STATE_DIR"; (umask 077; : > "$STATE_DIR/renders"); } 2>/dev/null || return 0
+    if [ "${#_rkl}" -lt 16384 ]; then { printf '%s\t%s\n' "$1" "$_rsk" >> "$STATE_DIR/renders"; } 2>/dev/null
+    else write_whole "$STATE_DIR/renders" render_sums "$1" "$_rsk"; fi || :
 }
+render_sums() { awk -F '\t' -v p="$1" '$1 != p { if (!($1 in sum)) path[++n] = $1; sum[$1] = $2 } END { for (i = 1; i <= n; i++) print path[i] "\t" sum[path[i]] }' "$STATE_DIR/renders" && printf '%s\t%s\n' "$1" "$2"; }   # render_sums DST SUM -> the list with one line a path
 render_one() {   # render_one SRC DST -- EXPR must be set
     render_tmp "$1" "$TMP/render" || { write_failed look "$2 could not be made$(store_said)"; return 0; }
     if [ -f "$2" ] && [ ! -L "$2" ] && cmp -s "$TMP/render" "$2"; then ok look "$2"; render_sum_keep "$2"; return; fi
     if [ -f "$2" ] && [ ! -L "$2" ] && { ! grep -q 'rendered by spark-shell' "$2" || render_by_hand "$2"; }; then backup "$2"; fi
     changes=$((changes + 1))
     if [ "$MODE" = dry ]; then row would look "$2"; return; fi
-    # a link there is no file of ours: the render takes its place
-    { mkdir -p "$(dirname "$2")" && { [ ! -L "$2" ] || rm -f "$2"; } && write_whole "$2" cat "$TMP/render" && chmod 0644 "$2"; } 2>/dev/null || { write_failed look "$2 could not be written$(store_said)"; return 0; }
+    render_put "$2" 2>"$TMP/store.why" || { file_unstage "$2"; write_failed look "$2 could not be written$(store_said)"; return 0; }
     render_sum_keep "$2"
     row render look "$2"
+}
+render_put() {   # render_put DST -- $TMP/render in its place, in one step; a link there is no file of ours and goes
+    [ -d "${1%/*}" ] || mkdir -p "${1%/*}" || return 1
+    [ ! -L "$1" ] || rm -f "$1"
+    stage_clear "$1"
+    cp "$TMP/render" "$_sgn" && chmod 0644 "$_sgn" && mv -f "$_sgn" "$1"
 }
 
 # what on renders and off hands back; sgr.sh is the prompt's color, sourced by the rc files

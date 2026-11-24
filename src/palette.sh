@@ -45,7 +45,7 @@ theme_label_of() {   # theme_label_of NAME -> _tal, the name it is shown by
 }
 theme_label() { theme_label_of "$1"; printf '%s' "$_tal"; }
 theme_enum() { dirs_cached theme.enum "$(THEME_DIRS)" theme_enum_now; }   # -> the schema's enum, a|b|c
-theme_enum_now() { { theme_names; echo none; } | LC_ALL=C grep -E '^[A-Za-z0-9._-]+$' | sort -u | paste -sd'|' -; }
+theme_enum_now() { { theme_facts | cut -f1; echo none; } | sort -u | paste -sd'|' -; }
 look_get() {   # look_get DIR KEY -> the value, control characters dropped
     [ -f "$1/look.env" ] && [ -r "$1/look.env" ] || return 0
     while IFS= read -r _lgl || [ -n "$_lgl" ]; do
