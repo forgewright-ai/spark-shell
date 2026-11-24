@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # on_console -> 0 on /dev/tty1 and up (not XDG_VTNR: Void has no logind)
 # sets: IDLE_ALPHA IDLE_APP IDLE_FROM IDLE_HUSH IDLE_STILL
-# reads: BAR_WS_ORDER CONFIG_DIR CONFIG_UNSET KB_RE LAYOUT_PENDING LAYOUT_SEEN NOTIFY_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SAVER_OWN SCREENS_CONF STATE_DIR TAB TERM_NAME TMP US WM_NAME
+# reads: BAR_WS_ORDER CONFIG_UNSET KB_RE LAYOUT_PENDING LAYOUT_SEEN NOTIFY_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SAVER_OWN STATE_DIR TAB TERM_NAME TMP US WM_NAME
 on_console() { case $(tty 2>/dev/null) in /dev/tty[1-9]*) return 0 ;; *) return 1 ;; esac; }
 # runtime_dir -- XDG_RUNTIME_DIR when unset (Void has no logind)
 runtime_dir() {
@@ -356,11 +356,8 @@ screen_origin() {   # -> the screens moved, one line each
     [ "$_sox" -lt 0 ] || _sox=0; [ "$_soy" -lt 0 ] || _soy=0
     while IFS="$TAB" read -r _son _soi _ _ _ _sx _sy _; do
         _snx=$((_sx - _sox)); _sny=$((_sy - _soy))
-        [ "$(awk -F '\t' -v i="$_soi" '$2 == i' "$TMP/origin" | grep -c .)" -eq 1 ] || _soi=$_son   # a shared name: the port's
-        wm_output "\"$_soi\"" position "$_snx" "$_sny" >/dev/null 2>&1 || wm_output "$_son" position "$_snx" "$_sny" >/dev/null 2>&1 || continue
-        mkdir -p "$CONFIG_DIR"
-        { [ ! -f "$SCREENS_CONF" ] || grep -v -F -e "output \"$_soi\" position " -e '# rendered' "$SCREENS_CONF" || :; } > "$TMP/screens"
-        { echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them'; grep . "$TMP/screens" || :; printf 'output "%s" position %s %s\n' "$_soi" "$_snx" "$_sny"; } > "$SCREENS_CONF"
+        _soi=$(screen_ref "$_soi" "$_son") && screen_send "$_soi" "$_son" "position $_snx $_sny" || continue
+        screen_place_save "$_soi" "$_snx" "$_sny"
         echo "$_son at $_snx,$_sny"
     done < "$TMP/origin"
 }
@@ -383,8 +380,8 @@ layout_screen() {   # layout_screen [NAME [scale N | mode WxH | transform normal
         done; return 0
     fi
     _r=$(screen_find "$1"); [ -n "$_r" ] || refuse "no screen named $1 (spark-shell desktop screen lists them)"
-    _n=$(printf '%s' "$_r" | cut -f1); _id=$(printf '%s' "$_r" | cut -f2); _kind=${2:-}   # kept: a place replaces $2
-    [ "$(screen_rows | awk -F '\t' -v i="$_id" '$2 == i' | grep -c .)" -eq 1 ] || _id=$_n   # a shared name (no serial) would set both: the port's
+    _n=$(printf '%s' "$_r" | cut -f1); _kind=${2:-}   # kept: a place replaces $2
+    _id=$(screen_ref "$(printf '%s' "$_r" | cut -f2)" "$_n") || refuse "that screen has no name $WM_NAME can be told"
     case ${2:-} in
         scale) screen_scale_valid "${3:-}" || refuse "scale takes a positive decimal"
             _cmd="scale $3"; _said="$_n scale $3" ;;
@@ -411,8 +408,8 @@ layout_screen() {   # layout_screen [NAME [scale N | mode WxH | transform normal
             _cmd="position $_x $_y"; _said="$_n $1 $(printf '%s' "$_o" | cut -f1)" ;;
         *) refuse "screen NAME takes scale N, mode WxH, transform normal|90|180|270, on, off, main, or left-of, right-of, above or below another screen" ;;
     esac
-    wm_output "\"$_id\"" "$_cmd" >/dev/null 2>&1 || wm_output "$_n" "$_cmd" >/dev/null 2>&1 || refuse "$WM_NAME refused: output $_n $_cmd"
-    case $_kind in left-of|right-of|above|below) _oi=$(printf '%s' "$_o" | cut -f2); [ "$(screen_rows | awk -F '\t' -v i="$_oi" '$2 == i' | grep -c .)" -eq 1 ] || _oi=$(printf '%s' "$_o" | cut -f1); screen_save "$_id" "$_cmd" "$_kind" "$_oi" ;;
+    screen_send "$_id" "$_n" "$_cmd" || refuse "$WM_NAME refused: output $_n $_cmd"
+    case $_kind in left-of|right-of|above|below) _oi=$(screen_ref "$(printf '%s' "$_o" | cut -f2)" "$(printf '%s' "$_o" | cut -f1)") || _oi=''; screen_save "$_id" "$_cmd" "$_kind" "$_oi" ;;
         *) screen_save "$_id" "$_cmd" ;; esac
     [ "$_kind" != transform ] || screen_beside_again "$_id"   # its width changed: the screens beside it move
     screen_origin > "$TMP/origin.said"
