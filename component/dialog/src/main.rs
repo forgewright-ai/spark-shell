@@ -894,6 +894,8 @@ fn main() {
     let mut peek_images = None;
     let mut win_peek: Option<(PeekKey, Arc<Pic>, (u32, u32))> = None;
     let mut peek_tried = Instant::now();
+    // the pictures of the screens in the display page's map
+    let mut thumbs = spark_dialog::thumbs::Thumbs::default();
     // a drag on a picture: where the pointer was, in the event's cells and, for a window of the dialog's own, in
     // its pixels
     let mut drag: Option<(u16, u16)> = None;
@@ -1025,7 +1027,7 @@ fn main() {
                     app.size = scene::size(&app, &m, window_px.0, window_px.1);
                     let sc = scene::build(&app, &pal, &m, window_px.0, window_px.1, &scrolls);
                     scrolls = sc.lists.iter().map(|l| l.at.clone()).collect();
-                    steps = sc.steps.clone();
+                    steps = thumbs.put(sc.steps.clone(), w.scale());
                     drawn = ui::Drawn::default();
                     if let Some(g) = sc.grid {
                         let mut b = Buffer::empty(Rect::new(0, 0, app.size.0, app.size.1));

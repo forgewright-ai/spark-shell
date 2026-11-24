@@ -38,6 +38,7 @@ pub mod semantic;
 pub mod sha256;
 pub mod sixel;
 pub mod terminal;
+pub mod thumbs;
 pub mod ui;
 #[cfg(target_os = "linux")]
 pub mod window;
