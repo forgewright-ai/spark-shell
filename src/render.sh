@@ -96,7 +96,7 @@ render_expr() {   # -> the sed script that renders a template, one s command a l
 render_sed() { printf '%s\n' "$1" > "$TMP/render.sed" && sed -f "$TMP/render.sed" "$2"; }   # render_sed SCRIPT SRC -> SRC through the script, from a file (never one -e line)
 render_tmp() {   # render_tmp SRC DST -- the template through EXPR, every placeholder gone; 1 when it could not be written
     render_sed "$EXPR" "$1" > "$2" 2>"$TMP/store.why" || return 1
-    case $1 in "$(wm_config_template)") python3 "$REPO/lib/home.py" render "$2" || exit 1 ;; esac
+    case $1 in "$(wm_config_template)") python3 "$REPO/lib/home.py" render "$2" 2>"$TMP/store.why" || return 1 ;; esac
     if grep -q '@[A-Z_0-9]*@' "$2"; then
         printf 'spark-shell: %s: unrendered placeholder: %s\n' "$1" "$(grep -o '@[A-Z_0-9]*@' "$2" | head -1)" >&2
         exit 1
