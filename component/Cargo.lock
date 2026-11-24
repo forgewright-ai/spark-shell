@@ -986,7 +986,7 @@ dependencies = [
 
 [[package]]
 name = "spark-dialog"
-version = "0.166.0"
+version = "0.166.1"
 dependencies = [
  "calloop",
  "gif",

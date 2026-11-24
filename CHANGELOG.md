@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.166.1
+
+- With a theme's own picture on the screen, such as Atlas Awakening's,
+  the gallery shows each palette's own drawing again. 16 of its works
+  said "Wallpaper preview unavailable", and choosing one kept the other
+  theme's picture under its colors.
+- Colors, Screens and art, Your themes, and the wallpaper, motion and
+  pointer lists look like the rest of the theme settings. Colors has
+  the terminal palette's two columns and its sample prompt.
+- The theme's lists and the gallery name their groups in small type, so
+  the rows and the titles lead. Screens and art fits on one page.
+- A theme's own picture is named by its role, Landscape 1, where its
+  file name was cut short.
+- In the gallery, the picture keeps its size as you move through the
+  list. A section's description and a work's kind show once, under its
+  name.
+- In a list with a check, the names line up.
+- The dialog is 0.166.1.
+
 ## v0.166
 
 - Settings starts with appearance: the theme, the wallpaper and the bar
