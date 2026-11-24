@@ -4872,12 +4872,14 @@ else
     [ ! -e "$H/.local/state/spark-shell/bar.pid" ] && ok "bar status ended: its pid file is gone" || bad "bar pid file stays"
     # the volume keys reach the running bar (the default card back to the first: the asoundrc the click wrote is gone)
     rm -f "$amlog" "$H/.config/alsa/asoundrc"
+    # each step waits for the line it brings, 10 s at most: a second's sleep lost a line on Arch's runner (v0.166.4)
+    _vl() { _vc=$(grep -c '^\[{' "$H/bar.out" 2>/dev/null) || :; echo "${_vc:-0}"; }
+    _vw() { _vi=0; while [ "$_vi" -lt 100 ] && [ "$(_vl)" -lt "$1" ]; do sleep 0.1; _vi=$((_vi + 1)); done; }
     sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
-    sleep 1
-    sh "$SH" bar volume up; sleep 1; sh "$SH" bar volume mute; sleep 1; sh "$SH" bar volume mic
-    sleep 1
+    _vw 1
+    sh "$SH" bar volume up; _vw 2; sh "$SH" bar volume mute; _vw 3; sh "$SH" bar volume mic; _vw 4
     kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
-    [ "$(cat "$amlog" 2>/dev/null)" = "$(printf '%s\n' '-c 0 sset Master 5%+' '-c 0 sset Master toggle' '-c 0 sset Capture toggle')" ] && [ "$(grep -c '^\[{' "$H/bar.out")" -ge 3 ] \
+    [ "$(cat "$amlog" 2>/dev/null)" = "$(printf '%s\n' '-c 0 sset Master 5%+' '-c 0 sset Master toggle' '-c 0 sset Capture toggle')" ] && [ "$(_vl)" -ge 4 ] \
         && ok "bar volume up|mute|mic: the key's change, and the running bar redrawn after each" || bad "volume keys" "$(cat "$amlog" 2>&1); $(grep -c '^\[{' "$H/bar.out") lines"
     st=0; out=$(sh "$SH" bar volume louder 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell bar: volume takes up, down, mute or mic' ] && ok "bar volume: a wrong word is refused in one line" || bad "volume refuse" "st=$st $out"
