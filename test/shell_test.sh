@@ -7914,6 +7914,13 @@ else
         && ok "Void: the run file: no desktop yet, the power keys through sudo, the palette" || bad "void run" "$(cat "$le/run")"
     [ "$(cat "$H/root/etc/sudoers.d/spark-shell-login")" = "$(sed -n '$p' "$REPO/template/login/sudoers" | sed 's/@LOGIN_ACCOUNT@/_greeter/')" ] || [ "$(sed -n '$p' "$H/root/etc/sudoers.d/spark-shell-login")" = '_greeter ALL=(root) NOPASSWD: /usr/bin/reboot "", /usr/bin/poweroff ""' ] \
         && grep -q '^visudo -cf ' "$H/log" && ok "Void: sudoers lets _greeter run reboot and poweroff only, checked by visudo first" || bad "void sudoers" "$(cat "$H/root/etc/sudoers.d/spark-shell-login" "$H/log")"
+    # the look's script runs over the screen's own files alone: a value in it that holds lines of its own reaches no file root runs or reads
+    cp "$C/src/window.sh" "$H/window.keep"; printf 'bar_mode() { printf "x|g\\ns|^exit 0|touch x|\\ns|NOPASSWD:.*|NOPASSWD: ALL"; }\n' >> "$C/src/window.sh"
+    rm -f "$H/root/etc/sudoers.d/spark-shell-login"; LC on login --yes >/dev/null 2>&1 || :   # gone, so it is written again: its mode lets no one write over it
+    _vs=$(tail -1 "$H/root/etc/sudoers.d/spark-shell-login") _vbo=$(tail -1 "$ll/login-boot")
+    cp "$H/window.keep" "$C/src/window.sh"; rm -f "$H/root/etc/sudoers.d/spark-shell-login"; LC on login --yes >/dev/null 2>&1 || :
+    [ "$_vs" = '_greeter ALL=(root) NOPASSWD: /usr/bin/reboot, /usr/bin/poweroff' ] && [ "$_vbo" = 'exit 0' ] \
+        && ok "Void: sudoers and the boot hook are rendered from the login's own two values, whatever the look's script holds" || bad "void render" "$_vs | $_vbo"
     grep -q '^_seatd:x:990:_greeter$' "$H/root/etc/group" && [ -e "$le/seatd.group" ] && ok "Void: _greeter joins _seatd, recorded" || bad "void seatd" "$(cat "$H/root/etc/group")"
     [ "$(cat "$le/boot")" = on ] && grep -q '/usr/local/lib/spark-shell/login-boot #spark-shell-login#$' "$H/root/etc/rc.local" \
         && [ -L "$H/root/etc/runit/runsvdir/default/agetty-tty1" ] && [ ! -e "$H/root/etc/runit/runsvdir/default/greetd" ] \
