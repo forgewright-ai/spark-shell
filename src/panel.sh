@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the signs and the sizes
 # sets: PANEL_APP PANEL_BLOCKS PANEL_CACHE PANEL_COL PANEL_CROSS PANEL_DOT PANEL_DOWN PANEL_GO PANEL_IN PANEL_LOOKS PANEL_MARK PANEL_ORDER PANEL_PROMPT PANEL_RING PANEL_SEP PANEL_SIZE PANEL_TICK PANEL_UP PANEL_WARN PULSE_W
-# reads: BAR_SYS CONFIG_DIR CORE_DIR OS PALETTE_DIR PULSE REPO STATE_DIR TMP
+# reads: BAR_SYS CONFIG_DIR CORE_DIR OS PALETTE_DIR PULSE REPO STATE_DIR TAB TMP
 PANEL_APP='spark-dialog'              # the desktop window's app id: the dialog's
 PANEL_SIZE=60x40                      # columns x rows of the desktop window
 PANEL_COL=9                           # the section column: as wide as reminders
@@ -116,12 +116,11 @@ panel_age() {   # panel_age NAME SECONDS -- an answer made older by that much
 panel_group_begin() { : > "$TMP/group"; }   # one group, one undo
 panel_group_end() {   # the group's inverses become the undo; none: the old undo stays
     [ -s "$TMP/group" ] || return 0
-    panel_dir; awk '{ l[NR] = $0 } END { for (i = NR; i >= 1; i--) print l[i] }' "$TMP/group" > "$PANEL_CACHE/undo"
+    panel_dir; write_whole "$PANEL_CACHE/undo" awk '{ l[NR] = $0 } END { for (i = NR; i >= 1; i--) print l[i] }' "$TMP/group" || rm -f "$PANEL_CACHE/undo"   # one that could not be kept leaves none: never the undo of something older
 }
 panel_recent_add() {   # panel_recent_add SECTION "ACTION ARG" -- the newest first, once, five kept
-    panel_dir; printf '%s\t%s\n' "$1" "$2" > "$TMP/recent.new"
-    [ ! -f "$PANEL_CACHE/recent" ] || grep -vxF "$(printf '%s\t%s' "$1" "$2")" "$PANEL_CACHE/recent" | head -4 >> "$TMP/recent.new"
-    mv "$TMP/recent.new" "$PANEL_CACHE/recent"
+    panel_dir; _pra=''; [ ! -f "$PANEL_CACHE/recent" ] || _pra=$(grep -vxF "$1$TAB$2" "$PANEL_CACHE/recent" | head -4)
+    write_whole "$PANEL_CACHE/recent" printf '%s\n' "$1$TAB$2" ${_pra:+"$_pra"} || :   # the step is done, whatever this list takes
 }
 panel_fresh() {   # panel_fresh NAME AGE -> 0 when the cache would answer without a probe
     _f=$PANEL_CACHE/$1; [ -f "$_f" ] && [ $(( $(date +%s) - $(sed -n 1p "$_f") )) -lt "$2" ] 2>/dev/null

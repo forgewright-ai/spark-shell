@@ -84,7 +84,7 @@ panel_step() {   # panel_step SECTION ACTION [ARG] -> panel_act's line; a step d
         if [ -s "$TMP/sound.undo" ]; then _snd_old=$(cat "$TMP/sound.undo"); _inv="level $_snd_old$TAB$1 at $_snd_old%"; fi
         [ "${PANEL_JOURNAL:-}" != off ] || return 0   # a host's step: no recent pick, no journal
         case $2 in show|all|pick|chat|more|save|close|focus) ;; *) panel_recent_add "$1" "$(printf '%s' "$2${3:+ $3}${4:+ $4}${5:+ $5}" | sed 's/ *$//')" ;; esac
-        [ -z "$_inv" ] || printf '%s\t%s\n' "$1" "$_inv" >> "$TMP/group"
+        [ -z "$_inv" ] || printf '%s\t%s\n' "$1" "$_inv" >> "$TMP/group" || :
         return 0
     fi
     return 1
