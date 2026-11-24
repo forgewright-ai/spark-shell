@@ -39,7 +39,7 @@ power_lock_first() {   # from outside (ssh): through sway's socket
     _pp=$(wm_pid); [ -n "$_pp" ] || return 0   # no desktop: nothing to lock
     _pk=$(wm_socket_of "$_pp"); [ -S "$_pk" ] || return 1
     wm_exec_at "$_pk" "$REPO/spark-shell desktop lock" >/dev/null 2>&1 || return 1
-    _pl=0; while [ "$_pl" -lt 12 ]; do wm_lock_running && return 0; sleep 0.25; _pl=$((_pl + 1)); done
+    _pl=0; while [ "$_pl" -lt 28 ]; do wm_lock_up && return 0; sleep 0.25; _pl=$((_pl + 1)); done   # 7 seconds: a lock that ends over its pictures takes 3 of them
     return 1
 }
 power_now() {   # power_now lock|suspend|logout|restart|shutdown -> one line

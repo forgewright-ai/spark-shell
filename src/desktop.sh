@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # on_console -> 0 on /dev/tty1 and up (not XDG_VTNR: Void has no logind)
-# sets: IDLE_ALPHA IDLE_APP IDLE_FROM IDLE_HUSH IDLE_STILL
+# sets: IDLE_ALPHA IDLE_APP IDLE_FROM IDLE_HUSH IDLE_STILL LOCK_WAIT
 # reads: BAR_WS_ORDER CONFIG_UNSET KB_RE LAYOUT_PENDING LAYOUT_SEEN NOTIFY_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SAVER_OWN STATE_DIR TAB TERM_NAME TMP US WM_NAME
 on_console() { case $(tty 2>/dev/null) in /dev/tty[1-9]*) return 0 ;; *) return 1 ;; esac; }
 # runtime_dir -- XDG_RUNTIME_DIR when unset (Void has no logind)
@@ -459,12 +459,24 @@ layout_power() {   # layout_power [lock|suspend|logout|restart|shutdown]
     esac
 }
 
-# layout_lock -- swaylock in the palette
+LOCK_WAIT=3   # seconds a lock has to read its pictures and be up; then it is one of a plain color. A machine about to sleep waits 5 for it
+lock_awaited() {   # -> 0 when this session is locked, or as soon as a lock that is starting has locked it: that one is never taken for a lock. LOCK_STUCK yes when it takes too long
+    LOCK_STUCK=''; ! wm_lock_up || return 0
+    _la=0
+    while wm_lock_running || { [ "$_la" -gt 0 ] && sleep 0.2 && wm_lock_running; }; do   # gone for a moment: from its pictures to its color
+        [ "$_la" -lt 35 ] || { LOCK_STUCK=yes; return 1; }
+        sleep 0.1; _la=$((_la + 1)); ! wm_lock_up || return 0
+    done
+    return 1
+}
+# layout_lock -- swaylock in the palette; 0 says the session is locked. Its pictures may be a stranger's, and swaylock reads
+# them before it locks: past LOCK_WAIT it is ended and one with no picture takes its place, so nothing it shows keeps the
+# screen open. Never two at once, and the first one's end opens nothing
 layout_lock() {
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own lock"
     [ -n "${WAYLAND_DISPLAY:-}" ] || refuse "locks the desktop: run it inside it (Super+Escape)"
     wm_lock_here || refuse "$(wm_missing lock)"
-    ! wm_lock_running || return 0
+    ! lock_awaited || return 0
     : "${HEX_BG:=242424}" "${HEX_FG:=ffffff}" "${HEX_ACCENT:=24acd4}" "${HEX_MUTED:=616161}" "${HEX_ANSI_1:=f62b5a}" "${HEX_ANSI_3:=e3c401}"   # foot's own, when no palette loaded
     if wall_there; then set -- --image "$(wall_path)" --scaling fill
         # each screen its own still where one is made, as the desktop shows it: a panel, a portrait, a scene's view, the art fitted; never a loop
@@ -474,14 +486,19 @@ layout_lock() {
         done <<EOF
 $(art_screens 2>/dev/null)
 EOF
+        [ -n "$LOCK_STUCK" ] || ! lock_ring wm_lock_within "$LOCK_WAIT" "$@" || return 0
+        ! wm_lock_up || return 0   # it locked as its time ran out
+        set -- --config /dev/null --color "$(wall_ground | tr -d '#')"   # nor a picture of swaylock's own settings
     elif [ "$WALLPAPER" = default ]; then set -- --color "$(wall_ground | tr -d '#')"
     elif wall_color; then set -- --color "$(wall_hex "$WALLPAPER" | tr -d '#')"
     else set -- --color "$HEX_BG"; fi
+    lock_ring wm_lock "$@" || wm_lock_up   # refused, as another locked meanwhile: locked
+}
+lock_ring() {   # lock_ring CMD ARG... -- CMD ARG... and the ring in the palette
     # e6: 90% of the background, the layout box too (swaylock's own is black)
     _in=${HEX_BG}e6
-    rm -rf "$TMP"; trap - EXIT
     _sz=$(look_font_size); : "${_sz:=12}"; _fs=$(font_spec)
-    wm_lock "$@" --font "${_fs%%:*}" --font-size $((_sz * 5 / 3)) --indicator-radius 72 --indicator-thickness 6 --show-failed-attempts \
+    "$@" --font "${_fs%%:*}" --font-size $((_sz * 5 / 3)) --indicator-radius 72 --indicator-thickness 6 --show-failed-attempts \
         --inside-color "$_in" --ring-color "$HEX_ACCENT" --key-hl-color "$HEX_FG" --bs-hl-color "$HEX_ANSI_1" --text-color "$HEX_FG" \
         --line-color 00000000 --separator-color 00000000 --line-clear-color 00000000 --line-ver-color 00000000 --line-wrong-color 00000000 \
         --inside-clear-color "$_in" --ring-clear-color "$HEX_MUTED" --text-clear-color "$HEX_FG" \

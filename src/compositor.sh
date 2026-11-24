@@ -129,15 +129,26 @@ wm_main_screen_of() { sed -n 's/^workspace 1 output "\(.*\)"$/\1/p' "$1" | head 
 
 # the lock, the idle watcher, the background, the capture, the clipboard
 wm_lock_here() { command -v swaylock >/dev/null 2>&1; }
-# a lock of this session's alone: another session's (a second desktop, on tty2) leaves this one open. From outside, with
-# no display, it is the session of wm_pid. One whose environment cannot be read is not counted: swaylock refuses a second by itself
-wm_lock_running() {
+wm_lock_pids() {   # -> the pids of this session's swaylocks, locked or still starting
+    # a lock of this session's alone: another session's (a second desktop, on tty2) leaves this one open. From outside, with
+    # no display, it is the session of wm_pid. One whose environment cannot be read is not counted: swaylock refuses a second by itself
     if [ -n "${WAYLAND_DISPLAY:-}" ]; then set -- "WAYLAND_DISPLAY=$WAYLAND_DISPLAY" "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-}"
     else set -- "$(wm_env_name)=$(wm_socket_of "$(wm_pid)")"; fi
-    for _wlp in $(pgrep -u "$(id -u)" -x swaylock 2>/dev/null); do ! wm_proc_has "$BAR_PROC/$_wlp" "$@" || return 0; done
+    for _wlp in $(pgrep -u "$(id -u)" -x swaylock 2>/dev/null); do ! wm_proc_has "$BAR_PROC/$_wlp" "$@" || printf '%s\n' "$_wlp"; done
+}
+wm_lock_running() { [ -n "$(wm_lock_pids)" ]; }   # one is here: it may read its pictures still, the screen open
+# swaylock reads its pictures, locks, and as the compositor says it is locked leaves its caller's session (--daemonize):
+# one that has not left it yet is no lock. Its password helper never leaves it
+wm_lock_up() {   # -> 0 once this session is locked, never before
+    for _wlu in $(wm_lock_pids); do
+        ! awk -v p="$_wlu" '{ sub(/.*\) /, ""); exit !($4 == p) }' "$BAR_PROC/$_wlu/stat" 2>/dev/null || return 0
+    done
     return 1
 }
-wm_lock() { exec swaylock --daemonize "$@"; }
+wm_lock() { swaylock --daemonize "$@"; }   # -> 0 once locked; not 0: not locked, or locked by another
+wm_lock_within() {   # wm_lock_within SECONDS ARG... -> as wm_lock, ended when it has not locked by then. What ends in between unlocks nothing: a lock whose owner is gone stays, and the next one takes it
+    _wls=$1; shift; { timeout -s KILL "$_wls" swaylock --daemonize "$@"; } 2>/dev/null
+}
 wm_lock_fallback() { printf 'swaylock -f'; }
 wm_idle_cmd() {   # wm_idle_cmd LOCK-LINE IDLE-SECONDS LOCK-SECONDS -> the watcher command; 0 seconds: no timer
     printf 'swayidle -w'
