@@ -65,6 +65,9 @@ else
     # would match nothing below. One it still quotes (a tab, a quote in it) is guarded: a person looks at it
     changed=$(git -c core.quotePath=false diff --no-renames --name-only "$base" "$at")
     lines=$(git diff --no-renames --numstat "$base" "$at" -- . ':(exclude)test' ':(exclude)CHANGELOG.md' | awk '{ n += $1 + $2 } END { print n + 0 }')
+    # a path is judged by its name and its text, and a link's text is not what it stands for
+    link=$(git -c core.quotePath=false diff --no-renames --raw "$base" "$at" | awk -F '\t' '$1 ~ /^:[0-7]+ 1[26]0000 / { print $2; exit }')
+    [ -z "$link" ] || say guarded "$link" "$FULL_JOBS"
 fi
 [ -n "$changed" ] || say fast 'nothing changed' "$FAST_JOBS"
 
@@ -118,13 +121,14 @@ either() { if [ -n "$paths" ]; then "$1" '' "$own_at" "$2"; else "$1" "$at" "$ow
 here_still() { if [ -n "$paths" ]; then [ -f "$1" ]; else git cat-file -e "$at:$1" 2>/dev/null; fi; }
 # module PATH LANE -> guarded, else LANE, for a module of src/. One that is gone and never acted as root is no small fix: standard
 module() { if either says "$1" || either takes "$1"; then echo guarded; elif here_still "$1"; then echo "$2"; else echo standard; fi; }
-# crates PATH -- of the Cargo.lock on stdin, each package from outside this tree; of a Cargo.toml, all but its own version
+# crates PATH -- the Cargo.lock or the Cargo.toml on stdin without the version of a package of this tree: the one thing a
+# fix moves there. Everything else is kept as it is written, so a package from outside is not missed by how it is written
 crates() {
     case $1 in
         *Cargo.lock) awk '
-            function out() { if (from != "") print name, version, from, sum; name = version = from = sum = "" }
+            function out(   i) { for (i = 1; i <= n; i++) if (outside || line[i] !~ /^version = "[0-9.]*"$/) print line[i]; n = 0; outside = 0 }
             /^\[/ { out() }
-            $1 == "name" { name = $3 } $1 == "version" { version = $3 } $1 == "source" { from = $3 } $1 == "checksum" { sum = $3 }
+            { line[++n] = $0 } /source/ { outside = 1 }
             END { out() }' ;;
         *) awk '/^\[/ { part = $0 } part == "[package]" && /^version = "[0-9.]*"$/ { next } { print }' ;;
     esac
@@ -139,8 +143,8 @@ area() {
         .gitattributes|*/.gitattributes|.gitmodules) echo guarded ;;   # what a checkout writes
         test/gate.sh|test/lane.sh|test/prove.sh|test/tag.sh) echo guarded ;;
         test/*_build.sh|test/dialog_sbom.sh) echo guarded ;;   # a release runs them
-        component/*deny.toml|component/*build.rs|component/*.cargo/*|component/*rust-toolchain*) echo guarded ;;   # how a build is made, and what it may take
-        component/*Cargo.lock|component/*Cargo.toml) cargo "$1" ;;
+        *deny.toml|*build.rs|.cargo/*|*/.cargo/*|*rust-toolchain*) echo guarded ;;   # how a build is made, and what it may take
+        *Cargo.lock|*Cargo.toml) cargo "$1" ;;
         spark-shell) echo guarded ;;                  # the entry: every verb passes through it, the update too, and the help is its head
         src/setup.sh|src/dialog.sh|src/gallery.sh) echo guarded ;;   # on and off; the update and the gallery, which read a signature and say what is trusted
         src/render.sh|template/etc/*|template/login/*) echo guarded ;;   # root's own files, and what renders them

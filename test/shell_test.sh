@@ -7073,8 +7073,9 @@ guarded|1|lib/network.py
 guarded|1|test/winpad_build.sh
 guarded|1|test/dialog_sbom.sh
 guarded|1|component/dialog/deny.toml
-guarded|1|component/dialog/build.rs
-guarded|1|component/.cargo/config.toml
+guarded|1|component/NAME/build.rs
+guarded|1|component/NAME/.cargo/config.toml
+guarded|1|.cargo/config.toml
 guarded|1|component/bar/rust-toolchain.toml
 guarded|1|.gitattributes
 guarded|1|test/gate.sh
@@ -7207,11 +7208,14 @@ if command -v git >/dev/null 2>&1; then
         sed "$_ln" "$_lr/component/Cargo.lock" > "$_lr/l"; mv "$_lr/l" "$_lr/component/Cargo.lock"; _lcargo
         case $out in 'guarded|component/Cargo.lock|') ;; *) _lb="$_lb [Cargo.lock $_ln: $out]" ;; esac
     done
+    printf '\n[[package]]\nname="x"\nversion="1.0.0"\nsource="registry+https://example.com/x"\n' >> "$_lr/component/Cargo.lock"; _lcargo
+    case $out in 'guarded|component/Cargo.lock|') ;; *) _lb="$_lb [Cargo.lock, a package written another way: $out]" ;; esac
+    ln -s ../README.md "$_lr/src/LINK.sh"; _lgit add -A; _lcargo; case $out in 'guarded|src/LINK.sh|') ;; *) _lb="$_lb [a link: $out]" ;; esac
     for _ln in 's/^version = "2"/version = "3"/' 's/^adler2 = .*/adler2 = { git = "https:\/\/example.com\/x" }/' 's/^name = .*/&\nbuild = "x.rs"/'; do
         sed "$_ln" "$_lr/component/dialog/Cargo.toml" > "$_lr/l"; mv "$_lr/l" "$_lr/component/dialog/Cargo.toml"; _lcargo
         case $out in 'guarded|component/dialog/Cargo.toml|') ;; *) _lb="$_lb [Cargo.toml $_ln: $out]" ;; esac
     done
-    [ -z "$_lb" ] && ok "test/lane.sh on a change: a module that takes a function's or a global's name from another, or a command's, is guarded, and one that says a root word; a helper that starts to run sudo too; a package from outside the tree or a Cargo.toml's anything but its version is guarded, a version of our own is not" || bad "lanes by name" "$_lb"
+    [ -z "$_lb" ] && ok "test/lane.sh on a change: a module that takes a function's or a global's name from another, or a command's, is guarded, and one that says a root word; a helper that starts to run sudo too; a link, a package from outside the tree or a Cargo.toml's anything but its version is guarded, a version of our own is not" || bad "lanes by name" "$_lb"
 fi
 # test/prove.sh: the desktop job's proofs, each one, and a folder that is not its own is never removed
 _lb=''
@@ -9244,10 +9248,10 @@ CURL
     out=$(T --now) && rc=0 || rc=$?
     [ "$rc" = 0 ] && on_origin v9.0.2 && ok "tag: the same commit, from the clone with the patch key, is tagged" || bad "tag: after the fence" "$rc $out"
     # what the patch key signed is read again where it lands: an install's own list says what a patch may change
-    ptag() { W checkout -q --detach v9.0.2; printf '%s\n' "$3" >> "$U/w/$2"; W add -A; W commit -q -m "$1"; W -c user.signingkey="$U/${4:-patch}" tag -s -m "$1" "$1"; W push -q origin "$1"; }   # ptag TAG FILE LINE [KEY] -- TAG on a commit past v9.0.2 that adds LINE to FILE, signed by KEY
+    ptag() { W checkout -q --detach v9.0.2; mkdir -p "$(dirname "$U/w/$2")"; printf '%s\n' "$3" >> "$U/w/$2"; W add -A; W commit -q -m "$1"; W -c user.signingkey="$U/${4:-patch}" tag -s -m "$1" "$1"; W push -q origin "$1"; }   # ptag TAG FILE LINE [KEY] -- TAG on a commit past v9.0.2 that adds LINE to FILE, signed by KEY
     W fetch -q origin 'refs/tags/*:refs/tags/*'
     ptag v9.0.3 src/login.sh '# a word'; ptag v9.0.4 src/notes.sh 'tag_signed() { return 0; }'; ptag v9.0.5 template/etc/sudoers.d/spark-shell-power '# a word'
-    ptag v9.0.6 component/Cargo.lock "$(printf '\n[[package]]\nname = "x"\nversion = "1.0.0"\nsource = "registry+https://example.com/x"')"; ptag v9.0.7 component/dialog/build.rs 'fn main() {}'
+    ptag v9.0.6 component/Cargo.lock "$(printf '\n[[package]]\nname = "x"\nversion = "1.0.0"\nsource = "registry+https://example.com/x"')"; ptag v9.0.7 component/NAME/build.rs 'fn main() {}'
     ptag v9.7.1 src/notes.sh '# a fix'   # no v9.7 a release key signed
     out=$(sh "$C" update --dry-run 2>&1) && rc=0 || rc=$?
     [ "$rc" = 0 ] && [ "$out" = "spark-shell update: would move v9.0 -> v9.0.2, signed by spark-shell-patch (skipped, not a signed release: v9.7.1 v9.2) (skipped, a patch that changes what only a release may: v9.0.7 v9.0.6 v9.0.5 v9.0.4 v9.0.3)" ] \
