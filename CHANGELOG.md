@@ -11,10 +11,6 @@
   and a logout leaves the screens as they were saved.
 - Type and glyphs shows what it offers: each typeface in its own
   letters, each glyph family by its signs, each text size by an A.
-- Your themes and Screens and art pick a file again. From a theme file,
-  from a picture, and each picture, loop and reel on Screens and art
-  opened the files to browse, and Enter on a file opened it instead of
-  taking it. Now the file is taken, and its page comes back.
 - The login screen shows on each screen the picture that screen has on
   the desktop. It showed one picture on all of them.
 - The login form is a window of its own, drawn once at its screen's size
@@ -63,6 +59,14 @@
 - What root writes is read as you, and checked where root alone can
   change it.
 - The dialog, the bar, the pad and the moving wallpaper are 0.167.0.
+
+## v0.166.5
+
+- Your themes and Screens and art pick a file again. From a theme file,
+  from a picture, and each picture, loop and reel on Screens and art
+  opened the files to browse, and Enter on a file opened it instead of
+  taking it. Now the file is taken, and its page comes back.
+- The dialog is 0.166.5.
 
 ## v0.166.4
 

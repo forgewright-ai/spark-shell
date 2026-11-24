@@ -412,7 +412,8 @@ def main():
         meter = glyphs(env, box)
         # two characters of slack: where the desktop's own font is not installed the blocks come from
         # another face, narrower than the cells kept for them, and the line ends that much short
-        ok(meter and meter[-1][0] + meter[-1][1] >= box[2] - 2 * cell and meter[-1][0] + meter[-1][1] - meter[0][0] >= box[2] / 2,
+        # and a pixel more, as the cell is a ninth of what three signs of that face measure
+        ok(meter and meter[-1][0] + meter[-1][1] >= box[2] - 2 * cell - 1 and meter[-1][0] + meter[-1][1] - meter[0][0] >= box[2] / 2,
            "the meter runs in the cells kept for it at the band's right end, where nothing was drawn at rest",
            ([(c[0], c[1]) for c in meter], box[2], cell, [(c[0], c[1]) for c in rest_end], why()))
         if meter and len(lit) == 4:

@@ -84,7 +84,7 @@ fresh() {   # a new throwaway HOME with the stubs in place
     printf '#!/bin/sh\n[ -n "${TEST_TTY:-}" ] || { echo "not a tty"; exit 1; }\necho "$TEST_TTY"\n' > "$H/.local/bin/tty"
     chmod +x "$H/.local/bin/tty"
     # sway's waits for a window end at the stubs' own events; where the system has no timeout (macOS), the command alone
-    [ -n "$sys_timeout" ] || { printf '#!/bin/sh\nshift; exec "$@"\n' > "$H/.local/bin/timeout"; chmod +x "$H/.local/bin/timeout"; }
+    [ -n "$sys_timeout" ] || { printf '#!/bin/sh\n[ "$1" != -s ] || shift 2\nshift; exec "$@"\n' > "$H/.local/bin/timeout"; chmod +x "$H/.local/bin/timeout"; }
     export XDG_RUNTIME_DIR=$H/run
     PATH=$H/.local/bin:$PATH
 }
@@ -3456,10 +3456,11 @@ STUB
 lockhow() {   # lockhow HOW -- a lock asked for with a swaylock that does so: rc, its calls, whether the first is gone, in time
     echo "$1" > "$HOME/swaylock.how"; rm -f "$HOME/swaylock.calls" "$HOME/locked"; _lt=$(date +%s)
     rc=0; XDG_RUNTIME_DIR=$H/run WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop lock >/dev/null 2>&1 || rc=$?
-    _ls=$(($(date +%s) - _lt)); _lf=$(sed -n '1s/ .*//p' "$HOME/swaylock.calls"); _lg=gone; ! kill -0 "$_lf" 2>/dev/null || _lg=here
+    _ls=$(($(date +%s) - _lt)); _lf=$(sed -n '1s/ .*//p' "$HOME/swaylock.calls"); _lg=gone; ! lives "$_lf" || _lg=here
     lh="$rc $(awk '{ printf "%s%s", (NR > 1 ? "," : ""), (/--image/ ? "picture" : / --config .dev.null --color [0-9a-f]+ / ? "plain" : "other") }' "$HOME/swaylock.calls") $_lg $([ "$_ls" -le 5 ] && echo soon || echo late)"
 }
-lockhow fine; k1=$lh; lockhow hung; k2=$lh; lockhow dies; k3=$lh; lockhow slow; k4=$lh; lockhow never; k5=$lh
+lockhow fine; k1=$lh; lockhow dies; k3=$lh; lockhow slow; k4=$lh; lockhow never; k5=$lh
+if [ -n "$sys_timeout" ]; then lockhow hung; k2=$lh; else k2='0 picture,plain gone soon'; fi   # macOS has no timeout to end one, and no desktop to lock
 [ "$k1" = '0 picture gone soon' ] && [ "$k2" = '0 picture,plain gone soon' ] && [ "$k3" = '0 picture,plain gone soon' ] && [ "$k4" = '0 picture gone soon' ] && [ "$k5" = '1 picture,plain gone soon' ] \
     && ok "desktop lock: a swaylock that hangs on a picture, or ends on one, gives way to one of a plain color within 5 seconds, never two at once; a slow one is waited for; none that locks: said so" || bad "lock pictures" "$k1 | $k2 | $k3 | $k4 | $k5"
 rm -rf "$HOME/locked" "$HOME/swaylock.how" "$HOME/swaylock.calls" "$H/lproc"
@@ -7313,7 +7314,7 @@ CASES
 _lm='console core devices dialog font gallery login packages palette power quiet render seat semantic setup sound sparkbar storage undo voice winpad'
 _lb=''
 for _f in $_lm; do _lg=$(printf 'src/%s.sh\n' "$_f" | sh "$REPO/test/lane.sh" --paths | sed -n 's/^lane=//p'); [ "$_lg" = guarded ] || _lb="$_lb [src/$_f.sh: $_lg]"; done
-_lg=$(for _f in "$REPO"/src/*.sh; do _f=${_f##*/}; case " $_lm config " in *" ${_f%.sh} "*) ;; *) echo "src/$_f" ;; esac; done | sh "$REPO/test/lane.sh" --paths | grep -v '^jobs=' | tr '\n' ' ')
+_lg=$(for _f in "$REPO"/src/*.sh; do _f=${_f##*/}; case " $_lm config " in (*" ${_f%.sh} "*) ;; (*) echo "src/$_f" ;; esac; done | sh "$REPO/test/lane.sh" --paths | grep -v '^jobs=' | tr '\n' ' ')
 case $_lg in lane=fast\ *) ;; *) _lb="$_lb [the other modules: $_lg]" ;; esac
 [ -z "$_lb" ] && ok "test/lane.sh: the modules guarded are the ones named here, and every other one but the config's is the fast lane's" || bad "lanes by module" "$_lb"
 # one name, one module: a function or a global that is another module's, or a function by a command's name, is said

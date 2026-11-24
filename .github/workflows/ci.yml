@@ -164,7 +164,7 @@ jobs:
     needs: [lint, plan, pins]
     if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' linux ') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
+    timeout-minutes: 25   # the suite passed 2000 tests in v0.167, and a slow runner takes twice a fast one's time
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
@@ -173,7 +173,7 @@ jobs:
         run: sudo apt-get update -qq >/dev/null && apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/debian.env) >/dev/null
       - name: the suite in a throwaway HOME
         run: |
-          timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          timeout --foreground 1080 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 18 minutes, before the job's 25, so a hang says where it is (#172)
           python3 test/apps_test.py
           python3 test/bluetooth_test.py
           python3 test/provider_acceptance.py
@@ -208,7 +208,7 @@ jobs:
     if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' debian ') }}
     runs-on: ubuntu-latest
     container: debian:13@sha256:9cc080028c43b27d2074d63a5f9caf7166d731494965616c1a6d2827a004585c   # a stable release: pinned, bump the digest with a point release
-    timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
+    timeout-minutes: 25   # the suite passed 2000 tests in v0.167, and a slow runner takes twice a fast one's time
     steps:
       - run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 git shellcheck diffutils jq openssh-client curl >/dev/null   # jq: a desk reads the model's answer with it; ssh-keygen: a release tag's signature
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
@@ -218,7 +218,7 @@ jobs:
         run: apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/debian.env) >/dev/null
       - name: the suite in a throwaway HOME
         run: |
-          timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          timeout --foreground 1080 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 18 minutes, before the job's 25, so a hang says where it is (#172)
           python3 test/apps_test.py
           python3 -I test/install_test.py
           python3 test/bluetooth_test.py
@@ -231,7 +231,7 @@ jobs:
     if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' ubuntu ') }}
     runs-on: ubuntu-latest
     container: ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c   # a stable release: pinned, bump the digest with a point release
-    timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
+    timeout-minutes: 25   # the suite passed 2000 tests in v0.167, and a slow runner takes twice a fast one's time
     steps:
       - run: printf 'http://mirrors.edge.kernel.org/ubuntu/\tpriority:1\nhttp://azure.archive.ubuntu.com/ubuntu/\tpriority:2\nhttp://archive.ubuntu.com/ubuntu/\tpriority:3\n' > /etc/apt/mirrors.txt && sed -i -E 's|^(URIs:) .*|\1 mirror+file:/etc/apt/mirrors.txt|' /etc/apt/sources.list.d/ubuntu.sources && apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update -qq && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq python3 git shellcheck diffutils jq openssh-client curl sudo >/dev/null   # sudo: the image has none, and 26.04's is sudo-rs
       - name: the image's sudo is sudo-rs and its coreutils are uutils', or this job proves nothing
@@ -246,7 +246,7 @@ jobs:
         run: apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/debian.env) >/dev/null
       - name: the suite in a throwaway HOME
         run: |
-          timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          timeout --foreground 1080 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 18 minutes, before the job's 25, so a hang says where it is (#172)
           python3 test/apps_test.py
           python3 -I test/install_test.py
           python3 test/bluetooth_test.py
@@ -257,7 +257,7 @@ jobs:
     if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' arch ') }}
     runs-on: ubuntu-latest
     container: archlinux:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Arch there is, and -Syu moves it to today anyway
-    timeout-minutes: 20   # the full shell and native provider suites need time for cleanup too
+    timeout-minutes: 25   # the full shell and native provider suites need time for cleanup too
     steps:
       - run: pacman -Syu --noconfirm --needed python git diffutils jq openssh >/dev/null   # ssh-keygen: a release tag's signature
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
@@ -267,7 +267,7 @@ jobs:
         run: pacman -Sp --needed $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/arch.env) >/dev/null
       - name: the suite in a throwaway HOME
         run: |
-          timeout --foreground 900 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 15 minutes, before the job's 20, so the parts say where they are
+          timeout --foreground 1080 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 18 minutes, before the job's 25, so the parts say where they are
           python3 test/apps_test.py
           python3 -I test/install_test.py
           python3 test/bluetooth_test.py
@@ -280,7 +280,7 @@ jobs:
     if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' void ') }}
     runs-on: ubuntu-latest
     container: ghcr.io/void-linux/void-glibc-full:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Void there is, and -Su moves it to today anyway
-    timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
+    timeout-minutes: 25   # the suite passed 2000 tests in v0.167, and a slow runner takes twice a fast one's time
     steps:
       # the image asks repo-default.voidlinux.org, which maps to any Tier 1
       # mirror. The one it mapped to on 2026-10-29 failed two runs
@@ -304,7 +304,7 @@ jobs:
         run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/void.env); do xbps-query -R "$p" >/dev/null || { echo "no package $p"; exit 1; }; done
       - name: the suite in a throwaway HOME
         run: |
-          timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          timeout --foreground 1080 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 18 minutes, before the job's 25, so a hang says where it is (#172)
           python3 test/apps_test.py
           python3 -I test/install_test.py
           python3 test/bluetooth_test.py
@@ -316,7 +316,7 @@ jobs:
     if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' fedora ') }}
     runs-on: ubuntu-latest
     container: fedora:44@sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80   # a versioned release: pinned, bump the digest with the next Fedora
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - run: dnf install -y -q python3 git ShellCheck diffutils jq openssh-clients curl >/dev/null
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
@@ -326,7 +326,7 @@ jobs:
         run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/fedora.env); do dnf -q repoquery --whatprovides "$p" 2>/dev/null | grep -q . || { echo "no package $p"; exit 1; }; done
       - name: the suite in a throwaway HOME
         run: |
-          timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          timeout --foreground 1080 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 18 minutes, before the job's 25, so a hang says where it is (#172)
           python3 test/apps_test.py
           python3 -I test/install_test.py
           python3 test/bluetooth_test.py
@@ -340,7 +340,7 @@ jobs:
     if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' opensuse ') }}
     runs-on: ubuntu-latest
     container: opensuse/tumbleweed:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Tumbleweed there is, and zypper dup moves it to today anyway
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       # the image is one snapshot and the repository another: dup puts them on one first, as the desktop job's row does.
       # The packages come from the origin, downloadcontent: the mirrors download.opensuse.org sends a runner to served
@@ -359,7 +359,7 @@ jobs:
         run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/opensuse.env); do zypper --non-interactive --no-refresh search --match-exact --provides "$p" >/dev/null 2>&1 || { echo "no package $p"; exit 1; }; done
       - name: the suite in a throwaway HOME
         run: |
-          timeout --foreground 780 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          timeout --foreground 1080 sh test/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 18 minutes, before the job's 25, so a hang says where it is (#172)
           python3 test/apps_test.py
           python3 -I test/install_test.py
           python3 test/bluetooth_test.py
@@ -503,7 +503,7 @@ jobs:
     needs: [lint, plan, pins]
     if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' macos ') }}
     runs-on: macos-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:

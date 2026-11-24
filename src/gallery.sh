@@ -89,6 +89,7 @@ gallery_picture_ok() {   # gallery_picture_ok FILE [MAX] -> 0 for a PNG or a JPE
     [ "$(wc -c < "$1" | tr -d ' ')" -le "$_gpm" ] || { echo "its picture is over $((_gpm / 1048576)) MiB"; return 1; }
     _gq=$(python3 -I "$REPO/lib/look.py" picture "$1" 2>&1) || { echo "its picture is $(printf '%s' "$_gq" | tr -d '\001-\037\177' | cut -c1-80)"; return 1; }
     set -- "$1" $_gq
+    [ $# -ge 4 ] || { echo "its picture is not one that can be read"; return 1; }
     case $(printf '%s' "${1##*.}" | tr 'A-Z' 'a-z'):$2 in png:png|jpg:jpeg|jpeg:jpeg) ;; *) echo "its picture is a $2 named ${1##*/}"; return 1 ;; esac
     [ "$3" -ge 1 ] && [ "$4" -ge 1 ] && { { [ "$3" -le "${GALLERY_PIXELS_MAX%x*}" ] && [ "$4" -le "${GALLERY_PIXELS_MAX#*x}" ]; } || { [ "$4" -le "${GALLERY_PIXELS_MAX%x*}" ] && [ "$3" -le "${GALLERY_PIXELS_MAX#*x}" ]; }; } \
         || { echo "its picture is $3x$4, past $GALLERY_PIXELS_MAX"; return 1; }

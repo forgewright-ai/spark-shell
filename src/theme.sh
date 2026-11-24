@@ -186,7 +186,7 @@ theme_list() {
         done
     fi
     echo "Bundled themes:"
-    { theme_facts; core_theme_ids; } | awk -F '\t' 'NF > 1 { if ($2 == "bundled") wall[$1] = $8; next } $1 in wall { printf "  %-20s %s\n", $1, wall[$1] == "-" ? "" : wall[$1] }'
+    { theme_facts; core_theme_ids; } | awk -F '\t' 'NF > 1 { if ($2 == "bundled") wall[$1] = $8; next } $1 in wall { printf "  %-20s %s\n", $1, (wall[$1] == "-" ? "" : wall[$1]) }'
     echo "The palettes (yours in $PALETTE_DIR come first):"
     { echo none; palette_names; } | while IFS= read -r n; do
         note=''

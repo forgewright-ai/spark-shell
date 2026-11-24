@@ -6,6 +6,13 @@
 # a pipe's status is its last command's, and the lines of one that failed would be kept.
 store_said() { _ssw=$(tail -n 1 "$TMP/store.why" 2>/dev/null | sed 's/.*: //'); printf '%s' "${_ssw:+: $_ssw}"; }   # -> ": No space left on device", the last words of what failed here; nothing when it had none
 
+proc_ended() {   # proc_ended PID -> 0 when no process has it, or the one that has it ended and nobody reaped it, as in a container whose first process reaps nothing
+    kill -0 "$1" 2>/dev/null || return 0
+    { IFS= read -r _pes < "/proc/$1/stat"; } 2>/dev/null || return 1
+    case ${_pes##*) } in Z*|X*) return 0 ;; esac
+    return 1
+}
+
 # --- a file
 stage_of() {   # stage_of FILE -> _sgf the file FILE is (a link stays one: the file it ends at is replaced) and _sgn where its next version waits
     _sgf=$1; _sgl=0
@@ -17,7 +24,7 @@ stage_of() {   # stage_of FILE -> _sgf the file FILE is (a link stays one: the f
 }
 stage_clear() {   # stage_clear FILE -- stage_of FILE, and what a killed writer left there gone: where a tool that writes a file itself puts FILE's next version, for file_commit
     stage_of "$1"
-    for _fsl in "${_sgn%."$$"}".*; do [ ! -e "$_fsl" ] || kill -0 "${_fsl##*.}" 2>/dev/null || rm -f "$_fsl"; done
+    for _fsl in "${_sgn%."$$"}".*; do [ ! -e "$_fsl" ] || ! proc_ended "${_fsl##*.}" || rm -f "$_fsl"; done
 }
 file_stage() {   # file_stage FILE CMD ARG... -- what CMD prints waits beside FILE, with FILE's mode, for file_commit; 1 when CMD or a write fails, and nothing waits
     stage_clear "$1"; shift
@@ -101,7 +108,7 @@ lock_make() {   # lock_make LOCK PID -- LOCK made with PID in it; 1 when it is t
 lock_state() {   # lock_state LOCK -> free, held, blank (no pid in it: its maker is about to write it, or never will) or gone: no process has its pid, or the one that has began at another time (with no time in it: the lock is over a minute old)
     _lsp=''; _lsa=''; { { IFS= read -r _lsp && IFS= read -r _lsa; } < "$1"; } 2>/dev/null || :
     case $_lsp in ''|*[!0-9]*) if dir_there "$1"; then echo blank; else echo free; fi; return ;; esac
-    if ! kill -0 "$_lsp" 2>/dev/null; then echo gone
+    if proc_ended "$_lsp"; then echo gone
     elif [ -n "$_lsa" ]; then if [ "$(proc_born "$_lsp")" = "$_lsa" ]; then echo held; else echo gone; fi
     elif [ -n "$(find "$1" -prune -mmin +1 2>/dev/null)" ]; then echo gone
     else echo held; fi

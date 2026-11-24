@@ -3263,7 +3263,8 @@ def live(d):
     was = {}
 
     def settled():
-        """What no verb may touch, as it is now."""
+        """What no verb may touch, as it is now: a reload just before may not have started the wallpapers' drawer yet."""
+        wait_for(lambda: d.programs("swaybg"), "the wallpapers' drawer")
         was.update(drawer=d.programs("swaybg"), pictures=d.pictures(), reloads=d.reloads())
 
     def untouched(what, detail=""):
