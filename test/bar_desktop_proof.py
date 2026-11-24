@@ -3263,8 +3263,12 @@ def live(d):
     was = {}
 
     def settled():
-        """What no verb may touch, as it is now: a reload just before may not have started the wallpapers' drawer yet."""
-        wait_for(lambda: d.programs("swaybg"), "the wallpapers' drawer")
+        """What no verb may touch, as it is now: after a reload sway may start the wallpapers' drawer anew a moment later, so one that stays."""
+        def stays():
+            before = d.programs("swaybg")
+            time.sleep(1)
+            return len(before) == 1 and d.programs("swaybg") == before
+        wait_for(stays, "one drawer of the wallpapers that stays")
         was.update(drawer=d.programs("swaybg"), pictures=d.pictures(), reloads=d.reloads())
 
     def untouched(what, detail=""):
