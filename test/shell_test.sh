@@ -10138,7 +10138,7 @@ for _op in 'delete hill' 'rename hill new' 'duplicate hill new' 'save new' 'colo
     _o=$(T $_op --dry-run) && _n="$_n [$_op]"; [ "$_o" = "spark-shell theme: ${_op%% *} takes no --dry-run, so nothing was done" ] || _n="$_n [$_op: $_o]"
 done
 _o=$(T day --dry-run) && _o2=$(T back --dry-run) || _n="$_n day"; _o3=$(sh "$SH" panel theme delete hill --dry-run 2>&1 </dev/null) && _n="$_n panel"
-[ -z "$_n" ] && [ "$_o3" = 'spark-shell panel: a step takes no --dry-run, so nothing was done' ] && [ "$(find "$HOME/.config" "$HOME/.local/state" -type f -exec cksum {} + | sort | cksum)" = "$_was" ] \
+[ -z "$_n" ] && [ "$_o3" = 'theme: a step takes no --dry-run, so nothing was done' ] && [ "$(find "$HOME/.config" "$HOME/.local/state" -type f -exec cksum {} + | sort | cksum)" = "$_was" ] \
     && ok "--dry-run: a theme and back show what they would change; every other verb, and a step of the panel, refuses; not a byte written" || bad "theme dry-run" "$_n $_o3"
 # two verbs at once: one after the other, each whole
 reset; _n=''

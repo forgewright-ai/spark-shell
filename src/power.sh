@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the power
 # sets: APP_GROUPS POWER_SUDOERS
-# reads: BAR_PROC BAR_SYS LAYOUTS_DIR LAYOUT_LAST LAYOUT_WAIT OS PANEL_APP PANEL_CACHE PANEL_CROSS PANEL_SEP PANEL_TICK PROVIDE_CLIENT REPO ROOT STATE_DIR TAB TERM_CLIENT TERM_NAME THEME_KEYS TMP WALL_NAMES WM_NAME
+# reads: BAR_PROC BAR_SYS LAYOUTS_DIR LAYOUT_LAST LAYOUT_WAIT MODE OS PANEL_APP PANEL_CACHE PANEL_CROSS PANEL_SEP PANEL_TICK PROVIDE_CLIENT REPO ROOT STATE_DIR TAB TERM_CLIENT TERM_NAME THEME_KEYS TMP WALL_NAMES WM_NAME
 POWER_SUDOERS=etc/sudoers.d/spark-shell-power
 about_site() {
     _as=https://github.com/forgewright-ai/spark-shell
@@ -155,7 +155,8 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line; exit 1 when not do
             if python3 "$REPO/lib/printers.py" "$_a" "$_arg" > "$TMP/printers.result" 2> "$TMP/printers.error"; then jq -r .receipt "$TMP/printers.result"
             else cat "$TMP/printers.error"; return 1; fi ;;
         out|mic) panel_act_sound ;;
-        theme) case $_a in preview|export|install) panel_act_theme ;; *) theme_locked panel_act_theme ;; esac ;;   # an install fetches first, and takes the lock itself
+        theme) [ "$MODE" != dry ] || { echo "theme: a step takes no --dry-run, so nothing was done"; return 1; }
+            case $_a in preview|export|install) panel_act_theme ;; *) theme_locked panel_act_theme ;; esac ;;   # an install fetches first, and takes the lock itself
         layout) panel_act_layout ;;
         apps) panel_act_apps ;;
         spark) case $_a in chat) panel_chat ;; *) echo "$_a is not something spark does here"; return 1 ;; esac ;;
