@@ -168,11 +168,14 @@ login_render() {   # -> the screen's files in $TMP/login, from template/login in
     _p=$(login_port); [ -z "$_p" ] || _pw="$_pw --spark-port $_p"
     _d=off; ! desktop_wanted || _d=on
     if wall_there; then _bg="/$LOGIN_ETC/wallpaper fill"; else _bg=$WALL_BG; fi
-    _le="$EXPR${NL}s|@LOGIN_ETC@|$LOGIN_ETC|g${NL}s|@LOGIN_LIB@|$LOGIN_LIB|g${NL}s|@LOGIN_ACCOUNT@|$(esc "$LOGIN_ACCOUNT")|g"
+    # what root runs or reads takes these two alone: no line of the look's script is run over it
+    _lrs="s|@LOGIN_ETC@|$LOGIN_ETC|g${NL}s|@LOGIN_ACCOUNT@|$(esc "$LOGIN_ACCOUNT")|g"
+    _le="$EXPR${NL}$_lrs${NL}s|@LOGIN_LIB@|$LOGIN_LIB|g"
     _le="$_le${NL}s|@LOGIN_DESKTOP@|$_d|g${NL}s|@LOGIN_ARGS@|$(esc "$_pw")|g${NL}s|@LOGIN_BG@|$(esc "$_bg")|g${NL}s|@PANEL_MUTED@|$PANEL_MUTED|g"
     for f in $LOGIN_FILES config.toml sudoers login-boot; do
         if [ "$f" = screens.conf ]; then login_screens > "$TMP/login/$f"; continue; fi   # no template: the lines of your screens.conf
-        render_sed "$_le" "$REPO/template/login/$f" > "$TMP/login/$f"
+        case $f in config.toml|sudoers|login-boot) _lsc=$_lrs ;; *) _lsc=$_le ;; esac
+        render_sed "$_lsc" "$REPO/template/login/$f" > "$TMP/login/$f"
         if grep -q '@[A-Z_0-9]*@' "$TMP/login/$f"; then
             printf 'spark-shell: template/login/%s: unrendered placeholder: %s\n' "$f" "$(grep -o '@[A-Z_0-9]*@' "$TMP/login/$f" | head -1)" >&2
             exit 1

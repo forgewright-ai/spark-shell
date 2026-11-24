@@ -19,8 +19,9 @@ import sys
 import tempfile
 import time
 
-# Also works when invoked by the permission helper with Python isolation.
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Also works when invoked by the permission helper with Python isolation. Last on the path: as root, no file
+# beside this one stands in for a module of Python's own.
+sys.path.append(str(Path(__file__).resolve().parent))
 from network import Refused, changes, device_name, FIELDS
 
 CONFIG = Path('/etc/dhcpcd.conf')

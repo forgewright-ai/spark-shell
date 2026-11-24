@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Native scope preservation, live ownership and guarded dhcpcd recovery."""
 from pathlib import Path
+import shutil
+import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -189,6 +192,17 @@ class Recovery(unittest.TestCase):
         self.assertEqual(self.records[-1]['after'], self.new)
         self.assertEqual(self.records[-1]['expected'], native.digest(self.after))
         self.assertNotIn(self.before, str(self.records))
+
+    def test_a_file_beside_the_helper_stands_in_for_no_module(self):
+        # the permission helper runs it isolated, as root
+        with tempfile.TemporaryDirectory() as folder:
+            for name in ('dhcp.py', 'network.py'):
+                shutil.copy(Path(native.__file__).with_name(name), folder)
+            for name in ('argparse', 'ipaddress', 'subprocess'):
+                Path(folder, name + '.py').write_text('raise SystemExit("planted")\n')
+            out = subprocess.run([sys.executable, '-I', str(Path(folder, 'dhcp.py')), 'show', 'no/such'],
+                                 text=True, capture_output=True, stdin=subprocess.DEVNULL, timeout=20)
+        self.assertNotIn('planted', out.stdout + out.stderr)
 
 
 if __name__ == '__main__':
