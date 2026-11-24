@@ -36,7 +36,13 @@ release_tag() {   # -> clone_tag when it pins a dialog and its sources, includin
 # key, PATCH_SIGNER, signs a patch release (vX.Y.Z) and nothing else: it lives on a machine that tags fixes by a rule
 # (test/tag.sh), so a vX.Y, a gallery or any other tag it signed is no signed tag here
 PATCH_SIGNER=spark-shell-patch
-tag_is_release() { printf '%s\n' "$1" | LC_ALL=C grep -qxE 'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\.[1-9][0-9]*)?'; }   # tag_is_release TAG -- vX.Y, or vX.Y.Z from 1: plain numbers, no other part
+tag_is_release() {   # tag_is_release TAG -- vX.Y, or vX.Y.Z from 1: plain numbers, no other part. No process: a read of the rows asks it
+    case $1 in v[0-9]*.[0-9]*) ;; *) return 1 ;; esac
+    case ${1#v} in *[!0-9.]*|*..*|*.|*.*.*.*) return 1 ;; esac
+    _tir=${1#v}; case ${_tir%%.*} in 0|[1-9]*) ;; *) return 1 ;; esac
+    _tir=${_tir#*.}; case ${_tir%%.*} in 0|[1-9]*) ;; *) return 1 ;; esac
+    case $_tir in *.*) case ${_tir#*.} in [1-9]*) ;; *) return 1 ;; esac ;; esac
+}
 tag_is_patch() { case $1 in *.*.*) tag_is_release "$1" ;; *) return 1 ;; esac; }   # tag_is_patch TAG -- vX.Y.Z
 signers_release() { grep -v "^$PATCH_SIGNER " "$REPO/allowed-signers" > "$TMP/signers.release" || :; printf '%s\n' "$TMP/signers.release"; }   # -> the file of the release keys alone
 signers_for() { if tag_is_patch "$1"; then printf '%s\n' "$REPO/allowed-signers"; else signers_release; fi; }   # signers_for TAG -> the file of the keys that may have signed TAG: every key for a patch release, the release keys alone for any other tag

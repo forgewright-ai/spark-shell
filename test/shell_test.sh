@@ -7352,8 +7352,13 @@ grep -qF '[ "$REF" = refs/heads/main ] || base=$(git merge-base origin/main HEAD
 [ -z "$_lb" ] && ok "ci.yml: the full lane is every job, each asked for by the plan in its own name and needed by green; the fast lane is the suite on a dash row and a bash row; main takes every job, and a push that changes the workflows or the list too" || bad "lanes and ci.yml" "$_lb"
 # a release's name is one pattern: where an install reads it, where a patch is tagged and where a release is built
 _ln='v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\.[1-9][0-9]*)?'
-_lb=''; for _f in src/dialog.sh test/tag.sh .github/workflows/release.yml; do grep -qF "'$_ln'" "$REPO/$_f" || _lb="$_lb [$_f]"; done
-[ -z "$_lb" ] && ok "a release's name is the same pattern in src/dialog.sh, test/tag.sh and release.yml" || bad "release names" "$_lb"
+_lb=''; for _f in test/tag.sh .github/workflows/release.yml; do grep -qF "'$_ln'" "$REPO/$_f" || _lb="$_lb [$_f]"; done
+sed -n '/^tag_is_release() {/,/^}/p' "$REPO/src/dialog.sh" > "$H/names.sh"; _lt=0   # an install asks it at every read of its rows, so with no process: the same names, one by one
+for _f in v0.1 v0.166 v0.166.4 v10.20.30 v1.0 v1.0.10 v01.2 v1.02 v1.2.0 v1.2.03 v1 v1. v1..2 v1.2.3.4 1.2 vv1.2 v1.2x gallery-v1 v1.2- v.1 v1.x v-1.2 v00.1 v1.2.-3 v1.2.3- "v1 .2" "v1.2 " 'v1.*' 'v1.[0-9]'; do
+    _l1=0; ( . "$H/names.sh"; tag_is_release "$_f" ) || _l1=1; _l2=0; printf '%s\n' "$_f" | LC_ALL=C grep -qxE "$_ln" || _l2=1
+    [ "$_l1" = "$_l2" ] || _lb="$_lb [src/dialog.sh: $_f]"; _lt=$((_lt + 1))
+done
+[ -z "$_lb" ] && [ "$_lt" = 29 ] && ok "a release's name is the same in src/dialog.sh, name by name, and in test/tag.sh and release.yml, the pattern" || bad "release names" "$_lt $_lb"
 grep -qE "^ *echo 'zizmor==[0-9.]+ --hash=sha256:[0-9a-f]{64}' > " "$_lci" && grep -qF -e '--require-hashes --only-binary :all: --no-deps -r' "$_lci" && ! grep -qE 'TERMS_SECRET"? *>' "$_lci" \
     && ok "ci.yml: zizmor is the wheel its sha256 names, and the private word list is never written to the disk" || bad "ci.yml's lint job"
 # the change itself, read from git: a scratch repository with the list in it

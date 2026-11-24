@@ -11,7 +11,7 @@ load_env() {
     [ -f "$1" ] || return 0
     [ -r "$1" ] || { printf 'spark-shell: %s cannot be read\n' "$1" >&2; return 1; }
     cr=$(printf '\r')
-    bad=$(tr -d '\000' < "$1" | LC_ALL=C grep -nEv '^[[:space:]]*(#|$)|^[A-Z_0-9]+=[^;`$()|&<>]*$' || true)   # a NUL made the file binary to grep, its lines unseen
+    bad=$(LC_ALL=C grep -anEv '^[[:space:]]*(#|$)|^[A-Z_0-9]+=[^;`$()|&<>]*$' "$1" || true)   # -a: a NUL makes the file binary to grep, its lines unseen
     [ -z "$bad" ] || [ -z "$CONFIG_MEND" ] || [ "$1" != "$CONFIG" ] || bad=$(config_bad_lines "$bad")
     if [ -n "$bad" ]; then
         printf 'spark-shell: %s: refused, these lines are not KEY=value:\n%s\n' "$1" "$bad" >&2

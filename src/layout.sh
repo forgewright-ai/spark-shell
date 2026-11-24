@@ -48,7 +48,7 @@ layout_apps() {   # layout_apps NEED -> the lines
         else
             awk -F'\t' '{printf "%s: %s%s\n", $1, $3, ($4 == "yes" ? ", terminal" : "")}' "$TMP/entries"
         fi
-        for w in $(layout_need_words "$1"); do
+        [ -z "$1" ] || for w in $(layout_need_words "$1"); do   # no need, as the list of apps asks: no process for it
             ! layout_on_path "$w" || layout_not_app "$w" || printf '%s: %s\n' "$w" "$LAYOUT_NAMED"
         done
         echo "shell: a terminal with a prompt, terminal"   # a layout word, not an app
