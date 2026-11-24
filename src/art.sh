@@ -84,10 +84,10 @@ family_why() {   # family_why FILE [AS] -> nothing and 0 for a family this spark
         _fq=$(gallery_picture_ok "$_fd/$_fp" "$THEME_FILE_PICTURE_MAX") || { echo "its $_fv variant names $_fp: ${_fq#its picture is }"; return 1; }
     done < "$TMP/family.files"
 }
-family_for() {   # family_for THEME -> the file of the family it is a variant of, or false; a theme's own file speaks for that theme alone, whatever it names
+family_for() {   # family_for THEME -> the file of the family it is a variant of, or false; a theme from a file someone shared speaks for itself alone, whatever it names
     _fl=$(theme_label "$1")
     family_files | while IFS= read -r _ff; do
-        case $_ff in */"$1"/family.json) ;; */family.json) continue ;; esac
+        case $_ff in */"$1"/family.json) ;; */family.json) [ ! -e "${_ff%/*}/.guest" ] || continue ;; esac
         grep -qF -e "\"$_fl\"" -e "\"core-$_fl\"" -e "\"$1\"" "$_ff" 2>/dev/null || continue   # no mention, no jq
         jq -e --arg t "$1" --arg l "$_fl" 'any(.variants[]?; (.theme? // "") as $k | $k == $t or $k == $l or ($k | ltrimstr("core-")) == $l)' "$_ff" >/dev/null 2>&1 || continue
         family_why "$_ff" >/dev/null || continue

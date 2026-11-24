@@ -199,6 +199,7 @@ theme_install_file() {   # theme_install_file FILE -- a theme file (spark-shell 
     esac
     gallery_theme_ok "$_gd/$_gn" "$_gn" > "$TMP/gallery.why" || refuse_in theme "$_gx was not installed: $(gallery_why)"
     _gw=$(look_get "$_gd/$_gn" WORDS | tr -cd 'A-Za-z0-9 ,.-' | cut -c1-80); [ -z "$(look_get "$_gd/$_gn" WORDS)" ] || look_set "$_gd/$_gn" WORDS "$_gw"
+    : > "$_gd/$_gn/.guest"   # a theme someone else made: its family speaks for itself alone (family_for)
     theme_locked theme_place "$_gd/$_gn" "$_gn" "installed the theme $_gn from $_gx, its files checked -- spark-shell theme $_gn brings it back"
 }
 

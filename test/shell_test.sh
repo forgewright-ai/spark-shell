@@ -8408,6 +8408,12 @@ c7=$(sh "$SH" theme portrait "$H/tall.jpg" 2>&1 | tail -1); c8=$(sh "$SH" theme 
 rc9=0; c9=$(sh "$SH" theme loop landscape-2 "$H/fake.mp4" 2>&1) || rc9=$?
 sh "$SH" theme reel open none >/dev/null 2>&1; a10=$(sed -n 's/^DIALOG_ANIMATION=//p' "$cfg"); c11=$(sh "$SH" theme reel open "$H/open.webp" 2>&1 | tail -1); a11=$(sed -n 's/^DIALOG_ANIMATION=//p' "$cfg")
 s12=$(sh "$SH" theme show 2>&1 | sed -n 's/^  art *//p')
+cp "$cfg" "$H/cfg.refused"; sh "$SH" theme atlas-awakening >/dev/null 2>&1; : > "$H/none.jpg"
+for _rf in "portrait $H/none.jpg" "panel 3 $H/none.jpg" "loop landscape-1 $H/fake.mp4" "loop landscape-9 $H/loop.mp4" "reel open $H/fake.mp4" "panel 4 $H/third.jpg"; do sh "$SH" theme $_rf >/dev/null 2>&1 && bad "refused switch" "$_rf taken" || :; [ "$(sed -n 's/^THEME=//p' "$cfg")" = atlas-awakening ] || bad "refused switch" "$_rf: $(sed -n 's/^THEME=//p' "$cfg")"; done
+[ "$(sed -n 's/^THEME=//p' "$cfg")" = atlas-awakening ] && ok "theme portrait, panel, loop, reel: a file or a role refused leaves a bundled theme in use as it is, no changed copy kept" || :
+cp "$H/cfg.refused" "$cfg"; sh "$SH" theme atlas-awakening-changed >/dev/null 2>&1
+sh "$SH" theme solarized-light >/dev/null 2>&1; sh "$SH" theme variant dark >/dev/null 2>&1 || :; v12=$(sed -n 's/^THEME=//p' "$cfg")
+[ "$v12" = atlas-awakening-changed ] && ok "theme variant: a pair set here comes back from its other side, which names no family of its own" || bad "pair back" "$v12"
 [ -f "$_fl/atlas-awakening-changed-landscape-1.mp4" ] && [ -f "$_fl/atlas-awakening-changed-dialog-close.webp" ] && [ "$t1" = atlas-awakening-changed ] \
     && [ "$c1" = 'accent #c88850' ] && [ "$c2" = 'muted #333333, 1.2:1 on the ground, hard to read' ] && grep -qx 'THEME_ACCENT=#c88850' "$_fl/palette.env" \
     && [ "$rc3" = 1 ] && printf '%s' "$c3" | grep -q '^spark-shell theme: color takes a color.s word (background, text' \
@@ -8772,7 +8778,7 @@ EOF
     [ "$h1" = 'ran 1440' ] && ok "look.py: 14 pictures, 21 loops and 14 reels read or refused in their own words, each cleaned of its metadata (a place, a name, a camera's clock, another track); 640 changed at random and never a traceback" || bad "look.py hostile" "$h1"
     sh "$SH" theme duplicate atlas-awakening reef >/dev/null 2>&1; sh "$SH" theme reef >/dev/null 2>&1; _hd=$th_dir/reef
     heard() { hrc=0; hout=$(sh "$SH" theme "$@" 2>&1 </dev/null) || hrc=$?; }
-    left() { for _lf in "$1"/.[!.]* "$1"/*.new; do [ ! -e "$_lf" ] || printf ' %s' "${_lf##*/}"; done; }   # left FOLDER -- what an unfinished copy would leave there
+    left() { for _lf in "$1"/.[!.]* "$1"/*.new; do case ${_lf##*/} in .deleted) continue ;; esac; [ ! -e "$_lf" ] || printf ' %s' "${_lf##*/}"; done; }   # left FOLDER -- what an unfinished copy would leave there
     held() { cksum "$_hd"/* | sed "s|$_hd/||" | paste -sd ' ' -; left "$_hd"; }   # the theme's files, and none left behind
     h0=$(held)
     # its own file given back to it, and a photo: the same picture (issue: the old one was removed before the copy)
@@ -8862,8 +8868,8 @@ EOF
     # three installs of one file at once: one is put in place whole, the others say so
     sh "$SH" theme nord >/dev/null 2>&1
     for _hn in 1 2 3; do sh "$SH" theme install "$_hx/twice.spark-theme" > "$H/twice.$_hn" 2>&1 </dev/null & done; wait
-    j1=$(cat "$H"/twice.[123] | grep -c '^installed the theme twice from '); j2=$(cat "$H"/twice.[123] | grep -c "^spark-shell theme: \(twice.spark-theme was not installed: another twice was put there meanwhile\|a theme of yours is named twice -- \)")
-    [ "$j1" = 1 ] && [ "$j2" = 2 ] && [ "$(ls -A "$th_dir/twice" | paste -sd ' ' -)" = 'look.env palette.env' ] && ok "theme install of one file three times at once: one is in place, whole and never one inside another; the others say so" || bad "theme install at once" "$j1 $j2 $(ls -AR "$th_dir/twice") $(cat "$H"/twice.[123] | grep 'spark-shell theme')"
+    j1=$(cat "$H"/twice.[123] | grep -c '^installed the theme twice from ' || :); j2=$(cat "$H"/twice.[123] | grep -c "^spark-shell theme: \(twice is taken -- another name\|a theme of yours is named twice -- \)" || :)
+    [ "$j1" = 1 ] && [ "$j2" = 2 ] && [ "$(ls -A "$th_dir/twice" | paste -sd ' ' -)" = '.guest look.env palette.env' ] && ok "theme install of one file three times at once: one is in place, whole and never one inside another; the others say so" || bad "theme install at once" "$j1 $j2 $(ls -AR "$th_dir/twice") $(cat "$H"/twice.[123] | grep 'spark-shell theme')"
     sh "$SH" theme "$_ht" >/dev/null 2>&1; for _hn in reef guest twice; do sh "$SH" theme delete "$_hn" >/dev/null 2>&1 </dev/null || :; done
     cp "$H/cfg.hostile" "$cfg"; rm -rf "$th_dir/reef" "$th_dir/guest" "$th_dir/twice" "$_hx" "$H/nojq" "${_xf%/*}"/reef*.spark-theme
     for _hn in "$_hp"/*; do case ${_hn##*/} in *.mp4|*.webp|*.JPG|*.JPEG|ZERO.jpg|CUT.jpg|text.jpg|turned.jpg|rgb.jpg|jfxx.jpg|thumb.jpg|scans.jpg|sixtyfour.jpg|fill.jpg|wide.jpg|said.png|cut.png|plain.jpg|PIPE.jpg|'My Photo.jpg') rm -f "$_hn" ;; esac; done
@@ -10212,6 +10218,12 @@ reset; sed 's/$/\r/' "$cfg" > "$cfg.x"; mv "$cfg.x" "$cfg"; _o=$(T nord) || _n="
 [ -z "$_n" ] && ok "a bad look value in the config: the theme's verbs go on with its default, say so, and the verb that sets it sets it; status refuses it still; a config with Windows line ends is read" || bad "bad look value" "$_n"
 # a picture that is empty is no wallpaper and no theme's
 reset; : > "$HOME/zero.png"; printf 'DESKTOP=sway\n' >> "$cfg"; _n=''
+if [ "$(uname -s)" != Darwin ]; then
+    printf '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>' > "$HOME/mine.svg"; : > "$HOME/none.svg"; cp "$cfg" "$H/cfg.svg"
+    _nr=0; T wallpaper "$HOME/mine.svg" >/dev/null 2>&1 || _nr=9; _o=$(T wallpaper "$HOME/none.svg") || _nr=$((_nr + 1))
+    [ "$_nr" = 1 ] && [ "$_o" = 'spark-shell theme: none.svg is empty' ] && ok "theme wallpaper: a picture of a kind spark-shell does not read is the background drawer's to show; an empty one is refused" || bad "wallpaper svg" "$_nr $_o"
+    cp "$H/cfg.svg" "$cfg"
+fi
 if [ "$(uname -s)" != Darwin ]; then _o=$(T wallpaper "$HOME/zero.png") && _n="$_n wallpaper"; [ "$_o" = 'spark-shell theme: zero.png is not a PNG, a JPEG, a WebP or a GIF' ] || _n="$_n [$_o]"; fi
 _o=$(T picture "$HOME/zero.png") && _n="$_n picture"; [ "$_o" = 'spark-shell theme: zero.png is not a PNG, a JPEG, a WebP or a GIF' ] || [ "${_o#*python3}" != "$_o" ] || _n="$_n [$_o]"
 T hill >/dev/null; : > "$th/sea/sea-landscape-1.png"; _o=$(T sea) && _n="$_n theme"; [ "$_o" = 'spark-shell theme: sea cannot be used: its sea-landscape-1.png is not a PNG, a JPEG, a WebP or a GIF. Nothing was changed' ] || _n="$_n [$_o]"
