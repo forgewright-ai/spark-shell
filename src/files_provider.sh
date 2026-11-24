@@ -54,7 +54,12 @@ provide_files_rows() {   # provide_files_rows [URI] -> the rows the uri names: t
         | {title: $t, kinds: $kinds, rows: $rows, short: [$rows[] | select(.id | startswith("files:root:")) | .id]} + (if $here == "" then {} else {here: $here} end)' "$TMP/files.rows"
 }
 files_urlenc() { printf '%s' "$1" | od -An -tx1 -v | tr -s ' \n' ' ' | awk '{ o = ""; for (i = 1; i <= NF; i++) { h = tolower($i); d = (index("0123456789abcdef", substr(h, 1, 1)) - 1) * 16 + index("0123456789abcdef", substr(h, 2, 1)) - 1; if ((d >= 48 && d <= 57) || (d >= 65 && d <= 90) || (d >= 97 && d <= 122) || d == 45 || d == 46 || d == 95 || d == 126 || d == 47) o = o sprintf("%c", d); else o = o "%" toupper(h) } printf "%s", o }'; }   # files_urlenc PATH -> the path as a.trashinfo writes it (RFC 2396: the unreserved and the slash as they are, every other byte %XX)
-files_urldec() { printf '%s' "$1" | awk '{ o = ""; s = $0; while (match(s, /%[0-9A-Fa-f][0-9A-Fa-f]/)) { o = o substr(s, 1, RSTART - 1) "\\" sprintf("%03o", (index("0123456789abcdef", tolower(substr(s, RSTART + 1, 1))) - 1) * 16 + index("0123456789abcdef", tolower(substr(s, RSTART + 2, 1))) - 1); s = substr(s, RSTART + 3) } printf "%s", o s }' | { IFS= read -r _fud || :; printf "$_fud"; }; }   # files_urldec TEXT -> the path a.trashinfo holds (%XX bytes back, through octal escapes: awk's %c is a character, not a byte, under gawk)
+files_urldec() {   # files_urldec TEXT -> the path a .trashinfo holds: its %XX bytes back, through octal escapes (awk's %c is a character, not a byte, under gawk); a backslash of its own is one too
+    printf '%s' "$1" | awk 'function hex(i) { return index("0123456789abcdef", tolower(substr(s, i, 1))) - 1 }
+        { o = ""; s = $0
+          while (match(s, /%[0-9A-Fa-f][0-9A-Fa-f]|\\/)) { o = o substr(s, 1, RSTART - 1) "\\0" (RLENGTH == 1 ? "134" : sprintf("%03o", hex(RSTART + 1) * 16 + hex(RSTART + 2))); s = substr(s, RSTART + RLENGTH) }
+          printf "%s", o s }' | { IFS= read -r _fud || :; printf '%b' "$_fud"; }
+}
 files_trash_safe() {   # files_trash_safe DIR -> true when DIR is a folder of yours alone: no link, yours, no write for the others
     [ ! -L "$1" ] && [ -d "$1" ] && [ -O "$1" ] && [ -z "$(find "$1" -prune -perm -002 2>/dev/null)" ]
 }

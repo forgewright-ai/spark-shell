@@ -6756,6 +6756,12 @@ cat "$H/mcp.first" >> "$H/mcp.out"
 [ "$(ans 9 | jq -c '.result.structuredContent')" = "$(jq -cn --arg p "$F2R/docs/new one" '{receipt: "folder new one made in ~/docs", undo: {name: "files_trash", arguments: {path: $p}}}')" ] && [ -d "$F2/docs/new one" ] \
     && [ "$(ans 10 | jq -c '.result.structuredContent')" = "$(jq -cn --arg p "$F2R/docs/todo.txt" '{receipt: "todo.txt made in ~/docs", undo: {name: "files_trash", arguments: {path: $p}}}')" ] && [ -f "$F2/docs/todo.txt" ] && [ ! -s "$F2/docs/todo.txt" ] \
     && ok "provide files: a new folder and a new text file are made in the folder named, each with the trash as its undo (the editor opens on the desktop alone)" || bad "files new" "$(ans 9) $(ans 10)"
+# a name that printf or an escape would read as its own comes back as it was; a record another program wrote, its % plain, too
+printf 'sale\n' > "$F2/docs/50%s off \\n %d.txt"; printf 'kept\n' > "$TR/files/raw%s.txt"; printf '[Trash Info]\nPath=%s/docs/raw%%s.txt\nDeletionDate=2026-01-01T00:00:00\n' "$(printf '%s' "$F2R" | sed 's/ /%20/g')" > "$TR/info/raw%s.txt.trashinfo"
+mcp2 "$(fc2 2 files_trash "$F2R/docs/50%s off \\n %d.txt")" "$(fc2 3 files_restore "$F2R/docs/50%s off \\n %d.txt")" "$(fc2 4 files_restore "$F2R/docs/raw%s.txt")"
+[ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = '50%s off \n %d.txt is back' ] && [ "$(cat "$F2/docs/50%s off \\n %d.txt")" = sale ] && [ "$(ans 4 | jq -r '.result.structuredContent.receipt')" = 'raw%s.txt is back' ] && [ "$(cat "$F2/docs/raw%s.txt")" = kept ] \
+    && ok "provide files: a name with a %s or a backslash in it comes back from the trash whole" || bad "files percent names" "$(ans 2) $(ans 3) $(ans 4) $(ls "$F2/docs" "$TR/files")"
+rm -f "$F2/docs/50%s off \\n %d.txt" "$F2/docs/raw%s.txt"
 # F4: the app the system assigns, a text file too, never the editor; outside the folders given, refused before any opener runs
 mcp2 "$(fc2 2 files_app "$H/notes.md")"
 [ "$(ans 2 | jq -r '.result.content[0].text')" = 'files: that is not a file or a folder in the folders given' ] && ok "provide files: files_app holds to the folders given" || bad "files app refused" "$(ans 2)"
