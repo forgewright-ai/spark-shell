@@ -262,8 +262,8 @@ layout_windows_of() {   # layout_windows_of JSONFILE -> $TMP/windows: SCREEN<tab
 }
 layout_words_full() { case " $(panel_lower "$1") " in *' fullscreen '*|*' full screen '*|*' full-screen '*) echo true ;; *) echo false ;; esac; }   # layout_words_full WORDS
 layout_words_ws() { printf '%s' "$1" | tr 'A-Z' 'a-z' | sed -n 's/.*workspace \([1-9][0-9]*\).*/\1/p' | sed -n 1p; }   # layout_words_ws WORDS -> the workspace named
-layout_term_line() {   # layout_term_line JSON INDEX APP ARGS -> the exec foot line
-    _min=$(jq -r --argjson n "$2" --arg app "$3" '[.main] + (.side // []) | .[$n] |
+layout_term_line() {   # layout_term_line JSON INDEX APP ARGS -> the exec foot line; its minimum size from JSON, none without it
+    _min=''; [ -z "$1" ] || _min=$(jq -r --argjson n "$2" --arg app "$3" '[.main] + (.side // []) | .[$n] |
         [(.min_columns // (if $app == "btop" then 80 else 0 end)), (.min_rows // 24)] |
         if all(.[]; type == "number" and . == floor) and .[0] >= 20 and .[0] <= 240 and .[1] >= 5 and .[1] <= 100 then "\(.[0]) \(.[1])" else empty end' "$1")
     if [ -n "$_min" ]; then
@@ -288,6 +288,14 @@ layout_terminal_ready() {   # false when a lease did not confirm
     done
     [ "$_dtr_failed" = 0 ]
 }
+layout_window_line() {   # layout_window_line JSON INDEX APP ARGS -> the window's exec line; nothing for an editor this machine lacks
+    case $3 in
+        shell) echo "exec $TERM_NAME" ;;
+        editor) [ -n "$ED" ] || return 0
+            if editor_windowed; then printf 'exec %s\n' "$(layout_launch "$ED" "$4")"; else layout_term_line "$1" "$2" "$ED" "$4"; fi ;;
+        *) if layout_app_term "$3" || { ! layout_app_known "$3" && layout_on_path "$3"; }; then layout_term_line "$@"; else printf 'exec %s\n' "$(layout_launch "$3" "$4")"; fi ;;
+    esac
+}
 layout_lines() {   # layout_lines WS JSONFILE -> the sway lines
     w=$1; used=''; main=1; many=$(wc -l < "$TMP/screens" | tr -d ' ')
     for scr in $(cut -f1 "$TMP/windows" | awk '!seen[$0]++'); do
@@ -301,11 +309,7 @@ layout_lines() {   # layout_lines WS JSONFILE -> the sway lines
             while IFS='	' read -r _ app index args; do
                 [ "$app" != editor ] || [ -n "$ED" ] || continue
                 case $i in 1) echo splith ;; 2) echo splitv ;; esac   # the next window's split
-                case $app in
-                    shell) echo "exec $TERM_NAME" ;;
-                    editor) if editor_windowed; then printf 'exec %s\n' "$(layout_launch "$ED" "$args")"; else layout_term_line "$2" "$index" "$ED" "$args"; fi ;;
-                    *) if layout_app_term "$app" || { ! layout_app_known "$app" && layout_on_path "$app"; }; then layout_term_line "$2" "$index" "$app" "$args"; else printf 'exec %s\n' "$(layout_launch "$app" "$args")"; fi ;;
-                esac
+                layout_window_line "$2" "$index" "$app" "$args"
                 jq -r --argjson n "$index" '[.main] + (.side // []) | .[$n] |
                     (if (.floating | type) == "boolean" then "window-rule floating " + (if .floating then "enable" else "disable" end) else empty end),
                     (if (.border as $b | ["normal", "none", "pixel"] | index($b)) != null then "window-rule border " + .border else empty end)' "$2"
@@ -321,16 +325,32 @@ layout_lines() {   # layout_lines WS JSONFILE -> the sway lines
         main=''
     done
 }
+layout_room_line() {   # layout_room_line "APP ARGS" -> the tmux window's line; nothing for an editor this machine lacks
+    _rla=${1%% *}; _rlw=''; case $1 in *' '*) _rlw=${1#* } ;; esac
+    case $_rla in
+        shell) echo "window shell" ;;
+        editor) [ -z "$ED" ] || printf 'window editor %s\n' "$(layout_launch "$ED" "$_rlw")" ;;
+        *) printf 'window %s %s\n' "$_rla" "$(layout_launch "$_rla" "$_rlw")" ;;
+    esac
+}
 layout_rooms() {   # layout_rooms NAME JSONFILE -> the lines
     printf 'session %s\n' "$1"
-    jq -r '[.main] + (.side // []) | .[] | "\(.app) \(.args // "")"' "$2" | sed 's/ *$//' | while IFS= read -r line; do
-        app=${line%% *}; args=''; case $line in *' '*) args=${line#* } ;; esac
-        case $app in
-            shell) echo "window shell" ;;
-            editor) [ -z "$ED" ] || printf 'window editor %s\n' "$(layout_launch "$ED" "$args")" ;;
-            *) printf 'window %s %s\n' "$app" "$(layout_launch "$app" "$args")" ;;
-        esac
+    jq -r '[.main] + (.side // []) | .[] | "\(.app) \(.args // "")"' "$2" | sed 's/ *$//' | while IFS= read -r line; do layout_room_line "$line"; done
+}
+layout_refuse_windows() {   # layout_refuse_windows JSONFILE -> JSONFILE without the windows the gate refuses, each said; false when none is left
+    : > "$TMP/refused"; _rwi=0; _rwn=$(jq '[.main] + .side | length' "$1")
+    while [ "$_rwi" -lt "$_rwn" ]; do
+        _rwa=$(jq -r --argjson i "$_rwi" '[.main] + .side | .[$i].app' "$1"); _rwg=$(jq -r --argjson i "$_rwi" '[.main] + .side | .[$i].args // ""' "$1")
+        if [ "$LAYOUT_ON" = terminal ]; then _rwl=$(layout_room_line "$(printf '%s %s' "$_rwa" "$_rwg" | sed 's/ *$//')"); else _rwl=$(layout_window_line '' 0 "$_rwa" "$_rwg"); fi
+        why=''; [ -z "$_rwl" ] || why=$(layout_gate "$_rwl")
+        [ -z "$why" ] || { printf '  refused  %s  (%s)\n' "$_rwl" "$why"; echo "$_rwi" >> "$TMP/refused"; }
+        _rwi=$((_rwi + 1))
     done
+    [ -s "$TMP/refused" ] || return 0
+    jq --slurpfile no "$TMP/refused" '([.main] + .side) as $all | .main.width as $wd
+        | [$all | to_entries[] | .key as $i | select(any($no[]; . == $i) | not) | .value] as $k
+        | .side = $k[1:] | .main = ($k[0] | if . != null and .width == null and $wd != null then .width = $wd else . end)' "$1" > "$TMP/allowed.json" && mv "$TMP/allowed.json" "$1"
+    jq -e .main "$1" >/dev/null
 }
 layout_play_rooms() {   # layout_play_rooms FILE -> true when a room ran
     name=$(sed -n 's/^session //p' "$1" | head -1)
@@ -433,7 +453,7 @@ layout_show() {   # layout_show WHOSE -- KEPT=1 for a kept one
         echo "tmux session $name -- $1"
         if wm_up; then   # a foot window of its own
             _w=$(layout_next_ws); printf 'workspace number %s\nrename workspace to "%s %s"\nexec %s\n' "$_w" "$_w" "$(layout_ws_label "$name")" "$(term_run "tmux attach-session -t =$name")" > "$TMP/layout.win"
-            KEPT=1 layout_play "$TMP/layout.win" >/dev/null || refuse 'the layout workspace could not be opened'; : > "$TMP/opened"
+            KEPT=1 LAYOUT_REFUSED=0 layout_play "$TMP/layout.win" >/dev/null || refuse 'the layout workspace could not be opened'; : > "$TMP/opened"
         else layout_join "$name"; fi
         return
     fi
@@ -446,7 +466,7 @@ layout_show() {   # layout_show WHOSE -- KEPT=1 for a kept one
 }
 
 layout_play() {   # layout_play FILE -> the lines sent to sway
-    sent=0; nowin=0; _ws=''; _new_id=''; _dp_failed=0
+    sent=0; nowin=0; _ws=''; _new_id=''; _dp_failed=${LAYOUT_REFUSED:-0}
     while IFS= read -r line || [ -n "$line" ]; do
         case $line in ''|'#'*) continue ;; exec*) _new_id='' ;; esac
         why=$(layout_gate "$line")
@@ -517,18 +537,27 @@ layout_make() {   # layout_make NEED -> the layout laid out
         else printf '  %s is not on this machine -- laid out without it\n' "$a"; fi
     done
     cat "$TMP/named.say"
+    layout_refuse_windows "$TMP/layout.json" || refuse "no window of the answer may open"   # before a file holds it
+    LAYOUT_REFUSED=0; [ ! -s "$TMP/refused" ] || LAYOUT_REFUSED=1
     mkdir_private "$(dirname "$LAYOUT_LAST")"
-    jq --arg w "$1" --arg ch "$changed" --argjson full "$(layout_words_full "$1")" '{words: $w} + . | if $ch == "" then . else del(.why) end | if $full then .main.fullscreen = true else . end' "$TMP/layout.json" > "$LAYOUT_LAST"
+    jq --arg w "$1" --arg ch "$changed" --argjson full "$(layout_words_full "$1")" '{words: $w, by: "spark"} + . | if $ch == "" then . else del(.why) end | if $full then .main.fullscreen = true else . end' "$TMP/layout.json" > "$LAYOUT_LAST"
     layout_render "$LAYOUT_LAST"
     layout_keep "$1"
     if [ -n "${ASKED:-}" ]; then layout_show ''; else layout_show "spark-shell layout save NAME saves it"; fi   # the panel has its save row
 }
 layout_keep() {   # layout_keep WORDS
     _kn=$(layout_name_of "$1"); [ -n "$_kn" ] || return 0
-    mkdir_state "$KEPT_LAYOUTS"; jq 'del(.suggested)' "$LAYOUT_LAST" > "$KEPT_LAYOUTS/$_kn.new" 2>/dev/null && mv "$KEPT_LAYOUTS/$_kn.new" "$KEPT_LAYOUTS/$_kn"
+    mkdir_state "$KEPT_LAYOUTS"; layout_copy "$LAYOUT_LAST" "$KEPT_LAYOUTS/$_kn" || return 0
     kept_note layout "$_kn"
 }
-layout_kept_file() { if [ -f "$LAYOUTS_DIR/$1" ]; then printf '%s' "$LAYOUTS_DIR/$1"; elif [ -f "$KEPT_LAYOUTS/$1" ]; then printf '%s' "$KEPT_LAYOUTS/$1"; else return 1; fi; }   # layout_kept_file NAME -> its saved or kept file
+# by spark: a layout of the model's, held to the model's gate wherever it is copied; one you saved from your windows, or
+# wrote, has no such mark and is yours
+layout_copy() { jq 'del(.suggested) | .by = "spark"' "$1" > "$TMP/layout.copy" 2>/dev/null && cp "$TMP/layout.copy" "$2"; }   # layout_copy FILE TO -- the last layout or a kept one: what opened, not what was suggested
+layout_yours() { case $1 in "$LAYOUTS_DIR"/*) jq -e '.by != "spark"' "$1" >/dev/null 2>&1 ;; *) return 1 ;; esac; }   # layout_yours FILE -> 0 for a saved one with no mark
+layout_kept_file() {   # layout_kept_file NAME -> its saved or kept file
+    case $1 in ''|.*|*/*) return 1 ;; esac
+    if [ -f "$LAYOUTS_DIR/$1" ]; then printf '%s' "$LAYOUTS_DIR/$1"; elif [ -f "$KEPT_LAYOUTS/$1" ]; then printf '%s' "$KEPT_LAYOUTS/$1"; else return 1; fi
+}
 layout_replay() {   # layout_replay NAME -- no model call
     _rf=$(layout_kept_file "$1") || refuse "no saved layout named $1"
     LAYOUT_LABEL=$(layout_ws_label "$1")
@@ -537,7 +566,8 @@ layout_replay() {   # layout_replay NAME -- no model call
     [ -n "${ASKED:-}" ] || printf 'layout> %s\n' "$(layout_words "$_rf")"
     why=$(layout_why "$_rf"); [ -z "$why" ] || printf '  %s\n' "$why"
     layout_render "$_rf"
-    if [ -f "$LAYOUTS_DIR/$1" ]; then KEPT=1 layout_show "the saved layout $1"; else layout_show "the layout $1 again"; fi   # saved is yours (KEPT); kept is still the model's
+    if [ -f "$LAYOUTS_DIR/$1" ]; then _rs="the saved layout $1"; else _rs="the layout $1 again"; fi
+    if layout_yours "$_rf"; then KEPT=1 layout_show "$_rs"; else layout_show "$_rs"; fi
     [ -n "${KEPT_BACK:-}" ] || kept_note layout "$1"
 }
 layout_back() {   # one step back each time
@@ -597,7 +627,7 @@ layout_save() {   # layout_save [NAME...] -- under its words by default
     name=$(layout_name_of "$*")
     [ -n "$name" ] || name=$(layout_name_of "$(layout_words "$LAYOUT_LAST")")
     [ -n "$name" ] || refuse "save NAME -- a name for it"
-    mkdir -p "$LAYOUTS_DIR"; jq 'del(.suggested)' "$LAYOUT_LAST" > "$LAYOUTS_DIR/$name"   # what opened, not what was suggested
+    mkdir -p "$LAYOUTS_DIR"; layout_copy "$LAYOUT_LAST" "$LAYOUTS_DIR/$name" || refuse "could not save $name"
     kept_note layout "$name"
     echo "saved $name -- spark-shell layout $name opens it ($LAYOUTS_DIR/$name)"
 }
@@ -621,7 +651,8 @@ layout_rename() {   # layout_rename NAME NEW... -- its history lines follow
     [ -n "$_ro" ] && [ -n "$_rn" ] || refuse "rename NAME NEW -- the layout and its new name"
     if [ ! -f "$LAYOUTS_DIR/$_ro" ] && [ -f "$KEPT_LAYOUTS/$_ro" ]; then   # a recent one saved under a name
         [ ! -e "$LAYOUTS_DIR/$_rn" ] || refuse "$_rn is a layout already: pick another name"
-        mkdir -p "$LAYOUTS_DIR"; cp "$KEPT_LAYOUTS/$_ro" "$LAYOUTS_DIR/$_rn"; kept_note layout "$_rn"
+        mkdir -p "$LAYOUTS_DIR"; layout_copy "$KEPT_LAYOUTS/$_ro" "$LAYOUTS_DIR/$_rn" || refuse "could not save $_rn"
+        kept_note layout "$_rn"
         echo "saved as $_rn"; return 0
     fi
     [ -f "$LAYOUTS_DIR/$_ro" ] || refuse "no saved layout named $_ro"

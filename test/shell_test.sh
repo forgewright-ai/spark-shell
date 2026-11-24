@@ -1721,8 +1721,8 @@ else
     printf '%s\n' 'workspace number 3' 'rename workspace to "3 photo editing for"' 'exec gimp-3.0' splith 'exec firefox https://instagram.com' splitv 'exec firefox https://x.com' 'exec foot -e micro' 'exec player --idle --' 'focus left' 'resize set width 70 ppt' > "$H/expected.lines"
     sed 's/^rename workspace to .*/rename workspace to "3 studio"/' "$H/expected.lines" > "$H/expected.studio"   # a saved layout names its workspace after itself
     cmp -s "$swlog" "$H/expected.lines" && ok "sway got exactly the ten lines in order (main, the workspace named after the words, splith, side, splitv, micro in foot, focus left, resize 70 ppt; ghostapp never)" || bad "swaymsg lines" "$(cat "$swlog" 2>&1)"
-    jq -e --arg w "$need" '(keys_unsorted[0] == "words") and .words == $w and (.why | startswith("photo work in gimp")) and .main.app == "gimp-3.0" and .main.width == 70 and (.side | length) == 5 and .side[0].args == "https://instagram.com"' "$layout_last" >/dev/null 2>&1 \
-        && ok "layout.last: the model's answer as JSON, the words first, then why, main and side as answered" || bad "layout.last" "$(cat "$layout_last" 2>&1)"
+    jq -e --arg w "$need" '(keys_unsorted[0] == "words") and .words == $w and (.why | startswith("photo work in gimp")) and .main.app == "gimp-3.0" and .main.width == 70 and (.side | map(.app)) == ["firefox", "firefox", "micro", "player"] and .by == "spark" and .side[0].args == "https://instagram.com"' "$layout_last" >/dev/null 2>&1 \
+        && ok "layout.last: the model's answer as JSON, the words first, then why, main and side as answered less the window refused" || bad "layout.last" "$(cat "$layout_last" 2>&1)"
     grep -q '^exec\|^workspace\|^#' "$layout_last" && bad "layout.last holds sway lines or a header" "$(head -3 "$layout_last")" || ok "layout.last: no sway line, no header (rendered when it opens)"
     # the inventory: unmarked, every app with a desktop entry and never a package
     # (the fake pacman answers -Qi and -Ql, as sbom_collect asks); marked (the
@@ -1770,6 +1770,7 @@ EOF
     out=$(sh "$SH" layout)
     printf '%s\n' "$out" | grep -q "^  studio  *$need\$" && printf '%s\n' "$out" | grep -q '^spark-shell layout NAME opens one -- layout save \[NAME\] saves the last layout, layout delete NAME deletes one$' \
         && ok "layout (bare): lists the saved layout with its words" || bad "desk list" "$out"
+    jq '.side += [{app: "ghostapp", args: ""}]' "$desks/studio" > "$H/studio.ghost" && cp "$H/studio.ghost" "$desks/studio"   # an app gone since the layout was saved
     rm -f "$argv" "$swlog"
     st=0; out=$(sh "$SH" layout studio 2>&1) || st=$?
     [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q "^layout> $need\$" && printf '%s\n' "$out" | grep -q '^  photo work in gimp' && printf '%s\n' "$out" | grep -q 'the layout did not finish' && cmp -s "$swlog" "$H/expected.studio" \
@@ -1913,14 +1914,68 @@ EOF
     ! grep -q 'term curl' "$swlog" && ok "gate: a terminal app's flags from a model: refused in foot -e too" || bad "gate term flag" "st=$st $out $(cat "$swlog")"
     gate_answer "$(gate_one firefox 'https://x.com/?a=1')"
     grep -qxF 'exec firefox https://x.com/?a=1' "$swlog" && ok "gate: a page with = and ? in it is still a page" || bad "gate page" "st=$st $out $(cat "$swlog")"
-    # a layout in the history is the model's answer, kept with no act of yours: it stays to the model's rule; a saved one is yours
-    printf '#!/bin/sh\n:\n' > "$H/.local/bin/reader"; chmod +x "$H/.local/bin/reader"
-    gate_answer '{"main": {"app": "firefox", "quote": "firefox"}, "side": [{"app": "reader", "quote": "read the news"}]}'
-    _gk=$(ls -t "$H/.local/state/spark-shell/layouts" | head -1)
-    : > "$swlog"; st=0; out=$(sh "$SH" layout "$_gk" 2>&1) || st=$?
-    ! grep -q reader "$swlog" && printf '%s\n' "$out" | grep -qF '(reader is not one of the allowed apps' \
-        && ok "gate: a window refused when the model named it is refused again from the history" || bad "gate history" "st=$st $_gk $out $(cat "$swlog")"
-    rm -f "$H/.local/bin/reader"
+    # a program the list lacks and the need names opens bare; a wrapper, an interpreter or a writer never opens, whatever
+    # the need says; past an app's name the model writes pages and files, no + word and no - word
+    for t in watch vim reader python3.12; do printf '#!/bin/sh\n:\n' > "$H/.local/bin/$t"; chmod +x "$H/.local/bin/$t"; done
+    gate_need() { printf '%s\n' "$2" > "$HOME/answer.json"; : > "$swlog"; st=0; out=$(sh "$SH" layout "$1" 2>&1) || st=$?; rm -f "$HOME/answer.json"; }
+    gate_side() { jq -cn --arg a "$1" --arg g "$2" '{main: {app: "micro", quote: "notes"}, side: [{app: $a, args: $g, quote: "notes"}]}'; }
+    gate_need 'watch a film and notes' "$(gate_side watch 'bash Downloads/x.sh')"
+    ! grep -q '^exec.*watch' "$swlog" && printf '%s\n' "$out" | grep -qF '(watch is not an app)' \
+        && ok "gate: watch a film admits no watch: a program that runs its arguments is never the model's" || bad "gate watch" "st=$st $out $(cat "$swlog")"
+    gate_need 'rm the plan, then notes' "$(gate_side rm plan.txt)"
+    ! grep -q '^exec.*rm' "$swlog" && printf '%s\n' "$out" | grep -qF '(rm is not an app)' && ok "gate: rm the plan removes nothing" || bad "gate rm need" "st=$st $out $(cat "$swlog")"
+    gate_need 'python3.12 and notes' "$(gate_side python3.12 Downloads/x.py)"
+    ! grep -q '^exec.*python' "$swlog" && printf '%s\n' "$out" | grep -qF '(python3.12 is not an app)' && ok "gate: an interpreter under its version's name is the interpreter" || bad "gate versioned" "st=$st $out $(cat "$swlog")"
+    gate_need 'reader and notes' "$(gate_side reader page.html)"
+    ! grep -q '^exec.*reader' "$swlog" && printf '%s\n' "$out" | grep -qF '(reader is not one of the allowed apps, so it opens bare (spark-shell apps adds it))' \
+        && ok "gate: a program here only because the need names it takes nothing after its name" || bad "gate named args" "st=$st $out $(cat "$swlog")"
+    gate_need 'reader and notes' "$(gate_side reader '')"
+    grep -qxF 'exec foot -e reader' "$swlog" && ok "gate: bare, it opens" || bad "gate named bare" "st=$st $out $(cat "$swlog")"
+    printf 'reader: my browser\nmicro\nfind\n' > "$HOME/.config/spark-shell/apps"
+    gate_need 'reader and notes' "$(gate_side reader page.html)"
+    grep -qxF 'exec foot -e reader page.html' "$swlog" && ok "gate: an allowed app takes its page" || bad "gate marked args" "st=$st $out $(cat "$swlog")"
+    gate_need 'find the notes' "$(gate_side find Documents)"
+    ! grep -q '^exec.*find' "$swlog" && printf '%s\n' "$out" | grep -qF '(find is not an app)' && ok "gate: find in the apps file is no app of the model's either" || bad "gate marked find" "st=$st $out $(cat "$swlog")"
+    rm -f "$HOME/.config/spark-shell/apps"
+    for _ga in '+so plan.txt' '-S plan.txt' '?so plan.txt' '[+]so plan.txt' ':exec id' 'term://plan.sh'; do
+        gate_need 'notes in micro' "$(jq -cn --arg g "$_ga" '{main: {app: "micro", args: $g, quote: "notes"}, side: []}')"
+        ! grep -q '^exec' "$swlog" && printf '%s\n' "$out" | grep -qF '(a page or a file, not a flag)' && ok "gate: $_ga from a model is refused" || bad "gate word $_ga" "st=$st $out $(cat "$swlog")"
+    done
+    gate_need 'vim and notes' "$(gate_side vim '+so plan.txt')"
+    ! grep -q '^exec.*vim' "$swlog" && ok "gate: vim's + command is refused where the need names vim" || bad "gate vim" "st=$st $out $(cat "$swlog")"
+    gate_need 'gone and notes' "$(gate_side gone 'new-session id')"
+    ! grep -q '^exec.*gone' "$swlog" && printf '%s\n' "$out" | grep -qF '(gone opens with nothing after its name)' \
+        && ok "gate: an entry whose Exec takes no file opens as its entry says, nothing added" || bad "gate no field" "st=$st $out $(cat "$swlog")"
+    gate_need 'notes in micro' '{"main": {"app": "m[i]cro", "quote": "notes"}, "side": [{"app": "mi.ro", "quote": "notes"}]}'
+    ! grep -qF -e 'm[i]cro' -e 'mi.ro' "$swlog" && ok "gate: an app is known by its whole name, never by a pattern" || bad "gate pattern" "st=$st $out $(cat "$swlog")"
+    rm -f "$H/.local/bin/watch" "$H/.local/bin/vim" "$H/.local/bin/python3.12"
+    # a refused window is written nowhere, and a layout of the model's stays the model's under any name; one you saved from your windows is yours
+    gate_need 'reader and notes' '{"words": "reader page.html", "by": "me", "main": {"app": "reader", "args": "page.html", "width": 60, "quote": "reader"}, "side": [{"app": "micro", "args": "", "quote": "notes"}]}'
+    _gk=$H/.local/state/spark-shell/layouts/reader-and-notes
+    [ "$st" -eq 1 ] && jq -e -s 'all(.[]; .words == "reader and notes" and .by == "spark" and .main.app == "micro" and .main.width == 60 and .side == [])' "$layout_last" "$_gk" >/dev/null 2>&1 \
+        && printf '%s\n' "$out" | grep -q '^  refused  exec foot -e reader page.html ' && printf '%s\n' "$out" | grep -q 'the layout did not finish' \
+        && ok "a refused window is in neither the last layout nor the kept one; the words are the need's, the mark spark's" || bad "refused written" "st=$st $out $(cat "$layout_last" "$_gk" 2>&1)"
+    cp "$layout_last" "$H/last.good"
+    gate_need 'reader it is' '{"main": {"app": "reader", "args": "page.html", "quote": "reader"}}'
+    [ "$st" -eq 1 ] && cmp -s "$layout_last" "$H/last.good" && [ ! -e "$H/.local/state/spark-shell/layouts/reader-it-is" ] && printf '%s\n' "$out" | grep -q '^spark-shell layout: no window of the answer may open$' \
+        && ok "an answer with no window left writes nothing" || bad "refused all" "st=$st $out $(cat "$layout_last")"
+    for _gw in last kept; do   # as a release before the mark left them: the refused window in the file, no mark
+        _gj='{"words": "reader and notes", "main": {"app": "reader", "args": "page.html"}, "side": [{"app": "micro", "args": "notes.txt"}]}'
+        if [ "$_gw" = last ]; then printf '%s\n' "$_gj" > "$layout_last"; sh "$SH" layout save by-hand >/dev/null 2>&1 || :
+        else printf '%s\n' "$_gj" > "$_gk"; sh "$SH" layout rename reader-and-notes by-hand >/dev/null 2>&1 || :; fi
+        _gm=$(jq -r .by "$desks/by-hand" 2>&1); sh "$SH" layout rename by-hand other-name >/dev/null 2>&1 || :
+        : > "$swlog"; st=0; out=$(sh "$SH" layout other-name 2>&1) || st=$?
+        [ "$_gm" = spark ] && [ "$(jq -r .by "$desks/other-name" 2>&1)" = spark ] && grep -qxF 'exec foot -e micro notes.txt' "$swlog" && ! grep -q '^exec.*reader' "$swlog" \
+            && printf '%s\n' "$out" | grep -q '^  refused  exec foot -e reader page.html ' && printf '%s\n' "$out" | grep -q 'the layout did not finish' \
+            && ok "a layout of spark's ($_gw) saved, then renamed, is held to the model's rule still" || bad "saved gate $_gw" "st=$st $_gm $out $(cat "$swlog")"
+        rm -f "$desks/by-hand" "$desks/other-name"
+    done
+    printf '{"words": "reader and notes", "main": {"app": "reader", "args": "page.html"}, "side": [{"app": "micro", "args": "notes.txt"}]}\n' > "$_gk"
+    : > "$swlog"; st=0; out=$(KEPT=1 sh "$SH" layout reader-and-notes 2>&1) || st=$?   # the word in the environment lifts nothing
+    grep -qxF 'exec foot -e micro notes.txt' "$swlog" && ! grep -q '^exec.*reader' "$swlog" && ok "gate: a kept layout in the history is the model's with or without the mark" || bad "gate history" "st=$st $out $(cat "$swlog")"
+    printf '{"words": "mine", "main": {"app": "reader", "args": "--x page.html"}}\n' > "$desks/mine"; : > "$swlog"; st=0; out=$(sh "$SH" layout mine 2>&1) || st=$?
+    grep -qxF 'exec foot -e reader --x page.html' "$swlog" && ok "gate: a layout in your layouts folder with no mark is yours: its flags and its own programs open" || bad "gate yours" "st=$st $out $(cat "$swlog")"
+    rm -f "$H/.local/bin/reader" "$_gk" "$desks/mine"
     # a window that never comes (mpv with nothing to play): the split meant for it is skipped,
     # so the next window lands beside the main one instead of cutting it
     printf '{"words": "gone", "main": {"app": "micro", "width": 70}, "side": [{"app": "gone"}, {"app": "firefox"}]}\n' > "$desks/gone"
