@@ -44,9 +44,15 @@ layout_place_marks() { printf ', mark --add _spark-shell.place.%s.%s, mark --add
 layout_place_unmarks() { [ "$1" = - ] || { printf '%s\n' "$1" | tr ',' '\n' | grep . | sed 's/^/unmark /; s/$/, /' | tr -d '\n'; }; }   # layout_place_unmarks MARKS|- -> "unmark M, " for each of a comma list
 LAYOUT_PLACE_SLACK=32   # twice the outer gap and more: how far sway itself may move a placed window when the area's corner moves
 LAYOUT_PLACE_ROUND=16   # a client rounds its size down to its own grid, a terminal to whole cells: that much is split between the two sides, so the gaps stay even; a window shorter than that lost room and is resized back
-layout_refit_soon() {   # a refit half a second on and again a second later: sway lays out a bar or a screen a moment after the command; only under a real sway
+layout_refit_soon() {   # layout_refit_soon [screen] -- a refit half a second on and again a second later: sway lays out a bar or a screen a moment after the command; only under a real sway. With screen, home is brought back into sight too
     wm_live || return 0
-    ( sleep 0.5; sh "$REPO/spark-shell" desktop window refit; sleep 1; sh "$REPO/spark-shell" desktop window refit ) </dev/null >/dev/null 2>&1 &
+    ( sleep 0.5; sh "$REPO/spark-shell" desktop window refit "$@"; sleep 1; sh "$REPO/spark-shell" desktop window refit "$@" ) </dev/null >/dev/null 2>&1 &
+}
+layout_dialog_in_sight() {   # after layout_window read the tree: home's window in the middle of its screen again, where a screen made smaller or turned left a part of it outside, its keys and its answers with it
+    _ld=$(jq -r '[.nodes[]? | select(.type == "output" and .name != "__i3") | .rect as $s | .. | objects
+        | select(.app_id? == "spark-dialog" and .type? == "floating_con" and (.fullscreen_mode // 0) == 0)
+        | select(.rect.x < $s.x or .rect.y < $s.y or .rect.x + .rect.width > $s.x + $s.width or .rect.y + .rect.height > $s.y + $s.height) | .id][0] // empty' "$TMP/tree" 2>/dev/null) || return 0
+    [ -z "$_ld" ] || wm_on "con_id=$_ld" "move position center" >/dev/null 2>&1 || :
 }
 layout_window_refit() {   # layout_window_refit -- after layout_window read the tree: each placed window in sight at its place on the area as it is now; one that left it loses it
     jq -r '.nodes[]? | select(.type == "output" and .name != "__i3") | .current_workspace as $cw | .nodes[]? | select(.type == "workspace" and .name == $cw) | .rect as $a
@@ -190,6 +196,7 @@ layout_window() {   # layout_window float|left|right|up|down|max|min|toggle|rest
     wm_up || refuse "moves the desktop's windows: run it inside it"
     wm_tree > "$TMP/tree" || refuse "$WM_NAME did not answer"
     _dwid=${2:-}; _dmv=''
+    [ "$1 $_dwid" != 'refit screen' ] || { layout_dialog_in_sight; _dwid=''; }   # a screen changed under it
     [ "$1" != move ] || { case $_dwid in left|right|up|down) _dmv=$_dwid; _dwid='' ;; *) refuse "window move takes left, right, up or down" ;; esac; }
     case $_dwid in *[!0-9]*) refuse "window takes a window's ID, its digits, after the word" ;; esac
     case $1 in restore) layout_window_restore "$_dwid"; return ;; refit) layout_window_refit; return ;; new) layout_window_new; return ;; back) layout_window_back; return ;; esac

@@ -3773,7 +3773,7 @@ rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 transform flipped 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: transform takes normal, 90, 180 or 270 (clockwise); no mirrored orientation' ] && ok "desktop screen transform: a mirrored orientation is refused" || bad "screen transform flipped" "rc=$rc $out"
 j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://display/rows/screen/HDMI-A-1"}}')
-printf '%s' "$j" | jq -e '.result.contents[0].text | fromjson | .rows[] | select(.text == "orientation") | .step | .set == {name: "display_transform", arguments: {screen: "HDMI-A-1"}} and .key == "transform" and [.values[] | .shown + ":" + .sent] == ["upright:normal", "right:90", "upside down:180", "left:270"]' >/dev/null \
+printf '%s' "$j" | jq -e '.result.contents[0].text | fromjson | .rows[] | select(.text == "orientation") | .step | .set == {name: "display_transform", arguments: {screen: "HDMI-A-1"}} and .key == "transform" and [.values[] | .shown + ":" + .sent] == ["left:270", "upright:normal", "right:90", "upside down:180"]' >/dev/null \
     && ok "display: a screen's orientation is one step, upright and three turns as sway turns it, clockwise" || bad "display orientation rows" "$j"
 j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"display_transform","arguments":{"screen":"HDMI-A-1","transform":"180"}}}')
 printf '%s' "$j" | jq -e '.result.isError == false and .result.structuredContent.receipt == "HDMI-A-1 turned 180" and .result.structuredContent.undo == {name:"display_transform",arguments:{screen:"HDMI-A-1",transform:"normal"}}' >/dev/null \
@@ -4009,6 +4009,12 @@ win_run refit
 rf_tree 1216 42 1888 1022 '' "$(rf_win 13 floating_con 0 1400 200 800 600 '')" ''
 win_run refit
 [ "$rc" = 0 ] && [ ! -e "$HOME/win.log" ] && [ "$out" = 'no window in sight has a place the keys gave it' ] && ok "desktop window refit: no window wears a place, said in one line (#264)" || bad "refit no place" "rc=$rc $out"
+# a screen turned or made smaller under home: home goes to the middle of its screen when a part of it is outside; any other refit, and a home in sight, stays
+rf_home() { printf '{"type":"root","nodes":[{"type":"output","name":"DP-3","current_workspace":"1","rect":{"x":0,"y":0,"width":1080,"height":1920},"nodes":[{"type":"workspace","name":"1","rect":{"x":0,"y":0,"width":1080,"height":1920},"nodes":[],"floating_nodes":[{"type":"floating_con","app_id":"spark-dialog","id":77,"fullscreen_mode":%s,"rect":{"x":%s,"y":200,"width":720,"height":900}}]}]}]}' "$1" "$2" > "$HOME/win-tree.json"; }
+rf_home 0 600; win_run refit screen; _rh1=$(cat "$HOME/win.log" 2>/dev/null || :); win_run refit; _rh2=$(cat "$HOME/win.log" 2>/dev/null || :)
+rf_home 0 180; win_run refit screen; _rh3=$(cat "$HOME/win.log" 2>/dev/null || :); rf_home 1 600; win_run refit screen; _rh4=$(cat "$HOME/win.log" 2>/dev/null || :)
+[ "$_rh1" = '-- [con_id=77] move position center' ] && [ -z "$_rh2$_rh3$_rh4" ] \
+    && ok "desktop window refit screen: home back in the middle of a screen that left part of it outside, its answers in sight; in no other case is it moved" || bad "refit home" "$_rh1 | $_rh2 | $_rh3 | $_rh4"
 printf '{"type":"root","nodes":[{"type":"output","name":"__i3","nodes":[{"type":"workspace","name":"__i3_scratch","nodes":[],"floating_nodes":[{"type":"floating_con","id":9,"marks":["_spark-shell.min.RB.9"],"nodes":[]}]}]},{"type":"output","name":"HDMI-A-1","nodes":[{"type":"workspace","name":"1","focused":true,"rect":{"x":1276,"y":42,"width":1828,"height":1022},"nodes":[],"floating_nodes":[]}]}]}\n' > "$HOME/win-tree.json"
 win_run restore
 [ "$(cat "$HOME/win.log")" = "-- [con_id=9] unmark _spark-shell.min.RB.9, scratchpad show, floating disable, floating enable, border normal 1, resize set width 914 px height 511 px, move absolute position 2190 553, mark --add _spark-shell.place.RB.9, mark --add _spark-shell.area.$_A2.9" ] \

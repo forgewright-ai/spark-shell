@@ -62,7 +62,7 @@ trial_apply() {   # trial_apply PORT KIND VALUE -- under the lock
     screen_origin >/dev/null
     SCREEN_TRIED=''
     [ "$(trial_get token)" != "$_tat" ] || cat "$TMP/trial" "$TMP/trial.keep" | trial_put || :
-    layout_refit_soon
+    layout_refit_soon screen
     jq -cn --arg said "$_tas" --argjson s "$(trial_seconds)" --arg n "$_tap" \
         '{said: $said, seconds: $s, keep: {name: "display_keep", arguments: {screen: $n}}, back: {name: "display_back", arguments: {screen: $n}}}' > "$TMP/screen.trial"
     echo "$_tap $_tas, back in $(trial_seconds) seconds unless kept"
@@ -127,7 +127,7 @@ trial_restore() {   # under the lock: what was there before, live, then the plac
         done < "$_trf"
     done
     trial_end
-    layout_refit_soon
+    layout_refit_soon screen
 }
 trial_write() {   # under the lock: what is tried into screens.conf, as the change made another way writes it; the state gone
     while IFS="$US" read -r _twk _twa _twb _twc _twd _twe; do
@@ -135,7 +135,7 @@ trial_write() {   # under the lock: what is tried into screens.conf, as the chan
     done < "$_trf"
     trial_end
     login_screens_follow
-    layout_refit_soon
+    layout_refit_soon screen
 }
 trial_again() {   # under the lock: what is tried live again, where the compositor read its config anew meanwhile and put the old back
     # shellcheck disable=SC2046   # a kind and its value, split on purpose
