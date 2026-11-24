@@ -29,15 +29,14 @@ term_window_cmd() {   # term_window_cmd APP-ID FACE SIZE ALPHA BACKGROUND COMMAN
     _tcs=$(term_colors_section)
     printf "foot --app-id %s -o 'font=%s:size=%s' -o %s.alpha=%s -o %s.background=%s -o pad=0x0 -e %s" "$1" "$2" "$3" "$_tcs" "$4" "$_tcs" "$5" "$6"
 }
-term_colors_section() {   # the name of its color section: [colors] before 1.26, [colors-dark] from it
+term_since() {   # term_since MINOR -> 0 for a foot of 1.MINOR or newer, and for one that says no version
     _v=$(PATH=$HOME/.local/bin:$PATH foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')
-    set -- ${_v:-1 26}
-    if [ "$1" -gt 1 ] || [ "$2" -ge 26 ]; then echo colors-dark; else echo colors; fi
+    case $_v in '') return 0 ;; '1 '*) [ "${_v#* }" -ge "$1" ] ;; *) [ "${_v%% *}" -gt 1 ] ;; esac
 }
-term_fill() {   # the line that has a floating window fill what the compositor gives: from 1.17 on it is cut to whole cells, and what is left shows the wallpaper; an older one refuses the key
-    _v=$(PATH=$HOME/.local/bin:$PATH foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')
-    set -- ${_v:-1 17}
-    if [ "$1" -gt 1 ] || [ "$2" -ge 17 ]; then echo 'resize-by-cells=no'; fi
-}
+term_colors_section() { if term_since 26; then echo colors-dark; else echo colors; fi; }   # the name of its color section
+term_fill() { ! term_since 17 || echo 'resize-by-cells=no'; }   # the line that has a floating window fill what the compositor gives: from 1.17 on it is cut to whole cells, and what is left shows the wallpaper; an older one refuses the key
+# a program in a terminal, at the far end of an ssh too, may put words on the clipboard and never read what is there
+term_security_section() { ! term_since 20 || echo '[security]'; }
+term_security() { ! term_since 20 || echo 'osc52=copy-enabled'; }
 term_version() { foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9.]*\).*/\1/p'; }
 term_osc_bg() { printf '[%s]#%s' "$(awk -v a="$1" 'BEGIN { printf "%d", a * 100 + 0.5 }')" "$2"; }   # term_osc_bg ALPHA HEX -> its OSC 11 form: opacity in percent, then the color
