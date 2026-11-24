@@ -244,22 +244,70 @@ pub fn film_webp(bytes: Vec<u8>, pixels: bool) -> Option<Film> {
     })
 }
 
-/// How long each frame of an animated WebP stays, read from its frames' headers (ANMF: offsets and size, then
-/// the time in three bytes) before any frame decodes.
+/// How long each frame of an animated WebP stays, read from its frames' headers before any frame decodes. None for
+/// one a frame of which is not as its header says: image-webp 0.2.4 takes the clear half of a frame (ALPH) at the
+/// header's size and the colors (VP8) at their own, and panics where they differ, which ends the dialog (panic is
+/// abort). So every frame is walked as the decoder walks it, its bitstream's own size read first; lib/look.py holds a
+/// theme's reel to the same on its way in.
 fn webp_times(b: &[u8]) -> Option<Vec<u32>> {
-    if b.len() < 12 || &b[0..4] != b"RIFF" || &b[8..12] != b"WEBP" {
+    if b.get(0..4)? != b"RIFF" || b.get(8..12)? != b"WEBP" || b.get(12..16)? != b"VP8X" {
         return None;
     }
+    let canvas = (u24(b, 24)? + 1, u24(b, 27)? + 1);
     let (mut i, mut times) = (12usize, vec![]);
-    while i + 8 <= b.len() {
-        let size = u32::from_le_bytes(b[i + 4..i + 8].try_into().ok()?) as usize;
-        if &b[i..i + 4] == b"ANMF" {
-            let p = b.get(i + 8..i + 8 + 16)?;
-            times.push(u32::from_le_bytes([p[12], p[13], p[14], 0]));
+    while let Some((kind, start, end)) = webp_chunk(b, i) {
+        if kind == b"ANMF" {
+            // the decoder goes from frame to frame with no padding: an odd one would be read from elsewhere than here
+            if (end - start) % 2 == 1 || times.len() >= REEL_FRAMES || !frame_ok(b.get(..end)?, start, canvas) {
+                return None;
+            }
+            times.push(u24(b, start + 12)?);
         }
-        i = i.checked_add(8 + size + (size & 1))?;
+        i = end + (end - start) % 2;
     }
     (!times.is_empty()).then_some(times)
+}
+
+/// The most frames a reel has.
+const REEL_FRAMES: usize = 1000;
+
+fn u24(b: &[u8], at: usize) -> Option<u32> {
+    let p = b.get(at..at.checked_add(3)?)?;
+    Some(u32::from_le_bytes([p[0], p[1], p[2], 0]))
+}
+
+/// The chunk at `at`: its kind, and where its bytes start and end. None where none is whole.
+fn webp_chunk(b: &[u8], at: usize) -> Option<(&[u8], usize, usize)> {
+    let start = at.checked_add(8)?;
+    let head = b.get(at..start)?;
+    let end = start.checked_add(u32::from_le_bytes(head[4..8].try_into().ok()?) as usize)?;
+    (end <= b.len()).then_some((&head[0..4], start, end))
+}
+
+/// Whether a frame (ANMF, its bytes from `start` to the end of `b`) lies on its picture, and its bitstream is of the
+/// size it says: one VP8L, one VP8, or an ALPH and the VP8 after it.
+fn frame_ok(b: &[u8], start: usize, canvas: (u32, u32)) -> bool {
+    let ok = || -> Option<bool> {
+        let (x, y) = (2 * u24(b, start)?, 2 * u24(b, start + 3)?);
+        let (w, h) = (u24(b, start + 6)? + 1, u24(b, start + 9)? + 1);
+        let (mut kind, mut s, mut e) = webp_chunk(b, start + 16)?;
+        if kind == b"ALPH" {
+            (kind, s, e) = webp_chunk(b, e + (e - s) % 2)?;
+            if kind != b"VP8 " {
+                return None;
+            }
+        }
+        let d = b.get(s..e)?;
+        let own = if kind == b"VP8L" {
+            let n = u32::from_le_bytes(d.get(1..5)?.try_into().ok()?);
+            (*d.first()? == 0x2f).then_some(((n & 0x3fff) + 1, (n >> 14 & 0x3fff) + 1))?
+        } else {
+            let side = |at: usize| Some(u16::from_le_bytes(d.get(at..at + 2)?.try_into().ok()?) as u32 & 0x3fff);
+            (kind == b"VP8 " && d.first()? & 1 == 0 && d.get(3..6)? == [0x9d, 0x01, 0x2a]).then_some((side(6)?, side(8)?))?
+        };
+        Some(own == (w, h) && x + w <= canvas.0 && y + h <= canvas.1)
+    };
+    ok() == Some(true)
 }
 
 #[cfg(test)]
@@ -342,5 +390,111 @@ mod tests {
             true
         )
         .is_none());
+    }
+
+    /// A chunk with its padding.
+    fn chunk(kind: &[u8], body: &[u8]) -> Vec<u8> {
+        let mut out = [kind, &(body.len() as u32).to_le_bytes(), body].concat();
+        out.resize(out.len() + body.len() % 2, 0);
+        out
+    }
+
+    fn three(n: u32) -> [u8; 3] {
+        n.to_le_bytes()[..3].try_into().unwrap()
+    }
+
+    /// An ANMF of these chunks, at 0,0 and of the size it says.
+    fn anmf(w: u32, h: u32, parts: &[u8]) -> Vec<u8> {
+        chunk(b"ANMF", &[&[0; 6], &three(w - 1)[..], &three(h - 1), &three(40), &[0], parts].concat())
+    }
+
+    fn reel(w: u32, h: u32, frames: &[Vec<u8>]) -> Vec<u8> {
+        let vp8x = chunk(b"VP8X", &[&[0x12, 0, 0, 0], &three(w - 1)[..], &three(h - 1)].concat());
+        let body = [b"WEBP".to_vec(), vp8x, chunk(b"ANIM", &[0; 6]), frames.concat()].concat();
+        [b"RIFF".to_vec(), (body.len() as u32).to_le_bytes().to_vec(), body].concat()
+    }
+
+    /// The shipped opening's frames: each whole chunk and the size it says.
+    fn frames() -> Vec<(Vec<u8>, (u32, u32))> {
+        let b = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../gallery/core/atlas-awakening/atlas-awakening-dialog-open.webp"
+        ))
+        .unwrap();
+        let (mut i, mut out) = (12, vec![]);
+        while let Some((kind, s, e)) = webp_chunk(&b, i) {
+            if kind == b"ANMF" {
+                let size = (u24(&b, s + 6).unwrap() + 1, u24(&b, s + 9).unwrap() + 1);
+                out.push((b[i..e].to_vec(), size));
+            }
+            i = e + (e - s) % 2;
+        }
+        out
+    }
+
+    #[test]
+    fn a_reel_whose_frame_is_not_the_size_it_says_is_no_film() {
+        let all = frames();
+        let (whole, (w, h)) = &all[0];
+        let own = &whole[24..]; // past ANMF's own header
+        assert!(own.starts_with(b"ALPH"), "the shipped opening is a clear half and its colors");
+        let good = film_webp(reel(360, 240, &[whole.clone(), whole.clone()]), true).expect("as it is, a film");
+        assert!(good.pic(1).is_some());
+        let (_, s, e) = webp_chunk(own, 0).unwrap();
+        let vp8 = &own[e + (e - s) % 2..];
+        let small = [chunk(b"ALPH", &[&[0u8][..], &[255; 100]].concat()), vp8.to_vec()].concat();
+        // the frame image-webp panics on, first and later: a clear half of 10 by 10 over colors of another size
+        for frames in [
+            vec![anmf(10, 10, &small)],
+            vec![whole.clone(), whole.clone(), anmf(10, 10, &small)],
+            vec![anmf(w + 16, *h, own)],
+            vec![anmf(*w, h - 1, own)],
+            vec![anmf(10, 10, vp8)],
+            // outside the picture, a clear half with no colors, and one whose colors are another kind
+            vec![whole.clone(), [&whole[..8], &three(200)[..], &whole[11..]].concat()],
+            vec![anmf(*w, *h, &chunk(b"ALPH", &[0; 64]))],
+            vec![anmf(*w, *h, &[chunk(b"ALPH", &[0; 64]), chunk(b"VP8L", &[0x2f; 64])].concat())],
+            vec![anmf(1, 1, &chunk(b"VP8L", &[0x2f, 9, 0, 0, 0]))],
+        ] {
+            assert!(film_webp(reel(360, 240, &frames), true).is_none());
+        }
+        // an odd frame, after which the decoder would read from elsewhere than its headers were
+        let n = u32::from_le_bytes(whole[4..8].try_into().unwrap()) + 1;
+        let odd = [&whole[..4], &n.to_le_bytes()[..], &whole[8..], &[0, b'A']].concat();
+        assert!(film_webp(reel(360, 240, &[odd, chunk(b"NMF ", &[0; 64])]), true).is_none());
+        // the size of the picture itself
+        assert!(film_webp(reel(1025, 240, std::slice::from_ref(whole)), true).is_none());
+        let many = vec![whole.clone(); REEL_FRAMES + 1];
+        assert!(webp_times(&reel(360, 240, &many)).is_none());
+        assert_eq!(webp_times(&reel(360, 240, &many[1..])).map(|t| t.len()), Some(REEL_FRAMES));
+    }
+
+    #[test]
+    fn a_broken_reel_is_no_film_and_never_ends_the_dialog() {
+        // a few frames of each kind, changed byte by byte from a fixed seed: read or refused, never a panic
+        let all = frames();
+        let seed = reel(360, 240, &[all[0].0.clone(), all[1].0.clone(), all[2].0.clone()]);
+        let mut x: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut next = move |most: usize| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            (x % most as u64) as usize
+        };
+        for k in 0..400 {
+            let mut b = seed.clone();
+            for _ in 0..1 + next(5) {
+                let i = if next(2) == 0 { next(120) } else { next(b.len()) };
+                b[i] = [0, 255, b[i] ^ 1 << next(8), next(256) as u8][next(4)];
+            }
+            if k % 7 == 0 {
+                b.truncate(next(b.len()));
+            }
+            if let Some(f) = film_webp(b, true) {
+                for k in 0..f.frames.len().min(4) {
+                    let _ = f.pic(k);
+                }
+            }
+        }
     }
 }
