@@ -43,11 +43,12 @@ short_host() {
     printf '%s' "$_host"
 }
 
-# a value no key takes refuses the config, but in a theme's verb (CONFIG_MEND): there a look's key is its default, said
+# a value no key takes refuses the config, but in a theme's verb (config_mend): there a look's key is its default, said
 # once, or the verb that sets the key could never run. It stays in CONFIG_BAD until it is set
 LOOK_KEYS='THEME WALLPAPER FONT ALPHA POINTER DIALOG_ANIMATION DIALOG_ICONS DIALOG_SPACING BAR_GLYPHS GLYPH_FAMILY WALLPAPER_MOTION'
 CONFIG_MEND=''
 CONFIG_BAD=''
+config_mend() { CONFIG_MEND=1; }   # this verb can set a look's key again, so a bad value of one does not stop it
 config_bad() {   # config_bad KEY DEFAULT WHY -- KEY's value is none it takes
     eval "v=\$$1"
     # shellcheck disable=SC2154   # v is set by the eval above

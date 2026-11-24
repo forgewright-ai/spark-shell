@@ -32,7 +32,7 @@ verb_close() {   # verb_close SENTENCE -> a verb's last line
 
 THEME_WORDS='none show list save delete back wallpaper text transparency animation glyphs icons spacing family face workspaces motion picture gallery install preview variant screens rename duplicate restore color colors pointer clock pair portrait panel loop reel export'   # no theme may be named one
 cmd_theme() {   # cmd_theme [NAME|none|show|list|WORD ARG...|"WORDS"]
-    CONFIG_MEND=1; [ -n "${THEME_LOCKED:-}" ] || config_load   # under the lock it is read already
+    config_mend; [ -n "${THEME_LOCKED:-}" ] || config_load   # under the lock it is read already
     [ "$MODE" != dry ] || theme_dry_takes "$@"
     themes_settle
     case ${1:-show} in
@@ -154,7 +154,7 @@ theme_apply() {   # theme_apply NAME|none [back] -- back keeps the history
     else verb_close "The palette is $name${_w:+, with $_w}. A program that is already running, such as btop, takes it when it starts again."; fi
     [ "$failed" -eq 0 ]
 }
-theme_wear() { _twl=$(theme_apply "$THEME" 2>&1) || refuse_in theme "$1, but the look is not all on: $(printf '%s\n' "$_twl" | tail -n 1 | sed 's/^spark-shell theme: //')"; }   # theme_wear DONE -- the theme in use put on again after a change of it, DONE what is done already
+theme_wear() { _twl=$(theme_apply "$THEME" 2>&1) || refuse_in theme "$1, but $(printf '%s\n' "$_twl" | tail -n 1 | sed 's/^spark-shell[a-z ]*: //; s/^Not all/not all/')"; }   # theme_wear DONE -- the theme in use put on again after a change of it, DONE what is done already
 wall_now() {   # -> the wallpaper's word, a theme's own picture by its role (Landscape 1), or the picture's name
     _wn=$(wall_name)
     if [ -z "$_wn" ] && wall_of_theme "${WALLPAPER:-}"; then _wnd=${WALLPAPER%/*}; _wn=$(art_named "$WALLPAPER" "${_wnd##*/}"); fi

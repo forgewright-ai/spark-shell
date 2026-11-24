@@ -67,7 +67,7 @@ provide_main() {   # provide_main SECTION
     case " $PROVIDE_SECTIONS " in *" $sec "*) ;; *) refuse_in provide "${sec:-a section} is not one: $(printf '%s' "$PROVIDE_SECTIONS" | sed 's/ /, /g')" >&2 ;; esac   # stdout is the wire
     command -v jq >/dev/null 2>&1 || refuse_in provide "jq is not installed (spark-shell on)" >&2
     command -v mkfifo >/dev/null 2>&1 || refuse_in provide "mkfifo is not installed" >&2
-    [ "$sec" != theme ] || CONFIG_MEND=1
+    [ "$sec" != theme ] || config_mend
     config_load; [ "$OS" = Darwin ] || pm_detect; theme_load; SND=''; [ "$OS" = Darwin ] || SND=$(snd_tool)
     PANEL_VERSION_NOW=$(panel_version); PANEL_VERSION_READ=1   # pinned for the provider's life
     [ "$sec" != display ] || { if saver_can; then SAVER_CAN_NOW=1; else SAVER_CAN_NOW=0; fi; }   # python3 asked once, not per read

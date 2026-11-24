@@ -219,7 +219,7 @@ panel_about() {   # panel_about WIDTH -> the splash: the logo, the version, the 
 
 # --- the verb and the click
 cmd_panel() {   # cmd_panel [SECTION] [--list | ACTION [ARG...]] | chat | "WORDS"
-    case ${1:-} in theme|look) CONFIG_MEND=1 ;; esac
+    case ${1:-} in theme|look) config_mend ;; esac
     config_load
     command -v jq >/dev/null 2>&1 || refuse_in panel "jq is not installed (spark-shell on)"
     [ "$OS" = Darwin ] || pm_detect
