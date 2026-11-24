@@ -78,7 +78,16 @@ wm_idle_cmd() {   # wm_idle_cmd LOCK-LINE IDLE-SECONDS LOCK-SECONDS -> the watch
 }
 wm_idle_stop() { pkill -u "$(id -u)" -f "^swayidle .*$(printf '%s' "$1" | sed 's/[][\.*^$+?(){}|]/\\&/g')" 2>/dev/null || :; }   # wm_idle_stop LOCK-LINE: ours alone
 wm_background_here() { command -v swaybg >/dev/null 2>&1; }
-wm_background() { exec swaybg -o '*' "$@"; }   # started in the background only: exec, so the pid its caller keeps and ends is the wallpaper's, not a shell's
+wm_background() {   # started in the background only: exec, so the pid its caller keeps and ends is the wallpaper's, not a shell's
+    if [ "${1:-}" = -i ]; then   # a picture: a screen with a still of its own wears it, as the desktop shows it (v0.166.4: a turned screen blinked the landscape while sway reloaded)
+        while IFS="$TAB" read -r _wbn _wbf; do
+            [ -n "$_wbn" ] && [ -n "$_wbf" ] && set -- "$@" -o "$_wbn" -i "$_wbf" -m fill
+        done <<EOF
+$(art_screen_stills)
+EOF
+    fi
+    exec swaybg -o '*' "$@"
+}
 wm_capture_here() { command -v grim >/dev/null 2>&1; }
 wm_capture() { grim -c "$@" 2>/dev/null; }       # wm_capture [-o OUTPUT|-g GEOMETRY] FILE; -c: the pointer too
 wm_pick_here() { command -v slurp >/dev/null 2>&1; }

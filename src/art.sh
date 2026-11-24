@@ -325,6 +325,15 @@ art_screen_file() {   # art_screen_file FILE MODE WxH -> the still a screen of t
         fit) [ ! -f "$WALL_CACHE/screens/$WALLPAPER-$THEME-$3-fit.png" ] || printf '%s' "$WALL_CACHE/screens/$WALLPAPER-$THEME-$3-fit.png" ;;
     esac
 }
+art_screen_stills() {   # -> NAME<tab>FILE for each screen with a still of its own made, as art_screens_follow gives them; none for a picture or a color of yours
+    case ${WALLPAPER:-default} in default|none|'#'*) return 0 ;; esac
+    ! art_wall_theirs || return 0
+    art_screens 2>/dev/null | while IFS="$TAB" read -r _ssn _ _ _ _sss _ssr _ssx _ssm; do
+        [ -n "$_ssn" ] && [ "$_ssr" != landscape ] || continue
+        _ssf=$(art_screen_file "$_ssx" "$_ssm" "$_sss") && [ -n "$_ssf" ] && printf '%s\t%s\n' "$_ssn" "$_ssf"
+    done
+    return 0
+}
 art_screens_follow() {   # each screen output * does not suit gets its own still: a panel, a portrait, a scene's portrait view or the art fitted; made in the background
     [ "$OS" != Darwin ] && wm_up && command -v jq >/dev/null 2>&1 || return 0
     _asp=$(art_screens); { printf '%s\n' "$_asp"; printf '%s %s\n' "${THEME:-}" "${WALLPAPER:-}"; } > "$(art_plan_file)" 2>/dev/null || :
