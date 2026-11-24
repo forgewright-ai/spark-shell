@@ -60,8 +60,17 @@ it, shown on the bar while it is held there with the line at the screen's edge o
 where it docks in a strip of its own, the bar's line saying the module while the pad
 is off the bar and not while it is on it, by the same status loop; a click on a cell brings the window back.
 
+Last, live, on a second sway of the proof's: two screens, the second turned, each with a picture of its own, and
+sway's lines for the bar are the ones spark-shell renders, so a reload reads what the verbs wrote. The bar hidden,
+shown, moved, and the tray switched on and off reload nothing: sway says no reload, the wallpaper's drawer is the same
+process, both pictures are pixel for pixel what they were, a window whose rule made it unseen when it opened is as
+seen as it was after its title changes; the status loop runs while the bar is hidden; one host of the tray's runs while
+the tray is on and the bar shown, and none otherwise, after a real reload too; and the same with sway's own bar where no
+spark-bar runs.
+
 BAR_PROOF_FONT names a face for the proof's config and hides the Monaspace faces from the proof's home: this
-machine as one of the rows that have DejaVu Sans Mono alone. BAR_PROOF_TIMES says how long each gate took.
+machine as one of the rows that have DejaVu Sans Mono alone. BAR_PROOF_PARTS names the parts to run, all of them
+without it. BAR_PROOF_TIMES says how long each part took.
 spark-bar is SPARK_SHELL_BAR, else component/target's release build. Needs sway, swaymsg, foot, grim, wtype,
 jq and python3; fc-list where there is one."""
 import atexit
@@ -473,6 +482,14 @@ def read_png(path):
         rows.append(line)
         prev = line
     return w, h, rows
+
+
+def write_png(path, side, color):
+    """A square RGB PNG whose pixel at (x, y) is color(x, y)."""
+    def chunk(kind, body):
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+    raw = b"".join(b"\0" + b"".join(bytes(color(x, y)) for x in range(side)) for y in range(side))
+    Path(path).write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", side, side, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 
 
 def drawn(asset, size, box, center, ground):
@@ -3126,23 +3143,247 @@ def relook(d):
     d.shot("look-applied")
 
 
-def main():
-    for tool in ("sway", "swaymsg", "foot", "grim", "wtype", "jq"):
-        if not shutil.which(tool):
-            raise SystemExit("missing native tool: " + tool)
-    binary = bar_binary()
-    evidence = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(tempfile.mkdtemp(prefix="bar-proof.", dir="/var/tmp"))
-    evidence.mkdir(parents=True, exist_ok=True)
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))   # the bar is ended with ABRT here: no core file of it
-    began = time.time()
-    d = Desk(evidence.resolve(), binary)
+TURNED = "HEADLESS-2"
+PICTURES = {OUT: ((40, 90, 150), (90, 40, 110)), TURNED: ((30, 120, 80), (150, 110, 40))}   # each screen's own, two tones a quarter each, so a picture turned or swapped is another
+RULED = (192, 64, 32)                        # the ground of the window with a rule
+
+
+class Live(Desk):
+    """The second desktop, for the verbs that change the bar while it runs."""
+
+    def stage(self):
+        super().stage()
+        self.env["WLR_HEADLESS_OUTPUTS"] = "2"
+        self.lines, self.events, self.title = self.work / "bar.conf", self.work / "events", self.work / "title"
+        self.lines.write_text("\n".join(self.own) + "\n")
+        backgrounds = []
+        for name, tones in PICTURES.items():
+            write_png(self.work / (name + ".png"), 32, lambda x, y, tones=tones: tones[(x < 16) != (y < 16)])
+            backgrounds.append("output %s bg %s fill\n" % (name, self.work / (name + ".png")))
+        self.config.write_text("set $mod Mod4\noutput %s mode %dx%d position 0 0\noutput %s mode %dx%d position %d 0 transform 270\n%sxwayland disable\ndefault_border none\n"
+                               "focus_follows_mouse no\nmouse_warping none\nseat * xcursor_theme proof-blank 24\n"
+                               'for_window [app_id="proof-ruled"] floating enable, border none, opacity 0\ninclude %s\n'
+                               % (OUT, W, H, TURNED, W, H, W, "".join(backgrounds), self.lines))
+
+    def start(self):
+        super().start()
+        with open(str(self.events), "w") as out:
+            self.children.append(subprocess.Popen(["swaymsg", "-r", "-m", "-t", "subscribe", '["workspace"]'], env=self.env, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.DEVNULL))
+
+    def take(self):
+        """The bar's lines of the config spark-shell rendered, as a login or a reload of the person's sway reads them."""
+        taken, block = [], False
+        for line in (self.home / ".config/sway/config").read_text().splitlines():
+            block = block or line == "bar {"
+            if block or re.match(r"exec(_always)? .* bar (start|tray --place)$", line):
+                taken.append(line)
+            block = block and line != "}"
+        self.put(self.lines, "\n".join(taken) + "\n")
+        return taken
+
+    def reloads(self):
+        """How many reloads sway said."""
+        return sum('"change": "reload"' in line or '"change":"reload"' in line for line in self.lines_of(self.events))
+
+    def programs(self, name):
+        """The processes of this sway's of that name, as (pid, when it started)."""
+        found = []
+        for pid in self.ours():
+            try:
+                if proc(pid, "comm").strip().decode() == name:
+                    found.append((pid, stat_of(pid, (19,))[0]))
+            except OSError:
+                continue
+        return sorted(found)
+
+    def under(self, pid, name):
+        """Whether a process of that name is above this one: what started it, or what started that."""
+        for _ in range(4):
+            pid = stat_of(pid)[1]
+            if pid in dict(self.programs(name)):
+                return True
+        return False
+
+    def bars(self, tray):
+        """The ids of sway's own bars whose programs run: the tray's hosts, or the others."""
+        ids = []
+        for pid, _ in self.programs("swaybar"):
+            words = cmdline(pid)
+            if "-b" in words:
+                ids.append(words[words.index("-b") + 1])
+        return sorted(i for i in ids if i.startswith("spark-tray") == tray)
+
+    def pictures(self):
+        """Both screens' pictures as they are drawn, between where a bar stands at the top and where one stands at the
+        bottom, right of the ruled window: sway moves a floating window with the corner of its area."""
+        return [self.grab(o["rect"]["x"] + left, o["rect"]["y"] + BAR, o["rect"]["width"] - left, o["rect"]["height"] - 2 * BAR).data
+                for o in sorted(self.ask("get_outputs"), key=lambda o: o["name"]) for left in ((W // 2 + 2 * BAR,) if o["name"] == OUT else (0,))]
+
+    def room(self):
+        """The rows the bars leave clear, as (over the windows' area, under it) a screen."""
+        rects = {o["name"]: o["rect"] for o in self.ask("get_outputs")}
+        return {w["output"]: (w["rect"]["y"] - rects[w["output"]]["y"], rects[w["output"]]["height"] - w["rect"]["height"] - (w["rect"]["y"] - rects[w["output"]]["y"])) for w in self.ask("get_workspaces")}
+
+    def both(self, over, under):
+        return {OUT: (over, under), TURNED: (over, under)}
+
+    def retitle(self):
+        """The ruled window's title changed, as sway lists it: sway runs a window's rules at a title it has not seen them run for."""
+        n = self.titles = getattr(self, "titles", 0) + 1
+        self.put(self.title, "RULED %d" % n)
+        return wait_for(lambda: self.node(self.ruled.pid)["name"] == "RULED %d" % n, "the ruled window's title %d" % n)
+
+
+def live(d):
+    """The bar hidden, shown, moved, and the tray switched, with no reload."""
+    enter("live", "two screens, each with its own picture: the bar hidden, shown, moved and the tray switched reload nothing")
+    if not (shutil.which("swaybar") and shutil.which("swaybg")):
+        note("the live checks did not run: this sway has no swaybar or no swaybg")
+        return
+    d.layout()
+    d.until(lambda s: s.status == "ok" and set(s.outputs) == {OUT, TURNED} and s.find("clock.text"), "the bar on both screens", 30)
+    turned = next(o for o in d.ask("get_outputs") if o["name"] == TURNED)
+    # a window whose rule makes it unseen as it opens, shown by what opened it, as the dialog is
+    d.put(d.title, "RULED 0")
+    d.ruled = subprocess.Popen([d.real_foot, "--app-id", "proof-ruled", "sh", "-c",
+                                "printf '\\033]11;#%02x%02x%02x\\033\\\\'; was=; while :; do now=$(cat \"$1\"); [ \"$now\" = \"$was\" ] || { printf '\\033]2;%%s\\033\\\\' \"$now\"; was=$now; }; sleep 0.1; done" % RULED, "sh", str(d.title)],
+                               env=d.env, cwd=str(d.work), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    d.children.append(d.ruled)
+    wait_for(lambda: d.node(d.ruled.pid) and d.node(d.ruled.pid)["name"] == "RULED 0", "the ruled window")
+    unseen = not near(d.grab(600, 400, 1, 1).px(0, 0), RULED)
+    d.sway("[app_id=proof-ruled] opacity 1, resize set width 600 px height 400 px, move absolute position 300 px 300 px")
+    seen_there = lambda: near(d.grab(600, 450, 1, 1).px(0, 0), RULED)   # noqa: E731  the ruled window's ground on the screen
+    worn = lambda: [any(near(d.grab(x, y, 1, 1).px(0, 0), tone) for tone in PICTURES[name]) for name, x, y in ((OUT, W * 3 // 4, H // 4), (TURNED, W + H // 4, W // 4), (TURNED, W + H * 3 // 4, W // 4))]   # noqa: E731  whether each screen wears its own picture
+    ok(unseen and settle(seen_there) and settle(lambda: all(worn())) and (turned["rect"]["width"], turned["rect"]["height"]) == (H, W) and turned["transform"] == "270",
+       "two screens, the second turned, each in its own picture; a window whose rule makes it unseen as it opens is shown by what opened it",
+       (unseen, d.grab(600, 450, 1, 1).px(0, 0), worn(), turned["rect"], turned["transform"]))
+    if d.pad:   # a pad that runs is started again beside the bar; none waits on it, so nothing of it is on the screen
+        d.sway("exec", "%s desktop pad start" % d.shell_path)
+        wait_for(d.pad_pid, "the pad")
+    was = {}
+
+    def settled():
+        """What no verb may touch, as it is now."""
+        was.update(drawer=d.programs("swaybg"), pictures=d.pictures(), reloads=d.reloads())
+
+    def untouched(what, detail=""):
+        """That a verb touched none of it: no reload, the same wallpaper drawer, both pictures, the window as seen as it was."""
+        d.retitle()
+        same = settle(lambda: d.pictures() == was["pictures"], 10)
+        ok(d.programs("swaybg") == was["drawer"] and d.reloads() == was["reloads"] and same and seen_there() and (not d.pad or settle(d.pad_pid, 10)),
+           what + ": sway says no reload, the wallpapers' drawer is the same process, both screens' pictures are pixel for pixel what they were, and the window is as seen as it was once its title changed"
+           + (", and a pad runs" if d.pad else ""),
+           (detail, d.programs("swaybg"), was["drawer"], d.reloads(), same, d.grab(600, 450, 1, 1).px(0, 0), d.pad and d.pad_pid()))
+
+    def verb(*words, **more):
+        return d.shell("bar", *words, **more)
+
+    def stands(edge, hosts):
+        """The bar on both screens at that edge, its room kept, sway's own bars none but `hosts` of the tray's."""
+        room = d.both(BAR, 0) if edge == "top" else d.both(0, BAR)
+        s = d.until(lambda s: s.status == "ok" and set(s.outputs) == {OUT, TURNED} and s.bar().edge == s.bar(TURNED).edge == edge and s.find("clock.text"), "the bar at the %s of both screens" % edge, 30)
+        kept = settle(lambda: d.room() == room and len(d.bars(True)) == hosts and not d.bars(False), 10)
+        return bool(s and kept), (d.room(), d.bars(True), d.bars(False))
+
+    def hidden():
+        """No bar of spark's, the windows' area the whole of both screens, and one bar of sway's, unseen, that runs the status loop."""
+        gone = settle(lambda: not d.bar_pid() and d.room() == d.both(0, 0) and len(d.bars(False)) == 1 and not d.bars(True), 10)
+        loop = settle(d.loop_pid, 10)
+        runs = loop and stat_of(loop)[0] not in ("T", "t") and d.under(loop, "swaybar")
+        return bool(gone and runs), (d.bar_pid(), d.room(), d.bars(False), d.bars(True), loop, loop and stat_of(loop), loop and d.under(loop, "swaybar"))
+
+    def reread():
+        """A real reload, of the lines spark-shell rendered: sway says it, and what it draws is drawn again."""
+        d.take()
+        n = d.reloads()
+        d.sway("reload")
+        wait_for(lambda: d.reloads() == n + 1, "sway to say its reload")
+        # sway runs the rule of a window again after a reload, at its next title: shown again, as what opened it does
+        d.retitle()
+        d.sway("[app_id=proof-ruled] opacity 1")
+        settle(lambda: len(d.programs("swaybg")) == 1 and d.programs("swaybg") != was["drawer"] and d.pictures() == was["pictures"] and seen_there(), 15)
+        settled()
+
+    settled()
+    said = verb("off", "--desktop")
+    good, saw = hidden()
+    ok(said.returncode == 0 and good and any(line == "    mode invisible" for line in d.take()) and said.said.endswith("bar: hidden (spark-shell bar on --desktop shows it)"),
+       "spark-shell bar off --desktop: spark's bar ends on both screens and its room goes to the windows; the config has sway's own bar, unseen, and the running sway has made it: it runs the status loop, which is not stopped", (said.said[-200:], saw))
+    untouched("the bar hidden")
+    said = verb("on", "--desktop")
+    good, saw = stands("top", 0)
+    ok(said.returncode == 0 and good and d.take() == d.own, "spark-shell bar on --desktop: the bar is back at the top of both screens, started through sway, and the bar that ran the line is gone", (said.said[-200:], saw))
+    untouched("the bar shown")
+    said = verb("bottom")
+    good, saw = stands("bottom", 0)
+    ok(said.returncode == 0 and good, "spark-shell bar bottom: the bar at the bottom of both screens", (said.said[-200:], saw))
+    untouched("the bar at the bottom")
+    said = verb("tray", "on")
+    good, saw = stands("bottom", 1)
+    host = settle(lambda: d.bars(True), 5)
+    conf = json.loads(d.sway("-r", "-t", "get_bar_config", host[0])) if host else {}
+    first = next(o for o in d.ask("get_outputs") if o.get("active"))
+    ok(said.returncode == 0 and good and d.bar_env().get("BAR_TRAY_WIDTH") == str(4 * BAR) and d.bar_env().get("BAR_TRAY_OUTPUT") == first["name"]
+       and (conf.get("mode"), conf.get("position"), conf.get("outputs"), conf.get("bar_height"), conf.get("gaps", {}).get("left")) == ("hide", "bottom", [first["name"]], BAR, first["rect"]["width"] - 4 * BAR),
+       "spark-shell bar tray on: one host of the tray's, a bar of sway's on the first screen over the strip spark's bar leaves clear there, at the bar's edge and of its height", (said.said[-200:], saw, conf, d.bar_env().get("BAR_TRAY_WIDTH")))
+    untouched("the tray on")
+    reread()
+    before = d.programs("swaybar")
+    ok(stands("bottom", 1)[0] and len(before) == 1, "a real reload with the tray on: one host, made again by the config's line", (d.bars(True), d.bars(False), d.lines.read_text()))
+    said = verb("top")
+    good, saw = stands("top", 1)
+    ok(said.returncode == 0 and good and d.programs("swaybar") != before, "spark-shell bar top with the tray on: the host comes with the bar, and it is one", (said.said[-200:], saw))
+    untouched("the bar at the top, the tray on")
+    said = verb("off", "--desktop")
+    good, saw = hidden()
+    ok(said.returncode == 0 and good, "spark-shell bar off --desktop with the tray on: no host, the line's bar alone", (said.said[-200:], saw))
+    untouched("the bar hidden, the tray on")
+    reread()
+    good, saw = hidden()
+    ok(good and d.bars(False) == ["spark-line"], "a real reload with the bar hidden: the config's own bar runs the line, alone", (saw, d.lines.read_text()))
+    said = verb("on", "--desktop")
+    good, saw = stands("top", 1)
+    ok(said.returncode == 0 and good, "spark-shell bar on --desktop after it: the bar and one host, and the config's bar that ran the line has ended", (said.said[-200:], saw))
+    untouched("the bar shown after a reload, the tray on")
+    said = verb("tray", "off")
+    good, saw = stands("top", 0)
+    ok(said.returncode == 0 and good and d.bar_env().get("BAR_TRAY_WIDTH") == "0", "spark-shell bar tray off: no host, and no strip of the bar's kept clear", (said.said[-200:], saw))
+    untouched("the tray off")
+    reread()
+    good, saw = stands("top", 0)
+    ok(good and d.take() == d.own, "a real reload with the tray off: no bar of sway's", saw)
+    said = verb("bottom"), verb("top")
+    good, saw = stands("top", 0)
+    ok(all(one.returncode == 0 for one in said) and good, "the bar moved and moved back, the second verb while the first one's bar is new: it stands at the top", saw)
+    untouched("the bar moved and moved back")
+    d.shot("live")
+    # where no spark-bar runs sway's own bar draws the line: the same verbs make it anew, and reload nothing
+    verb("off", "--desktop")
+    hidden()
+    none = {"SPARK_SHELL_BAR": str(d.work / "none")}
+
+    def swaybar(edge):
+        kept = settle(lambda: len(d.bars(False)) == 1 and not d.bars(True) and all(bool(over) == (edge == "top") and bool(under) == (edge == "bottom") for over, under in d.room().values()), 10)
+        return bool(kept), (d.room(), d.bars(False), d.bars(True))
+    for words, edge in ((("on", "--desktop"), "top"), (("bottom",), "bottom"), (("tray", "on"), "bottom"), (("top",), "top"), (("tray", "off"), "top")):
+        said = verb(*words, **none)
+        good, saw = swaybar(edge)
+        ok(said.returncode == 0 and good, "with no spark-bar here, spark-shell bar %s: sway's own bar, one of them, at the %s of both screens" % (" ".join(words), edge), (said.said[-200:], saw))
+        untouched("sway's own bar, " + " ".join(words))
+    said = verb("off", "--desktop", **none)
+    good, saw = hidden()
+    ok(said.returncode == 0 and good, "with no spark-bar here, spark-shell bar off --desktop: sway's own bar unseen, and its loop runs", (said.said[-200:], saw))
+    untouched("sway's own bar hidden")
+
+
+def session(d, parts):
+    """One desktop of the proof's: started, its parts run, ended."""
+    global gate
     atexit.register(d.stop)
-    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-        signal.signal(sig, lambda number, _: sys.exit(128 + number))
-    on_failure.append(d.keep_failure)
+    on_failure[:] = [d.keep_failure]
     try:
         d.start()
-        for part in (lifecycle, identity, behavior, states, accessibility, geometry, pad, relook, names):
+        for part in parts:
             at = time.time()
             try:
                 part(d)
@@ -3157,9 +3398,26 @@ def main():
         ok(False, str(e))
     finally:
         d.stop()
-    global gate
     gate = "lifecycle"
     ok(d.left == [], "the session over: the bar, its keeper and its status%s ended with their sway, by themselves" % (", the pad and its keeper" if d.padded else ""), d.left)
+
+
+def main():
+    for tool in ("sway", "swaymsg", "foot", "grim", "wtype", "jq"):
+        if not shutil.which(tool):
+            raise SystemExit("missing native tool: " + tool)
+    binary = bar_binary()
+    evidence = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(tempfile.mkdtemp(prefix="bar-proof.", dir="/var/tmp"))
+    evidence.mkdir(parents=True, exist_ok=True)
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))   # the bar is ended with ABRT here: no core file of it
+    began = time.time()
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, lambda number, _: sys.exit(128 + number))
+    only = os.environ.get("BAR_PROOF_PARTS", "").split()   # the parts by name, for a run of some of them
+    for desk, parts in ((Desk, (lifecycle, identity, behavior, states, accessibility, geometry, pad, relook, names)), (Live, (live,))):
+        parts = [part for part in parts if not only or part.__name__ in only]
+        if parts:
+            session(desk(evidence.resolve(), binary), parts)
     took = time.time() - began
     counted = ", ".join("%s %d" % (name, good + bad) for name, (good, bad) in tally.items())
     print("bar proof: %s (%s) in %d s; the screens are in %s" % ("every gate holds" if failed == 0 else "%d failed" % failed, counted, took, evidence))
