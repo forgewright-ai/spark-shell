@@ -4395,6 +4395,29 @@ impl App {
         self.view == View::Conversation && self.running.is_none() && !self.exchange.is_empty()
     }
 
+    /// A row that picks a file: the files open at the home folder, offering the types it takes; the file picked goes to
+    /// the row's tool at its own provider, and the view the row is on comes back.
+    fn start_pick(&mut self, p: usize, pk: &crate::model::Pick) {
+        let Some(f) = self.files() else {
+            return self.refuse("no files to pick from");
+        };
+        let Some(root) = self.providers[f].rows.rows.iter().find_map(|r| r.children.clone()) else {
+            return self.refuse("no folder to pick from");
+        };
+        self.picking = Some(Picking {
+            back: self.view.clone(),
+            depth: self.came_from.len(),
+            prov: p,
+            tool: pk.tool.clone(),
+            types: pk.types.clone(),
+            arguments: pk.arguments.clone(),
+            step: None,
+            field: String::new(),
+            what: String::new(),
+        });
+        self.open_children(f, &root);
+    }
+
     fn go_back(&mut self, v: View) {
         self.leave_plan();
         self.prompt_depart();
@@ -4940,25 +4963,7 @@ impl App {
             Item::Row(p, r) => {
                 let row = self.providers[p].rows.rows[r].clone();
                 if let Some(pk) = &row.pick {
-                    // a pick opens the files at the home folder, offering the types it takes
-                    let Some(f) = self.files() else {
-                        return self.refuse("no files to pick from");
-                    };
-                    let Some(root) = self.providers[f].rows.rows.iter().find_map(|r| r.children.clone()) else {
-                        return self.refuse("no folder to pick from");
-                    };
-                    self.picking = Some(Picking {
-                        back: self.view.clone(),
-                        depth: self.came_from.len(),
-                        prov: p,
-                        tool: pk.tool.clone(),
-                        types: pk.types.clone(),
-                        arguments: pk.arguments.clone(),
-                        step: None,
-                        field: String::new(),
-                        what: String::new(),
-                    });
-                    self.open_children(f, &root);
+                    self.start_pick(p, pk);
                 } else if let Some(c) = row.children {
                     self.open_children(p, &c);
                 } else if let Some(call) = row.tool {
@@ -4989,6 +4994,13 @@ impl App {
                     }
                     return;
                 }
+                // a row of a list's own page that picks a file (Your themes, Screens and art): a pick, as on a place's
+                // list, never the files to browse (v0.166.5)
+                if let Some(pk) = &row.pick {
+                    if self.picking.is_none() {
+                        return self.start_pick(p, pk);
+                    }
+                }
                 if let Some(c) = row.children {
                     self.open_children(p, &c);
                     return;
@@ -5010,6 +5022,9 @@ impl App {
                     self.prompt_arrive();
                     self.folder = None;
                     self.sel = 0;
+                    if let View::Folder(fp, uri) = self.view.clone() {
+                        self.read_folder(fp, &uri); // a pick begun on a list's page comes back to that page's rows
+                    }
                     let call = Call {
                         name: pk.tool,
                         arguments,

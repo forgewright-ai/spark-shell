@@ -806,6 +806,69 @@ fn a_pick_row_opens_the_files_offers_its_types_and_hands_the_picture_to_its_tool
     assert!(app.picking.is_none());
 }
 
+/// A pick row on a list's own page (Your themes' "from a theme file", Screens and art's pictures) picks as one on a
+/// place's list does, and its page comes back (v0.166.5): before, Enter there browsed the files, and a file's Enter
+/// opened it.
+#[test]
+fn a_pick_row_on_a_page_picks_and_comes_back_to_the_page() {
+    let home = std::env::var("HOME").unwrap();
+    let (mut app, rx, tx) = app_with(&["theme", "files"]);
+    let calls = Arc::new(Mutex::new(vec![]));
+    let tools = json!([{"name": "theme_install", "title": "theme install FILE", "inputSchema": {"type": "object", "properties": {"path": {"type": "string", "minLength": 2}}, "required": ["path"]}, "annotations": {"destructiveHint": false}}]);
+    let yours_uri = "spark-shell://theme/rows/yours";
+    let main = json!({"title": "theme", "rows": [{"id": "theme:settings:yours", "sign": "opens", "text": "Your themes", "tool": null, "more": [], "columns": [], "children": yours_uri, "group": null}], "short": []});
+    let yours = json!({"title": "Your themes", "rows": [{"id": "theme:new:file", "sign": "opens", "text": "from a theme file", "tool": null, "more": [], "columns": [], "group": "new theme",
+                       "children": "spark-shell://files/rows", "pick": {"tool": "theme_install", "types": ["png"]}}]});
+    let tc = calls.clone();
+    let theme: Script = Box::new(move |v, send| {
+        if v.get("method").and_then(Value::as_str) == Some("resources/read") && v.pointer("/params/uri") == Some(&json!(yours_uri)) {
+            tc.lock().unwrap().push(json!({"read": yours_uri}));
+            return send(result(
+                &v["id"],
+                json!({"contents": [{"uri": yours_uri, "mimeType": "application/json", "text": yours.to_string()}]}),
+            ));
+        }
+        if let Some(r) = ordinary("theme", v, &tools, &main) {
+            return send(r);
+        }
+        if v.get("method").and_then(Value::as_str) == Some("tools/call") {
+            tc.lock().unwrap().push(v["params"].clone());
+            send(result(&v["id"], json!({"content": [{"type": "text", "text": "installed"}], "isError": false})));
+        }
+    });
+    app.servers.push(stub(0, "theme", theme, tx.clone()));
+    app.servers.push(stub(1, "files", files_stub(Arc::new(Mutex::new(vec![])), home), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers.iter().all(|p| p.ready && !p.rows.rows.is_empty())));
+    at_row(&mut app, View::Section(0), 0);
+    app.enter();
+    assert!(
+        pump(&mut app, &rx, |a| a.folder.as_ref().is_some_and(|(_, u, _)| u == yours_uri)),
+        "Your themes opens"
+    );
+    app.in_list = true;
+    app.sel = 0;
+    app.enter();
+    assert!(app.picking.is_some(), "the page's row picks");
+    assert!(pump(&mut app, &rx, |a| a
+        .folder
+        .as_ref()
+        .is_some_and(|(_, u, _)| u.starts_with("spark-shell://files/"))));
+    assert!(app.hint().iter().any(|(t, _)| t.starts_with("Pick a file (png)")));
+    app.in_list = true;
+    app.sel = 1;
+    app.enter();
+    assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c["name"] == "theme_install")));
+    let c = calls.lock().unwrap().iter().find(|c| c["name"] == "theme_install").cloned().unwrap();
+    assert_eq!(c["arguments"]["path"], "/x/photo.png", "the file goes to the row's tool, never files_open");
+    assert_eq!(app.view, View::Folder(0, yours_uri.into()), "back on the page the pick began on");
+    assert!(app.picking.is_none());
+    assert!(
+        pump(&mut app, &rx, |a| a.folder.as_ref().is_some_and(|(_, u, _)| u == yours_uri)),
+        "the page's rows read again"
+    );
+}
+
 #[test]
 fn calendar_typed_alone_opens_the_clock() {
     let (mut app, rx, tx) = app_with(&["clock"]);
