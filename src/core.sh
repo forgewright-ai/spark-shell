@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- core: the paths, the rows, the flags, the temp folder and the traps
-# sets: CONFIG CONFIG_DIR LAYOUT_ON MODE NL OS PULSE ROOT SPARK_CONFIG_DIR STATE_DIR TAB THEME_ENV TMP VERBOSE YES
+# sets: CONFIG CONFIG_DIR LAYOUT_NOT_APPS LAYOUT_ON MODE NL OS PULSE ROOT SPARK_CONFIG_DIR STATE_DIR TAB THEME_ENV TMP VERBOSE YES
 OS=$(uname -s)
 CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/spark-shell
 CONFIG=$CONFIG_DIR/config
@@ -39,6 +39,7 @@ need() {
     acting=1
     return 0
 }
+LAYOUT_NOT_APPS="sh bash zsh dash fish ksh sudo doas su pkexec"   # a shell or a way to root: never an app of a layout
 as_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }
 sudo_upfront() {
     # ask once, before anything is touched

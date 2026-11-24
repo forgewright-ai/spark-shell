@@ -190,7 +190,7 @@ panel_hint() {   # the one line under the list: the keys as keys
     if [ "${view:-home}" = about ]; then printf 'say what you would like %s %s closes' "$PANEL_SEP" "$(panel_chip Esc)"
     else printf '%s %s pick an option, or say what you would like %s %s closes' "$(panel_chip "$PANEL_UP")" "$(panel_chip "$PANEL_DOWN")" "$PANEL_SEP" "$(panel_chip Esc)"; fi
 }
-panel_version() { [ -z "${PANEL_VERSION_READ:-}" ] || { printf '%s\n' "$PANEL_VERSION_NOW"; return 0; }; clone_tag | sed 's/^v//'; }   # the release this copy is at, or nothing; a provider asks git once
+panel_version() { [ -z "${PANEL_VERSION_READ:-}" ] || { printf '%s\n' "$PANEL_VERSION_NOW"; return 0; }; clone_tag | sed 's/^v//'; }   # the release this copy is at, or nothing; a provider asks once
 panel_about() {   # panel_about WIDTH -> the splash: the logo, the version, the keys, the licence and the address
     _k=20; _w=$(($1 - _k)); [ "$_w" -ge 20 ] || _w=20
     _y1=''; _y2=''; _r=''; _b=''

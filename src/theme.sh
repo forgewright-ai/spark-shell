@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # ---------------------------------------------- verbs: theme, font, quiet
 # sets: MOTION_DIR MOTION_NOW THEME_COLOR_WORDS THEME_WORDS WORDS_TAKE
-# reads: ANIMATION_NAMES CONFIG CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GALLERY_KEYS GLYPH_FAMILIES LOOKS_DIR LOOK_FORMAT MODE NEON NEON_OLD NL OS PALETTE_DIR PALETTE_MARK PANEL_SEP PATH_REFUSED PM RENDERED REPO ROOT SCENE_MAKE STATE_DIR TAB TERMINAL_SEEN TERM_PALETTE_FORMATS THEME_ENV THEME_FILE_PICTURE_MAX THEME_KEYS TMP WALL_NAMES WALL_SCENES WALL_SHIPPED
+# reads: ANIMATION_NAMES CONFIG CONSOLE_AGAIN CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT FONT_FACES GALLERY_KEYS GLYPH_FAMILIES LOOKS_DIR LOOK_FORMAT MODE NEON NEON_OLD NL OS PALETTE_DIR PALETTE_MARK PANEL_SEP PATH_REFUSED PM RENDERED REPO ROOT SCENE_MAKE STATE_DIR TAB TERMINAL_SEEN TERM_PALETTE_FORMATS THEME_ENV THEME_FILE_PICTURE_MAX THEME_KEYS TMP WALL_NAMES WALL_SCENES WALL_SHIPPED
 refuse_in() { echo "spark-shell $1: $2"; exit 1; }   # refuse_in VERB SENTENCE
 seat_on() { _r=$(rc_files); _r=${_r%% *}; [ -L "$HOME/$_r" ] && [ "$(readlink "$HOME/$_r")" = "$(rc_tree)/$_r" ]; }
 look_now() {   # after a palette change
@@ -918,9 +918,9 @@ check_theme() {
         case $(init_shape) in
             systemd) unit_render
                 { cmp -s "$TMP/unit" "$ROOT/$CONSOLE_UNIT" && unit_enabled spark-shell-console.service; } \
-                    || { chk theme fail "$THEME: spark-shell-console.service does not set it at boot" "spark-shell on (sudo once)"; return; } ;;
+                    || { chk theme fail "$THEME: spark-shell-console.service does not set it at boot" "$CONSOLE_AGAIN"; return; } ;;
             runit) [ "$(marked "$ROOT/etc/rc.local" "$PALETTE_MARK")" = "$(palette_line)" ] \
-                    || { chk theme fail "$THEME: no line in /etc/rc.local sets it at boot" "spark-shell on (sudo once)"; return; } ;;
+                    || { chk theme fail "$THEME: no line in /etc/rc.local sets it at boot" "$CONSOLE_AGAIN"; return; } ;;
         esac
         if vt_here && [ "$(vt_live)" != "$(head -1 "$CONSOLE_RGB")" ]; then
             chk theme warn "$THEME: the console uses another palette until the next boot" "spark-shell on"; return

@@ -38,7 +38,7 @@ scrub_text() {   # stdin -> the same lines scrubbed; C0 and DEL alone where ther
 # bright, alpha 0-1, a|b a closed set), _tw what it says when asked for,
 # _tq a secret argument, _te the extras (NAME:KIND, NAME? optional), _th
 # the hints (r read only, d destructive, i idempotent, f free: names no
-# row, o opens a window, p a person's step: a terminal or sudo, from its
+# row, o opens a window, p a person's step: a terminal or root, from its
 # row alone), _tt the title, _td the words for a person; false for no tool
 tool_spec() {
     _tp=''; _tk=''; _tq=''; _tw=''; _te=''

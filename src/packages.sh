@@ -30,6 +30,12 @@ pkg_update_said() {   # -> the family's own step when an install is refused: a r
         dnf) echo 'sudo dnf upgrade --refresh' ;; zypper) echo 'sudo zypper dup' ;;
     esac
 }
+pkg_upgrade_said() {   # -> the family's own upgrade, or nothing
+    case $PM in apt) echo 'sudo apt-get update && sudo apt-get upgrade' ;; pacman) echo 'sudo pacman -Syu' ;; *) pkg_update_said ;; esac
+}
+pkg_clean_said() {   # -> the family's own clean of its download cache, or nothing
+    case $PM in xbps) echo 'sudo xbps-remove -O' ;; apt) echo 'sudo apt-get clean' ;; pacman) echo 'sudo pacman -Sc' ;; dnf) echo 'sudo dnf clean packages' ;; zypper) echo 'sudo zypper clean --all' ;; esac
+}
 tool_here() {   # tool_here NAME -- on PATH or in ~/.local/bin; under apt by Debian's name (fdfind, batcat), after pm_detect
     _n=$1
     if [ "$PM" = apt ]; then case $1 in fd) _n=fdfind ;; bat) _n=batcat ;; esac; fi

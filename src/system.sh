@@ -168,14 +168,11 @@ system_details_page() {   # -> the details' page: the machine's facts in three g
 system_details_text() {   # -> the system's facts as text, a group under its heading, for a bug report
     system_details_facts | scrub_text | awk -F '\t' '$3 != "" { if ($1 != g) { if (g != "") print ""; print $1; g = $1 } printf "  %-12s %s\n", $2, $3 }'
 }
-system_upgrade_command() {   # -> the family's own upgrade, or nothing
-    case $PM in apt) echo 'sudo apt-get update && sudo apt-get upgrade' ;; pacman) echo 'sudo pacman -Syu' ;; *) pkg_update_said ;; esac
-}
 system_updates_page() {   # -> the updates page: the releases, update spark-shell, update system
     _tuv=$(panel_version); _tud=''
-    [ -z "$_tuv" ] || _tud=$(cd "$REPO" 2>/dev/null && LC_ALL=C git log -1 --format=%cd --date=format:'%e %b %Y' "v$_tuv" 2>/dev/null | sed 's/^ *//')
+    [ -z "$_tuv" ] || _tud=$(release_day "$_tuv")
     jq -n --arg sep "$PANEL_SEP" --arg v "v$_tuv${_tud:+, released $_tud}" --arg dv "$(system_dialog_version)" \
-        --arg sys "$(system_os PRETTY_NAME | scrub_text)${PM:+, $PM}" --arg up "$(system_upgrade_command)" '
+        --arg sys "$(system_os PRETTY_NAME | scrub_text)${PM:+, $PM}" --arg up "$(pkg_upgrade_said)" '
         def row($id; $text): {id: $id, sign: "blank", text: $text, tool: null, more: [], columns: [], children: null, group: null};
         [(row("system:fact:spark-shell"; "spark-shell") | .columns = [$v]),
          (if $dv == "" then empty else (row("system:fact:spark-dialog"; "spark-dialog") | .columns = [$dv]) end),
@@ -239,9 +236,6 @@ system_package_cache() {   # -> the package manager's download cache, or nothing
         dnf) if [ -d /var/cache/libdnf5 ]; then echo /var/cache/libdnf5; else echo /var/cache/dnf; fi ;; zypper) echo /var/cache/zypp/packages ;;
     esac
 }
-system_clean_command() {   # -> the family's own clean of that cache, or nothing
-    case $PM in xbps) echo 'sudo xbps-remove -O' ;; apt) echo 'sudo apt-get clean' ;; pacman) echo 'sudo pacman -Sc' ;; dnf) echo 'sudo dnf clean packages' ;; zypper) echo 'sudo zypper clean --all' ;; esac
-}
 system_cache_dir() { printf '%s\n' "${XDG_CACHE_HOME:-$HOME/.cache}"; }
 system_trash_dir() { printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/Trash"; }
 system_tilde() {   # system_tilde PATH -> the path with your home as ~
@@ -289,7 +283,7 @@ system_space_page() {   # -> the space page: the disk, cleanup, home's folders, 
     _tsl=$(system_space_loose)
     jq -Rn --arg sep "$PANEL_SEP" --arg disk "$(storage_here)" --arg shown "$SYSTEM_SPACE_SHOWN" \
         --arg trash "$(_k=$(cat "$SYSTEM_SPACE/trash" 2>/dev/null); [ -z "$_k" ] || files_size $((_k * 1024)))" \
-        --arg pkg "$(_k=$(cat "$SYSTEM_SPACE/packages" 2>/dev/null); [ -z "$_k" ] || files_size $((_k * 1024)))" --arg clean "$(system_clean_command)" \
+        --arg pkg "$(_k=$(cat "$SYSTEM_SPACE/packages" 2>/dev/null); [ -z "$_k" ] || files_size $((_k * 1024)))" --arg clean "$(pkg_clean_said)" \
         --arg cache "$([ -z "$_tsc" ] || files_size $((_tsc * 1024)))" --arg cached "$(system_tilde "$(system_cache_dir)")" \
         --arg loose "$([ -z "$_tsl" ] || files_size $((_tsl * 1024)))" --arg home "$(files_uri "$(files_home_root)")" \
         --arg rest "$(awk -F '\t' -v n="$SYSTEM_SPACE_SHOWN" 'NR > n { c++; k += $1 } END { if (c) printf "%d\t%d\n", c, k }' "$TMP/space.folders")" \
@@ -386,8 +380,8 @@ system_dialog_tree() {   # -> the pids never ended from here: this provider's an
 system_gate() {   # system_gate ACTION [ARG] -> ARG as the step takes it (exit 0), or why not (exit 1)
     case $1 in
         check|copy-details|update|export|measure) echo ''; return 0 ;;
-        clean-packages) [ -n "$(system_clean_command)" ] || { echo "no supported package manager here"; return 1; }; echo ''; return 0 ;;
-        update-system) [ -n "$(system_upgrade_command)" ] || { echo "no supported package manager here"; return 1; }; echo ''; return 0 ;;
+        clean-packages) [ -n "$(pkg_clean_said)" ] || { echo "no supported package manager here"; return 1; }; echo ''; return 0 ;;
+        update-system) [ -n "$(pkg_upgrade_said)" ] || { echo "no supported package manager here"; return 1; }; echo ''; return 0 ;;
         front) _tgl=$(system_program "$2"); [ -n "$_tgl" ] || { echo "$2 is not running"; return 1; }
             [ -n "$(printf '%s' "$_tgl" | cut -f10)" ] || { echo "$2 has no window"; return 1; }
             printf '%s\n' "$2"; return 0 ;;
@@ -411,7 +405,7 @@ system_act() {   # system_act ACTION [ARG] -> one line; exit 1 when it was not d
         fix) system_terminal "$2" 'spark-shell check' ;;   # the check runs again when the fix ends: the menu's count is the fix's result
         update) system_terminal 'spark-shell update' ;;
         measure) system_space_measure; echo "measured: $(system_space_state)" ;;
-        clean-packages) system_terminal "$(system_clean_command)" ;;
+        clean-packages) system_terminal "$(pkg_clean_said)" ;;
         front) _tfc=$(system_program "$2" | cut -f10)
             wm_act "con_id=$_tfc" "focus" >/dev/null 2>&1 || { echo "$2 did not come to front"; return 1; }
             : > "$TMP/opened"; echo "$2 in front" ;;
@@ -425,7 +419,7 @@ system_act() {   # system_act ACTION [ARG] -> one line; exit 1 when it was not d
             done
             [ -z "$_tel" ] || { echo "$2 is still running after 5 seconds"; return 1; }
             echo "$2 ended" ;;
-        update-system) system_terminal "$(system_upgrade_command)" ;;
+        update-system) system_terminal "$(pkg_upgrade_said)" ;;
         copy-details) wm_copy_here || { echo "$(wm_missing copy)"; return 1; }
             system_details_text | wm_copy 2>/dev/null || { echo "cannot copy: the clipboard did not take it"; return 1; }
             echo "details copied" ;;
@@ -477,7 +471,7 @@ help_keys() {   # -> SUBJECT<tab>WHAT<tab>BINDING<tab>KEY, a desktop key a row; 
 }
 provide_about_rows() {   # -> the about section's rows resource: the facts, project, license, credits, then help's keys
     _av=$(panel_version); _ad=''
-    [ -z "$_av" ] || _ad=$(cd "$REPO" 2>/dev/null && LC_ALL=C git log -1 --format=%cd --date=format:'%e %b %Y' "v$_av" 2>/dev/null | sed 's/^ *//')   # the day of the tag this copy is at
+    [ -z "$_av" ] || _ad=$(release_day "$_av")
     _ap=$REPO; case $_ap in "$HOME"/*) _ap="~${_ap#"$HOME"}" ;; esac
     _an=$(grep -c '^- ' "$REPO/CREDITS.md" 2>/dev/null || echo 0)
     _am=$(python3 "$REPO/lib/home.py" map "$(wm_config_template)" 2>/dev/null) || _am='{}'   # the keys as bound now, your overrides in

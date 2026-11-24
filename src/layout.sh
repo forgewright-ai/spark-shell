@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the layouts
-# sets: LAYOUTS_DIR LAYOUT_LAST LAYOUT_NOT_APPS LAYOUT_PENDING LAYOUT_SMALL_WORDS LAYOUT_VERBS LAYOUT_WAIT REFUSE_AS
-# reads: APPS CONFIG_DIR DIALOG_BIN KEPT_LAYOUTS LAYOUT_ON NOTES_DIR OS PANEL_APP REPO STATE_DIR TAB TERM_NAME TERM_OWN TMP VERBOSE WM_NAME WM_OWN
+# sets: LAYOUTS_DIR LAYOUT_LAST LAYOUT_PENDING LAYOUT_SMALL_WORDS LAYOUT_VERBS LAYOUT_WAIT REFUSE_AS
+# reads: APPS CONFIG_DIR DIALOG_BIN KEPT_LAYOUTS LAYOUT_NOT_APPS LAYOUT_ON NOTES_DIR OS PANEL_APP REPO STATE_DIR TAB TERM_NAME TERM_OWN TMP VERBOSE WM_NAME WM_OWN
 # every rendered line passes the gate before sway sees it
 LAYOUTS_DIR=$CONFIG_DIR/layouts
 LAYOUT_LAST=$STATE_DIR/layout.last
@@ -13,7 +13,6 @@ layout_state_names() {   # the state files were desk.last and desk.pending throu
 }
 layout_state_names
 LAYOUT_VERBS="workspace rename splith splitv layout resize focus move floating fullscreen exec session window window-rule"   # session and window: the tmux lines
-LAYOUT_NOT_APPS="sh bash zsh dash fish ksh sudo doas su pkexec"   # a shell or a way to root
 LAYOUT_WAIT=30                                                    # seconds for a window to map
 
 

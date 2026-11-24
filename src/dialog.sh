@@ -25,6 +25,7 @@ tag_floor() {   # -> the newest signed tag at or behind HEAD; false when none
     return 1
 }
 clone_tag() { tag_floor || git -C "$REPO" describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*' 2>/dev/null; }   # -> the release this clone is at: the signed tag, else the nearest
+release_day() { LC_ALL=C git -C "$REPO" log -1 --format=%cd --date=format:'%e %b %Y' "v$1" 2>/dev/null | sed 's/^ *//'; }   # release_day VERSION -> the day of its tag's commit, or nothing
 release_tag() {   # -> clone_tag when it pins a dialog and its sources, including the shared theme, match; false otherwise
     _rt=$(clone_tag) || return 1
     git -C "$REPO" cat-file -e "$_rt:component/dialog/dialog.env" 2>/dev/null || return 1

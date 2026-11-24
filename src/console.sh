@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # ------------------------------------------------------------- the console
-# sets: CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT CURSOR_ON PALETTE_MARK POINTER_SEEN QUIET_MARK QUIET_WORDS REBUILD SPLASH_MARK TERMINAL_SEEN
+# sets: CONSOLE_AGAIN CONSOLE_COLORS CONSOLE_RGB CONSOLE_UNIT CURSOR_ON PALETTE_MARK POINTER_SEEN QUIET_MARK QUIET_WORDS REBUILD SPLASH_MARK TERMINAL_SEEN
 # reads: CONFIG_DIR MODE NOTES_DIR OS PALETTE_DIR ROOT STATE_DIR
 # Four config keys, each written by its verb and applied by `on`: THEME
 # (a palette name, or none), CONSOLE_FONT ("FACE SIZE", empty: the console
@@ -54,6 +54,7 @@ init_shape() {   # -> systemd | runit | none: what boots this Linux
     elif [ -d "$ROOT/etc/runit" ]; then echo runit
     else echo none; fi
 }
+CONSOLE_AGAIN='spark-shell on (sudo once)'   # a check's remedy where root writes
 console_linux() { [ "$OS" != Darwin ] && ! is_wsl; }   # a Linux with a console of its own
 root_ready() {   # root_ready ROW -- a root to write with, asked once; else a todo row and false
     if ! root_can; then row todo "$1" "root is needed -- spark-shell on at a terminal (sudo once)"; acting=0; return 1; fi
