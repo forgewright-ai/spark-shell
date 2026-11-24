@@ -136,12 +136,13 @@ desktop_file_apply() {   # sway's config rendered, nothing redrawn
     for _k in $THEME_KEYS; do unset "$_k"; done; theme_load; EXPR=$(render_expr)
     render_one "$(wm_config_template)" "$(wm_config_file)" >/dev/null 2>&1 || :
 }
-look_apply() {   # a look change, on the screen now
+look_apply() {   # a look change, on the screen now; one line and 1 when not all of it could be written
     for _k in $THEME_KEYS; do unset "$_k"; done; theme_load; EXPR=$(render_expr)
     wall_missing >/dev/null
     wall_follow >/dev/null
     look_burst
-    desktop_files >/dev/null 2>&1 || :
+    ! desktop_wanted || desktop_files >/dev/null 2>&1 || :   # never a desktop's files where there is none
+    [ "$failed" -eq 0 ] || { echo "not all of it could be written: $failed_said"; return 1; }
 }
 panel_act() {   # panel_act SECTION ACTION [ARG] -> one line; exit 1 when not done. The steps read _p, _a and _arg
     _p=$1; _a=$2; shift 2; _arg=$*
@@ -154,7 +155,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line; exit 1 when not do
             if python3 "$REPO/lib/printers.py" "$_a" "$_arg" > "$TMP/printers.result" 2> "$TMP/printers.error"; then jq -r .receipt "$TMP/printers.result"
             else cat "$TMP/printers.error"; return 1; fi ;;
         out|mic) panel_act_sound ;;
-        theme) panel_act_theme ;;
+        theme) case $_a in preview|export|install) panel_act_theme ;; *) theme_locked panel_act_theme ;; esac ;;   # an install fetches first, and takes the lock itself
         layout) panel_act_layout ;;
         apps) panel_act_apps ;;
         spark) case $_a in chat) panel_chat ;; *) echo "$_a is not something spark does here"; return 1 ;; esac ;;
@@ -207,7 +208,7 @@ panel_act_theme() {   # the theme steps: the text, the wallpaper, save, delete, 
         wallpaper-picture) _pp=$(wall_picture_ok "$_arg") || { echo "$_pp"; return 1; }
             _r=$(cmd_theme wallpaper "$_pp" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "the wallpaper is ${_pp##*/}" ;;
         save) _r=$(cmd_theme save "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "saved $(layout_name_of "$_arg") $PANEL_SEP spark-shell theme $(layout_name_of "$_arg") brings it back" ;;
-        delete) _r=$(cmd_theme delete "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "deleted $_arg" ;;
+        delete) _r=$(THEME_UNDO=1; cmd_theme delete "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | tail -1 ;;
         restore) _r=$(cmd_theme restore "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | tail -1 ;;
         color) _r=$(cmd_theme color "${_arg%% *}" "${_arg#* color=}" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | tail -1 ;;
         export) _r=$(cmd_theme export "$_arg" spark-theme 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | tail -1 ;;
@@ -223,7 +224,7 @@ panel_act_theme() {   # the theme steps: the text, the wallpaper, save, delete, 
         picture) _r=$(cmd_theme picture "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | sed -n 1p ;;
         words) theme_words_step "$_arg" ;;
         alpha) case $_arg in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) ;; *) echo "alpha is 0 to 1, as 0.95"; return 1 ;; esac
-            config_set ALPHA "$_arg" >/dev/null; ALPHA=$_arg; export ALPHA; look_apply
+            config_set ALPHA "$_arg" >/dev/null; ALPHA=$_arg; export ALPHA; look_apply || return 1
             echo "alpha at $_arg" ;;
         transparency|see-through) case ${_arg%\%} in more|less|[0-9]|[1-4][0-9]|50) alpha_step "${_arg%\%}" ;; *) echo "transparency takes more or less, or a percent from 0 to 50"; return 1 ;; esac ;;   # see-through: synonym
         preview) theme_preview "$_arg" ;;

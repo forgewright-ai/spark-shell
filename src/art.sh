@@ -9,7 +9,7 @@
 # file is data: jq reads it, each key is checked, and a picture it names is a
 # plain PNG or JPEG in the variant's own folder.
 # sets: ART_FORMAT ART_SCREENS FAMILY_CORE FAMILY_MAX FAMILY_RULES SCENES_PIXEL
-# reads: CONFIG_DIR CORE_DIR LOOKS_DIR OS PALETTE_DIR PANEL_SEP REPO STATE_DIR TAB THEME_FILE_PICTURE_MAX TMP WALL_CACHE
+# reads: CONFIG_DIR CORE_DIR LOOKS_DIR OS PALETTE_DIR PANEL_SEP REPO STATE_DIR TAB THEME_FILE_PICTURE_MAX TMP WALL_CACHE WALL_SCENES WALL_SHIPPED
 ART_FORMAT=1   # a newer format is refused, not half read
 FAMILY_CORE=$REPO/gallery/family
 FAMILY_MAX=16384
@@ -56,7 +56,7 @@ family_files() {   # -> the family files, yours first, one a line; an id once: a
     for _ff in "$PALETTE_DIR"/*/family.json "$LOOKS_DIR"/*/family.json "$CORE_DIR"/*/family.json "$CONFIG_DIR"/families/*.json "$FAMILY_CORE"/*.json; do [ -f "$_ff" ] && printf '%s\n' "$_ff"; done \
         | awk -F/ '{ k = ($NF == "family.json") ? $(NF - 1) ".json" : $NF } !seen[k]++'
 }
-family_why() {   # family_why FILE -> nothing and 0 for a family this spark-shell reads; else why in one line and 1
+family_why() {   # family_why FILE [AS] -> nothing and 0 for a family this spark-shell reads (one about to be AS); else why in one line and 1
     [ -f "$1" ] && [ ! -L "$1" ] || { echo "it is not a plain file"; return 1; }
     [ "$(wc -c < "$1" | tr -d ' ')" -le "$FAMILY_MAX" ] || { echo "it is over $((FAMILY_MAX / 1024)) KiB"; return 1; }
     [ "$(LC_ALL=C tr -d '\n\t -~' < "$1" | wc -c)" -eq 0 ] || { echo "it holds a byte that is not plain text"; return 1; }   # counted: to grep a NUL ends the line
@@ -64,17 +64,18 @@ family_why() {   # family_why FILE -> nothing and 0 for a family this spark-shel
     _fw=$(jq -r --argjson fmt "$ART_FORMAT" "$FAMILY_RULES" "$1" 2>/dev/null) || { echo "it is not JSON"; return 1; }
     _fw=$(printf '%s\n' "$_fw" | scrub_text | sed -n 1p | cut -c1-200)   # a key of its own may be in it
     [ -z "$_fw" ] || { echo "$_fw"; return 1; }
-    _fi=${1##*/}; [ "$_fi" != family.json ] || { _fi=${1%/family.json}; _fi=${_fi##*/}.json; }
+    set -- "$1" "${2:-$1}"; _fi=${2##*/}; [ "$_fi" != family.json ] || { _fi=${2%/family.json}; _fi=${_fi##*/}.json; }
     [ "$_fi" = "$(jq -r .id "$1").json" ] || { echo "its id is not its file's name"; return 1; }
     # a theme's own names that theme among its variants: a theme that came from someone else speaks for itself alone
-    [ "${1##*/}" != family.json ] || jq -e --arg t "${_fi%.json}" 'any(.variants[]; .theme == $t)' "$1" >/dev/null 2>&1 || { echo "it is in the folder of a theme it does not name"; return 1; }
+    [ "${2##*/}" != family.json ] || jq -e --arg t "${_fi%.json}" 'any(.variants[]; .theme == $t)' "$1" >/dev/null 2>&1 || { echo "it is in the folder of a theme it does not name"; return 1; }
     # the themes it names are here, and each picture is a plain PNG or JPEG in its variant's folder
     jq -r '.variants | to_entries[] | .key as $v | .value as $x
-        | ([$v, $x.theme, ""] | @tsv), ([$x.portrait // empty, ($x.panels // {} | .[][] | .[])] | unique[] | [$v, $x.theme, .] | @tsv)' "$1" > "$TMP/family.files"
+        | ([$v, $x.theme, ""] | @tsv), ([$x.portrait // empty, ($x.panels // {} | .[][] | .[])] | unique[] | [$v, $x.theme, .] | @tsv)' "$1" > "$TMP/family.files" || { echo "it could not be read"; return 1; }
     while IFS="$TAB" read -r _fv _ft _fp; do
-        if [ "${1##*/}" = family.json ] && [ "$_ft" = "${_fi%.json}" ]; then _fd=${1%/family.json}   # its own theme: the folder it is in, there or on its way in
+        if [ "${2##*/}" = family.json ] && [ "$_ft" = "${_fi%.json}" ]; then _fd=${2%/family.json}   # its own theme: the folder it is in, there or on its way in
         else
-            case $(theme_kind "$_ft") in ''|none) echo "its $_fv variant names $_ft, which is no theme here"; return 1 ;; esac
+            case $(theme_kind "$_ft") in ''|none) [ "${2##*/}" != family.json ] || continue   # the theme goes on without a variant that is gone
+                echo "its $_fv variant names $_ft, which is no theme here"; return 1 ;; esac
             [ -n "$_fp" ] || continue
             _fd=$(theme_dir "$_ft"); [ -n "$_fd" ] || { echo "its $_fv variant names $_fp, and $_ft has no folder to hold it"; return 1; }
         fi
@@ -148,6 +149,7 @@ art_words() {   # art_words THEME -> "everforest, dark (light: everforest-light)
 }
 theme_variant() {   # theme_variant [dark|light] -- the theme in use in its other variant
     [ -n "${THEME:-}" ] && [ "$THEME" != none ] || refuse_in theme "no theme is in use -- spark-shell theme NAME first"
+    [ -n "$(theme_kind "$THEME")" ] || refuse_in theme "$THEME, the theme in use, is no longer here -- spark-shell theme NAME first"
     _tva=$(art_of "$THEME"); _tvn=$(printf '%s' "$_tva" | jq -r .variant)
     [ -n "${1:-}" ] || { printf 'variant %s %s %s\n' "$_tvn" "$PANEL_SEP" "$(printf '%s' "$_tva" | jq -r '.variants | keys | join(" or ")')"; return 0; }
     [ $# -eq 1 ] || refuse_in theme "variant takes one word: dark or light"
@@ -158,14 +160,23 @@ theme_variant() {   # theme_variant [dark|light] -- the theme in use in its othe
     theme_apply "$_tvt"
 }
 art_index() { dirs_cached art.index "$(THEME_DIRS) $LOOKS_DIR $FAMILY_CORE $CONFIG_DIR/families" art_index_now; }   # -> {THEME: {family, title, media, variant, variants}} for every theme here, kept until a theme or family file changes
+family_shapes() {   # -> the families as one JSON array, read in one pass: each of the shape family_why asks for, a theme's own (own) for that theme alone. Their pictures are looked at when one is used
+    family_files | tr '\n' '\000' | xargs -0 jq -Rnc --argjson fmt "$ART_FORMAT" --argjson max "$FAMILY_MAX" "${FAMILY_RULES%problems | first // empty}"'
+        [reduce (inputs | [input_filename, .]) as [$f, $l] ({}; .[$f] += $l + "\n") | to_entries[]
+         | (.key | split("/") | if .[-1] == "family.json" then {own: true, id: .[-2]} else {own: false, id: (.[-1] | rtrimstr(".json"))} end) as $at
+         | .value | select(length <= $max and test("^[ -~\t\n]*$")) | (try fromjson catch null)
+         | select(type == "object") | select((problems | length) == 0 and .id == $at.id and (($at.own | not) or any(.variants[]; .theme == $at.id)))
+         | if $at.own then . + {own: .id} else . end]' /dev/null | jq -cs 'add // []'
+}
 art_index_now() {
-    family_files | while IFS= read -r _aif; do   # a theme's own file: that theme alone
-        family_why "$_aif" >/dev/null || continue
-        case $_aif in */family.json) jq -c '. + {own: .id}' "$_aif" ;; *) cat "$_aif" ;; esac
-    done | jq -cs . > "$TMP/art.families"
-    theme_names | while IFS= read -r _aik; do
-        _aiw=$(art_wall "$_aik"); printf '%s\t%s\t%s\t%s\n' "$_aik" "$(theme_label "$_aik")" "$(art_media "$_aiw")" "$(art_variant "$_aik")"
-    done | jq -Rnc --slurpfile f "$TMP/art.families" '
+    family_shapes > "$TMP/art.families"
+    theme_facts | awk -F '\t' -v OFS='\t' -v drawn="$WALL_SHIPPED" -v scenes=" $WALL_SCENES " -v pixel=" $SCENES_PIXEL " '
+        BEGIN { n = split(drawn, e, " "); for (i = 1; i <= n; i++) { split(e[i], d, ":"); vector[d[1]] = 1; if (!(d[2] in brings)) brings[d[2]] = d[1] } }
+        {   # art_wall, then art_media of it
+            w = $4 != "-" ? $8 : $3 in brings ? brings[$3] : "-"
+            m = w == "picture" ? "picture" : index(pixel, " " w " ") ? "pixel" : index(scenes, " " w " ") ? "illustration" : w in vector ? "vector" : "color"
+            print $1, $3, m, $5
+        }' | jq -Rnc --slurpfile f "$TMP/art.families" '
         ([$f[0][] | . as $x | .variants | to_entries[] | select($x.own == null or .value.theme == $x.own) | {key: .value.theme, value: {family: $x.id, title: $x.title, media: $x.media, variant: .key,
             variants: ($x.variants | map_values(.theme))}}] | from_entries) as $fam
         | reduce (inputs | split("\t")) as [$k, $l, $m, $v] ({};

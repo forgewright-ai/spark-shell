@@ -51,7 +51,7 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         theme:wallpaper|theme:wallpaper-picture|theme:wallpaper-color) _cur=$(wall_name); if [ -n "$_cur" ]; then printf 'wallpaper %s\twallpaper %s\n' "$_cur" "$_cur"; else printf 'wallpaper-picture %s\twallpaper %s\n' "$WALLPAPER" "${WALLPAPER##*/}"; fi ;;
         theme:theme) printf '%s\ttheme %s\n' "${THEME:-none}" "${THEME:-none}" ;;
         theme:delete) [ "$(theme_kind "$_arg")" != saved ] || printf 'restore %s\t%s is back\n' "$_arg" "$_arg" ;;
-        theme:rename) _n=$(layout_name_of "${_arg#* to=}"); [ -z "$_n" ] || printf 'rename %s to=%s\t%s has its name again\n' "$_n" "${_arg%% *}" "${_arg%% *}" ;;
+        theme:rename) _n=$(layout_name_of "${_arg#* to=}"); [ -z "$_n" ] || [ "$(layout_name_of "${_arg%% *}")" != "${_arg%% *}" ] || printf 'rename %s to=%s\t%s has its name again\n' "$_n" "${_arg%% *}" "${_arg%% *}" ;;
         theme:duplicate) _n=$(layout_name_of "${_arg#* to=}"); [ -z "$_n" ] || printf 'delete %s\t%s deleted again\n' "$_n" "$_n" ;;
         theme:restore|theme:colors|theme:pair|theme:portrait|theme:panel|theme:loop|theme:reel) ;;   # no inverse: the look before is theme back's
         theme:export|theme:install) ;;   # a file kept in Downloads; a theme of yours, which Your themes deletes

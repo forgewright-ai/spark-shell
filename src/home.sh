@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- the window
-# reads: BAR_FULL CONFIG_DIR OS PANEL_APP PANEL_CROSS PANEL_DOWN PANEL_IN PANEL_LOOKS PANEL_MARK PANEL_ORDER PANEL_PROMPT PANEL_SEP PANEL_TICK PANEL_UP PULSE REPO TAB THEME_KEYS TMP
+# reads: BAR_FULL CONFIG_DIR MODE OS PANEL_APP PANEL_CROSS PANEL_DOWN PANEL_IN PANEL_LOOKS PANEL_MARK PANEL_ORDER PANEL_PROMPT PANEL_SEP PANEL_TICK PANEL_UP PULSE REPO TAB THEME_KEYS TMP
 panel_quit() { kill "${FZF:-}" 2>/dev/null || :; panel_tick_stop; panel_pulse_kill; stty echo 2>/dev/null || :; }
 panel_tick_start() {   # panel_tick_start ROW -- the time drawn again at ROW as each minute turns, until panel_tick_stop
     [ -t 1 ] || return 0
@@ -219,6 +219,7 @@ panel_about() {   # panel_about WIDTH -> the splash: the logo, the version, the 
 
 # --- the verb and the click
 cmd_panel() {   # cmd_panel [SECTION] [--list | ACTION [ARG...]] | chat | "WORDS"
+    case ${1:-} in theme|look) CONFIG_MEND=1 ;; esac
     config_load
     command -v jq >/dev/null 2>&1 || refuse_in panel "jq is not installed (spark-shell on)"
     [ "$OS" = Darwin ] || pm_detect
@@ -235,7 +236,8 @@ cmd_panel() {   # cmd_panel [SECTION] [--list | ACTION [ARG...]] | chat | "WORDS
     case ${1:-} in
         --list) panel_list "$what"; return 0 ;;
         '') ;;
-        *) a=$1; shift; arg=$(panel_gate "$what" "$a" "$*") || { echo "spark-shell panel: $arg"; exit 1; }
+        *) [ "$MODE" != dry ] || refuse_in panel "a step takes no --dry-run, so nothing was done"
+           a=$1; shift; arg=$(panel_gate "$what" "$a" "$*") || { echo "spark-shell panel: $arg"; exit 1; }
            panel_group_begin
            panel_step "$what" "$a" "$arg"; st=$?   # the row's own ARG, one word: never re-split, never a glob
            panel_group_end; return "$st" ;;

@@ -151,17 +151,6 @@ theme_gallery() {   # theme_gallery -- what the gallery's release offers: the th
     [ -z "$GALLERY_SKIPPED" ] || echo "Not taken, as no key in allowed-signers signed them:$GALLERY_SKIPPED."
     echo "spark-shell theme install NAME puts one in place and uses it."
 }
-gallery_put() {   # gallery_put DIR NAME [over] -- DIR copied as the theme NAME of yours, whole or not at all; over: in place of the one there. Else why in one line and 1
-    mkdir_private "$PALETTE_DIR"; find "$PALETTE_DIR" -maxdepth 1 -name '.put.??????' -mtime +1 -exec rm -rf {} + 2>/dev/null || :   # what a killed one left
-    _gpt=$PALETTE_DIR/$2; _gpw=$(mktemp -d "$PALETTE_DIR/.put.XXXXXX" 2>/dev/null) || { echo "$PALETTE_DIR cannot be written"; return 1; }   # a name of its own, which no list shows
-    _gpo=''; cp -R "$1/." "$_gpw" 2>/dev/null || { rm -rf "${_gpw:?}"; echo "$PALETTE_DIR cannot be written, or is full"; return 1; }
-    if [ "${3:-}" = over ] && [ -d "$_gpt" ]; then _gpo=$_gpw.old; mv "$_gpt" "$_gpo" || { rm -rf "${_gpw:?}"; echo "$_gpt cannot be moved"; return 1; }; fi
-    _gpr=1; if [ ! -e "$_gpt" ] && [ ! -L "$_gpt" ] && mv "$_gpw" "$_gpt" 2>/dev/null; then _gpr=0; fi
-    if [ -e "$_gpt/${_gpw##*/}" ]; then _gpr=1; rm -rf "${_gpt:?}/${_gpw##*/}"; fi   # another came first, and mv put this one inside it
-    rm -rf "${_gpw:?}"
-    if [ -n "$_gpo" ]; then if [ -e "$_gpt" ] || ! mv "$_gpo" "$_gpt"; then [ ! -e "$_gpt" ] || rm -rf "${_gpo:?}"; fi; fi
-    [ "$_gpr" = 0 ] || { echo "another $2 was put there meanwhile"; return 1; }
-}
 theme_install() {   # theme_install NAME|FILE -- a theme or a wallpaper from the gallery, or a theme file; checked, put in place and used
     [ $# -eq 1 ] || refuse_in theme "install takes one name or one theme file -- spark-shell theme gallery lists them"
     case $1 in *.spark-theme) theme_install_file "$1"; return ;; esac
@@ -193,9 +182,7 @@ theme_install() {   # theme_install NAME|FILE -- a theme or a wallpaper from the
     gallery_theme_ok "$_gd" > "$TMP/gallery.why" || refuse_in theme "$1 from the gallery's $GALLERY_TAG was not installed: $(gallery_why)"
     _gw=$(look_get "$_gd" WORDS | tr -cd 'A-Za-z0-9 ,.-' | cut -c1-80); [ -z "$(look_get "$_gd" WORDS)" ] || look_set "$_gd" WORDS "$_gw"   # the words held to the characters a look's name takes
     look_set "$_gd" PALETTE gallery; look_set "$_gd" GALLERY "$GALLERY_TAG"
-    gallery_put "$_gd" "$1" over > "$TMP/gallery.why" || refuse_in theme "$1 from the gallery's $GALLERY_TAG was not installed: $(gallery_why)"   # the name held to its shape above: never empty, never a path
-    echo "installed the theme $1 from the gallery's $GALLERY_TAG, signed and its sha256s checked -- spark-shell theme $1 brings it back"
-    theme_apply "$1"
+    theme_locked theme_place "$_gd" "$1" "installed the theme $1 from the gallery's $GALLERY_TAG, signed and its sha256s checked -- spark-shell theme $1 brings it back"
 }
 theme_install_file() {   # theme_install_file FILE -- a theme file (spark-shell theme export): read as data, checked as the gallery's themes are with its own stills, loops and reels, put in place and used
     _gx=$(file_named "$1")
@@ -212,8 +199,6 @@ theme_install_file() {   # theme_install_file FILE -- a theme file (spark-shell 
     esac
     gallery_theme_ok "$_gd/$_gn" "$_gn" > "$TMP/gallery.why" || refuse_in theme "$_gx was not installed: $(gallery_why)"
     _gw=$(look_get "$_gd/$_gn" WORDS | tr -cd 'A-Za-z0-9 ,.-' | cut -c1-80); [ -z "$(look_get "$_gd/$_gn" WORDS)" ] || look_set "$_gd/$_gn" WORDS "$_gw"
-    gallery_put "$_gd/$_gn" "$_gn" > "$TMP/gallery.why" || refuse_in theme "$_gx was not installed: $(gallery_why)"   # the name held to its shape by the reader: never empty, never a path
-    echo "installed the theme $_gn from $_gx, its files checked -- spark-shell theme $_gn brings it back"
-    theme_apply "$_gn"
+    theme_locked theme_place "$_gd/$_gn" "$_gn" "installed the theme $_gn from $_gx, its files checked -- spark-shell theme $_gn brings it back"
 }
 

@@ -67,6 +67,7 @@ provide_main() {   # provide_main SECTION
     case " $PROVIDE_SECTIONS " in *" $sec "*) ;; *) refuse_in provide "${sec:-a section} is not one: $(printf '%s' "$PROVIDE_SECTIONS" | sed 's/ /, /g')" >&2 ;; esac   # stdout is the wire
     command -v jq >/dev/null 2>&1 || refuse_in provide "jq is not installed (spark-shell on)" >&2
     command -v mkfifo >/dev/null 2>&1 || refuse_in provide "mkfifo is not installed" >&2
+    [ "$sec" != theme ] || CONFIG_MEND=1
     config_load; [ "$OS" = Darwin ] || pm_detect; theme_load; SND=''; [ "$OS" = Darwin ] || SND=$(snd_tool)
     PANEL_VERSION_NOW=$(panel_version); PANEL_VERSION_READ=1   # pinned for the provider's life
     [ "$sec" != display ] || { if saver_can; then SAVER_CAN_NOW=1; else SAVER_CAN_NOW=0; fi; }   # python3 asked once, not per read
@@ -75,7 +76,6 @@ provide_main() {   # provide_main SECTION
     WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; CLIENT_PAIRING=''; : > "$PROOTS"
     REM_DELETED=$TMP/deleted   # kept for undo until the provider ends
     LAYOUT_DELETED=$TMP/deleted-layouts
-    THEME_DELETED=$TMP/deleted-themes
     trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; files_stop; files_sound_stop; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # a kill that finds nobody is no failure
     trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM   # so the EXIT trap runs
     mkfifo "$TMP/in"
@@ -110,6 +110,7 @@ EOF
         *) rpc_error null -32600 "one JSON-RPC 2.0 object a line"; return 0 ;;
     esac
     case $_id in '"'*|[0-9]*|-[0-9]*) ;; *) rpc_error null -32600 "an id is a string or a number"; return 0 ;; esac
+    [ "$sec" != theme ] || themes_settle
     case $_method in
         initialize) provide_initialize "$_id" "$_params" ;;
         ping|logging/setLevel) rpc_result "$_id" '{}' ;;
@@ -438,7 +439,7 @@ provide_call_step() {   # provide_call_step ID -- the step in a child, progress 
         printf '%s\n' "$1" > "$TMP/bt.call-id"
     fi
     export BT_BRIDGE
-    rm -f "$TMP/opened" "$TMP/action.effect"
+    rm -f "$TMP/opened" "$TMP/action.effect" "$TMP/call.rc"   # a step that ends early leaves no status: never the last call's
     : > "$TMP/step.mark"   # reread settings only when the step wrote them
     PROVIDE_EFFECT=1; PANEL_JOURNAL=off   # the panel's recent picks and undo journal are its own
     ( set +e; panel_step "$sec" "$_act" "$_g" > "$TMP/call.out" 2>&1; echo $? > "$TMP/call.rc" ) 3>&- 4<&- 5>&- & _w=$!
