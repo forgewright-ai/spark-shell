@@ -8619,7 +8619,7 @@ loops = {
     "nosps.mp4": (mp4(stsd=size(box(b"avcC", b"\1\x42\0\x33\xff\xe1\0\4\x67\x42\0\0"))), "an MP4 with a broken H.264 header"),
     "out.mp4": (mp4(offset=4), "an MP4 whose video is not all in it"),
     "long.mp4": (mp4(sizes=1 << 30), "an MP4 whose video is not all in it"),
-    "none.mp4": (at(b"ftyp"), "an MP4 of not one moov"),
+    "none.mp4": (at(b"ftyp"), "an MP4 with no moov box, or two"),
     "text.mp4": (b"no video", "no MP4"),
     "ZERO.mp4": (b"", "no MP4"),
 }

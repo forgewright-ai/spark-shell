@@ -619,7 +619,7 @@ def mp4_free(bare, start, inside, end):
 def mp4_one(own, kind):
     """-> (inside, end) of the one box of its kind."""
     if len(own.get(kind, ())) != 1:
-        raise ValueError("an MP4 of not one %s" % kind.decode())
+        raise ValueError("an MP4 with no %s box, or two" % kind.decode())
     return own[kind][0][1:]
 
 
