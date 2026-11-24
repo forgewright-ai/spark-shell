@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- undo: the step and its journal
-# reads: ANIMATION_NAMES BAR_FULL BAR_SYS CONFIG FONT_FACES GLYPH_FAMILIES LAYOUTS_DIR LAYOUT_LAST MODE OS ROOT TAB THEME_COLOR_WORDS TMP US WALL_NAMES WORDS_TAKE YES
+# reads: ANIMATION_NAMES BAR_FULL BAR_SYS CONFIG FONT_FACES GLYPH_FAMILIES LAYOUTS_DIR LAYOUT_LAST MODE OS PROVIDE_CLIENT ROOT TAB THEME_COLOR_WORDS TMP US WALL_NAMES WORDS_TAKE YES
 panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORDS" that takes the step back, or nothing
     _p=$1; _a=$2; shift 2; _arg=$*
     case $_p:$_a in
@@ -78,7 +78,7 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
 }
 panel_step() {   # panel_step SECTION ACTION [ARG] -> panel_act's line; a step done is remembered as recent, its inverse kept for undo
     if [ -n "${PANEL_INV_READ:-}" ]; then _inv=$PANEL_INV; else _inv=$(panel_inverse "$@"); fi   # read once by a host's call
-    rm -f "$TMP/network.undo" "$TMP/sound.undo"
+    rm -f "$TMP/network.undo" "$TMP/sound.undo" "$TMP/screen.undo" "$TMP/screen.trial"
     if panel_act "$@"; then
         if [ -s "$TMP/network.undo" ]; then _inv="restore $(cat "$TMP/network.undo")$TAB network settings restored"; fi
         if [ -s "$TMP/sound.undo" ]; then _snd_old=$(cat "$TMP/sound.undo"); _inv="level $_snd_old$TAB$1 at $_snd_old%"; fi
@@ -233,6 +233,10 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
     case $1:$2 in
         display:scale|display:mode|display:position|display:place|display:transform|display:screen-on|display:screen-off|display:main)
             screen_action "$2" "${3:-}" check || return 1
+            printf '%s\n' "$3"; return 0 ;;
+        display:keep|display:back)
+            [ "$PROVIDE_CLIENT" = spark-dialog ] || { echo "display $2 is the dialog's, for the person who sees the screen"; return 1; }
+            screen_port_ok "${3:-}" || { echo "display $2 takes a connected screen"; return 1; }
             printf '%s\n' "$3"; return 0 ;;
         clock:format|clock:week|clock:zone)
             time_valid "$2" "${3:-}" || { echo "invalid time $2"; return 1; }

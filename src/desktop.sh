@@ -24,6 +24,7 @@ runtime_adopt() {
 # cmd_desktop [WORDS] -- sway as a child, never exec: the EXIT trap cleans TMP
 home_open() { python3 "$REPO/lib/home.py" open "$REPO/spark-shell" "${1:-}"; }   # home_open [VIEW]
 cmd_desktop() {
+    case ${1:-} in --trial) shift; trial_timer "$@"; return ;; esac   # before the config: a bad line in it never keeps a screen from going back
     config_load
     [ "$OS" = Darwin ] || pm_detect
     case ${1:-} in
@@ -383,12 +384,7 @@ layout_screen() {   # layout_screen [NAME [scale N | mode WxH | transform normal
     _n=$(printf '%s' "$_r" | cut -f1); _kind=${2:-}   # kept: a place replaces $2
     _id=$(screen_ref "$(printf '%s' "$_r" | cut -f2)" "$_n") || refuse "that screen has no name $WM_NAME can be told"
     case ${2:-} in
-        scale) screen_scale_valid "${3:-}" || refuse "scale takes a positive decimal"
-            _cmd="scale $3"; _said="$_n scale $3" ;;
-        mode) screens_json | jq -e --arg n "$_n" --arg m "${3:-}" '.[] | select(.name == $n) | .modes[] | select("\(.width)x\(.height)" == $m or ("\(.width)x\(.height)@\((.refresh // 0) / 1000)Hz" == $m))' >/dev/null 2>&1 || refuse "$_n has no mode ${3:-}: $(screens_json | jq -r --arg n "$_n" '[.[] | select(.name == $n) | .modes[] | "\(.width)x\(.height)"] | unique | join(", ")')"
-            _cmd="mode ${3}"; _said="$_n $3" ;;
-        transform) case ${3:-} in normal|90|180|270) ;; *) refuse "transform takes normal, 90, 180 or 270 (clockwise); no mirrored orientation" ;; esac
-            _cmd="transform $3"; if [ "$3" = normal ]; then _said="$_n upright"; else _said="$_n turned $3"; fi ;;
+        scale|mode|transform) screen_setting "$_n" "$2" "${3:-}" ;;
         main) [ "$(printf '%s' "$_r" | cut -f3)" = on ] || refuse "$_n is off: a screen off is no main one"
             screen_main_save "$_id"; wm_workspace 1 output "\"$_id\"" >/dev/null 2>&1 || :   # sway's now too, for a new workspace 1
             login_screens_follow; screen_x11_main
@@ -408,12 +404,13 @@ layout_screen() {   # layout_screen [NAME [scale N | mode WxH | transform normal
             _cmd="position $_x $_y"; _said="$_n $1 $(printf '%s' "$_o" | cut -f1)" ;;
         *) refuse "screen NAME takes scale N, mode WxH, transform normal|90|180|270, on, off, main, or left-of, right-of, above or below another screen" ;;
     esac
+    [ -n "${SCREEN_TRIED:-}" ] || trial_settle   # another change is being tried: kept first, so its timer never takes this one back
     screen_send "$_id" "$_n" "$_cmd" || refuse "$WM_NAME refused: output $_n $_cmd"
     case $_kind in left-of|right-of|above|below) _oi=$(screen_ref "$(printf '%s' "$_o" | cut -f2)" "$(printf '%s' "$_o" | cut -f1)") || _oi=''; screen_save "$_id" "$_cmd" "$_kind" "$_oi" ;;
         *) screen_save "$_id" "$_cmd" ;; esac
     [ "$_kind" != transform ] || screen_beside_again "$_id"   # its width changed: the screens beside it move
     screen_origin > "$TMP/origin.said"
-    login_screens_follow
+    [ -n "${SCREEN_TRIED:-}" ] || login_screens_follow
     layout_refit_soon
     echo "$_said"
     [ ! -s "$TMP/origin.said" ] || echo "every screen moved by the same amount, so none sits left of or above 0 (X11 apps take clicks there)"

@@ -9,7 +9,7 @@ rpc_error() { rpc_send "$(jq -cn --argjson id "$1" --argjson c "$2" --arg m "$3"
 rpc_note() { rpc_send "$(jq -cn --arg m "$1" --argjson p "$2" '{jsonrpc: "2.0", method: $m, params: $p}')"; }   # rpc_note METHOD PARAMS
 fifo_put() {   # fifo_put LINE -- to fd 5 under the lock; lines never interleave
     # a lock older than two seconds is a dead writer's: taken
-    _fpw=0; until lock_take "$PLOCK"; do _fpw=$((_fpw + 1)); [ "$_fpw" -lt 200 ] || { lock_drop "$PLOCK"; _fpw=0; }; sleep 0.01; done
+    _fpw=0; until lock_take "$PLOCK"; do [ -d "${PLOCK%/*}" ] || return 0; _fpw=$((_fpw + 1)); [ "$_fpw" -lt 200 ] || { lock_drop "$PLOCK"; _fpw=0; }; sleep 0.01; done
     printf '%s\n' "$1" >&5 || :; lock_drop "$PLOCK"
 }
 PROVIDE_POLL=${SPARK_SHELL_PROVIDE_POLL:-}   # the watcher's poll seconds; the tests set it
@@ -214,7 +214,8 @@ provide_resource_special() {   # provide_resource_special ID METHOD URI -- one s
         theme:resources/read:spark-shell://theme/rows/animations)
             rpc_result "$1" "$(provide_anim_rows | jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')" ;;
         display:resources/read:spark-shell://display/rows/screen/?*)
-            if provide_screen_rows "${3##*/}" > "$TMP/screen.json"; then rpc_result "$1" "$(jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/screen.json")"
+            _psn=${3#spark-shell://display/rows/screen/}
+            if case $_psn in */modes) provide_screen_modes "${_psn%/modes}" ;; *) provide_screen_rows "$_psn" ;; esac > "$TMP/screen.json"; then rpc_result "$1" "$(jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/screen.json")"
             else rpc_error "$1" -32002 "no screen at that uri"; fi ;;
         lan:resources/read:spark-shell://lan/rows/network/?*|wifi:resources/read:spark-shell://wifi/rows/network/?*)
             if provide_network_rows "$sec" "${3##*/}" > "$TMP/network.rows"; then rpc_result "$1" "$(jq -c --arg u "$3" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/network.rows")"
@@ -365,7 +366,7 @@ provide_args_bad() {   # provide_args_bad ARGUMENTS -> why they do not fit the t
         elif any($xp[]; . as $e | .[1] == "art" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] != "none" and (($a[$e[0]] | startswith("/") | not) or ($a[$e[0]] | length) > 4096 or ($a[$e[0]] | test("[\u0000-\u001f\u007f]")))))) then "path is a whole path, or none"
         elif any($xp[]; . as $e | .[1] == "color" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^#[0-9a-fA-F]{6}$") | not))) then "color is #rrggbb"
         elif ([$xs[] | select(.[1] == "text" or .[1] == "name") | . as $e | select(($a | has($e[0])) and ((($a[$e[0]] | type) != "string") or (($a[$e[0]] | length) > 40) or (($a[$e[0]]) | plain | not)))] | length) > 0 then ([$xs[] | select(.[1] == "text" or .[1] == "name") | .[0]][0]) + " is plain text, 40 characters at most"
-        elif any($xs[]; . as $e | .[1] == "coordinate" and (($a[$e[0]] | type) != "number" or $a[$e[0]] < -65535 or $a[$e[0]] > 65535 or $a[$e[0]] != ($a[$e[0]] | floor))) then "coordinates are whole numbers, -65535 to 65535"
+        elif any($xs[]; . as $e | .[1] == "coordinate" and ($a[$e[0]] | if type == "string" and test("^-?[0-9]{1,5}$") then tonumber else . end | type != "number" or . < -65535 or . > 65535 or . != floor)) then "coordinates are whole numbers, -65535 to 65535"
         elif any($xs[]; . as $e | .[1] == "scale" and (if ($a[$e[0]] | type) != "string" then true else ($a[$e[0]] | length) > 16 or ($a[$e[0]] | test("^[0-9]+([.][0-9]+)?$") | not) or (($a[$e[0]] | tonumber? // 0) <= 0) end)) then "scale is a positive decimal"
         elif any($xs[]; . as $e | .[1] == "mode" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$") | not))) then "mode is WIDTHxHEIGHT or WIDTHxHEIGHT@REFRESHHz"
         elif any($xs[]; . as $e | .[1] == "net" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[A-Za-z0-9.,:/-]{1,80}$") | not))) then "network values are addresses, none or auto"
@@ -376,7 +377,7 @@ provide_args_bad() {   # provide_args_bad ARGUMENTS -> why they do not fit the t
         elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
         elif $k == "delta" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= -100 and .[$p] <= 100 then "" else $p + " is a whole number of percentage points, -100 to 100" end)
         elif $k == "bright" then (if ((.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 1 and .[$p] <= 100) or ((.[$p] | type) == "string" and (.[$p] | test("^(up|down|[1-9][0-9]?|100)$"))) then "" else $p + " is up, down or a whole number, 1 to 100" end)
-        elif $k == "minutes" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 999 then "" else $p + " is a whole number of minutes, 0 to 999" end)
+        elif $k == "minutes" then (if ((.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 999) or ((.[$p] | type) == "string" and (.[$p] | test("^(0|[1-9][0-9]{0,2})$"))) then "" else $p + " is a whole number of minutes, 0 to 999" end)
         elif $k == "speed" then (if (.[$p] | type) == "number" and .[$p] >= -1 and .[$p] <= 1 then "" else $p + " is a number, -1 to 1" end)
         elif $k == "delay" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 100 and .[$p] <= 2000 then "" else $p + " is a whole number, 100 to 2000" end)
         elif $k == "alpha" then (if (.[$p] | type) == "number" and .[$p] >= 0 and .[$p] <= 1 then "" else $p + " is a number, 0 to 1" end)
@@ -467,15 +468,17 @@ provide_call_answer() {   # provide_call_answer ID -- the result: the receipt, t
         + ($ENV | with_entries(select(.key | test("^HEX_ANSI_([0-9]|1[0-5])$"))))'); }   # for the pieces the dialog draws
     if [ -s "$TMP/network.undo" ]; then _undo=$(tool_call_json "${sec}_restore" "$(cat "$TMP/network.undo")"); fi
     if [ -s "$TMP/sound.undo" ]; then _undo=$(tool_call_json "${sec}_level" "$(cat "$TMP/sound.undo")"); fi
+    if [ -s "$TMP/screen.undo" ]; then _undo=$(cat "$TMP/screen.undo"); fi   # kept now: the one the change would have had; in use already: none
+    _try='null'; if [ -s "$TMP/screen.trial" ]; then _try=$(cat "$TMP/screen.trial"); _undo='null'; fi   # a trial takes itself back
     # the rows go with the answer; gate and watcher take them as seen
     [ -s "$TMP/action.effect" ] || printf 'null' > "$TMP/action.effect"
     if [ -f "$TMP/opened" ] || [ "$sec" = system ]; then printf 'null' > "$TMP/rows.last.new"   # system: no rows; the host reads again
     else provide_rows "$sec" > "$TMP/rows.last.new" && cp "$TMP/rows.last.new" "$TMP/rows.last" && provide_seen; fi
-    rpc_result "$1" "$(jq -cn --arg r "$_out" --argjson u "$_undo" --argjson p "$_pal" --argjson t "$_trn" --argjson o "$([ -f "$TMP/opened" ] && echo true || echo false)" \
+    rpc_result "$1" "$(jq -cn --arg r "$_out" --argjson u "$_undo" --argjson p "$_pal" --argjson t "$_trn" --argjson trial "$_try" --argjson o "$([ -f "$TMP/opened" ] && echo true || echo false)" \
         --slurpfile e "$TMP/action.effect" --slurpfile rows "$TMP/rows.last.new" '
         (if $o then {opened: true}
          else {receipt: $r} + (if $u == null then {} else {undo: $u} end) + (if $p == null then {} else {palette: $p} end)
-            + (if $t == null then {} else {transitions: $t} end) + (if $rows[0] == null then {} else {rows: $rows[0]} end) end)
+            + (if $t == null then {} else {transitions: $t} end) + (if $trial == null then {} else {trial: $trial} end) + (if $rows[0] == null then {} else {rows: $rows[0]} end) end)
         + (if $e[0] == null then {} else {effect: $e[0]} end)
         | {content: [{type: "text", text: (del(.rows) | tojson)}], structuredContent: ., isError: false}')"
     rm -f "$TMP/action.effect" "$TMP/rows.last.new"

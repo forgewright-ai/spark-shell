@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- rows: a section as an MCP server on stdio
 # sets: PROVIDE_CLIENT PROVIDE_LINE_MAX PROVIDE_PROTOCOL PROVIDE_SECTIONS PROVIDE_SECTIONS_OLD PROVIDE_TOOLS SCRUB_AWK SCRUB_JQ SCRUB_UNSEEN
-# reads: ANIMATION_NAMES KEPT_LAYOUTS LAYOUTS_DIR LAYOUT_LAST PANEL_CROSS PANEL_DOT PANEL_GO PANEL_RING PANEL_SEP PANEL_TICK REPO SAVER_NAMES SAVER_OWN TAB TERM_PALETTE_FORMATS THUMB_DIR TMP US WALL_TYPES
+# reads: ANIMATION_NAMES KEPT_LAYOUTS LAYOUTS_DIR LAYOUT_LAST PANEL_CROSS PANEL_DOT PANEL_GO PANEL_RING PANEL_SEP PANEL_TICK REPO SAVER_NAMES SAVER_OWN SCREEN_CALLED_JQ TAB TERM_PALETTE_FORMATS THUMB_DIR TMP US WALL_TYPES
 # a section as an MCP server on stdio, JSON-RPC a line. Every JSON value
 # is built by jq with --arg, every request is parsed by jq; a method or a
 # tool name is matched by case, never run as a name
@@ -9,7 +9,7 @@ PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps system about undo files"   # every panel section but spark, and files
 PROVIDE_SECTIONS_OLD='tools'   # the names a section had before: tools is system since v0.153. A line spark's MCP list holds under one is ours to take off
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_copy_color theme_export_palette theme_save theme_delete theme_restore theme_rename theme_duplicate theme_export theme_install theme_color theme_colors theme_pointer theme_clock theme_pair theme_portrait theme_panel theme_loop theme_reel theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_icons theme_spacing theme_family theme_face theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open about_site undo_all files_browse files_open files_app files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden system_check system_fix system_copy_details system_update system_update_system system_export system_front system_end system_measure system_clean_packages"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_copy_color theme_export_palette theme_save theme_delete theme_restore theme_rename theme_duplicate theme_export theme_install theme_color theme_colors theme_pointer theme_clock theme_pair theme_portrait theme_panel theme_loop theme_reel theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_icons theme_spacing theme_family theme_face theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_keep display_back display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open about_site undo_all files_browse files_open files_app files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden system_check system_fix system_copy_details system_update system_update_system system_export system_front system_end system_measure system_clean_packages"
 # the scrubber for every string a provider hands on: what can redraw or
 # reorder a screen goes
 #   C0 but the tab, DEL and C1            \u0000-\u0008 \u000b-\u001f \u007f-\u009f
@@ -193,8 +193,8 @@ tool_spec_reminders() {   # the reminders tools
 }
 tool_spec_display() {   # the display and clock tools
     case $1 in
-        display_idle)      _ts=display _ta=idle _tp=minutes _tk=minutes _th=i _tt='display idle N' _td='Show the idle screen after N idle minutes; 0 never.' ;;
-        display_lock)      _ts=display _ta=lock _tp=minutes _tk=minutes _th=i _tt='display lock N' _td='Lock the screen after N idle minutes; 0 never.' ;;
+        display_idle)      _ts=display _ta=idle _tp=minutes _tk=minutes _th=if _tt='display idle N' _td='Show the idle screen after N idle minutes; 0 never.' ;;
+        display_lock)      _ts=display _ta=lock _tp=minutes _tk=minutes _th=if _tt='display lock N' _td='Lock the screen after N idle minutes; 0 never.' ;;
         display_saver)     _ts=display _ta=saver _tp=name _tk="$(printf '%s' "$SAVER_OWN $SAVER_NAMES" | tr ' ' '|')" _th=i _tt='display saver NAME' _td='What the idle screen shows: the clock alone, the theme art with the clock over it, or an animation behind it.' ;;
         display_brightness) _ts=display _ta=brightness _tp=level _tk=bright _th=if _tt='display brightness N' _td='Set the screen brightness, 1 to 100, or up or down a step.' ;;
         display_scale) _ts=display _ta=scale _tp=screen _tk=string _te='scale:scale' _th=if _tt='screen scale' _td='Set the scale on one connected screen; larger means larger text.' ;;
@@ -202,6 +202,8 @@ tool_spec_display() {   # the display and clock tools
         display_position) _ts=display _ta=position _tp=screen _tk=string _te='x:coordinate y:coordinate' _th=if _tt='screen position' _td='Place a connected screen at absolute layout coordinates.' ;;
         display_place) _ts=display _ta=place _tp=screen _tk=string _te='side:left-of|right-of|above|below other:port' _th=if _tt='screen arrangement' _td='Place a connected screen beside another active screen.' ;;
         display_transform) _ts=display _ta=transform _tp=screen _tk=string _te='transform:normal|90|180|270' _th=if _tt='screen orientation' _td='Turn a connected screen: normal, or 90, 180 or 270 degrees clockwise. No mirrored orientation.' ;;
+        display_keep) _ts=display _ta=keep _tp=screen _tk=string _th=ifp _tt='screen keep' _td='Keep the resolution, scale or turn being tried on a screen, before it goes back by itself. The person who sees the screen says it.' ;;
+        display_back) _ts=display _ta=back _tp=screen _tk=string _th=ifp _tt='screen back' _td='Put a screen back as it was before the resolution, scale or turn being tried on it.' ;;
         display_main) _ts=display _ta=main _tp=screen _tk=string _th=if _tt='screen main' _td='Make a connected screen the main one: workspace 1, the focus at the start and the login screen go to it.' ;;
         display_on) _ts=display _ta=screen-on _tp=screen _tk=string _th=if _tt='screen on' _td='Enable a connected screen now and at the next login.' ;;
         display_off) _ts=display _ta=screen-off _tp=screen _tk=string _th=if _tt='screen off' _td='Disable a connected screen now and at the next login; the last active screen stays on.' ;;
@@ -344,6 +346,8 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it
          annotations: {title: $t, readOnlyHint: ($h | contains("r")), destructiveHint: ($h | contains("d")), idempotentHint: ($h | contains("i")), openWorldHint: false}}
          | if ($h | contains("o")) then ._meta = {"spark-shell/opens": true} else . end
          | if ($h | contains("p")) then ._meta = ((._meta // {}) + {"spark-shell/person": true}) else . end
+         | if ($n | test("^display_(mode|scale|transform)$")) then .outputSchema.properties as $o
+             | .outputSchema.properties.trial = {type: "object", properties: {said: {type: "string"}, seconds: {type: "integer", minimum: 1, maximum: 60}, keep: $o.undo, back: $o.undo}, required: ["said", "seconds", "keep", "back"], additionalProperties: false} else . end
          | if $n == "notes_append" then .inputSchema = {type:"object", properties:{name:{type:"string", minLength:1, maxLength:255, description:"Exact existing Markdown filename"}, text:{type:"string", minLength:1, maxLength:16384, contentMediaType:"text/plain", description:"Text to append; spaces and line breaks are preserved"}}, required:["name","text"], additionalProperties:false} else . end
          | if $n == "notes_rename" then .inputSchema = {type:"object", properties:{name:{type:"string", minLength:1, maxLength:255, description:"Exact existing Markdown filename"}, to:{type:"string", minLength:1, maxLength:255, description:"the new title"}}, required:["name","to"], additionalProperties:false} else . end'
 }
@@ -355,6 +359,7 @@ provide_tools() {   # provide_tools SECTION -> the section's tools as one JSON a
 PROVIDE_CLIENT=''
 provide_person_ok() { [ "$PROVIDE_CLIENT" = spark-dialog ]; }
 provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state", "rows": [{"id", "sign", "text", "tool", "more", "columns", "children", "group"}], "short": [ID]}; a tool may carry "ask", the arguments the host asks for
+    [ "$1" != display ] || { provide_display_rows; return; }
     [ "$1" != clock ] || [ "${2:-}" = settings ] || { provide_clock_rows; return; }
     [ "$1" != about ] || { provide_about_rows; return; }
     [ "$1" != system ] || { provide_system_rows; return; }
@@ -427,7 +432,6 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 elif $s == "theme" and .id == "theme:show:Animation" then .children = "spark-shell://theme/rows/animations" | .tool = null | .columns = [$anim] | .text = "Dialog motion"
                 elif $s == "theme" and .id == "theme:show:Pointer" then .children = "spark-shell://theme/rows/pointers" | .tool = null | .columns = [$pointer]
                 elif ($s == "lan" or $s == "wifi") and (.id | startswith($s + ":network-settings")) then .sign = "opens" | .children = ("spark-shell://" + $s + "/rows/network/" + (.id | split(":network-settings ")[1]))
-                elif $s == "display" and (.text | startswith("screen ")) then .sign = "opens" | .children = ("spark-shell://display/rows/screen/" + (.text | split(" ")[1]))
                 elif $s == "power" and (.columns | length) > 0 then .wide = .columns | .columns = []   # what each does: the status row while lit, a column in a wide list
                 elif $s == "window" and (.tool.name // "") == "window_capture" then .key = ($desktopkeys["desktop.desktop-capture-" + .tool.arguments.what] // null)
                 elif (.tool.name // "") == "layout_save" then .tool.ask = ["name"]
@@ -453,10 +457,7 @@ provide_rows_window() {   # stdin: the window section's rows -> the same with th
     jq -c --slurpfile facts "$TMP/win.facts" --slurpfile screens "$TMP/win.screens" --arg sep "$PANEL_SEP" '
         def step($n; $a; $w): {name: $n, arguments: $a, said: $w};
         def outs: $screens[0] // [] | map(select(type == "object" and (.name | type) == "string"));
-        def own: (.model // "") as $d | if ($d | type) != "string" or $d == "" or $d == "Unknown" or ($d | test("^0x[0-9A-Fa-f]+$")) then "" else $d | gsub("[|]"; "/") end;
-        def builtin: .name | test("^(eDP|LVDS|DSI)-");
-        def called: own as $d | if builtin and ([outs[] | select(builtin)] | length) == 1 then "built-in screen"
-            elif $d != "" and ([outs[] | select(own == $d)] | length) == 1 then $d else .name end;
+        '"$SCREEN_CALLED_JQ"'
         def screened: . as $g | if ($g | type) != "string" then $g else (first(outs[] | {key: " \($sep) \(.name)", value: " \($sep) \(called)"} | select(.key as $k | $g | endswith($k))) // null) as $s
             | if $s == null then $g else $g[0:($g | length) - ($s.key | length)] + $s.value end end;   # a screen by its model, as the display place shows it; the port where two share one or it has none (v0.162.1)
         ($facts[0] // null) as $f
@@ -629,4 +630,4 @@ provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION [GROUP|COLUMN
 provide_clock_rows() {
     jq -cn --arg state "$(time_zone), $(time_sync)" '{title: "clock", state: $state, rows: [{id: "clock:settings", sign: "opens", text: "time settings", tool: null, more: [], columns: [], children: "spark-shell://clock/rows/settings", group: null}], short: ["clock:settings"]}'
 }
-provide_title() { [ "$1" != about ] || return 0; [ "$1" != system ] || return 0; [ "$1" != files ] || { echo "your home folder"; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }
+provide_title() { [ "$1" != about ] || return 0; [ "$1" != system ] || return 0; [ "$1" != files ] || { echo "your home folder"; return; }; [ "$1" != display ] || { display_state; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }

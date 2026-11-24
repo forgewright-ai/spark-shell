@@ -3744,16 +3744,24 @@ rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 mo
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: eDP-1 has no mode 800x600: 1280x720, 1920x1080' ] && ok "desktop screen mode: a mode the screen lacks refused, naming those it has" || bad "screen mode" "rc=$rc $out"
 # The same settings through MCP, including the undo receipt and children.
 j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://display/rows"}}')
-printf '%s' "$j" | jq -e '.result.contents[0].text | fromjson | any(.rows[]; .children == "spark-shell://display/rows/screen/HDMI-A-1")' >/dev/null     && ok "display: each screen opens its choices" || bad "display child" "$j"
+printf '%s' "$j" | jq -e '.result.contents[0].text | fromjson | .state == "2 screens" and .rows[0].move == {name: "display_position", arguments: {}}
+        and ([.rows[0].screens[] | [.name, .text, .x, .w, .on, .main]] == [["eDP-1", "built-in screen", 0, 1920, true, false], ["HDMI-A-1", "T24i-30", 1920, 1920, true, true]])
+        and ([.rows[] | select(.group == "screens") | [.text, .columns[0] // "", .children]] == [["screens", "", null], ["built-in screen", "1920x1080", "spark-shell://display/rows/screen/eDP-1"], ["T24i-30", "1920x1080 '"$dot"' main", "spark-shell://display/rows/screen/HDMI-A-1"]])
+        and ([.rows[] | select(.group == "idle and lock") | [.text, .step.set.name, .step.values[.step.at].sent]] == [["idle screen", "display_idle", "10"], ["saver", "display_saver", "clock"], ["lock", "display_lock", "15"]])
+        and all(.rows[]; (.text | test("brighter|dimmer|after|never") | not) and .tool == null)' >/dev/null     && ok "display: the map and a row a screen, from the left, by their models, the main one said; the idle screen, the saver and the lock each a step; no row for a value" || bad "display rows read" "$j"
 j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://display/rows/screen/HDMI-A-1"}}')
-printf '%s' "$j" | jq -e '.result.contents[0].text | fromjson | any(.rows[]; .tool.name == "display_mode" and .tool.arguments.mode == "1920x1080") and any(.rows[]; .tool.name == "display_place" and .tool.arguments.other == "eDP-1")' >/dev/null     && ok "display: native modes and connected neighbors are offered" || bad "display choices" "$j"
+printf '%s' "$j" | jq -e '.result.contents[0].text | fromjson | [.title, .state] == ["T24i-30", "1920x1080"] and [.rows[].text] == ["in use", "main screen", "resolution", "scale", "orientation", "beside built-in screen"]
+        and .rows[0].switch.turn_off == {name: "display_off", arguments: {screen: "HDMI-A-1"}} and .rows[1].columns == ["this one"] and .rows[2].children == "spark-shell://display/rows/screen/HDMI-A-1/modes"
+        and (.rows[5].step | .set == {name: "display_place", arguments: {screen: "HDMI-A-1", other: "eDP-1"}} and .values[.at].sent == "right-of")' >/dev/null     && ok "display: one screen's settings: its switch, the main one, its resolution, scale and orientation, and where it stands beside the other" || bad "display choices" "$j"
+j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://display/rows/screen/eDP-1/modes"}}')
+printf '%s' "$j" | jq -e '.result.contents[0].text | fromjson | [.rows[] | [.text, .sign, .back, .tool.arguments.mode]] == [["1920x1080", "check", true, null], ["1280x720", "blank", true, "1280x720"]]' >/dev/null     && ok "display: a screen's resolutions, the largest first, the one in use checked" || bad "display modes" "$j"
 j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"display_scale","arguments":{"screen":"HDMI-A-1","scale":"1.5"}}}')
 printf '%s' "$j" | jq -e '.result.isError == false and .result.structuredContent.undo == {name:"display_scale",arguments:{screen:"HDMI-A-1",scale:"1"}}' >/dev/null     && ok "display: scale runs through the native action with its prior value as undo" || bad "display scale tool" "$j"
 j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"display_position","arguments":{"screen":"HDMI-A-1","x":-100,"y":200}}}')
 printf '%s' "$j" | jq -e '.result.isError == false and .result.structuredContent.undo.arguments == {screen:"HDMI-A-1",x:1920,y:0}' >/dev/null     && ok "display: absolute placement has typed coordinates and undo" || bad "display position tool" "$j"
-before=$(cksum < "$HOME/swaymsg.log")
+before=$(grep -v '^-t get_' "$HOME/swaymsg.log" | cksum)
 j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"display_position","arguments":{"screen":"HDMI-A-1","x":"0; exec bad","y":0}}}')
-printf '%s' "$j" | jq -e '.error.code == -32602' >/dev/null && [ "$before" = "$(cksum < "$HOME/swaymsg.log")" ]     && ok "display: invalid coordinate text is refused before a native call" || bad "display invalid coordinate" "$j"
+printf '%s' "$j" | jq -e '.error.code == -32602' >/dev/null && [ "$before" = "$(grep -v '^-t get_' "$HOME/swaymsg.log" | cksum)" ]     && ok "display: invalid coordinate text is refused before a native call" || bad "display invalid coordinate" "$j"
 SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 on >/dev/null
 ! grep -q 'disable' "$HOME/.config/spark-shell/screens.conf" && grep -q 'enable' "$HOME/.config/spark-shell/screens.conf"     && ok "display: on replaces a saved off, with no conflicting power line" || bad "display saved power"
 # the orientation (#109): sway's transform, kept like the others; a screen placed beside another is placed again after a turn; the dialog offers the four
@@ -3765,8 +3773,8 @@ rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 transform flipped 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: transform takes normal, 90, 180 or 270 (clockwise); no mirrored orientation' ] && ok "desktop screen transform: a mirrored orientation is refused" || bad "screen transform flipped" "rc=$rc $out"
 j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://display/rows/screen/HDMI-A-1"}}')
-printf '%s' "$j" | jq -e '.result.contents[0].text | fromjson | [.rows[] | select(.group == "orientation") | .text + ":" + .tool.name + ":" + .tool.arguments.transform] == ["upright:display_transform:normal", "turned 90:display_transform:90", "turned 180:display_transform:180", "turned 270:display_transform:270"]' >/dev/null \
-    && ok "display: a screen's rows offer the orientation, upright and three turns, through one typed tool" || bad "display orientation rows" "$j"
+printf '%s' "$j" | jq -e '.result.contents[0].text | fromjson | .rows[] | select(.text == "orientation") | .step | .set == {name: "display_transform", arguments: {screen: "HDMI-A-1"}} and .key == "transform" and [.values[] | .shown + ":" + .sent] == ["upright:normal", "right:90", "upside down:180", "left:270"]' >/dev/null \
+    && ok "display: a screen's orientation is one step, upright and three turns as sway turns it, clockwise" || bad "display orientation rows" "$j"
 j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"display_transform","arguments":{"screen":"HDMI-A-1","transform":"180"}}}')
 printf '%s' "$j" | jq -e '.result.isError == false and .result.structuredContent.receipt == "HDMI-A-1 turned 180" and .result.structuredContent.undo == {name:"display_transform",arguments:{screen:"HDMI-A-1",transform:"normal"}}' >/dev/null \
     && ok "display: the orientation tool turns the screen, its undo the orientation it had (sway says none: upright)" || bad "display transform tool" "$j"
@@ -6159,8 +6167,8 @@ for _mf in "$REPO"/lib/motion_*.py; do _mn=${_mf##*/motion_}; wall_n=${_mn%.py};
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps system about undo files; do mcp "$s" "$(pinit spark-dialog)" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 174 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-five sections hold the 174 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 176 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-five sections hold the 176 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -6257,7 +6265,7 @@ STUB
     done
     _nn=$(ls "$HOME/notes"/*.md 2>/dev/null | wc -l | tr -d ' '); _n=$(asks notes "stat -c %Y $HOME/notes/"); [ "$_n" = $((2 * _nn)) ] || _ob="$_ob [notes] $_n of $((2 * _nn))"
     _sp=" $(printf '\302\267') "; _dt=$(printf '\342\227\217')   # the panel's middle dot and its dot for in use
-    [ -z "$_ob" ] && [ "$_nn" -gt 0 ] && [ "$_os" = "Studio Speakers${_sp}40%|Studio Speakers${_sp}40%|Studio Mic${_sp}40%|Studio Mic${_sp}40%|$_dt MAJOR V|$_dt MAJOR V|$_dt MAJOR V|1 drive|1 drive|1 drive|1 on the screen|1 on the screen|1 on the screen|br${_sp}2 layouts|brightness 75%|brightness 75%|0 today, 1 after|" ] \
+    [ -z "$_ob" ] && [ "$_nn" -gt 0 ] && [ "$_os" = "Studio Speakers${_sp}40%|Studio Speakers${_sp}40%|Studio Mic${_sp}40%|Studio Mic${_sp}40%|$_dt MAJOR V|$_dt MAJOR V|$_dt MAJOR V|1 drive|1 drive|1 drive|1 on the screen|1 on the screen|1 on the screen|br${_sp}2 layouts|1 screen|1 screen|0 today, 1 after|" ] \
         && ok "provide: one rows read asks each device, list and file once, its title, short form and full form sharing the answer, and the next read asks again: sound, bluetooth, drives, notifications, keyboard, screens, brightness, notes and reminders (#196)" \
         || bad "one probe per read" "asked otherwise:$_ob; states: $_os"
     cp "$H/config.once" "$HOME/.config/spark-shell/config"; rm -rf "$H/once" "$H/sys/class/backlight" "$HOME/calendar/once-196.ics" "$H/.local/state/spark-shell/panel/bt.list" "$HOME/once.log" "$H/once.json" "$H/config.once"; unset ONCE_PATH
@@ -6304,7 +6312,7 @@ for _effect_file in "$H/calendar/"*.ics; do
     if grep -qF "UID:$_effect_id" "$_effect_file" || grep -qF "UID:$_effect_id2" "$_effect_file"; then rm -f "$_effect_file"; fi
 done
 # the brightness takes the gate's own words, up, down or 1 to 100: a planner told 0 to 100 and no step sent a 0 the gate
-# refused, and the dialog's brighter and dimmer rows send up and down (#31). spark's grammar types an argument one
+# refused, and a planner sends up and down (#31). spark's grammar types an argument one
 # way, so a string enum holds both, the tens first: a brief names an enum's first twelve
 mcp display "$init" "$(call 2 display_brightness '{"level":0}')" "$(call 3 display_brightness '{"level":"down"}')" "$(call 4 display_brightness '{"level":"30"}')"
 jq -e -s '(map(select(.name == "display_brightness"))[0].inputSchema.properties.level | .type == "string" and .enum[0:12] == ["up", "down", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"] and (.enum | length) == 102 and (.enum | index("1") != null and index("99") != null and index("0") == null))
@@ -6328,9 +6336,9 @@ jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.dest
     && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = 'notes_find system_check system_measure about_open files_show files_attach files_find files_say' ] \
     && ok "provide: every hint spelled out (the spec's default is destructive); destructive where something is lost (#112): forget, close, remove, delete, delete for good and empty the trash (#130), the power steps, a print job cancelled, the network manager installed, a program ended (v0.129); and where the typed verb asks for a yes: the network's address and DNS, a hidden network, the time zone; the printer settings carry undo instead; read only: notes find, the check and the measure of system, about, files show, attach, find and say" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
 [ "$(jq -r 'select(._meta["spark-shell/opens"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'about_site apps_open apps_terminal files_app files_browse files_open files_reveal notes_open power_lock storage_open system_clean_packages system_fix system_front system_update system_update_system window_focus' ] \
-    && [ "$(jq -s '[.[] | select(._meta != null and ._meta != {"spark-shell/opens": true} and ._meta != {"spark-shell/opens": true, "spark-shell/person": true})] | length' "$H/tools.all")" = 0 ] \
-    && [ "$(jq -r 'select(._meta["spark-shell/person"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'system_clean_packages system_fix system_update system_update_system' ] \
-    && ok "provide: the tools that put a window in front say so (_meta spark-shell/opens), so the dialog steps aside at the click (#196); a person's step says so too (spark-shell/person: a terminal, or sudo, v0.129.2); no other _meta" || bad "tool opens" "$(jq -c 'select(._meta) | [.name, ._meta]' "$H/tools.all")"
+    && [ "$(jq -s '[.[] | select(._meta != null and ._meta != {"spark-shell/opens": true} and ._meta != {"spark-shell/person": true} and ._meta != {"spark-shell/opens": true, "spark-shell/person": true})] | length' "$H/tools.all")" = 0 ] \
+    && [ "$(jq -r 'select(._meta["spark-shell/person"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'display_back display_keep system_clean_packages system_fix system_update system_update_system' ] \
+    && ok "provide: the tools that put a window in front say so (_meta spark-shell/opens), so the dialog steps aside at the click (#196); a person's step says so too (spark-shell/person: a terminal, or sudo, v0.129.2; keeping or ending a screen's trial, which the person who sees it says); no other _meta" || bad "tool opens" "$(jq -c 'select(._meta) | [.name, ._meta]' "$H/tools.all")"
 # a person's step to the dialog alone (v0.129.2): another client that names itself (spark's MCP list, the prompt line, spark
 # do) neither sees it nor calls it; nor does a client with no name
 mcp system "$(pinit spark-dialog)" "$(rq 1 tools/list)"; _pd=$(ans 1 | jq -r '[.result.tools[].name] | join(" ")')

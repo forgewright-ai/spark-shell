@@ -260,6 +260,8 @@ REPO=$(cd "$(dirname "$SELF")" && pwd)
 . "$REPO/src/desktop.sh"
 # shellcheck source=src/screen.sh
 . "$REPO/src/screen.sh"
+# shellcheck source=src/trial.sh
+. "$REPO/src/trial.sh"
 # shellcheck source=src/window.sh
 . "$REPO/src/window.sh"
 

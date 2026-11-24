@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the power
 # sets: APP_GROUPS POWER_SUDOERS
-# reads: BAR_PROC BAR_SYS LAYOUTS_DIR LAYOUT_LAST LAYOUT_WAIT OS PANEL_APP PANEL_CACHE PANEL_CROSS PANEL_SEP PANEL_TICK REPO ROOT STATE_DIR TAB TERM_CLIENT TERM_NAME THEME_KEYS TMP WALL_NAMES WM_NAME
+# reads: BAR_PROC BAR_SYS LAYOUTS_DIR LAYOUT_LAST LAYOUT_WAIT OS PANEL_APP PANEL_CACHE PANEL_CROSS PANEL_SEP PANEL_TICK PROVIDE_CLIENT REPO ROOT STATE_DIR TAB TERM_CLIENT TERM_NAME THEME_KEYS TMP WALL_NAMES WM_NAME
 POWER_SUDOERS=etc/sudoers.d/spark-shell-power
 about_site() {
     _as=https://github.com/forgewright-ai/spark-shell
@@ -288,7 +288,7 @@ panel_act_window() {   # the window steps: the arrangement and its undo, move, p
         *) echo "$_a is not something window does"; return 1 ;;
     esac
 }
-panel_act_display() {   # the display steps: the idle and lock minutes, the saver, the brightness, the screens
+panel_act_display() {   # the display steps: the idle and lock minutes, the saver, the brightness, the screens; a resolution, scale or turn of the dialog's is tried
     case $_a in
         idle|lock) case $_arg in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) echo "$_a takes minutes, 0 to 999 (0: never)"; return 1 ;; esac
             _k=DISPLAY_IDLE; [ "$_a" = idle ] || _k=DISPLAY_LOCK
@@ -298,7 +298,9 @@ panel_act_display() {   # the display steps: the idle and lock minutes, the save
             config_set DISPLAY_SAVER "$_arg" >/dev/null; DISPLAY_SAVER=$_arg; export DISPLAY_SAVER
             echo "idle screen shows $(saver_words "$_arg")" ;;
         brightness) light_set "$_arg" ;;
-        scale|mode|position|place|transform|screen-on|screen-off|main) screen_action "$_a" "$_arg" ;;
+        scale|mode|transform) if [ "$PROVIDE_CLIENT" = spark-dialog ]; then screen_action "$_a" "$_arg" try; else screen_action "$_a" "$_arg"; fi ;;
+        position|place|screen-on|screen-off|main) screen_action "$_a" "$_arg" ;;
+        keep|back) trial_answer "$_a" "$_arg" ;;
         *) echo "$_a is not something display does"; return 1 ;;
     esac
 }
