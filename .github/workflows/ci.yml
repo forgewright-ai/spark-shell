@@ -98,7 +98,9 @@ jobs:
         with:
           persist-credentials: false
       - name: privacy gate over the whole tree
-        # the personal word list is a repository secret (one word per line);
+        # the personal word list is a repository secret (one word per line),
+        # in this step's environment and never on the disk, where what a
+        # later step fetches could read it;
         # each word escaped for grep -E, and -l everywhere: a hit names the
         # file, never the line -- this log is public. A fork without the
         # secret gets a NOTICE and the generic patterns only. Each check is
@@ -111,8 +113,7 @@ jobs:
         env:
           SPARK_PRIVACY_TERMS_SECRET: ${{ secrets.SPARK_PRIVACY_TERMS }}
         run: |
-          printf '%s\n' "$SPARK_PRIVACY_TERMS_SECRET" > "$RUNNER_TEMP/privacy-terms"
-          terms=$(cat .privacy-terms "$RUNNER_TEMP/privacy-terms" | grep -v '^#' | grep -v '^[[:space:]]*$' | sort -u | sed 's,[][\.*^$+?(){}|/],\\&,g' | paste -sd'|' -)
+          terms=$(printf '%s\n' "$SPARK_PRIVACY_TERMS_SECRET" | cat .privacy-terms - | grep -v '^#' | grep -v '^[[:space:]]*$' | sort -u | sed 's,[][\.*^$+?(){}|/],\\&,g' | paste -sd'|' -)
           if [ -z "$terms" ]; then echo "NOTICE: no privacy word list -- generic patterns only"; else
             hits=$(git grep -l -i -w -E "$terms" -- . ':(exclude).privacy-terms' || true)
             if [ -n "$hits" ] && ! printf '%s\n' "$hits" | PRIVACY_TERMS="$terms" python3 -I test/privacy_media.py; then
@@ -151,11 +152,13 @@ jobs:
           shellcheck --version | sed -n '2p'
           shellcheck -x -S warning -e SC1107 spark-shell lib/shim/xterm test/shell_test.sh test/dialog_build.sh test/dialog_sbom.sh test/wallpaper_build.sh test/winpad_build.sh test/bar_build.sh test/desktop_proof.sh test/wifi_proof.sh test/login_upgrade_proof.sh test/dhcp_proof.sh test/gate.sh test/lane.sh test/prove.sh test/tag.sh test/semantic_measure.sh .githooks/pre-push
       - name: zizmor over .github/workflows
-        # the workflows are code too: zizmor (pinned, in a venv of its own)
-        # reads every file under .github/workflows; medium and above fail.
+        # the workflows are code too: zizmor (its wheel pinned by its sha256,
+        # in a venv of its own) reads every file under .github/workflows;
+        # medium and above fail.
         run: |
           python3 -m venv "$RUNNER_TEMP/zizmor"
-          "$RUNNER_TEMP/zizmor/bin/pip" install --quiet zizmor==1.30.1
+          echo 'zizmor==1.30.1 --hash=sha256:eee12266b793cb87ad4a7e3af2e72404f8a63e3de5eb099b80bf7b1cfd232a8e' > "$RUNNER_TEMP/zizmor.txt"
+          "$RUNNER_TEMP/zizmor/bin/pip" install --quiet --require-hashes --only-binary :all: --no-deps -r "$RUNNER_TEMP/zizmor.txt"
           "$RUNNER_TEMP/zizmor/bin/zizmor" --min-severity medium .github/workflows
   linux:
     needs: [lint, plan, pins]

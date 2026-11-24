@@ -36,13 +36,17 @@ jobs:
         # wherever the file was missing could be stopped by the history it
         # checks. Only ssh signatures are read. A patch key, a line of
         # allowed-signers that starts spark-shell-patch, vouches for a patch
-        # (vX.Y.Z) and for no other tag: a vX.Y is a release key's alone.
+        # (vX.Y.Z) and for no other tag: a vX.Y is a release key's alone. A
+        # release's name is the one an install reads (tag_is_release in
+        # src/dialog.sh); a tag by any other is in no chain.
         run: |
           set -eu
+          names='v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\.[1-9][0-9]*)?'
+          printf '%s\n' "$GITHUB_REF_NAME" | grep -qxE "$names" || { echo "release: $GITHUB_REF_NAME is no release's name"; exit 1; }
           git merge-base --is-ancestor "${GITHUB_REF_NAME}^{commit}" origin/main || { echo "release: $GITHUB_REF_NAME is not on main"; exit 1; }
           keys="$RUNNER_TEMP/allowed-signers"; root=v0.135
           verify() { git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile="$keys" -c gpg.program=false -c gpg.openpgp.program=false -c gpg.x509.program=false verify-tag "$1"; }
-          before() { git describe --abbrev=0 --match 'v[0-9]*' "$1^{commit}^" 2>/dev/null; }
+          before() { m=$(git tag -l --merged "$1^{commit}^" | grep -xE "$names" | sed 's/^/--match=/'); [ -n "$m" ] && git describe --abbrev=0 $m "$1^{commit}^" 2>/dev/null; }
           signers() { git show "$1:allowed-signers" > "$keys.all" 2>/dev/null || return 1; case ${2#v} in *.*.*) cat "$keys.all" ;; *) grep -v '^spark-shell-patch ' "$keys.all" || true ;; esac > "$keys"; }   # signers RELEASE TAG -- the keys of RELEASE that may have signed TAG
           if [ "$GITHUB_REF_NAME" = "$root" ]; then
             prev=$root; signers "$root" "$root"; from="its own allowed-signers, the root of the record"

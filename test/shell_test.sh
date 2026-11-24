@@ -7125,6 +7125,12 @@ for _j in $_lfast; do case " $_lfull " in *" $_j "*) ;; *) _lb="$_lb [the fast l
 grep -qF "if grep -q '^\\.github/' \"\$RUNNER_TEMP/changed\" || grep -qxF test/lane.sh \"\$RUNNER_TEMP/changed\"; then" "$_lci" || _lb="$_lb [the plan asks a changed list about itself]"
 grep -qF '[ "$REF" = refs/heads/main ] || base=$(git merge-base origin/main HEAD' "$_lci" || _lb="$_lb [main is measured]"
 [ -z "$_lb" ] && ok "ci.yml: the full lane is every job, each asked for by the plan in its own name and needed by green; the fast lane is the suite on a dash row and a bash row; main takes every job, and a push that changes the workflows or the list too" || bad "lanes and ci.yml" "$_lb"
+# a release's name is one pattern: where an install reads it, where a patch is tagged and where a release is built
+_ln='v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\.[1-9][0-9]*)?'
+_lb=''; for _f in src/dialog.sh test/tag.sh .github/workflows/release.yml; do grep -qF "'$_ln'" "$REPO/$_f" || _lb="$_lb [$_f]"; done
+[ -z "$_lb" ] && ok "a release's name is the same pattern in src/dialog.sh, test/tag.sh and release.yml" || bad "release names" "$_lb"
+grep -qE "^ *echo 'zizmor==[0-9.]+ --hash=sha256:[0-9a-f]{64}' > " "$_lci" && grep -qF -e '--require-hashes --only-binary :all: --no-deps -r' "$_lci" && ! grep -qE 'TERMS_SECRET"? *>' "$_lci" \
+    && ok "ci.yml: zizmor is the wheel its sha256 names, and the private word list is never written to the disk" || bad "ci.yml's lint job"
 # the change itself, read from git: a scratch repository with the list in it
 if command -v git >/dev/null 2>&1; then
     _lr=$(tmpd); _lgit() { git -C "$_lr" -c user.name=t -c user.email=you@example.com -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
