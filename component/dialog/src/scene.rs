@@ -1693,8 +1693,9 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
     });
     // each group lines its second words up: past its longest name
     let mut column = m.px(176.0);
-    // a group with a row checked (a pick list) keeps the check's room on every row, so its names stand in one line
-    let mut checked = false;
+    // a list with a row checked (a pick list) keeps the check's room on every row, so its names stand in one line
+    // and stay there as the check moves from group to group
+    let checked = rows.iter().any(|r| matches!(&r.k, K::One { sign: "check", .. }));
     let mut y = area.top - off;
     for (at, row) in rows.iter().enumerate() {
         if matches!(row.k, K::Head(..)) || at == 0 {
@@ -1704,7 +1705,6 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                     .skip(usize::from(matches!(row.k, K::Head(..))))
                     .take_while(|r| !matches!(r.k, K::Head(..)))
             };
-            checked = group().any(|r| matches!(&r.k, K::One { sign: "check", .. }));
             let names = group()
                 .filter_map(|r| match &r.k {
                     K::One { name, icon, sign, .. } => Some(
@@ -1782,8 +1782,10 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                     } else {
                         w
                     }
-                } else {
+                } else if top + m.px(8.0) >= area.top && top + m.px(30.0) <= area.bottom {
                     pen.text(x, top + m.px(24.0), text, Size::Small, t.accent, true)
+                } else {
+                    0.0 // a small group name the list's edge would cut is left out: its rows say where they are
                 };
                 if let Some(label) = click {
                     pen.hit(x - m.px(6.0), top + m.px(6.0), w + m.px(12.0), h - m.px(8.0), Target::Head(label.clone()));
