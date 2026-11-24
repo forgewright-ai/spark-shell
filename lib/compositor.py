@@ -25,12 +25,12 @@ def argv(*args):
 
 def call(*args, timeout=5):
     """A command's CompletedProcess, the reply unparsed."""
-    return subprocess.run(["swaymsg", *args], text=True, capture_output=True, stdin=subprocess.DEVNULL, timeout=timeout)
+    return subprocess.run(["swaymsg", *args], text=True, errors="replace", capture_output=True, stdin=subprocess.DEVNULL, timeout=timeout)
 
 
 def msg(*args, timeout=5):
     """A command, its reply parsed; raises on a refused one."""
-    result = subprocess.run(argv(*args), check=True, capture_output=True, text=True, timeout=timeout)
+    result = subprocess.run(argv(*args), check=True, capture_output=True, text=True, errors="replace", timeout=timeout)
     return json.loads(result.stdout)
 
 

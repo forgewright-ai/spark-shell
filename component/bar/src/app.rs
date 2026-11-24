@@ -42,6 +42,9 @@ use wayland_client::protocol::wl_shm;
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Connection, QueueHandle, WEnum};
 
+/// The questions in a row sway may leave without an answer before the program ends and its keeper starts it again.
+const MISSES: u32 = 10;
+
 /// The layer shell namespace: what sway's rules and tools call the surface.
 const NAMESPACE: &str = "spark-bar";
 /// The namespace of the line that shows where a dragged bar would land.
@@ -261,6 +264,8 @@ pub struct App {
     written: String,
     pub dirty: bool,
     pub stop: bool,
+    /// The questions in a row sway did not answer.
+    misses: u32,
     /// Why the bar ends when sway is gone: it ends with an error, and its keeper starts it again.
     pub failed: Option<String>,
 }
@@ -323,6 +328,7 @@ impl App {
             written: String::new(),
             dirty: true,
             stop: false,
+            misses: 0,
             failed: None,
         })
     }
@@ -408,13 +414,33 @@ impl App {
         });
     }
 
+    /// A question sway did not answer: the bar stays as it stands, and what it asked is asked again in half a second.
+    /// Too many in a row end it, and its keeper starts it again.
+    fn missed(&mut self, again: Option<fn(&mut App)>) {
+        self.misses += 1;
+        if self.misses >= MISSES {
+            self.failed = Some("sway does not answer".into());
+            self.stop = true;
+            return;
+        }
+        let Some(again) = again else { return };
+        let _ = self
+            .handle
+            .insert_source(Timer::from_duration(Duration::from_millis(500)), move |_, _, app: &mut App| {
+                if !app.stop {
+                    again(app);
+                }
+                TimeoutAction::Drop
+            });
+    }
+
     /// sway's workspaces read again: at the start and after each workspace or output event.
     pub fn read_workspaces(&mut self) {
         let Ok(v) = self.ipc.workspaces() else {
-            self.failed = Some("sway did not answer".into());
-            self.stop = true;
+            self.missed(Some(App::read_workspaces));
             return;
         };
+        self.misses = 0;
         let workspaces = bar::workspaces(&v);
         if workspaces != self.workspaces {
             self.workspaces = workspaces;
@@ -460,10 +486,10 @@ impl App {
     /// sway's binding mode read again: at the start and after each mode event.
     pub fn read_mode(&mut self) {
         let Ok(v) = self.ipc.binding_state() else {
-            self.failed = Some("sway did not answer".into());
-            self.stop = true;
+            self.missed(Some(App::read_mode));
             return;
         };
+        self.misses = 0;
         let mode = bar::mode(&v);
         if mode != self.mode {
             self.mode = mode;
@@ -736,8 +762,7 @@ impl App {
             }
             Act::Sway(command) => {
                 if self.ipc.run(&command).is_err() {
-                    self.failed = Some("sway did not answer".into());
-                    self.stop = true;
+                    self.missed(None);
                 }
             }
             Act::Nothing => {}

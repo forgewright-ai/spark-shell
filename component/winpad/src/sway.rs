@@ -114,7 +114,13 @@ fn exchange(s: &mut (impl Read + Write), kind: u32, payload: &str) -> io::Result
     if got != kind {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "sway answered another request"));
     }
-    serde_json::from_slice(&body).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    json(&body)
+}
+
+/// An answer's JSON. A window names its own app id, and sway hands on whatever bytes it chose: bytes that are no text
+/// are read as the replacement sign, so one window's name never costs the rest of the answer.
+fn json(body: &[u8]) -> io::Result<Value> {
+    serde_json::from_str(&String::from_utf8_lossy(body)).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 /// A connection that hears sway's events of those kinds: non-blocking, for the event loop.
@@ -137,6 +143,14 @@ pub fn subscribe(kinds: &[&str]) -> io::Result<UnixStream> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_answer_with_bytes_that_are_no_text_is_read() {
+        let v = json(b"{\"app_id\":\"caf\xe9\",\"id\":7}").unwrap();
+        assert_eq!(v["id"], 7);
+        assert_eq!(v["app_id"], "caf\u{fffd}");
+        assert!(json(b"{\"id\":").is_err());
+    }
 
     #[test]
     fn an_answer_to_another_request_is_no_answer() {

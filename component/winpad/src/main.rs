@@ -444,7 +444,8 @@ fn run(keys: bool) -> Result<(), String> {
     });
     app.free();
     let _ = conn.flush();
-    ran.map_err(|e| format!("the compositor is gone: {e}"))
+    ran.map_err(|e| format!("the compositor is gone: {e}"))?;
+    app.failed.take().map_or(Ok(()), Err)
 }
 
 #[cfg(test)]

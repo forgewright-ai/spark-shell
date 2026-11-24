@@ -39,6 +39,9 @@ use wayland_client::{Connection, QueueHandle, WEnum};
 mod buttons;
 mod order;
 
+/// The questions in a row sway may leave without an answer before the program ends and its keeper starts it again.
+const MISSES: u32 = 10;
+
 /// The layer shell namespace: what sway's rules and tools call the surface.
 const NAMESPACE: &str = "spark-winpad";
 const BTN_LEFT: u32 = 0x110;
@@ -313,6 +316,9 @@ pub struct App {
     pub list_dirty: bool,
     pub deco_dirty: bool,
     pub stop: bool,
+    /// The looks at sway's tree in a row that got no answer, and why the pad ends when that many did.
+    misses: u32,
+    pub failed: Option<String>,
     /// The title bands in sight, and the glyph a press is on.
     bands: Vec<Band>,
     deco_press: Option<(i64, Glyph)>,
@@ -405,6 +411,8 @@ impl App {
             list_dirty: true,
             deco_dirty: true,
             stop: false,
+            misses: 0,
+            failed: None,
             bands: vec![],
             deco_press: None,
             deco_hover: None,
@@ -935,11 +943,20 @@ impl App {
     /// and the screens at rest.
     pub fn refresh_list(&mut self) {
         self.list_dirty = false;
-        let Ok(tree) = self.ipc.tree() else {
-            eprintln!("spark-winpad: sway did not answer");
-            self.stop = true;
-            return;
+        let tree = match self.ipc.tree() {
+            Ok(t) => t,
+            Err(e) => {
+                // one answer missed: everything stays as it stands until the next look
+                eprintln!("spark-winpad: sway did not answer: {e}");
+                self.misses += 1;
+                if self.misses >= MISSES {
+                    self.failed = Some("sway does not answer".into());
+                    self.stop = true;
+                }
+                return;
+            }
         };
+        self.misses = 0;
         let bands = crate::buttons::bands(&tree, self.cell);
         if bands != self.bands {
             self.bands = bands;
