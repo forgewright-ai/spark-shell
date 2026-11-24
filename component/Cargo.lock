@@ -971,7 +971,7 @@ dependencies = [
 
 [[package]]
 name = "spark-bar"
-version = "0.153.1"
+version = "0.154.0"
 dependencies = [
  "calloop",
  "libc",
@@ -986,7 +986,7 @@ dependencies = [
 
 [[package]]
 name = "spark-dialog"
-version = "0.165.0"
+version = "0.166.0"
 dependencies = [
  "calloop",
  "gif",

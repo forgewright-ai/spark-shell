@@ -1,6 +1,6 @@
 [package]
 name = "spark-bar"
-version = "0.153.1"
+version = "0.154.0"
 edition = "2021"
 rust-version = "1.98"
 license = "MIT"

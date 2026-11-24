@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.166
+
+- Settings starts with appearance: the theme, the wallpaper and the bar
+  come first.
+- The bar's text size lists auto first, with the size it gives, then
+  each size from 6 to 40. Left and Right step one size; from auto they
+  step from auto's size, and Left from 6 is auto. Before, auto stood
+  among the sizes at the size in use, so a step could land on auto,
+  send the same size twice or skip one, and auto showed the wrong size.
+- A text size's A's stand still, one each at 10, 12, 14 and 16, with
+  the size in use after them. Before, they moved with each change.
+- While windows wait on the pad and its place is the bar, the bar keeps
+  the pad's space: its numbers, gauges and modules leave first. Before,
+  the tray or a larger text could leave no space, and the pad moved to
+  the bottom of the screen and took a strip of its own.
+- A change to the bar's text size changes the windows' titles in the
+  same step. Before, sway kept the old size until its next reload while
+  the pad placed the title buttons at the new one, so a click on a
+  title could land on minimize or close.
+- The dialog is 0.166.0 and the bar 0.154.0.
+
 ## v0.165
 
 - The dialog plays a theme's opening when it opens and its closing when
