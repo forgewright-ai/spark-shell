@@ -157,9 +157,16 @@ its own until you save it.
 
 To share a theme, `spark-shell theme export NAME spark-theme` writes
 `NAME.spark-theme` to the downloads folder: its colors, look, pictures,
-loops and dialog animation. Pictures lose their metadata, and the pointer
-and text size stay yours. `spark-shell theme install FILE` reads one as
-data, checks it as the gallery's themes are, and uses it.
+loops and dialog animation. The pointer and text size stay yours. Every
+file loses its metadata: the place, camera, date, color profile, comments
+and small preview of a picture or a dialog animation; the place, dates,
+names, sound and every other track of a loop. A photo that only its
+metadata turns upright is refused, as is a file that cannot be cleaned.
+What the encoder wrote inside the video stays.
+
+`spark-shell theme install FILE` reads one as data, checks it as the
+gallery's themes are, and uses it. A picture is a PNG, or a JPG of 64
+scans at most. A loop is an MP4 of one H.264 video, whole in its file.
 
 ## Contributing
 
