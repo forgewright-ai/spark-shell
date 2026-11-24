@@ -61,7 +61,10 @@ wm_kb_layout() {   # wm_kb_layout next|INDEX -> 0 when the keyboards took it; fa
 wm_tick() { swaymsg -t send_tick "$1"; }   # wm_tick PAYLOAD -- a word to every subscriber of ticks
 wm_reload() { swaymsg reload; }
 wm_exit() { swaymsg exit; }
-wm_main_screen_lines() { printf 'workspace 1 output "%s"\nexec swaymsg focus output %s\n' "$1" "'\"$1\"'"; }   # the main screen, in the config's words
+wm_main_screen_lines() {   # wm_main_screen_lines ID -- the main screen, in the config's words; false, and no line, for an id with a sign in it: the second line is a shell's
+    case $1 in ''|*[!A-Za-z0-9\ ._:\(\)+/,-]*) return 1 ;; esac
+    printf 'workspace 1 output "%s"\nexec swaymsg focus output %s\n' "$1" "'\"$1\"'"
+}
 wm_main_screen_strip() { grep -v -e '^workspace 1 output ' -e '^exec swaymsg focus output '; }
 wm_main_screen_of() { sed -n 's/^workspace 1 output "\(.*\)"$/\1/p' "$1" | head -1; }   # wm_main_screen_of FILE
 

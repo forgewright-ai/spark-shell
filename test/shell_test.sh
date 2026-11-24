@@ -3710,6 +3710,12 @@ _mf=$HOME/.config/spark-shell/screens.conf
     && grep -qxF 'workspace 1 output "Lenovo Group Limited T24i-30 V30A1"' "$H/root/etc/spark-shell/login/screens.conf" && ! grep -q '^exec' "$H/root/etc/spark-shell/login/screens.conf" \
     && grep -qF 'workspace 1 output "Lenovo Group Limited T24i-30 V30A1"' "$HOME/swaymsg.log" \
     && ok "desktop screen main: workspace 1 and the focus at the start on it, the one before gone, the other lines kept; the login screen's copy names it for its form (#135)" || bad "screen main" "rc=$rc $out $(cat "$_mf") | $(cat "$H/root/etc/spark-shell/login/screens.conf" 2>&1)"
+# the second of its lines is a shell's: an id with a quote, a dollar, a bracket or a new line in it makes none
+eval "$(sed -n '/^wm_main_screen_lines() {/,/^}$/p' "$REPO/src/compositor.sh")"; _msb=''
+for _ms in "x'; touch y; '" 'x"y' 'x$(id)' 'x`id`' 'x;y' 'x\y' 'x|y' "x
+y" ''; do ! wm_main_screen_lines "$_ms" > "$H/ms" || _msb="$_msb [$_ms]"; [ ! -s "$H/ms" ] || _msb="$_msb {$_ms}"; done
+[ -z "$_msb" ] && [ "$(wm_main_screen_lines 'Dell Inc., (DP-1) A+B/C:1_2')" = "$(printf 'workspace 1 output "%s"\nexec swaymsg focus output %s\n' 'Dell Inc., (DP-1) A+B/C:1_2' "'\"Dell Inc., (DP-1) A+B/C:1_2\"'")" ] \
+    && ok "the main screen's lines: a plain id alone makes them" || bad "main screen lines" "$_msb | $(wm_main_screen_lines 'Dell Inc., (DP-1) A+B/C:1_2')"
 # X11's main screen (#173): the main screen named X11's primary once Xwayland runs, by its port; once only; nothing with no X11 or no xrandr
 mkdir -p "$H/xr"
 printf '#!/bin/sh\necho "$*" >> "$HOME/xrandr.log"\n[ "$1" != --listmonitors ] || cat "$HOME/xrandr.monitors" 2>/dev/null\n' > "$H/xr/xrandr"; chmod +x "$H/xr/xrandr"
