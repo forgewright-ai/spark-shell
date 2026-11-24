@@ -221,8 +221,8 @@ class Display(unittest.TestCase):
         self.steps(rows)
         self.assertEqual((rows["title"], rows["state"]), ("display", "3 screens"))
         self.assertEqual([r["id"] for r in rows["rows"]],
-                         ["display:map", "display:screen:DP-3", "display:screen:HDMI-A-1", "display:screen:DP-1", "display:level", "display:idle", "display:saver", "display:lock"])
-        self.assertEqual([r["group"] for r in rows["rows"]], ["screens"] * 4 + ["brightness"] + ["idle and lock"] * 3)
+                         ["display:map", "display:screen:DP-3", "display:screen:HDMI-A-1", "display:screen:DP-1", "display:brightness", "display:idle", "display:saver", "display:lock"])
+        self.assertEqual([r["group"] for r in rows["rows"]], ["screens"] * 4 + ["light"] + ["idle and lock"] * 3)
         first = rows["rows"][0]
         self.assertEqual(first["move"], {"name": "display_position", "arguments": {}})
         self.assertEqual(first["screens"], [
@@ -234,7 +234,7 @@ class Display(unittest.TestCase):
                          [("MB16FC", ["1920x1200 · turned"], "opens", ROWS + "/screen/DP-3"),
                           ("T24i-30", ["1920x1080 · main"], "opens", ROWS + "/screen/HDMI-A-1"), ("Off one", ["off"], "opens", ROWS + "/screen/DP-1")])
         steps = {r["id"]: r["step"] for r in rows["rows"] if "step" in r}
-        level = steps["display:level"]
+        level = steps["display:brightness"]
         self.assertEqual([v["sent"] for v in level["values"]], [str(n) for n in sorted(list(range(5, 101, 5)) + [47])])
         self.assertEqual((level["values"][level["at"]]["shown"], level["set"], level["key"], level["words"]),
                          ("47%", {"name": "display_brightness", "arguments": {}}, "level", ["dimmer", "brighter"]))
@@ -282,9 +282,9 @@ class Display(unittest.TestCase):
         self.assertEqual((scale["step"]["values"], scale["step"]["at"], scale["step"]["set"], scale["step"]["key"]),
                          ([{"shown": s, "sent": v} for s, v in (("75%", "0.75"), ("100%", "1"), ("125%", "1.25"), ("150%", "1.5"), ("200%", "2"))], 1,
                           {"name": "display_scale", "arguments": {"screen": "HDMI-A-1"}}, "scale"))
-        self.assertEqual(turn["step"]["values"], [{"shown": s, "sent": v} for s, v in (("upright", "normal"), ("right", "90"), ("upside down", "180"), ("left", "270"))],
+        self.assertEqual(turn["step"]["values"], [{"shown": s, "sent": v} for s, v in (("left", "270"), ("upright", "normal"), ("right", "90"), ("upside down", "180"))],
                          "the compositor turns the picture clockwise")
-        self.assertEqual((turn["step"]["at"], other["rows"][4]["step"]["at"]), (0, 1))
+        self.assertEqual((turn["step"]["at"], other["rows"][4]["step"]["at"]), (1, 2))
         self.assertEqual((beside["text"], beside["step"]["set"], [v["sent"] for v in beside["step"]["values"]], beside["step"]["at"], other["rows"][5]["step"]["at"]),
                          ("beside MB16FC", {"name": "display_place", "arguments": {"screen": "HDMI-A-1", "other": "DP-3"}}, ["left-of", "right-of", "above", "below"], 1, 0))
         self.assertEqual([(r["text"], r["sign"], r["back"]) for r in modes_page["rows"]],
@@ -537,9 +537,9 @@ class Display(unittest.TestCase):
                 self.assertEqual(("trial" in got, got["undo"]["arguments"], got["receipt"], self.state()), (False, {"screen": "DP-3", "scale": "1"}, "DP-3 scale 1.5", []))
                 self.assertIn("scale 1.5\n", self.conf())
                 got = p.call("display_keep", screen="DP-3")
-                self.assertTrue("error" in got if client == "spark" else got["isError"], got)
+                self.assertIn("error", got)
                 names = [t["name"] for t in p.ask("tools/list")["result"]["tools"]]
-                self.assertEqual("display_keep" in names, client != "spark")
+                self.assertNotIn("display_keep", names)
         for verb in ("keep", "back"):
             done = self.shell("bar", "panel", "display", verb, "DP-3")
             self.assertEqual(done.returncode, 1, done.stdout)

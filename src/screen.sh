@@ -102,7 +102,7 @@ provide_display_rows() {   # -> the display section as the dialog shows it: the 
               + [$all[] | {id: ("display:screen:" + .name), text: called, sign: "opens", children: place(.name), group: "screens",
                   columns: [(if on then [.current_mode | if . == null then empty else "\(.width)x\(.height)" end] + turned + (if is_main then ["main"] else [] end) else ["off"] end) | join(" \($sep) ")]} | row] end)
             + (if $light == "" then [] else ($light | tonumber) as $n | ([range(5; 101; 5), $n] | unique) as $v
-                | [{id: "display:level", text: "level", group: "brightness",
+                | [{id: "display:brightness", text: "brightness", group: "light",
                     step: step([$v[] | {shown: "\(.)%", sent: tostring}]; ($n | tostring); "display_brightness"; {}; "level"; ["dimmer", "brighter"])} | row] end)
             + [minutes("idle"; "idle screen"; $idle; "display_idle"),
                ({id: "display:saver", text: "saver", group: "idle and lock",
@@ -132,7 +132,7 @@ provide_screen_rows() {   # provide_screen_rows NAME -> one screen's settings as
                 | ([$usual[] | select(([. - $c, $c - .] | max) < 0.005)][0] // $c) as $c   # the compositor rounds a scale to a 120th
                 | {id: ($id + "scale"), text: "scale",
                    step: step([$usual + [$c] | unique[] | {shown: "\(. * 100 | round)%", sent: tostring}]; ($c | tostring); "display_scale"; {screen: $n}; "scale"; ["smaller", "larger"])} | row),
-             ($s | turn as $t | [{shown: "upright", sent: "normal"}, {shown: "right", sent: "90"}, {shown: "upside down", sent: "180"}, {shown: "left", sent: "270"}] as $v   # sway turns the picture clockwise: 90 is a quarter to the right
+             ($s | turn as $t | [{shown: "left", sent: "270"}, {shown: "upright", sent: "normal"}, {shown: "right", sent: "90"}, {shown: "upside down", sent: "180"}] as $v   # sway turns the picture clockwise: 90 is a quarter to the right. Each turn beside the one it is reached from: a step shows the screen so, and keeps what it passes
                 | {id: ($id + "orientation"), text: "orientation"}
                   + (if ($v | map(.sent) | index([$t])) == null then {columns: ["mirrored"], muted: true}   # the tool makes no mirrored one to go back to
                      else {step: step($v; $t; "display_transform"; {screen: $n}; "transform"; ["turn left", "turn right"])} end) | row)]
