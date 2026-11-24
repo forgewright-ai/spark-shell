@@ -294,7 +294,7 @@ theme_delete_now() {   # theme_delete_now NAME
     else dir_drop "$_tdd"; fi || refuse_in theme "could not delete $1$(store_said)"
     families_drop "$1"
     kept_drop theme "$1" || :
-    [ -z "$_ltk" ] || look_apply || return 1
+    [ -z "$_ltk" ] || look_apply "deleted $1" || return 1
     echo "deleted $1${_ltk:+; its picture was the wallpaper, $(wall_now) is now}"
 }
 theme_wallpaper_of() {   # theme_wallpaper_of NAME -> the WALLPAPER the theme brings, default when none
@@ -438,7 +438,7 @@ theme_pointer() {   # theme_pointer NAME [SIZE]|default -- the pointer of the lo
     _ltk=''; look_take POINTER "$_tpv"
     look_taken 2>"$TMP/store.why" || { [ -z "$_tpd" ] || file_unstage "$_tpd/look.env"; refuse_in theme "could not keep the pointer$(store_said)"; }
     [ -z "$_tpd" ] || file_commit "$_tpd/look.env" || refuse_in theme "the pointer is ${_tpv:-default}, but the theme could not keep it$(store_said)"
-    look_apply || return 1
+    look_apply "the pointer is ${_tpv:-default}" || return 1
     echo "pointer ${_tpv:-default}"
 }
 theme_family_edit() {   # theme_family_edit JQ [JQ ARGS...] -- the theme in use's own family file changed by JQ ($me its name, $v its variant), made first with the theme its one variant; refused whole when it is no family this spark-shell reads
@@ -573,7 +573,7 @@ theme_rename() {   # theme_rename NAME NEW... -- a theme of yours by a new name:
     kept_rename theme "$_rnf" "$_tnn" || :
     _rnw=''; families_rename "$_rnf" "$_tnn" || _rnw=$(store_said)
     dir_drop "$_rnd" || refuse_in theme "$_tnn is there, but $_rnf could not be removed$(store_said)"
-    [ -z "$_ltk" ] || look_apply || return 1
+    [ -z "$_ltk" ] || look_apply "renamed $_rnf to $_tnn" || return 1
     [ -z "$_rnw" ] || refuse_in theme "renamed $_rnf to $_tnn, but a family still names $_rnf$_rnw"
     echo "renamed $_rnf to $_tnn"
 }
@@ -613,7 +613,7 @@ theme_wallpaper() {   # theme_wallpaper [PATH|DRAWING|COLOR|default]
     config_set WALLPAPER "$want"
     WALLPAPER=$want; export WALLPAPER
     wall_follow
-    look_apply || return 1
+    look_apply "the wallpaper is $want" || return 1
     login_follow
     _tr="the windows keep their transparency, $(transparency_of "$ALPHA")%"; [ "$(transparency_of "$ALPHA")" -ne 0 ] || _tr="the windows are solid (spark-shell theme transparency N)"
     if [ "$1" = none ]; then echo "the ground is back: none is the ground now, and $_tr"
@@ -633,7 +633,7 @@ text_step() {   # text_step N|bigger|smaller -> the receipt; 1 when refused
     case $1 in bigger) _new=$((_sz + 1)) ;; smaller) _new=$((_sz - 1)) ;; *) _new=$1 ;; esac
     [ "$_new" -ge 6 ] && [ "$_new" -le 40 ] || { echo "text size $_sz stays (6 to 40)"; return 1; }
     _f=$(printf '%s' "$FONT" | sed "s/size=$_sz/size=$_new/")
-    config_set FONT "$_f" >/dev/null; FONT=$_f; export FONT; look_apply || return 1; login_follow >/dev/null 2>&1 || :
+    config_set FONT "$_f" >/dev/null; FONT=$_f; export FONT; look_apply "the text is at $_new" || return 1; login_follow >/dev/null 2>&1 || :
     echo "text at $_new $PANEL_SEP new windows and the bar take it; the pointer $(pointer_size_for "$_new") pixels"
 }
 theme_face() {   # theme_face [neon|argon|xenon|radon|krypton]
@@ -647,7 +647,7 @@ face_step() {   # face_step NAME -> the receipt; 1 when refused
     _fn=$(face_name "$1")
     [ "${FONT%%:*}" != "$_fn" ] || ! config_is FONT "$FONT" || { echo "the text is in $1 already"; return 1; }
     _f="$_fn${FONT#"${FONT%%:*}"}"   # the face swapped, the rest kept
-    config_set FONT "$_f" >/dev/null; FONT=$_f; export FONT; look_apply || return 1; login_follow >/dev/null 2>&1 || :
+    config_set FONT "$_f" >/dev/null; FONT=$_f; export FONT; look_apply "the text is in $1" || return 1; login_follow >/dev/null 2>&1 || :
     if [ "$1" = neon ] || face_ours "$1"; then echo "text in $1 $PANEL_SEP new windows and the bar take it"
     else echo "text in $1 $PANEL_SEP from spark-shell on, which installs it; neon until then"; fi
 }
@@ -884,7 +884,7 @@ alpha_step() {   # alpha_step N|more|less -> the receipt; 1 when refused
     esac
     _new=$(awk -v a="$ALPHA" -v d="$_d" 'BEGIN { v = a + d; if (v > 1) v = 1; if (v < 0.5) v = 0.5; s = sprintf("%.2f", v); sub(/0$/, "", s); print s }')
     ! config_is ALPHA "$_new" || { if [ "$1" = less ]; then echo "transparency is off already"; elif [ "$1" = more ]; then echo "transparency stops at 50%"; else echo "transparency is $(transparency_of "$ALPHA")% already"; fi; return 1; }
-    config_set ALPHA "$_new" >/dev/null; ALPHA=$_new; export ALPHA; look_apply || return 1
+    config_set ALPHA "$_new" >/dev/null; ALPHA=$_new; export ALPHA; look_apply "transparency is $(transparency_of "$_new")%" || return 1
     _st=$(transparency_of "$_new"); if [ "$_st" -eq 0 ]; then echo "transparency off"; else echo "transparency at $_st%"; fi
 }
 look_small() {   # look_small PICTURE -> a small PNG, or the PNG itself

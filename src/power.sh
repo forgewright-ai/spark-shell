@@ -136,13 +136,13 @@ desktop_file_apply() {   # sway's config rendered, nothing redrawn
     for _k in $THEME_KEYS; do unset "$_k"; done; theme_load; EXPR=$(render_expr)
     render_one "$(wm_config_template)" "$(wm_config_file)" >/dev/null 2>&1 || :
 }
-look_apply() {   # a look change, on the screen now; one line and 1 when not all of it could be written
+look_apply() {   # look_apply [DONE] -- a look change, on the screen now; one line, DONE what is kept already, and 1 when not all of it could be written
     for _k in $THEME_KEYS; do unset "$_k"; done; theme_load; EXPR=$(render_expr)
     wall_missing >/dev/null
     wall_follow >/dev/null
     look_burst
     ! desktop_wanted || desktop_files >/dev/null 2>&1 || :   # never a desktop's files where there is none
-    [ "$failed" -eq 0 ] || { echo "not all of it could be written: $failed_said"; return 1; }
+    [ "$failed" -eq 0 ] || { echo "${1:+$1, but }not all of it could be written: $failed_said"; return 1; }
 }
 panel_act() {   # panel_act SECTION ACTION [ARG] -> one line; exit 1 when not done. The steps read _p, _a and _arg
     _p=$1; _a=$2; shift 2; _arg=$*
@@ -224,7 +224,7 @@ panel_act_theme() {   # the theme steps: the text, the wallpaper, save, delete, 
         picture) _r=$(cmd_theme picture "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | sed -n 1p ;;
         words) theme_words_step "$_arg" ;;
         alpha) case $_arg in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) ;; *) echo "alpha is 0 to 1, as 0.95"; return 1 ;; esac
-            config_set ALPHA "$_arg" >/dev/null; ALPHA=$_arg; export ALPHA; look_apply || return 1
+            config_set ALPHA "$_arg" >/dev/null; ALPHA=$_arg; export ALPHA; look_apply "alpha is $_arg" || return 1
             echo "alpha at $_arg" ;;
         transparency|see-through) case ${_arg%\%} in more|less|[0-9]|[1-4][0-9]|50) alpha_step "${_arg%\%}" ;; *) echo "transparency takes more or less, or a percent from 0 to 50"; return 1 ;; esac ;;   # see-through: synonym
         preview) theme_preview "$_arg" ;;

@@ -445,21 +445,21 @@ terminal_off() {
 # a tmux pane is left out: tmux would keep the codes to that pane;
 # tests set SPARK_SHELL_PTS_DIR
 PTS_DIR=${SPARK_SHELL_PTS_DIR:-/dev/pts}
-osc_render() {   # osc_render plain|foot|dialog -> $TMP/osc.KIND: OSC 4, 10, 11 and 12
+osc_render() {   # osc_render plain|foot|dialog -> $TMP/osc.KIND: OSC 4, 10, 11 and 12; 1 when it could not be written: half an escape would hold a terminal
     _o=$TMP/osc.$1; : > "$_o"
     _i=0
     while [ "$_i" -le 15 ]; do
         eval "_h=\$HEX_ANSI_$_i"
-        printf '\033]4;%d;#%s\033\\' "$_i" "$_h" >> "$_o"
+        printf '\033]4;%d;#%s\033\\' "$_i" "$_h" >> "$_o" || return 1
         _i=$((_i + 1))
     done
-    [ "$1" = plain ] || printf '\033]4;16;#%s\033\\\033]4;17;#%s\033\\\033]4;18;#%s\033\\\033]4;19;#%s\033\\\033]4;20;#%s\033\\\033]4;21;#%s\033\\' "$HEX_ACCENT" "$HEX_MUTED" "$PANEL_BG" "$PANEL_HI" "$PANEL_MUTED" "$PANEL_BAND" >> "$_o"
+    [ "$1" = plain ] || printf '\033]4;16;#%s\033\\\033]4;17;#%s\033\\\033]4;18;#%s\033\\\033]4;19;#%s\033\\\033]4;20;#%s\033\\\033]4;21;#%s\033\\' "$HEX_ACCENT" "$HEX_MUTED" "$PANEL_BG" "$PANEL_HI" "$PANEL_MUTED" "$PANEL_BAND" >> "$_o" || return 1
     case $1 in
         "$TERM_NAME") _bg=$(term_osc_bg "$FOOT_ALPHA" "$HEX_BG") ;;   # foot's form: opacity in percent, then the color
         dialog) _bg="#$PANEL_BG" ;;
         *) _bg="#$HEX_BG" ;;
     esac
-    printf '\033]10;#%s\033\\\033]11;%s\033\\' "$HEX_FG" "$_bg" >> "$_o"
+    printf '\033]10;#%s\033\\\033]11;%s\033\\' "$HEX_FG" "$_bg" >> "$_o" || return 1
     _c=''; if [ -n "${THEME:-}" ] && [ "$THEME" != none ] && _pf=$(palette_file "$THEME"); then _c=$(palette_get "$_pf" THEME_CURSOR); fi
     if hex_rgb "$_c" >/dev/null; then printf '\033]12;%s\033\\' "$(printf '%s' "$_c" | tr 'A-F' 'a-f')" >> "$_o"
     else printf '\033]112\033\\' >> "$_o"; fi   # 112: the terminal's own cursor color
@@ -498,8 +498,8 @@ look_terms() {   # look_terms prepare|send -- send writes all at once; _painted 
         prepare)
             : > "$TMP/pts.todo"
             [ "$MODE" = apply ] && [ "$OS" != Darwin ] && [ -d "$PTS_DIR" ] || return 0
-            pts_kinds > "$TMP/pts.todo"
-            for _k in plain $TERM_NAME dialog; do ! grep -q "$TAB$_k\$" "$TMP/pts.todo" || osc_render "$_k"; done ;;
+            { pts_kinds > "$TMP/pts.todo"; } 2>/dev/null || { : > "$TMP/pts.todo"; return 0; }
+            for _k in plain $TERM_NAME dialog; do ! grep -q "$TAB$_k\$" "$TMP/pts.todo" || osc_render "$_k" 2>/dev/null || { : > "$TMP/pts.todo"; return 0; }; done ;;
         send)
             _painted=0; _pids=''
             [ -s "$TMP/pts.todo" ] || return 0
@@ -560,7 +560,7 @@ look_burst() {   # one frame: all made ready, then sent while the wallpaper draw
     [ -n "${LOOK_PREVIEW:-}" ] || portal_look   # a preview leaves the apps' mode alone
     _wn=''; ! desktop_wanted || ! wm_session || [ "$WALL_BG" = "$(wall_shown)" ] || _wn=1
     look_terms prepare
-    ! desktop_wanted || bar_palette
+    ! desktop_wanted || bar_palette || write_failed bar "the bar's colors could not be written$(store_said)"
     _sc=''; ! desktop_wanted || _sc=$(desktop_live_cmd)   # the wallpaper goes under the cover
     [ -z "$_wn" ] || wall_cover
     if [ -n "$WALL_COVER" ]; then sleep 0.09   # the new picture draws meanwhile

@@ -171,7 +171,7 @@ theme_install() {   # theme_install NAME|FILE -- a theme or a wallpaper from the
         wall_value_ok "$GALLERY_WALLS/$_gf" || refuse_in theme "$PATH_REFUSED"
         echo "installed the wallpaper $1 from the gallery's $GALLERY_TAG, signed and its sha256 checked ($GALLERY_WALLS/$_gf)"
         config_set WALLPAPER "$GALLERY_WALLS/$_gf" >/dev/null; WALLPAPER=$GALLERY_WALLS/$_gf; export WALLPAPER
-        theme_load; wall_follow; look_apply; login_follow
+        theme_load; wall_follow; look_apply "the wallpaper is $1"; login_follow
         echo "a running sway shows it now"
         return 0
     fi

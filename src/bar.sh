@@ -858,7 +858,7 @@ bar_loop_pid() {   # -> the status loop's pid, from its file; false when none ru
 bar_redraw() { _brp=$(bar_loop_pid) && kill -USR1 "$_brp" 2>/dev/null || :; }   # a line now: the signal goes to the status loop alone, as the bar's and the pad's go to theirs (sparkbar_pid, winpad_pid_in)
 bar_stale() { [ -f "$BAR_PID" ] && [ -n "$(find "$REPO/spark-shell" "$REPO/src" -newer "$BAR_PID" 2>/dev/null)" ] && read -r _bsp < "$BAR_PID" && kill -0 "$_bsp" 2>/dev/null; }   # -> 0 when the bar predates a change to spark-shell or to a module it reads (src/, since v0.136)
 BAR_PALETTE=$STATE_DIR/bar.palette   # written by a look change, a preview too: the five colors a line is drawn in, then what spark's bar wears beyond them, the ground, the lit shade and the alpha
-bar_palette() { mkdir_private "$STATE_DIR" && printf 'HEX_FG=%s\nHEX_ACCENT=%s\nHEX_MUTED=%s\nHEX_ANSI_1=%s\nHEX_ANSI_3=%s\nHEX_BG=%s\nPANEL_HI=%s\nALPHA=%s\nPANEL_INK=%s\nPANEL_ATTENTION=%s\n' "$HEX_FG" "$HEX_ACCENT" "$HEX_MUTED" "$HEX_ANSI_1" "$HEX_ANSI_3" "$HEX_BG" "$PANEL_HI" "$ALPHA" "$PANEL_INK" "$PANEL_ATTENTION" > "$BAR_PALETTE"; }
+bar_palette() { mkdir_private "$STATE_DIR" && write_whole "$BAR_PALETTE" printf 'HEX_FG=%s\nHEX_ACCENT=%s\nHEX_MUTED=%s\nHEX_ANSI_1=%s\nHEX_ANSI_3=%s\nHEX_BG=%s\nPANEL_HI=%s\nALPHA=%s\nPANEL_INK=%s\nPANEL_ATTENTION=%s\n' "$HEX_FG" "$HEX_ACCENT" "$HEX_MUTED" "$HEX_ANSI_1" "$HEX_ANSI_3" "$HEX_BG" "$PANEL_HI" "$ALPHA" "$PANEL_INK" "$PANEL_ATTENTION"; }
 bar_recolor() {   # bar_recolor LINE -> _old's colors swapped for the palette's
     _e=''; _i=0
     for _h in $_old; do _e="${_e}s/#$_h'/#@$_i@'/g;"; _i=$((_i + 1)); done
