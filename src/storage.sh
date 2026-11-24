@@ -22,7 +22,7 @@ storage_list_now() {
 }
 udisks_here() { [ -z "${SPARK_SHELL_NO_UDISKS:-}" ] && command -v udisksctl >/dev/null 2>&1; }   # SPARK_SHELL_NO_UDISKS: for the tests
 storage_free() { df -Pk "$1" 2>/dev/null | awk 'NR == 2 { printf "%s", $4 }'; }   # storage_free MOUNT -> KB free
-storage_kb() { files_size $(( ${1:-0} * 1024 )); }   # storage_kb KB -> 3.1 GB
+storage_kb() { case ${1:-0} in *[!0-9]*) return 0 ;; esac; files_size $(( ${1:-0} * 1024 )); }   # storage_kb KB -> 3.1 GB; nothing for a word that is no number (df gives a column of another where a source has a space)
 storage_here() { read_once storage.here storage_here_now; }   # -> "476.9 GB, 120.3 GB free"
 storage_here_now() {
     df -Pk / 2>/dev/null | awk 'NR == 2 { print $2, $4 }' > "$TMP/df.here"

@@ -71,7 +71,7 @@ wifi_setup() {
     esac
     echo 'the native network manager is installed and running'
 }
-wifi_level() { _l=$(( ($1 + 100) * 2 )); [ "$_l" -ge 0 ] || _l=0; [ "$_l" -le 100 ] || _l=100; echo $(( (_l + 12) / 25 )); }   # wifi_level DBM -> 0..4
+wifi_level() { case $1 in ''|-|*[!0-9-]*|?*-*) echo 0; return ;; esac; _l=$(( ($1 + 100) * 2 )); [ "$_l" -ge 0 ] || _l=0; [ "$_l" -le 100 ] || _l=100; echo $(( (_l + 12) / 25 )); }   # wifi_level DBM -> 0..4
 wifi_strip() { sed 's/\x1b\[[0-9;]*m//g; s/^[ >]*//; s/ *$//'; }   # iwctl's colors and marks off
 wifi_connected() {   # -> the network in use, or nothing
     case $(wifi_tool) in

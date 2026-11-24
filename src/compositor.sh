@@ -66,6 +66,10 @@ wm_bar_running() {   # wm_bar_running NAME -> PID:ID for each of NAME's bars who
         case $_wbc in "$1"|"$1".[0-9]*) printf '%s:%s\n' "${_wbp##*/}" "$_wbc" ;; esac
     done
 }
+wm_bars_mode() {   # wm_bars_mode invisible|dock -- the line's bar, and the tray's host with it: out of sight, or back as each stands, the host over spark's bar and taking no room of its own
+    _wbm=$(wm_bar_id); [ -z "$_wbm" ] || swaymsg -- "bar $_wbm mode $1"
+    _wbt=$(wm_bar_running "$WM_TRAY" | sed -n '$s/^[0-9]*://p'); [ -z "$_wbt" ] || swaymsg -- "bar $_wbt mode $(if [ "$1" = dock ]; then echo hide; else echo invisible; fi)"
+}
 wm_bar_end() {   # wm_bar_end NAME [ID] -- the programs of NAME's bars ended, but for ID's, waited for two seconds at most; no subcommand goes to a bar a reload may have dropped: it would make one
     for _wbe in $(wm_bar_running "$1"); do
         [ "${_wbe#*:}" != "${2:-}" ] || continue

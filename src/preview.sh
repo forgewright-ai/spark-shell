@@ -348,10 +348,9 @@ files_play_video() {   # files_play_video PATH AT X Y W H -- X Y W H in terminal
             _fvsw="$_fvsw $(printf '%s' "$_fvt" | jq -r '[.. | objects | .deco_rect?.height // 0] | max // 0')"
             # shellcheck disable=SC2086   # four numbers
             set -- "$1" "$2" "$3" "$4" "$5" "$6" $_fvr
-            # the bar apart: a sway with no bar refuses it
-            wm_cmd "bar mode invisible" >/dev/null 2>&1 || :
+            wm_bars_mode invisible >/dev/null 2>&1 || :
             wm_act "con_id=${_fvsw%% *}" "fullscreen disable, border none, resize set $7 $8, move absolute position $9 ${10}" >/dev/null 2>&1 \
-                || { wm_cmd "bar mode $(bar_mode)" >/dev/null 2>&1 || :; echo "full screen could not make room for the video"; return 1; }
+                || { wm_bars_mode "$(bar_mode)" >/dev/null 2>&1 || :; echo "full screen could not make room for the video"; return 1; }
             printf '%s\n' "$_fvsw" > "$TMP/play.swap" ;;
         esac
     fi
@@ -401,6 +400,6 @@ files_full_back() {   # files_full_back "ID W H BORDER WIDTH BAND" -- full scree
             [ "$4" != csd ] || _ffb="border csd, $_ffb" ;;
     esac
     wm_act "con_id=$1" "${_ffb}fullscreen enable" >/dev/null 2>&1 || :
-    wm_cmd "bar mode $(bar_mode)" >/dev/null 2>&1 || :
+    wm_bars_mode "$(bar_mode)" >/dev/null 2>&1 || :
 }
 files_stop() { [ ! -f "$TMP/play.pid" ] || { kill "$(cat "$TMP/play.pid")" 2>/dev/null || :; rm -f "$TMP/play.pid"; }; }

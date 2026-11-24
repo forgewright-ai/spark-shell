@@ -460,7 +460,7 @@ desktop_live_cmd() {   # -> one compositor command; not the wallpaper
     _c="client.focused #$HEX_ACCENT #$HEX_ACCENT #$PANEL_INK #$HEX_ACCENT #$HEX_ACCENT; client.focused_inactive #$PANEL_LOW #$PANEL_LOW #$HEX_MUTED #$PANEL_LOW #$PANEL_LOW"   # the indicator: the frame's own color, so the frame is one line on every side
     _c="$_c; client.unfocused #$PANEL_LOW #$PANEL_LOW #$HEX_MUTED #$PANEL_LOW #$PANEL_LOW; client.urgent #$HEX_ANSI_1 #$HEX_ANSI_1 #$PANEL_INK_URGENT #$HEX_ANSI_1 #$HEX_ANSI_1"
     _c="$_c; font pango:$(bar_line_font "$(font_spec)"); $(pointer_fresh)seat * xcursor_theme $POINTER_NAME $POINTER_SIZE; gaps inner all set $GAPS_INNER; gaps outer all set $GAPS_OUTER; [tiling] border $BORDER"
-    _b=$(wm_bar_id)   # the bar's id, bar-0
+    _b=$(wm_bar_id)
     [ -z "$_b" ] || _c="$_c; bar $_b mode $(bar_mode); bar $_b font pango:$(bar_line_font "$(font_spec)"); bar $_b colors background #$HEX_BG$BAR_ALPHA; bar $_b colors statusline #$HEX_FG; bar $_b colors separator #$HEX_MUTED; bar $_b colors focused_workspace #$HEX_ACCENT #$HEX_ACCENT #$PANEL_INK; bar $_b colors active_workspace #$HEX_MUTED #$HEX_MUTED #$HEX_BG; bar $_b colors inactive_workspace #$HEX_BG$BAR_ALPHA #$HEX_BG$BAR_ALPHA #$HEX_MUTED; bar $_b colors urgent_workspace #$HEX_ANSI_1 #$HEX_ANSI_1 #$PANEL_INK_URGENT; bar $_b colors binding_mode #$HEX_ACCENT #$HEX_ACCENT #$PANEL_INK"
     printf '%s' "$_c"
 }

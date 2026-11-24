@@ -7062,6 +7062,7 @@ cat > "$H/pvsw/swaymsg" <<'STUB'
 echo "$*" >> "$HOME/swaymsg.log"
 case "$*" in
     "-t get_version") echo '{"human_readable":"sway-stub"}' ;;
+    "-t get_bar_config") echo '["bar-0"]' ;;
     "-t get_outputs") echo '[{"name":"HDMI-A-1","scale":1,"rect":{"x":0,"y":0,"width":1920,"height":1080}}]' ;;
     "-t get_tree") printf '{"nodes":[{"type":"output","name":"HDMI-A-1","nodes":[{"app_id":"spark-dialog","id":42,"focused":true,"fullscreen_mode":%s,"border":"normal","current_border_width":1,"rect":{"x":100,"y":50},"window_rect":{"x":0,"y":0},"geometry":{"width":600,"height":800}},{"app_id":"spark-preview"},{"app_id":"foot","deco_rect":{"height":28}}]}]}\n' "${FULL:-0}" ;;
 esac
@@ -7072,7 +7073,7 @@ rm -f "$F2/swaymsg.log" "$F2/mpv.log"
 mcpw "$(pvr 2 "$PVR/clip.webm")" "$(call 3 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, at: 1.5, x: 20, y: 200, w: 640, h: 360}')")" "$(call 4 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p}')")"
 _p2=$(page 2); _a3=$(ans 3); _a4=$(ans 4)
 # a full screen play's way back runs after its step has answered (#172): its last word is the bar, then the next test may start
-full_back() { _fb=0; while [ "$_fb" -lt 50 ] && ! tail -n 1 "$F2/swaymsg.log" 2>/dev/null | grep -q '^bar mode '; do sleep 0.1; _fb=$((_fb + 1)); done; }
+full_back() { _fb=0; while [ "$_fb" -lt 50 ] && ! tail -n 1 "$F2/swaymsg.log" 2>/dev/null | grep -q '^-- bar bar-0 mode '; do sleep 0.1; _fb=$((_fb + 1)); done; }
 ( FULL=1 mcpw "$(call 5 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" ); full_back
 printf '%s' "$_p2" | jq -e '.play.name == "files_play" and .stop.name == "files_stop" and .seconds == 4.5' >/dev/null \
     && [ "$(printf '%s' "$_a3" | jq -r '.result.structuredContent.receipt')" = 'playing clip.webm' ] \
@@ -7096,8 +7097,8 @@ rm -f "$F2/swaymsg.log"
 rm -f "$F2/swaymsg.log"
 ( FULL=1 mcpw "$(call 5 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" ); full_back
 [ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'playing clip.webm' ] \
-    && [ "$(grep -n -e '^bar mode invisible$' -e 'fullscreen disable' "$F2/swaymsg.log" | cut -d: -f2- | head -2 | paste -sd '|' -)" = 'bar mode invisible|[con_id=42] fullscreen disable, border none, resize set 1920 1080, move absolute position 0 0' ] \
-    && [ "$(grep -n -e 'fullscreen enable' -e '^bar mode' "$F2/swaymsg.log" | cut -d: -f2- | tail -2 | paste -sd '|' -)" = '[con_id=42] border normal 1, resize set 602 829, move position center, fullscreen enable|bar mode dock' ] \
+    && [ "$(grep -n -e '^-- bar bar-0 mode invisible$' -e 'fullscreen disable' "$F2/swaymsg.log" | cut -d: -f2- | head -2 | paste -sd '|' -)" = '-- bar bar-0 mode invisible|[con_id=42] fullscreen disable, border none, resize set 1920 1080, move absolute position 0 0' ] \
+    && [ "$(grep -n -e 'fullscreen enable' -e '^-- bar bar-0 mode' "$F2/swaymsg.log" | cut -d: -f2- | tail -2 | paste -sd '|' -)" = '[con_id=42] border normal 1, resize set 602 829, move position center, fullscreen enable|-- bar bar-0 mode dock' ] \
     && [ "$(grep -n 'fullscreen disable' "$F2/swaymsg.log" | cut -d: -f1)" -lt "$(grep -n 'spark-preview' "$F2/swaymsg.log" | tail -1 | cut -d: -f1)" ] \
     && ok "provide files: full screen, a video plays in its frame too: the dialog floats on the same pixels for the play, its band and border off, and is full screen again with them, its box sized for its content, its border and its band (#158)" \
     || bad "preview video full screen" "$(ans 5) | $(cat "$F2/swaymsg.log" 2>&1)"
@@ -8673,6 +8674,7 @@ if [ "$(uname -s)" != Darwin ]; then
 echo "$*" >> "$HOME/swaymsg.log"
 case "$*" in
     "-t get_version") echo '{"human_readable":"sway-stub"}' ;;
+    "-t get_bar_config") echo '["bar-0"]' ;;
     "-t get_tree") cat "$HOME/tree.json" 2>/dev/null || echo '{"nodes":[]}' ;;   # the idle windows a test says are up, or none
     "-t get_workspaces") printf '[{"name":"%s","focused":true,"visible":true}]\n' "$(cat "$HOME/ws.focused" 2>/dev/null || echo idle)" ;;   # the workspace in front: idle, unless a test says another
     "-t get_outputs") printf '%s\n' '[{"name":"DP-3","make":"ASUSTek COMPUTER INC","model":"MB16AH","serial":"S1","active":true,"focused":false,"current_workspace":"1"},' \
@@ -8688,7 +8690,7 @@ STUB
 HDMI-A-1${tb}2 webdev" ] && ok "desktop idle: each screen's workspace kept by name, the focused screen's last: the way back (#70, #177)" || bad "idle from" "rc=$rc $(cat "$HOME/.local/state/spark-shell/idle.from" 2>&1)"
     rm -f "$HOME/ws.focused"
     foot="foot --app-id spark-idle -o 'font=DejaVu Sans Mono:size=24' -o colors[a-z-]*\.alpha=0\.8 -o colors[a-z-]*\.background=2e3440 -o pad=0x0 -e $REPO/spark-shell desktop idle"
-    [ "$rc" = 0 ] && grep -qx -- '-- bar mode invisible' "$HOME/swaymsg.log" \
+    [ "$rc" = 0 ] && grep -qx -- '-- bar bar-0 mode invisible' "$HOME/swaymsg.log" \
         && grep -qx -- "-- mouse_warping none; focus output \"DP-3\"; workspace \"idle DP-3\"; gaps inner current set 0; gaps outer current set 0; exec $foot --side; mouse_warping output" "$HOME/swaymsg.log" \
         && grep -qx -- "-- mouse_warping none; focus output \"HDMI-A-1\"; workspace idle; exec $foot --clock; mouse_warping output" "$HOME/swaymsg.log" \
         && [ "$(grep 'exec foot' "$HOME/swaymsg.log" | sed 's/.*desktop idle --//; s/;.*//' | tr '\n' ' ')" = 'side clock ' ] && ! grep -q 'HDMI-A-2' "$HOME/swaymsg.log" \
@@ -8701,12 +8703,12 @@ HDMI-A-1${tb}2 webdev" ] && ok "desktop idle: each screen's workspace kept by na
     printf '%s\n' '{"nodes":[{"type":"con","app_id":"spark-idle","pid":4011,"id":51},{"type":"con","app_id":"foot","pid":4012,"id":52},{"type":"con","app_id":"spark-idle","pid":4013,"id":53}]}' > "$HOME/tree.json"
     rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/ix:$PATH" sh "$SH" desktop idle off 2>&1) || rc=$?
     [ "$rc" = 0 ] && grep -qxF -- '-- mouse_warping none; focus output "DP-3"; workspace "1"; focus output "HDMI-A-1"; workspace "2 webdev"; mouse_warping output' "$HOME/swaymsg.log" \
-        && grep -qxF -- '-- [con_id=51] kill' "$HOME/swaymsg.log" && grep -qxF -- '-- [con_id=53] kill' "$HOME/swaymsg.log" && ! grep -q 'con_id=52' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" \
+        && grep -qxF -- '-- [con_id=51] kill' "$HOME/swaymsg.log" && grep -qxF -- '-- [con_id=53] kill' "$HOME/swaymsg.log" && ! grep -q 'con_id=52' "$HOME/swaymsg.log" && grep -qx -- '-- bar bar-0 mode dock' "$HOME/swaymsg.log" \
         && awk '/workspace "1"/ { w = NR } /con_id=51/ { k = NR } END { exit !(w && k && w < k) }' "$HOME/swaymsg.log" \
         && ok "desktop idle off: every screen back to its workspace by name in one command (never a toggle, #70), the focus where it was, the bar back, then every idle window closed, nothing else (#177)" || bad "idle off" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
     rm -f "$HOME/swaymsg.log"; printf '2 webdev\n' > "$HOME/ws.focused"
     SWAYSOCK=$H/sock PATH="$H/ix:$PATH" sh "$SH" desktop idle off >/dev/null 2>&1 || :
-    ! grep -q -- '-- workspace' "$HOME/swaymsg.log" && ! grep -q 'workspace "' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" && ok "desktop idle off a second time, no idle workspace shown: nothing moves, the bar stays (#70)" || bad "idle off twice" "$(cat "$HOME/swaymsg.log" 2>&1)"
+    ! grep -q -- '-- workspace' "$HOME/swaymsg.log" && ! grep -q 'workspace "' "$HOME/swaymsg.log" && grep -qx -- '-- bar bar-0 mode dock' "$HOME/swaymsg.log" && ok "desktop idle off a second time, no idle workspace shown: nothing moves, the bar stays (#70)" || bad "idle off twice" "$(cat "$HOME/swaymsg.log" 2>&1)"
     rm -f "$HOME/swaymsg.log" "$HOME/ws.focused" "$HOME/tree.json"; printf '2 webdev\n' > "$HOME/.local/state/spark-shell/idle.from"
     SWAYSOCK=$H/sock PATH="$H/ix:$PATH" sh "$SH" desktop idle off >/dev/null 2>&1 || :
     grep -qxF -- '-- mouse_warping none; workspace "2 webdev"; mouse_warping output' "$HOME/swaymsg.log" && ok "desktop idle off with one name kept (a window from before #177): that workspace back" || bad "idle off old file" "$(cat "$HOME/swaymsg.log" 2>&1)"
@@ -8727,7 +8729,7 @@ HDMI-A-1${tb}2 webdev" ] && ok "desktop idle: each screen's workspace kept by na
     # whatever ends the idle window brings the desktop back (#70): the clock's end, here its sleep failing; and in its own terminal, a key
     rm -f "$HOME/swaymsg.log"
     rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/ix:$H/ic:$PATH" sh "$SH" desktop idle --clock 2>&1) || rc=$?
-    [ "$rc" = 0 ] && grep -qxF -- '-- mouse_warping none; workspace "2 webdev"; mouse_warping output' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" \
+    [ "$rc" = 0 ] && grep -qxF -- '-- mouse_warping none; workspace "2 webdev"; mouse_warping output' "$HOME/swaymsg.log" && grep -qx -- '-- bar bar-0 mode dock' "$HOME/swaymsg.log" \
         && ok "desktop idle --clock: when the clock ends, the workspace it left and the bar come back (#70)" || bad "idle clock end" "rc=$rc $(cat "$HOME/swaymsg.log" 2>&1)"
     if [ -n "$py3" ]; then   # the real python3 (CI's bare containers have none)
         cat > "$H/keypty.py" <<'PY'
@@ -8752,7 +8754,7 @@ os.kill(pid, 9); sys.exit(1)
 PY
         rm -f "$HOME/swaymsg.log"; printf 'DESKTOP=sway\nDISPLAY_SAVER=clock\n' > "$HOME/.config/spark-shell/config"
         rc=0; SWAYSOCK=$H/sock PATH="$H/ix:$PATH" "$py3" "$H/keypty.py" sh "$SH" desktop idle --clock || rc=$?
-        [ "$rc" = 0 ] && grep -qxF -- '-- mouse_warping none; workspace "2 webdev"; mouse_warping output' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" \
+        [ "$rc" = 0 ] && grep -qxF -- '-- mouse_warping none; workspace "2 webdev"; mouse_warping output' "$HOME/swaymsg.log" && grep -qx -- '-- bar bar-0 mode dock' "$HOME/swaymsg.log" \
             && ok "desktop idle --clock in its terminal: a key ends the clock within a second or two, and the desktop comes back (#70)" || bad "idle clock key" "rc=$rc $(cat "$HOME/swaymsg.log" 2>&1)"
         printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     fi

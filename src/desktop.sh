@@ -104,7 +104,7 @@ layout_idle() {   # layout_idle [off|--clock|--side]
     screens_json | jq -r '[.[] | select(.active and (.current_workspace // "") != "" and .current_workspace != "idle" and (.current_workspace | startswith("idle ") | not))]
         | (map(select(.focused | not)) + map(select(.focused)))[] | [.name, .current_workspace] | @tsv' > "$TMP/idle.from" 2>/dev/null || :
     [ ! -s "$TMP/idle.from" ] || { mkdir_private "$STATE_DIR"; cat "$TMP/idle.from" > "$IDLE_FROM"; }
-    wm_send "bar mode invisible" >/dev/null 2>&1 || :
+    wm_bars_mode invisible >/dev/null 2>&1 || :
     idle_rest_begin
     _ia=$IDLE_ALPHA; [ "$DISPLAY_SAVER" != art ] || _ia=0   # the art: each screen's own still, nothing over it but the clock
     _fs=$(font_spec); _foot=$(term_window_cmd "$IDLE_APP" "${_fs%%:*}" "$((_sz * 2))" "$_ia" "$HEX_BG" "$REPO/spark-shell desktop idle")
@@ -137,7 +137,7 @@ idle_back() {   # never a toggle: off and each window's end may all run it
         if [ -n "$_ib" ]; then wm_send "mouse_warping none;$_ib mouse_warping output" >/dev/null 2>&1 || :   # one command: two ways out cannot cross
         else wm_send "workspace back_and_forth" >/dev/null 2>&1 || :; fi
     fi
-    [ "$DESKTOP_BAR" != yes ] || wm_send "bar mode dock" >/dev/null 2>&1 || :
+    [ "$DESKTOP_BAR" != yes ] || wm_bars_mode dock >/dev/null 2>&1 || :
     idle_rest_end
     idle_close
 }
