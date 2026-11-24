@@ -1751,6 +1751,7 @@ EOF
     grep -q 'bash:' "$argv" && bad "inventory marked: a shell is offered to the model" "$(grep -o 'bash:[^;]*' "$argv")" || ok "inventory marked: a shell is never offered"
     grep -q 'ghost' "$argv" && bad "inventory marked: a name that is nowhere is in" "$(grep -o 'ghost[^;]*' "$argv")" || ok "inventory marked: a name that is nowhere is silently left out"
     rm -f "$apps_file" "$H/.local/bin/pacman" "$H/.local/bin/reader"
+    sh "$SH" layout "$need" >/dev/null 2>&1 || :   # the last layout again with every entry allowed
     # the old Super+d spelling: the panel with the layouts first; no terminal, so the list as text
     : > "$swlog"; SEP=$(printf '\302\267'); GO=$(printf '\342\226\270')
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" layout --ask </dev/null 2>&1) || st=$?
