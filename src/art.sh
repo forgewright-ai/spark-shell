@@ -271,11 +271,14 @@ art_stills() {   # -> the theme's own landscape pictures, full paths, one a line
 art_still() {   # art_still NAME -> the theme's own landscape picture NAME (its file's name with or without the extension, or its role: landscape-2), full path; else false
     art_stills | while IFS= read -r _asf; do _asb=${_asf##*/}; case $1 in "$_asb"|"${_asb%.*}"|"$(art_role "$_asf")") printf '%s' "$_asf"; exit 0 ;; esac; done | grep .
 }
-art_role() {   # art_role FILE -> its role in the theme: its name without the extension and the theme's name before it (landscape-1)
-    _arb=${1##*/}; _arb=${_arb%.*}; _arb=${_arb#"${THEME:-}"-}; printf '%s' "$_arb"
+art_role() {   # art_role FILE [THEME] -> its role in the theme (the one in use by default): its name without the extension and the theme's name before it (landscape-1)
+    _arb=${1##*/}; _arb=${_arb%.*}; _arb=${_arb#"${2:-${THEME:-}}"-}; printf '%s' "$_arb"
 }
-art_label() {   # art_label FILE -> its role as the list says it: Landscape 1
-    _arl=$(art_role "$1" | tr '_-' '  '); printf '%s%s' "$(printf '%s' "$_arl" | cut -c1 | tr 'a-z' 'A-Z')" "$(printf '%s' "$_arl" | cut -c2-)"
+art_named() {   # art_named FILE THEME -> a file the theme names by its role (THEME-landscape-1.jpg) as Landscape 1; any other by its file name
+    case ${1##*/} in "$2"-*) art_label "$1" "$2" ;; *) printf '%s' "${1##*/}" ;; esac
+}
+art_label() {   # art_label FILE [THEME] -> its role as the list says it: Landscape 1
+    _arl=$(art_role "$1" "${2:-}" | tr '_-' '  '); printf '%s%s' "$(printf '%s' "$_arl" | cut -c1 | tr 'a-z' 'A-Z')" "$(printf '%s' "$_arl" | cut -c2-)"
 }
 art_wall_theirs() {   # -> 0 when the wallpaper is a picture or a color of the person's own; a theme's own picture, in its folder, is the theme's
     _awt=$(theme_dir "${THEME:-none}")

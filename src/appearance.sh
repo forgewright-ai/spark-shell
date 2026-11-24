@@ -107,12 +107,15 @@ appearance_gallery_collection() {
 # Colors: the 20 of the theme in use, each changed by its value, its swatch beside it; above them, another theme's
 appearance_colors() {
     _acp=$(palette_file "${THEME:-none}") || return 1
-    for _e in $THEME_COLOR_WORDS; do printf '%s\t%s\n' "${_e%%:*}" "$(palette_get "$_acp" "THEME_${_e#*:}")"; done \
+    for _e in $THEME_COLOR_WORDS; do printf '%s\t%s\t%s\n' "${_e%%:*}" "${_e#*:}" "$(palette_get "$_acp" "THEME_${_e#*:}")"; done \
         | jq -Rn --arg label "$(theme_label "$THEME")" '[inputs | split("\t")] as $c
+            | ["black","red","green","yellow","blue","magenta","cyan","white"] as $names
             | {title: "Colors", state: $label, short: [],
                rows: ([{id: "theme:colors:from", text: "another theme'"'"'s colors", sign: "opens", children: "spark-shell://theme/rows/colors/from"}]
-                      + [$c[] | {id: ("theme:color:" + .[0]), group: (if (.[0] | test("^(background|text|accent|muted)$")) then "the four" else "the sixteen" end),
-                                 text: .[0], chip: [.[1]], columns: [.[1]], tool: {name: "theme_color", arguments: {word: .[0]}, ask: ["color"]}}])}'
+                      + [$c[] | .[0] as $w | .[1] as $k | .[2] as $hex | ($k | ltrimstr("ANSI_") | tonumber? // null) as $i
+                         | {id: ("theme:color:" + $k), group: (if $i == null then "theme colors" elif $i < 8 then "ANSI regular" else "ANSI bright" end),   # as the terminal palette has them
+                            text: (if $i == null then ($w | (.[0:1] | ascii_upcase) + .[1:]) else "\($i)  \($names[$i % 8])" end),
+                            swatch: $hex, columns: [$hex], tool: {name: "theme_color", arguments: {word: $w}, ask: ["color"]}}])}'
 }
 appearance_colors_from() {   # every theme, its swatch: Enter takes its colors
     appearance_gallery_entries | jq -c '{title: "Another theme'"'"'s colors", state: "", short: [],
@@ -131,7 +134,8 @@ appearance_screens() {
     } | jq -Rn --argjson art "$_asa" --arg label "$(theme_label "${THEME:-none}")" '
         [inputs | split("\t")] as $in | ($in | map(select(.[0] == "file")) | map({(.[1]): .[2]}) | add // {}) as $f
         | def file($n; $r; $what; $tool; $args; $types): {id: ("theme:screens:" + $r), group: $what, text: $n, sign: "opens",
-              columns: [if $f[$r] == "" then "none" else $f[$r] end], children: "spark-shell://files/rows",
+              columns: [if $f[$r] == "" then "none" elif ($r | startswith("dialog-")) then "its own" else ($r | gsub("-"; " ") | (.[0:1] | ascii_upcase) + .[1:]) end],   # by its role, as the wallpaper list says it
+              children: "spark-shell://files/rows",
               pick: {tool: $tool, types: $types, arguments: $args},
               more: (if $f[$r] == "" then [] else [{name: $tool, arguments: ($args + {path: "none"}), said: "take it away"}] end)};
         {title: "Screens and art", state: $label, short: [],
@@ -331,8 +335,9 @@ appearance_preview() (
     _wall=${_wall:-${WALLPAPER:-default}}
     _label=$_wall; _picture=''; _source=''; _kind=flat
     case $_wall in
-        picture) _source=$_dir/$(look_get "$_dir" PICTURE); _label=${_source##*/}; _kind=picture ;;
-        /*) _source=$(wall_picture_ok "$_wall") || _source=''; _label=${_wall##*/}; _kind=picture ;;
+        picture) _source=$_dir/$(look_get "$_dir" PICTURE); _label=$(art_named "$_source" "${_dir##*/}"); _kind=picture ;;   # by its role: Landscape 1
+        /*) _source=$(wall_picture_ok "$_wall") || _source=''; _label=${_wall##*/}; _kind=picture
+            if wall_of_theme "$_wall"; then _source=$_wall; _lpd=${_wall%/*}; _label=$(art_named "$_wall" "${_lpd##*/}"); fi ;;   # a theme's own, not under your home
         none|default|'#'*) ;;
         *) if wall_scene "$_wall"; then _kind=scene; _source=$SCENE_MAKE
            elif wall_shipped "$_wall"; then _kind=drawing; _source=$REPO/gallery/wallpaper/$_wall.svg

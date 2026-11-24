@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # ------------------------------------------------------------- the slots
 # sets: HEX_KEYS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_THEMES SCENE_MAKE SCENE_READY SLOT_KEYS THUMB_DIR VGA_HEX WALL_GROUND_SAID WALL_KEYS WALL_NAMES WALL_SCENES WALL_SHIPPED WALL_TYPES WIN_KEYS
-# reads: CORE_DIR MODE PATH_REFUSED PM POINTER_SEEN REPO STATE_DIR TERM_HEX THEME_ENV THEME_KEYS TMP WALL_CACHE
+# reads: CORE_DIR LOOKS_DIR MODE PALETTE_DIR PATH_REFUSED PM POINTER_SEEN REPO STATE_DIR TERM_HEX THEME_ENV THEME_KEYS TMP WALL_CACHE
 # slots (0-15), not hex: one file serves the console and an emulator;
 # spark reads SPARK_*_SGR at a tty
 SLOT_KEYS="ACCENT_SLOT MUTED_SLOT ACCENT_STAR MUTED_STAR ACCENT_SGR MUTED_SGR"
@@ -193,7 +193,19 @@ wall_follow() {   # draws the wallpaper in the palette in use when missing; a ro
     else row todo wallpaper "$WALLPAPER as drawn for $(wall_palette_of "$WALLPAPER"): rsvg-convert is not installed to draw it in $THEME (the $(svg_pkg) package)"; fi
 }
 wall_color() { hex_rgb "$WALLPAPER" >/dev/null; }   # WALLPAPER is #rrggbb
-wall_yours() { case ${WALLPAPER:-} in ''|none|default) return 1 ;; esac; ! wall_color && ! wall_shipped "$WALLPAPER"; }   # WALLPAPER is a path; false before the config is read
+wall_yours() { case ${WALLPAPER:-} in ''|none|default) return 1 ;; esac; ! wall_color && ! wall_shipped "$WALLPAPER" && ! wall_bundled "$WALLPAPER"; }   # WALLPAPER is a path of yours; false before the config is read
+wall_bundled() {   # wall_bundled PATH -> 0 for a bundled theme's own picture, in its folder or its copy changed and not saved (NAME-changed): its art, never yours
+    case $1 in
+        "$CORE_DIR"/*/*) return 0 ;;
+        "$LOOKS_DIR"/*-changed/*) _wbn=${1#"$LOOKS_DIR"/}; _wbn=${_wbn%%/*}; _wbn=${_wbn%-changed}
+            [ -f "$CORE_DIR/$_wbn/look.env" ] || [ -f "$CORE_DIR/core-$_wbn/look.env" ] ;;
+        *) return 1 ;;
+    esac
+}
+wall_of_theme() {   # wall_of_theme PATH -> 0 for a picture in a theme's own folder (bundled, saved, or changed and not saved): read as the theme's data, named by its role
+    for _wot in "$CORE_DIR" "$PALETTE_DIR" "$LOOKS_DIR"; do case $1 in "$_wot"/*/*) return 0 ;; esac; done
+    return 1
+}
 wall_name() {   # -> default, a name or hex; nothing for a path
     case $WALLPAPER in default|none) echo default; return ;; esac
     if wall_shipped "$WALLPAPER"; then echo "$WALLPAPER"; return; fi

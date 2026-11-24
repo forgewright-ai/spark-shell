@@ -136,7 +136,11 @@ theme_apply() {   # theme_apply NAME|none [back] -- back keeps the history
     elif [ -n "$_td" ]; then verb_close "The theme is $(theme_words_of "$name"): $(theme_look_words). A program that is already running, such as btop, takes it when it starts again."
     else verb_close "The palette is $name${_w:+, with $_w}. A program that is already running, such as btop, takes it when it starts again."; fi
 }
-wall_now() { _wn=$(wall_name); printf '%s' "${_wn:-$(basename "$(wall_path)")}"; }   # -> the wallpaper's word or picture name
+wall_now() {   # -> the wallpaper's word, a theme's own picture by its role (Landscape 1), or the picture's name
+    _wn=$(wall_name)
+    if [ -z "$_wn" ] && wall_of_theme "${WALLPAPER:-}"; then _wnd=${WALLPAPER%/*}; _wn=$(art_named "$WALLPAPER" "${_wnd##*/}"); fi
+    printf '%s' "${_wn:-$(basename "$(wall_path)")}"
+}
 theme_look_words() { printf '%s, text %s, transparency %s%%' "$(wall_now)" "$(look_font_size)" "$(transparency_of "$ALPHA")"; }   # -> "skyline, text 12, transparency 15%"
 theme_show() {
     if [ -z "$THEME" ]; then echo "theme  unset: the palette stays as it is (spark-shell theme list shows them)"

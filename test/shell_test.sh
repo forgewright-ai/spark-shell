@@ -8060,10 +8060,10 @@ s12=$(sh "$SH" theme show 2>&1 | sed -n 's/^  art *//p')
     || bad "theme fields" "$t1 | $c1 | $c2 | $rc3 $c3 | $c4 | $c5 | $rc6 $c6 | $c7 | $c8 | $rc9 $c9 | $a10 $c11 $a11 | $s12"
 mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows/colors"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/screens"}')" "$(rq 3 resources/read '{"uri":"spark-shell://theme/rows"}')" \
     "$(call 4 theme_color '{"word":"accent","color":"#d08a52"}')" "$(call 5 theme_panel '{"n":"3","path":"none"}')"
-f1=$(ans 1 | jq -r '.result.contents[0].text | fromjson | [(.rows | length), .rows[0].children, (.rows[3] | .text + "=" + .columns[0] + ":" + .tool.name)] | map(tostring) | join(" ")')
+f1=$(ans 1 | jq -r '.result.contents[0].text | fromjson | [(.rows | length), .rows[0].children, (.rows[3] | .id + " " + .text + "=" + .swatch + ":" + .tool.name + ":" + .tool.arguments.word), (.rows[13] | .id + " " + .text)] | map(tostring) | join(" ")')
 f2=$(ans 2 | jq -r '.result.contents[0].text | fromjson | [.rows[] | .id + ":" + (.pick.tool // (if .switch then "switch" else "" end))] | join(" ")')
 f3=$(ans 3 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.id | startswith("theme:settings:")) | .text] | join("|")')
-[ "$f1" = "21 spark-shell://theme/rows/colors/from accent=#c88850:theme_color" ] \
+[ "$f1" = "21 spark-shell://theme/rows/colors/from theme:color:ACCENT Accent=#c88850:theme_color:accent theme:color:ANSI_8 8  black" ] \
     && printf '%s' "$f2" | grep -q '^theme:screens:landscape-2:theme_panel theme:screens:landscape-3:theme_panel theme:screens:portrait:theme_portrait theme:screens:clock:switch theme:screens:pair: ' \
     && printf '%s' "$f2" | grep -q 'theme:screens:dialog-open:theme_reel theme:screens:dialog-close:theme_reel$' \
     && [ "$f3" = "$_settings" ] \
@@ -8305,6 +8305,13 @@ if [ "$(uname -s)" != Darwin ]; then
     sh "$SH" theme wallpaper "$HOME/pictures/mine.png" >/dev/null 2>&1; sh "$SH" theme tokyonight-night >/dev/null 2>&1
     grep -qxF "WALLPAPER=$HOME/pictures/mine.png" "$cfg" && ! sh "$SH" theme list | grep -q '^  nord  *fjord' && sh "$SH" panel theme --list | grep -q "^  theme      nord	theme nord$" \
         && ok "theme tokyonight-night under a picture of yours: the picture stays, and the list names no drawing then" || bad "picture stays" "$(grep WALLPAPER "$cfg"; sh "$SH" theme list | grep nord)"
+    # a theme's own picture is the theme's: the next palette brings its drawing, from a bundled theme's folder or a changed look's
+    mkdir -p "$st_dir/looks/atlas-awakening-changed"; printf x > "$st_dir/looks/atlas-awakening-changed/atlas-awakening-changed-landscape-2.jpg"
+    printf 'DESKTOP=sway\nTHEME=atlas-awakening\nWALLPAPER=%s\n' "$REPO/gallery/core/atlas-awakening/atlas-awakening-landscape-1.jpg" > "$cfg"
+    sh "$SH" theme tokyonight-night >/dev/null 2>&1; w1=$(sed -n 's/^WALLPAPER=//p' "$cfg")
+    printf 'DESKTOP=sway\nTHEME=atlas-awakening\nWALLPAPER=%s\n' "$st_dir/looks/atlas-awakening-changed/atlas-awakening-changed-landscape-2.jpg" > "$cfg"
+    sh "$SH" theme nord >/dev/null 2>&1; w2=$(sed -n 's/^WALLPAPER=//p' "$cfg"); rm -rf "$st_dir/looks"
+    [ "$w1" = skyline ] && [ "$w2" = fjord ] && ok "theme tokyonight-night after atlas-awakening: skyline, not atlas's picture; a changed look's picture gives way too" || bad "theme's picture" "$w1 $w2"
     sh "$SH" theme wallpaper navy >/dev/null 2>&1; sh "$SH" theme nord >/dev/null 2>&1
     rc=0; out=$(sh "$SH" theme wallpaper skyline 2>&1) || rc=$?
     if command -v rsvg-convert >/dev/null 2>&1 || command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1; then
