@@ -27,15 +27,21 @@ asks first.
 ## Install
 
     git clone https://github.com/forgewright-ai/spark-shell ~/.spark-shell
-    ~/.spark-shell/spark-shell on
+    cd ~/.spark-shell
+    git checkout -q "$(git describe --abbrev=0)"
+    ./spark-shell on
 
-To update, run `spark-shell update`: the clone moves to the newest
-release signed by a key in its `allowed-signers`, never to a commit
-nobody signed, and `on` runs again from it. A tag whose release is not
-published yet moves nothing: run it again a few minutes later. Two
+The third line takes the clone from main to its newest release.
+
+To update, run `spark-shell update`: the clone moves forward to the
+newest release signed by a key in its `allowed-signers`, never to a
+commit nobody signed, and `on` runs again from it. A release that does
+not hold the commit the clone is at moves nothing. Nor does a tag whose
+release is not published yet: run it again a few minutes later. Two
 kinds of key sign: the release key any release, and a patch key, on a
 machine that tags fixes by the rule in `test/tag.sh`, a patch (vX.Y.Z)
-alone.
+alone. The clone checks by its own copy of that rule's list,
+`test/lane.sh`, that the patch changes nothing the list guards.
 
 ## Where it runs
 

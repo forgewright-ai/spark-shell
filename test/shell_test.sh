@@ -9016,6 +9016,9 @@ if command -v ssh-keygen >/dev/null 2>&1; then
     echo zero > "$U/w/zero"; git -C "$U/w" add -A; git -C "$U/w" commit -q -m zero; git -C "$U/w" push -q origin main
     git clone -q "$U/origin.git" "$U/p"; out=$(sh "$U/p/spark-shell" update 2>&1) && rc=0 || rc=$?
     [ "$rc" -eq 0 ] && [ "$out" = "spark-shell update: at v9.0, the newest release (this clone is past it)" ] && ok "update: a clone of main past its release: one line says so, exit 0" || bad "update: past the release" "$rc $out"
+    _rd=$(sed -n 's/^    git checkout -q "$(\(git describe [^)]*\))"$/\1/p' "$REPO/README.md")
+    # shellcheck disable=SC2086   # the README's words are a command line
+    [ -n "$_rd" ] && [ "$(cd "$U/p" && $_rd)" = v9.0 ] && ok "README: the install checks out main's newest release before it runs anything" || bad "README install" "$_rd"
     git clone -q --depth 1 "file://$U/origin.git" "$U/s"; out=$(sh "$U/s/spark-shell" update 2>&1) && rc=0 || rc=$?
     [ "$rc" -eq 1 ] && [ "$out" = "spark-shell update: the clone is shallow, and a release is checked against its history -- nothing moved; git -C $U/s fetch --unshallow gets it" ] && ok "update: a shallow clone is refused, and told how to get its history" || bad "update: shallow" "$rc $out"
     echo one > "$U/w/one"; git -C "$U/w" add -A; git -C "$U/w" commit -q -m v9.1; git -C "$U/w" tag -s -m v9.1 v9.1
