@@ -292,7 +292,7 @@ media_ok() {   # media_ok FILE mp4|webp -> nothing and 0 for a plain MP4 (ftyp, 
         mp4) [ "$_mos" -le 67108864 ] || { echo "a loop is 64 MiB at most"; return 1; }
             [ "$(od -An -c -j4 -N4 "$1" | tr -d ' \n')" = ftyp ] || { echo "it is no MP4"; return 1; }
             command -v ffprobe >/dev/null 2>&1 || return 0
-            _moc=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of csv=p=0 "$1" 2>/dev/null | head -1)
+            _moc=$(ffprobe -v error -protocol_whitelist file -select_streams v:0 -show_entries stream=codec_name,width,height -of csv=p=0 "$1" 2>/dev/null | head -1)
             case $_moc in h264,[0-9]*,[0-9]*) ;; *) echo "its video is not H.264"; return 1 ;; esac
             _mow=${_moc#h264,}; _mow=${_mow%%,*}; _moh=${_moc##*,}
             [ "$_mow" -le 7680 ] && [ "$_moh" -le 7680 ] && [ $((_mow * _moh)) -le $((7680 * 4320)) ] || { echo "it is ${_mow}x$_moh, past 7680x4320"; return 1; } ;;

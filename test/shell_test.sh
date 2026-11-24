@@ -6907,10 +6907,39 @@ page 7 | jq -e '.page == 2 and .pages == 3 and .size == [816, 1056] and .full ==
     && page 8 | jq -e '.full == true and (.picture | endswith("-4096-2.png"))' >/dev/null && grep -q -- '-f 2 -l 2 -png -scale-to 1600 ' "$F2/pdftoppm.log" && grep -q -- '-scale-to 4096 ' "$F2/pdftoppm.log" \
     && ok "provide files: a PDF's page drawn, page 2 of 3, its 100 % the page at 96 pixels an inch, its text for spark; full=1 draws it at 4096 for a zoom (#120)" || bad "preview pdf" "$(page 7) | $(page 8) | $(cat "$F2/pdftoppm.log" 2>&1)"
 page 9 | jq -e '.lines == ["Evening", "Ada \u00b7 Proofs"] and .seconds == 20.5 and .facts[0:4] == ["44.1 kHz", "16 bit", "stereo", "FLAC"] and .sound.wave == 160 and (.sound.picture | endswith("-sound.png")) and .play.name == "files_play" and .stop.name == "files_stop"' >/dev/null \
-    && grep -q -- '--untimed' "$F2/mpv.log" && grep -q -- 'showwavespic' "$F2/mpv.log" && grep -q -- '--demuxer-lavf-o=protocol_whitelist=file' "$F2/mpv.log" \
+    && grep -q -- '--untimed' "$F2/mpv.log" && grep -q -- 'showwavespic' "$F2/mpv.log" \
+    && ! grep '^--' "$F2/mpv.log" | grep -v -- '^--no-config --no-ytdl --load-scripts=no --demuxer=+lavf --sub-demuxer=+lavf --cover-art-auto=no --demuxer-lavf-o=protocol_whitelist=file --stream-lavf-o=protocol_whitelist=file ' | grep -q . \
     && ok "provide files: a sound's tags, its waveform over its spectrogram drawn once, what an engineer asks first (rate, bits, channels, format); mpv on local files only (#120)" || bad "preview sound" "$(page 9) | $(cat "$F2/mpv.log" 2>&1)"
 page 10 | jq -e '.facts[0:2] == ["0:05", "1280 \u00d7 720"] and .size == [1280, 720] and .play.name == "files_open" and (.picture | endswith(".png"))' >/dev/null \
     && ok "provide files: a video's frame, its length and size; right plays it in its app (#120)" || bad "preview video" "$(page 10)"
+if [ -n "$fixture_python" ] && (PATH=$_fpath; command -v mpv >/dev/null 2>&1); then   # the real mpv, where there is one: text under a media name that lists an address (an edit list, two playlists, HLS) opens nothing; a sound still shows
+    cp "$H/mcp.out" "$H/mcp.pages"   # the answers above, read on below
+    "$fixture_python" - "$H/heard" <<'PYTHON' >/dev/null 2>&1 &
+import http.server, sys
+class Heard(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        with open(sys.argv[1], "a") as log:
+            log.write(self.path + "\n")
+        self.send_error(404)
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Heard)
+with open(sys.argv[1] + ".port", "w") as port:
+    port.write("%d\n" % server.server_address[1])
+server.serve_forever()
+PYTHON
+    _hp=$!; _lw=0; while [ ! -s "$H/heard.port" ] && [ "$_lw" -lt 50 ]; do sleep 0.1; _lw=$((_lw + 1)); done
+    _lu=http://127.0.0.1:$(cat "$H/heard.port" 2>/dev/null)
+    printf '# mpv EDL v0\n%s/edl\n' "$_lu" > "$PVR/edl.mp4"; printf '#EXTM3U\n%s/m3u\n' "$_lu" > "$PVR/m3u.wav"; printf '[playlist]\nFile1=%s/pls\nNumberOfEntries=1\n' "$_lu" > "$PVR/pls.mp3"
+    printf '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXTINF:9.0,\n%s/hls.ts\n#EXT-X-ENDLIST\n' "$_lu" > "$PVR/hls.mp4"
+    "$fixture_python" -c 'import sys, wave
+w = wave.open(sys.argv[1], "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(8000); w.writeframes(b"\0\1" * 16000); w.close()' "$PVR/real.wav"
+    cp "$PVR/real.wav" "$PVR/cover.wav"; printf '# mpv EDL v0\n%s/cover\n' "$_lu" > "$PVR/cover.jpg"
+    printf '%s\n' "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$roots2" "$(pvr 2 "$PVR/edl.mp4")" "$(pvr 3 "$PVR/m3u.wav")" "$(pvr 4 "$PVR/pls.mp3")" "$(pvr 5 "$PVR/hls.mp4")" "$(pvr 6 "$PVR/cover.wav")" "$(pvr 7 "$PVR/real.wav")" \
+        | PATH=$_fpath HOME=$F2 XDG_DATA_HOME=$F2/.local/share SPARK_SHELL_NO_UDISKS=1 SPARK_SHELL_NO_GIO=1 sh "$SH" provide files > "$H/mcp.out" 2> "$H/mcp.err"
+    [ -s "$H/heard.port" ] && [ ! -e "$H/heard" ] && [ "$(for _i in 2 3 4 5; do page "$_i" | jq -r .say; done | sort -u)" = 'cannot view: mpv could not read this file, Enter opens it' ] && page 6 | jq -e '.seconds == 2' >/dev/null && page 7 | jq -e '.seconds == 2 and .facts[0:3] == ["8 kHz", "16 bit", "mono"]' >/dev/null \
+        && ok "provide files: text named as a film or a sound that lists an address, or such a cover beside a sound, has mpv open no connection; a real sound shows" || bad "preview playlists" "heard: $(cat "$H/heard" 2>&1) | $(page 2) | $(page 5) | $(page 6) | $(page 7) | $(tail -3 "$H/mcp.err")"
+    kill "$_hp" 2>/dev/null || :; wait "$_hp" 2>/dev/null || :
+    mv "$H/mcp.pages" "$H/mcp.out"; rm -f "$PVR/edl.mp4" "$PVR/m3u.wav" "$PVR/pls.mp3" "$PVR/hls.mp4" "$PVR/real.wav" "$PVR/cover.wav" "$PVR/cover.jpg"
+fi
 _vf() { grep -F -- "--vo-image-outdir" "$F2/mpv.log" | grep -F -- "$1" | grep -o -- '--vf=[^ ]*' || :; }   # _vf FILE -> the scale its frame was drawn with
 page 14 | jq -e '.facts[1] == "1080 \u00d7 1920" and .size == [1080, 1920]' >/dev/null && page 15 | jq -e '.size == [1080, 1920]' >/dev/null \
     && [ "$(_vf phone.mov)" = '--vf=scale=w=1600:h=-2' ] && [ "$(_vf tall.mp4)" = '--vf=scale=w=-2:h=1600' ] && [ -z "$(_vf clip.webm)" ] \

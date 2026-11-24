@@ -18,7 +18,9 @@ sound mp3 wav flac ogg oga opus m4a aac aif aiff aifc ac3 eac3 dts caf mka wv
 video mp4 m4v mov webm mkv avi mpg mpeg mts m2ts wmv ogv mxf 3gp
 office docx pptx xlsx odt odp ods'
 FILES_WAVE_PX=160        # the waveform's height over the spectrogram (512)
-MPV_SAFE='--no-config --no-ytdl --load-scripts=no --demuxer-lavf-o=protocol_whitelist=file'   # the file is untrusted: no config, scripts, network
+# the file is untrusted: no config, no scripts, files alone for ffmpeg, and ffmpeg alone to read one (mpv's own readers take a
+# playlist or an edit list under any name and open what it lists)
+MPV_SAFE='--no-config --no-ytdl --load-scripts=no --demuxer=+lavf --sub-demuxer=+lavf --cover-art-auto=no --demuxer-lavf-o=protocol_whitelist=file --stream-lavf-o=protocol_whitelist=file'
 files_kind() {   # files_kind PATH -> its kind, text or other
     _fke=$(printf '%s' "${1##*/}" | sed -n 's/.*\.\([A-Za-z0-9]*\)$/\1/p' | tr 'A-Z' 'a-z')
     _fkk=$(printf '%s\n' "$FILES_KINDS" | awk -v e="$_fke" 'e != "" { for (i = 2; i <= NF; i++) if ($i == e) { print $1; exit } }')

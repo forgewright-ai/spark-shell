@@ -3527,7 +3527,7 @@ def native_fps(scene):
 
 def encode(path, w, h, frames, preset="slow"):
     """The frames as H.264 in an MP4: tuned for flat art, BT.709 like a screen."""
-    cmd = ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "%dx%d" % (w, h), "-r", str(FPS), "-i", "-",
+    cmd = ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "%dx%d" % (w, h), "-r", str(FPS), "-protocol_whitelist", "pipe,fd", "-i", "-",
            "-vf", "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p", "-c:v", "libx264", "-preset", preset, "-tune", "animation",
            "-crf", "21", "-g", str(FPS * 4), "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
            "-movflags", "+faststart", path]
