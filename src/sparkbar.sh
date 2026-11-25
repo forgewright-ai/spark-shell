@@ -117,6 +117,7 @@ sparkbar_follow() {   # the bar as the config has it now: a running one ended, s
     ! _sbo=$(sparkbar_pid) || sparkbar_stop "$_sbo"
     ! sparkbar_draws || sparkbar_start || :
 }
+sparkbar_has_font() { _shp=$(sparkbar_pid) && tr '\0' '\n' 2>/dev/null < "/proc/$_shp/environ" | grep -qxF "BAR_FONT=$(bar_line_font)"; }   # the bar that runs was started with the font the config asks for
 sparkbar_again() {   # sparkbar_follow from anywhere, once a run
     [ -z "${_sparkbar_again:-}" ] || return 0; _sparkbar_again=1
     sparkbar_pid >/dev/null || sparkbar_draws || return 0   # none runs and none draws here: sway is not asked
@@ -128,8 +129,9 @@ sparkbar_stands() { if sparkbar_draws; then sparkbar_pid >/dev/null; else ! spar
 sparkbar_font_again() {   # sparkbar_font_again FONT -- the status loop's: its bar started again for the screen's font, apart, so the restart outlives the loop; once for a font, whatever the new bar is handed
     [ "$1" != "$(cat "$(sparkbar_file font)" 2>/dev/null)" ] || return 0
     printf '%s\n' "$1" > "$(sparkbar_file font)"
-    if command -v setsid >/dev/null 2>&1; then setsid sh "$REPO/spark-shell" bar again </dev/null >/dev/null 2>&1 &
-    else ( trap '' HUP; exec sh "$REPO/spark-shell" bar again ) </dev/null >/dev/null 2>&1 & fi
+    _sfa=font; case $1 in 'screen '*) _sfa='' ;; esac
+    if command -v setsid >/dev/null 2>&1; then setsid sh "$REPO/spark-shell" bar again $_sfa </dev/null >/dev/null 2>&1 &
+    else ( trap '' HUP; exec sh "$REPO/spark-shell" bar again $_sfa ) </dev/null >/dev/null 2>&1 & fi
 }
 sparkbar_no_pins() {   # sparkbar_no_pins pin|unpin|hide|show -> why it changes nothing here, in the verb's own words; nothing where spark-bar draws the bar and holds to both
     ! sparkbar_draws || return 0
@@ -148,14 +150,15 @@ sparkbar_keys() {   # Super+equal: the keyboard on the bar
 # the first screen. It is made where the bar stands, at login, after a reload, which drops it, and by the verbs; a change
 # of the screen or of the bar's height makes another
 sparkbar_tray_screen() { wm_live && wm_here || return 1; wm_outputs | jq -r '[.[] | select(.active)][0] | "\(.name) \(.rect.width)"' 2>/dev/null | grep -x '[^ ]* [0-9][0-9]*'; }   # -> the first screen on: NAME WIDTH
-sparkbar_tray_place() { locked "$(sparkbar_file tray.lock)" "tray" 10 sparkbar_tray_one || :; }   # one maker at a time: two close together left two hosts
-sparkbar_tray_one() {   # the host at its place, made anew; none where the tray is off, or the bar hidden
+sparkbar_tray_place() { locked "$(sparkbar_file tray.lock)" "tray" 10 sparkbar_tray_one "${1:-}" || :; }   # one maker at a time: two close together left two hosts
+sparkbar_tray_one() {   # sparkbar_tray_one [PLACE] -- the host at its place, made anew; none where the tray is off, or the bar hidden. With PLACE, the loop's, nothing where another made it meanwhile
+    [ -z "$1" ] || [ "$1" != "$(cat "$(sparkbar_file tray)" 2>/dev/null)" ] || return 0
     [ "$BAR_TRAY" = yes ] && sparkbar_draws || { wm_bar_end "$WM_TRAY"; return 0; }
     _sts=$(sparkbar_tray_screen) || return 0
     _sth=$(sparkbar_height); _stl=$(( ${_sts#* } - _sth * SPARKBAR_TRAY_SLOTS ))
-    printf '%s %s\n' "$_sts" "$_sth" > "$(sparkbar_file tray)"   # first: the status loop, which follows the screen, makes none of its own
-    [ "$_stl" -ge 0 ] || { wm_bar_end "$WM_TRAY"; return 0; }   # a screen narrower than the strip
-    wm_tray_make "${_sts% *}" "$_stl" "$_sth" "$(( (_sth + 3) / 6 ))" "$BAR_POSITION" || return 0   # the icons one and a half times the text, as the pad's are: 24 px in a bar of 36
+    if [ "$_stl" -lt 0 ]; then wm_bar_end "$WM_TRAY"   # a screen narrower than the strip
+    else wm_tray_make "${_sts% *}" "$_stl" "$_sth" "$(( (_sth + 3) / 6 ))" "$BAR_POSITION" || return 0; fi   # the icons one and a half times the text, as the pad's are: 24 px in a bar of 36
+    printf '%s %s\n' "$_sts" "$_sth" > "$(sparkbar_file tray)"   # last: a maker that was ended before here leaves it to the next loop, which ends the hosts it left
 }
 sparkbar_tray_follow() {   # the status loop's: the host follows its screen's width and the bar's height; kept once for each, so nothing repeats
     [ "$(bar_style BAR_TRAY no)" = yes ] || return 0
@@ -163,7 +166,7 @@ sparkbar_tray_follow() {   # the status loop's: the host follows its screen's wi
     _stn="$_stn $(sparkbar_height)"; _sto=$(cat "$(sparkbar_file tray)" 2>/dev/null) || _sto=''
     [ "$_stn" != "$_sto" ] || return 0
     set -- $_stn ${_sto:-- 0 0}
-    BAR_TRAY=yes sparkbar_tray_place || :
+    BAR_TRAY=yes sparkbar_tray_place "$_stn" || :
     [ "$1" = "$4" ] || [ "$4" = - ] || sparkbar_font_again "screen $1"   # another screen is the first: the bar clears its strip there
 }
 sparkbar_off() {   # off, off desktop: the bar ended, its binary and its runtime files gone

@@ -953,7 +953,9 @@ bar_text_step() {   # bar_text_step auto|N|bigger|smaller -> the receipt, or exi
         *) echo "bar text takes auto, a size from 6 to 40, bigger or smaller"; return 1 ;;
     esac
     [ "$_btn" = auto ] || { [ "$_btn" -ge 6 ] && [ "$_btn" -le 40 ]; } || { echo "bar text $_bts stays (6 to 40)"; return 1; }
-    config_set BAR_TEXT "$_btn" >/dev/null; BAR_TEXT=$_btn; export BAR_TEXT
+    BAR_TEXT=$_btn; export BAR_TEXT
+    ! sparkbar_draws || bar_line_font > "$(sparkbar_file font)" 2>/dev/null || :   # first: the running bar's loop, which follows the config, asks for no bar of its own
+    config_set BAR_TEXT "$_btn" >/dev/null
     theme_load; EXPR=$(render_expr); desktop_files >/dev/null
     _btb=$(wm_bar_id) || _btb=''; _btf=$(bar_line_font "$(font_spec)")
     [ -z "$_btb" ] || ! wm_session || wm_send "bar $_btb font pango:$_btf" >/dev/null 2>&1 || :
@@ -1059,7 +1061,7 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | top|bottom | text [aut
         keys) bar_desktop_here; sparkbar_keys; return ;;   # Super+equal
         start) [ "$OS" = Darwin ] || sparkbar_wake; return ;;   # sway's, at login: resident
         fallback) [ "$OS" = Darwin ] || sparkbar_fallback; return ;;   # the keeper's, when it gives up
-        again) [ "$OS" = Darwin ] || { sparkbar_again; layout_refit_soon; }; return ;;   # the status loop's, apart from it: a new font
+        again) [ "$OS" = Darwin ] || { [ "${2:-}" = font ] && sparkbar_has_font; } || { sparkbar_again; layout_refit_soon; }; return 0 ;;   # the status loop's, apart from it: a new font, which a verb may have given the bar already
         seen) shift; notify_seen "$@"; return ;;   # mako's clicks
         on|off|'') ;;
         -*) refuse_in bar "$1 is not a bar command: on, off, top, bottom, text, tray, pin, unpin, hide, show, keys, status, volume, panel, or words for what you want" ;;
