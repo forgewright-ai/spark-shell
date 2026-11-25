@@ -63,6 +63,8 @@ pub const RECEIPT_STAYS: std::time::Duration = std::time::Duration::from_secs(8)
 pub const HEIGHT: u16 = 40;
 pub const MIN_WIDTH: u16 = 36;
 pub const MIN_HEIGHT: u16 = 20;
+/// What the layout in pixels takes of the least window around a place of the grid's, in cells: its own edges and keys.
+pub const FRAME: (u16, u16) = (2, 4);
 /// The draft's length, in characters.
 pub const INPUT_MAX: usize = 2000;
 /// What the prompt says while it is empty.
@@ -986,6 +988,8 @@ pub struct App {
     pub pixels: bool,
     /// The window is wide enough for an app's details beside the list. main.rs sets it.
     pub pane_fits: bool,
+    /// The grid is drawn inside the layout in pixels, which has less than the window to give it. main.rs sets it.
+    pub framed: bool,
     /// The window is wide (scene::wide): the lit app or file stands beside its list without being asked for.
     pub wide: bool,
     /// The details beside the list of apps were opened by the window being wide: they close when it is no longer.
@@ -1152,6 +1156,7 @@ impl App {
             list_keys: false,
             pixels: false,
             pane_fits: false,
+            framed: false,
             wide: false,
             pane_wide: false,
             wide3: false,

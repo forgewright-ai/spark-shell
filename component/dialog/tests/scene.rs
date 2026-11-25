@@ -277,6 +277,88 @@ fn space_at_the_empty_line_of_home_is_a_space() {
     assert_eq!(a.reply.as_ref().map(|r| r.text.as_str()), Some("nothing to select here"));
 }
 
+/// A place of the grid's inside the frame is drawn in every window the frame is: it said to make the window larger in
+/// one a little over the least size.
+#[test]
+fn a_place_of_the_grids_is_drawn_in_the_least_window() {
+    // the view of a file with pages: its keys take two lines in a narrow window
+    let preview = || {
+        let mut view = files();
+        let rows = view.folder.as_ref().unwrap().2.clone();
+        view.preview = spark_dialog::preview::Preview::new(0, &rows.title, &rows.rows, "files:file:diagram.png");
+        view.came_from.push(view.view.clone());
+        (view.view, view.preview_pages) = (View::Preview, 5);
+        view
+    };
+    let talk = || {
+        let mut a = home();
+        a.came_from.push(View::Home);
+        a.view = View::Conversation;
+        a.input = "what is on the screen".into();
+        a
+    };
+    let at = |view: View| {
+        move || {
+            let mut a = home();
+            a.came_from.push(View::Home);
+            a.view = view.clone();
+            a
+        }
+    };
+    let found = || {
+        let mut a = home();
+        a.came_from.push(View::Home);
+        a.view = View::Found(spark_dialog::app::Found::Places, "display".into());
+        a
+    };
+    let (help, about, models, voice, tools) = (at(View::Help), at(View::About), at(View::Models), at(View::Talk), at(View::Connections));
+    let places: [(&str, &dyn Fn() -> App); 11] = [
+        ("preview", &preview),
+        ("found", &found),
+        ("conversation", &talk),
+        ("help", &help),
+        ("about", &about),
+        ("models", &models),
+        ("talk", &voice),
+        ("connections", &tools),
+        ("files", &files),
+        ("apps", &apps),
+        ("home", &home),
+    ];
+    let change = json!({"trial": {"said": "1280x720", "seconds": 15,
+        "keep": {"name": "display_keep", "arguments": {"screen": "DP-3"}},
+        "back": {"name": "display_back", "arguments": {"screen": "DP-3"}}}});
+    let mut least = (u16::MAX, u16::MAX);
+    for (name, make) in places {
+        for (cw, ch) in [(10.0, 20.0), (9.0, 18.0), (8.0, 20.0), (8.0, 16.0), (15.0, 30.0)] {
+            let m = Metrics { cw, ch, sw: cw * 0.7, ..M };
+            for (dw, dh, trial) in (0..6 * 12 * 2).map(|i| (i % 6, i / 6 % 12, i >= 72)) {
+                let (w, h) = ((36 + dw) as f64 * cw, (20 + dh) as f64 * ch);
+                assert!(spark_dialog::scene::fits(&m, w, h));
+                let mut a = make();
+                a.framed = true;
+                if trial {
+                    a.display.trial = spark_dialog::display::trial::Trial::read(&change, 0, std::time::Instant::now());
+                    assert!(a.trial_card().is_some());
+                }
+                a.size = size(&a, &m, w, h);
+                let mut b = spark_dialog::grid::Buffer::empty(spark_dialog::grid::Rect::new(0, 0, a.size.0, a.size.1));
+                spark_dialog::ui::draw(&a, &nord(), "", &mut b);
+                if kind(&a) == Kind::Grid {
+                    least = (least.0.min(a.size.0), least.1.min(a.size.1));
+                    let said: String = b.content.iter().map(|c| c.symbol()).collect();
+                    assert!(
+                        !said.contains("Make this window larger"),
+                        "{name} {w}x{h} at {cw}x{ch}, a trial {trial}: {:?}",
+                        a.size
+                    );
+                }
+            }
+        }
+    }
+    assert!(least.0 < 36 && least.1 < 20, "no place met fewer than the grid's own least: {least:?}");
+}
+
 #[test]
 fn no_heading_and_no_stepper_takes_a_click_outside_its_list() {
     // the values the words find at home, each between its arrows

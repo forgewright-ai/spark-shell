@@ -1056,12 +1056,14 @@ fn main() {
                 grid_at = None;
                 if alone {
                     app.size = window_size;
+                    app.framed = false;
                     let mut b = Buffer::empty(Rect::new(0, 0, window_size.0, window_size.1));
                     drawn = ui::draw(&app, &pal, &last_clock, &mut b);
                     steps = spark_dialog::draw::steps(&b, w.cell, &tones);
                     frame_buf = b;
                     shown = None;
                 } else {
+                    app.framed = true;
                     app.pane_fits = scene::splits(&m, window_px.0);
                     app.wide = scene::wide(&m, window_px.0);
                     app.wide3 = scene::wide3(&m, window_px.0);

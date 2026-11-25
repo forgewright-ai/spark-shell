@@ -21,6 +21,8 @@
   on the row that was pressed.
 - A dialog that is refused, and one that opens a window of its own, leave
   the terminal its cursor.
+- A list found by a search is drawn in a small home window. It said to
+  make the window larger in one that fits.
 - A launch of home that never shows leaves no window behind.
 - The release of a held Super+Space fails no more when its session ends
   at that moment.

@@ -5,7 +5,7 @@
 //! model, the mic).
 
 use crate::animation::Reel;
-use crate::app::{App, FolderShape, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, SETTINGS, WIDTH};
+use crate::app::{App, FolderShape, HintKey, Item, Mode, Sign, Talk, View, DESTS, FRAME, MIN_HEIGHT, MIN_WIDTH, SETTINGS, WIDTH};
 use crate::display::screens::Side as Toward;
 use crate::files::{Pane, Side};
 use crate::grid::{Buffer, CellDiffOption, Color, Modifier, Rect, Style};
@@ -476,7 +476,7 @@ fn draw_layout(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     let mut drawn = draw_column(app, pal, clock, &mut col, false);
     blit(buf, &col, x, 0);
     drawn.shift(x);
-    if cw >= MIN_WIDTH && h >= MIN_HEIGHT {
+    if holds(app, cw, h) {
         let mut pen = Pen {
             buf,
             pal,
@@ -580,6 +580,12 @@ fn rules(pen: &mut Pen) {
 /// The dialog's own column.
 /// The dialog's own column. With `chrome` it draws the frame's header, rules and key bar too, at its own width;
 /// without, draw_layout draws them at the window's.
+/// Whether a size holds the prompt, a list and the footer: the least window, less what the layout in pixels takes of it.
+fn holds(app: &App, w: u16, h: u16) -> bool {
+    let (dw, dh) = if app.framed { FRAME } else { (0, 0) };
+    w + dw >= MIN_WIDTH && h + dh >= MIN_HEIGHT
+}
+
 fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: bool) -> Drawn {
     let mut drawn = Drawn::default();
     let hd = head(app);
@@ -596,7 +602,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: 
         pane: false,
         g: app.glyphs,
     };
-    if w < MIN_WIDTH || h < MIN_HEIGHT {
+    if !holds(app, w, h) {
         // too small to hold the prompt, a list and the footer without cutting one: say so, plainly
         let t = "Make this window larger";
         pen.put(w.saturating_sub(cells(t) as u16) / 2, h / 2, t, pal.muted, false, false);
