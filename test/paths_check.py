@@ -69,8 +69,9 @@ def unrun():
                 code = re.sub(r"(^|\s)#.*", "", line)
                 if "shellcheck" not in code and "py_compile" not in code:
                     run += code
-    names = [os.path.basename(p) for p in tracked() if re.match(r"test/\w*_proof\.(py|sh)$", p)]
-    return [n for n in names if n not in BY_HAND and not re.search(r"(?<![\w])" + re.escape(n), run)]
+    names = [os.path.basename(p) for p in tracked() if re.match(r"test/[\w-]*_proof\.(py|sh)$", p)]
+    starts = r"(?:^|[\s\"'(;&|])(?:sh|python3(?: -I)?) [^\n]*"   # an interpreter before the name; a list of files is no run
+    return [n for n in names if n not in BY_HAND and not re.search(starts + re.escape(n), run, re.M)]
 
 
 def main():

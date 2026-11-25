@@ -141,7 +141,7 @@ area() {
         '"'*) echo guarded ;;   # a name git had to quote
         .github/*|.githooks/*|allowed-signers|distro/*) echo guarded ;;
         .gitattributes|*/.gitattributes|.gitmodules) echo guarded ;;   # what a checkout writes
-        test/gate.sh|test/lane.sh|test/prove.sh|test/tag.sh) echo guarded ;;
+        test/gate.sh|test/lane.sh|test/prove.sh|test/tag.sh|test/reds.sh) echo guarded ;;
         test/*_build.sh|test/dialog_sbom.sh) echo guarded ;;   # a release runs them
         *deny.toml|*build.rs|.cargo/*|*/.cargo/*|*rust-toolchain*) echo guarded ;;   # how a build is made, and what it may take
         *Cargo.lock|*Cargo.toml) cargo "$1" ;;

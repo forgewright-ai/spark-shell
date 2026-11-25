@@ -7,7 +7,7 @@
 #   sh test/tag.sh --dry-run   say what it would do, touch nothing
 #   sh test/tag.sh --now       a person's word: no rest on main first
 #   sh test/tag.sh --cool H    the hours a fix rests on main before its tag (default 6; SPARK_SHELL_TAG_COOL too)
-#   sh test/tag.sh --cause W   why a rerun of main's run turned green, with the card that holds it
+#   sh test/tag.sh --cause W   why ci.yml was red on the commit before it was green, with the card that holds it
 #
 # Run it from the clone that tags, and run a copy you trust: the installed release's
 # (sh ~/.spark-shell/test/tag.sh), never the one of the commit it judges. It reads that commit from git and
@@ -25,9 +25,9 @@
 #     the changelog, and what is no text is a picture or a loop of the gallery's;
 #   - ci.yml passed for the exact commit in main's own run, the one that takes every job (GitHub's public
 #     API through curl, no token);
-#   - that run passed at its first attempt, or --cause says why a rerun turned it green, and the tag's message
-#     keeps the words: two releases went out on a rerun with the bug the first run had caught (release.yml asks
-#     the same of every tag);
+#   - no attempt of ci.yml on the commit failed, or --cause says why one did, and the tag's message keeps the
+#     words: two releases went out on a rerun with the bug the first run had caught (test/reds.sh, which
+#     release.yml asks too);
 #   - the fix has rested the cooling hours on main, counted from when that run was made, by GitHub's clock:
 #     a person has time to see it. A date the committer wrote never counts. --now skips the rest.
 # Then the tag is signed by the key this clone's git config names (gpg.format ssh, user.signingkey),
@@ -53,8 +53,9 @@ while [ $# -gt 0 ]; do
     shift
 done
 case $cool in ''|*[!0-9]*) usage ;; esac
-case $cause in *'
-'*) usage ;; esac   # one line: it is a line of the tag's message
+case $cause in -*|*'
+'*) usage ;; esac   # words, and one line: it is a line of the tag's message
+cause=$(printf '%s' "$cause" | sed 's/^[[:blank:]]*//; s/[[:blank:]]*$//')
 here=$(cd "$(dirname "$0")" && pwd)   # this copy: its list judges, never the one of the commit judged
 top_dir=$(git rev-parse --show-toplevel 2>/dev/null) || no "this folder is no git clone"
 cd "$top_dir"
@@ -132,12 +133,12 @@ runs=$("$CURL" -fsS -m 30 -H 'Accept: application/vnd.github+json' "https://api.
 made=$(printf '%s' "$runs" | jq -r --arg sha "$sha" '[.workflow_runs[]? | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .conclusion == "success") | .created_at | fromdateiso8601] | min // empty' 2>/dev/null) \
     || no "GitHub's answer about ci.yml could not be read"
 case $made in ''|*[!0-9]*) no "ci.yml has not passed for main at $short in main's own run" ;; esac
-attempt=$(printf '%s' "$runs" | jq -r --arg sha "$sha" '[.workflow_runs[]? | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .conclusion == "success") | .run_attempt // 0] | max // 0' 2>/dev/null) || attempt=0
-case $attempt in
-    1) ;;
-    ''|0|*[!0-9]*) no "GitHub's answer about ci.yml could not be read" ;;
-    *) [ "${#cause}" -ge 10 ] || no "main's run at $short passed on attempt $attempt: --cause says why the ones before it failed, and the card that holds it" ;;
-esac
+reds=$(SPARK_SHELL_TAG_CURL="$CURL" GH_TOKEN='' sh "$here/reds.sh" "$repo" "$sha") || no "GitHub's answer about ci.yml's attempts could not be read"
+if [ -n "$reds" ]; then
+    [ "${#cause}" -ge 10 ] || no "ci.yml was red on $short before it was green ($(printf '%s\n' "$reds" | paste -sd, - | sed 's/,/, /g')): --cause says why, and the card that holds it"
+else
+    [ -z "$cause" ] || no "no attempt of ci.yml failed on $short: --cause says nothing"
+fi
 if [ -z "$now" ]; then
     age=$(( $(date +%s) - made ))
     if [ "$age" -lt $((cool * 3600)) ]; then

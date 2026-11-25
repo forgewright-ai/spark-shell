@@ -35,9 +35,14 @@ trap '_rc=$?; [ -n "$_ended" ] || printf "  FAIL the suite stopped before its en
 # never the person's own session: a test that notifies, locks or asks a compositor must reach none of it,
 # whatever the shell that started the suite carries
 unset WAYLAND_DISPLAY SWAYSOCK I3SOCK DISPLAY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR TMUX TMUX_PANE
-# nor the machine's root: a sudo and a doas that refuse are first on PATH, so a test that names none of its own
-# never acts as root here, whatever this machine's sudoers say (a test once wrote /etc/rc.local)
-_nr=$(tmpd); for _t in sudo doas; do printf '#!/bin/sh\nexit 1\n' > "$_nr/$_t"; chmod 755 "$_nr/$_t"; done; PATH=$_nr:$PATH; export PATH
+# tmux looks for its server in a folder of the suite's: with TMUX unset it would find the person's own
+TMUX_TMPDIR=$(tmpd); export TMUX_TMPDIR
+exec </dev/null   # no terminal on stdin: a verb that asks for a password asks nobody here
+# nor the machine's root: a sudo and a doas that refuse, first on PATH for the tests that keep it, so one that names
+# none of its own never acts as root here (a test once wrote /etc/rc.local); test/prove.sh has its own, which count
+if [ -z "${SPARK_SHELL_FENCE:-}" ]; then
+    _nr=$(tmpd); for _t in sudo doas; do printf '#!/bin/sh\nexit 1\n' > "$_nr/$_t"; chmod 755 "$_nr/$_t"; done; PATH=$_nr:$PATH; export PATH
+fi
 
 fresh() {   # a new throwaway HOME with the stubs in place
     H=$(tmpd)
@@ -7310,6 +7315,7 @@ guarded|1|test/gate.sh
 guarded|1|test/lane.sh
 guarded|1|test/prove.sh
 guarded|1|test/tag.sh
+guarded|1|test/reds.sh
 guarded|10|src/bar.sh README.md src/login.sh spark-shell
 CASES
 [ -z "$_lb" ] && ok "test/lane.sh: a small fix in the user's side of the shell, the tests or the words is fast, to 400 lines; a component, a template, a helper, a proof, the config's module and a path it does not name are standard; the workflows, the hooks, the signers, the gate and the tagging rule, the entry, on and off, the update, the gallery, what becomes root's file, what a build is made by and a module that acts as root are guarded, and guarded wins" || bad "lanes by path" "$_lb"
@@ -9828,9 +9834,13 @@ if command -v ssh-keygen >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
 for a in "$@"; do u=$a; done
 printf '%s\n' "$u" >> "$CURL_DIR/asked"
 sha=${u#*head_sha=}; sha=${sha%%&*}
-jq -n --arg sha "$sha" --arg b "$(cat "$CURL_DIR/branch")" --argjson ago "$(cat "$CURL_DIR/made")" --argjson n "$(cat "$CURL_DIR/attempt")" '{workflow_runs: [{head_sha: $sha, head_branch: $b, event: "push", conclusion: "success", run_attempt: $n, created_at: (now - $ago | todate)}]}'
+case $u in
+    */attempts/*) jq -n --arg c "$(cat "$CURL_DIR/first")" '{conclusion: $c}'; exit ;;
+    *branch=main*) jq -n --arg sha "$sha" --arg b "$(cat "$CURL_DIR/branch")" --argjson ago "$(cat "$CURL_DIR/made")" '{workflow_runs: [{head_sha: $sha, head_branch: $b, event: "push", conclusion: "success", created_at: (now - $ago | todate)}]}' ;;
+    *) jq -n --arg sha "$sha" --argjson n "$(cat "$CURL_DIR/attempt")" '{workflow_runs: [{id: 7, head_sha: $sha, head_branch: "main", event: "push", conclusion: "success", run_attempt: $n}]}' ;;
+esac
 CURL
-    chmod +x "$U/curl"; echo main > "$U/branch"; echo 25200 > "$U/made"; echo 1 > "$U/attempt"   # seven hours, the first attempt
+    chmod +x "$U/curl"; echo main > "$U/branch"; echo 25200 > "$U/made"; echo 1 > "$U/attempt"; echo failure > "$U/first"   # seven hours, the first attempt
     T() { (cd "$U/t" && CURL_DIR=$U SPARK_SHELL_TAG_CURL=$U/curl SPARK_SHELL_TAG_SIGNERS=$U/signers sh "$REPO/test/tag.sh" "$@" 2>&1); }
     on_origin() { git -C "$U/origin.git" rev-parse -q --verify "refs/tags/$1" >/dev/null 2>&1; }
     # a vX.Y heading is a person's
@@ -9852,18 +9862,25 @@ CURL
     [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q "^tag: refused: ci.yml has not passed for main at [0-9a-f]\{7\} in main's own run -- nothing tagged$" && ! on_origin v9.0.1 \
         && grep -q 'actions/workflows/ci.yml/runs?head_sha=[0-9a-f]\{40\}&branch=main&event=push&status=success' "$U/asked" \
         && ok "tag: a pass in a branch's run is no pass: main's own run of the exact commit is asked for" || bad "tag: a branch's run" "$rc $out $(tail -1 "$U/asked")"
-    # a run that passed on a rerun: the tag says why the first one failed, or there is none
+    # a commit that was red before it was green: the tag says why, or there is none
     echo main > "$U/branch"; echo 25200 > "$U/made"; echo 3 > "$U/attempt"
     out=$(T --now) && rc=0 || rc=$?
-    _tb=''; [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q "^tag: refused: main's run at [0-9a-f]\{7\} passed on attempt 3: --cause says why the ones before it failed, and the card that holds it -- nothing tagged$" && ! on_origin v9.0.1 || _tb="$_tb [no cause: $rc $out]"
-    out=$(T --now --cause short) && rc=0 || rc=$?
+    _tb=''; [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q "^tag: refused: ci.yml was red on [0-9a-f]\{7\} before it was green (main run 7 attempt 1, main run 7 attempt 2): --cause says why, and the card that holds it -- nothing tagged$" && ! on_origin v9.0.1 || _tb="$_tb [no cause: $rc $out]"
+    out=$(T --now --cause 'short    ') && rc=0 || rc=$?
     [ "$rc" = 1 ] && ! on_origin v9.0.1 || _tb="$_tb [a word for a cause: $rc $out]"
+    out=$(T --now --cause --dry-run) && rc=0 || rc=$?
+    [ "$rc" = 2 ] && ! on_origin v9.0.1 || _tb="$_tb [an option for a cause: $rc $out]"
     out=$(T --now --dry-run --cause 'a mirror was half synced, card 12') && rc=0 || rc=$?
     [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -qF "git tag -s v9.0.1 -m 'spark-shell v9.0.1' -m 'rerun: a mirror was half synced, card 12'" || _tb="$_tb [dry run: $rc $out]"
-    echo null > "$U/attempt"
+    echo cancelled > "$U/first"
+    out=$(T --now --dry-run) && rc=0 || rc=$?
+    [ "$rc" = 0 ] || _tb="$_tb [a cancelled attempt is no red: $rc $out]"
+    out=$(T --now --dry-run --cause 'nothing was red here at all') && rc=0 || rc=$?
+    [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'no attempt of ci.yml failed on [0-9a-f]\{7\}: --cause says nothing' || _tb="$_tb [a cause for nothing: $rc $out]"
+    echo failure > "$U/first"; echo null > "$U/attempt"
     out=$(T --now) && rc=0 || rc=$?
-    [ "$rc" = 1 ] && [ "$out" = "tag: refused: GitHub's answer about ci.yml could not be read -- nothing tagged" ] || _tb="$_tb [no attempt in the answer: $rc $out]"
-    [ -z "$_tb" ] && ok "tag: main's run that passed on a rerun is no pass until --cause says why, and the tag's message keeps the words; an answer with no attempt is not read as one" || bad "tag: a rerun" "$_tb"
+    [ "$rc" = 1 ] && [ "$out" = "tag: refused: GitHub's answer about ci.yml's attempts could not be read -- nothing tagged" ] || _tb="$_tb [no attempt in the answer: $rc $out]"
+    [ -z "$_tb" ] && ok "tag: a commit whose ci.yml was red before it was green is tagged once --cause says why, and the tag's message keeps the words; a cancelled attempt is no red, a cause for nothing and an answer with no attempt are refused" || bad "tag: a rerun" "$_tb"
     echo 2 > "$U/attempt"
     out=$(T --cause 'a mirror was half synced, card 12') && rc=0 || rc=$?
     git -C "$U/origin.git" cat-file tag v9.0.1 2>/dev/null | grep -qx 'rerun: a mirror was half synced, card 12' || out="no rerun line; $out"

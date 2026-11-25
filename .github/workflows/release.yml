@@ -75,18 +75,16 @@ jobs:
           sha=$(git rev-parse "${GITHUB_REF_NAME}^{commit}")
           n=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&status=success&branch=main&event=push" --jq '.total_count')
           [ "$n" -gt 0 ] || { echo "no green ci.yml run of main's own for $sha"; exit 1; }
-          # a run that passed on a rerun is a pass once the tag says why the
-          # ones before it failed: two releases went out on a rerun with the
-          # bug the first run had caught
-          again=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&status=success&branch=main&event=push" --jq '[.workflow_runs[].run_attempt] | max')
-          if [ "$again" != 1 ]; then
-            git cat-file tag "$GITHUB_REF_NAME" | sed '1,/^$/d' | grep -qE '^rerun: .{10,}' \
-              || { echo "release: main's run for $sha passed on attempt $again: the tag's message needs a line, rerun: WHY, and the card that holds it"; exit 1; }
-          fi
       - name: the toolchain component/dialog/rust-toolchain.toml pins
         working-directory: component/dialog
         run: rustup show active-toolchain || rustup toolchain install
       - name: the dialog's crates and the release's notes
+        # a commit that was red before it was green says so in the notes, with
+        # the cause its tag gives: two releases went out on a rerun with the
+        # bug the first run had caught. It is said here and not refused: the
+        # tag is out, and an install takes the newest one.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
           mkdir -p out
@@ -96,6 +94,12 @@ jobs:
           printf 'spark-dialog for x86_64 Linux is spark-dialog-x86_64-linux-gnu from v0.152 on.\n' > out/spark-dialog-x86_64-linux-musl
           awk -v t="## ${GITHUB_REF_NAME}" '$0 == t { on = 1; next } on && /^## / { exit } on' CHANGELOG.md > out/notes.md
           [ -s out/notes.md ] || { echo "CHANGELOG.md has no section for ${GITHUB_REF_NAME}"; exit 1; }
+          reds=$(sh test/reds.sh "$GITHUB_REPOSITORY" "$(git rev-parse "${GITHUB_REF_NAME}^{commit}")") || reds='runs that could not be read'
+          if [ -n "$reds" ]; then
+            cause=$(git cat-file tag "$GITHUB_REF_NAME" | sed '1,/^$/d' | sed -n 's/^rerun: //p' | head -1)
+            printf '\nThe checks on this commit were red before they were green (%s): %s\n' "$(printf '%s\n' "$reds" | paste -sd, - | sed 's/,/, /g')" "${cause:-no cause given}" >> out/notes.md
+            echo "::warning::ci.yml was red on this commit before it was green: ${cause:-no cause given}"
+          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
         with:
           name: release
