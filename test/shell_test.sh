@@ -988,19 +988,19 @@ else
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: foot 1.28 gets [colors-dark] alone" || bad "foot 1.28 section" "$(grep -n '^\[' "$foot")"
     grep -q '^client.focused *#ff5555 #ff5555 #000000 #ff5555 #ff5555$' "$sway" && grep -q '^client.unfocused *#060606 #060606 #555555 #060606 #060606$' "$sway" && ! grep -q '^client\.unfocused.*#ff5555' "$sway" && grep -q '^default_border normal 1$' "$sway" && grep -q '^default_floating_border normal 1$' "$sway" && grep -q '^titlebar_border_thickness 1$' "$sway" && grep -q '^title_align left$' "$sway" && ! grep -q '^smart_borders' "$sway" \
         && ok "sway: the chrome (v0.140): a title band and a one-pixel frame in one shade, the surface shade on the focused window (#0f0f0f), four percent above the ground on the others (#060606) with muted text; the accent only as the focused indicator, the drop area of a moving window (#47), at a quarter: #ff5555 halved with alpha 80, as sway takes it (#49)" || bad "sway focused" "$(grep -n 'client\|border' "$sway")"
-    grep -qxF 'for_window [shell=".*"] title_format "  %title"' "$sway" && grep -qxF 'for_window [app_id="^(foot|spark-shell-.*)$"] title_format "  terminal   %title"' "$sway" \
+    grep -qxF 'for_window [shell=".*"] title_format "&#x200E;  %title"' "$sway" && grep -qxF 'for_window [app_id="^(foot|spark-shell-.*)$"] title_format "  terminal   %title"' "$sway" \
         && ok "sway: with no winpad on the machine the titles are plain: no button is drawn that does not click (v0.143)" || bad "band plain" "$(grep -n title_format "$sway")"
     printf '#!/bin/sh\n' > "$HOME/winpad-here"; chmod +x "$HOME/winpad-here"
     SPARK_SHELL_WINPAD=$HOME/winpad-here sh "$SH" on --yes >/dev/null
     _bg=' &#x2715;  &#x25B3;  &#x25A1; '
-    grep -qxF "for_window [shell=\".*\"] title_format \"$_bg  %title\"" "$sway" && grep -qxF "for_window [app_id=\"^(foot|spark-shell-.*)\$\"] title_format \"$_bg  terminal   %title\"" "$sway" \
+    grep -qxF "for_window [shell=\".*\"] title_format \"$_bg&#x200E;  %title\"" "$sway" && grep -qxF "for_window [app_id=\"^(foot|spark-shell-.*)\$\"] title_format \"$_bg  terminal   %title\"" "$sway" \
         && grep -qF 'pub const GLYPH_REFS: [&str; 3] = ["&#x2715;", "&#x25B3;", "&#x25A1;"];' "$REPO/component/winpad/src/buttons.rs" \
         && ok "sway: with a winpad, the close, minimize and fill buttons are the start of every title, sway's own pixels, so they move with the window (v0.142), written as character references so the render stays ASCII; the component's are the same three" || bad "band glyphs" "$(grep -n title_format "$sway")"
     printf 'VOICE_ENGINE=/bin/true\n' >> "$HOME/.config/spark-shell/config"
     printf '#!/bin/sh\nexit 0\n' > "$HOME/.local/bin/wtype"; chmod +x "$HOME/.local/bin/wtype"   # a desktop has it; without it no mic is drawn
     SPARK_SHELL_WINPAD=$HOME/winpad-here sh "$SH" on --yes >/dev/null
     _mic=' &#x25CB; '
-    grep -qxF "for_window [app_id=\"^(foot|spark-shell-.*)\$\"] title_format \"$_bg$_mic  terminal   %title\"" "$sway" && grep -qxF "for_window [shell=\".*\"] title_format \"$_bg$_mic  %title\"" "$sway" \
+    grep -qxF "for_window [app_id=\"^(foot|spark-shell-.*)\$\"] title_format \"$_bg$_mic  terminal   %title\"" "$sway" && grep -qxF "for_window [shell=\".*\"] title_format \"$_bg$_mic&#x200E;  %title\"" "$sway" \
         && ok "sway: with a voice, every title carries the mic after the buttons, a ring in the title's color as they are (v0.148.1): the voice is a window's, like its buttons (v0.145)" || bad "band mic" "$(grep -n title_format "$sway")"
     sed -i.bak '/^VOICE_ENGINE=/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak" "$HOME/.local/bin/wtype"
     sh "$SH" on --yes >/dev/null; rm -f "$HOME/winpad-here"

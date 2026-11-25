@@ -196,7 +196,7 @@ fn wide(c: char) -> usize {
     UnicodeWidthChar::width(c).unwrap_or(0)
 }
 
-/// The cells a title takes on screen: a tag takes none, a character reference or an escaped character one,
+/// The cells a title takes on screen: a tag and the left-to-right mark take none, a reference or an escaped character one,
 /// a wide character two, and a character in a span with a size of its own half of its cells: the half spaces
 /// at a button's sides.
 pub fn cells(s: &str) -> usize {
@@ -208,10 +208,7 @@ pub fn cells(s: &str) -> usize {
                 small = tag.starts_with("span size=");
                 continue;
             }
-            '&' => {
-                it.by_ref().find(|&d| d == ';');
-                1
-            }
+            '&' => usize::from(it.by_ref().take_while(|&d| d != ';').collect::<String>() != "#x200E"),
             '\\' => {
                 it.next();
                 1
@@ -766,6 +763,19 @@ mod tests {
         let shady = title(40, "", "%title", "a \"b\" <i>c</i> & d\\", "");
         assert!(shady.starts_with("a &quot;b&quot; &lt;i&gt;c&lt;/i&gt; &amp; d\\\\"), "{shady}");
         assert_eq!(cells(&shady), 32);
+    }
+
+    #[test]
+    fn the_mark_that_keeps_a_line_left_to_right_takes_no_cell() {
+        // the look puts it before a name, so a Hebrew or an Arabic one turns no button around: the line is the one it
+        // would be without it, the mark alone more
+        let btn = " &#x2715;  &#x25B3;  &#x25A1; ";
+        for name in ["\u{5e9}\u{5dc}\u{5d5}\u{5dd}", "a window with a name far longer than its band"] {
+            let marked = title(40, btn, "&#x200E;  %title", name, "");
+            assert_eq!(marked.replacen("&#x200E;", "", 1), title(40, btn, "  %title", name, ""));
+            assert!(marked.starts_with(&format!("{btn}&#x200E;  ")), "{marked}");
+        }
+        assert_eq!((cells("&#x200E;"), cells("&#x2715;")), (0, 1));
     }
 
     #[test]

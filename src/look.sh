@@ -289,7 +289,7 @@ wall_load() {   # WALL_KEYS from WALLPAPER and ALPHA
     else WALL_BG="$(wall_ground) solid_color"; fi   # default, none or a missing picture
     # shellcheck disable=SC2034
     GAPS_INNER=8; GAPS_OUTER=8; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER="normal 1"   # a title band and a one-pixel frame; windows 8 px apart
-    BAND_TITLE='  %title'; BAND_TERM_TITLE='  terminal   %title'   # what follows the buttons, two spaces on: a window's title; the terminal's name, then the folder
+    BAND_TITLE='&#x200E;  %title'; BAND_TERM_TITLE='  terminal   %title'   # what follows the buttons, two spaces on: a window's title, behind a left-to-right mark, as a Hebrew or an Arabic one turned the line around and the buttons with it; the terminal's name, then the folder
     for k in $WALL_KEYS; do export "${k?}"; done
 }
 
