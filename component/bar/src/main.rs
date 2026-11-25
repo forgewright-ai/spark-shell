@@ -292,6 +292,8 @@ fn run() -> Result<(), String> {
     // so the signals reach this loop
     let signals = Signals::new(&[Signal::SIGUSR1, Signal::SIGTERM, Signal::SIGINT]).map_err(|e| format!("signals: {e}"))?;
     let Some(_lock) = lock()? else { return Ok(()) };
+    // what a bar that crashed left says where that one stood
+    let _ = std::fs::remove_file(&cfg.state_file);
     if !wayland_sys::client::is_lib_available() {
         return Err("libwayland-client.so.0 is missing (Wayland's client library)".into());
     }

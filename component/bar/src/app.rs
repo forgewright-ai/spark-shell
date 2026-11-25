@@ -1095,8 +1095,10 @@ impl App {
         self.outputs.info(output).map_or(1, |i| i.scale_factor.max(1))
     }
 
-    /// The bar ends: the status child's group told to, the surfaces and what cairo and pango hold given back.
+    /// The bar ends: the status child's group told to, the surfaces, the state file and what cairo and pango hold
+    /// given back.
     pub fn free(&mut self) {
+        let _ = std::fs::remove_file(&self.cfg.state_file);
         if let Some(feed) = self.feed.take() {
             feed.end();
         }
