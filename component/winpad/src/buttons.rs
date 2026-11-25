@@ -331,21 +331,24 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
     fn shows(n: &Value) -> bool {
         n["visible"] != false && (kids(n).next().is_none() || kids(n).any(shows))
     }
-    fn walk(n: &Value, at: Rect, afloat: Option<i64>, out: &mut Vec<Seen>) {
-        let r = rect_of(&n["rect"]);
+    /// `titles`: how many titles of its row sway leaves out of a node's rect, its own in a tab, every one in a stack.
+    fn walk(n: &Value, at: Rect, titles: i32, afloat: Option<i64>, out: &mut Vec<Seen>) {
+        let (mut r, d) = (rect_of(&n["rect"]), rect_of(&n["deco_rect"]));
         if kids(n).next().is_some() {
+            // a group in a tab: its windows' titles are drawn where the group begins, above the rect sway says
+            r.y -= d.h * titles;
             // a window behind another tab keeps its title in the tabs' row; any other out of sight has none
             let tabs = n["layout"] == "tabbed" || n["layout"] == "stacked";
+            let titles = if n["layout"] == "stacked" { kids(n).count() as i32 } else { 1 };
             for k in kids(n).filter(|k| shows(k) || tabs && kids(k).next().is_none()) {
                 let afloat = if k["type"] == "floating_con" { k["id"].as_i64() } else { afloat };
-                walk(k, r, afloat, out);
+                walk(k, r, titles, afloat, out);
             }
             return;
         }
         if n["type"] != "con" && n["type"] != "floating_con" {
             return;
         }
-        let d = rect_of(&n["deco_rect"]);
         let band = Rect::new(at.x + d.x, at.y + d.y, d.w, d.h);
         let (x0, y0) = (r.x.min(band.x), r.y.min(band.y));
         let whole = Rect::new(x0, y0, (r.x + r.w).max(band.x + band.w) - x0, (r.y + r.h).max(band.y + band.h) - y0);
@@ -380,7 +383,7 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
             continue;
         };
         let mut seen = vec![];
-        walk(ws, rect_of(&ws["rect"]), None, &mut seen);
+        walk(ws, rect_of(&ws["rect"]), 1, None, &mut seen);
         if seen.iter().any(|s| s.full) {
             continue;
         }
@@ -505,6 +508,30 @@ mod tests {
         assert_eq!(ids(&tab_of_two(false)), [5], "the group's tab is behind: its two windows show nothing");
         // in front, they have their bands, and the window behind them keeps its tab's
         assert_eq!(ids(&tab_of_two(true)), [5, 31, 32]);
+    }
+
+    #[test]
+    fn a_group_in_a_tab_or_a_stack_has_its_titles_where_sway_draws_them() {
+        // sway 1.12's own numbers, measured on a screen of 1280 by 720: the titles stood at y 80 in the tab, 108 in the stack
+        let at = |layout: &str, rect: [i32; 4], deco: [i32; 4], child: [i32; 4]| {
+            let b = |r: [i32; 4]| serde_json::json!({"x": r[0], "y": r[1], "width": r[2], "height": r[3]});
+            let win = |id: i64, rect: Value, deco: Value, visible: bool| serde_json::json!({"type": "con", "id": id, "name": "w", "app_id": "foot", "layout": "none", "visible": visible, "rect": rect, "deco_rect": deco, "nodes": [], "floating_nodes": []});
+            let behind = win(9, b([16, rect[1] - 28, 1248, 600]), b([0, 0, 624, 28]), false);
+            let group = serde_json::json!({"type": "con", "id": 12, "layout": "splith", "rect": b(rect), "deco_rect": b(deco),
+                "nodes": [win(11, b(child), b([0, 0, 416, 28]), true)], "floating_nodes": []});
+            let t = serde_json::json!({"type": "root", "nodes": [{"type": "output", "name": "A", "id": 3, "current_workspace": "4", "rect": b([0, 0, 1280, 720]),
+                "nodes": [{"type": "workspace", "name": "4", "id": 8, "layout": "splith", "rect": b([16, 52, 1248, 652]), "deco_rect": b([0; 4]), "floating_nodes": [],
+                    "nodes": [{"type": "con", "id": 10, "layout": layout, "rect": b([16, 52, 1248, 652]), "deco_rect": b([0; 4]), "nodes": [behind, group], "floating_nodes": []}]}]}]});
+            bands(&t, 10.0).iter().find(|b| b.id == 11).map(|b| b.rect)
+        };
+        assert_eq!(
+            at("tabbed", [16, 108, 1248, 596], [624, 28, 624, 28], [16, 108, 416, 596]),
+            Some(Rect::new(16, 80, 416, 28))
+        );
+        assert_eq!(
+            at("stacked", [16, 164, 1248, 540], [0, 28, 1248, 28], [16, 136, 416, 568]),
+            Some(Rect::new(16, 108, 416, 28))
+        );
     }
 
     #[test]
