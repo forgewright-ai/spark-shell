@@ -1570,6 +1570,17 @@ fn two_panes_of_files_stand_side_by_side_each_under_its_folder() {
     let kept = a.files.other.as_mut().unwrap().rows.replace(moved);
     assert!(a.files_row_key(1, true) != held && a.files_row_key(0, true) == held);
     a.files.other.as_mut().unwrap().rows = kept;
+    // the place is counted among the rows drawn: with words typed in that pane, among the ones they match
+    let ids = |a: &App| (0..9).map_while(|n| a.files_row_key(n, true)).collect::<Vec<_>>();
+    let all = ids(&a);
+    let View::Folder(p, _) = a.view.clone() else { panic!("files") };
+    a.prompts.save(&View::Folder(p, folder_uri("/data/me/documents")), "letters");
+    assert!(
+        ids(&a).contains(&"files:dir:letters".to_string()) && !ids(&a).contains(&"files:dir:research".to_string()),
+        "{:?} of {all:?}",
+        ids(&a)
+    );
+    a.prompts.save(&View::Folder(p, folder_uri("/data/me/documents")), "");
     assert_eq!(s.hit(450.0, 110.0), Some(&Target::OtherPane), "its folder's name too");
     // the keys say Tab is the other pane
     assert_eq!(keys(&s), [HintKey::Escape, HintKey::Enter, HintKey::View, HintKey::Actions, HintKey::Tab]);

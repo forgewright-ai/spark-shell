@@ -747,13 +747,15 @@ impl App {
     }
 
     /// The row `n` of the other pane, or of the list beside open details, by its id: a press keeps it while rows move.
+    /// Counted as they are drawn: the rows that pane's own words match.
     pub fn files_row_key(&self, n: usize, other: bool) -> Option<String> {
-        let rows = if other {
-            self.files.other.as_ref()?.rows.as_ref()?
-        } else {
-            &self.folder.as_ref()?.2
-        };
-        rows.rows.get(n).map(|r| r.id.clone())
+        if other {
+            let (pane, p) = (self.files.other.as_ref()?, self.files()?);
+            let words = self.prompts.restore(&View::Folder(p, pane.uri.clone()));
+            return self.files_bar_ids(p, pane.rows.as_ref()?, &words, true).get(n).cloned();
+        }
+        let (nav, (p, _, rows)) = (self.files.list_nav()?, self.folder.as_ref()?);
+        self.files_bar_ids(*p, rows, &nav.query, self.panes_drawn()).get(n).cloned()
     }
 
     /// The row `n` of the details beside a list: what it does to what is lit, for apps; the lit file's own, for files.
