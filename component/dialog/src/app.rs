@@ -6363,6 +6363,12 @@ impl App {
         crate::ui::frame_width(self.size.0, self)
     }
 
+    /// What stands on pick `n`, by its row's id where it has one: it keeps it wherever the row moves.
+    pub fn pick_key(&self, n: usize) -> Option<String> {
+        let it = self.picks().get(n).cloned()?;
+        Some(self.row_ref(&it).map_or_else(|| format!("{it:?}"), |r| r.id.clone()))
+    }
+
     /// A click lights row `n`: a choice, as a key's is, so the light kept from a preview lets go (#153).
     pub fn light(&mut self, n: usize) {
         self.in_list = true;

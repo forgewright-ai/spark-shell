@@ -646,7 +646,21 @@ struct Press {
     off0: f64,
     most: f64,
     target: Option<scene::Target>,
+    row: Option<String>,
     moved: bool,
+}
+
+/// A press as the next event leaves it: none after a move with no button held or another press, its release lost.
+fn kept(press: Option<Press>, kind: MouseEventKind) -> Option<Press> {
+    press.filter(|_| !matches!(kind, MouseEventKind::Moved | MouseEventKind::Down(MouseButton::Left)))
+}
+
+/// The row a press is on, by what it is: another may stand in its place when the button is let go.
+fn pressed(app: &App, target: &scene::Target) -> Option<String> {
+    match target {
+        scene::Target::Pick(n) | scene::Target::Step(n, _) | scene::Target::Option(n, _) => app.pick_key(*n),
+        _ => None,
+    }
 }
 
 /// How far a press may move and still be a click, in pixels: a finger is never still.
@@ -1701,6 +1715,7 @@ fn main() {
             Ev::Term(Event::Mouse(m)) => {
                 // a drag of nothing draws nothing: the window says the pointer a pixel at a time
                 dirty |= frame_for_mouse(m.kind, drag.is_some()) && !(drag.is_none() && matches!(m.kind, MouseEventKind::Drag(_)));
+                press = kept(press, m.kind);
                 // the pointer says what a click does where it is (#129)
                 // a picture being moved, or a list being dragged: the holding hand
                 let dragging = (drag.is_some() && matches!(m.kind, MouseEventKind::Drag(_))) || press.as_ref().is_some_and(|p| p.moved) || app.map_dragging();
@@ -1744,6 +1759,7 @@ fn main() {
                                 y0: at_px.1,
                                 off0: l.at.off,
                                 most: l.most,
+                                row: target.as_ref().and_then(|t| pressed(&app, t)),
                                 target,
                                 moved: false,
                             });
@@ -1849,7 +1865,7 @@ fn main() {
                     MouseEventKind::Up(button) => {
                         // a press on a list let go: where it began, it is the click
                         if let Some(p) = press.take().filter(|_| button == MouseButton::Left) {
-                            if let Some(target) = p.target.filter(|_| !p.moved) {
+                            if let Some(target) = p.target.filter(|t| !p.moved && pressed(&app, t) == p.row) {
                                 act(&mut app, target);
                             }
                             dirty = true;
@@ -1970,6 +1986,49 @@ mod tests {
         assert!(!counted(&mut app, 3), "and no frame after that");
         assert!(counted(&mut app, 0), "a place with no pages: one");
         assert_eq!(app.preview_pages, 1);
+    }
+
+    #[test]
+    fn a_press_is_its_row_wherever_the_row_moves() {
+        let rows = |names: &[&str]| {
+            let rows: Vec<_> = names
+                .iter()
+                .map(|n| serde_json::json!({"id": format!("notes:note {n}"), "sign": "blank", "text": n, "children": null, "tool": {"name": "notes_open", "arguments": {}}}))
+                .collect();
+            spark_dialog::model::rows(&serde_json::json!({"title": "notes", "rows": rows}).to_string()).unwrap()
+        };
+        let mut app = App::new(Config::default(), &[]);
+        let mut p = spark_dialog::app::Provider::new("notes");
+        p.ready = true;
+        p.rows = rows(&["one", "two"]);
+        app.providers = vec![p];
+        app.view = View::Section(0);
+        let on = |app: &App, n: usize| pressed(app, &scene::Target::Pick(n));
+        let two = on(&app, 1);
+        assert_eq!(two.as_deref(), Some("notes:note two"));
+        app.providers[0].rows = rows(&["new", "one", "two"]);
+        assert_ne!(on(&app, 1), two, "another row is there when the button is let go: the click is not its");
+        assert_eq!(on(&app, 2), two);
+        assert_eq!(pressed(&app, &scene::Target::Home), None, "a place that is no row is what it was");
+    }
+
+    #[test]
+    fn a_press_whose_release_went_elsewhere_is_none() {
+        let held = || {
+            Some(Press {
+                key: String::new(),
+                y0: 0.0,
+                off0: 0.0,
+                most: 0.0,
+                target: None,
+                row: None,
+                moved: false,
+            })
+        };
+        assert!(kept(held(), MouseEventKind::Drag(MouseButton::Left)).is_some());
+        assert!(kept(held(), MouseEventKind::Up(MouseButton::Left)).is_some());
+        assert!(kept(held(), MouseEventKind::Moved).is_none(), "a move with no button held");
+        assert!(kept(held(), MouseEventKind::Down(MouseButton::Left)).is_none(), "another press");
     }
 
     #[test]
