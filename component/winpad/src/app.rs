@@ -974,7 +974,7 @@ impl App {
             }
         };
         self.misses = 0;
-        let bands = crate::buttons::bands(&tree, self.cell);
+        let bands = crate::buttons::bands(&tree, self.cell, self.cfg.titles.voice);
         if bands != self.bands {
             self.bands = bands;
             self.deco_dirty = true;
@@ -1069,7 +1069,8 @@ impl App {
     }
 
     /// Super+minus: the pad in sight with the keyboard on it, on the screen sway has the focus on,
-    /// the newest picked. Not on a screen at rest, and not kept for when it is back.
+    /// the newest picked. Not on a screen at rest, nor under a full-screen window, where it is not seen, and not
+    /// kept for when it is back.
     pub fn keys_on(&mut self) {
         if self.wins.is_empty() {
             self.keys_wanted = true;
@@ -1080,7 +1081,7 @@ impl App {
             .focused_output()
             .or_else(|| self.outs.first().map(|o| o.name.clone()))
             .unwrap_or_default();
-        if self.resting.contains(&out) {
+        if self.resting.contains(&out) || self.ipc.tree().is_ok_and(|t| crate::sway::covered(&t, &out)) {
             return;
         }
         let temp = self.keys.as_ref().map_or(self.hidden, |k| k.temp);

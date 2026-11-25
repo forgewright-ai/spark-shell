@@ -313,8 +313,8 @@ fn meets(a: Rect, b: Rect) -> bool {
 /// it, in the screen's own pixels. A workspace with a view in full screen has none, and a band whose
 /// glyphs lie under a floating window above it is left out: a tiled window lies over no other, and the tabs
 /// of one container, which sway gives one rect, lie over none of their own. `cell` is the width of one
-/// character of the title.
-pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
+/// character of the title; `mic`, whether the titles have the mic's cell.
+pub fn bands(tree: &Value, cell: f64, mic: bool) -> Vec<Band> {
     struct Seen {
         band: Rect,
         whole: Rect,
@@ -352,7 +352,10 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
         }
         let band = Rect::new(at.x + d.x, at.y + d.y, d.w, d.h);
         let (x0, y0) = (r.x.min(band.x), r.y.min(band.y));
-        let whole = Rect::new(x0, y0, (r.x + r.w).max(band.x + band.w) - x0, (r.y + r.h).max(band.y + band.h) - y0);
+        let whole = match d.w > 0 && d.h > 0 {
+            true => Rect::new(x0, y0, (r.x + r.w).max(band.x + band.w) - x0, (r.y + r.h).max(band.y + band.h) - y0),
+            false => r, // no title of its own
+        };
         out.push(Seen {
             band,
             whole,
@@ -389,7 +392,7 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
             continue;
         }
         let shift = |r: Rect| Rect::new(r.x - orect.x, r.y - orect.y, r.w, r.h);
-        for s in seen.into_iter().filter(|s| s.band.h > 0 && s.band.w > 0) {
+        for s in seen {
             places.push((s.afloat, s.band, s.whole));
             out.push(Band {
                 id: s.id,
@@ -405,7 +408,13 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
     }
     let keep: Vec<bool> = (0..out.len())
         .map(|i| {
-            let [a, _, b, _] = glyph_cells(places[i].1, cell);
+            let band = places[i].1;
+            // a window with no title has no buttons; it lies over those of another all the same
+            if band.w <= 0 || band.h <= 0 {
+                return false;
+            }
+            let [a, _, fill, last] = glyph_cells(band, cell);
+            let b = if mic { last } else { fill };
             let zone = Rect::new(a.x, a.y, b.x + b.w - a.x, a.h);
             // what lies over a band: a floating container that is not the band's own, later in the stacking order, or
             // another screen's, whose place in that order the tree does not say: the focused one is on top
@@ -420,6 +429,10 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn bands(tree: &Value, cell: f64) -> Vec<Band> {
+        super::bands(tree, cell, false)
+    }
 
     fn a_tree(over: bool) -> Value {
         // a screen of 1600 by 900 with the bar's 30 px, a tiled window with the focus and a floating one,
@@ -830,6 +843,27 @@ mod tests {
         };
         assert_eq!(two(2000), [40, 5, 8, 9, 10], "on its own screen it hides none");
         assert_eq!(two(1400), [40, 5, 8, 9], "over the last tab's buttons, on the screen to the left");
+    }
+
+    #[test]
+    fn a_floating_window_with_no_title_and_one_over_the_mic_alone_hide_the_buttons_under_them() {
+        // one screen, its floating window over the first of three tabs: `x` from its left end, with a title or none
+        let over = |x: i64, title: i64, mic: bool| {
+            let mut t = tabs(None);
+            let float = serde_json::json!({"type": "floating_con", "id": 40, "name": "over", "app_id": "app", "focused": true, "urgent": false, "fullscreen_mode": 0, "visible": true,
+                "rect": {"x": x, "y": 40 + title, "width": 60, "height": 200}, "deco_rect": {"x": x - 16, "y": -12, "width": 60 * (title / 28), "height": title}, "nodes": [], "floating_nodes": []});
+            let out = t["nodes"].as_array_mut().unwrap().iter_mut().find(|o| o["name"] != "__i3").unwrap();
+            out["nodes"][0]["floating_nodes"].as_array_mut().unwrap().push(float);
+            super::bands(&t, 10.0, mic).iter().map(|b| b.id).collect::<Vec<_>>()
+        };
+        let first = over(900, 0, false)[0];
+        assert!(
+            !over(20, 0, false).contains(&first),
+            "no title of its own, and it lies over the first tab's buttons"
+        );
+        assert!(!over(20, 0, false).contains(&40), "and has none");
+        // the mic's cell is the fourth, 90 pixels on
+        assert!(over(122, 0, false).contains(&first) && !over(122, 0, true).contains(&first));
     }
 
     #[test]

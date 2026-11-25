@@ -81,6 +81,23 @@ pub fn split(buf: &mut Vec<u8>) -> Vec<(u32, Vec<u8>)> {
     out
 }
 
+/// Whether a full-screen window hides an output's pad, by sway's tree: one on the workspace the output shows, or one
+/// over every output. A workspace's own mode is no window's: sway says 1 of each.
+pub fn covered(tree: &Value, output: &str) -> bool {
+    fn kids<'a>(n: &'a Value, k: &str) -> impl Iterator<Item = &'a Value> {
+        n[k].as_array().into_iter().flatten()
+    }
+    fn full(n: &Value, least: i64) -> bool {
+        let own = n["type"] != "workspace" && n["fullscreen_mode"].as_i64() >= Some(least);
+        own || kids(n, "nodes").chain(kids(n, "floating_nodes")).any(|k| full(k, least))
+    }
+    let shown = kids(tree, "nodes").filter(|o| o["name"] == output);
+    full(tree, 2)
+        || shown
+            .flat_map(|o| kids(o, "nodes").filter(|w| w["name"] == o["current_workspace"]))
+            .any(|w| full(w, 1))
+}
+
 /// A connection for requests: one answer to each.
 pub struct Ipc {
     s: UnixStream,
@@ -165,6 +182,21 @@ pub fn subscribe(kinds: &[&str]) -> io::Result<UnixStream> {
 mod tests {
     use super::*;
     use std::os::unix::net::UnixListener;
+
+    #[test]
+    fn a_full_screen_window_hides_its_screens_pad() {
+        let win = |full: i32| serde_json::json!({"type": "con", "fullscreen_mode": full, "nodes": [], "floating_nodes": []});
+        let ws = |name: &str, w: Value| serde_json::json!({"type": "workspace", "name": name, "fullscreen_mode": 1, "nodes": [w], "floating_nodes": []});
+        let tree = |shown: i32, behind: i32| {
+            serde_json::json!({"type": "root", "nodes": [
+                {"type": "output", "name": "A", "current_workspace": "1", "nodes": [ws("1", win(shown)), ws("2", win(behind))]},
+                {"type": "output", "name": "B", "current_workspace": "3", "nodes": [ws("3", win(0))]}
+            ]})
+        };
+        let hides = |t: Value| (covered(&t, "A"), covered(&t, "B"));
+        assert_eq!((hides(tree(0, 0)), hides(tree(0, 1))), ((false, false), (false, false)));
+        assert_eq!((hides(tree(1, 0)), hides(tree(2, 0))), ((true, false), (true, true)));
+    }
 
     #[test]
     fn a_socket_whose_sway_is_gone_gives_way_to_the_one_that_answers() {
