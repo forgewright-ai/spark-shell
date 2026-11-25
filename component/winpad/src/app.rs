@@ -24,7 +24,7 @@ use smithay_client_toolkit::shm::slot::SlotPool;
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use wayland_client::globals::GlobalList;
 use wayland_client::protocol::wl_callback::{self, WlCallback};
@@ -701,7 +701,8 @@ impl App {
     }
 
     /// The bar's state file read, ten times a second: where each screen's bar stands and the room it keeps. A
-    /// file that is gone keeps what it last said for three seconds, a bar started again, and then says no bar.
+    /// file that is gone, or whose bar is, keeps what it last said for three seconds, a bar started again, and then
+    /// says no bar.
     pub fn bar_tick(&mut self) {
         // a bar that does not come is waited for no longer than one that is gone
         let late = self.coming.iter().any(|c| !self.resting.contains(c));
@@ -713,7 +714,7 @@ impl App {
         let Some(file) = &self.cfg.bar_state else { return };
         // the text, and whether the pad is laid out again whatever it says: a bar back from being gone, or none come
         let (text, again) = match std::fs::read_to_string(file) {
-            Ok(text) if text.starts_with("bar\t") => {
+            Ok(text) if text.starts_with("bar\t") && bar_runs(file) => {
                 let back = self.bar_gone > 0;
                 self.bar_gone = 0;
                 if text == self.bar_text {
@@ -2206,9 +2207,46 @@ pub fn is_status_loop(cmdline: &[u8]) -> bool {
     words.windows(2).any(|w| w[0] == b"bar" && w[1] == b"status")
 }
 
+/// Whether the bar of a state file runs: its lock, beside the file, names a process that is the bar still. One that
+/// crashed leaves both; with no lock there is nothing to tell by, and the file's word is taken.
+fn bar_runs(state: &Path) -> bool {
+    let Ok(pid) = std::fs::read_to_string(state.with_extension("pid")) else {
+        return true;
+    };
+    std::fs::read(format!("/proc/{}/cmdline", pid.trim())).is_ok_and(|c| c.windows(9).any(|w| w == b"spark-bar"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_state_file_outlives_its_bar_and_is_no_bar_then() {
+        use std::io::Read;
+        use std::process::{Command, Stdio};
+        let state = std::env::temp_dir().join(format!("spark-winpad-bar.{}.state", std::process::id()));
+        let lock = state.with_extension("pid");
+        let names = |pid: &str| {
+            std::fs::write(&lock, format!("{pid}\n")).unwrap();
+            bar_runs(&state)
+        };
+        assert!(bar_runs(&state), "no lock beside it: the file's word is taken");
+        // no process has the pid, it is another program's by now, or none is written
+        assert!(!names(&i32::MAX.to_string()) && !names(&std::process::id().to_string()) && !names(""));
+        // a process that is the bar, and the same once it has ended
+        let mut run = Command::new("sh");
+        run.args(["-c", "echo; read x", "spark-bar"]).stdin(Stdio::piped()).stdout(Stdio::piped());
+        let mut bar = run.spawn().unwrap();
+        let pid = bar.id().to_string();
+        // it has spoken: the kernel has its words, which it has not the moment the spawn returns
+        bar.stdout.as_mut().unwrap().read_exact(&mut [0]).unwrap();
+        let ran = names(&pid);
+        drop(bar.stdin.take());
+        bar.wait().unwrap();
+        let runs = names(&pid);
+        std::fs::remove_file(&lock).unwrap();
+        assert_eq!((ran, runs), (true, false));
+    }
 
     #[test]
     fn only_the_status_loop_is_signalled() {
