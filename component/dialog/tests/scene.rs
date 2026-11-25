@@ -1204,6 +1204,48 @@ fn a_click_on_a_row_of_the_details_never_acts_on_the_list_or_on_another_row() {
 }
 
 #[test]
+fn an_apps_details_open_while_details_are_read() {
+    let reading = |a: &App| a.apps.pending.clone().filter(|(_, op)| op == "details").map(|(serial, _)| serial);
+    let facts = |version: &str, id: &str| json!({"id": id, "version": version, "installed": "XBPS / System", "source": "XBPS", "fields": []});
+    let mut a = apps();
+    a.down();
+    a.down();
+    a.apps.pane = true;
+    a.apps_follow();
+    let first = reading(&a).expect("the lit app's facts are asked for as the list holds the keys");
+    let jobs = a.jobs.len();
+    // its details while they are read: the read under way is theirs
+    a.hint_key(HintKey::Tab);
+    assert_eq!(
+        a.apps.page,
+        Page::Details("foot.desktop".into()),
+        "{:?}",
+        a.reply.as_ref().map(|r| r.text.clone())
+    );
+    assert_eq!((reading(&a), a.jobs.len()), (Some(first), jobs), "none is asked for twice");
+    // another app's while they are read: its own read, and the one under way says nothing
+    a.hint_key(HintKey::Tab);
+    a.down();
+    assert!(a.apps_details());
+    assert_eq!(a.apps.page, Page::Details("cups.desktop".into()));
+    let second = reading(&a).expect("its own facts are asked for");
+    assert!(second != first && a.jobs.len() == jobs + 1);
+    a.apps.receive(first, facts("1.28.0_1", "foot.desktop")).unwrap();
+    assert_eq!(reading(&a), Some(second), "an answer let go ends nothing");
+    a.apps.receive(second, facts("2.4.12_1", "cups.desktop")).unwrap();
+    word(&scene(&mut a, 600.0, 800.0), "2.4.12_1");
+    // the catalog read, an app opening: the details wait for those still
+    a.escape();
+    a.apps.pending = Some((99, "catalog".into()));
+    assert!(a.apps_details());
+    assert_eq!(
+        (&a.apps.page, a.reply.as_ref().map(|r| r.text.as_str())),
+        (&Page::List, Some("the apps are busy: a moment"))
+    );
+    let _ = std::fs::remove_dir_all(a.apps.path.parent().unwrap());
+}
+
+#[test]
 fn a_larger_text_grows_every_length() {
     let mut a = home();
     let big = Metrics {

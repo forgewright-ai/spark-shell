@@ -23,8 +23,8 @@ impl App {
     }
 
     pub fn apps_request(&mut self, mut request: Value) {
-        // an app opens over its details still being read
-        let over = request["op"] == "launch" && self.apps.pending.as_ref().is_some_and(|(_, op)| op == "details");
+        // an app, and the details of one, open over details still being read
+        let over = matches!(request["op"].as_str(), Some("launch" | "details")) && self.apps.pending.as_ref().is_some_and(|(_, op)| op == "details");
         if over {
             self.apps.asked = None;
         } else if self.apps.pending.is_some() {

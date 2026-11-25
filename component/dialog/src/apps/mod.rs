@@ -386,13 +386,15 @@ impl State {
                 out.request = Some(json!({"op":"launch","id":id,"mode":pref.mode()}));
             }
             Action::Details(id) => {
-                if self.pending.is_some() {
+                if self.pending.as_ref().is_some_and(|(_, op)| op != "details") {
                     return Err("the apps are busy: a moment".into());
                 }
                 self.entry(&id).ok_or("this app is no longer installed")?;
                 out.navigation = Some(self.navigate(Page::Details(id.clone()), nav));
-                // the cached facts stay readable while fresh ones come: packages and windows change
-                out.request = Some(json!({"op":"details","id":id}));
+                // the cached facts stay readable while fresh ones come: packages and windows change. The list may have
+                // asked for them already; another app's read gives way
+                let asked = self.pending.is_some() && self.asked.as_deref() == Some(id.as_str());
+                out.request = (!asked).then(|| json!({"op":"details","id":id}));
             }
             Action::Technical(id) => out.navigation = Some(self.navigate(Page::Technical(id), nav)),
             Action::SetFilter(category) => {
