@@ -1245,6 +1245,54 @@ fn an_apps_details_open_while_details_are_read() {
     let _ = std::fs::remove_dir_all(a.apps.path.parent().unwrap());
 }
 
+/// Tab goes round an app's details, the list beside them and the line's controls: a control that holds the keys
+/// holds them alone, and the details stay open beside the list.
+#[test]
+fn a_control_reached_from_the_list_of_apps_holds_the_keys_alone() {
+    let mut a = apps();
+    a.voice_on = true;
+    a.down();
+    a.down();
+    assert!(a.apps_details());
+    a.apps.pending = None;
+    a.hint_key(HintKey::Tab); // the list, the details beside it
+    assert!(a.apps.pane && a.in_list && a.sel == 1 && a.apps.page == Page::List);
+    a.hint_key(HintKey::PreviousControl);
+    assert!(a.chip_focus.is_some(), "talk, the line's last control");
+    let s = scene(&mut a, 600.0, 800.0);
+    let names: Vec<_> = words(&s).into_iter().filter(|w| w.0 == "foot").map(|w| w.1).collect();
+    assert!(names.iter().any(|x| *x > 296.0), "foot's details stand beside the list still: {names:?}");
+    for key in [HintKey::Down, HintKey::Up, HintKey::PageDown, HintKey::End, HintKey::Start] {
+        a.hint_key(key);
+        assert!(a.sel == 1 && a.chip_focus.is_some(), "{key:?} moves no list behind a control");
+    }
+    // a click on a row of the details takes the keys from the control
+    let (_, y, ..) = word(&s, "open");
+    assert!(matches!(s.hit(400.0, y + 8.0), Some(Target::PaneRow(_))));
+    let mut clicked = apps();
+    clicked.voice_on = true;
+    clicked.down();
+    clicked.down();
+    clicked.apps.pane = true;
+    clicked.hint_key(HintKey::PreviousControl);
+    clicked.apps_pane_row(0, std::time::Instant::now());
+    assert!(clicked.chip_focus.is_none() && clicked.apps.page == Page::Details("foot.desktop".into()));
+    // from the line no app is lit, and a control shows none
+    let mut line = apps();
+    line.voice_on = true;
+    line.apps.pane = true;
+    line.hint_key(HintKey::PreviousControl);
+    assert!(line.chip_focus.is_some());
+    let s = scene(&mut line, 1400.0, 800.0);
+    assert_eq!(words(&s).iter().filter(|w| w.0 == "btop++").count(), 1);
+    // Tab past the last control: the list again, on its app
+    a.hint_key(HintKey::Tab);
+    assert!(a.chip_focus.is_none() && a.in_list && a.list_keys && a.sel == 1);
+    for a in [a, clicked, line] {
+        let _ = std::fs::remove_dir_all(a.apps.path.parent().unwrap());
+    }
+}
+
 #[test]
 fn a_larger_text_grows_every_length() {
     let mut a = home();

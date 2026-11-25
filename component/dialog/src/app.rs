@@ -6784,6 +6784,8 @@ impl App {
             return;
         }
         match key {
+            // a control holds the keys over a list with details beside it: the list behind it stands still
+            HintKey::Up | HintKey::Down | HintKey::PageUp | HintKey::PageDown | HintKey::Start | HintKey::End if self.in_list && self.chip_focus.is_some() => {}
             // a change on trial: its card goes first
             HintKey::Enter if self.trial_keys() => self.trial_end(true),
             HintKey::Enter => self.enter(),
