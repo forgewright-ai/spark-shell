@@ -650,6 +650,14 @@ struct Press {
     moved: bool,
 }
 
+/// When the opening began, once films are here: now; but films of another scale come while it plays, and it goes on.
+fn opening(since: Instant, playing: bool, on_time: bool) -> Option<Instant> {
+    if playing {
+        return Some(since);
+    }
+    on_time.then(Instant::now)
+}
+
 /// A press as the next event leaves it: none after a move with no button held or another press, its release lost.
 fn kept(press: Option<Press>, kind: MouseEventKind) -> Option<Press> {
     press.filter(|_| !matches!(kind, MouseEventKind::Moved | MouseEventKind::Down(MouseButton::Left)))
@@ -659,6 +667,8 @@ fn kept(press: Option<Press>, kind: MouseEventKind) -> Option<Press> {
 fn pressed(app: &App, target: &scene::Target) -> Option<String> {
     match target {
         scene::Target::Pick(n) | scene::Target::Step(n, _) | scene::Target::Option(n, _) => app.pick_key(*n),
+        scene::Target::OtherRow(n) | scene::Target::ListRow(n) => app.files_row_key(*n, matches!(target, scene::Target::OtherRow(_))),
+        scene::Target::PaneRow(n) => app.details_row_key(*n),
         _ => None,
     }
 }
@@ -1544,9 +1554,9 @@ fn main() {
                 // the open plays from its start when it is still pending: the dialog opened on its home a moment ago and no
                 // key cut it (a letter typed lands at the prompt and cuts nothing, #138); else the rows show
                 app.films = f.is_some();
-                if matches!(app.motion, Some((Reel::Open, _))) {
+                if let Some((Reel::Open, since)) = app.motion {
                     let on_time = f.is_some() && app.view == View::Home && started.elapsed() < Duration::from_millis(800);
-                    app.motion = on_time.then(|| (Reel::Open, Instant::now()));
+                    app.motion = opening(since, films.is_some() && f.is_some(), on_time).map(|at| (Reel::Open, at));
                 }
                 films = f;
                 dirty = true;
@@ -2015,6 +2025,15 @@ mod tests {
         assert_ne!(on(&app, 1), two, "another row is there when the button is let go: the click is not its");
         assert_eq!(on(&app, 2), two);
         assert_eq!(pressed(&app, &scene::Target::Home), None, "a place that is no row is what it was");
+    }
+
+    #[test]
+    fn the_opening_goes_on_when_films_of_another_scale_come() {
+        let since = Instant::now() - Duration::from_millis(700);
+        assert_eq!(opening(since, true, true), Some(since), "it does not start again");
+        assert_eq!(opening(since, true, false), Some(since), "nor is it cut, late as they come");
+        assert!(opening(since, false, true).is_some_and(|at| at > since), "the first films: from its start");
+        assert_eq!(opening(since, false, false), None);
     }
 
     #[test]

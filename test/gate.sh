@@ -22,6 +22,10 @@ esac
 logs=$(mktemp -d "${TMPDIR:-/tmp}/gate.XXXXXX")
 trap 'rm -rf "$logs"' EXIT INT TERM
 export SPARK_SHELL_NO_APPLY=1   # a test never touches this machine's terminal profile
+# no check acts as root: on a machine whose sudo asks nothing, a test's theme step once wrote its own home into /etc/rc.local
+mkdir "$logs/no-root"
+for t in sudo doas; do printf '#!/bin/sh\nexit 1\n' > "$logs/no-root/$t"; chmod 755 "$logs/no-root/$t"; done
+PATH=$logs/no-root:$PATH; export PATH
 
 # the python3 tests ci.yml runs, each as written there (-I kept); dialog_pty
 # takes the release build as its argument

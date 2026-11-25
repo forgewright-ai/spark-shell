@@ -246,12 +246,19 @@ impl App {
         }
     }
 
+    /// What row `n` of the lit app's details does.
+    pub(crate) fn apps_pane_action(&self, n: usize) -> Option<Action> {
+        let Some(Item::Apps(lit)) = self.picks().get(self.sel).cloned() else {
+            return None;
+        };
+        let Some(Action::Launch(id)) = lit.action else { return None };
+        self.apps.lines_of(&Page::Details(id), 60, "", 0).into_iter().filter_map(|l| l.action).nth(n)
+    }
+
     /// A click on a row of the details shown beside the list while the list holds the keys: the keys go to the
     /// details, and the row acts as a click on it does: by what it does, since a read that starts takes a row away.
     pub fn apps_pane_row(&mut self, n: usize, now: std::time::Instant) {
-        let Some(Item::Apps(lit)) = self.picks().get(self.sel).cloned() else { return };
-        let Some(Action::Launch(id)) = lit.action else { return };
-        let row = self.apps.lines_of(&Page::Details(id), 60, "", 0).into_iter().filter_map(|l| l.action).nth(n);
+        let row = self.apps_pane_action(n);
         // refused while the apps are at work: the click is no row of the list's
         if self.apps_details() && matches!(self.apps.page, Page::Details(_)) {
             let same = |it: &Item| matches!(it, Item::Apps(l) if row.is_some() && l.action == row);

@@ -39,6 +39,13 @@ class Providers(unittest.TestCase):
                         SPARK_SHELL_PTS_DIR=str(self.home / "ptys"), TZ="UTC0")
         for key in ("SWAYSOCK", "WAYLAND_DISPLAY", "DISPLAY", "SPARK_BASE_URL", "SPARK_FORGE_TOKEN"):
             self.env.pop(key, None)
+        # no way to root: on a machine whose sudo asks nothing, a theme step once wrote this home into its /etc/rc.local
+        no_root = self.home / "no-root"
+        no_root.mkdir()
+        for name in ("sudo", "doas"):
+            (no_root / name).write_text("#!/bin/sh\nexit 1\n")
+            (no_root / name).chmod(0o755)
+        self.env["PATH"] = str(no_root) + os.pathsep + self.env["PATH"]
 
     def provider(self, section, *requests, program=PROGRAM):
         packets = [rpc(0, "initialize", protocolVersion="2025-06-18", capabilities={})] + list(requests)

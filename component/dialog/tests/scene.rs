@@ -1197,6 +1197,8 @@ fn a_click_on_a_row_of_the_details_never_acts_on_the_list_or_on_another_row() {
     a.escape();
     a.apps.pending = None;
     a.apps.pane = true;
+    // a press there keeps what its row does
+    assert!(a.details_row_key(1).is_some_and(|k| k.contains("Launch")) && a.details_row_key(0) != a.details_row_key(1));
     a.apps_pane_row(1, now);
     assert_eq!(a.apps.page, Page::Details("foot.desktop".into()));
     assert_eq!((asked(&a).as_deref(), a.apps.pending_name.as_str()), (Some("launch"), "foot"));
@@ -1560,6 +1562,14 @@ fn two_panes_of_files_stand_side_by_side_each_under_its_folder() {
     assert_eq!(s.hit(150.0, 137.0 + 10.0), Some(&Target::Pick(0)));
     assert_eq!(s.hit(450.0, 137.0 + 88.0 + 10.0), Some(&Target::OtherRow(1)));
     assert_eq!(s.hit(450.0, 600.0), Some(&Target::OtherPane));
+    // a press on it keeps it by its id: another row in its place when the button is let go is another
+    let held = a.files_row_key(1, true);
+    let mut moved = a.files.other.as_ref().unwrap().rows.clone().unwrap();
+    moved.rows.remove(0);
+    assert!(held.is_some() && a.files_row_key(0, true) != held);
+    let kept = a.files.other.as_mut().unwrap().rows.replace(moved);
+    assert!(a.files_row_key(1, true) != held && a.files_row_key(0, true) == held);
+    a.files.other.as_mut().unwrap().rows = kept;
     assert_eq!(s.hit(450.0, 110.0), Some(&Target::OtherPane), "its folder's name too");
     // the keys say Tab is the other pane
     assert_eq!(keys(&s), [HintKey::Escape, HintKey::Enter, HintKey::View, HintKey::Actions, HintKey::Tab]);

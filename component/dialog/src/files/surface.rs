@@ -746,6 +746,24 @@ impl App {
         self.clicked(n, now);
     }
 
+    /// The row `n` of the other pane, or of the list beside open details, by its id: a press keeps it while rows move.
+    pub fn files_row_key(&self, n: usize, other: bool) -> Option<String> {
+        let rows = if other {
+            self.files.other.as_ref()?.rows.as_ref()?
+        } else {
+            &self.folder.as_ref()?.2
+        };
+        rows.rows.get(n).map(|r| r.id.clone())
+    }
+
+    /// The row `n` of the details beside a list: what it does to what is lit, for apps; the lit file's own, for files.
+    pub fn details_row_key(&self, n: usize) -> Option<String> {
+        if self.view != View::Apps {
+            return self.pick_key(self.sel).map(|k| format!("{k} {n}"));
+        }
+        self.apps_pane_action(n).map(|a| format!("{a:?}"))
+    }
+
     /// The other pane's rows read again: its own read of its own folder.
     pub(crate) fn files_refresh_other(&mut self, p: usize) {
         let Some(uri) = self.files.other.as_ref().map(|o| o.uri.clone()) else {
