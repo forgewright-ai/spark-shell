@@ -373,7 +373,7 @@ jobs:
     # drawn in it in two palettes, the pictures kept for a look. No seat,
     # no GPU, no sound card: a proof of the install and the render, said
     # so; a screen is a machine's proof.
-    needs: [lint, plan, pins, winpad, ear, bar]   # the pad's, the ear's and the bar's builds, proven on each family's sway (test/winpad_desktop_proof.py, test/voice_desktop_proof.py, test/bar_desktop_proof.py)
+    needs: [lint, plan, pins, winpad, ear, bar, dialog-build]   # the pad's, the ear's, the bar's and the dialog's builds, proven on each family's sway (test/winpad_desktop_proof.py, test/voice_desktop_proof.py, test/bar_desktop_proof.py)
     if: ${{ !cancelled() && needs.lint.result == 'success' && needs.pins.result == 'success' && contains(format(' {0} ', needs.plan.outputs.jobs), ' desktop ') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -465,6 +465,11 @@ jobs:
         with:
           name: spark-bar-x86_64-linux-gnu
           path: bar-build
+      - name: the dialog's build, the one the dialog's build job made
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333   # v8.0.2
+        with:
+          name: spark-dialog-x86_64-linux-gnu
+          path: dialog-build
       - name: spark-shell on as a plain user, the config read by sway, a headless sway with a foot in it
         # sway's package on Arch, Void and Fedora sets cap_sys_nice on the
         # binary; a container's bounding set lacks it, so a plain user's
@@ -489,6 +494,20 @@ jobs:
           # the bar on this family's sway: the frame, the framed workspaces, the pins, the audio controls by pointer and by key, both edges, two screens; and the pad on the bar
           bar-build/spark-bar --version
           su ada -c "SPARK_SHELL_FENCE=ci PATH=/opt/nocap:\$PATH SPARK_SHELL_WINPAD='$GITHUB_WORKSPACE/winpad-build/spark-winpad' SPARK_SHELL_BAR='$GITHUB_WORKSPACE/bar-build/spark-bar' python3 -I '$GITHUB_WORKSPACE/test/bar_desktop_proof.py' \$HOME/proof/bar"
+      - name: the journeys, the desktop whole with the real dialog, bar and pad (test/journeys.py)
+        # home opened, reloaded under and re-themed, changes while it runs, and a
+        # narrow turned screen: what stands, what is seen, what runs. A verdict
+        # of NOT-RUN fails too, by its own name: nothing was said of the tree.
+        # One family a push, two on main: the desktop is the same programs
+        if: matrix.family == 'void' || (github.ref == 'refs/heads/main' && matrix.family == 'debian')
+        run: |
+          chmod 755 dialog-build/spark-dialog
+          rc=0
+          for j in home live matrix; do
+            su ada -c "SPARK_SHELL_FENCE=ci PATH=/opt/nocap:\$PATH python3 -I '$GITHUB_WORKSPACE/test/journeys.py' $j '$GITHUB_WORKSPACE' \$HOME/journey-$j dialog='$GITHUB_WORKSPACE/dialog-build/spark-dialog' bar='$GITHUB_WORKSPACE/bar-build/spark-bar' winpad='$GITHUB_WORKSPACE/winpad-build/spark-winpad'" || rc=1
+            su ada -c "mkdir -p \$HOME/proof/journeys && cp \$HOME/journey-$j/last.png \$HOME/proof/journeys/$j.png && cp \$HOME/journey-$j/said.txt \$HOME/proof/journeys/$j.txt" || true
+          done
+          exit $rc
       - name: the notifications as drawn, kept for a look
         if: always()
         run: mkdir -p proof && cp -R ~ada/proof/. proof/ 2>/dev/null || true   # ~ada: the proof user's home, by its name

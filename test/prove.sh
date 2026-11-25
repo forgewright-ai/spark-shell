@@ -38,7 +38,7 @@ case ${1:-} in
     *) echo "usage: sh test/prove.sh [--quick | --list]" >&2; exit 2 ;;
 esac
 
-PROOFS='layout window desktop winpad voice bar'   # the desktop job's, in its order
+PROOFS='layout window desktop winpad voice bar journeys'   # the desktop job's, in its order; the journeys (test/journeys.py) in a bwrap of their own
 steps() {
     printf '%s\n' gate 'suite'
     [ -n "$quick" ] || { printf '%s\n' 'suite as root'; for p in $PROOFS; do printf 'proof %s\n' "$p"; done; }
@@ -106,12 +106,15 @@ proof() {   # proof NAME -- one of the desktop job's proofs, on a headless sway 
             desktop) apart "$d" timeout 420 sh "$REPO/test/desktop_proof.sh" ;;
             winpad) apart "$d" env SPARK_SHELL_WINPAD="$pad" timeout 420 python3 -I "$REPO/test/winpad_desktop_proof.py" "$d/evidence" ;;
             voice) apart "$d" env SPARK_SHELL_WINPAD="$pad" timeout 420 python3 -I "$REPO/test/voice_desktop_proof.py" "$d/evidence" ;;
+            journeys)
+                command -v bwrap >/dev/null 2>&1 || { echo "no bwrap here: CI's desktop job runs the journeys"; exit 0; }
+                for j in home live matrix loops; do REPLAY_DIR="$d" apart "$d" timeout 480 python3 -I "$REPO/test/replay.py" "$j" here || exit 1; done ;;
             bar) apart "$d" env SPARK_SHELL_WINPAD="$pad" SPARK_SHELL_BAR="$bar" timeout 600 python3 -I "$REPO/test/bar_desktop_proof.py" "$d/evidence" ;;
         esac
     )
 }
-builds() {   # the pad's and the bar's builds the proofs run, made here from the tree
-    for c in winpad bar; do (cd "component/$c" && fenced "$out/build-$c" cargo build --release --locked) || return 1; done
+builds() {   # the builds the proofs run, made here from the tree
+    for c in winpad bar dialog wallpaper; do (cd "component/$c" && fenced "$out/build-$c" cargo build --release --locked) || return 1; done
 }
 left() {   # no process of the run is left. Every step ran with its home under the run's folder: a process whose own HOME is there is the run's, whatever its command says
     sleep 2
@@ -132,7 +135,7 @@ if [ -z "$quick" ]; then
     if unshare --user --map-root-user --map-auto true 2>/dev/null; then step 'suite as root' suite_root
     else echo "skip  suite as root (unshare cannot map your ids here: CI's rows run it)"; fi
     if command -v sway >/dev/null 2>&1 && command -v cargo >/dev/null 2>&1; then
-        step "the pad's and the bar's builds" builds
+        step "the builds the proofs run" builds
         for p in $PROOFS; do step "proof $p" proof "$p"; done
     else echo "skip  the desktop's proofs (no sway or no cargo here: CI's desktop job runs them)"; fi
 fi
