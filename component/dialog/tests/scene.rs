@@ -264,6 +264,20 @@ fn down_hands_the_list_the_keys_and_up_at_the_empty_line_is_the_lines() {
 }
 
 #[test]
+fn space_at_the_empty_line_of_home_is_a_space() {
+    let mut a = home();
+    assert!(a.in_list && !a.list_keys, "a row lit, the line holding the keys");
+    a.hint_key(HintKey::Select); // Space, the select key of a fresh config
+    assert_eq!(a.input, " ", "{:?}", a.reply.as_ref().map(|r| r.text.clone()));
+    // the list holding the keys has nothing to select, and says so
+    let mut a = home();
+    a.down();
+    a.hint_key(HintKey::Select);
+    assert_eq!(a.input, "");
+    assert_eq!(a.reply.as_ref().map(|r| r.text.as_str()), Some("nothing to select here"));
+}
+
+#[test]
 fn what_home_finds_wears_homes_rows_an_app_with_its_picture() {
     let mut a = apps();
     a.view = View::Home;

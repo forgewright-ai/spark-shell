@@ -3712,7 +3712,7 @@ impl App {
             if self.files_pane_view().is_some() && !self.files.form() && self.space_selects() {
                 return self.files_check();
             }
-            if self.in_list && self.input.is_empty() {
+            if self.in_list && self.input.is_empty() && !self.at_rest() {
                 return self.refuse("nothing to select here"); // a lit row: Space is no letter of a search not begun (#196)
             }
         }
