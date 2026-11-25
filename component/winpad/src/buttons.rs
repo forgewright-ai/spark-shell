@@ -278,11 +278,12 @@ pub fn title(room: usize, buttons: &str, around: &str, name: &str, meter: &str) 
 }
 
 /// A band's button cells for the pointer, `cell` the width of one character of the title: close,
-/// minimize, fill and the mic, three characters each from the title's start, as tall as the band.
+/// minimize, fill and the mic, three characters each from the title's start, as tall as the band and cut at its end.
 pub fn glyph_cells(band: Rect, cell: f64) -> [Rect; 4] {
+    let end = band.x + band.w;
     let at = |i: f64| {
-        let x = band.x as f64 + TITLE_PAD as f64 + 3.0 * i * cell;
-        Rect::new(x.round() as i32, band.y, (3.0 * cell).round() as i32, band.h)
+        let x = ((band.x as f64 + TITLE_PAD as f64 + 3.0 * i * cell).round() as i32).min(end);
+        Rect::new(x, band.y, ((3.0 * cell).round() as i32).min(end - x), band.h)
     };
     [at(0.0), at(1.0), at(2.0), at(3.0)]
 }
@@ -800,6 +801,19 @@ mod tests {
         };
         assert_eq!(two(2000), [40, 5, 8, 9, 10], "on its own screen it hides none");
         assert_eq!(two(1400), [40, 5, 8, 9], "over the last tab's buttons, on the screen to the left");
+    }
+
+    #[test]
+    fn a_narrow_bands_buttons_end_with_it() {
+        // a tab 70 px wide: close is whole, minimize is cut at the band's end, and fill and the mic have no cell there
+        let band = Rect::new(100, 52, 70, 28);
+        let [close, min, fill, mic] = glyph_cells(band, 10.0);
+        assert_eq!((close, min), (Rect::new(112, 52, 30, 28), Rect::new(142, 52, 28, 28)));
+        assert_eq!((fill, mic), (Rect::new(170, 52, 0, 28), Rect::new(170, 52, 0, 28)));
+        // the next tab begins where it ends: a point on it is none of this band's
+        assert_eq!(glyph_at(band, 10.0, 165.0, 60.0, true), Some(Glyph::Min));
+        assert_eq!((glyph_at(band, 10.0, 171.0, 60.0, true), glyph_at(band, 10.0, 200.0, 60.0, true)), (None, None));
+        assert_eq!(glyph_cells(Rect::new(100, 52, 8, 28), 10.0)[0], Rect::new(108, 52, 0, 28));
     }
 
     #[test]
