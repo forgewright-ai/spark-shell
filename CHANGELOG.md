@@ -19,8 +19,6 @@
   the pad was off the screen; it stands at the bottom.
 - Where no pad runs, a screen that comes, goes or turns sends the windows
   the keys placed to their places.
-- The bar at a text size of your own takes a new typeface. It kept the
-  old one until the next login.
 - `spark-shell bar` names the modules on the bar. It named the hidden
   ones too.
 - Home keeps its height when it is brought back into sight. It lost the

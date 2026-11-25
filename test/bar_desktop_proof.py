@@ -1934,7 +1934,12 @@ def behavior(d):
        "keys: spark-shell bar keys says so, and Enter on the logo opens home", (said.said, home))
     d.keys_on()
     d.until(lambda s: s.focused() == "mark", "Super+%s again" % d.keys_key)
-    d.key("Right", times=2)
+    # the bar says the keys are on before the compositor gives it the keyboard: a key before that goes to a window
+    for _ in range(4):
+        d.key("Right")
+        if settle(lambda: (lambda s: s is not None and s.focused() == "workspace:1")(d.state()), 4):
+            break
+    d.key("Right")
     d.until(lambda s: s.focused() == "workspace:2", "Right twice to the second place")
     d.key("Return")
     s = d.until(lambda s: "selected" in s.find("workspace:2").flags and not s.focused(), "Enter on the second place to show its workspace")
