@@ -836,7 +836,9 @@ fn path(app: &App, pen: &mut Pen, g: &Geo, items: &[Item], k: Kind) {
     } else if sub.trim().is_empty() {
         names.push((place, None));
     } else {
-        names.push((place, Some(Target::Back)));
+        // what a place holds now is no level under it: its name is where you are
+        let holds = matches!(app.view, View::Section(_)) || matches!(app.view, View::Dest(_)) && app.ws_filter.is_none();
+        names.push((place, (!holds || app.mode != Mode::Normal).then_some(Target::Back)));
         names.push((sub, None));
     }
     let mut x = g.inset;

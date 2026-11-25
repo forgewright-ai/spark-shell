@@ -1294,6 +1294,41 @@ fn a_control_reached_from_the_list_of_apps_holds_the_keys_alone() {
 }
 
 #[test]
+fn a_places_own_name_on_the_location_line_stays_in_the_place() {
+    let place = |label: &str, title: &str| {
+        let mut a = home();
+        let mut p = Provider::new(label);
+        p.ready = true;
+        p.title = title.into();
+        a.providers = vec![p];
+        a.came_from = vec![View::Home];
+        a
+    };
+    let on = |a: &mut App, name: &str| {
+        let s = scene(a, 600.0, 800.0);
+        let (x, ..) = word(&s, name);
+        s.hit(x + 4.0, 78.0).cloned()
+    };
+    // what a section holds now stands after its name, and is no level under it
+    let mut notes = place("notes", "3 notes");
+    notes.view = View::Section(0);
+    assert_eq!(on(&mut notes, "notes"), None);
+    assert_eq!(on(&mut notes, "home"), Some(Target::Home));
+    // a list under it is: the name goes back to the section
+    notes.came_from.push(View::Section(0));
+    notes.view = View::Folder(0, "spark-shell://notes/rows/archive".into());
+    let rows = spark_dialog::model::rows(&json!({"title": "archive", "rows": []}).to_string()).unwrap();
+    notes.folder = Some((0, "spark-shell://notes/rows/archive".into(), rows));
+    assert_eq!(on(&mut notes, "notes"), Some(Target::Back));
+    // the same of workspaces, where a workspace shown alone is a level
+    let mut windows = place("window", "2 windows");
+    assert!(windows.go_to("window"));
+    assert_eq!(on(&mut windows, "workspaces"), None);
+    windows.ws_filter = Some("workspace 1".into());
+    assert_eq!(on(&mut windows, "workspaces"), Some(Target::Back));
+}
+
+#[test]
 fn a_larger_text_grows_every_length() {
     let mut a = home();
     let big = Metrics {
