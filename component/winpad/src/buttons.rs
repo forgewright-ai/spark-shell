@@ -361,7 +361,8 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
         });
     }
     let mut out: Vec<Band> = vec![];
-    let mut afloat: Vec<Option<i64>> = vec![];
+    // each band's floating container, and its rect and the window's whole one in the desktop's own pixels
+    let mut places: Vec<(Option<i64>, Rect, Rect)> = vec![];
     for o in tree["nodes"].as_array().into_iter().flatten() {
         let name = o["name"].as_str().unwrap_or("");
         if o["type"] != "output" || name == "__i3" {
@@ -384,7 +385,7 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
         }
         let shift = |r: Rect| Rect::new(r.x - orect.x, r.y - orect.y, r.w, r.h);
         for s in seen.into_iter().filter(|s| s.band.h > 0 && s.band.w > 0) {
-            afloat.push(s.afloat);
+            places.push((s.afloat, s.band, s.whole));
             out.push(Band {
                 id: s.id,
                 output: name.to_string(),
@@ -399,10 +400,12 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
     }
     let keep: Vec<bool> = (0..out.len())
         .map(|i| {
-            let [a, _, b, _] = glyph_cells(out[i].rect, cell);
+            let [a, _, b, _] = glyph_cells(places[i].1, cell);
             let zone = Rect::new(a.x, a.y, b.x + b.w - a.x, a.h);
-            // what lies over a band: a floating container that is not the band's own, later in the stacking order
-            !(i + 1..out.len()).any(|j| afloat[j].is_some() && afloat[j] != afloat[i] && out[j].output == out[i].output && meets(zone, out[j].whole))
+            // what lies over a band: a floating container that is not the band's own, later in the stacking order, or
+            // another screen's, whose place in that order the tree does not say
+            let over = |j: usize| places[j].0.is_some() && places[j].0 != places[i].0 && (j > i || out[j].output != out[i].output);
+            !(0..out.len()).any(|j| over(j) && meets(zone, places[j].2))
         })
         .collect();
     out.into_iter().zip(keep).filter_map(|(b, k)| k.then_some(b)).collect()
@@ -782,6 +785,21 @@ mod tests {
     fn a_band_has_the_cells_its_width_holds() {
         assert_eq!(room(Rect::new(0, 0, 784, 23), 10.0), 76);
         assert_eq!(room(Rect::new(0, 0, 20, 23), 10.0), 0);
+    }
+
+    #[test]
+    fn a_floating_window_over_another_screens_band_hides_its_buttons() {
+        // a second screen beside the first, its floating window dragged until its left half lies over the first's tabs
+        let two = |x: i64| {
+            let mut t = tabs(None);
+            let float = serde_json::json!({"type": "floating_con", "id": 40, "name": "over", "app_id": "foot", "focused": true, "urgent": false, "fullscreen_mode": 0,
+                "rect": {"x": x, "y": 80, "width": 600, "height": 400}, "deco_rect": {"x": x - 1920, "y": 0, "width": 600, "height": 28}});
+            t["nodes"].as_array_mut().unwrap().insert(0, serde_json::json!({"type": "output", "name": "DP-0", "id": 6, "current_workspace": "2", "rect": {"x": 1920, "y": 0, "width": 1920, "height": 1080},
+                "nodes": [{"type": "workspace", "name": "2", "id": 7, "rect": {"x": 1920, "y": 52, "width": 1920, "height": 1028}, "nodes": [], "floating_nodes": [float]}]}));
+            bands(&t, 10.0).iter().map(|b| b.id).collect::<Vec<_>>()
+        };
+        assert_eq!(two(2000), [40, 5, 8, 9, 10], "on its own screen it hides none");
+        assert_eq!(two(1400), [40, 5, 8, 9], "over the last tab's buttons, on the screen to the left");
     }
 
     #[test]
