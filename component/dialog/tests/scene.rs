@@ -278,6 +278,49 @@ fn space_at_the_empty_line_of_home_is_a_space() {
 }
 
 #[test]
+fn no_heading_and_no_stepper_takes_a_click_outside_its_list() {
+    // the values the words find at home, each between its arrows
+    let mut levels = home();
+    levels.providers = ["power", "theme", "out", "system"]
+        .map(|label| {
+            let values = json!([{"shown": "low", "sent": "low"}, {"shown": "high", "sent": "high"}]);
+            let row = |n: u8| {
+                json!({"id": format!("{label}:level {n}"), "sign": "blank", "text": format!("level {n}"), "tool": null,
+                    "step": {"values": values, "at": 0, "set": {"name": "level", "arguments": {}}, "key": "to", "words": ["less", "more"]}})
+            };
+            let mut p = Provider::new(label);
+            p.ready = true;
+            p.rows = spark_dialog::model::rows(&json!({"title": label, "rows": [row(1), row(2), row(3)]}).to_string()).unwrap();
+            p
+        })
+        .into();
+    levels.set_draft("level");
+    for (mut a, h) in [(apps(), 800.0), (levels, 220.0)] {
+        let l = scene(&mut a, 600.0, h).lists[0].clone();
+        let (mut off, mut seen) = (0.0, 0);
+        while off <= l.most {
+            let mut was = vec![l.at.clone()];
+            was[0].off = off;
+            let s = build(&a, &nord(), &M, 600.0, h, &was);
+            for h in s.hits.iter().filter(|h| matches!(h.target, Target::Head(_) | Target::Step(..))) {
+                seen += 1;
+                assert!(
+                    h.y >= l.y && h.y + h.h <= l.y + l.h,
+                    "{:?} at {} to {} in a list from {} to {}, scrolled {off}",
+                    h.target,
+                    h.y,
+                    h.y + h.h,
+                    l.y,
+                    l.y + l.h
+                );
+            }
+            off += 7.0;
+        }
+        assert!(seen > 0 && l.most > 0.0, "{:?}: {seen} seen, {} to scroll, {:?}", a.view, l.most, kind(&a));
+    }
+}
+
+#[test]
 fn what_home_finds_wears_homes_rows_an_app_with_its_picture() {
     let mut a = apps();
     a.view = View::Home;

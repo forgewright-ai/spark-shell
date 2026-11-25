@@ -1779,6 +1779,8 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
             );
         }
         let x = area.left + m.px(shape.pad);
+        // a click reaches no further than the list's box
+        let inside = |y: f64| y.max(area.top).min(area.bottom);
         // a column of names keeps its room for the names; in a wide window what ends a row stays beside its name
         let end = (right - m.px(if shape.two && shape.narrow { 4.0 } else { 12.0 })).min(area.left + m.px(ROW_MAX));
         // on a whole pixel: a row of an odd height would set its words half a pixel down, blurred
@@ -1831,7 +1833,8 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                     0.0 // a small group name the list's edge would cut is left out: its rows say where they are
                 };
                 if let Some(label) = click {
-                    pen.hit(x - m.px(6.0), top + m.px(6.0), w + m.px(12.0), h - m.px(8.0), Target::Head(label.clone()));
+                    let (a, b) = (inside(top + m.px(6.0)), inside(top + h - m.px(2.0)));
+                    pen.hit(x - m.px(6.0), a, w + m.px(12.0), b - a, Target::Head(label.clone()));
                 }
             }
             K::Dest(name, words) => {
@@ -1952,8 +1955,9 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                         let lx = vx - m.sw - aw;
                         pen.text(lx, base, crate::ui::LESS, Size::Main, if *less { live } else { dim }, false);
                         if let Some(n) = row.pick {
-                            pen.hit(lx - aw, top, 3.0 * aw, h, Target::Step(n, false));
-                            pen.hit(mx - aw, top, 3.0 * aw, h, Target::Step(n, true));
+                            let (a, b) = (inside(top), inside(top + h));
+                            pen.hit(lx - aw, a, 3.0 * aw, b - a, Target::Step(n, false));
+                            pen.hit(mx - aw, a, 3.0 * aw, b - a, Target::Step(n, true));
                         }
                         e = lx - m.px(8.0);
                     }
