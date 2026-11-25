@@ -7173,7 +7173,7 @@ echo "$*" >> "$HOME/swaymsg.log"
 case "$*" in
     "-t get_version") echo '{"human_readable":"sway-stub"}' ;;
     "-t get_bar_config") echo '["bar-0"]' ;;
-    "-t get_outputs") echo '[{"name":"HDMI-A-1","scale":1,"rect":{"x":0,"y":0,"width":1920,"height":1080}}]' ;;
+    "-t get_outputs") printf '[{"name":"HDMI-A-1","scale":%s,"rect":{"x":0,"y":0,"width":1920,"height":1080}}]\n' "${SCALE:-1}" ;;
     "-t get_tree") printf '{"nodes":[{"type":"output","name":"HDMI-A-1","nodes":[{"app_id":"spark-dialog","id":42,"focused":true,"fullscreen_mode":%s,"border":"normal","current_border_width":1,"rect":{"x":100,"y":50},"window_rect":{"x":0,"y":0},"geometry":{"width":600,"height":800}},{"app_id":"spark-preview"},{"app_id":"foot","deco_rect":{"height":28}}]}]}\n' "${FULL:-0}" ;;
 esac
 STUB
@@ -7198,6 +7198,15 @@ rm -f "$F2/swaymsg.log"
 grep -qxF '[app_id="spark-preview"] floating enable, border none, resize set 640 360, move absolute position 120 250, opacity 1' "$F2/swaymsg.log" \
     && ok "provide files: in a window the dialog draws itself the video is laid from the window's corner and the frame's box, with no terminal's padding" \
     || bad "preview video own window" "$(cat "$F2/swaymsg.log" 2>&1)"
+rm -f "$F2/swaymsg.log"
+# a screen of scale 1.5: a terminal counts its box in the screen's pixels, the dialog's own window in sway's units
+_vbox=$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')
+( SCALE=1.5; export SCALE; mcpw "$(call 7 files_play "$_vbox")" ); _vterm=$(cat "$F2/swaymsg.log" 2>&1); rm -f "$F2/swaymsg.log"
+( SPARK_DIALOG_OWN_WINDOW=1; SCALE=1.5; export SPARK_DIALOG_OWN_WINDOW SCALE; mcpw "$(call 8 files_play "$_vbox")" )
+printf '%s\n' "$_vterm" | grep -qxF '[app_id="spark-preview"] floating enable, border none, resize set 426 240, move absolute position 137 202, opacity 1' \
+    && grep -qxF '[app_id="spark-preview"] floating enable, border none, resize set 640 360, move absolute position 120 250, opacity 1' "$F2/swaymsg.log" \
+    && ok "provide files: at scale 1.5 a video is laid where its frame is: a terminal's box is scaled, a window's of the dialog's own is sway's units already" \
+    || bad "preview video scale" "$_vterm | $(cat "$F2/swaymsg.log" 2>&1)"
 rm -f "$F2/swaymsg.log"
 # #158: full screen, the dialog trades sway's full screen for a floating window on the same pixels while the video plays,
 # the bar out of sight, in one command; when the play ends it takes full screen back at its own size first, in one command.

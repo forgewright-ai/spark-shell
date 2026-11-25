@@ -329,12 +329,13 @@ files_play() {   # files_play PATH [AT] -- a sound from AT seconds
     echo "$!" > "$TMP/play.pid"
 }
 files_video_here() { wm_session && wm_here && wm_version >/dev/null; }   # files_video_here -- sway answers
-files_play_video() {   # files_play_video PATH AT X Y W H -- X Y W H in terminal pixels
+files_play_video() {   # files_play_video PATH AT X Y W H -- X Y W H in terminal pixels, or in sway's units
     _fvt=$(wm_tree) || { echo "$WM_NAME does not answer"; return 1; }
     _fvd=$(printf '%s' "$_fvt" | jq -r 'first(.. | objects | select(.app_id? == "spark-dialog" and .focused? == true) | "\(.rect.x + .window_rect.x) \(.rect.y + .window_rect.y) \(.fullscreen_mode // 0)") // empty')
     [ -n "$_fvd" ] || { echo "the dialog's window is not found"; return 1; }
     _fvo=$(printf '%s' "$_fvt" | jq -r 'first(.nodes[] | select(.type == "output") | select(any(.. | objects; .app_id? == "spark-dialog" and .focused? == true)) | .name) // empty')
     _fvs=$(wm_outputs | jq -r --arg o "$_fvo" 'first(.[] | select(.name == $o) | .scale) // 1')
+    case ${SPARK_DIALOG_OWN_WINDOW:-} in 1) _fvs=1 ;; esac   # a window the dialog draws itself says its box in sway's units
     # sway stacks full screen over floating: the dialog goes floating for the play, with no band and no border. With
     # them its content would be smaller than the screen, and the dialog stops a video when its size changes
     _fvsw=''

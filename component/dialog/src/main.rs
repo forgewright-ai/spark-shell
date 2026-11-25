@@ -607,6 +607,11 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
     }
 }
 
+/// A box in the screen's pixels in the window's own, which sway counts by: a video's player is laid by them.
+fn logical(scale: u32, (x, y, w, h): (u32, u32, u32, u32)) -> (u32, u32, u32, u32) {
+    (x / scale, y / scale, w / scale, h / scale)
+}
+
 /// The text's measures the layout in pixels places by: the window's font says them.
 fn metrics(w: &Window) -> scene::Metrics {
     scene::Metrics {
@@ -1126,7 +1131,8 @@ fn main() {
                                     (pv.px, pv.src) = ((bw, bh), kept.source);
                                     window_again = true;
                                 }
-                                pv.frame = Some((dox + (p.x + dx) as u32 * cw, doy + (p.y + dy) as u32 * chh, pw, ph));
+                                let at = (dox + (p.x + dx) as u32 * cw, doy + (p.y + dy) as u32 * chh, pw, ph);
+                                pv.frame = Some(logical(scale, at));
                             }
                             steps.push(place(p.x + dx, p.y + dy, &kept.pic));
                         }
@@ -1937,6 +1943,16 @@ mod tests {
         );
         // a terminal: the cells moved, at a cell's size
         assert_eq!(drag_by(None, (-2.0, 1.0), (9, 18)), (-18.0, 18.0));
+    }
+
+    #[test]
+    fn a_videos_box_is_in_the_windows_own_pixels_at_any_scale() {
+        assert_eq!(logical(1, (24, 101, 640, 360)), (24, 101, 640, 360));
+        assert_eq!(
+            logical(2, (48, 202, 1281, 720)),
+            (24, 101, 640, 360),
+            "a screen of 1.5 or 2: drawn at 2, placed by one"
+        );
     }
 
     #[test]
