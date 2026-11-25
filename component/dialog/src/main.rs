@@ -612,6 +612,11 @@ fn logical(scale: u32, (x, y, w, h): (u32, u32, u32, u32)) -> (u32, u32, u32, u3
     (x / scale, y / scale, w / scale, h / scale)
 }
 
+/// A preview's pages as a frame counted them; whether its key bar, built before, was for another count.
+fn counted(app: &mut App, pages: usize) -> bool {
+    std::mem::replace(&mut app.preview_pages, pages.max(1)) != pages.max(1)
+}
+
 /// The text's measures the layout in pixels places by: the window's font says them.
 fn metrics(w: &Window) -> scene::Metrics {
     scene::Metrics {
@@ -1336,7 +1341,7 @@ fn main() {
             if std::mem::take(&mut app.stow) {
                 stow();
             }
-            app.preview_pages = drawn.pages.max(1);
+            window_again |= counted(&mut app, drawn.pages) && window.is_some();
             // the picture beside a list: drawn when it changed, its cells blanked first (the buffer skips them);
             // a picture gone is the buffer's again, which writes its cells over it
             let want = drawn.preview.clone();
@@ -1953,6 +1958,17 @@ mod tests {
             (24, 101, 640, 360),
             "a screen of 1.5 or 2: drawn at 2, placed by one"
         );
+    }
+
+    #[test]
+    fn a_previews_pages_once_counted_draw_the_key_bar_again() {
+        // the layout in pixels builds its key bar before the grid counts the pages: one page until it has
+        let mut app = App::new(Config::default(), &[]);
+        assert!(counted(&mut app, 3), "the bar had no page key");
+        assert_eq!(app.preview_pages, 3);
+        assert!(!counted(&mut app, 3), "and no frame after that");
+        assert!(counted(&mut app, 0), "a place with no pages: one");
+        assert_eq!(app.preview_pages, 1);
     }
 
     #[test]
