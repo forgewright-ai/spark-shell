@@ -329,10 +329,16 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
         /// The floating container it is in, by its id; none for a tiled window.
         afloat: Option<i64>,
     }
+    /// Whether any window of a node is in sight: none of a hidden tab's group is.
+    fn shows(n: &Value) -> bool {
+        n["visible"] != false && (kids(n).next().is_none() || kids(n).any(shows))
+    }
     fn walk(n: &Value, at: Rect, afloat: Option<i64>, out: &mut Vec<Seen>) {
         let r = rect_of(&n["rect"]);
         if kids(n).next().is_some() {
-            for k in kids(n) {
+            // a window behind another tab keeps its title in the tabs' row; any other out of sight has none
+            let tabs = n["layout"] == "tabbed" || n["layout"] == "stacked";
+            for k in kids(n).filter(|k| shows(k) || tabs && kids(k).next().is_none()) {
                 let afloat = if k["type"] == "floating_con" { k["id"].as_i64() } else { afloat };
                 walk(k, r, afloat, out);
             }
@@ -475,6 +481,29 @@ mod tests {
         // a floating window over the second tab's buttons hides that band alone
         let b = bands(&tabs(Some(472)), 10.0);
         assert_eq!(b.iter().map(|b| b.id).collect::<Vec<_>>(), [5, 9, 10, 20]);
+    }
+
+    /// A tabbed container with a window in its first tab and two beside each other in its second, which is in front
+    /// or behind, as sway says each window's `visible`.
+    fn tab_of_two(front: bool) -> Value {
+        let win = |id: i64, x: i64, y: i64, visible: bool| {
+            serde_json::json!({"type": "con", "id": id, "name": format!("w {id}"), "app_id": "foot", "focused": false, "urgent": false, "fullscreen_mode": 0, "visible": visible,
+                "rect": {"x": x, "y": y, "width": 944, "height": 900}, "deco_rect": {"x": x - 16, "y": 0, "width": 944, "height": 28}, "nodes": [], "floating_nodes": []})
+        };
+        serde_json::json!({"type": "root", "nodes": [{"type": "output", "name": "DP-1", "id": 3, "current_workspace": "1", "rect": {"x": 0, "y": 0, "width": 1920, "height": 1080},
+            "nodes": [{"type": "workspace", "name": "1", "id": 4, "layout": "splith", "rect": {"x": 16, "y": 52, "width": 1888, "height": 1012}, "floating_nodes": [],
+                "nodes": [{"type": "con", "id": 11, "layout": "tabbed", "rect": {"x": 16, "y": 52, "width": 1888, "height": 1012}, "deco_rect": {"x": 0, "y": 0, "width": 0, "height": 0},
+                    "nodes": [win(5, 16, 80, !front),
+                        {"type": "con", "id": 12, "layout": "splith", "rect": {"x": 16, "y": 108, "width": 1888, "height": 956}, "deco_rect": {"x": 944, "y": 28, "width": 944, "height": 28},
+                            "nodes": [win(31, 16, 108, front), win(32, 960, 108, front)]}]}]}]}]})
+    }
+
+    #[test]
+    fn a_window_in_a_hidden_tabs_group_has_no_buttons() {
+        let ids = |t: &Value| bands(t, 10.0).iter().map(|b| b.id).collect::<Vec<_>>();
+        assert_eq!(ids(&tab_of_two(false)), [5], "the group's tab is behind: its two windows show nothing");
+        // in front, they have their bands, and the window behind them keeps its tab's
+        assert_eq!(ids(&tab_of_two(true)), [5, 31, 32]);
     }
 
     #[test]
