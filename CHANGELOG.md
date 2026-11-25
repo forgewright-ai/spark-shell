@@ -2,12 +2,12 @@
 
 ## v0.168.3
 
-- A list that moves while the button is down opens no other row, and a
-  lost release opens none later.
+- A list that moves while the button is down, or between two clicks,
+  opens no other row, and a lost release opens none later.
 - An app's details open while other details are read.
 - With a control focused beside the list of apps or files, the arrows
-  move no row behind it.
-- A click on a place's own name stays in the place.
+  move no row behind it, and a click on a row takes the keys there.
+- A click on a section's own name, or the workspaces', stays there.
 - A picture dragged in the window keeps up with a slow drawing.
 - Super+equal does nothing over a full-screen window. The keyboard went
   to a bar that could not be seen.

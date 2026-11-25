@@ -935,7 +935,7 @@ pub struct App {
     /// A launch no window has confirmed, and until when the focus leaving home is taken for that app's window.
     pub launch_wait: Option<Instant>,
     /// The last click on an object's row, and when: a second within DOUBLE_CLICK acts on it (the dialog design notes).
-    pub last_click: Option<(usize, Instant)>,
+    pub last_click: Option<(Option<String>, Instant)>,
     /// When a click last opened a question or fell on one just opened: a click close behind it is the same hand, no answer.
     pub question_click: Option<Instant>,
     pub busy_since: Option<Instant>,
@@ -3898,7 +3898,7 @@ impl App {
             _ => None,
         });
         if let Some(id) = found {
-            if self.apps.pending.is_some() {
+            if self.apps.pending.as_ref().is_some_and(|(_, op)| op != "details") {
                 return self.refuse("the apps are busy: a moment");
             }
             self.go(View::Apps);
@@ -6029,6 +6029,7 @@ impl App {
             });
             self.in_list = true;
             self.sel = 0;
+            self.chip_focus = None;
             return;
         }
         if step.call.name == "about_open" {
@@ -6051,6 +6052,7 @@ impl App {
             // verb takes Up or a click, so a bounce on Enter never shuts the machine down
             self.in_list = true;
             self.sel = 1;
+            self.chip_focus = None;
             self.reply = None;
             return;
         }
@@ -6366,7 +6368,13 @@ impl App {
     /// What stands on pick `n`, by its row's id where it has one: it keeps it wherever the row moves.
     pub fn pick_key(&self, n: usize) -> Option<String> {
         let it = self.picks().get(n).cloned()?;
-        Some(self.row_ref(&it).map_or_else(|| format!("{it:?}"), |r| r.id.clone()))
+        Some(match (self.row_ref(&it), &it) {
+            (Some(r), _) => r.id.clone(),
+            // what a later answer adds to a row, its count or its icon, makes it no other row
+            (_, Item::More(kind, _)) => format!("more {kind:?}"),
+            (_, Item::Apps(line)) if line.action.is_some() => format!("{:?}", line.action),
+            _ => format!("{it:?}"),
+        })
     }
 
     /// A click lights row `n`: a choice, as a key's is, so the light kept from a preview lets go (#153).
@@ -6375,6 +6383,7 @@ impl App {
         self.sel = n;
         self.keep_lit = None;
         self.list_keys = true;
+        self.chip_focus = None; // a control that had the keys lets them go
     }
 
     /// A click on row `n` (the dialog design notes): a menu's row acts at once; an object's row is selected by the first
@@ -6387,15 +6396,17 @@ impl App {
             return;
         }
         let asked = matches!(self.mode, Mode::Confirm(_));
+        let row = self.pick_key(n); // the row, not its place: a list may move between the two clicks
         let again = self
             .last_click
-            .is_some_and(|(k, at)| k == n && now.saturating_duration_since(at) < DOUBLE_CLICK);
+            .as_ref()
+            .is_some_and(|(k, at)| *k == row && now.saturating_duration_since(*at) < DOUBLE_CLICK);
         self.light(n);
         if again || !self.object_pick(n) {
             self.last_click = None;
             self.enter();
         } else {
-            self.last_click = Some((n, now));
+            self.last_click = Some((row, now));
         }
         self.question_click = (!asked && matches!(self.mode, Mode::Confirm(_))).then_some(now);
     }

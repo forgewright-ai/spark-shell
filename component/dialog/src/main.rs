@@ -1139,7 +1139,8 @@ fn main() {
                                 });
                             }
                             if drag.is_some() {
-                                drag_cost = drawing.elapsed();
+                                (drag_cost, drag_drawn) = (drawing.elapsed(), Instant::now());
+                                // the wait runs from its end
                             }
                             preview_tried = Instant::now();
                         }
@@ -1412,7 +1413,7 @@ fn main() {
                     let _ = out.write_all(b"\x1b[?2026l");
                     let _ = out.flush();
                     if drag.is_some() {
-                        drag_cost = drawing.elapsed();
+                        (drag_cost, drag_drawn) = (drawing.elapsed(), Instant::now());
                     }
                 }
                 preview_tried = Instant::now();

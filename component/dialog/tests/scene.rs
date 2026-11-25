@@ -1277,6 +1277,23 @@ fn a_control_reached_from_the_list_of_apps_holds_the_keys_alone() {
     clicked.hint_key(HintKey::PreviousControl);
     clicked.apps_pane_row(0, std::time::Instant::now());
     assert!(clicked.chip_focus.is_none() && clicked.apps.page == Page::Details("foot.desktop".into()));
+    // and so does a click on a row of the list: the arrows move it on
+    let mut lit = apps();
+    lit.voice_on = true;
+    lit.down();
+    lit.hint_key(HintKey::PreviousControl);
+    assert!(lit.chip_focus.is_some());
+    lit.clicked(0, std::time::Instant::now());
+    lit.hint_key(HintKey::Down);
+    assert!(lit.chip_focus.is_none() && lit.sel == 1);
+    // a second click on another row that has come to the same place is the first on it
+    lit.clicked(1, std::time::Instant::now());
+    lit.last_click.as_mut().unwrap().0 = lit.pick_key(0);
+    lit.clicked(1, std::time::Instant::now());
+    let opens = |a: &App| a.apps.pending.as_ref().is_some_and(|(_, op)| op == "launch");
+    assert!(!opens(&lit), "it opens nothing");
+    lit.clicked(1, std::time::Instant::now());
+    assert!(opens(&lit), "a double click on one row opens it");
     // from the line no app is lit, and a control shows none
     let mut line = apps();
     line.voice_on = true;
@@ -1288,7 +1305,7 @@ fn a_control_reached_from_the_list_of_apps_holds_the_keys_alone() {
     // Tab past the last control: the list again, on its app
     a.hint_key(HintKey::Tab);
     assert!(a.chip_focus.is_none() && a.in_list && a.list_keys && a.sel == 1);
-    for a in [a, clicked, line] {
+    for a in [a, clicked, lit, line] {
         let _ = std::fs::remove_dir_all(a.apps.path.parent().unwrap());
     }
 }
