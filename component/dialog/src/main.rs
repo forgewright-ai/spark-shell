@@ -1993,14 +1993,6 @@ mod tests {
     }
 
     #[test]
-    fn a_dragged_picture_says_how_long_it_took_in_the_window_and_in_a_terminal() {
-        // the loop runs under a compositor alone: its own text says that both its paths time the picture a drag moves
-        let text = include_str!("main.rs");
-        let body = &text[..text.find("#[cfg(test)]").unwrap()];
-        assert_eq!(body.matches("drag_cost = drawing.elapsed()").count(), 2);
-    }
-
-    #[test]
     fn a_press_is_its_row_wherever_the_row_moves() {
         let rows = |names: &[&str]| {
             let rows: Vec<_> = names

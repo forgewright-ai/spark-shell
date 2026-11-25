@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.168.3
+
+- A list that moves while the button is down opens no other row, and a
+  lost release opens none later.
+- An app's details open while other details are read.
+- With a control focused beside the list of apps or files, the arrows
+  move no row behind it.
+- A click on a place's own name stays in the place.
+- A picture dragged in the window keeps up with a slow drawing.
+- Super+equal does nothing over a full-screen window. The keyboard went
+  to a bar that could not be seen.
+- Two workspaces past the tenth that share a number, as 11:web and
+  11:mail, are told apart: a click shows the one clicked, and the arrows
+  reach both.
+- The name of a binding mode is cut before the pad's space is. On a tight
+  bar the pad left the bar.
+- The dialog and the bar are 0.168.3.
+
 ## v0.168.2
 
 - Apps: a click in an app's details while they are read lights no row of
