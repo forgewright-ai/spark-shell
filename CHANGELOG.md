@@ -29,6 +29,8 @@
   the desktop's other parts.
 - A broken link in eza's listing is red on no ground of its own. On a
   light palette it stood on a dark block.
+- The status of sway's own bar ends within a second of a bar that crashed,
+  as spark's does. It ran on for up to 15 seconds.
 - The pad is 0.168.1.
 
 ## v0.168

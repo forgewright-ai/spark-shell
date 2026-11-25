@@ -5274,6 +5274,25 @@ KBSWAY_STUB
     kill "$(cat "$H/orphan.sleep" 2>/dev/null)" 2>/dev/null || :
     [ -n "$_ol" ] && [ "$_oi" -lt 60 ] && ok "spark's bar gone without a word: its status loop ends within seconds" || bad "a loop without its bar" "pid $_op after $_oi tenths: $(tail -1 "$H/bar.err" 2>/dev/null)"
     kill "$_op" 2>/dev/null || :
+    # sway's own bar gone the same way, a shell between it and its command: the loop ends with it (v0.168.1)
+    if [ -r /proc/self/comm ]; then
+        cat > "$H/swaybar" <<'SWAYBAR'
+#!/bin/sh
+sh -c 'sh "$1" bar status < /dev/null > "$2/bar.out" 2> "$2/bar.err" & echo $! > "$2/orphan.pid"; wait' x "$1" "$2" &
+sleep 60 & echo $! > "$2/orphan.sleep"
+wait
+SWAYBAR
+        chmod +x "$H/swaybar"; : > "$H/bar.out"; rm -f "$H/orphan.pid" "$H/orphan.sleep"
+        "$H/swaybar" "$SH" "$H" & bp=$!
+        _oi=0; while [ "$_oi" -lt 100 ] && [ ! -s "$H/orphan.pid" ]; do sleep 0.1; _oi=$((_oi + 1)); done
+        lines_are 1; _op=$(cat "$H/orphan.pid" 2>/dev/null || :)
+        _ol=''; grep -q '^\[{' "$H/bar.out" && [ -n "$_op" ] && kill -0 "$_op" 2>/dev/null && _ol=1
+        kill -9 "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
+        _oi=0; while [ "$_oi" -lt 60 ] && kill -0 "$_op" 2>/dev/null && ! grep -qs '^State:[[:space:]]*Z' "/proc/$_op/status"; do sleep 0.1; _oi=$((_oi + 1)); done
+        kill "$(cat "$H/orphan.sleep" 2>/dev/null)" 2>/dev/null || :
+        [ -n "$_ol" ] && [ "$_oi" -lt 60 ] && ok "sway's own bar gone without a word: its status loop ends within seconds" || bad "a loop without sway's bar" "pid $_op after $_oi tenths: $(tail -1 "$H/bar.err" 2>/dev/null)"
+        kill "$_op" 2>/dev/null || :
+    fi
     # the workspace watcher ends with its loop: a loop that died with its group left running (spark-bar crashed) left
     # the watcher renaming workspaces at every event until sway ended, one more a crash. A sway that sends an event
     # every fifth of a second and logs each read of the workspaces' names shows it: the loop killed outright, the

@@ -759,7 +759,14 @@ bar_status() {   # bar_status [--once]
     # again) is no bar's line. Nor does it carry the pins and the hidden as this loop started with them: each line reads
     # the config's, and so does what it starts
     _bsb=${SPARK_BAR:-}; unset SPARK_BAR BAR_PINS BAR_HIDE; SPARK_BAR=$_bsb
-    _bar_of=''; [ -z "$SPARK_BAR" ] || _bar_of=$PPID   # spark's bar itself, which started this
+    _bar_of=''   # the bar that started this, which its lines go with
+    if [ -n "$SPARK_BAR" ]; then _bar_of=$PPID
+    else   # sway's own, or the shell it starts its command with
+        _bsp=$PPID; for _bsi in 1 2; do
+            if [ "$(cat "/proc/$_bsp/comm" 2>/dev/null)" = swaybar ]; then _bar_of=$_bsp; break; fi
+            _bsp=$(sed 's/.*) //' "/proc/$_bsp/stat" 2>/dev/null | cut -d' ' -f2); [ -n "$_bsp" ] || break
+        done
+    fi
     theme_load; al_mend_file
     if [ "${1:-}" = --once ]; then bar_line | sed 's/,$//'; return 0; fi
     command -v jq >/dev/null 2>&1 || echo "spark-shell bar status: jq is not installed, so the bar takes no clicks (spark-shell on)" >&2
