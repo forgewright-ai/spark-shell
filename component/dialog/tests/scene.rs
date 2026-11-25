@@ -321,6 +321,34 @@ fn no_heading_and_no_stepper_takes_a_click_outside_its_list() {
 }
 
 #[test]
+fn the_cursor_is_as_wide_as_the_character_it_stands_on() {
+    let mut a = home();
+    a.set_draft("a\u{56db}b");
+    a.cursor = 1;
+    let ink = [0xd8, 0xde, 0xe9];
+    let block = |a: &mut App| fills(&scene(a, 600.0, 800.0), ink);
+    assert_eq!(block(&mut a), [(58.0, 24.0, 20.0, 20.0)], "two cells under a wide one");
+    let s = scene(&mut a, 600.0, 800.0);
+    let on = s
+        .steps
+        .iter()
+        .filter(|st| matches!(st, Step::Symbol { text, cells: 2, color: [0x3d, 0x43, 0x4f], .. } if text == "\u{56db}"));
+    assert_eq!(on.count(), 1, "and the character on it, in the ground's color");
+    a.cursor = 2;
+    assert_eq!(block(&mut a), [(78.0, 24.0, 10.0, 20.0)], "one under a letter");
+    a.cursor = 3;
+    assert_eq!(block(&mut a), [(88.0, 24.0, 10.0, 20.0)], "and at the line's end");
+    // a window without the focus draws it as an outline, as wide
+    a.cursor = 1;
+    a.window_focused = false;
+    let sides = block(&mut a);
+    assert!(
+        sides.contains(&(58.0, 24.0, 20.0, 1.0)) && sides.contains(&(77.0, 24.0, 1.0, 20.0)),
+        "{sides:?}"
+    );
+}
+
+#[test]
 fn what_home_finds_wears_homes_rows_an_app_with_its_picture() {
     let mut a = apps();
     a.view = View::Home;

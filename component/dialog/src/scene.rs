@@ -702,6 +702,8 @@ fn line(app: &App, pen: &mut Pen, g: &Geo) {
     let typing = !list_focus(app) && app.chip_focus.is_none();
     if typing {
         let cx = tx + cc as f64 * m.cw;
+        let cw = m.cw * symbol_at(&row, cc).map_or(1, |s| cells(&s)) as f64;
+        let m = Metrics { cw, ..m }; // the cursor is as wide as the character it stands on
         if app.window_focused {
             pen.fill(cx, top, m.cw, m.ch, if empty { t.muted } else { t.ink });
             if let Some(s) = symbol_at(&row, cc) {
