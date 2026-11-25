@@ -57,6 +57,7 @@ workspace_layout @WS_LAYOUT@
 font pango:@BAR_LINE_FONT@
 default_border @BORDER@
 default_floating_border @BORDER@
+# The pad's buttons stand by these and by the titles' font: one of config.d's is not followed
 titlebar_border_thickness 1
 titlebar_padding 12 4
 title_align left

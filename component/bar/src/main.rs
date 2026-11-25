@@ -88,9 +88,9 @@ the status ends, its stream or the program itself, its group is told to end
 and it is started again after 1 s, then 2, 4, up to 30; a line from a
 status that has run 10 s starts the count anew.
 
-SIGUSR1 puts the keyboard on the bar of the focused output, and a line in
-the accent stands under the part the keys are on (in the ink on the
-plate): Tab and Shift+Tab go round the targets, and Left and Right too;
+SIGUSR1 puts the keyboard on the bar of the focused output, unless a
+full-screen window covers it, and a line in the accent stands under the
+part the keys are on (in the ink on the plate): Tab and Shift+Tab go round the targets, and Left and Right too;
 Up and Down are the wheel on any part of a level that can be set, and Home
 and End its ends on its gauge; Enter or Space is a click, and gives the
 keyboard back, except on the sign or the text of a module that says toggle,

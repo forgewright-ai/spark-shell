@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.168.4
+
+- An update or a theme change from a terminal older than the login keeps
+  the pad and the bar: each ends only where one sway of yours answers,
+  which starts the next. The pad stopped, or took its buttons' size from
+  no screen.
+- A bar that ends five times in a minute leaves sway's own bar in its
+  place until the next login. There was none.
+- A reload starts the bar a config asks for, where the config was written
+  from outside the session. There was none until the next login.
+- Super+equal over a full-screen window says the bar takes no keys there.
+- Super+minus does nothing over a full-screen window.
+- A floating window with no title takes the clicks over the buttons
+  under it.
+- `spark-shell desktop pad band` and `pad view` say they are kept for a
+  place off the bar, which shows neither.
+- Home's opening no longer starts again on a screen of another scale.
+- A click on a row of the other files pane, or of an app's details, acts
+  on the row that was pressed.
+- A dialog that is refused, and one that opens a window of its own, leave
+  the terminal its cursor.
+- A launch of home that never shows leaves no window behind.
+- The release of a held Super+Space fails no more when its session ends
+  at that moment.
+- On a machine with no logind, the desktop locks before a lid or a sleep
+  key suspends it. `spark-shell on desktop` writes zzz's hook.
+- A terminal's program, or a host it is on, that takes home's or the idle
+  screen's app id is not taken for it.
+- Another account that makes the runtime folder under /tmp first no
+  longer keeps your desktop from starting.
+- A push no longer reaches this machine's root: a test's theme step wrote
+  a test's folder into /etc/rc.local.
+- cargo-deny-action is 2.1.3 and codeql-action 4.39.4.
+- The dialog, the bar and the pad are 0.168.4.
+
 ## v0.168.3
 
 - A list that moves while the button is down, or between two clicks,
