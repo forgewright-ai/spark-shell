@@ -123,7 +123,7 @@ pub struct Handle {
 
 impl Handle {
     /// How many of the screen's pixels stand on one of the window's: 1, or 2 and more on a screen of many pixels.
-    /// A picture is made for the screen's pixels. A change is said as a size (Event::Resize), the cells the same.
+    /// A picture is made for the screen's pixels. A change is said as a size (Event::Resize), after Out::Font.
     pub fn scale(&self) -> u32 {
         self.scale.load(Ordering::Relaxed).max(1) as u32
     }
@@ -394,6 +394,7 @@ impl State {
         }
         let scale = input::first_scale(state.outputs.outputs().filter_map(|o| state.outputs.info(&o)).map(|i| i.scale_factor));
         state.rescale(scale);
+        state.want.0 = want.0.max((setup.cols as f64 * state.font.cell.w).ceil() as u32);
         WaylandSource::new(conn, queue)
             .insert(state.handle.clone())
             .map_err(|e| format!("event loop: {}", e.error))?;
@@ -405,7 +406,6 @@ impl State {
         self.scale = scale;
         self.shared.store(scale, Ordering::Relaxed);
         let Some(font) = Font::new(&self.lib, &self.face, scale as f64) else { return };
-        self.want.0 = (self.want.0 as f64 * font.cell.w / self.font.cell.w).ceil() as u32;
         std::mem::replace(&mut self.font, font).free(&self.lib);
     }
 
