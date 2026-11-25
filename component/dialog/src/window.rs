@@ -315,8 +315,6 @@ impl State {
         let window = xdg.create_window(compositor.create_surface(&qh), WindowDecorations::RequestServer, &qh);
         window.set_app_id(setup.app_id);
         window.set_title(setup.title);
-        // a first commit with nothing on it: the compositor answers with the size, and the first frame maps the window
-        window.commit();
         handle
             .insert_source(cmds, |msg, &mut (), s: &mut State| match msg {
                 Msg::Msg(Cmd::Frame(steps, ground)) => {
@@ -392,9 +390,24 @@ impl State {
         for _ in 0..2 {
             queue.roundtrip(&mut state).map_err(|e| format!("the compositor: {e}"))?;
         }
-        let scale = input::first_scale(state.outputs.outputs().filter_map(|o| state.outputs.info(&o)).map(|i| i.scale_factor));
-        state.rescale(scale);
-        state.want.0 = want.0.max((setup.cols as f64 * state.font.cell.w).ceil() as u32);
+        let scales: Vec<i32> = state
+            .outputs
+            .outputs()
+            .filter_map(|o| state.outputs.info(&o))
+            .map(|i| i.scale_factor.max(1))
+            .collect();
+        state.rescale(input::first_scale(scales.iter().copied()));
+        // its columns on every screen here: a letter can be wider at another scale, and the window keeps its size there
+        for scale in scales {
+            let Some(font) = Font::new(&state.lib, &state.face, scale as f64) else {
+                continue;
+            };
+            state.want.0 = state.want.0.max((setup.cols as f64 * font.cell.w).ceil() as u32);
+            font.free(&state.lib);
+        }
+        state.px = state.want;
+        // a first commit with nothing on it: the compositor answers with the size, and the first frame maps the window
+        state.window.commit();
         WaylandSource::new(conn, queue)
             .insert(state.handle.clone())
             .map_err(|e| format!("event loop: {}", e.error))?;

@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.168.2
+
+- Apps: a click in an app's details while they are read lights no row of
+  the list, and a double click opens no other app. After a read that
+  failed, a click acted on the row beside it.
+- On a screen at scale 1.25 and up, words at the right edge and the keys'
+  labels stay in their place. The small text was drawn wider than it was
+  measured.
+- At a fractional scale a video plays in its frame. It was too large and
+  beside it.
+- Space types a space at home's empty line again.
+- A heading or a value cut by the list's edge takes no click outside the
+  list, and the cursor covers the whole of a wide character.
+- A document's view shows its page key at once.
+- The dialog is 0.168.2.
+
 ## v0.168.1
 
 - On one screen a moving wallpaper moves again after a reload and after a

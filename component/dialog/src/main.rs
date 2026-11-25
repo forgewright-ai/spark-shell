@@ -1616,7 +1616,8 @@ fn main() {
                 if let Some(w) = &mut window {
                     (w.cell, w.small, w.ascent, w.big) = (cell, small, ascent, big);
                 }
-                app.faces.clear(); // the specimens are measured again too
+                app.faces.clear(); // the specimens are measured again too, and the picture of a file is laid by the cell
+                win_preview = None;
             }
             Ev::Px(w, h) => {
                 // the layout in pixels places by them: a frame at the new size, the pictures made again for it
