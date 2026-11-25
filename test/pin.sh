@@ -7,42 +7,63 @@
 #   sh test/pin.sh --check [PART...]  build and compare, write nothing; exit 1 when a pin is not its build's
 #   sh test/pin.sh --fetch            the image, once: some 300 MiB from Docker Hub, each layer held to its sha256
 #
-# The tree is this one's files as they are, the crates are the ones on disk (cargo fetch --locked brings a new one).
-# PIN_DIR (/var/tmp/spark-shell-pin) holds the image and the builds. It runs at low priority.
+# The tree is this one's files as they are; the crates are the ones on disk, each held to Cargo.lock (cargo fetch
+# --locked brings a new one). PIN_DIR (/var/tmp/spark-shell-pin) holds the image and the builds, one run at a time.
+# Exit 2: it could not be built here, and nothing is said of the pin.
 set -eu
 cd "$(dirname "$0")/.."
+no() { echo "pin: $*" >&2; exit 2; }
 P=${PIN_DIR:-/var/tmp/spark-shell-pin}
-image=$(awk '/^  dialog-build:/ { on = 1 } on && /^    container: rust:/ { print $2; exit }' .github/workflows/ci.yml)
-case $image in rust:*@sha256:*) ;; *) echo "pin: ci.yml's dialog-build names no image by its digest" >&2; exit 2 ;; esac
-check=''
-case ${1:-} in
-    --fetch) exec python3 -I test/pin_image.py "$image" "$P" ;;
-    --check) check=1; shift ;;
-    -*) echo "usage: sh test/pin.sh [--check] [PART...] | --fetch" >&2; exit 2 ;;
-esac
-[ $# -gt 0 ] || set -- dialog bar winpad ear wallpaper
-command -v bwrap >/dev/null 2>&1 || { echo "pin: bwrap is not installed: CI's first build of a part prints its pin" >&2; exit 2; }
-[ "$(cat "$P/image" 2>/dev/null)" = "$image" ] || { echo "pin: the image is not here: sh test/pin.sh --fetch brings it (some 300 MiB)" >&2; exit 2; }
-rm -rf "$P/tree" "$P/cargo"; mkdir -p "$P/tree" "$P/root/__w/spark-shell/spark-shell" "$P/root/github/home"
-{ git ls-files -z --cached; git ls-files -z --others --exclude-standard -- component; } | tar --null -T - -cf - --ignore-failed-read 2>/dev/null | tar -xf - -C "$P/tree"
-cp -r "$P/root/usr/local/cargo" "$P/cargo"; rm -rf "$P/cargo/registry"; cp -r "${CARGO_HOME:-$HOME/.cargo}/registry" "$P/cargo/registry"
+check=''; fetch=''; parts=''
+for a in "$@"; do
+    case $a in
+        --check) check=1 ;;
+        --fetch) fetch=1 ;;
+        -*) no "usage: sh test/pin.sh [--check] [PART...] | --fetch" ;;
+        *) [ -f "component/$a/$a.env" ] && [ -f "test/${a}_build.sh" ] || no "no part $a"; parts="$parts $a" ;;
+    esac
+done
+image=$(grep -hoE 'rust:[0-9A-Za-z.-]+@sha256:[0-9a-f]{64}' .github/workflows/ci.yml .github/workflows/release.yml | sort -u)
+case $image in ''|*'
+'*) no "ci.yml and release.yml name no one build image: $image" ;; esac
 version=$(printf '%s\n' "$image" | sed 's/^rust:\([0-9.]*\).*/\1/')
+command -v bwrap >/dev/null 2>&1 && command -v flock >/dev/null 2>&1 || no "bwrap and flock are needed: CI's first build of a part prints its pin"
+# a folder of this script's own, and of nobody else's
+[ -d "$P" ] || mkdir -m 700 "$P"
+[ ! -L "$P" ] && [ "$(stat -c %u "$P")" = "$(id -u)" ] || no "$P is not your folder"
+[ -f "$P/.spark-shell-pin" ] || [ -z "$(ls -A "$P")" ] || no "$P is there and is no folder of this script: not touched (PIN_DIR names another)"
+chmod 700 "$P"; : > "$P/.spark-shell-pin"
+exec 9> "$P/lock"; flock 9   # one run at a time: two would build each other's trees
+[ -z "$fetch" ] || exec python3 -I test/pin_image.py "$image" "$P"
+[ "$(cat "$P/image" 2>/dev/null)" = "$image" ] || no "the image is not here: sh test/pin.sh --fetch brings it (some 300 MiB)"
+rm -rf "$P/tree" "$P/cargo"; mkdir -p "$P/tree" "$P/root/__w/spark-shell/spark-shell" "$P/root/github/home"
+{ git ls-files -z --cached; git ls-files -z --others --exclude-standard -- component; } > "$P/files"
+tar --null -T "$P/files" -cf "$P/tree.tar" || no "the tree could not be read whole"
+tar -xf "$P/tree.tar" -C "$P/tree"; rm -f "$P/tree.tar"
+cp -r "$P/root/usr/local/cargo" "$P/cargo"; rm -rf "$P/cargo/registry"; mkdir -p "$P/cargo/registry"
+for d in index cache; do cp -r "${CARGO_HOME:-$HOME/.cargo}/registry/$d" "$P/cargo/registry/$d"; done   # unpacked anew from the crates
+python3 -I test/pin_image.py --crates "$P/cargo/registry/cache" "$P"/tree/component/Cargo.lock "$P"/tree/component/*/Cargo.lock || no "a crate is not the one Cargo.lock names"
 rc=0
-for c in "$@"; do
-    env=component/$c/$c.env
-    [ -f "$env" ] && [ -f "test/${c}_build.sh" ] || { echo "pin: no part $c" >&2; exit 2; }
+for c in ${parts:-dialog bar winpad ear wallpaper}; do
+    env=component/$c/$c.env; key=$(printf '%s' "$c" | tr '[:lower:]' '[:upper:]')_SHA256_X86_64_LINUX_GNU
+    [ "$(grep -c "^$key=" "$env")" = 1 ] || no "$env has not one line $key="
+    asks=$(sed -n 's/^channel = "\(.*\)"/\1/p' "component/$c/rust-toolchain.toml" 2>/dev/null)
+    [ "${asks:-$version}" = "$version" ] || no "$c asks for rust $asks, and the image has $version"
     # the checkout's path, the homes and the toolchain are the ones CI's container has
     got=$(nice -n 15 bwrap --die-with-parent --new-session --unshare-all --ro-bind "$P/root" / --proc /proc --dev /dev --tmpfs /tmp \
         --bind "$P/tree" /__w/spark-shell/spark-shell --bind "$P/cargo" /usr/local/cargo --chdir /__w/spark-shell/spark-shell --clearenv \
         --setenv PATH /usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin --setenv HOME /github/home --setenv CI true \
         --setenv RUSTUP_HOME /usr/local/rustup --setenv CARGO_HOME /usr/local/cargo --setenv RUSTUP_TOOLCHAIN "$version-x86_64-unknown-linux-gnu" \
-        --setenv CARGO_NET_OFFLINE true sh "test/${c}_build.sh" 2>"$P/$c.log" | cut -d' ' -f1) || got=''
-    case $got in *[!0-9a-f]*|'') echo "pin: $c was not built: $P/$c.log" >&2; tail -3 "$P/$c.log" >&2; exit 1 ;; esac
-    want=$(sed -n 's/^[A-Z]*_SHA256_X86_64_LINUX_GNU=//p' "$env")
+        --setenv CARGO_NET_OFFLINE true sh "test/${c}_build.sh" 2>"$P/$c.log" </dev/null) || got=''
+    got=${got%% *}
+    printf '%s\n' "$got" | grep -qxE '[0-9a-f]{64}' || { tail -3 "$P/$c.log" >&2; no "$c was not built: $P/$c.log"; }
+    want=$(sed -n "s/^$key=//p" "$env")
     if [ "$got" = "$want" ]; then echo "ok    $c $got"
     elif [ -n "$check" ]; then echo "stale $c $want, its build is $got"; rc=1
     else
-        sed "s/^\([A-Z]*_SHA256_X86_64_LINUX_GNU=\).*/\1$got/" "$env" > "$P/env.new" && cat "$P/env.new" > "$env"
+        sed "s/^$key=.*/$key=$got/" "$env" > "$P/env.new" || no "$env could not be written"
+        cat "$P/env.new" > "$env" || no "$env could not be written"
+        [ "$(sed -n "s/^$key=//p" "$env")" = "$got" ] || no "$env does not hold what was written"
         echo "wrote $c $got"
     fi
 done
