@@ -141,7 +141,7 @@ wm_lock_running() { [ -n "$(wm_lock_pids)" ]; }   # one is here: it may read its
 # one that has not left it yet is no lock. Its password helper never leaves it
 wm_lock_up() {   # -> 0 once this session is locked, never before
     for _wlu in $(wm_lock_pids); do
-        ! awk -v p="$_wlu" '{ sub(/.*\) /, ""); exit !($4 == p) }' "$BAR_PROC/$_wlu/stat" 2>/dev/null || return 0
+        ! awk -v p="$_wlu" '{ sub(/.*\) /, ""); up = $4 == p } END { exit !up }' "$BAR_PROC/$_wlu/stat" 2>/dev/null || return 0   # nothing read, as of one that ends: not up
     done
     return 1
 }

@@ -31,6 +31,8 @@
   light palette it stood on a dark block.
 - The status of sway's own bar ends within a second of a bar that crashed,
   as spark's does. It ran on for up to 15 seconds.
+- A lock that ends while it is looked at is no lock: another takes its
+  place. It could pass for one.
 - The pad is 0.168.1.
 
 ## v0.168

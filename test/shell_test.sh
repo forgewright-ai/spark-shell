@@ -3447,7 +3447,7 @@ printf 'A=1\0WAYLAND_DISPLAY=wayland-1\0XDG_RUNTIME_DIR=%s\0' "$H/run" > "$H/lpr
 printf 'A=x\nWAYLAND_DISPLAY=wayland-1\0WAYLAND_DISPLAY=wayland-2\0XDG_RUNTIME_DIR=%s\0' "$H/run" > "$H/lproc/42/environ"
 printf 'WAYLAND_DISPLAY=wayland-1\0XDG_RUNTIME_DIR=%s\0' "$H/run2" > "$H/lproc/43/environ"
 cp "$H/lproc/41/environ" "$H/lproc/45/environ"; printf '45 (swaylock) S 1 40 40 0 -1\n' > "$H/lproc/45/stat"   # the lock's password helper, in its caller's session for good
-lockstat() { printf '41 (swaylock) S 1 40 %s 0 -1\n' "$1" > "$H/lproc/41/stat"; }   # lockstat 40|41 -- the lock still starting, or up: it left its caller's session
+lockstat() { printf '41 (swaylock) S 1 40 %s 0 -1\n' "$1" > "$H/lproc/41/stat.new"; mv "$H/lproc/41/stat.new" "$H/lproc/41/stat"; }   # lockstat 40|41 -- the lock still starting, or up: it left its caller's session
 lockstat 41
 lockrun() { printf '%s\n' "$@" > "$HOME/locked"; rm -f "$HOME/swaylock.args"; rc=0; XDG_RUNTIME_DIR=$H/run SPARK_SHELL_PROC=$H/lproc WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop lock >/dev/null 2>&1 || rc=$?; }   # lockrun PID... -- a lock asked for with those swaylocks running
 lockrun 42 41
@@ -3461,6 +3461,8 @@ lockstat 40; ( sleep 0.7; echo 45 > "$H/gone"; mv "$H/gone" "$HOME/locked"; rm -
 lockstat 40; lockrun 41; l3=$rc; l3a=$(paste -sd ' ' - < "$HOME/swaylock.args" 2>/dev/null)
 case $l3a in '--daemonize --config /dev/null --color '*) ;; *) l3="$l3 $l3a" ;; esac
 [ "$l1" = 0 ] && [ "$l2" = 0 ] && [ "$l3" = 0 ] && ok "desktop lock: a lock still reading its pictures is waited for and never said to be one; one that goes leaves this one to lock, one that takes too long a plain one" || bad "lock starting" "$l1 | $l2 | $l3"
+# a lock that ends as it is looked at: its stat opens and reads as nothing, and it is no lock
+: > "$H/lproc/41/stat"; lockrun 41; [ "$rc" = 0 ] && [ -e "$HOME/swaylock.args" ] && ok "desktop lock: a lock whose state reads as nothing is not up: this one locks (v0.168.1)" || bad "lock read empty" "rc=$rc $(cat "$HOME/swaylock.args" 2>&1)"; lockstat 41
 # what it shows keeps no screen open: past 3 seconds the lock that reads a picture is ended, and one of a plain color is up; said to be locked only when swaylock says so
 cat > "$H/lx/swaylock" <<'STUB'
 #!/bin/sh
