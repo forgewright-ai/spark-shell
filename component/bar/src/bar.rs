@@ -1127,7 +1127,7 @@ fn drop_order(pieces: &[Piece], overflow: &[String]) -> Vec<String> {
 /// The room for the pad's windows (Apps) begins one cell after the run and ends four cells before the
 /// status, or one cell before the mode's name: the pad stands there when it is on the bar, and the bar
 /// draws nothing in it. While the line says the pad stands on the bar (PAD_ROOM), that room is the pad's grip
-/// and one cell at least: the numbers, the gauges and the modules leave first, so the pad never leaves the bar.
+/// and one cell at least: numbers, gauges, modules and the mode's name leave first, so the pad never leaves the bar.
 pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
     let (cell, h) = (m.cell.max(1), m.height);
     let mut lay = Layout {
@@ -1243,7 +1243,7 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
     let mut room_end = limit;
     if let Some(name) = scene.mode {
         let said = glyphs(&plain(name));
-        let n = ((limit - run_end - cell) / cell).clamp(0, said.len() as i32);
+        let n = ((limit - run_end - keep - cell) / cell).clamp(0, said.len() as i32);
         for (i, glyph) in said.into_iter().take(n as usize).enumerate() {
             lay.fixed.push(Draw::Glyph {
                 rect: Rect::new(limit - (n - i as i32) * cell, 0, cell, h),
@@ -5335,6 +5335,36 @@ mod tests {
         // at 884 the sheet leaves none: the bar's own parts leave first
         assert_eq!(sheet(884).apps.w, 0);
         assert!(lay(884, &mods(&room), &five()).dropped.len() > sheet(884).dropped.len());
+    }
+
+    #[test]
+    fn a_mode_and_a_reminder_leave_the_pads_room_while_the_pad_stands_on_the_bar() {
+        // the sheet with the pad's room, and the same with a reminder due before the seat's
+        let sheet = SHEET.replacen(r#"{"name":"lan""#, r#"{"name":"room","group":"pad"},{"name":"lan""#, 1);
+        let asks = r#"{"name":"due","group":"tasks","sign":"!","state":"asks"},{"name":"light""#;
+        let (room, due) = (mods(&sheet), mods(&sheet.replacen(r#"{"name":"light""#, asks, 1)));
+        assert_eq!(due.len(), room.len() + 1);
+        let at = |width: i32, m: &[Module], mode| lay_on("A", width, Edge::Top, Status::Ok, m, &levels_of(m), &five(), mode, &Prefs::default());
+        let need = 20 + 36;
+        for width in 0..=1300 {
+            let least = at(width, &room, None).apps.w.min(need);
+            assert!(width < 884 || least == need, "{width}");
+            for m in [&room, &due] {
+                let plain = at(width, m, None);
+                assert!(plain.apps.w >= least, "{width}: {} px", plain.apps.w);
+                for mode in ["resize", "a mode with a long name to stand in the bar here"] {
+                    let l = at(width, m, Some(mode));
+                    assert!(l.apps.w >= least, "{width}, {mode}: {} px", l.apps.w);
+                    assert_eq!((&l.targets, &l.dropped), (&plain.targets, &plain.dropped), "{width}, {mode}");
+                }
+            }
+        }
+        // with the width for both, the mode stands whole and the pad's room ends one cell before it
+        assert_eq!(
+            mode_said(&at(1200, &room, Some("resize"))),
+            mode_said(&in_mode(1200, Status::Ok, "resize", &five()))
+        );
+        assert_eq!(at(1200, &room, Some("resize")).apps, Rect::new(354, 0, 236, 36));
     }
 
     #[test]
