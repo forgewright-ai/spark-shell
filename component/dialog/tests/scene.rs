@@ -1086,6 +1086,39 @@ fn an_apps_details_stand_beside_the_list_and_tab_goes_between_them() {
 }
 
 #[test]
+fn a_click_on_a_row_of_the_details_never_acts_on_the_list_or_on_another_row() {
+    let now = std::time::Instant::now();
+    let mut a = apps();
+    a.down();
+    a.down();
+    a.apps.pane = true;
+    // the apps at work: the details do not open, and the click is no row of the list's
+    a.apps.pending = Some((9, "catalog".into()));
+    a.apps_pane_row(0, now);
+    assert_eq!((a.sel, &a.apps.page), (1, &Page::List), "foot is lit still");
+    // the facts could not be read: read again is the first row, and gone once the read starts
+    a.apps.pending = None;
+    a.apps.asked = Some("foot.desktop".into());
+    let s = scene(&mut a, 600.0, 800.0);
+    let (_, y, ..) = word(&s, "read the details\u{2026}");
+    assert_eq!(s.hit(400.0, y + 8.0), Some(&Target::PaneRow(0)));
+    let (_, y, ..) = word(&s, "open");
+    assert_eq!(s.hit(400.0, y + 8.0), Some(&Target::PaneRow(1)));
+    let asked = |a: &App| a.apps.pending.as_ref().map(|(_, op)| op.clone());
+    a.apps_pane_row(0, now);
+    assert_eq!(a.apps.page, Page::Details("foot.desktop".into()));
+    assert_eq!(asked(&a).as_deref(), Some("details"), "they are read again, and nothing opens");
+    // and a click on open is open's
+    a.escape();
+    a.apps.pending = None;
+    a.apps.pane = true;
+    a.apps_pane_row(1, now);
+    assert_eq!(a.apps.page, Page::Details("foot.desktop".into()));
+    assert_eq!((asked(&a).as_deref(), a.apps.pending_name.as_str()), (Some("launch"), "foot"));
+    let _ = std::fs::remove_dir_all(a.apps.path.parent().unwrap());
+}
+
+#[test]
 fn a_larger_text_grows_every_length() {
     let mut a = home();
     let big = Metrics {
