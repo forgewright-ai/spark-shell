@@ -113,6 +113,7 @@ sparkbar_start() {   # the bar started through sway as at login, so it is sway's
     sparkbar_settle
 }
 sparkbar_follow() {   # the bar as the config has it now: a running one ended, so the next takes a new place, text or room for the tray, and one started where it draws
+    ! sparkbar_draws || bar_line_font > "$(sparkbar_file font)" 2>/dev/null || :   # the font it starts with, first: the old bar's loop asks for no bar of its own for it
     ! _sbo=$(sparkbar_pid) || sparkbar_stop "$_sbo"
     ! sparkbar_draws || sparkbar_start || :
 }
@@ -147,7 +148,8 @@ sparkbar_keys() {   # Super+equal: the keyboard on the bar
 # the first screen. It is made where the bar stands, at login, after a reload, which drops it, and by the verbs; a change
 # of the screen or of the bar's height makes another
 sparkbar_tray_screen() { wm_live && wm_here || return 1; wm_outputs | jq -r '[.[] | select(.active)][0] | "\(.name) \(.rect.width)"' 2>/dev/null | grep -x '[^ ]* [0-9][0-9]*'; }   # -> the first screen on: NAME WIDTH
-sparkbar_tray_place() {   # the host at its place, made anew; none where the tray is off, or the bar hidden
+sparkbar_tray_place() { locked "$(sparkbar_file tray.lock)" "tray" 10 sparkbar_tray_one || :; }   # one maker at a time: two close together left two hosts
+sparkbar_tray_one() {   # the host at its place, made anew; none where the tray is off, or the bar hidden
     [ "$BAR_TRAY" = yes ] && sparkbar_draws || { wm_bar_end "$WM_TRAY"; return 0; }
     _sts=$(sparkbar_tray_screen) || return 0
     _sth=$(sparkbar_height); _stl=$(( ${_sts#* } - _sth * SPARKBAR_TRAY_SLOTS ))
@@ -171,7 +173,7 @@ sparkbar_off() {   # off, off desktop: the bar ended, its binary and its runtime
     [ -z "$_sbo" ] || sparkbar_stop "$_sbo"
     wm_bar_end "$WM_TRAY" || :
     rm -f "$SPARKBAR_BIN"
-    for _sbx in pid state log font tray failed.out failed.mic; do rm -f "$(sparkbar_file "$_sbx")"; done
+    for _sbx in pid state log font tray tray.lock failed.out failed.mic; do rm -f "$(sparkbar_file "$_sbx")"; done
     [ -z "${XDG_RUNTIME_DIR:-}" ] || rm -rf "${XDG_RUNTIME_DIR:?}/spark-shell-bar.icons"   # the logo spark-bar drew and kept
     row ok bar "spark-bar ended and removed ($SPARKBAR_BIN)"
 }

@@ -6181,6 +6181,13 @@ SBSWAY_STUB
     for _i in $(seq 1 100); do [ "$(sb_bar_ids)" != 'bar-0 spark-tray spark-tray.5' ] || [ ! -s "$HOME/tray.log" ] || break; sleep .1; done; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
     [ "$(grep '^bar ' "$HOME/tray.log")" = "$(tray_made spark-tray.5 top)" ] && [ "$(sb_bar_ids)" = 'bar-0 spark-tray spark-tray.5' ] && [ "$(cat "$H/run/spark-shell-bar.tray")" = 'DP-1 1280 36' ] && ! grep -q reload "$HOME/tray.log" "$HOME/sbsway.log" 2>/dev/null \
         && ok "the loop under spark-bar: a narrower screen gets another host, at its width, with no reload" || bad "tray follow" "$(cat "$HOME/tray.log" "$H/bar.err" 2>&1) | $(sb_bar_ids)"
+    # two makers close together, sway a moment late to start a program: one host stands at the end
+    sed 's|"${0%/\*}/programs/swaybar" -b "$id" </dev/null|{ sleep 1.2; exec "${0%/*}/programs/swaybar" -b "$id"; } </dev/null|' "$H/sbsway/swaymsg" > "$H/sbsway/swaymsg.late"; mkdir -p "$H/sblate/programs"; cp "$H/sbsway/swaymsg.late" "$H/sblate/swaymsg"; cp "$H/sbsway/programs/swaybar" "$H/sblate/programs/"; chmod +x "$H/sblate/swaymsg"
+    late() { SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/tray.sock SBSWAY_NEXT=$H/traybin/swaymsg PATH="$H/sblate:$H/traybin:$PATH" sh "$SH" bar tray --place >/dev/null 2>&1 || :; }
+    late & _l1=$!; sleep 0.4; late & _l2=$!; wait "$_l1" "$_l2" 2>/dev/null || :; _i=0; while [ "$_i" -lt 40 ] && [ "$(for _q in /proc/[0-9]*; do tr '\000' ' ' 2>/dev/null < "$_q/cmdline" | grep -F "$H/sblate/programs/swaybar -b spark-tray" || :; done | grep -c .)" != 1 ]; do sleep 0.1; _i=$((_i + 1)); done
+    sleep 1; _ln=$(for _q in /proc/[0-9]*; do tr '\000' ' ' 2>/dev/null < "$_q/cmdline" | grep -F "$H/sblate/programs/swaybar -b spark-tray" || :; done | grep -c . || :)
+    [ "$_ln" = 1 ] && ok "bar tray --place twice at once, sway late to start a program: one host stands, never two" || bad "tray hosts" "$_ln"
+    for _q in /proc/[0-9]*; do ! tr '\000' ' ' 2>/dev/null < "$_q/cmdline" | grep -qF "$H/sblate/programs/swaybar" || kill "${_q##*/}" 2>/dev/null || :; done
     rm -f "$HOME/tray.width" "$HOME/tray.log"; str bar tray off; sb_up 7
     [ "$rc" = 0 ] && ! grep -q '^exec_always .* bar tray' "$sway" && ! grep -q '^bar {$' "$sway" && sbe 'BAR_TRAY_WIDTH=0' && [ "$(sb_bar_ids)" = 'bar-0 spark-tray' ] && lives "$_bo" && ! grep -q 'reload\|^bar ' "$HOME/tray.log" 2>/dev/null && [ ! -e "$HOME/sbsway.log" ] \
         && ok "bar tray off: no host beside spark-bar, none in sway's config, no reload; a person's own bar and another session's stay" || bad "tray off" "rc=$rc $out $(grep -n 'bar\|tray' "$sway" | head) | $(sb_bar_ids) $(cat "$HOME/tray.log" 2>&1)"
@@ -6196,6 +6203,17 @@ SBSWAY_STUB
     [ "$(cat "$H/run/spark-shell-bar.font" 2>/dev/null)" = 'DejaVu Sans Mono 12' ] && [ "$(grep -c '' "$HOME/sbar.log")" = 8 ] && sbe 'BAR_FONT=DejaVu Sans Mono 12' && ! grep -q 'bar [^ ]* font' "$HOME/tray.log" 2>/dev/null \
         && ! grep -q '^SPARK_BAR=' "$HOME/sbar.env" && grep -q '"name":"look"' "$H/bar.out" \
         && ok "the loop under spark-bar: another font for the screen starts the bar again once, apart from the loop, through sway; a second loop with the same font asks for none, and sway is sent no font; the loop draws for spark-bar and what it starts does not carry that word" || bad "font follow spark-bar" "$(cat "$H/run/spark-shell-bar.font" "$HOME/sbar.log" "$H/bar.err" 2>&1)"
+    # a fixed size takes a new face too; a bar that has the font is done with it, so the same font asked for again later starts the bar
+    mkdir -p "$H/nosid"; printf '#!/bin/sh\nexit 0\n' > "$H/nosid/setsid"; chmod +x "$H/nosid/setsid"   # the loop asks for the bar again through it: here nothing starts or ends
+    printf 'BAR_TEXT="14"\n' >> "$HOME/.config/spark-shell/config"; _fa=''; rm -f "$H/run/spark-shell-bar.font"
+    for _f in 'Other Mono 14' 'DejaVu Sans Mono 14' 'Other Mono 14'; do
+        _fw='DejaVu Sans Mono 14'; [ "$_f" != "$_fw" ] || _fw=''
+        SPARK_BAR=1 BAR_FONT="$_f" SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/tray.sock SBSWAY_NEXT=$H/traybin/swaymsg PATH="$H/nosid:$H/sbsway:$H/traybin:$PATH" sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
+        for _i in $(seq 1 100); do [ "$(grep -c '^\[{' "$H/bar.out")" -ge 1 ] && [ "$(cat "$H/run/spark-shell-bar.font" 2>/dev/null || :)" = "$_fw" ] && break; sleep .1; done; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
+        _fa="$_fa$(cat "$H/run/spark-shell-bar.font" 2>/dev/null || :)|"
+    done
+    sed -i.bak '/^BAR_TEXT="14"$/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak"
+    [ "$_fa" = 'DejaVu Sans Mono 14||DejaVu Sans Mono 14|' ] && ok "the loop under spark-bar: a fixed size takes a new face, and a font it has is no longer kept as asked for" || bad "font follow fixed" "$_fa | $(cat "$H/bar.err")"
     # hidden: spark-bar ends and a bar of sway's, unseen, runs the line; shown again, that bar ends and sway starts spark-bar
     : > "$H/.local/state/swaymsg.log"; sbr bar off --desktop
     [ "$rc" = 0 ] && [ ! -s "$block" ] && grep -q '^bar {$' "$sway" && grep -q '^    mode invisible$' "$sway" && grep -q 'status_command' "$sway" && ! grep -q 'bar start' "$sway" && [ "$(sb_bar_ids)" = spark-line ] \

@@ -10,6 +10,9 @@
   place until the next login. There was none.
 - A reload starts the bar a config asks for, where the config was written
   from outside the session. There was none until the next login.
+- The bar at a text size of your own takes a new typeface. It kept the
+  old one until the next login.
+- Two requests for the tray close together leave one, never two.
 - Super+equal over a full-screen window says the bar takes no keys there.
 - Super+minus does nothing over a full-screen window.
 - A floating window with no title takes the clicks over the buttons

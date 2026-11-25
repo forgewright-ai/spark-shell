@@ -119,7 +119,9 @@ wm_bar_follow() {   # the line's bar in the running session as its config has it
 wm_tray_make() {   # wm_tray_make OUTPUT LEFT HEIGHT PADDING top|bottom -- the tray's host on that screen, LEFT pixels in from its left edge, its ground clear, unseen until it is whole; the newest alone stays, whoever made one at the same moment
     wm_bar_make "$WM_TRAY" "$(printf '%s\n' 'mode invisible' 'hidden_state show' 'modifier none' "position $5" "output $1" "tray_output $1" "height $3" \
         "tray_padding $4" "gaps 0 0 0 $2" 'workspace_buttons no' 'binding_mode_indicator no' 'colors background #00000000' 'mode hide')" || return 1
-    wm_bar_end "$WM_TRAY" "$(wm_bar_newest "$WM_TRAY")"
+    _wtn=$(wm_bar_newest "$WM_TRAY"); _wti=0
+    while [ "$_wti" -lt 20 ] && ! wm_bar_running "$WM_TRAY" | grep -qx "[0-9]*:$_wtn"; do sleep 0.1; _wti=$((_wti + 1)); done   # its program is there, two seconds at most: one not yet started is not found, and the next maker's end would pass it by
+    wm_bar_end "$WM_TRAY" "$_wtn"
 }
 
 # the commands, in its own language; send and on end the options first, cmd and act do not (a stub sees the difference)
