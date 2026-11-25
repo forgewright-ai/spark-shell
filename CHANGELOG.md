@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.168.5
+
+- Cinematic Worlds has its second work, The Sounding Gate:
+  `spark-shell theme the-sounding-gate`. A turned screen gets its own
+  portrait, and with two screens each gets a panel. The dialog opens and
+  closes with its bridge.
+
 ## v0.168.4
 
 - An update or a theme change from a terminal older than the login keeps

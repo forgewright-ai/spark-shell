@@ -114,7 +114,7 @@ class Providers(unittest.TestCase):
         self.assertTrue(all(r.get("group") == "The Permanent Collection"
                             and not r.get("tool") and not r.get("look") for r in kept))
         self.assertEqual([(r["text"], r["columns"]) for r in gallery["rows"] if r.get("group") == "Exhibitions"],
-                         [("Cinematic Worlds", ["1 work"])])
+                         [("Cinematic Worlds", ["%d works" % len(shows)])])
         for section, entry, room in zip(sections, kept, rooms):
             self.assertEqual(entry["children"], base + "/collection/permanent/" + section["id"])
             self.assertEqual(entry["columns"], [str(len(section["works"])) + " works"])
@@ -241,18 +241,24 @@ class Providers(unittest.TestCase):
                                 *[rpc(i, "resources/read", uri=base + "/collection/exhibition/" + e) for i, e in enumerate(pending, 2)])
         self.assertEqual([r["text"] for r in text(replies[1])["rows"] if r.get("group") == "Exhibitions"], opened, "no exhibition before it opens")
         self.assertTrue(all("error" in replies[i] for i in range(2, 2 + len(pending))))
-        # Cinematic Worlds, open: Atlas Awakening, its portrait drawn for a turned screen, panels for two, loops of its own
+        # Cinematic Worlds, open: each work's portrait drawn for a turned screen and its panels for two; Atlas Awakening has
+        # loops of its own, The Sounding Gate a still and its own opening and closing
+        works = [("atlas-awakening", "Atlas Awakening", "moves with moving wallpaper on", "atlas"),
+                 ("the-sounding-gate", "The Sounding Gate", "still", "own")]
+        looked = lambda i, name: [rpc(i, "resources/read", uri=base + "/" + name),
+                                  rpc(i + 1, "resources/read", uri="spark-shell://theme/preview/" + name + "/portrait"),
+                                  rpc(i + 2, "resources/read", uri="spark-shell://theme/preview/" + name + "/panels-2")]
         replies = self.provider("theme", rpc(1, "resources/read", uri=base + "/collection/exhibition/cinematic-worlds"),
-                                rpc(2, "resources/read", uri=base + "/atlas-awakening"),
-                                rpc(3, "resources/read", uri="spark-shell://theme/preview/atlas-awakening/portrait"),
-                                rpc(4, "resources/read", uri="spark-shell://theme/preview/atlas-awakening/panels-2"))
-        show, detail = text(replies[1]), text(replies[2])
-        self.assertEqual([(r["text"], r["line"]) for r in show["rows"]], [("atlas-awakening", "cinematic illustration \u00b7 dark")])
-        facts = {r["id"]: r.get("columns", [None])[0] for r in detail["rows"]}
-        moves = None if sys.platform == "darwin" else "moves with moving wallpaper on"   # no desktop on a Mac: no wallpaper motion
-        self.assertEqual((facts["theme:detail:media"], facts["theme:detail:family-of"], facts.get("theme:detail:moves"), facts["theme:detail:animation"]),
-                         ("cinematic illustration", "Atlas Awakening", moves, "atlas"))
-        self.assertEqual((text(replies[3])["facts"][0], text(replies[4])["facts"][0]), ("its own portrait", "2 panels, left to right"))
+                                *[q for i, work in enumerate(works) for q in looked(2 + 3 * i, work[0])])
+        self.assertEqual([(r["text"], r["line"]) for r in text(replies[1])["rows"]],
+                         [(work[0], "cinematic illustration \u00b7 dark") for work in works])
+        for i, (_, title, moves, opens) in enumerate(works):
+            detail, portrait, panels = [text(replies[2 + 3 * i + n]) for n in range(3)]
+            facts = {r["id"]: r.get("columns", [None])[0] for r in detail["rows"]}
+            moves = None if sys.platform == "darwin" else moves   # no desktop on a Mac: no wallpaper motion
+            self.assertEqual((facts["theme:detail:media"], facts["theme:detail:family-of"], facts.get("theme:detail:moves"), facts["theme:detail:animation"]),
+                             ("cinematic illustration", title, moves, opens))
+            self.assertEqual((portrait["facts"][0], panels["facts"][0]), ("its own portrait", "2 panels, left to right"))
         # an open exhibition, a supporting work and a section's lead, from a curation of the test's own
         curation["exhibitions"] = [{"id": "study", "title": "Study", "note": "A test exhibition.", "status": "open",
                                     "works": ["nord", "absent", "dracula"]}]

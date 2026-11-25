@@ -113,11 +113,12 @@ lists every key with its default, and the commands write them.
 
 ## Theme settings
 
-Open **settings > theme > The Gallery**. The 34 bundled themes hang in
-the six sections of **The Permanent Collection**. Open a section to browse
-its works. Moving through the list shows each wallpaper and changes nothing.
-F3 opens the larger picture and Esc goes back. Enter on a work opens its
-details; choose **apply theme** there to use it.
+Open **settings > theme > The Gallery**. 34 bundled themes hang in the six
+sections of **The Permanent Collection** and the others in the exhibition
+**Cinematic Worlds**. Open one to browse its works. Moving through the list
+shows each wallpaper and changes nothing. F3 opens the larger picture and
+Esc goes back. Enter on a work opens its details; choose **apply theme**
+there to use it.
 
 Each work identifies its source palette. Press F4 on a work to inspect the
 **Terminal palette**; select a color to copy its hex value, or choose

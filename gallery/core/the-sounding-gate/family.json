@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "id": "the-sounding-gate",
+  "title": "The Sounding Gate",
+  "media": "cinematic",
+  "variants": {
+    "dark": {
+      "theme": "the-sounding-gate",
+      "portrait": "the-sounding-gate-portrait.jpg",
+      "panels": {
+        "2": [{"landscape": "the-sounding-gate-landscape-1.jpg"}, {"landscape": "the-sounding-gate-landscape-2.jpg"}]
+      }
+    }
+  }
+}
