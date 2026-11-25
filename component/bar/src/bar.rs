@@ -751,7 +751,10 @@ fn places(workspaces: &[Workspace], output: &str, rest: &str) -> Vec<Place> {
         ));
     }
     for w in workspaces.iter().copied().filter(|w| !placed(w)) {
-        out.push(Place::of(w.id(), w.title(), w.command(), w.plate(), &[w], output));
+        // the number names it where no other has it, else its whole name
+        let mut by = w.clone();
+        by.num = by.num.filter(|n| workspaces.iter().filter(|o| o.num == Some(*n)).count() == 1);
+        out.push(Place::of(by.id(), by.title(), by.command(), w.plate(), &[w], output));
     }
     out
 }
@@ -2427,6 +2430,29 @@ mod tests {
             ("05".into(), "10".into(), "00".into())
         );
         assert_eq!(ws(3, "3:web", "A", true, true, false).plate(), "03");
+    }
+
+    #[test]
+    fn two_workspaces_of_one_number_are_told_apart_by_their_names() {
+        let all = vec![
+            ws(2, "2", "A", true, true, false),
+            ws(11, "11:web", "A", false, false, false),
+            ws(11, "11:mail", "B", true, false, false),
+            ws(12, "12:notes", "A", false, false, false),
+        ];
+        let l = lay(1200, &[], &all);
+        assert_eq!(ids(&l)[11..], ["workspace:11:web", "workspace:11:mail", "workspace:12"]);
+        let names: Vec<&str> = l.targets[11..].iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["workspace 11:web", "workspace 11:mail", "workspace 12"]);
+        // each goes to its own, and the keys find each: a click on either showed the first, and the keys stayed on it
+        let goes = |x: f64| l.press(x, 10.0, 1, &Levels::default()).act;
+        assert_eq!(goes(350.0), Act::Sway("workspace \"11:web\"".into()));
+        assert_eq!(goes(380.0), Act::Sway("workspace \"11:mail\"".into()));
+        assert_eq!(goes(410.0), Act::Sway("workspace number 12".into()));
+        assert_eq!(l.key(l.find("workspace:11:mail").unwrap(), Key::Right, &Levels::default()), KeyAct::Focus(13));
+        // the plate says the number, whatever the name
+        let b = lay_on("B", 1200, Edge::Top, Status::Ok, &[], &Levels::default(), &all, None, &Prefs::default());
+        assert_eq!(target(&b, "workspace:11:mail").what, What::Plate("11".into()));
     }
 
     #[test]
