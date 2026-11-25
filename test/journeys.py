@@ -13,7 +13,7 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from desk import Broken, Desktop, NotRun, fenced  # noqa: E402
+from desk import Broken, Desktop, NotRun, Pointer, fenced  # noqa: E402
 
 
 def open_home(d, workspace):
@@ -115,6 +115,57 @@ def matrix(d):
         else:
             raise NotRun("the window did not come back from the pad")
     d.whole()
+    tabs(d)
+
+
+def tabs(d):
+    """A window in a tab and two side by side in the next: a click on a close button closes the window it is drawn on,
+    and one in a window's own text closes none, whatever stands behind it."""
+    outs = [o["rect"] for o in d.msg("-t", "get_outputs")]
+    wide, high = max(r["x"] + r["width"] for r in outs), max(r["y"] + r["height"] for r in outs)
+    pointer = Pointer(d.env)
+
+    def click(x, y):
+        pointer.click(round(x * 1440 / wide), round(y * 1000 / high))   # its own space over every screen
+
+    def here():
+        return {w["app_id"]: w for w in d.windows() if (w.get("app_id") or "").startswith("desk-tab")}
+
+    def foot(name):
+        d.sway("exec foot --app-id desk-tab%s" % name)
+        d.until(lambda: "desk-tab" + name in here(), "window %s" % name)
+        time.sleep(0.8)   # the keys on it, before the next word to sway
+    d.sway("workspace 6")
+    foot("a")
+    d.sway("splith")
+    d.sway("layout tabbed")
+    foot("b")
+    d.sway("splith")
+    foot("c")
+    w = here()
+    if w["desk-tabb"]["rect"]["y"] != w["desk-tabc"]["rect"]["y"] or w["desk-tabb"].get("visible") is not True or w["desk-taba"].get("visible") is not False:
+        raise NotRun("sway did not lay the windows in a tab and a group")
+    for _ in range(3):   # the pad's buttons follow the tree: one not there yet is asked again
+        rect = w["desk-tabb"]["rect"]
+        click(rect["x"] + 26, rect["y"] - w["desk-tabb"]["deco_rect"]["height"] / 2)   # a title stands right over its window
+        end = time.monotonic() + 5
+        while time.monotonic() < end and "desk-tabb" in here():
+            time.sleep(0.2)
+        if "desk-tabb" not in here():
+            break
+    else:
+        raise Broken("a click on the close button of a window in a tab's group does nothing")
+    foot("b")
+    d.sway('[app_id="desk-taba"] focus')
+    d.until(lambda: here()["desk-taba"].get("visible") and not here()["desk-tabb"].get("visible"), "the group behind its tab")
+    time.sleep(1.5)
+    rect, left = here()["desk-taba"]["rect"], set(here())
+    for down in (14, 42, 70):
+        click(rect["x"] + 26, rect["y"] + down)
+        time.sleep(1.5)
+        if set(here()) != left:
+            raise Broken("a click in a window's text closed %s behind it" % ", ".join(left - set(here())))
+    pointer.close()
 
 
 def loops(d):
@@ -160,7 +211,7 @@ def loop(d):
 
 SCREENS = {"home": ((1280, 720, "normal"),), "loops": ((1080, 1920, "90"), (1280, 720, "normal")), "loop": ((1280, 720, "normal"),)}
 KEYS = {"matrix": {"BAR_TRAY": "yes"}}
-JOURNEYS = {f.__name__: f for f in (home, live, matrix, loops, loop)}
+JOURNEYS = {f.__name__: f for f in (home, live, matrix, tabs, loops, loop)}
 
 
 MARK = ".spark-shell-journey"

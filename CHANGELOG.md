@@ -4,6 +4,19 @@
 
 - On one screen a moving wallpaper keeps moving after a reload and after
   a theme change. It stopped.
+- A click on the tab in front no longer closes a window hidden in the tab
+  behind it.
+- In a tab or a stack, the buttons of two windows beside each other take
+  their clicks where they are drawn. They took them a title lower.
+- A window with a Hebrew or an Arabic title has its buttons at the left,
+  where they take the click. They were drawn at the right.
+- The buttons of a narrow title end with it, and a floating window over a
+  title on another screen takes its own clicks.
+- An update run from a terminal older than the login no longer leaves the
+  windows without their buttons.
+- When the idle screen ends, the pad comes back on the bar. It went to the
+  bottom of the screen first. Where the bar ended and did not come back,
+  the pad was off the screen; it stands at the bottom.
 - Where no pad runs, a screen that comes, goes or turns sends the windows
   the keys placed to their places, as the pad does.
 - The bar at a text size of your own takes a new typeface. It kept the
@@ -16,6 +29,7 @@
   the desktop's other parts.
 - A broken link in a listing is red on no ground of its own. On a light
   palette it stood on a dark block.
+- The pad is 0.168.1.
 
 ## v0.168
 
