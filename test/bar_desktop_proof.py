@@ -15,7 +15,7 @@ subpixel rendering, as Ubuntu's does for every home: the bar draws its text gray
 the screen is the color it was handed. And the proof reaps what its session orphans, as an init does: a
 container's first process reaps none, and a dead process nobody reaped still answers kill -0.
 
-sway's own lines for the bar are read from the template: exec spark-shell bar start, the key bound to spark-shell
+sway's own lines for the bar are read from the template: exec_always spark-shell bar start, the key bound to spark-shell
 bar keys, and the resize mode. So the bar under proof is the one spark-shell starts, under its keeper, reading the
 real spark-shell bar status. What is measured is what the bar promises: its cells, the colors it was handed, its
 own geometry, by its state file and a few pixels a claim; never a font's outline, and never a time: how long a
@@ -1546,8 +1546,8 @@ def line_reads(d, strip, t, plate):
 
 def lifecycle(d):
     enter("lifecycle", "spark-shell starts the bar, as sway's config does at login")
-    ok(d.own == ["exec %s bar start" % d.shell_path] and len(d.keys_line) == 1 and d.keys_key and d.mode_lines[-1:] == ['bindsym $mod+r mode "resize"'],
-       "sway's template has one line that starts the bar, exec spark-shell bar start, binds Super+%s to spark-shell bar keys, and has the resize mode on Super+r: the proof's sway reads them from it" % d.keys_key,
+    ok(d.own == ["exec_always %s bar start" % d.shell_path] and len(d.keys_line) == 1 and d.keys_key and d.mode_lines[-1:] == ['bindsym $mod+r mode "resize"'],
+       "sway's template has one line that starts the bar, exec_always spark-shell bar start, binds Super+%s to spark-shell bar keys, and has the resize mode on Super+r: the proof's sway reads them from it" % d.keys_key,
        (d.own, d.keys_line, d.mode_lines[-1:]))
     s = d.until(lambda s: s.status == "ok" and s.find("out.gauge") and s.find("clock.text"), "the bar's first line", 30)
     d.cell, d.high = s.find("mark").x, s.bar().height

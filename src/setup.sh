@@ -279,6 +279,7 @@ cmd_off() {   # cmd_off [desktop|login]
         light_off
         storage_off
         power_off
+    power_sleep_off
         mcp_off
         semantic_off
         voice_off
@@ -305,6 +306,7 @@ cmd_off() {   # cmd_off [desktop|login]
     light_off
     storage_off
     power_off
+    power_sleep_off
     mcp_off
     semantic_off
     [ "$OS" = Darwin ] || sparkbar_off
@@ -375,6 +377,7 @@ off_would() {   # off_would [desktop|login]
     light_off
     storage_off
     power_off
+    power_sleep_off
     if [ "${1:-}" != desktop ]; then pm_detect; console_off; fi
     dry_close
 }

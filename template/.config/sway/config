@@ -81,7 +81,8 @@ client.urgent           #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@PANEL_INK_URGENT@ #@HEX_AN
 # pad, lan, bluetooth, wifi, sound out and mic, a reminder that is due,
 # brightness, the keyboard's layout, battery, the time and the
 # notifications.
-# spark-bar draws it from spark-shell bar status, a line every 15 s and
+# spark-bar draws it from spark-shell bar status (started at login, and
+# by a reload where none runs), a line every 15 s and
 # at once after a click; where spark-bar cannot run, sway's own bar runs
 # the same command and draws its blocks, and where the bar is hidden it
 # runs the command unseen.
@@ -99,7 +100,7 @@ client.urgent           #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@PANEL_INK_URGENT@ #@HEX_AN
 # the strip spark-bar leaves clear at its right end on the first screen;
 # spark-shell bar tray --place makes it, at login and after a reload,
 # which drops it.
-@BAR_OWN@exec @REPO@/spark-shell bar start
+@BAR_OWN@exec_always @REPO@/spark-shell bar start
 @BAR_HOST@exec_always @REPO@/spark-shell bar tray --place
 @BAR_SWAY@bar {
 @BAR_SWAY@    id @WM_LINE@

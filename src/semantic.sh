@@ -137,7 +137,8 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- home, its conversation, or
         stty -echo -icanon 2>/dev/null || :
         printf '\033[?25l'
     else
-        [ ! -t 1 ] || printf '\033[?25l'   # no cursor while it starts: the dialog puts it back
+        # no cursor while it starts: the dialog puts it back, and where it never draws here, a refusal or a window of its own, this does
+        [ "${SPARK_DIALOG_WINDOW:-}" = own ] || [ ! -t 1 ] || { printf '\033[?25l'; CURSOR_AWAY=yes; }
     fi
     _dwin=${SPARK_DIALOG_WINDOW:-}   # the window maps unseen; the dialog shows it once its opening is drawn
     unset SPARK_DIALOG_WINDOW   # read once: a terminal a step opens from here is no dialog's window
@@ -183,7 +184,7 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- home, its conversation, or
     if [ "$_dwin" = own ]; then ! wm_session || ! wm_here || panel_full_aside focused
     elif panel_own_window; then panel_full_aside; fi
     ! desktop_wanted || ! term_is_ours || { SPARK_DIALOG_SLOTS=1; export SPARK_DIALOG_SLOTS; }   # foot's five slots: a new look recolors the dialog in place
-    st=0; "$_db" "$@" --composer "$_dc" --attach "$DIALOG_ATTACH_TYPES" --spark-shell "$REPO/spark-shell" || st=$?
+    CURSOR_AWAY=''; st=0; "$_db" "$@" --composer "$_dc" --attach "$DIALOG_ATTACH_TYPES" --spark-shell "$REPO/spark-shell" || st=$?
     [ "$st" -eq 3 ] || panel_full_back   # 3: a step put a window on the screen, and the window is the receipt
     [ "$st" -eq 3 ] || [ "$st" -eq 0 ] || return "$st"
 }

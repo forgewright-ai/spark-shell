@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -88,8 +89,18 @@ def wm(*args):
     return compositor.msg(*args)
 
 
+def ours(node):
+    """Whether the window is home's own by its program: a terminal's program, or a host it is on, can take any app id
+    (foot's OSC 176). One whose words cannot be read is taken at its app id."""
+    try:
+        words = Path("/proc/%d/cmdline" % node["pid"]).read_bytes()
+    except (KeyError, TypeError, OSError):
+        return True
+    return not words or b"spark-dialog" in words or b"--spark-shell" in words
+
+
 def home_id(tree):
-    if tree.get("app_id") == "spark-dialog" and isinstance(tree.get("id"), int):
+    if tree.get("app_id") == "spark-dialog" and isinstance(tree.get("id"), int) and ours(tree):
         return tree["id"]
     for child in tree.get("nodes", []) + tree.get("floating_nodes", []):
         found = home_id(child)
@@ -204,11 +215,12 @@ def open_home(shell, section=None):
                     break
                 time.sleep(0.05)
             if ended is None:
-                child.terminate()
+                # its whole group: the shell alone ended would leave the dialog it runs, and a window nobody opened
+                os.killpg(child.pid, signal.SIGTERM)
                 try:
                     child.wait(timeout=3)
                 except subprocess.TimeoutExpired:
-                    child.kill()
+                    os.killpg(child.pid, signal.SIGKILL)
                     child.wait(timeout=3)
                 raise ValueError("home did not map; the incomplete launch was stopped")
             if ended == 0:

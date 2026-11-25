@@ -1506,7 +1506,7 @@ grep -q '@FONT@' "$REPO/template/.config/foot/foot.ini" && grep -q '@FOOT_ALPHA@
     && grep -q 'output \* bg @WALL_BG@' "$REPO/template/.config/sway/config" && grep -q '^gaps inner @GAPS_INNER@' "$REPO/template/.config/sway/config" \
     && ok "templates: foot.ini and sway/config carry placeholders, the hex and the wallpaper land at render time" || bad "desktop template placeholders"
 grep -q '^@BAR_SWAY@bar {$' "$REPO/template/.config/sway/config" && grep -q '^@BAR_SWAY@    position @BAR_POSITION@$' "$REPO/template/.config/sway/config" && grep -q '^@BAR_SWAY@    tray_output @BAR_TRAY@$' "$REPO/template/.config/sway/config" && grep -q '^@BAR_SWAY@    status_command @REPO@/spark-shell bar status$' "$REPO/template/.config/sway/config" \
-    && grep -q '^@BAR_SWAY@}$' "$REPO/template/.config/sway/config" && grep -qx '@BAR_OWN@exec @REPO@/spark-shell bar start' "$REPO/template/.config/sway/config" && ! grep -q '^ *bar {\|^ *status_command\|^exec .*bar start' "$REPO/template/.config/sway/config" \
+    && grep -q '^@BAR_SWAY@}$' "$REPO/template/.config/sway/config" && grep -qx '@BAR_OWN@exec_always @REPO@/spark-shell bar start' "$REPO/template/.config/sway/config" && ! grep -q '^ *bar {\|^ *status_command\|^exec.* .*bar start' "$REPO/template/.config/sway/config" \
     && [ "$(grep -c 'bar {$' "$REPO/template/.config/sway/config")" = 1 ] && grep -qx "@BAR_SWAY@    id @WM_LINE@" "$REPO/template/.config/sway/config" && grep -qx "@BAR_HOST@exec_always @REPO@/spark-shell bar tray --place" "$REPO/template/.config/sway/config" && [ "$(grep -c 'status_command' "$REPO/template/.config/sway/config")" = 1 ] \
     && ok "sway template: sway's own bar where BAR_POSITION puts it, its tray as BAR_TRAY says, drawn by spark-shell bar status, each line the render's to keep or drop (@BAR_SWAY@); spark-bar's start beside it (@BAR_OWN@), and the line that makes the tray's host (@BAR_HOST@); no other bar in it" || bad "sway template: the bar block" "$(grep -n 'bar {\|position\|status_command\|bar start' "$REPO/template/.config/sway/config")"
 grep -q '^xwayland enable$' "$REPO/template/.config/sway/config" && ! grep -q '^xwayland disable' "$REPO/template/.config/sway/config" && ok "sway template: Xwayland on, so Steam and other X11 apps open (#170)" || bad "sway xwayland"
@@ -3361,7 +3361,15 @@ rc=0; out=$(TEST_TTY=/dev/tty1 env -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR TMPDIR=
 [ "$rc" = 0 ] && grep -qx "XDG_RUNTIME_DIR=$rd" "$slog" && [ "$(ls -ld "$rd" | cut -c1-10)" = drwx------ ] && ok "desktop: the same directory again, back to 0700" || bad "runtime dir again" "rc=$rc $out"
 rm -rf "$rd"; mkdir -p "$H/elsewhere"; ln -s "$H/elsewhere" "$rd"
 rc=0; out=$(TEST_TTY=/dev/tty1 env -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR TMPDIR="$H/tmp" PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
-[ "$rc" = 1 ] && [ "$out" = "spark-shell desktop: $rd is not a private directory of yours, and the desktop needs one (XDG_RUNTIME_DIR)" ] && ok "desktop: a symlink in its place is refused, sway never starts" || bad "runtime dir symlink" "rc=$rc $out"
+_rk=$(sed -n 's/^XDG_RUNTIME_DIR=//p' "$slog" | tail -1)
+[ "$rc" = 0 ] && case $_rk in "$rd".????????) true ;; *) false ;; esac && [ -d "$_rk" ] && [ "$(ls -ld "$_rk" | cut -c1-10)" = drwx------ ] && [ "$(cat "$HOME/.local/state/spark-shell/runtime-dir")" = "$_rk" ] && [ -z "$(ls -A "$H/elsewhere")" ] \
+    && ok "desktop: a symlink in its place is left alone, nothing written through it: a private one of another name, kept in the state folder, and sway starts" || bad "runtime dir symlink" "rc=$rc $out $_rk"
+rc=0; out=$(TEST_TTY=/dev/tty1 env -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR TMPDIR="$H/tmp" PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$(sed -n 's/^XDG_RUNTIME_DIR=//p' "$slog" | tail -1)" = "$_rk" ] && ok "desktop: the next login takes the one it made" || bad "runtime dir kept name" "rc=$rc $out $(cat "$slog")"
+chmod 0755 "$_rk"
+rc=0; out=$(TEST_TTY=/dev/tty1 env -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR TMPDIR="$H/tmp" PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$(sed -n 's/^XDG_RUNTIME_DIR=//p' "$slog" | tail -1)" != "$_rk" ] && ok "desktop: one that others can enter is not taken again" || bad "runtime dir open" "rc=$rc $out"
+rm -rf "$rd" "$_rk" "$rd".???????? "$HOME/.local/state/spark-shell/runtime-dir"
 rc=0; out=$(TEST_TTY=/dev/tty1 XDG_RUNTIME_DIR=$H/run env -u WAYLAND_DISPLAY PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
 [ "$rc" = 0 ] && grep -qx "XDG_RUNTIME_DIR=$H/run" "$slog" && ok "desktop: an XDG_RUNTIME_DIR a login manager set is kept" || bad "runtime dir kept" "rc=$rc $out $(cat "$slog")"
 # no systemd: PipeWire, WirePlumber and the PulseAudio server start before
@@ -4230,6 +4238,35 @@ _pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'WINPAD_BAND=off' "$HOME/winpad.env
 [ "$rc" = 0 ] && [ "$out" = "pad band off $dot no band, its grip and its icons alone" ] && grep -qx 'WINPAD_BAND=off' "$cfg" && [ "$(grep -c '' "$HOME/pad.log")" = 2 ] && grep -qx 'WINPAD_BAND=off' "$HOME/winpad.env" && grep -qE '^WINPAD_BAND_HEX=[0-9a-f]{6}$' "$HOME/winpad.env" \
     && ok "desktop pad band off: a running pad starts again without its band, its color still handed apart (#266)" || bad "pad band again pad" "rc=$rc $out $(cat "$HOME/pad.log" "$HOME/winpad.env" 2>&1)"
 pad_down
+# a terminal older than the login names a sway that is gone: the running pad ends only where one sway of yours answers, which starts the next
+if [ -n "$py3" ] && [ "$(uname -s)" != Darwin ]; then
+    mkdir -p "$H/gone"
+    cat > "$H/gone/swaymsg" <<'GONE_STUB'
+#!/bin/sh
+case "$*" in
+    '-t get_version') [ ! -S "${SWAYSOCK:-/nonexistent}" ] || echo '{}' ;;
+    *) echo "$SWAYSOCK $*" >> "$HOME/gone.log" ;;
+esac
+GONE_STUB
+    chmod +x "$H/gone/swaymsg"
+    _gs=$H/run/sway-ipc.$(id -u)
+    gone() { rm -f "$HOME/gone.log"; rc=0; out=$(XDG_RUNTIME_DIR=$H/run SPARK_SHELL_WINPAD=$H/padbin/spark-winpad SWAYSOCK=$_gs.1.sock PATH="$H/gone:$H/win:$H/lx:$PATH" sh "$SH" desktop pad again 2>&1) || rc=$?; }
+    sock_at() { "$py3" -I -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$1"; }
+    pad_tree; padr keys; pad_up; _gp=$(cat "$H/run/spark-shell-winpad.pid")
+    gone
+    [ "$rc" = 0 ] && kill -0 "$_gp" 2>/dev/null && [ "$(grep -c '' "$HOME/pad.log")" = 1 ] && [ ! -e "$H/run/spark-shell-winpad.again" ] && ok "desktop pad again: no sway answers, so the running pad stays" || bad "pad again none" "rc=$rc $out $(cat "$HOME/pad.log" 2>&1)"
+    sock_at "$_gs.2.sock"; sock_at "$_gs.3.sock"; gone
+    [ "$rc" = 0 ] && kill -0 "$_gp" 2>/dev/null && [ ! -e "$HOME/gone.log" ] && ok "desktop pad again: two sways answer, and which is the session's is not to be told: the running pad stays" || bad "pad again two" "rc=$rc $out $(cat "$HOME/gone.log" 2>&1)"
+    rm -f "$_gs.3.sock"; gone
+    [ "$rc" = 0 ] && ! kill -0 "$_gp" 2>/dev/null && [ "$(cat "$HOME/gone.log")" = "$_gs.2.sock -- exec $REPO/spark-shell desktop pad start" ] && ok "desktop pad again: the one sway that answers starts the pad again, in the session's own environment" || bad "pad again gone" "rc=$rc $out $(cat "$HOME/gone.log" 2>&1)"
+    rm -f "$_gs.2.sock" "$H/run/spark-shell-winpad.again"; pad_down
+fi
+# on the bar the pad shows neither its band nor a view: the receipt says they are kept
+printf 'WINPAD_PLACE=bar\n' >> "$cfg"; mkdir -p "$H/barhere"; printf '#!/bin/sh\n' > "$H/barhere/spark-bar"; chmod +x "$H/barhere/spark-bar"
+_pk1=$(SPARK_SHELL_BAR=$H/barhere/spark-bar XDG_RUNTIME_DIR=$H/run SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop pad view 2>&1); _pk2=$(SPARK_SHELL_BAR=$H/barhere/spark-bar XDG_RUNTIME_DIR=$H/run SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop pad band on 2>&1)
+[ "$_pk1" = "pad view icons $dot one icon a window, its title beside it on hover; kept for a place off the bar" ] && [ "$_pk2" = "pad band on $dot its band says pad and how many wait; kept for a place off the bar" ] \
+    && ok "desktop pad band, view: with the pad on spark's bar, which shows neither, the receipt says they are kept" || bad "pad kept" "$_pk1 | $_pk2"
+cp "$H/cfg.pad" "$cfg"
 # the config is replaced in one step (v0.152): written beside it and moved onto it, so whoever reads it meets the old file or
 # the new one. cp emptied it first, and a bar started in that moment came back on the defaults. Its mode stays, nothing is
 # left beside it, and a config that is a link stays a link
@@ -4334,6 +4371,10 @@ export SPARK_SHELL_VOICE_TAP_MS=2000; vclean; vrun press; vrun release; unset SP
 [ "$rc" = 0 ] && grep -q '^home ' "$HOME/home.log" && [ ! -e "$HOME/wtype.log" ] && ok "desktop voice press then release at once: home opens, as Super+Space did (v0.144)" || bad "voice press tap" "rc=$rc $out $(cat "$HOME/home.log" 2>&1)"
 vhold
 [ "$rc" = 0 ] && [ ! -e "$HOME/home.log" ] && grep -qx -- '-s 20 -- hey' "$HOME/wtype.log" && ok "desktop voice press held past 0.3 s: it listens, the release ends it, no home (v0.144)" || bad "voice press hold" "rc=$rc $out $(cat "$HOME/wtype.log" "$HOME/home.log" 2>&1)"
+# the session ends between the release's two reads of its file, and takes it
+mkdir -p "$H/vcut"; printf '#!/bin/sh\n"%s" "$@"; _rc=$?\ncase "$*" in *f1*/want) rm -f "$HOME/../run/none" "${3:-}" "${4:-}" ;; esac\nexit $_rc\n' "$(command -v cut)" > "$H/vcut/cut"; chmod +x "$H/vcut/cut"
+vclean; mkdir -p "$H/run/spark-shell-voice"; printf '1 t.1 plain\n' > "$H/run/spark-shell-voice/want"; _vp=$PATH; PATH=$H/vcut:$PATH; vrun release; PATH=$_vp
+[ "$rc" = 0 ] && [ -z "$out" ] && [ ! -e "$H/run/spark-shell-voice/want" ] && ok "desktop voice release: a session that ends between its two reads is no failure" || bad "voice release race" "rc=$rc $out"
 # an engine that holds its leash: the mic stays open until it is clicked again
 cat > "$H/vx/ear-hold" <<'EAR_HOLD'
 #!/bin/sh
@@ -6038,7 +6079,7 @@ SPARKBAR_STUB
     sbv() { sed -n "s/^$1=//p" "$HOME/sbar.env"; }   # sbv KEY -> its value in the stand-in's environment
     sb_end() { [ ! -s "$block" ] || kill "$(cat "$block")" 2>/dev/null || :; _se=0; while [ "$_se" -lt 30 ] && [ -e "$block" ]; do sleep 0.1; _se=$((_se + 1)); done; }   # the stand-in ended by hand
     sbr on --yes
-    grep -q "^exec $REPO/spark-shell bar start\$" "$sway" && ! grep -q '^bar {$' "$sway" && ! grep -q 'status_command' "$sway" && ! grep -q 'spark-tray' "$sway" && ! grep -q '@BAR' "$sway" \
+    grep -q "^exec_always $REPO/spark-shell bar start\$" "$sway" && ! grep -q '^bar {$' "$sway" && ! grep -q 'status_command' "$sway" && ! grep -q 'spark-tray' "$sway" && ! grep -q '@BAR' "$sway" \
         && grep -qxF "exec $REPO/spark-shell bar start" "$H/.local/state/swaymsg.log" \
         && ok "on with a spark-bar here: sway's config starts it and holds no bar of sway's; sway, reloaded, is asked to start it now" || bad "render spark-bar" "rc=$rc $(grep -n '^exec\|^bar' "$sway" | head) | $out"
     : > "$H/.local/state/swaymsg.log"; sbr on --yes; sbr on --dry-run
@@ -6123,7 +6164,7 @@ SBSWAY_STUB
     ( SWAYSOCK=$H/tray.sock "$H/sbsway/programs/swaybar" -b bar-0 </dev/null >/dev/null 2>&1 & ); SWAYSOCK=$H/other.sock "$H/sbsway/programs/swaybar" -b spark-tray </dev/null >/dev/null 2>&1 & _bo=$!   # and a host of another session's
     for _i in $(seq 1 50); do [ "$(sb_bar_ids)" != 'bar-0 spark-tray' ] || break; sleep 0.1; done
     str bar tray on; sb_up 4
-    [ "$rc" = 0 ] && grep -q "^exec_always $REPO/spark-shell bar tray --place\$" "$sway" && grep -q "^exec $REPO/spark-shell bar start\$" "$sway" && ! grep -q '^bar {$' "$sway" && ! grep -q 'status_command' "$sway" \
+    [ "$rc" = 0 ] && grep -q "^exec_always $REPO/spark-shell bar tray --place\$" "$sway" && grep -q "^exec_always $REPO/spark-shell bar start\$" "$sway" && ! grep -q '^bar {$' "$sway" && ! grep -q 'status_command' "$sway" \
         && sbe 'BAR_TRAY_WIDTH=144' && sbe 'BAR_TRAY_OUTPUT=DP-1' && grep -qxF "$(tray_made spark-tray top)" "$HOME/tray.log" && [ "$(grep -c '^bar ' "$HOME/tray.log")" = 1 ] && ! grep -q reload "$HOME/tray.log" "$HOME/sbsway.log" 2>/dev/null \
         && [ "$(cat "$H/run/spark-shell-bar.tray")" = 'DP-1 1920 36' ] && [ "$(sb_bar_ids)" = 'bar-0 spark-tray spark-tray' ] \
         && ok "bar tray on beside spark-bar: sway's config makes the host at login and after a reload, and has no bar of its own; spark-bar starts again and leaves four icons' width clear on the first screen; the host is made there at once, with no reload, the bar's height, 144 pixels wide, its icons 24 px, as the pad's are (v0.149); a host of another session's is not taken for it" || bad "tray on" "rc=$rc $out $(grep -n 'bar\|tray' "$sway" | head -20) $(cat "$HOME/sbar.env" "$HOME/tray.log" 2>&1) | $(sb_bar_ids)"
@@ -6162,7 +6203,7 @@ SBSWAY_STUB
         && ok "bar off --desktop: spark-bar ends; the config's bar of sway's, never drawn, is made in the running session and keeps the line running; no reload" || bad "bar off spark-bar" "rc=$rc $out | $(sb_bar_ids) | $(cat "$H/.local/state/swaymsg.log" "$HOME/sbsway.log" 2>&1)"
     st=0; out2=$(SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/sock sh "$SH" bar keys 2>&1) || st=$?
     : > "$H/.local/state/swaymsg.log"; sbr bar on --desktop; sb_up 9
-    [ "$st" = 1 ] && [ "$out2" = 'spark-shell bar: the bar is hidden (spark-shell bar on --desktop shows it)' ] && [ "$rc" = 0 ] && grep -q "^exec $REPO/spark-shell bar start\$" "$sway" && ! grep -q '^bar {$' "$sway" && grep -qxF "exec $REPO/spark-shell bar start" "$H/.local/state/swaymsg.log" \
+    [ "$st" = 1 ] && [ "$out2" = 'spark-shell bar: the bar is hidden (spark-shell bar on --desktop shows it)' ] && [ "$rc" = 0 ] && grep -q "^exec_always $REPO/spark-shell bar start\$" "$sway" && ! grep -q '^bar {$' "$sway" && grep -qxF "exec $REPO/spark-shell bar start" "$H/.local/state/swaymsg.log" \
         && [ -s "$block" ] && [ "$(grep -c '' "$HOME/sbar.log")" = 9 ] && sbe 'BAR_POSITION=top' && [ -z "$(sb_bar_ids)" ] && ! grep -q '^bar ' "$H/.local/state/swaymsg.log" && [ ! -e "$HOME/sbsway.log" ] \
         && ok "bar on --desktop: the bar that ran the line ends, the config starts spark-bar again, sway is asked to start it now and it runs; no reload; the keys on a hidden bar are refused" || bad "bar on spark-bar" "st=$st $out2 rc=$rc $out | $(sb_bar_ids) | $(cat "$H/.local/state/swaymsg.log" "$HOME/sbar.log" "$HOME/sbsway.log" 2>&1)"
     # the same from the dialog's section, and its undo
@@ -6172,17 +6213,35 @@ SBSWAY_STUB
     # from a shell that cannot reach the session the files are written, and the bar and the line are left as they are; the session asked for it again catches up
     rc=0; out=$(SPARK_SHELL_BAR=$H/barbin/spark-bar env -u SWAYSOCK sh "$SH" bar off --desktop 2>&1) || rc=$?; _o1="$rc $([ ! -s "$block" ] || echo up)"; sbr bar off --desktop; _o2="$rc $([ ! -s "$block" ] || echo up)$(sb_bar_ids)"; sbr bar on --desktop; sb_up 11
     [ "$_o1" = '0 up' ] && [ "$_o2" = '0 spark-line.3' ] && [ -s "$block" ] && [ -z "$(sb_bar_ids)" ] && ok "bar off from a shell that cannot reach the session: the running bar stays; asked again inside, it goes" || bad "bar off no session" "$_o1 | $_o2 | $(sb_bar_ids)"
+    mkdir -p "$H/full"; printf '#!/bin/sh\n[ "$*" != "-t get_tree" ] || { cat "$HOME/full.json"; exit 0; }\nexec "%s/.local/bin/swaymsg" "$@"\n' "$H" > "$H/full/swaymsg"; chmod +x "$H/full/swaymsg"
+    full() { printf '{"type":"root","nodes":[{"type":"output","name":"A","nodes":[{"type":"workspace","nodes":[{"type":"con","focused":%s,"fullscreen_mode":%s,"nodes":[]}]}]},{"type":"output","name":"B","nodes":[{"type":"workspace","fullscreen_mode":1,"nodes":[{"type":"con","focused":%s,"fullscreen_mode":0,"nodes":[]}]}]}]}\n' "$1" "$2" "$3" > "$HOME/full.json"; st=0; out=$(SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/sock PATH="$H/full:$PATH" sh "$SH" bar keys 2>&1) || st=$?; }
+    full true 1 false; _o1="$st $out"; full false 2 true; _o2="$st $out"; full false 1 true; _o3="$st $out"
+    [ "$_o1" = '1 spark-shell bar: a full-screen window covers the bar: it takes no keys there' ] && [ "$_o2" = "$_o1" ] && [ "$_o3" = '0 the bar has the keys: the arrows move, Enter acts, Esc leaves' ] \
+        && ok "bar keys: refused in one line where a full-screen window covers the focused screen, or every screen; one on another screen is no reason" || bad "bar keys covered" "$_o1 | $_o2 | $_o3"
     sb_end
+    # a bar that ends five times within a minute: its keeper gives up, and sway's own bar takes the line in the running session
+    mkdir -p "$H/barbad" "$H/quick"; printf '#!/bin/sh\necho start >> "$HOME/sbad.log"\nexit 1\n' > "$H/barbad/spark-bar"; printf '#!/bin/sh\nexec "%s" 0.1\n' "$(command -v sleep)" > "$H/quick/sleep"; chmod +x "$H/barbad/spark-bar" "$H/quick/sleep"
+    if [ -n "$py3" ]; then
+        rm -f "$H/run/wayland-7"; "$py3" -I -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$H/run/wayland-7"
+        : > "$H/.local/state/swaymsg.log"; _sc=$(cksum < "$sway")
+        SPARK_SHELL_BAR=$H/barbad/spark-bar XDG_RUNTIME_DIR=$H/run WAYLAND_DISPLAY=wayland-7 SWAYSOCK=$H/sock SBSWAY_NEXT=$H/.local/bin/swaymsg PATH="$H/quick:$H/sbsway:$PATH" sh "$SH" bar start >/dev/null 2>&1 || :
+        _i=0; while [ "$_i" -lt 150 ] && [ -z "$(sb_bar_ids)" ]; do sleep 0.1; _i=$((_i + 1)); done
+        [ "$(grep -c '' "$HOME/sbad.log")" = 6 ] && case $(sb_bar_ids) in spark-line*) true ;; *) false ;; esac && grep -q "^bar spark-line[.0-9]* mode dock; bar spark-line[.0-9]* position top; .*status_command $REPO/spark-shell bar status; " "$H/.local/state/swaymsg.log" && [ "$(cksum < "$sway")" = "$_sc" ] \
+            && ok "a bar that ends five times in a minute: sway's own bar draws the line in the running session, and the config stays spark's" || bad "bar fallback" "$(cat "$HOME/sbad.log" 2>&1 | grep -c '') | $(sb_bar_ids) | $(cat "$H/.local/state/swaymsg.log")"
+        sbr bar start; _i=0; while [ "$_i" -lt 40 ] && { [ ! -s "$block" ] || [ -n "$(sb_bar_ids)" ]; }; do sleep 0.1; _i=$((_i + 1)); done
+        [ -s "$block" ] && [ -z "$(sb_bar_ids)" ] && ok "bar start after that: sway's bar ends, and spark's draws again" || bad "bar after fallback" "rc=$rc $out | $(sb_bar_ids)"
+        sb_end; rm -f "$H/run/wayland-7"
+    fi
     st=0; out=$(SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/sock sh "$SH" bar keys 2>&1) || st=$?
     [ "$st" = 1 ] && [ "$out" = 'spark-shell bar: the bar takes no keys here: spark-bar is not running (spark-shell on desktop)' ] && ok "bar keys with no spark-bar running: refused in one line" || bad "bar keys none" "st=$st $out"
     # bar start where spark-bar draws no more (its file gone, or not the pinned one) and sway's config still starts it:
     # the config is rendered again, sway reloaded, and sway's own bar draws the line; once, and only where sway answers
     sbn() { rc=0; out=$(SWAYSOCK=$H/sock SBSWAY_NEXT=$H/.local/bin/swaymsg PATH="$H/sbsway:$PATH" sh "$SH" "$@" 2>&1) || rc=$?; }   # as sbr, with no spark-bar here
-    rm -f "$HOME/sbsway.log"; out2=$(env -u SWAYSOCK sh "$SH" bar start 2>&1) || :; _c0=$(grep -c "^exec $REPO/spark-shell bar start\$" "$sway" || :); _r0=$(grep -c reload "$HOME/sbsway.log" 2>/dev/null || :)
+    rm -f "$HOME/sbsway.log"; out2=$(env -u SWAYSOCK sh "$SH" bar start 2>&1) || :; _c0=$(grep -c "^exec_always $REPO/spark-shell bar start\$" "$sway" || :); _r0=$(grep -c reload "$HOME/sbsway.log" 2>/dev/null || :)
     sbn bar start; _c1=$(cksum < "$sway"); _r1=$(grep -c reload "$HOME/sbsway.log" 2>/dev/null || :); _o1="$rc $out"
     _g1=''; ! { grep -q '^bar {$' "$sway" && grep -q "^    status_command $REPO/spark-shell bar status\$" "$sway" && grep -q '^    mode dock$' "$sway" && ! grep -q 'bar start' "$sway"; } || _g1=1
     sbn bar start
-    [ "$_c0" = 1 ] && [ "${_r0:-0}" = 0 ] && [ "$_o1" = '0 ' ] && [ -n "$_g1" ] && [ "$_r1" = 1 ] && [ "$rc" = 0 ] && [ "$(cksum < "$sway")" = "$_c1" ] && [ "$(grep -c reload "$HOME/sbsway.log")" = 1 ] && [ ! -s "$block" ] && [ "$(grep -c '' "$HOME/sbar.log")" = 11 ] \
+    [ "$_c0" = 1 ] && [ "${_r0:-0}" = 0 ] && [ "$_o1" = '0 ' ] && [ -n "$_g1" ] && [ "$_r1" = 1 ] && [ "$rc" = 0 ] && [ "$(cksum < "$sway")" = "$_c1" ] && [ "$(grep -c reload "$HOME/sbsway.log")" = 1 ] && [ ! -s "$block" ] && [ "$(grep -c '' "$HOME/sbar.log")" = 12 ] \
         && ok "bar start with no spark-bar to start, as sway's config still asks: the config rendered again with sway's own bar and sway reloaded, so the bar is back; nothing from a shell with no session, and nothing the second time" || bad "bar start none" "$_c0 $_r0 | $_o1 | $_g1 $_r1 | $rc $out | $(grep -n '^bar\|bar start\|status_command' "$sway")"
     # the pad's start waits for the bar: sway starts both at once at login, and a pad keeping its strip starts after
     # the bar has its lock, two seconds at most; where spark-bar draws no bar the pad starts at once, as before. A sleep
@@ -7271,6 +7330,10 @@ PY
     case $_f1 in b?"\\x1b[?25l"*) _fo=1 ;; *) _fo='' ;; esac
     [ -n "$_fo" ] && case $_f1$_f2 in *'Type a request.'*) false ;; *) true ;; esac \
         && ok "dialog: in its own window and in a terminal nothing is drawn ahead of the opening, the cursor hidden first (#142)" || bad "dialog first frame" "$_f1 | $_f2"
+    # the cursor the terminal is left with: a refusal puts it back, and a window of its own never took it
+    _f1=$(SPARK_SHELL_DIALOG=$H/no-such-dialog python3 -I "$H/pty_first.py" "$SH" 2>/dev/null); _f2=$(SPARK_SHELL_DIALOG=$H/no-such-dialog SPARK_DIALOG_WINDOW=own WAYLAND_DISPLAY=wayland-none python3 -I "$H/pty_first.py" "$SH" 2>/dev/null)
+    case $_f1 in *"[?25l"*'is not executable'*"[?25h"*) true ;; *) false ;; esac && case $_f2 in *'[?25l'*) false ;; *'is not executable'*) true ;; *) false ;; esac \
+        && ok "dialog: one that is refused in a terminal leaves it its cursor, and one that opens a window of its own never hides it" || bad "dialog cursor" "$_f1 | $_f2"
 fi
 # #132: the theme's animation row opens a list of the pieces, as the wallpaper's opens its drawings: the one in use checked,
 # the palette's own said, each with its folder in the palette in use (none with none), Enter the step that sets it
@@ -7966,7 +8029,7 @@ STUB
     [ "$out" = 'would  bar          fetch spark-bar for v9.10 and check its sha256' ] && [ ! -e "$bbin" ] && ok "on --dry-run: spark-bar it would fetch is said, nothing fetched (v0.147)" || bad "bar dry" "$out"
     out=$(bon --yes)
     [ "$out" = "ok     bar          spark-bar installed for v9.10 ($bbin), sha256 checked" ] && [ -x "$bbin" ] && [ "$(sum256 "$bbin")" = "$sha_bar" ] \
-        && grep -q "^exec $C/spark-shell bar start\$" "$bsway" && ! grep -q '^bar {$' "$bsway" \
+        && grep -q "^exec_always $C/spark-shell bar start\$" "$bsway" && ! grep -q '^bar {$' "$bsway" \
         && ok "on: spark-bar fetched for the signed tag, its sha256 the tag's own tree pins, installed; sway's config starts it and holds no bar of sway's" || bad "bar install" "$out $(grep -n '^bar\|bar start' "$bsway")"
     out=$(bon --dry-run)
     [ "$out" = "ok     bar          $bbin, the sha256 v9.10 pins" ] && ok "on --dry-run: spark-bar in place is ok" || bad "bar ok" "$out"
@@ -7984,7 +8047,7 @@ STUB
     cp "$H/.local/bin/uname" "$H/uname.keep"; printf '#!/bin/sh\ncase $1 in -m) echo riscv64 ;; *) exec "%s" "$@" ;; esac\n' "$(command -v -p uname)" > "$H/.local/bin/uname"; out=$(bon --dry-run); cp "$H/uname.keep" "$H/.local/bin/uname"
     [ "$out" = 'skip   bar          no spark-bar built for riscv64 yet: sway'"'"'s bar draws the bar' ] && ok "on a machine with no build: a skip, sway's bar draws the bar" || bad "bar no build" "$out"
     SPARK_SHELL_BAR=$H/stub-bar SPARK_SHELL_DIALOG_URL=none sh "$C/spark-shell" on --yes >/dev/null 2>&1 || :
-    grep -q "^exec $C/spark-shell bar start\$" "$bsway" && ! grep -q '^bar {$' "$bsway" && [ ! -e "$bbin" ] && ok "SPARK_SHELL_BAR names another build: taken as it is, sway's config starts the bar, nothing fetched" || bad "bar override" "$(grep -n '^bar\|bar start' "$bsway")"
+    grep -q "^exec_always $C/spark-shell bar start\$" "$bsway" && ! grep -q '^bar {$' "$bsway" && [ ! -e "$bbin" ] && ok "SPARK_SHELL_BAR names another build: taken as it is, sway's config starts the bar, nothing fetched" || bad "bar override" "$(grep -n '^bar\|bar start' "$bsway")"
     rm -f "$H/.local/bin/uname"
 fi
 unset SPARK_SHELL_SYS SPARK_SHELL_PROC SWAYSOCK
@@ -9221,7 +9284,10 @@ HDMI-A-1${tb}2 webdev" ] && ok "desktop idle: each screen's workspace kept by na
         && ok "desktop idle: the clock goes on Display's main screen, named by its make and model, wherever the focus is (#177)" || bad "idle main" "$(cat "$HOME/swaymsg.log" 2>&1)"
     rm -f "$HOME/.config/spark-shell/screens.conf" "$HOME/swaymsg.log"
     printf '%s\n' '{"nodes":[{"type":"con","app_id":"spark-idle","pid":4011,"id":51},{"type":"con","app_id":"foot","pid":4012,"id":52},{"type":"con","app_id":"spark-idle","pid":4013,"id":53}]}' > "$HOME/tree.json"
-    rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/ix:$PATH" sh "$SH" desktop idle off 2>&1) || rc=$?
+    mkdir -p "$H/iproc/4011" "$H/iproc/4014"; printf 'foot\0--app-id\0spark-idle\0' > "$H/iproc/4011/cmdline"; printf 'foot\0' > "$H/iproc/4014/cmdline"   # 4013's words cannot be read
+    sed -i.bak 's/,"id":53}/,"id":53},{"type":"con","app_id":"spark-idle","pid":4014,"id":54}/' "$HOME/tree.json"
+    rc=0; out=$(SPARK_SHELL_PROC=$H/iproc SWAYSOCK=$H/sock PATH="$H/ix:$PATH" sh "$SH" desktop idle off 2>&1) || rc=$?
+    ! grep -q 'con_id=54' "$HOME/swaymsg.log" && ok "desktop idle off: a terminal whose program took the idle screen's app id (OSC 176) is not closed" || bad "idle off osc 176" "$(cat "$HOME/swaymsg.log")"
     [ "$rc" = 0 ] && grep -qxF -- '-- mouse_warping none; focus output "DP-3"; workspace "1"; focus output "HDMI-A-1"; workspace "2 webdev"; mouse_warping output' "$HOME/swaymsg.log" \
         && grep -qxF -- '-- [con_id=51] kill' "$HOME/swaymsg.log" && grep -qxF -- '-- [con_id=53] kill' "$HOME/swaymsg.log" && ! grep -q 'con_id=52' "$HOME/swaymsg.log" && grep -qx -- '-- bar bar-0 mode dock' "$HOME/swaymsg.log" \
         && awk '/workspace "1"/ { w = NR } /con_id=51/ { k = NR } END { exit !(w && k && w < k) }' "$HOME/swaymsg.log" \
@@ -10685,7 +10751,15 @@ EOF
     printf '%s\n' "$out0" | grep -qx 'todo   power        the sudoers file could not be written: Read-only file system -- spark-shell on desktop again' && [ ! -e "$sud" ] && [ ! -e "$HOME/.local/state/spark-shell/power.sudoers" ] \
         && ! printf '%s\n' "$out0" | grep -q 'stopped there' && ! printf '%s\n' "$out0" | grep -q '^ok     power ' \
         && ok "runit: a sudoers file that cannot be written is a todo row with the reason, not said to be in place, nothing recorded; on goes on" || bad "power unwritable" "rc=$rc $(printf '%s' "$out0" | tr '\n' '|')"
+    hook=$H/root/etc/zzz.d/suspend/spark-shell-lock; mkdir -p "$H/root/etc/zzz.d/suspend"
+    nowrite "$H/.local/bin" "$hook"; out0=$(sh "$SH" on desktop --yes 2>&1 || :); nowrite "$H/.local/bin"
+    printf '%s\n' "$out0" | grep -qx 'todo   lock         the sleep hook could not be written: Read-only file system -- spark-shell on desktop again' && [ ! -e "$hook" ] && [ ! -e "$HOME/.local/state/spark-shell/power.sleep" ] \
+        && ok "runit: a sleep hook that cannot be written is a todo row with the reason, nothing recorded" || bad "sleep hook unwritable" "$(printf '%s' "$out0" | grep -i lock)"
+    rm -f "$sud" "$HOME/.local/state/spark-shell/power.sudoers"
     out=$(sh "$SH" on desktop --yes 2>&1 || :)
+    printf '%s\n' "$out" | grep -q '^ok     lock         the desktop locks before a lid or a sleep key suspends (/etc/zzz.d/suspend/spark-shell-lock)$' && [ -x "$hook" ] && sh -n "$hook" && ! grep -q '@[A-Z]*@' "$hook" \
+        && grep -qxF "timeout 10 su -s /bin/sh -c 'exec \"\$0\" desktop power lock-first' $(id -un) $REPO/spark-shell </dev/null >/dev/null 2>&1" "$hook" \
+        && ok "runit: on desktop writes zzz's own hook: the desktop is locked as its user before a suspend, ten seconds at most" || bad "sleep hook" "$(printf '%s' "$out" | grep -i lock) $(cat "$hook" 2>&1)"
     printf '%s\n' "$out" | grep -q '^ok     power        you suspend, restart and shut down from the dialog (/etc/sudoers.d/spark-shell-power)$' && printf '%s\n' "$out1" | grep -q '^ok     storage      you mount and eject drives (/etc/polkit-1/rules.d/50-spark-shell-storage.rules)$' \
         && grep -qxF "$me ALL=(root) NOPASSWD: /usr/bin/zzz \"\", /usr/bin/reboot \"\", /usr/bin/poweroff \"\"" "$sud" && [ "$(ls -l "$sud" | cut -c1-10)" = '-r--r-----' ] \
         && grep -qF "subject.user == \"$me\"" "$pol" && grep -qF '"org.freedesktop.udisks2.filesystem-mount"' "$pol" && ! grep -q 'filesystem-mount-system\|encrypted-unlock' "$pol" \
@@ -10704,6 +10778,7 @@ EOF
     printf '%s\n' "$out" | grep -q '^ok     storage      udisks2 mounts and ejects drives for you$' && printf '%s\n' "$out" | grep -q '^ok     power        lock, log out' && printf '%s\n' "$out" | grep -q '^ok     notify       the notifications show on the desktop$' \
         && ok "check: the notify, storage and power rows" || bad "check rows" "$out"
     sh "$SH" off desktop >/dev/null 2>&1 || :
+    [ ! -e "$hook" ] && [ ! -e "$HOME/.local/state/spark-shell/power.sleep" ] && ok "off desktop: the sleep hook gone, by its record" || bad "off sleep hook" "$(ls -R "$H/root/etc/zzz.d" 2>&1)"
     [ ! -e "$sud" ] && [ ! -e "$pol" ] && [ ! -e "$HOME/.local/state/spark-shell/power.sudoers" ] && [ ! -e "$HOME/.local/state/spark-shell/storage.polkit" ] && [ ! -e "$mk" ] \
         && ok "off desktop: both rules gone, by spark-shell's records, and mako's config with them" || bad "off rules" "$(ls -R "$H/root/etc" 2>&1)"
     rm -rf "$H/root/etc/runit"

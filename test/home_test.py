@@ -146,6 +146,42 @@ time.sleep(.5)
             self.assertEqual(done.returncode, 0, done.stderr.decode())
             self.assertEqual((root / "launches").read_text().splitlines(), ["own: dialog own"])
 
+    def test_a_launch_that_never_maps_leaves_nothing_running(self):
+        # the shell that runs the dialog ended alone left the dialog, and a window nobody opened
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = {**os.environ, "HOME": tmp, "XDG_RUNTIME_DIR": tmp, "PATH": tmp + os.pathsep + os.environ["PATH"]}
+            for name, body in {
+                "swaymsg": "#!/bin/sh\necho '{\"nodes\":[]}'\n",
+                "shell": "#!/bin/sh\nsleep 60 &\necho $! > \"$HOME/dialog\"\nwait\n",
+            }.items():
+                (root / name).write_text(body)
+                (root / name).chmod(0o700)
+            # ten seconds of its clock in a moment, once the dialog runs
+            code = ("import sys, time, types, pathlib; sys.path.insert(0, %r); import home; began = time.monotonic(); up = pathlib.Path(%r)\n"
+                    "home.time = types.SimpleNamespace(sleep=time.sleep, monotonic=lambda: time.monotonic() + (100 if up.exists() else 0))\n"
+                    "home.main(['open', %r])\n" % (str(REPO / "lib"), str(root / "dialog"), str(root / "shell")))
+            done = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, timeout=30)
+            self.assertIn("home did not map", done.stderr.decode())
+            state = subprocess.run(["ps", "-o", "stat=", "-p", (root / "dialog").read_text().strip()], capture_output=True, text=True).stdout.strip()
+            self.assertIn(state[:1], ("", "Z"))   # gone, or a husk nothing reaped
+
+    @unittest.skipUnless(os.path.exists("/proc/self/cmdline"), "its program's words are read from /proc")
+    def test_another_programs_window_under_homes_app_id_is_not_home(self):
+        # a terminal's program, or a host it is on, takes any app id (foot's OSC 176)
+        tree = lambda **window: {"type": "root", "nodes": [{"nodes": [{"id": 42, "app_id": "spark-dialog", **window}]}]}
+        sleeper = subprocess.Popen(["sleep", "30"])
+        own = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "--app-id", "spark-dialog"])
+        try:
+            self.assertIsNone(home.home_id(tree(pid=sleeper.pid)))
+            self.assertEqual(home.home_id(tree(pid=own.pid)), 42)
+            self.assertEqual(home.home_id(tree()), 42)   # no pid said, as from a stand-in
+            self.assertEqual(home.home_id(tree(pid=2 ** 30)), 42)   # its words cannot be read
+        finally:
+            for child in (sleeper, own):
+                child.kill()
+                child.wait()
+
     def test_home_back_from_the_pad_leaves_the_pad(self):
         tree = {"type": "root", "nodes": [{"type": "output", "nodes": [{"type": "workspace", "name": "__i3_scratch", "nodes": [], "floating_nodes": [
             {"type": "floating_con", "app_id": "spark-dialog", "id": 42, "marks": ["_spark-shell.min.float.42", "keep"],

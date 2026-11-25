@@ -105,8 +105,14 @@ winpad_pause() {   # a running pad ended before the bar moves, for winpad_again 
 }
 winpad_again() {   # a running pad restarted, so it takes a new look or bar place; once a run
     [ -z "${_winpad_again:-}" ] || return 0; _winpad_again=1
+    [ -n "${_winpad_paused:-}" ] || winpad_pid >/dev/null || return 0
+    wm_with winpad_restart || [ -z "${_winpad_paused:-}" ] || winpad_restart   # no sway to start it in: the running one stays
+}
+winpad_restart() {   # winpad_again's, where sway answers. In a shell apart sway starts it, as at login: its display and the rest are the session's
     if [ -z "${_winpad_paused:-}" ]; then _pdo=$(winpad_pid) || return 0; winpad_end "$_pdo"; fi
-    if winpad_run 2>/dev/null; then
+    _pdg=0
+    if [ -n "${WM_APART:-}" ]; then wm_exec "$REPO/spark-shell desktop pad start" >/dev/null 2>&1 || _pdg=1; else winpad_run 2>/dev/null || _pdg=1; fi
+    if [ "$_pdg" = 0 ]; then
         _winpad_started=1   # winpad_session asks for no second one before this one takes its lock
         _pdi=0; while [ "$_pdi" -lt 30 ] && ! winpad_pid >/dev/null; do sleep 0.1; _pdi=$((_pdi + 1)); done   # its lock, within a moment
     fi
@@ -124,6 +130,7 @@ winpad_place_words() {   # winpad_place_words PLACE -> where it sits, in words
         *) echo "at the ${1% *} edge" ;;
     esac
 }
+winpad_kept() { [ "$WINPAD_PLACE" != bar ] || ! sparkbar_draws || printf '; kept for a place off the bar'; }   # what a band or a view is while the pad is on the bar, which shows neither
 winpad_band_words() { if [ "$1" = on ]; then echo "its band says pad and how many wait"; else echo "no band, its grip and its icons alone"; fi; }   # winpad_band_words on|off -> what the pad shows, in words
 winpad_view_words() { if [ "$1" = titles ]; then echo "a slot a window, its icon, its app and its title"; else echo "one icon a window, its title beside it on hover"; fi; }   # winpad_view_words icons|titles -> how the pad shows its windows, in words
 layout_pad() {   # layout_pad [keys|toggle|place PLACE WIDTH SIDE [HEIGHT]|band [on|off]|view [icons|titles]|start|again] -- the pad
@@ -144,24 +151,24 @@ layout_pad() {   # layout_pad [keys|toggle|place PLACE WIDTH SIDE [HEIGHT]|band 
             echo "the pad sits $(winpad_place_words "$1")"; return ;;
         band) [ "$#" -le 2 ] || refuse "pad band takes on or off"
             case ${2:-} in
-                '') echo "pad band $WINPAD_BAND $PANEL_SEP $(winpad_band_words "$WINPAD_BAND")"; return ;;
+                '') echo "pad band $WINPAD_BAND $PANEL_SEP $(winpad_band_words "$WINPAD_BAND")$(winpad_kept)"; return ;;
                 on|off) ;;
                 *) refuse "pad band takes on or off" ;;
             esac
             [ "$2" != "$WINPAD_BAND" ] || refuse "the pad's band is $2 already"
             config_set WINPAD_BAND "$2" >/dev/null; WINPAD_BAND=$2; export WINPAD_BAND
             winpad_again   # drawn again, with the band or without it
-            echo "pad band $2 $PANEL_SEP $(winpad_band_words "$2")"; return ;;
+            echo "pad band $2 $PANEL_SEP $(winpad_band_words "$2")$(winpad_kept)"; return ;;
         view) [ "$#" -le 2 ] || refuse "pad view takes icons or titles"   # WINPAD_VIEW
             case ${2:-} in
-                '') echo "pad view $WINPAD_VIEW $PANEL_SEP $(winpad_view_words "$WINPAD_VIEW")"; return ;;
+                '') echo "pad view $WINPAD_VIEW $PANEL_SEP $(winpad_view_words "$WINPAD_VIEW")$(winpad_kept)"; return ;;
                 icons|titles) ;;
                 *) refuse "pad view takes icons or titles" ;;
             esac
             [ "$2" != "$WINPAD_VIEW" ] || refuse "the pad's view is $2 already"
             config_set WINPAD_VIEW "$2" >/dev/null; WINPAD_VIEW=$2; export WINPAD_VIEW
             winpad_again   # drawn again in that view
-            echo "pad view $2 $PANEL_SEP $(winpad_view_words "$2")"; return ;;
+            echo "pad view $2 $PANEL_SEP $(winpad_view_words "$2")$(winpad_kept)"; return ;;
         ''|keys|toggle|start|again) ;;
         *) refuse "pad takes keys, toggle, place PLACE WIDTH SIDE [HEIGHT], band on|off or view icons|titles" ;;
     esac

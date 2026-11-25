@@ -1054,6 +1054,7 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | top|bottom | text [aut
         tray) shift; bar_tray "$@"; return ;;
         keys) bar_desktop_here; sparkbar_keys; return ;;   # Super+equal
         start) [ "$OS" = Darwin ] || sparkbar_wake; return ;;   # sway's, at login: resident
+        fallback) [ "$OS" = Darwin ] || sparkbar_fallback; return ;;   # the keeper's, when it gives up
         again) [ "$OS" = Darwin ] || { sparkbar_again; layout_refit_soon; }; return ;;   # the status loop's, apart from it: a new font
         seen) shift; notify_seen "$@"; return ;;   # mako's clicks
         on|off|'') ;;

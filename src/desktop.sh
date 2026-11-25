@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # on_console -> 0 on /dev/tty1 and up (not XDG_VTNR: Void has no logind)
 # sets: IDLE_ALPHA IDLE_APP IDLE_FROM IDLE_HUSH IDLE_STILL LOCK_WAIT
-# reads: BAR_WS_ORDER CONFIG_UNSET KB_RE LAYOUT_PENDING LAYOUT_SEEN NOTIFY_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SAVER_OWN STATE_DIR TAB TERM_NAME TMP US WM_NAME
+# reads: BAR_PROC BAR_WS_ORDER CONFIG_UNSET KB_RE LAYOUT_PENDING LAYOUT_SEEN NOTIFY_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SAVER_OWN STATE_DIR TAB TERM_NAME TMP US WM_NAME
 on_console() { case $(tty 2>/dev/null) in /dev/tty[1-9]*) return 0 ;; *) return 1 ;; esac; }
 # runtime_dir -- XDG_RUNTIME_DIR when unset (Void has no logind)
 runtime_dir() {
@@ -11,14 +11,19 @@ runtime_dir() {
     if [ -d "$_rd" ] && [ ! -L "$_rd" ] && [ "$(ls -ldn "$_rd" | awk '{print $3}')" = "$_uid" ] && chmod 0700 "$_rd"; then
         XDG_RUNTIME_DIR=$_rd; export XDG_RUNTIME_DIR; return 0
     fi
-    refuse "$_rd is not a private directory of yours, and the desktop needs one (XDG_RUNTIME_DIR)"
+    # another account's, or a link: one of a name nobody could take first, kept where you alone write, for ssh and the next login
+    XDG_RUNTIME_DIR=$(runtime_kept) || { XDG_RUNTIME_DIR=$(mktemp -d "$_rd.XXXXXXXX" 2>/dev/null) && mkdir_private "$STATE_DIR" && printf '%s\n' "$XDG_RUNTIME_DIR" > "$STATE_DIR/runtime-dir"; } \
+        || refuse "$_rd is not a private directory of yours, and no other could be made (XDG_RUNTIME_DIR)"
+    export XDG_RUNTIME_DIR
 }
+runtime_private() { [ -d "$1" ] && [ ! -L "$1" ] && case $(ls -ldn "$1" | awk '{print $1, $3}') in "drwx------ $(id -u)"|"drwx------. $(id -u)") ;; *) false ;; esac; }   # runtime_private DIR -> 0 when it is a directory of yours that nobody else enters
+runtime_kept() { _rk=$(cat "$STATE_DIR/runtime-dir" 2>/dev/null) && [ -n "$_rk" ] && runtime_private "$_rk" && printf '%s\n' "$_rk"; }   # -> the one made where the usual name was taken, while it stands
 # runtime_adopt -- from ssh or a service; never makes the directory
 runtime_adopt() {
     [ -z "${XDG_RUNTIME_DIR:-}" ] && [ "$OS" != Darwin ] || return 0
     _uid=$(id -u); _rd=${TMPDIR:-/tmp}; _rd=${_rd%/}/$_uid-runtime-dir
-    [ -d "$_rd" ] && [ ! -L "$_rd" ] || return 0
-    case $(ls -ldn "$_rd" | awk '{print $1, $3}') in "drwx------ $_uid"|"drwx------. $_uid") XDG_RUNTIME_DIR=$_rd; export XDG_RUNTIME_DIR ;; esac
+    runtime_private "$_rd" || _rd=$(runtime_kept) || return 0
+    XDG_RUNTIME_DIR=$_rd; export XDG_RUNTIME_DIR; RUNTIME_ADOPTED=yes   # found, not handed over: no session of the caller's
 }
 
 # cmd_desktop [WORDS] -- sway as a child, never exec: the EXIT trap cleans TMP
@@ -123,7 +128,13 @@ idle_main() {   # -> the main screen when on, else the focused one
         | ([$on[] | select($m != "" and (.name == $m or ([.make, .model, .serial] | map(if . == null or . == "" then "Unknown" else . end) | join(" ")) == $m))]
            + [$on[] | select(.focused)] + $on)[0].name // empty' 2>/dev/null || :
 }
-idle_up() { wm_tree | jq -e --arg a "$IDLE_APP" '[.. | objects | select(.app_id? == $a)] | length > 0' >/dev/null 2>&1; }
+idle_windows() {   # -> "ID PID" of each window of the idle screen, by its program's words: a terminal's program, or a host it is on, can take any app id (foot's OSC 176). One whose words cannot be read counts
+    wm_tree | jq -r --arg a "$IDLE_APP" '.. | objects | select(.app_id? == $a) | "\(.id) \(.pid // 0)"' 2>/dev/null | while read -r _iwi _iwp; do
+        [ ! -r "$BAR_PROC/$_iwp/cmdline" ] || tr '\0' ' ' < "$BAR_PROC/$_iwp/cmdline" | grep -qF -- "$IDLE_APP" || continue
+        printf '%s %s\n' "$_iwi" "$_iwp"
+    done
+}
+idle_up() { idle_windows | grep -q .; }
 idle_back() {   # never a toggle: off and each window's end may all run it
     wm_up || return 0
     if wm_workspaces | jq -e '[.[] | select((.visible or .focused) and (.name == "idle" or (.name | startswith("idle "))))] | length > 0' >/dev/null 2>&1; then
@@ -155,8 +166,7 @@ idle_rest_end() {   # what the idle screen held, back as it was; nothing it did 
     if [ -f "$IDLE_STILL" ]; then rm -f "$IDLE_STILL"; theme_load 2>/dev/null || :; motion_follow; fi
 }
 idle_close() {   # all but this shell's parent foot
-    wm_tree | jq -r --arg a "$IDLE_APP" --argjson p "${PPID:-0}" '.. | objects | select(.app_id? == $a and .pid != $p) | .id' 2>/dev/null \
-        | while IFS= read -r _ic; do wm_on "con_id=$_ic" "kill" >/dev/null 2>&1 || :; done
+    idle_windows | while read -r _ic _icp; do [ "$_icp" = "${PPID:-0}" ] || wm_on "con_id=$_ic" "kill" >/dev/null 2>&1 || :; done
 }
 idle_wait() {   # idle_wait SECONDS -> 0 on input, 1 when the time ran out
     _iw=0

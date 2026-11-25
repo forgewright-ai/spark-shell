@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- sparkbar: spark's own bar (spark-bar), pinned like the pad; it runs `spark-shell bar status` and draws its line
 # sets: SPARKBAR_BIN SPARKBAR_KEEP SPARKBAR_TRAY_SLOTS
-# reads: DIALOG_URL MODE OS REPO STATE_DIR TMP WM_TRAY
+# reads: DIALOG_URL MODE OS REPO STATE_DIR TMP WM_LINE WM_TRAY
 SPARKBAR_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-bar
 SPARKBAR_TRAY_SLOTS=4   # the apps' icons the strip at the bar's end holds
 sparkbar_file() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-bar.$1"; }   # sparkbar_file pid|state|log|font|tray -> the bar's file of that kind, in the runtime folder
@@ -18,7 +18,7 @@ sparkbar_want_sha() {   # -> the sha256 the release tag's tree pins for this mac
 sparkbar_ok() { [ -x "$SPARKBAR_BIN" ] && _sbw=$(sparkbar_want_sha) && [ -n "$_sbw" ] && [ "$(sha256_of "$SPARKBAR_BIN")" = "$_sbw" ]; }   # the binary in place is the one the tree pins
 sparkbar_cmd() { if [ -n "${SPARK_SHELL_BAR:-}" ]; then [ -x "$SPARK_SHELL_BAR" ] && printf '%s' "$SPARK_SHELL_BAR"; elif sparkbar_ok; then printf '%s' "$SPARKBAR_BIN"; else return 1; fi; }   # -> SPARK_SHELL_BAR (another build, as it is), else the pinned bar; false when none
 sparkbar_here() { sparkbar_cmd >/dev/null 2>&1; }   # a spark-bar can run on this machine
-sparkbar_draws() { [ "$OS" != Darwin ] && [ "$DESKTOP_BAR" = yes ] && sparkbar_here; }   # spark-bar draws the bar; where it cannot run, or the bar is hidden, sway's own bar runs the line
+sparkbar_draws() { [ "$OS" != Darwin ] && [ "$DESKTOP_BAR" = yes ] && [ -z "${SPARKBAR_GAVE_UP:-}" ] && sparkbar_here; }   # spark-bar draws the bar; where it cannot run, or the bar is hidden, sway's own bar runs the line
 sparkbar_install() {   # the bar's row of on desktop: in place as pinned, or fetched for the signed tag and checked
     _sbt=$(wallpaper_target) || { skip bar "no spark-bar built for $(uname -m) yet: sway's bar draws the bar"; return 0; }
     _sbr=$(sparkbar_release_tag) || { row todo bar "this clone is past its release: spark-bar comes with the next tag; sway's bar draws the bar"; return 0; }
@@ -56,8 +56,9 @@ sparkbar_height() {   # -> the bar's height in pixels: 2.25 times its text's, 36
     case $_sbh in *px) awk -v n="${_sbh%px}" 'BEGIN { printf "%d", n * 2.25 + 0.5 }' ;; *) awk -v n="$_sbh" 'BEGIN { printf "%d", n * 3 + 0.5 }' ;; esac
 }
 # the keeper: the bar again when it ends by itself, a crash; a stop on purpose (0) stays a stop, and so do wrong
-# arguments (2), a session that is gone and a bar that ends five times within a minute of its start
-SPARKBAR_KEEP='n=0; while :; do t=$(date +%s); "$0" "$@"; rc=$?; case $rc in 0|2) break ;; esac; [ -S "${XDG_RUNTIME_DIR:-/nonexistent}/${WAYLAND_DISPLAY:-none}" ] || break; [ $(( $(date +%s) - t )) -lt 60 ] || n=0; n=$((n + 1)); [ "$n" -le 5 ] || break; echo "spark-bar ended ($rc): started again" >&2; sleep 1; done'
+# arguments (2), a session that is gone and a bar that ends five times within a minute of its start, where sway's own
+# bar takes the line (sparkbar_fallback)
+SPARKBAR_KEEP='n=0; while :; do t=$(date +%s); "$0" "$@"; rc=$?; case $rc in 0|2) break ;; esac; [ -S "${XDG_RUNTIME_DIR:-/nonexistent}/${WAYLAND_DISPLAY:-none}" ] || break; [ $(( $(date +%s) - t )) -lt 60 ] || n=0; n=$((n + 1)); [ "$n" -le 5 ] || { "$SPARK_SHELL" bar fallback; break; }; echo "spark-bar ended ($rc): started again" >&2; sleep 1; done'
 sparkbar_run() {   # spark-bar started in its own session, under its keeper; false when none can run here
     _sbc=$(sparkbar_cmd) || return 1
     theme_load 2>/dev/null || :
@@ -79,11 +80,25 @@ sparkbar_run() {   # spark-bar started in its own session, under its keeper; fal
     )
 }
 sparkbar_wake() {   # bar start, sway's: the bar up when it is not; never waited for
-    if sparkbar_draws; then sparkbar_pid >/dev/null || sparkbar_run 2>/dev/null || :; return 0; fi
+    if sparkbar_draws; then
+        ! sparkbar_pid >/dev/null || return 0
+        ! wm_up || wm_bar_end "$WM_LINE" || :   # the one that took the line when spark's bar gave up
+        sparkbar_run 2>/dev/null || :; return 0
+    fi
     # sway's config starts a spark-bar that draws no more, its file gone or not the pinned one: rendered again, and sway's
     # own bar is back. Once: the new config has no line that runs this
-    [ "$DESKTOP_BAR" = yes ] && grep -qxF "exec $REPO/spark-shell bar start" "$(wm_config_file)" 2>/dev/null && wm_up || return 0
+    [ "$DESKTOP_BAR" = yes ] && grep -qxF -e "exec_always $REPO/spark-shell bar start" -e "exec $REPO/spark-shell bar start" "$(wm_config_file)" 2>/dev/null && wm_up || return 0
     theme_load; EXPR=$(render_expr); desktop_look_apply >/dev/null
+}
+sparkbar_fallback() {   # the keeper's, when it gives up: sway's own bar draws the line in the running session, as the config has it where no spark-bar can run. The config stays: the next login, reload or verb that starts the bar tries spark's again
+    sparkbar_draws && ! sparkbar_pid >/dev/null && wm_up || return 0
+    SPARKBAR_GAVE_UP=yes; theme_load
+    render_sed "$(render_expr)" "$(wm_config_template)" > "$TMP/fallback.config" || return 0
+    _sfb=$(wm_config_bar "$TMP/fallback.config"); [ -n "$_sfb" ] || return 0
+    wm_bar_end "$WM_TRAY" || :   # the tray's host stood on spark's bar
+    wm_bar_end "$WM_LINE" || :
+    wm_bar_make "$WM_LINE" "$_sfb" || return 0
+    notify_send bar "Bar: spark-bar ended five times in a minute" "sway's bar draws the line until the next login"
 }
 sparkbar_stop() {   # sparkbar_stop PID -- the bar told to end (it leaves with 0, so its keeper lets it), waited for two seconds
     kill "$1" 2>/dev/null || :
@@ -103,7 +118,9 @@ sparkbar_follow() {   # the bar as the config has it now: a running one ended, s
 sparkbar_again() {   # sparkbar_follow from anywhere, once a run
     [ -z "${_sparkbar_again:-}" ] || return 0; _sparkbar_again=1
     sparkbar_pid >/dev/null || sparkbar_draws || return 0   # none runs and none draws here: sway is not asked
-    ! wm_up || sparkbar_follow   # a shell that cannot reach the session (ssh, a socket that is gone) would end the bar and start none: the bar stays
+    _sba=''; wm_up || _sba=1
+    wm_with sparkbar_follow || return 0   # a shell that cannot reach the session (ssh) would end the bar and start none: the bar stays
+    [ -z "$_sba" ] || ! sparkbar_draws || _winpad_again=1   # the pad started again with the bar, in that shell
 }
 sparkbar_stands() { if sparkbar_draws; then sparkbar_pid >/dev/null; else ! sparkbar_pid >/dev/null; fi; }   # 0 when it runs where it draws, and only there
 sparkbar_font_again() {   # sparkbar_font_again FONT -- the status loop's: its bar started again for the screen's font, apart, so the restart outlives the loop; once for a font, whatever the new bar is handed
@@ -121,6 +138,7 @@ sparkbar_no_pins() {   # sparkbar_no_pins pin|unpin|hide|show -> why it changes 
 sparkbar_keys() {   # Super+equal: the keyboard on the bar
     [ "$DESKTOP_BAR" = yes ] || refuse_in bar "the bar is hidden (spark-shell bar on --desktop shows it)"
     _sbp=$(sparkbar_pid) || refuse_in bar "the bar takes no keys here: spark-bar is not running (spark-shell on desktop)"
+    ! wm_covered || refuse_in bar "a full-screen window covers the bar: it takes no keys there"
     kill -USR1 "$_sbp" 2>/dev/null || :
     echo "the bar has the keys: the arrows move, Enter acts, Esc leaves"
 }

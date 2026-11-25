@@ -94,7 +94,7 @@ voice_press() {   # voice_press [wrap] -- the key down: a tap opens home on the 
 }
 voice_release() {   # voice_release [wrap] -- the key up
     _vr=$(voice_want_stamp) && [ -n "$_vr" ] || { voice_stop || :; return 0; }   # the press is listening already
-    _vk=$(voice_want_kind)
+    _vk=$(voice_want_kind) || _vk=plain   # the session ended between the two reads, and took the file
     rm -f "$(voice_want)"
     [ "$_vr" != 0 ] && [ $(( $(voice_now_ms) - _vr )) -lt "$VOICE_TAP_MS" ] || { voice_stop || :; return 0; }   # held: the words stay
     [ "$_vk" = wrap ] || home_open   # a tap of the plain key opens home; the wrapping key is for holding

@@ -1,8 +1,9 @@
 # shellcheck extended-analysis=false
 # --- the power
-# sets: APP_GROUPS POWER_SUDOERS
-# reads: BAR_PROC BAR_SYS LAYOUTS_DIR LAYOUT_LAST LAYOUT_WAIT MODE OS PANEL_APP PANEL_CACHE PANEL_CROSS PANEL_SEP PANEL_TICK PROVIDE_CLIENT REPO ROOT STATE_DIR TAB TERM_CLIENT TERM_NAME THEME_KEYS TMP WALL_NAMES WM_NAME
+# sets: APP_GROUPS POWER_SLEEP POWER_SUDOERS
+# reads: BAR_PROC BAR_SYS LAYOUTS_DIR LAYOUT_LAST LAYOUT_WAIT MODE NL OS PANEL_APP PANEL_CACHE PANEL_CROSS PANEL_SEP PANEL_TICK PROVIDE_CLIENT REPO ROOT STATE_DIR TAB TERM_CLIENT TERM_NAME THEME_KEYS TMP WALL_NAMES WM_NAME
 POWER_SUDOERS=etc/sudoers.d/spark-shell-power
+POWER_SLEEP=etc/zzz.d/suspend/spark-shell-lock
 about_site() {
     _as=https://github.com/forgewright-ai/spark-shell
     if [ "$OS" = Darwin ]; then open "$_as" >/dev/null 2>&1 || { echo "the browser did not open"; return 1; }
@@ -32,7 +33,7 @@ power_keys() {   # -> what the power button and lid do
     if [ "$(init_shape)" = systemd ]; then
         echo "the power button $(power_words "$(power_logind HandlePowerKey poweroff)")"
         ! ls "$BAR_PROC"/acpi/button/lid/*/state >/dev/null 2>&1 || echo "closing the lid $(power_words "$(power_logind HandleLidSwitch suspend)")"
-    elif pgrep -x acpid >/dev/null 2>&1; then echo "the power button and the lid: acpid decides (/etc/acpi/handler.sh)"; fi
+    elif pgrep -x acpid >/dev/null 2>&1; then echo "the power button and the lid: acpid decides (/etc/acpi/handler.sh)$([ ! -s "$STATE_DIR/power.sleep" ] || printf ', the desktop locked before a suspend')"; fi
 }
 power_lock_first() {   # from outside (ssh): through sway's socket
     if [ -n "${WAYLAND_DISPLAY:-}" ]; then "$REPO/spark-shell" desktop lock >/dev/null 2>&1; return; fi
@@ -45,6 +46,7 @@ power_lock_first() {   # from outside (ssh): through sway's socket
 power_now() {   # power_now lock|suspend|logout|restart|shutdown -> one line
     case $1 in
         lock) "$REPO/spark-shell" desktop lock || return 1; echo "locked" ;;
+        lock-first) power_lock_first || { echo "the desktop could not be locked"; return 1; } ;;   # the sleep hook's
         suspend) power_sleeps || { echo "this machine cannot suspend"; return 1; }
             _pt=$(power_tool); [ -n "$_pt" ] || { power_why; return 1; }
             power_lock_first || { echo "the desktop could not be locked, so the machine did not suspend"; return 1; }   # locked on waking, or no suspend
@@ -82,6 +84,26 @@ power_apply() {   # on desktop's power row: the sudo rule
         mkdir_private "$STATE_DIR"; printf '%s\n' "$_ps" > "$STATE_DIR/power.sudoers"
         ok power "you suspend, restart and shut down from the dialog (/$POWER_SUDOERS)"
     else row todo power "the sudoers file could not be written${root_why:+: $root_why} -- spark-shell on desktop again"; acting=0; fi
+}
+power_sleep_rule() { render_sed "s|@USER@|$(esc "$(id -un)")|g${NL}s|@REPO@|$(esc "$REPO")|g" "$REPO/template/etc/zzz.d/suspend/spark-shell-lock"; }
+power_sleep_apply() {   # on desktop's lock row: with no logind a lid or a sleep key suspends through acpid, which tells no session: zzz's own hook locks the desktop first
+    [ "$(init_shape)" = runit ] && [ -x "$ROOT/usr/bin/zzz" ] && [ -d "$ROOT/etc/zzz.d/suspend" ] || return 0
+    case $(id -un) in *[!A-Za-z0-9._-]*) _pq=no ;; *) root_path_ok "$REPO" && _pq=yes || _pq=no ;; esac
+    [ "$_pq" = yes ] || { skip lock "a name with a character a root file does not take: a lid suspends unlocked"; return 0; }
+    power_sleep_rule > "$TMP/power.sleep"; _pq=$(cksum < "$TMP/power.sleep")
+    if [ "$(cat "$STATE_DIR/power.sleep" 2>/dev/null)" = "$_pq" ]; then ok lock "the desktop locks before a lid or a sleep key suspends (/$POWER_SLEEP)"; return 0; fi
+    need lock "lock the desktop before a lid or a sleep key suspends: /$POWER_SLEEP (sudo)" && seat_root on "the lock" || return 0
+    if root_try "$TMP/power.sleep" "$ROOT/$POWER_SLEEP" 0755; then
+        mkdir_private "$STATE_DIR"; printf '%s\n' "$_pq" > "$STATE_DIR/power.sleep"
+        ok lock "the desktop locks before a lid or a sleep key suspends (/$POWER_SLEEP)"
+    else row todo lock "the sleep hook could not be written${root_why:+: $root_why} -- spark-shell on desktop again"; acting=0; fi
+}
+power_sleep_off() {   # by the record only
+    [ -e "$STATE_DIR/power.sleep" ] || return 0
+    need lock "the hook that locks before a suspend removed, as spark-shell wrote it (sudo)" || return 0
+    seat_root off "the lock" || return 0
+    if root_do rm -f "$ROOT/$POWER_SLEEP"; then rm -f "$STATE_DIR/power.sleep"; row ok lock "the hook that locks before a suspend is gone"
+    else row todo lock "/$POWER_SLEEP stays -- spark-shell off desktop again"; fi
 }
 power_off() {   # by the record only
     [ -e "$STATE_DIR/power.sudoers" ] || return 0

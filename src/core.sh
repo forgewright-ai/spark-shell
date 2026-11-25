@@ -105,7 +105,7 @@ spark_bin() {   # -> spark's path, or nothing: PATH, then ~/.local/bin (a non-lo
 TMP=$(mktemp -d)
 PULSE=''
 # an on or an off that ends badly, however it does (a step this program has no row for, a signal), says the ways on too
-trap '_xs=$?; [ -z "$run_verb" ] || [ "$_xs" = 0 ] || run_closing; rm -rf "$TMP"; [ -z "$PULSE" ] || kill "$PULSE" 2>/dev/null' EXIT
+trap '_xs=$?; [ -z "${CURSOR_AWAY:-}" ] || printf "\033[?25h"; [ -z "$run_verb" ] || [ "$_xs" = 0 ] || run_closing; rm -rf "$TMP"; [ -z "$PULSE" ] || kill "$PULSE" 2>/dev/null' EXIT
 trap 'exit 141' PIPE   # dash otherwise skips EXIT when a caller closes stdout
 trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM   # a signal ends it through the EXIT trap: TMP never stays behind
 

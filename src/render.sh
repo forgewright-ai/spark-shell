@@ -250,6 +250,7 @@ desktop_apply() {
     light_apply
     storage_apply
     power_apply
+    power_sleep_apply
     dialog_install
     home_stale
     semantic_install

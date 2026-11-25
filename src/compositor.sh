@@ -13,6 +13,22 @@ wm_session() { [ -n "${SWAYSOCK:-}" ]; }         # inside a session
 wm_live() { [ -S "${SWAYSOCK:-}" ]; }            # its socket is open
 wm_here() { command -v swaymsg >/dev/null 2>&1; }
 wm_up() { wm_session && [ -n "$(swaymsg -t get_version 2>/dev/null)" ]; }   # it answers
+wm_running_socket() {   # -> the socket of the one sway of yours that answers in the runtime folder, where SWAYSOCK names one that is gone, as a terminal older than the login hands it on; false where SWAYSOCK names none, and where none or several answer
+    wm_session && [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -z "${RUNTIME_ADOPTED:-}" ] || return 1   # a folder the caller was handed, as its login's
+    _wrf=''
+    for _wrs in "$XDG_RUNTIME_DIR/sway-ipc.$(id -u)."*.sock; do
+        [ -S "$_wrs" ] && [ -O "$_wrs" ] && [ -n "$(SWAYSOCK=$_wrs swaymsg -t get_version 2>/dev/null)" ] || continue
+        [ -z "$_wrf" ] || return 1
+        _wrf=$_wrs
+    done
+    [ -n "$_wrf" ] && printf '%s\n' "$_wrf"
+}
+wm_with() {   # wm_with COMMAND... -- run where sway answers: in this shell, or, for a SWAYSOCK that is gone, in a shell of its own with the running one's (WM_APART); false, and nothing run, where none answers
+    if wm_up; then "$@"; return; fi
+    _wws=$(wm_running_socket) || return 1
+    ( SWAYSOCK=$_wws; export SWAYSOCK; WM_APART=yes; "$@" )
+}
+wm_covered() { wm_tree | jq -e 'any(.. | objects; .fullscreen_mode? == 2) or any(.. | objects | select(.type? == "workspace" and any(.. | objects; .focused? == true)) | .. | objects; .type? != "workspace" and (.fullscreen_mode? // 0) >= 1)' >/dev/null 2>&1; }   # 0 when a full-screen window covers the focused screen
 wm_running_any() { pgrep -x sway >/dev/null 2>&1; }
 wm_pid() { pgrep -u "$(id -u)" -x sway 2>/dev/null | head -1 || :; }
 wm_socket_of() { printf '%s\n' "${XDG_RUNTIME_DIR:-/nonexistent}/sway-ipc.$(id -u).$1.sock"; }   # wm_socket_of PID
@@ -82,12 +98,12 @@ wm_bar_make() {   # wm_bar_make NAME SUBCOMMANDS -- a bar made whole, its subcom
     while wm_bar_ids | grep -qxF -- "$_wmi"; do _wmn=$((_wmn + 1)); _wmi=$1.$_wmn; done
     swaymsg -- "$(printf '%s\n' "$2" | awk -v bar="bar $_wmi " '{ printf "%s%s%s", (NR > 1 ? "; " : ""), bar, $0 }')" >/dev/null 2>&1
 }
-wm_config_bar() {   # -> the bar its config has, a subcommand a line, the mode first, its id left out; nothing for none
+wm_config_bar() {   # wm_config_bar [FILE] -> the bar its config has, or FILE, a subcommand a line, the mode first, its id left out; nothing for none
     awk '/^bar \{$/ { on = 1; next } !on { next } /^\}$/ { exit }
         { sub(/^[ \t]+/, "") }
         /^#/ || /^id / || $0 == "" { next } /\{$/ { group = $1 " "; next } /^\}$/ { group = ""; next }
         $1 == "mode" { print; next } { rest = rest group $0 "\n" }
-        END { printf "%s", rest }' "$(wm_config_file)" 2>/dev/null
+        END { printf "%s", rest }' "${1:-$(wm_config_file)}" 2>/dev/null
 }
 wm_bar_follow() {   # the line's bar in the running session as its config has it now, with no reload: the one that runs ended, the config's made
     wm_bar_end "$WM_LINE"

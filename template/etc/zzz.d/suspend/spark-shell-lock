@@ -1,0 +1,7 @@
+#!/bin/sh
+# rendered by spark-shell from template/etc/zzz.d/suspend/spark-shell-lock -- spark-shell off desktop removes it
+# With no logind (runit) a lid or a sleep key suspends through acpid, which
+# tells no session. zzz runs this first, as root: the desktop of @USER@ is
+# locked, by that user, ten seconds at most, and the machine sleeps either way.
+timeout 10 su -s /bin/sh -c 'exec "$0" desktop power lock-first' @USER@ @REPO@/spark-shell </dev/null >/dev/null 2>&1
+exit 0
