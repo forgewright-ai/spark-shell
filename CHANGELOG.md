@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.167.1
+
+- A release says why when its checks passed on a second try only: the
+  tag keeps the words. Two releases went out that way with a bug the
+  first try had caught.
+- A run of the tests no longer reaches your tmux server. It reloaded
+  the server with a configuration of its own.
+
 ## v0.167
 
 - Display is under appearance, between the theme and the bar. Its page

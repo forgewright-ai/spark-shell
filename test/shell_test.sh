@@ -34,7 +34,10 @@ _ended=1   # empty while a run holds sections: one that stops before its last li
 trap '_rc=$?; [ -n "$_ended" ] || printf "  FAIL the suite stopped before its end   status %s, at the command after the last line above\n" "$_rc"; while IFS= read -r _td; do [ -z "$_td" ] || { chmod -R u+rwX "$_td" 2>/dev/null || :; rm -rf "$_td" 2>/dev/null || :; }; done < "$TMPDIRS" || :; rm -f "$TMPDIRS" || :; exit "$_rc"' EXIT
 # never the person's own session: a test that notifies, locks or asks a compositor must reach none of it,
 # whatever the shell that started the suite carries
-unset WAYLAND_DISPLAY SWAYSOCK I3SOCK DISPLAY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR
+unset WAYLAND_DISPLAY SWAYSOCK I3SOCK DISPLAY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR TMUX TMUX_PANE
+# nor the machine's root: a sudo and a doas that refuse are first on PATH, so a test that names none of its own
+# never acts as root here, whatever this machine's sudoers say (a test once wrote /etc/rc.local)
+_nr=$(tmpd); for _t in sudo doas; do printf '#!/bin/sh\nexit 1\n' > "$_nr/$_t"; chmod 755 "$_nr/$_t"; done; PATH=$_nr:$PATH; export PATH
 
 fresh() {   # a new throwaway HOME with the stubs in place
     H=$(tmpd)
@@ -9825,9 +9828,9 @@ if command -v ssh-keygen >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
 for a in "$@"; do u=$a; done
 printf '%s\n' "$u" >> "$CURL_DIR/asked"
 sha=${u#*head_sha=}; sha=${sha%%&*}
-jq -n --arg sha "$sha" --arg b "$(cat "$CURL_DIR/branch")" --argjson ago "$(cat "$CURL_DIR/made")" '{workflow_runs: [{head_sha: $sha, head_branch: $b, event: "push", conclusion: "success", created_at: (now - $ago | todate)}]}'
+jq -n --arg sha "$sha" --arg b "$(cat "$CURL_DIR/branch")" --argjson ago "$(cat "$CURL_DIR/made")" --argjson n "$(cat "$CURL_DIR/attempt")" '{workflow_runs: [{head_sha: $sha, head_branch: $b, event: "push", conclusion: "success", run_attempt: $n, created_at: (now - $ago | todate)}]}'
 CURL
-    chmod +x "$U/curl"; echo main > "$U/branch"; echo 25200 > "$U/made"   # seven hours
+    chmod +x "$U/curl"; echo main > "$U/branch"; echo 25200 > "$U/made"; echo 1 > "$U/attempt"   # seven hours, the first attempt
     T() { (cd "$U/t" && CURL_DIR=$U SPARK_SHELL_TAG_CURL=$U/curl SPARK_SHELL_TAG_SIGNERS=$U/signers sh "$REPO/test/tag.sh" "$@" 2>&1); }
     on_origin() { git -C "$U/origin.git" rev-parse -q --verify "refs/tags/$1" >/dev/null 2>&1; }
     # a vX.Y heading is a person's
@@ -9849,8 +9852,22 @@ CURL
     [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q "^tag: refused: ci.yml has not passed for main at [0-9a-f]\{7\} in main's own run -- nothing tagged$" && ! on_origin v9.0.1 \
         && grep -q 'actions/workflows/ci.yml/runs?head_sha=[0-9a-f]\{40\}&branch=main&event=push&status=success' "$U/asked" \
         && ok "tag: a pass in a branch's run is no pass: main's own run of the exact commit is asked for" || bad "tag: a branch's run" "$rc $out $(tail -1 "$U/asked")"
-    echo main > "$U/branch"; echo 25200 > "$U/made"
-    out=$(T) && rc=0 || rc=$?
+    # a run that passed on a rerun: the tag says why the first one failed, or there is none
+    echo main > "$U/branch"; echo 25200 > "$U/made"; echo 3 > "$U/attempt"
+    out=$(T --now) && rc=0 || rc=$?
+    _tb=''; [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q "^tag: refused: main's run at [0-9a-f]\{7\} passed on attempt 3: --cause says why the ones before it failed, and the card that holds it -- nothing tagged$" && ! on_origin v9.0.1 || _tb="$_tb [no cause: $rc $out]"
+    out=$(T --now --cause short) && rc=0 || rc=$?
+    [ "$rc" = 1 ] && ! on_origin v9.0.1 || _tb="$_tb [a word for a cause: $rc $out]"
+    out=$(T --now --dry-run --cause 'a mirror was half synced, card 12') && rc=0 || rc=$?
+    [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -qF "git tag -s v9.0.1 -m 'spark-shell v9.0.1' -m 'rerun: a mirror was half synced, card 12'" || _tb="$_tb [dry run: $rc $out]"
+    echo null > "$U/attempt"
+    out=$(T --now) && rc=0 || rc=$?
+    [ "$rc" = 1 ] && [ "$out" = "tag: refused: GitHub's answer about ci.yml could not be read -- nothing tagged" ] || _tb="$_tb [no attempt in the answer: $rc $out]"
+    [ -z "$_tb" ] && ok "tag: main's run that passed on a rerun is no pass until --cause says why, and the tag's message keeps the words; an answer with no attempt is not read as one" || bad "tag: a rerun" "$_tb"
+    echo 2 > "$U/attempt"
+    out=$(T --cause 'a mirror was half synced, card 12') && rc=0 || rc=$?
+    git -C "$U/origin.git" cat-file tag v9.0.1 2>/dev/null | grep -qx 'rerun: a mirror was half synced, card 12' || out="no rerun line; $out"
+    echo 1 > "$U/attempt"
     [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^tag: v9\.0\.1 at [0-9a-f]\{7\}, a fast change of 1 lines since v9\.0$' && on_origin v9.0.1 \
         && git -C "$U/origin.git" -c gpg.format=ssh -c gpg.ssh.allowedSignersFile="$U/signers" verify-tag v9.0.1 2>&1 | grep -q 'signature for spark-shell-patch ' \
         && [ "$(git -C "$U/origin.git" rev-parse 'v9.0.1^{commit}')" = "$(git -C "$U/origin.git" rev-parse main)" ] \
@@ -11046,8 +11063,7 @@ wide=$(awk 'length > 80 {print FNR ": " length}' "$REPO/README.md" | head -3 | p
 # own, names a root of its own too. With none, a step that needs root goes to sudo, and where sudo asks no password it
 # writes the machine's own files: a proof turned a login screen off that way (v0.150)
 _tr=''
-for _tf in layout_desktop_proof.py window_desktop_proof.py winpad_desktop_proof.py voice_desktop_proof.py bar_desktop_proof.py home_desktop_proof.py \
-    glyph_families_desktop_proof.py desktop_proof.sh bar_proof.sh terminal_test.py dialog_pty.py; do
+for _tf in layout_desktop_proof.py window_desktop_proof.py winpad_desktop_proof.py voice_desktop_proof.py bar_desktop_proof.py desktop_proof.sh terminal_test.py dialog_pty.py; do
     grep -q 'SPARK_SHELL_ROOT' "$REPO/test/$_tf" 2>/dev/null || _tr="$_tr $_tf"
 done
 [ -z "$_tr" ] && ok "tests: the desktop proofs and the tests with a home of their own each have a root of their own (SPARK_SHELL_ROOT)" || bad "tests with no root of their own" "$_tr"

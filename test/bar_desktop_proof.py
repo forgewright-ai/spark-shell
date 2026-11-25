@@ -93,7 +93,7 @@ import zlib
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "test"))
-from home_desktop_proof import Pointer  # noqa: E402  the repo's virtual pointer: motion, button, axis, frame
+from desk import Pointer, fenced  # noqa: E402  the repo's virtual pointer: motion, button, axis, frame; the fence
 
 W, H = 1920, 1080
 OUT = "HEADLESS-1"
@@ -3408,6 +3408,7 @@ def session(d, parts):
 
 
 def main():
+    fenced()
     for tool in ("sway", "swaymsg", "foot", "grim", "wtype", "jq"):
         if not shutil.which(tool):
             raise SystemExit("missing native tool: " + tool)

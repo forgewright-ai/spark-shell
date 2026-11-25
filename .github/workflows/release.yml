@@ -75,6 +75,14 @@ jobs:
           sha=$(git rev-parse "${GITHUB_REF_NAME}^{commit}")
           n=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&status=success&branch=main&event=push" --jq '.total_count')
           [ "$n" -gt 0 ] || { echo "no green ci.yml run of main's own for $sha"; exit 1; }
+          # a run that passed on a rerun is a pass once the tag says why the
+          # ones before it failed: two releases went out on a rerun with the
+          # bug the first run had caught
+          again=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&status=success&branch=main&event=push" --jq '[.workflow_runs[].run_attempt] | max')
+          if [ "$again" != 1 ]; then
+            git cat-file tag "$GITHUB_REF_NAME" | sed '1,/^$/d' | grep -qE '^rerun: .{10,}' \
+              || { echo "release: main's run for $sha passed on attempt $again: the tag's message needs a line, rerun: WHY, and the card that holds it"; exit 1; }
+          fi
       - name: the toolchain component/dialog/rust-toolchain.toml pins
         working-directory: component/dialog
         run: rustup show active-toolchain || rustup toolchain install

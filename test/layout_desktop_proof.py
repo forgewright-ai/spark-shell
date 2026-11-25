@@ -5,10 +5,13 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "test"))
+from desk import fenced  # noqa: E402  the fence a proof starts behind
 
 
 def wait_for(read, description):
@@ -21,6 +24,7 @@ def wait_for(read, description):
 
 
 def main():
+    fenced()
     for command in ("sway", "swaymsg", "foot", "python3"):
         if not shutil.which(command):
             raise SystemExit("missing native tool: " + command)

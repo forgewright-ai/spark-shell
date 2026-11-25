@@ -57,7 +57,7 @@ import time
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "test"))
-from home_desktop_proof import Pointer  # noqa: E402  the repo's virtual pointer: motion, button, frame
+from desk import Pointer, fenced  # noqa: E402  the repo's virtual pointer: motion, button, frame; the fence
 
 W, H = 1920, 1080
 GAP = 8           # sway's outer gap here, as spark-shell's GAPS_OUTER (#265); the pad's margin comes in WINPAD_GAP
@@ -1237,6 +1237,7 @@ def round_in(palette, binary, evidence):
 
 
 def main():
+    fenced()
     for tool in ("sway", "swaymsg", "foot", "grim", "wtype"):   # swaybar too where the family has it: the round takes a bar then
         if not shutil.which(tool):
             raise SystemExit("missing native tool: " + tool)

@@ -22,7 +22,7 @@ import time
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "test"))
-from home_desktop_proof import Pointer  # noqa: E402  the repo's virtual pointer: motion, button, frame
+from desk import Pointer, fenced  # noqa: E402  the repo's virtual pointer: motion, button, frame; the fence
 LONG = "a window whose name is far longer than any band here holds, with words enough to run off its right end"
 failed = 0
 
@@ -138,6 +138,7 @@ while :; do say 'level 6'; say 'level 2'; done
 
 
 def main():
+    fenced()
     pad = os.environ.get("SPARK_SHELL_WINPAD", "")
     if not (pad and os.access(pad, os.X_OK)):
         raise SystemExit("SPARK_SHELL_WINPAD names no pad build")

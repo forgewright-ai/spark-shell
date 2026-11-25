@@ -13,6 +13,7 @@
 # edit the throwaway root's group file, as the suite's do.
 set -eu
 REPO=${REPO:?the clone path}
+[ -n "${SPARK_SHELL_FENCE:-}" ] || { echo "refusing: run it through test/prove.sh: its fence keeps a proof off your desktop"; exit 2; }   # as test/desk.py's fenced()
 export HOME=${HOME:-/home/ada}
 # A home of its own, always: this proof writes the config and installs spark-shell over it, and CI gives it
 # a user of its own. A home that already holds a config is someone's, and the proof stops rather than take it.

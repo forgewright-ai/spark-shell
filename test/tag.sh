@@ -7,6 +7,7 @@
 #   sh test/tag.sh --dry-run   say what it would do, touch nothing
 #   sh test/tag.sh --now       a person's word: no rest on main first
 #   sh test/tag.sh --cool H    the hours a fix rests on main before its tag (default 6; SPARK_SHELL_TAG_COOL too)
+#   sh test/tag.sh --cause W   why a rerun of main's run turned green, with the card that holds it
 #
 # Run it from the clone that tags, and run a copy you trust: the installed release's
 # (sh ~/.spark-shell/test/tag.sh), never the one of the commit it judges. It reads that commit from git and
@@ -24,6 +25,9 @@
 #     the changelog, and what is no text is a picture or a loop of the gallery's;
 #   - ci.yml passed for the exact commit in main's own run, the one that takes every job (GitHub's public
 #     API through curl, no token);
+#   - that run passed at its first attempt, or --cause says why a rerun turned it green, and the tag's message
+#     keeps the words: two releases went out on a rerun with the bug the first run had caught (release.yml asks
+#     the same of every tag);
 #   - the fix has rested the cooling hours on main, counted from when that run was made, by GitHub's clock:
 #     a person has time to see it. A date the committer wrote never counts. --now skips the rest.
 # Then the tag is signed by the key this clone's git config names (gpg.format ssh, user.signingkey),
@@ -34,8 +38,8 @@ set -eu
 cool=${SPARK_SHELL_TAG_COOL:-6}
 CURL=${SPARK_SHELL_TAG_CURL:-curl}
 MOST=400   # the most lines a fix changes outside test/ and the changelog
-dry=''; now=''
-usage() { echo "usage: sh test/tag.sh [--dry-run] [--now] [--cool H]" >&2; exit 2; }
+dry=''; now=''; cause=''
+usage() { echo "usage: sh test/tag.sh [--dry-run] [--now] [--cool H] [--cause WORDS]" >&2; exit 2; }
 say() { printf 'tag: %s\n' "$*"; }
 no() { printf 'tag: refused: %s -- nothing tagged\n' "$*"; exit 1; }
 while [ $# -gt 0 ]; do
@@ -43,11 +47,14 @@ while [ $# -gt 0 ]; do
         --dry-run) dry=1 ;;
         --now) now=1 ;;
         --cool) [ $# -ge 2 ] || usage; cool=$2; shift ;;
+        --cause) [ $# -ge 2 ] || usage; cause=$2; shift ;;
         *) usage ;;
     esac
     shift
 done
 case $cool in ''|*[!0-9]*) usage ;; esac
+case $cause in *'
+'*) usage ;; esac   # one line: it is a line of the tag's message
 here=$(cd "$(dirname "$0")" && pwd)   # this copy: its list judges, never the one of the commit judged
 top_dir=$(git rev-parse --show-toplevel 2>/dev/null) || no "this folder is no git clone"
 cd "$top_dir"
@@ -125,6 +132,12 @@ runs=$("$CURL" -fsS -m 30 -H 'Accept: application/vnd.github+json' "https://api.
 made=$(printf '%s' "$runs" | jq -r --arg sha "$sha" '[.workflow_runs[]? | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .conclusion == "success") | .created_at | fromdateiso8601] | min // empty' 2>/dev/null) \
     || no "GitHub's answer about ci.yml could not be read"
 case $made in ''|*[!0-9]*) no "ci.yml has not passed for main at $short in main's own run" ;; esac
+attempt=$(printf '%s' "$runs" | jq -r --arg sha "$sha" '[.workflow_runs[]? | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .conclusion == "success") | .run_attempt // 0] | max // 0' 2>/dev/null) || attempt=0
+case $attempt in
+    1) ;;
+    ''|0|*[!0-9]*) no "GitHub's answer about ci.yml could not be read" ;;
+    *) [ "${#cause}" -ge 10 ] || no "main's run at $short passed on attempt $attempt: --cause says why the ones before it failed, and the card that holds it" ;;
+esac
 if [ -z "$now" ]; then
     age=$(( $(date +%s) - made ))
     if [ "$age" -lt $((cool * 3600)) ]; then
@@ -135,11 +148,11 @@ fi
 
 if [ -n "$dry" ]; then
     say "would tag $tag at $short, a $lane change of $lines lines since $base:"
-    say "  git tag -s $tag -m 'spark-shell $tag' $short"
+    say "  git tag -s $tag -m 'spark-shell $tag'${cause:+ -m 'rerun: $cause'} $short"
     say "  git push origin refs/tags/$tag"
     exit 0
 fi
-quiet_git tag -s "$tag" -m "spark-shell $tag" "$sha" 2>/dev/null || no "$tag could not be signed (git config gpg.format ssh, user.signingkey)"
+quiet_git tag -s "$tag" -m "spark-shell $tag" ${cause:+-m "rerun: $cause"} "$sha" 2>/dev/null || no "$tag could not be signed (git config gpg.format ssh, user.signingkey)"
 # the tag just made checks against the installed allowed-signers, or it never leaves: on origin its name is taken for good
 cat "$signers" > "$keys"
 if ! verify "$tag"; then

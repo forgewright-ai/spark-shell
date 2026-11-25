@@ -7,6 +7,9 @@ distro, gallery, lib, src, template, test), in these forms:
 A reference with a shell variable or a glob after the folder (src/$name.sh, lib/motion_*.py)
 is checked up to the first such part. A reference that names nothing in the tree is an error.
 Markers written into installed files keep their text on purpose and are listed in KEEP.
+
+And every proof is run by something: a test/*_proof.* that neither ci.yml nor test/prove.sh runs is an error. A line
+that only lints it (shellcheck, py_compile) is no run. BY_HAND names the ones a person runs, and why.
 """
 import os
 import re
@@ -20,6 +23,11 @@ KEEP = (
     "rendered by spark-shell from template",   # the marker an installed file carries; readers accept it
     "[ ! -e ",                                 # a test that a path is absent
 )
+BY_HAND = {
+    "wifi_proof.sh": "simulated radios: a disposable virtual machine's root",
+    "login_upgrade_proof.sh": "the login screen's packages: a machine's root",
+    "dhcp_proof.sh": "namespaces: root, and the dhcpcd of a machine",
+}
 TEXT = (".sh", ".py", ".rs", ".toml", ".yml", ".yaml", ".md", ".env", ".ini", ".conf", ".json", ".txt", ".svg", ".desktop", ".rules", ".service")
 NOEXT = ("spark-shell", "allowed-signers", "pre-commit", "pre-push", "xterm", "brewfile", "licenses", "run", "finish", "session", "window", "login-boot", "sudoers", ".gitignore")
 
@@ -52,6 +60,19 @@ def exists(ref, base):
     return False
 
 
+def unrun():
+    """The proofs nothing runs."""
+    run = ""
+    for path in (".github/workflows/ci.yml", "test/prove.sh"):
+        with open(os.path.join(REPO, path), encoding="utf-8") as fh:
+            for line in fh:
+                code = re.sub(r"(^|\s)#.*", "", line)
+                if "shellcheck" not in code and "py_compile" not in code:
+                    run += code
+    names = [os.path.basename(p) for p in tracked() if re.match(r"test/\w*_proof\.(py|sh)$", p)]
+    return [n for n in names if n not in BY_HAND and not re.search(r"(?<![\w])" + re.escape(n), run)]
+
+
 def main():
     bad = []
     for path in tracked():
@@ -72,8 +93,11 @@ def main():
             continue
     for path, n, ref in bad:
         print("paths check: %s:%d names %s, which the tree does not have" % (path, n, ref))
-    if bad:
-        print("paths check: %d stale references" % len(bad))
+    idle = unrun()
+    for name in idle:
+        print("paths check: test/%s is run by nothing: ci.yml or test/prove.sh runs it, or it goes" % name)
+    if bad or idle:
+        print("paths check: %d stale references, %d proofs nothing runs" % (len(bad), len(idle)))
         return 1
     print("paths check: every path written in the tree exists")
     return 0

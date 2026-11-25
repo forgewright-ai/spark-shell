@@ -8,7 +8,9 @@
 #
 # A run is fenced before its first step:
 #   - each step has a home, a runtime and a temp folder of its own under PROVE_DIR (/var/tmp/spark-shell-prove);
-#   - the session's variables are unset, so no step reaches the desktop it was started from;
+#   - the session's variables are unset, so no step reaches the desktop it was started from, and tmux looks for its
+#     server in the run's own folder: spark-shell on reloads the server it finds, and that is yours;
+#   - a proof starts here and in CI alone (SPARK_SHELL_FENCE, test/desk.py);
 #   - a sudo and a doas that refuse stand first on PATH, so no step acts as root here whatever this
 #     machine's sudoers say (a proof without a root of its own once turned a login screen off);
 #   - the suite and the proofs find the system's tools alone, as CI's containers do: no folder of your own
@@ -67,8 +69,8 @@ apart() { fence "$sys_path" "$@"; }   # apart DIR COMMAND... -- with the system'
 fence() {   # fence PATH DIR COMMAND... -- in a home of its own, away from the session, with no way to root
     fp=$1; d=$2; shift 2
     mkdir -p "$d/home" "$d/run" "$d/tmp" "$d/pts"; chmod 700 "$d/run"
-    env -u SWAYSOCK -u WAYLAND_DISPLAY -u DISPLAY -u I3SOCK -u DBUS_SESSION_BUS_ADDRESS -u XDG_CONFIG_HOME -u XDG_STATE_HOME -u XDG_DATA_HOME -u XDG_CACHE_HOME \
-        PATH="$out/no-root:$fp" HOME="$d/home" XDG_RUNTIME_DIR="$d/run" TMPDIR="$d/tmp" CARGO_HOME="$cargo_home" RUSTUP_HOME="$rustup_home" \
+    env -u SWAYSOCK -u WAYLAND_DISPLAY -u DISPLAY -u I3SOCK -u DBUS_SESSION_BUS_ADDRESS -u XDG_CONFIG_HOME -u XDG_STATE_HOME -u XDG_DATA_HOME -u XDG_CACHE_HOME -u TMUX -u TMUX_PANE \
+        PATH="$out/no-root:$fp" HOME="$d/home" XDG_RUNTIME_DIR="$d/run" TMPDIR="$d/tmp" TMUX_TMPDIR="$d/tmp" SPARK_SHELL_FENCE=prove CARGO_HOME="$cargo_home" RUSTUP_HOME="$rustup_home" \
         SPARK_SHELL_PTS_DIR="$d/pts" SPARK_SHELL_SEMANTIC_URL=none SPARK_SHELL_NO_APPLY=1 SPARK_PRIVACY_TERMS="$terms" REPO="$REPO" "$@" </dev/null
 }
 n=0
