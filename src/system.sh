@@ -333,7 +333,7 @@ system_running_read() {   # -> $TMP/running.tsv, the programs now, sway's window
     python3 -I "$REPO/lib/running.py" list "$BAR_PROC" "$TMP/running.state" "$TMP/running.windows" > "$TMP/running.tsv" 2>/dev/null
 }
 system_users() { awk -F: '{ printf "%s\t%s\n", $3, $1 }' /etc/passwd 2>/dev/null | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add // {}'; }   # -> {"0": "root",...}
-SYSTEM_KEEP="$WM_OWN spark-shell spark-dialog dbus-daemon pipewire pipewire-pulse wireplumber"   # never ended from here: the desktop's own parts and the dialog
+SYSTEM_KEEP="$WM_OWN spark-shell spark-dialog spark-bar spark-winpad spark-wallpaper dbus-daemon pipewire pipewire-pulse wireplumber"   # never ended from here: the desktop's own parts and the dialog
 system_running_page() {   # -> every program, the busiest first, with put in front and end
     system_running_read
     jq -Rn --arg sep "$PANEL_SEP" --arg me "$(id -u)" --argjson users "$(system_users)" --arg keep " $SYSTEM_KEEP " --arg state "$(system_running_state)" '

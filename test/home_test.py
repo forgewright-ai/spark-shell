@@ -51,6 +51,10 @@ class HomeTest(unittest.TestCase):
         self.assertIsNone(home.fit(tree(rect(660, 174, 600, 760), rect(0, 28, 1920, 1052)), 42))
         self.assertEqual(home.fit(tree(rect(660, 0, 600, 760), rect(0, 28, 1920, 1052)), 42),
                          "[con_id=42] resize set width 600 px height 760 px, move position center")
+        # a title band: sway's rect stands under it, and the height it takes has it in, so home keeps its own (v0.168.1)
+        banded = tree(rect(660, 0, 600, 731), rect(0, 28, 1920, 1052))
+        banded["nodes"][0]["nodes"][0]["floating_nodes"][0]["deco_rect"] = rect(0, 0, 600, 29)
+        self.assertEqual(home.fit(banded, 42), "[con_id=42] resize set width 600 px height 760 px, move position center")
         # nothing known, nothing done: no workspace, no rect, another window
         self.assertIsNone(home.fit({"nodes": [{"id": 42, "app_id": "spark-dialog"}]}, 42))
         self.assertIsNone(home.fit(tree(rect(0, 0, 600, 720), {}), 42))

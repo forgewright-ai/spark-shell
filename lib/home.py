@@ -133,7 +133,7 @@ def fit(tree, ident):
     w, h = min(width, room_w), min(height, room_h)
     if (w, h) == (width, height) and ax <= x and ay + band <= y and x + w <= ax + room_w and y + h <= ay + band + room_h:
         return None
-    return "[con_id=%d] resize set width %d px height %d px, move position center" % (ident, w, h)
+    return "[con_id=%d] resize set width %d px height %d px, move position center" % (ident, w, h + band)   # sway's height has the band in it
 
 
 def focus_existing():

@@ -361,6 +361,7 @@ art_screen_stills() {   # -> NAME<tab>FILE for each screen with a still of its o
     return 0
 }
 art_screens_follow() {   # each screen output * does not suit gets its own still: a panel, a portrait, a scene's portrait view or the art fitted; made in the background
+    _asl=''   # the screens drawn anew below: none on every way out before that
     [ "$OS" != Darwin ] && wm_up && command -v jq >/dev/null 2>&1 || return 0
     _asp=$(art_screens); { printf '%s\n' "$_asp"; printf '%s %s\n' "${THEME:-}" "${WALLPAPER:-}"; } > "$(art_plan_file)" 2>/dev/null || :
     case ${WALLPAPER:-default} in default|none|'#'*) return 0 ;; esac
@@ -392,4 +393,5 @@ art_screens_changed() {   # on sway's output events: a screen came, went, moved 
     [ "$_asc" != "$(cat "$(art_plan_file)" 2>/dev/null)" ] || return 0
     wm_send "output * bg $WALL_BG" >/dev/null 2>&1 || :   # a screen turned back to landscape: output * merges into each screen's own line
     motion_follow
+    winpad_pid >/dev/null || layout_refit_soon screen   # the placed windows on the new area; a pad sends them there itself
 }

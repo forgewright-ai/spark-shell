@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.168.1
+
+- On one screen a moving wallpaper keeps moving after a reload and after
+  a theme change. It stopped.
+- Where no pad runs, a screen that comes, goes or turns sends the windows
+  the keys placed to their places, as the pad does.
+- The bar at a text size of your own takes a new typeface. It kept the
+  old one until the next login.
+- `spark-shell bar` names the modules on the bar. It named the hidden
+  ones too.
+- Home keeps its height when it is brought back into sight. It lost the
+  height of its title band each time.
+- End, in system, refuses the bar, the pad and the wallpaper as it does
+  the desktop's other parts.
+- A broken link in a listing is red on no ground of its own. On a light
+  palette it stood on a dark block.
+
 ## v0.168
 
 - A release whose checks were red before they were green says so in its

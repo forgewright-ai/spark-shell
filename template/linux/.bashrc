@@ -15,6 +15,7 @@ bind 'set completion-ignore-case on' 2>/dev/null
 command -v fdfind >/dev/null && alias fd=fdfind
 command -v batcat >/dev/null && alias bat=batcat
 if command -v eza >/dev/null; then
+    export EZA_COLORS="${EZA_COLORS-or=31}"   # a broken link in red alone: the system's own rule sets it on black, a dark block on a light palette
     alias ls='eza --group-directories-first'
     alias ll='eza -la --group-directories-first --git'
     alias lt='eza --tree -L 2'

@@ -873,6 +873,12 @@ if want 10; then
 grep -q MICRO_TRUECOLOR "$REPO/template/linux/.bashrc" "$REPO/template/macos/.zshrc" && bad "MICRO_TRUECOLOR still exported" || ok "rc files: no MICRO_TRUECOLOR"
 grep -q -- '--no-unicode' "$REPO/template/linux/.bashrc" && grep -q -- '--no-unicode' "$REPO/template/macos/.zshrc" && ok "rc files: fzf asked for ASCII" || bad "fzf opts"
 grep -rEq '#[0-9a-fA-F]{6}' "$REPO/template" && bad "a template names a hex color" "$(grep -rnE '#[0-9a-fA-F]{6}' "$REPO/template" | head -2)" || ok "templates: no hex color anywhere"
+if command -v bash >/dev/null 2>&1; then
+    mkdir -p "$H/ezabin"; printf '#!/bin/sh\nexit 0\n' > "$H/ezabin/eza"; chmod +x "$H/ezabin/eza"
+    _ez=$(PATH="$H/ezabin:$PATH" HOME=$H/ezahome EZA_COLORS='' bash --norc -ic ". '$REPO/template/linux/.bashrc' >/dev/null 2>&1; printf %s \"\$EZA_COLORS\"" 2>/dev/null </dev/null || :)
+    _ez2=$(PATH="$H/ezabin:$PATH" HOME=$H/ezahome bash --norc -ic "unset EZA_COLORS; . '$REPO/template/linux/.bashrc' >/dev/null 2>&1; printf %s \"\$EZA_COLORS\"" 2>/dev/null </dev/null || :)
+    [ -z "$_ez" ] && [ "$_ez2" = or=31 ] && ok "rc files: a broken link is listed in red on no ground of its own, unless your EZA_COLORS says otherwise (v0.168.1)" || bad "eza colors" "$_ez | $_ez2"
+fi
 for rc in linux/.bashrc macos/.zshrc; do
     grep -q 'spark-shell/sgr.sh' "$REPO/template/$rc" && ok "rc files: $rc sources spark-shell/sgr.sh" || bad "$rc: no sgr.sh"
     # the order: starship's init, then sgr.sh, then spark's hook line, then zoxide
@@ -4298,6 +4304,10 @@ printf '4242 (bash) S 4000 4242 4242 34816 4242 4194560 0 0\n' > "$H/proc/4242/s
 voice_tree() { printf '{"type":"root","nodes":[{"type":"output","name":"HDMI-A-1","nodes":[{"type":"workspace","id":3,"num":1,"nodes":[{"type":"con","id":7,"app_id":"%s","pid":4000,"focused":true,"nodes":[]}],"floating_nodes":[]}]}]}' "$1" > "$HOME/win-tree.json"; }
 voice_none() { printf '{"type":"root","nodes":[{"type":"output","name":"HDMI-A-1","nodes":[{"type":"workspace","id":3,"num":1,"nodes":[],"floating_nodes":[]}]}]}' > "$HOME/win-tree.json"; }
 vrun() { rc=0; out=$(XDG_RUNTIME_DIR=$H/run SPARK_SHELL_PROC=$H/proc WAYLAND_DISPLAY=wayland-9 SWAYSOCK=$H/sock PATH="$H/vx:$H/win:$H/lx:$PATH" sh "$SH" desktop voice "$@" 2>&1) || rc=$?; }
+vhold() {   # vhold [wrap] -- the key held until the words are typed, the engine open until the release: a session that ends by itself meets the release halfway
+    vclean; export EAR_STUB_WAIT=1; vrun press "$@"; _vi=0; while [ "$_vi" -lt 100 ] && ! grep -qx -- '-s 20 -- cat' "$HOME/wtype.log" 2>/dev/null; do sleep 0.1; _vi=$((_vi + 1)); done
+    vrun release "$@"; unset EAR_STUB_WAIT; sleep 0.5
+}
 vclean() { rm -f "$HOME/wtype.log" "$HOME/notify.log" "$HOME/home.log" "$H/run/spark-shell-voice/want" "$H/run/spark-shell-voice.state"; }
 vstate=$H/run/spark-shell-voice.state
 cp "$cfg" "$H/cfg.voice"
@@ -4320,7 +4330,7 @@ vclean; vrun --listen hold
 # a tap is the key up within the tap's time of the key down, by the clock; two starts of spark-shell can take longer than its 0.3 s on a busy machine, so this tap has two seconds, and the press's session is waited out
 export SPARK_SHELL_VOICE_TAP_MS=2000; vclean; vrun press; vrun release; unset SPARK_SHELL_VOICE_TAP_MS; sleep 2.6
 [ "$rc" = 0 ] && grep -q '^home ' "$HOME/home.log" && [ ! -e "$HOME/wtype.log" ] && ok "desktop voice press then release at once: home opens, as Super+Space did (v0.144)" || bad "voice press tap" "rc=$rc $out $(cat "$HOME/home.log" 2>&1)"
-vclean; vrun press; sleep 0.7; vrun release; sleep 0.5
+vhold
 [ "$rc" = 0 ] && [ ! -e "$HOME/home.log" ] && grep -qx -- '-s 20 -- hey' "$HOME/wtype.log" && ok "desktop voice press held past 0.3 s: it listens, the release ends it, no home (v0.144)" || bad "voice press hold" "rc=$rc $out $(cat "$HOME/wtype.log" "$HOME/home.log" 2>&1)"
 # an engine that holds its leash: the mic stays open until it is clicked again
 cat > "$H/vx/ear-hold" <<'EAR_HOLD'
@@ -4342,10 +4352,10 @@ case $out in *ready*) _vt6=gone ;; *) _vt6="$out" ;; esac
     || bad "voice toggle" "$_vt1 | $_vt2 | $_vt3 $_vt5 | $_vt4 $_vt6 | $(cat "$HOME/wtype.log" 2>&1)"
 sed -i.bak '/^VOICE_ENGINE=/d' "$cfg"; rm -f "$cfg.bak"; printf 'VOICE_ENGINE=%s\n' "$H/vx/ear-stub" >> "$cfg"
 voice_tree foot; printf 'VOICE_PREFIX=?? \nVOICE_SUFFIX= --now\n' >> "$cfg"
-vclean; vrun press wrap; sleep 0.7; vrun release wrap; sleep 0.5
+vhold wrap
 [ "$rc" = 0 ] && [ "$(sed -n 1p "$HOME/wtype.log")" = '-s 20 -- ?? ' ] && [ "$(tail -1 "$HOME/wtype.log")" = '-s 20 --  --now' ] \
     && ok "desktop voice: the wrapping key held, VOICE_PREFIX before the first words and VOICE_SUFFIX after the last (v0.146)" || bad "voice wrap" "rc=$rc $(cat "$HOME/wtype.log" 2>&1)"
-vclean; vrun press; sleep 0.7; vrun release; sleep 0.5
+vhold
 [ "$rc" = 0 ] && [ "$(sed -n 1p "$HOME/wtype.log")" = '-s 20 -- hey' ] && ! grep -qF '??' "$HOME/wtype.log" && [ ! -e "$HOME/home.log" ] \
     && ok "desktop voice: the plain key types the words alone, a prefix in your config or not (v0.146)" || bad "voice plain key" "rc=$rc $(cat "$HOME/wtype.log" 2>&1)"
 sed -i.bak '/^VOICE_PREFIX=/d; /^VOICE_SUFFIX=/d' "$cfg"; rm -f "$cfg.bak"
@@ -4369,6 +4379,11 @@ if [ -S "$_rsk" ]; then
     [ "$rc" = 0 ] && ! grep -qx 'reload' "$HOME/win.log" && grep -q '^-- bar spark-line mode dock; bar spark-line position bottom; ' "$HOME/win.log" && grep -qxF -- "$_rfl" "$HOME/win.log" \
         && ok "bar bottom: sway's own bar is made at the bottom with no reload, then a refit of the windows the keys placed (#264)" || bad "bar bottom refit" "rc=$rc $out | $(cat "$HOME/win.log" 2>&1)"
     sleep 2
+    # a screen came, went or turned, and no pad runs to send the windows to their places
+    rm -f "$HOME/win.log" "$H/run/spark-shell-screens.plan"; XDG_RUNTIME_DIR=$H/run SWAYSOCK=$_rsk PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop --screens >/dev/null 2>&1 || :
+    _pi=0; while [ "$_pi" -lt 40 ] && ! grep -qxF -- "$_rfl" "$HOME/win.log" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
+    grep -qxF -- "$_rfl" "$HOME/win.log" 2>/dev/null && ok "desktop --screens, no pad: the windows the keys placed take their places on the screens as they are now (v0.168.1)" || bad "screens refit" "$(cat "$HOME/win.log" 2>&1)"
+    sleep 2
     sh "$SH" bar top >/dev/null 2>&1 || :
 else
     ok "bar text, bar bottom: no unix socket can be made here, the refit after them is proven in test/window_desktop_proof.py"
@@ -4381,7 +4396,8 @@ cat > "$H/mo/swaymsg" <<'MO_SWAY'
 #!/bin/sh
 case "$*" in
     "-t get_version") echo "{}" ;;
-    "-t get_outputs") echo '[{"name":"DP-3","active":true,"scale":1,"rect":{"x":0,"y":0,"width":1200,"height":1920}},{"name":"HDMI-A-1","active":true,"scale":1,"rect":{"x":1200,"y":0,"width":1920,"height":1080}}]' ;;
+    "-t get_outputs") wide='{"name":"HDMI-A-1","active":true,"scale":1,"rect":{"x":1200,"y":0,"width":1920,"height":1080}}'
+        if [ -e "$HOME/mo.one" ]; then echo "[$wide]"; else echo '[{"name":"DP-3","active":true,"scale":1,"rect":{"x":0,"y":0,"width":1200,"height":1920}},'"$wide]"; fi ;;
     *) echo "$*" >> "$HOME/mosway.log" ;;
 esac
 MO_SWAY
@@ -4454,6 +4470,12 @@ if [ -r "/proc/$$/stat" ]; then   # where a process's start can be read
     [ "$(grep -c '' "$HOME/player.log")" = 2 ] && [ "$(sed -n 2p "$HOME/player.log")" = "$_ml" ] \
         && ok "desktop --motion: a loop the background drawer started over is played again, on top (a still or a reload covered it)" || bad "loop raised" "$(cat "$HOME/player.log")"
     kill "$_mbg" 2>/dev/null || :
+    # one landscape screen: no still of its own to draw, and the drawer covers the loop all the same
+    mo_stop; : > "$HOME/mo.one"; rm -f "$HOME/player.log" "$H/run/spark-shell-motion.want"; mo desktop --motion >/dev/null 2>&1; mo_wait 1; sleep 0.1; "$H/mo/swaybg" & _mbg=$!
+    TMPDIR=$H/motmp XDG_RUNTIME_DIR=$H/run SWAYSOCK=$H/sway-ipc.$(id -u).$$.sock SPARK_SHELL_WALLPAPER=$H/mo/spark-wallpaper PATH="$H/mo:$H/lx:$PATH" sh "$SH" desktop --motion >/dev/null 2>&1; mo_wait 2
+    [ "$(grep -c '' "$HOME/player.log")" = 2 ] && [ "$(sed -n 1p "$HOME/player.log")" = "$(sed -n 2p "$HOME/player.log")" ] && grep -q "^--screen HDMI-A-1=$_mdir/given-[0-9]*.mp4$" "$HOME/player.log" \
+        && ok "desktop --motion, one screen: a loop the drawer started over is played again, on top, as on two (v0.168.1)" || bad "loop raised, one screen" "$(cat "$HOME/player.log")"
+    kill "$_mbg" 2>/dev/null || :; rm -f "$HOME/mo.one"
 fi
 mo_stop
 cp "$H/cfg.mo" "$HOME/.config/spark-shell/config"
@@ -6046,6 +6068,9 @@ SBSWAY_STUB
         && [ "$(lk 2 '[.[] | select(.name == "lan" or .name == "mic") | .name + "=" + (.pinned | tostring)] | join(" ")')" = '"mic=false"' ] && [ "$(lk 3 '[.[] | select(.name == "lan" or .name == "mic") | .name + "=" + (.pinned | tostring)] | join(" ")')" = '"mic=true"' ] \
         && [ -n "$_bp0" ] && [ "$(cat "$block" 2>/dev/null)" = "$_bp0" ] && kill -0 "$_bp0" 2>/dev/null && [ "$(grep -c '' "$HOME/sbar.log")" = 1 ] && [ ! -s "$H/.local/state/swaymsg.log" ] \
         && ok "bar hide and bar pin: no bar is ended and none started, sway is asked for nothing; the status loop's next line has the hidden module no more, and the one after says the level pinned" || bad "bar pins no restart" "$_o1 | $_o2 | $(cat "$HOME/sbar.log" "$H/.local/state/swaymsg.log" 2>&1) | $(cat "$H/bar.out")"
+    sbr bar; _o3=$out; sbr bar hide clock; sbr bar; _o4=$out; sbr bar show clock
+    case $(printf '%s\n' "$_o3" "$_o4" | grep -c '^bar: shown .* clock'),$(printf '%s\n' "$_o3" "$_o4" | grep -c '^bar: shown .* lan'),$(printf '%s\n' "$_o4" | grep -c '^bar: shown .* wifi') in
+        1,0,1) ok "bar: its line names the modules on the bar, not the hidden ones (v0.168.1)" ;; *) bad "bar hidden names" "$_o3 | $_o4" ;; esac
     sbr bar show lan; sbr bar unpin mic
     # a shell that cannot reach the session (ssh: no socket; a socket whose sway is gone) does the same: the config is
     # written, the running bar stays as it is, and none is started
@@ -6109,6 +6134,15 @@ SBSWAY_STUB
     [ "$(cat "$H/run/spark-shell-bar.font" 2>/dev/null)" = 'DejaVu Sans Mono 12' ] && [ "$(grep -c '' "$HOME/sbar.log")" = 8 ] && sbe 'BAR_FONT=DejaVu Sans Mono 12' && ! grep -q 'bar [^ ]* font' "$HOME/tray.log" 2>/dev/null \
         && ! grep -q '^SPARK_BAR=' "$HOME/sbar.env" && grep -q '"name":"look"' "$H/bar.out" \
         && ok "the loop under spark-bar: another font for the screen starts the bar again once, apart from the loop, through sway; a second loop with the same font asks for none, and sway is sent no font; the loop draws for spark-bar and what it starts does not carry that word" || bad "font follow spark-bar" "$(cat "$H/run/spark-shell-bar.font" "$HOME/sbar.log" "$H/bar.err" 2>&1)"
+    # a fixed size takes a new face too; a bar that has the font is done with it, so the same font asked for again later starts the bar
+    printf 'BAR_TEXT=14\n' >> "$HOME/.config/spark-shell/config"; _fa=''
+    for _f in 'Other Mono 14' 'DejaVu Sans Mono 14' 'Other Mono 14'; do
+        SPARK_BAR=1 BAR_FONT="$_f" SPARK_SHELL_BAR=$H/none SWAYSOCK=$H/tray.sock SBSWAY_NEXT=$H/traybin/swaymsg PATH="$H/sbsway:$H/traybin:$PATH" sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
+        for _i in $(seq 1 100); do [ "$(grep -c '^\[{' "$H/bar.out")" -ge 1 ] && break; sleep .1; done; sleep 1; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
+        _fa="$_fa$(cat "$H/run/spark-shell-bar.font" 2>/dev/null || :)|"
+    done
+    sed -i.bak '/^BAR_TEXT=14$/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak"
+    [ "$_fa" = 'DejaVu Sans Mono 14||DejaVu Sans Mono 14|' ] && ok "the loop under spark-bar: a fixed size takes a new face, and a font it has is no longer kept as asked for (v0.168.1)" || bad "font follow fixed" "$_fa | $(cat "$H/bar.err")"
     # hidden: spark-bar ends and a bar of sway's, unseen, runs the line; shown again, that bar ends and sway starts spark-bar
     : > "$H/.local/state/swaymsg.log"; sbr bar off --desktop
     [ "$rc" = 0 ] && [ ! -s "$block" ] && grep -q '^bar {$' "$sway" && grep -q '^    mode invisible$' "$sway" && grep -q 'status_command' "$sway" && ! grep -q 'bar start' "$sway" && [ "$(sb_bar_ids)" = spark-line ] \
@@ -6431,7 +6465,7 @@ if [ "$(uname -s)" != Darwin ]; then
         "$(call 6 system_end '{"name":"sway"}')" "$(call 7 system_end '{"name":"spark-dialog"}')" "$(call 8 system_end '{"name":"udevd"}')" "$(call 9 system_end '{"name":"nosuch"}')" \
         "$(call 10 system_front '{"name":"firefox"}')" "$(call 11 system_fix '{"command":"rm -rf /"}')" "$(call 12 system_fix '{"command":"spark-shell on"}')" \
         "$(call 13 system_clean_packages)" "$(rq 14 resources/read '{"uri":"spark-shell://system/rows/details"}')" "$(rq 15 resources/read '{"uri":"spark-shell://system/rows/updates"}')" \
-        "$(call 16 system_end '{"name":"swaybar"}')")   # a subshell: sh keeps a variable set before a function after it
+        "$(call 16 system_end '{"name":"swaybar"}')" "$(call 17 system_end '{"name":"spark-bar"}')" "$(call 18 system_end '{"name":"spark-winpad"}')" "$(call 19 system_end '{"name":"spark-wallpaper"}')")   # a subshell: sh keeps a variable set before a function after it
     rows() { ans "$1" | jq -c '.result.contents[0].text | fromjson'; }
     said() { ans "$1" | jq -r '.result.content[0].text'; }
     [ "$(rows 1 | jq -c '[.rows[] | [.id, .text, .children]]')" = '[["system:check","check","spark-shell://system/rows/check"],["system:space","space","spark-shell://system/rows/space"],["system:running","running","spark-shell://system/rows/running"],["system:details","details","spark-shell://system/rows/details"],["system:updates","updates","spark-shell://system/rows/updates"],["system:software","software","spark-shell://system/rows/software"],["system:about","about","spark-shell://about/rows"]]' ] \
@@ -6450,7 +6484,8 @@ if [ "$(uname -s)" != Darwin ]; then
     [ "$(said 6)" = 'sway is the desktop: use logout in power' ] && [ "$(said 7)" = 'the dialog closes with Esc' ] && [ "$(said 8)" = "udevd belongs to $_on and cannot be ended here" ] \
         && [ "$(said 9)" = 'nosuch is not running' ] && [ "$(said 10)" = 'firefox has no window' ] && [ "$(said 11)" = 'rm -rf / is not a fix the last check gave' ] \
         && [ "$(said 12)" = 'a terminal window needs the desktop' ] && [ "$(said 13)" = 'no supported package manager here' ] \
-        && [ "$(said 16)" = 'swaybar is part of the desktop: use logout in power' ] \
+        && [ "$(said 16)" = 'swaybar is part of the desktop: use logout in power' ] && [ "$(said 17)" = 'spark-bar is part of the desktop: use logout in power' ] \
+        && [ "$(said 18)" = 'spark-winpad is part of the desktop: use logout in power' ] && [ "$(said 19)" = 'spark-wallpaper is part of the desktop: use logout in power' ] \
         && ans 8 | jq -e '.result.isError' >/dev/null && ok "system: end refuses the desktop and its parts, the dialog, another user's program and one not running; front one with no window; a fix the check did not give; a terminal with no desktop; a clean with no package manager" \
         || bad "system refusals" "$(for i in 6 7 8 9 10 11 12 13; do said $i; done | paste -sd '|' -)"
     [ "$(rows 14 | jq -c '[.rows[] | .group] | unique')" != '[null]' ] && rows 14 | jq -e 'any(.rows[]; .id == "system:copy-details" and .tool.name == "system_copy_details") and all(.rows[]; .group == null or .group == "hardware" or .group == "operating system" or .group == "desktop")' >/dev/null \

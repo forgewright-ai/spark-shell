@@ -808,6 +808,7 @@ motion_follow() {   # the look's loops playing or made; else ours stopped
     [ "$OS" != Darwin ] && wm_up || return 0
     art_screens_follow
     if [ "${WALLPAPER_MOTION:-off}" != on ] || ! motion_has "${WALLPAPER:-}" || [ -n "$(motion_missing)" ]; then motion_stop; return 0; fi
+    [ -n "$_asl" ] || ( sleep 1; motion_raise ) </dev/null >/dev/null 2>&1 3>&- 4<&- &   # no screen of its own still to draw, which raises them: a reload or a look starts the drawer all the same
     _mj=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || return 0
     mkdir -p "$MOTION_DIR"
     if _mlp=$(art_loops); then   # the theme's own loops, linked into the cache so they are ours to stop: a loop a screen, none to make
