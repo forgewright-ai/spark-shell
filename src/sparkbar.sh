@@ -97,6 +97,7 @@ sparkbar_fallback() {   # the keeper's, when it gives up: sway's own bar draws t
     _sfb=$(wm_config_bar "$TMP/fallback.config"); [ -n "$_sfb" ] || return 0
     wm_bar_end "$WM_TRAY" || :   # the tray's host stood on spark's bar
     wm_bar_end "$WM_LINE" || :
+    ! sparkbar_pid >/dev/null || return 0   # a reload started one meanwhile
     wm_bar_make "$WM_LINE" "$_sfb" || return 0
     notify_send bar "Bar: spark-bar ended five times in a minute" "sway's bar draws the line until the next login"
 }

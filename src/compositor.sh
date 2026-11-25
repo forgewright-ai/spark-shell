@@ -30,7 +30,14 @@ wm_with() {   # wm_with COMMAND... -- run where sway answers: in this shell, or,
 }
 wm_covered() { wm_tree | jq -e 'any(.. | objects; .fullscreen_mode? == 2) or any(.. | objects | select(.type? == "workspace" and any(.. | objects; .focused? == true)) | .. | objects; .type? != "workspace" and (.fullscreen_mode? // 0) >= 1)' >/dev/null 2>&1; }   # 0 when a full-screen window covers the focused screen
 wm_running_any() { pgrep -x sway >/dev/null 2>&1; }
-wm_pid() { pgrep -u "$(id -u)" -x sway 2>/dev/null | head -1 || :; }
+wm_pid() {   # -> your sway's pid: the one whose socket is in this runtime folder, past a nested or a headless one that has its own, else the first; nothing for none
+    _wpf=''
+    for _wpp in $(pgrep -u "$(id -u)" -x sway 2>/dev/null); do
+        [ ! -S "$(wm_socket_of "$_wpp")" ] || { _wpf=$_wpp; break; }
+        _wpf=${_wpf:-$_wpp}
+    done
+    [ -z "$_wpf" ] || printf '%s\n' "$_wpf"
+}
 wm_socket_of() { printf '%s\n' "${XDG_RUNTIME_DIR:-/nonexistent}/sway-ipc.$(id -u).$1.sock"; }   # wm_socket_of PID
 wm_background_pid() {   # -> the session's newest background drawer (swaybg, a child of the sway whose socket is SWAYSOCK); false for none
     _wbs=${SWAYSOCK##*/sway-ipc.}; _wbs=${_wbs%.sock}; _wbs=${_wbs#*.}; case $_wbs in ''|*[!0-9]*) return 1 ;; esac   # sway-ipc.UID.PID.sock -> PID

@@ -16,13 +16,14 @@ runtime_dir() {
         || refuse "$_rd is not a private directory of yours, and no other could be made (XDG_RUNTIME_DIR)"
     export XDG_RUNTIME_DIR
 }
-runtime_private() { [ -d "$1" ] && [ ! -L "$1" ] && case $(ls -ldn "$1" | awk '{print $1, $3}') in "drwx------ $(id -u)"|"drwx------. $(id -u)") ;; *) false ;; esac; }   # runtime_private DIR -> 0 when it is a directory of yours that nobody else enters
+runtime_private() { [ -d "$1" ] && [ ! -L "$1" ] && case $(ls -ldn "$1" | awk '{print $1, $3}') in "drwx------ ${_uid:=$(id -u)}"|"drwx------. $_uid") ;; *) false ;; esac; }   # runtime_private DIR -> 0 when it is a directory of yours that nobody else enters
 runtime_kept() { _rk=$(cat "$STATE_DIR/runtime-dir" 2>/dev/null) && [ -n "$_rk" ] && runtime_private "$_rk" && printf '%s\n' "$_rk"; }   # -> the one made where the usual name was taken, while it stands
 # runtime_adopt -- from ssh or a service; never makes the directory
 runtime_adopt() {
     [ -z "${XDG_RUNTIME_DIR:-}" ] && [ "$OS" != Darwin ] || return 0
     _uid=$(id -u); _rd=${TMPDIR:-/tmp}; _rd=${_rd%/}/$_uid-runtime-dir
-    runtime_private "$_rd" || _rd=$(runtime_kept) || return 0
+    # the kept one first while a sway of yours is in it: the usual name may be yours again, with no session
+    if _rk=$(runtime_kept) && ls "$_rk/sway-ipc.$_uid."*.sock >/dev/null 2>&1; then _rd=$_rk; else runtime_private "$_rd" || _rd=$(runtime_kept) || return 0; fi
     XDG_RUNTIME_DIR=$_rd; export XDG_RUNTIME_DIR; RUNTIME_ADOPTED=yes   # found, not handed over: no session of the caller's
 }
 
@@ -465,6 +466,7 @@ layout_power() {   # layout_power [lock|suspend|logout|restart|shutdown]
             else echo "restart and shut down from the dialog; this machine cannot suspend"; fi
             power_keys ;;
         lock|suspend|logout|restart|shutdown) power_now "$1" || exit 1 ;;
+        lock-first) power_lock_first || exit 1 ;;   # the sleep hook's, from outside the desktop
         *) refuse "power takes lock, suspend, logout, restart or shutdown" ;;
     esac
 }

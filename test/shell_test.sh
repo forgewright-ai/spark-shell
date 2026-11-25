@@ -6225,7 +6225,7 @@ SBSWAY_STUB
         rm -f "$H/run/wayland-7"; "$py3" -I -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$H/run/wayland-7"
         : > "$H/.local/state/swaymsg.log"; _sc=$(cksum < "$sway")
         SPARK_SHELL_BAR=$H/barbad/spark-bar XDG_RUNTIME_DIR=$H/run WAYLAND_DISPLAY=wayland-7 SWAYSOCK=$H/sock SBSWAY_NEXT=$H/.local/bin/swaymsg PATH="$H/quick:$H/sbsway:$PATH" sh "$SH" bar start >/dev/null 2>&1 || :
-        _i=0; while [ "$_i" -lt 150 ] && [ -z "$(sb_bar_ids)" ]; do sleep 0.1; _i=$((_i + 1)); done
+        _i=0; while [ "$_i" -lt 150 ] && ! grep -q '^bar spark-line' "$H/.local/state/swaymsg.log"; do sleep 0.1; _i=$((_i + 1)); done   # the line its program came with: the program is there before it
         [ "$(grep -c '' "$HOME/sbad.log")" = 6 ] && case $(sb_bar_ids) in spark-line*) true ;; *) false ;; esac && grep -q "^bar spark-line[.0-9]* mode dock; bar spark-line[.0-9]* position top; .*status_command $REPO/spark-shell bar status; " "$H/.local/state/swaymsg.log" && [ "$(cksum < "$sway")" = "$_sc" ] \
             && ok "a bar that ends five times in a minute: sway's own bar draws the line in the running session, and the config stays spark's" || bad "bar fallback" "$(cat "$HOME/sbad.log" 2>&1 | grep -c '') | $(sb_bar_ids) | $(cat "$H/.local/state/swaymsg.log")"
         sbr bar start; _i=0; while [ "$_i" -lt 40 ] && { [ ! -s "$block" ] || [ -n "$(sb_bar_ids)" ]; }; do sleep 0.1; _i=$((_i + 1)); done
@@ -6268,13 +6268,13 @@ SLP_STUB
     pad_gone; pst "$H/barbin/spark-bar" || :; pad_there; _w1="$(cat "$HOME/spad.log" 2>&1 || :) $(slept) $(sort -u "$HOME/slp.log" 2>&1 || :)"   # no bar comes: twenty waits of a tenth, then the pad
     pad_gone; : > "$HOME/slp.hold"; pst "$H/barbin/spark-bar" & pp=$!
     _i=0; while [ "$_i" -lt 100 ] && [ ! -s "$HOME/slp.log" ]; do sleep 0.1; _i=$((_i + 1)); done; _w2="$(cat "$HOME/spad.log" 2>/dev/null || :)|$(cat "$plock" 2>/dev/null || :)"   # it waits: no pad yet
-    sbr bar start; sb_up 12; rm -f "$HOME/slp.hold"; wait "$pp" || :; pad_there; _w2="$_w2|$(cat "$HOME/spad.log" 2>&1 || :) $(slept)"
+    sbr bar start; sb_up 13; rm -f "$HOME/slp.hold"; wait "$pp" || :; pad_there; _w2="$_w2|$(cat "$HOME/spad.log" 2>&1 || :) $(slept)"
     sb_end; pad_gone; pst '' || :; pad_there; _w3="$(cat "$HOME/spad.log" 2>&1 || :) $(slept)"   # no spark-bar here: no wait
     [ "$_w1" = 'no-bar 20 0.1' ] && [ "$_w2" = '||bar-up 1' ] && [ "$_w3" = 'no-bar 0' ] \
         && ok "desktop pad start where spark-bar draws: the pad starts once the bar has its lock, and after two seconds without one; where spark-bar draws no bar it starts at once" || bad "pad after bar" "$_w1 | $_w2 | $_w3"
     pad_gone; rm -rf "$H/spad" "$H/slp" "$HOME/slp.hold"
     # off: a running bar ends and its binary and runtime files go, the folder of its drawn logo too
-    sb_bars_end; sbr bar start; sb_up 13; mkdir -p "$H/.local/share/spark-shell" "$H/run/spark-shell-bar.icons"; : > "$H/run/spark-shell-bar.icons/logo-24.png"; cp "$H/barbin/spark-bar" "$H/.local/share/spark-shell/spark-bar"
+    sb_bars_end; sbr bar start; sb_up 14; mkdir -p "$H/.local/share/spark-shell" "$H/run/spark-shell-bar.icons"; : > "$H/run/spark-shell-bar.icons/logo-24.png"; cp "$H/barbin/spark-bar" "$H/.local/share/spark-shell/spark-bar"
     out=$(sh "$SH" off --dry-run 2>&1 || :); _d1=$(printf '%s\n' "$out" | grep -c "^would  bar          spark-bar ended and removed ($H/.local/share/spark-shell/spark-bar)\$" || :)
     out=$(sh "$SH" off desktop --yes 2>&1 || :); _i=0; while [ "$_i" -lt 20 ] && [ -s "$block" ]; do sleep 0.1; _i=$((_i + 1)); done
     [ "$_d1" = 1 ] && [ -s "$HOME/sbar.log" ] && printf '%s\n' "$out" | grep -qx "ok     bar          spark-bar ended and removed ($H/.local/share/spark-shell/spark-bar)" && [ ! -e "$H/.local/share/spark-shell/spark-bar" ] && [ ! -e "$block" ] && [ -z "$(find "$H/run" -name 'spark-shell-bar.*' 2>/dev/null)" ] \
@@ -7332,7 +7332,7 @@ PY
         && ok "dialog: in its own window and in a terminal nothing is drawn ahead of the opening, the cursor hidden first (#142)" || bad "dialog first frame" "$_f1 | $_f2"
     # the cursor the terminal is left with: a refusal puts it back, and a window of its own never took it
     _f1=$(SPARK_SHELL_DIALOG=$H/no-such-dialog python3 -I "$H/pty_first.py" "$SH" 2>/dev/null); _f2=$(SPARK_SHELL_DIALOG=$H/no-such-dialog SPARK_DIALOG_WINDOW=own WAYLAND_DISPLAY=wayland-none python3 -I "$H/pty_first.py" "$SH" 2>/dev/null)
-    case $_f1 in *"[?25l"*'is not executable'*"[?25h"*) true ;; *) false ;; esac && case $_f2 in *'[?25l'*) false ;; *'is not executable'*) true ;; *) false ;; esac \
+    [ "$(uname -s)" = Darwin ] || case $_f1 in *"[?25l"*'is not executable'*"[?25h"*) true ;; *) false ;; esac && case $_f2 in *'[?25l'*) false ;; *'is not executable'*) true ;; *) false ;; esac \
         && ok "dialog: one that is refused in a terminal leaves it its cursor, and one that opens a window of its own never hides it" || bad "dialog cursor" "$_f1 | $_f2"
 fi
 # #132: the theme's animation row opens a list of the pieces, as the wallpaper's opens its drawings: the one in use checked,
@@ -10751,14 +10751,14 @@ EOF
     printf '%s\n' "$out0" | grep -qx 'todo   power        the sudoers file could not be written: Read-only file system -- spark-shell on desktop again' && [ ! -e "$sud" ] && [ ! -e "$HOME/.local/state/spark-shell/power.sudoers" ] \
         && ! printf '%s\n' "$out0" | grep -q 'stopped there' && ! printf '%s\n' "$out0" | grep -q '^ok     power ' \
         && ok "runit: a sudoers file that cannot be written is a todo row with the reason, not said to be in place, nothing recorded; on goes on" || bad "power unwritable" "rc=$rc $(printf '%s' "$out0" | tr '\n' '|')"
-    hook=$H/root/etc/zzz.d/suspend/spark-shell-lock; mkdir -p "$H/root/etc/zzz.d/suspend"
+    hook=$H/root/etc/zzz.d/suspend/spark-shell-lock-$(id -un); mkdir -p "$H/root/etc/zzz.d/suspend"
     nowrite "$H/.local/bin" "$hook"; out0=$(sh "$SH" on desktop --yes 2>&1 || :); nowrite "$H/.local/bin"
     printf '%s\n' "$out0" | grep -qx 'todo   lock         the sleep hook could not be written: Read-only file system -- spark-shell on desktop again' && [ ! -e "$hook" ] && [ ! -e "$HOME/.local/state/spark-shell/power.sleep" ] \
         && ok "runit: a sleep hook that cannot be written is a todo row with the reason, nothing recorded" || bad "sleep hook unwritable" "$(printf '%s' "$out0" | grep -i lock)"
     rm -f "$sud" "$HOME/.local/state/spark-shell/power.sudoers"
     out=$(sh "$SH" on desktop --yes 2>&1 || :)
-    printf '%s\n' "$out" | grep -q '^ok     lock         the desktop locks before a lid or a sleep key suspends (/etc/zzz.d/suspend/spark-shell-lock)$' && [ -x "$hook" ] && sh -n "$hook" && ! grep -q '@[A-Z]*@' "$hook" \
-        && grep -qxF "timeout 10 su -s /bin/sh -c 'exec \"\$0\" desktop power lock-first' $(id -un) $REPO/spark-shell </dev/null >/dev/null 2>&1" "$hook" \
+    printf '%s\n' "$out" | grep -q '^ok     lock         the desktop locks before a lid or a sleep key suspends (/etc/zzz.d/suspend/spark-shell-lock-'"$(id -un)"')$' && [ -x "$hook" ] && sh -n "$hook" && ! grep -q '@[A-Z]*@' "$hook" \
+        && grep -qxF "timeout 10 su -s /bin/sh -c 'exec \"\$0\" desktop power lock-first' $(id -un) $REPO/spark-shell </dev/null >/dev/null 2>&1 9<&-   # 9: zzz's lock, never the desktop lock's to keep" "$hook" \
         && ok "runit: on desktop writes zzz's own hook: the desktop is locked as its user before a suspend, ten seconds at most" || bad "sleep hook" "$(printf '%s' "$out" | grep -i lock) $(cat "$hook" 2>&1)"
     printf '%s\n' "$out" | grep -q '^ok     power        you suspend, restart and shut down from the dialog (/etc/sudoers.d/spark-shell-power)$' && printf '%s\n' "$out1" | grep -q '^ok     storage      you mount and eject drives (/etc/polkit-1/rules.d/50-spark-shell-storage.rules)$' \
         && grep -qxF "$me ALL=(root) NOPASSWD: /usr/bin/zzz \"\", /usr/bin/reboot \"\", /usr/bin/poweroff \"\"" "$sud" && [ "$(ls -l "$sud" | cut -c1-10)" = '-r--r-----' ] \
@@ -10774,6 +10774,16 @@ EOF
     rm -f "$HOME/power.log"; out=$(SPARK_SHELL_SYS=$S env -u WAYLAND_DISPLAY sh "$SH" desktop power suspend 2>&1 || :); rm -f "$H/.local/bin/pgrep"
     [ "$out" = 'the desktop could not be locked, so the machine did not suspend' ] && ! grep -q zzz "$HOME/power.log" 2>/dev/null \
         && ok "desktop power suspend from outside the desktop (ssh): a desktop it cannot lock keeps the machine up" || bad "power suspend unlocked" "$out $(cat "$HOME/power.log" 2>&1)"
+    if [ -n "$py3" ]; then   # the sleep hook's verb, as root's su runs it: no session of its own, the desktop found by its socket in the runtime folder
+        mkdir -p "$H/lf" "$H/lfrun"; chmod 700 "$H/lfrun"; "$py3" -I -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$H/lfrun/sway-ipc.$(id -u).4242.sock"
+        printf '#!/bin/sh\ncase "$*" in *"-x sway") echo 4141; echo 4242 ;; *swaylock*) echo 4444 ;; *) exit 1 ;; esac\n' > "$H/lf/pgrep"; mkdir -p "$H/lfproc/4444"; printf 'SWAYSOCK=%s\0' "$H/lfrun/sway-ipc.$(id -u).4242.sock" > "$H/lfproc/4444/environ"; printf '4444 (swaylock) S 1 4444 4444 0\n' > "$H/lfproc/4444/stat"; printf '#!/bin/sh\necho "$SWAYSOCK $*" >> "$HOME/lf.log"\n' > "$H/lf/swaymsg"; chmod +x "$H/lf/pgrep" "$H/lf/swaymsg"
+        rc=0; out=$(cd / && env -u WAYLAND_DISPLAY -u SWAYSOCK SPARK_SHELL_PROC="$H/lfproc" XDG_RUNTIME_DIR="$H/lfrun" PATH="$H/lf:$PATH" sh "$SH" desktop power lock-first 2>&1) || rc=$?
+        [ "$rc" = 0 ] && [ -z "$out" ] && grep -qxF "$H/lfrun/sway-ipc.$(id -u).4242.sock -- exec $REPO/spark-shell desktop lock" "$HOME/lf.log" \
+            && ok "desktop power lock-first, the sleep hook's: the desktop of this runtime folder is locked, past a sway that has its own" || bad "power lock-first" "rc=$rc $out $(cat "$HOME/lf.log" 2>&1)"
+        rm -f "$H/lfproc/4444/environ"; printf '#!/bin/sh\nexit 0\n' > "$H/lf/sleep"; chmod +x "$H/lf/sleep"; _l1=0; env -u WAYLAND_DISPLAY -u SWAYSOCK SPARK_SHELL_PROC="$H/lfproc" XDG_RUNTIME_DIR="$H/lfrun" PATH="$H/lf:$PATH" sh "$SH" desktop power lock-first >/dev/null 2>&1 || _l1=$?
+        printf '#!/bin/sh\nexit 1\n' > "$H/lf/pgrep"; rm -f "$HOME/lf.log"; _l2=0; env -u WAYLAND_DISPLAY -u SWAYSOCK SPARK_SHELL_PROC="$H/lfproc" XDG_RUNTIME_DIR="$H/lfrun" PATH="$H/lf:$PATH" sh "$SH" desktop power lock-first >/dev/null 2>&1 || _l2=$?
+        [ "$_l1" = 1 ] && [ "$_l2" = 0 ] && [ ! -e "$HOME/lf.log" ] && ok "desktop power lock-first: a desktop that does not lock is a failure, no desktop is none" || bad "power lock-first no" "$_l1 $_l2 $(cat "$HOME/lf.log" 2>&1)"
+    fi
     out=$(sh "$SH" check 2>&1 || :)
     printf '%s\n' "$out" | grep -q '^ok     storage      udisks2 mounts and ejects drives for you$' && printf '%s\n' "$out" | grep -q '^ok     power        lock, log out' && printf '%s\n' "$out" | grep -q '^ok     notify       the notifications show on the desktop$' \
         && ok "check: the notify, storage and power rows" || bad "check rows" "$out"
