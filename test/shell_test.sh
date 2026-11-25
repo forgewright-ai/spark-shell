@@ -7332,7 +7332,8 @@ PY
         && ok "dialog: in its own window and in a terminal nothing is drawn ahead of the opening, the cursor hidden first (#142)" || bad "dialog first frame" "$_f1 | $_f2"
     # the cursor the terminal is left with: a refusal puts it back, and a window of its own never took it
     _f1=$(SPARK_SHELL_DIALOG=$H/no-such-dialog python3 -I "$H/pty_first.py" "$SH" 2>/dev/null); _f2=$(SPARK_SHELL_DIALOG=$H/no-such-dialog SPARK_DIALOG_WINDOW=own WAYLAND_DISPLAY=wayland-none python3 -I "$H/pty_first.py" "$SH" 2>/dev/null)
-    [ "$(uname -s)" = Darwin ] || case $_f1 in *"[?25l"*'is not executable'*"[?25h"*) true ;; *) false ;; esac && case $_f2 in *'[?25l'*) false ;; *'is not executable'*) true ;; *) false ;; esac \
+    _fw='is not executable'; [ "$(uname -s)" != Darwin ] || _fw="the Linux desktop's"   # the words it is refused with
+    case $_f1 in *"[?25l"*"$_fw"*"[?25h"*) true ;; *) false ;; esac && case $_f2 in *'[?25l'*) false ;; *"$_fw"*) true ;; *) false ;; esac \
         && ok "dialog: one that is refused in a terminal leaves it its cursor, and one that opens a window of its own never hides it" || bad "dialog cursor" "$_f1 | $_f2"
 fi
 # #132: the theme's animation row opens a list of the pieces, as the wallpaper's opens its drawings: the one in use checked,
