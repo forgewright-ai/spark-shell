@@ -7316,6 +7316,8 @@ guarded|1|test/lane.sh
 guarded|1|test/prove.sh
 guarded|1|test/tag.sh
 guarded|1|test/reds.sh
+guarded|1|test/pin.sh
+guarded|1|test/pin_image.py
 guarded|10|src/bar.sh README.md src/login.sh spark-shell
 CASES
 [ -z "$_lb" ] && ok "test/lane.sh: a small fix in the user's side of the shell, the tests or the words is fast, to 400 lines; a component, a template, a helper, a proof, the config's module and a path it does not name are standard; the workflows, the hooks, the signers, the gate and the tagging rule, the entry, on and off, the update, the gallery, what becomes root's file, what a build is made by and a module that acts as root are guarded, and guarded wins" || bad "lanes by path" "$_lb"
