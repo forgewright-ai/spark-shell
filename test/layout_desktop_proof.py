@@ -68,6 +68,16 @@ def main():
                     return None
                 return find(sway("-t", "get_tree"))
 
+            def settled(app):   # the window once its size stays: foot takes whole cells a moment after it is in the tree
+                last = wait_for(lambda: window(app), app)
+                for _ in range(50):
+                    time.sleep(0.2)
+                    now = window(app)
+                    if now["rect"] == last["rect"]:
+                        return now
+                    last = now
+                raise AssertionError(app + " never came to rest")
+
             def call(name, ident):
                 packets = [
                     {"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {
@@ -90,7 +100,7 @@ def main():
                 sway("output", "HEADLESS-1", "scale", str(scale))
                 sibling = subprocess.Popen(["foot", "--app-id", "proof-sibling", "sleep", "30"], env=env, stdout=log, stderr=log)
                 children.append(sibling)
-                before = wait_for(lambda: window("proof-sibling"), "sibling")
+                before = settled("proof-sibling")
                 lease = root / "lease"
                 result = root / "cells.json"
                 lease.write_text("wait\n")
