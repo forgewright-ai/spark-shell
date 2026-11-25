@@ -1118,6 +1118,7 @@ fn main() {
                         let (bw, bh) = (p.w as u32 * cw, p.h as u32 * chh);
                         if win_preview.as_ref().is_none_or(|kept| kept.of != p || kept.scale != scale) {
                             win_preview = None;
+                            let drawing = Instant::now();
                             let img = if p.spectrogram {
                                 let ramp = colors.ramp().unwrap_or([[0x1f; 3], [0x7f; 3], [0x55, 0x55, 0xff], [0xaa; 3]]);
                                 let heard = app.preview.as_ref().and_then(|pv| pv.heard.as_ref());
@@ -1136,6 +1137,9 @@ fn main() {
                                     size: (fitted.w, fitted.h),
                                     source: (img.w, img.h),
                                 });
+                            }
+                            if drag.is_some() {
+                                drag_cost = drawing.elapsed();
                             }
                             preview_tried = Instant::now();
                         }
@@ -1986,6 +1990,14 @@ mod tests {
         assert!(!counted(&mut app, 3), "and no frame after that");
         assert!(counted(&mut app, 0), "a place with no pages: one");
         assert_eq!(app.preview_pages, 1);
+    }
+
+    #[test]
+    fn a_dragged_picture_says_how_long_it_took_in_the_window_and_in_a_terminal() {
+        // the loop runs under a compositor alone: its own text says that both its paths time the picture a drag moves
+        let text = include_str!("main.rs");
+        let body = &text[..text.find("#[cfg(test)]").unwrap()];
+        assert_eq!(body.matches("drag_cost = drawing.elapsed()").count(), 2);
     }
 
     #[test]
