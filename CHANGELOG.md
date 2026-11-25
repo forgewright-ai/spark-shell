@@ -5,6 +5,8 @@
 - A release whose checks were red before they were green says so in its
   notes, with the cause, and a patch a machine tags needs the cause.
   Two releases went out on a second try with a bug the first had caught.
+- The bar's status ends within a second of a bar that crashed. It ran on
+  for up to 15 seconds.
 - A run of the tests no longer reaches your tmux server, and asks for no
   password. It reloaded the server with a configuration of its own.
 

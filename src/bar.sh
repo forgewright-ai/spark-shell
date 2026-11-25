@@ -759,6 +759,7 @@ bar_status() {   # bar_status [--once]
     # again) is no bar's line. Nor does it carry the pins and the hidden as this loop started with them: each line reads
     # the config's, and so does what it starts
     _bsb=${SPARK_BAR:-}; unset SPARK_BAR BAR_PINS BAR_HIDE; SPARK_BAR=$_bsb
+    _bar_of=''; [ -z "$SPARK_BAR" ] || _bar_of=$PPID   # spark's bar itself, which started this
     theme_load; al_mend_file
     if [ "${1:-}" = --once ]; then bar_line | sed 's/,$//'; return 0; fi
     command -v jq >/dev/null 2>&1 || echo "spark-shell bar status: jq is not installed, so the bar takes no clicks (spark-shell on)" >&2
@@ -827,6 +828,7 @@ bar_status_lines() {   # the lines, one every 15 s and one when asked, in a proc
             wait "$sleeper" 2>/dev/null || :
             : > "$TMP/bar.sleeper"
             kill -0 "$$" 2>/dev/null || exit 0   # the process that takes the signals is gone, killed outright: the lines go within a second, read by a bar or by no one
+            [ -z "$_bar_of" ] || ! proc_ended "$_bar_of" || exit 0   # the bar is gone without a word (it crashed): so do its lines
             if [ -e "$TMP/bar.asked" ]; then rm -f "$TMP/bar.asked"; redraw=1; fi
             t=$((t + 1))
             storage_sig; [ "$_bsg" = "$_bseen" ] || { _bseen=$_bsg; redraw=1; }   # a disk came or went

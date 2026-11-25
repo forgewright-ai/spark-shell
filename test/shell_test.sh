@@ -5240,6 +5240,16 @@ KBSWAY_STUB
     [ "$(grep -c '^\[{' "$H/bar.out")" = 5 ] && ! grep -q '"look"' "$H/bar.out" && [ "$(lk 2 .)" = "$(lk 1 . | sed "s/#aaaaaa'/#$(pv HEX_FG)'/g; s/#ff5555'/#$(pv HEX_ACCENT)'/g; s/#555555'/#$(pv HEX_MUTED)'/g; s/#aa0000'/#$(pv HEX_ANSI_1)'/g; s/#aa5500'/#$(pv HEX_ANSI_3)'/g")" ] \
         && [ "$(lk 2 .)" != "$(lk 1 .)" ] && [ "$(lk 3 '[.[] | select(.name != "clock")]')" = "$(lk 2 '[.[] | select(.name != "clock")]')" ] && [ "$(lk 5 '[.[] | select(.name != "clock")]')" = "$(lk 1 '[.[] | select(.name != "clock")]')" ] \
         && ok "sway's bar follows a look as before: the last line again in the new colors, then the next line; no look block on it" || bad "recolor" "$(grep -c '^\[{' "$H/bar.out") | $(lk 1 .) | $(lk 2 .)"
+    # spark's bar gone without a word (it crashed, so its status's group was told nothing): the loop ends within
+    # seconds, not at its next timed line, and what it writes into is a file here, so no broken pipe ends it
+    rm -f "$H/orphan.pid"
+    sh -c 'SPARK_BAR=1 sh "$1" bar status < /dev/null > "$2/bar.out" 2> "$2/bar.err" & echo $! > "$2/orphan.pid"; sleep 60 & echo $! > "$2/orphan.sleep"; wait' x "$SH" "$H" & bp=$!
+    lines_are 1; _op=$(cat "$H/orphan.pid" 2>/dev/null || :)
+    kill -9 "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
+    _oi=0; while [ "$_oi" -lt 60 ] && kill -0 "$_op" 2>/dev/null && ! grep -qs '^State:[[:space:]]*Z' "/proc/$_op/status"; do sleep 0.1; _oi=$((_oi + 1)); done
+    kill "$(cat "$H/orphan.sleep" 2>/dev/null)" 2>/dev/null || :
+    [ -n "$_op" ] && [ "$_oi" -lt 60 ] && ok "spark's bar gone without a word: its status loop ends within seconds" || bad "a loop without its bar" "pid $_op after $_oi tenths: $(tail -1 "$H/bar.err" 2>/dev/null)"
+    kill "$_op" 2>/dev/null || :
     # the workspace watcher ends with its loop: a loop that died with its group left running (spark-bar crashed) left
     # the watcher renaming workspaces at every event until sway ended, one more a crash. A sway that sends an event
     # every fifth of a second and logs each read of the workspaces' names shows it: the loop killed outright, the
