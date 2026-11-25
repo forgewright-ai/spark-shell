@@ -306,6 +306,13 @@ fn run(keys: bool) -> Result<(), String> {
     use wayland_client::{ConnectError, Connection};
 
     let cfg = config();
+    // a SWAYSOCK whose sway is gone gives way to the running one's before any thread starts, for what the pad runs too
+    if let Some(run) = std::env::var_os("XDG_RUNTIME_DIR") {
+        let handed = std::env::var_os("SWAYSOCK");
+        if let Some(sock) = sway::found(handed.as_deref(), run.as_ref(), unsafe { libc::getuid() }) {
+            std::env::set_var("SWAYSOCK", sock);
+        }
+    }
     // before the lock, which says this pid to whoever sends the keys: a signal that came before it was taken into
     // the loop would end the pad by its own action, and its keeper would take that for a crash. And before any
     // thread starts: the threads inherit the blocked mask, so the signals reach this loop

@@ -1,8 +1,11 @@
 //! sway's IPC: the tree, a command, the outputs, and the window events, over SWAYSOCK.
 
 use serde_json::Value;
+use std::ffi::OsStr;
 use std::io::{self, Read, Write};
+use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::os::unix::net::UnixStream;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 const MAGIC: &[u8; 6] = b"i3-ipc";
@@ -19,6 +22,24 @@ pub const EVENT_TICK: u32 = 0x8000_0007;
 pub const BACK: &str = "spark-winpad.back";
 /// The tick spark-shell sends after a window command: the tree read now.
 pub const LOOK: &str = "spark-winpad.look";
+
+/// The socket in place of a SWAYSOCK whose sway is gone, as a terminal older than the login hands it on: the one in the
+/// runtime folder that is this user's, named as sway names its own, and answers. None where several do.
+pub fn found(handed: Option<&OsStr>, run: &Path, uid: u32) -> Option<PathBuf> {
+    let answers = |p: &Path| UnixStream::connect(p).is_ok();
+    if answers(Path::new(handed?)) {
+        return None;
+    }
+    let sways = |p: &Path| {
+        let name = p.file_name()?.to_str()?.strip_prefix(&format!("sway-ipc.{uid}."))?;
+        let pid = name.strip_suffix(".sock")?;
+        let m = std::fs::symlink_metadata(p).ok()?;
+        (pid.parse::<u32>().is_ok() && m.file_type().is_socket() && m.uid() == uid && answers(p)).then_some(())
+    };
+    let mut live = std::fs::read_dir(run).ok()?.flatten().map(|e| e.path()).filter(|p| sways(p).is_some());
+    let one = live.next()?;
+    live.next().is_none().then_some(one)
+}
 
 fn socket() -> io::Result<UnixStream> {
     let path = std::env::var_os("SWAYSOCK").ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no sway here (SWAYSOCK)"))?;
@@ -143,6 +164,32 @@ pub fn subscribe(kinds: &[&str]) -> io::Result<UnixStream> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::net::UnixListener;
+
+    #[test]
+    fn a_socket_whose_sway_is_gone_gives_way_to_the_one_that_answers() {
+        let run = std::env::temp_dir().join(format!("spark-winpad-sway.{}", std::process::id()));
+        std::fs::create_dir_all(&run).unwrap();
+        let uid = std::fs::metadata(&run).unwrap().uid();
+        let named = |uid: u32, pid: &str| run.join(format!("sway-ipc.{uid}.{pid}.sock"));
+        let find = |sock: &Path| found(Some(sock.as_os_str()), &run, uid);
+        let dead = named(uid, "7");
+        // a file, a socket nobody answers on, another user's and another program's are none of them it
+        std::fs::write(named(uid, "8"), "").unwrap();
+        drop(UnixListener::bind(named(uid, "9")).unwrap());
+        let others = [named(uid + 1, "10"), named(uid, "x"), run.join("wayland-1")].map(|p| UnixListener::bind(p).unwrap());
+        assert_eq!((find(&dead), find(&named(uid, "9"))), (None, None));
+        let one = named(uid, "30");
+        let sway = UnixListener::bind(&one).unwrap();
+        assert_eq!((find(&dead), find(&named(uid, "9"))), (Some(one.clone()), Some(one.clone())));
+        // the one that answers is left as it is, and with none named there is no sway here, as before
+        assert_eq!((find(&one), found(None, &run, uid)), (None, None));
+        // two that answer: which is the session's is not to be told
+        let two = UnixListener::bind(named(uid, "31")).unwrap();
+        assert_eq!((find(&dead), find(&one)), (None, None));
+        drop((others, sway, two));
+        std::fs::remove_dir_all(&run).unwrap();
+    }
 
     #[test]
     fn an_answer_with_bytes_that_are_no_text_is_read() {
