@@ -87,6 +87,8 @@ enum Ev {
     Term(Event),
     /// The window's size in pixels.
     Px(u32, u32),
+    #[cfg(target_os = "linux")]
+    Font(spark_dialog::draw::Cell),
     /// The window is gone: the compositor ended, or closed it.
     Gone,
     Tick,
@@ -335,7 +337,7 @@ mod own {
     /// The login screen's own window. It maps clear, at the size it asked for, and the compositor then gives it its
     /// screen's: the strip is drawn for that size alone, so nothing of it ever moves.
     pub struct Window {
-        handle: Handle,
+        pub(super) handle: Handle,
         px: (u32, u32),
         settled: bool,
     }
@@ -353,6 +355,7 @@ mod own {
                 let _ = tx.send(match o {
                     Out::Event(e) => Ev::Term(e),
                     Out::Pixels(w, h) => Ev::Px(w, h),
+                    Out::Font(cell, ..) => Ev::Font(cell),
                     Out::Gone => Ev::Gone,
                     Out::At(..) | Out::Drawn => return,
                 });
@@ -451,6 +454,12 @@ pub fn main() {
             Ev::Px(w, h) => {
                 face.sized(w, h);
                 dirty = true;
+            }
+            #[cfg(target_os = "linux")]
+            Ev::Font(cell) => {
+                if let Face::Own(w) = &mut face {
+                    w.handle.cell = cell;
+                }
             }
             Ev::Gone => code = Some(WINDOW_GONE),
             Ev::Spark(r) => {

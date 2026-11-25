@@ -71,7 +71,7 @@ pub struct Lib {
     layout_get_context: unsafe extern "C" fn(*mut PangoLayout) -> *mut c_void,
     layout_set_font_description: unsafe extern "C" fn(*mut PangoLayout, *mut FontDesc),
     layout_set_text: unsafe extern "C" fn(*mut PangoLayout, *const c_char, c_int),
-    layout_get_pixel_size: unsafe extern "C" fn(*mut PangoLayout, *mut c_int, *mut c_int),
+    layout_get_size: unsafe extern "C" fn(*mut PangoLayout, *mut c_int, *mut c_int),
     layout_get_baseline: unsafe extern "C" fn(*mut PangoLayout) -> c_int,
     cairo_create_layout: unsafe extern "C" fn(*mut Cairo) -> *mut PangoLayout,
     cairo_show_layout: unsafe extern "C" fn(*mut Cairo, *mut PangoLayout),
@@ -138,7 +138,7 @@ impl Lib {
             layout_get_context: sym!(pango, p, "pango_layout_get_context"),
             layout_set_font_description: sym!(pango, p, "pango_layout_set_font_description"),
             layout_set_text: sym!(pango, p, "pango_layout_set_text"),
-            layout_get_pixel_size: sym!(pango, p, "pango_layout_get_pixel_size"),
+            layout_get_size: sym!(pango, p, "pango_layout_get_size"),
             layout_get_baseline: sym!(pango, p, "pango_layout_get_baseline"),
             cairo_create_layout: sym!(pc, q, "pango_cairo_create_layout"),
             cairo_show_layout: sym!(pc, q, "pango_cairo_show_layout"),
@@ -168,6 +168,8 @@ pub struct Font {
     pub small_cell: Cell,
     /// The baseline under the line's top: the text's own face, the smaller one.
     pub ascent: (f64, f64),
+    /// The scale it is measured for: a letter's width is whole in the screen's pixels, so each scale has its own.
+    scale: f64,
     /// The other families drawn so far, a specimen each: made when one is first drawn, FACES_MOST at most.
     faces: RefCell<HashMap<(String, Size), *mut FontDesc>>,
 }
@@ -178,7 +180,7 @@ const FACES_MOST: usize = 64;
 impl Font {
     /// A face by pango's own words for one ("Monaspace Neon 12"); its cell measured once. None when no cell comes
     /// of it.
-    pub fn new(lib: &Lib, spec: &str) -> Option<Font> {
+    pub fn new(lib: &Lib, spec: &str, scale: f64) -> Option<Font> {
         let spec = CString::new(spec.replace('\0', "")).ok()?;
         unsafe {
             let scaled = |bold: bool, times: f64| {
@@ -208,33 +210,36 @@ impl Font {
                 cell: Cell { w: 0.0, h: 0.0 },
                 small_cell: Cell { w: 0.0, h: 0.0 },
                 ascent: (0.0, 0.0),
+                scale,
                 faces: RefCell::default(),
             };
             let surface = (lib.image_surface_create)(CAIRO_FORMAT_ARGB32, 1, 1);
             let cr = (lib.create)(surface);
+            (lib.scale)(cr, scale, scale);
             let l = (lib.cairo_create_layout)(cr);
             let measure = |desc: *mut FontDesc| {
                 (lib.layout_set_font_description)(l, desc);
                 (lib.layout_set_text)(l, c"M".as_ptr(), -1);
                 let (mut w, mut h) = (0, 0);
-                (lib.layout_get_pixel_size)(l, &mut w, &mut h);
-                (w, h, (lib.layout_get_baseline)(l) as f64 / PANGO_SCALE)
+                (lib.layout_get_size)(l, &mut w, &mut h);
+                let px = |v: c_int| (v as f64 * scale / PANGO_SCALE).ceil() / scale;
+                (px(w), px(h), (lib.layout_get_baseline)(l) as f64 / PANGO_SCALE)
             };
             let (w, h, up) = measure(font.regular);
             let (sw, sh, sup) = measure(font.small);
             let big = font.big.map(|d| {
                 let (bw, _, bup) = measure(d);
-                (bw as f64, bup)
+                (bw, bup)
             });
             (lib.object_unref)(l as *mut c_void);
             (lib.destroy)(cr);
             (lib.surface_destroy)(surface);
-            if w <= 0 || h <= 0 || sw <= 0 || sh <= 0 {
+            if [w, h, sw, sh].contains(&0.0) {
                 font.free(lib);
                 return None;
             }
-            font.cell = Cell { w: w as f64, h: h as f64 };
-            font.small_cell = Cell { w: sw as f64, h: sh as f64 };
+            font.cell = Cell { w, h };
+            font.small_cell = Cell { w: sw, h: sh };
             font.big_cells = big;
             font.ascent = (up, sup);
             Some(font)
@@ -283,6 +288,7 @@ impl Font {
         unsafe {
             let surface = (lib.image_surface_create)(CAIRO_FORMAT_ARGB32, 1, 1);
             let cr = (lib.create)(surface);
+            (lib.scale)(cr, self.scale, self.scale);
             let l = (lib.cairo_create_layout)(cr);
             let font = (lib.context_load_font)((lib.layout_get_context)(l), d);
             let own = !font.is_null() && {
@@ -296,11 +302,11 @@ impl Font {
             (lib.layout_set_font_description)(l, d);
             (lib.layout_set_text)(l, text.as_ptr(), -1);
             let (mut w, mut h) = (0, 0);
-            (lib.layout_get_pixel_size)(l, &mut w, &mut h);
+            (lib.layout_get_size)(l, &mut w, &mut h);
             (lib.object_unref)(l as *mut c_void);
             (lib.destroy)(cr);
             (lib.surface_destroy)(surface);
-            (own && w > 0).then_some(w as f64)
+            (own && w > 0).then_some(w as f64 / PANGO_SCALE)
         }
     }
 

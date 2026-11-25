@@ -1604,7 +1604,7 @@ fn the_scenes_are_painted_with_cairo_and_pango() {
         return;
     };
     let face = std::env::var("DIALOG_FONT").unwrap_or_else(|_| "monospace 12".into());
-    let Some(font) = Font::new(&lib, &face) else {
+    let Some(font) = Font::new(&lib, &face, 1.0) else {
         eprintln!("  NOTICE: no font {face:?} here -- the painter is not exercised");
         return;
     };

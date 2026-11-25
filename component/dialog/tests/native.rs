@@ -26,7 +26,7 @@ fn home_is_painted_cell_for_cell_with_cairo_and_pango() {
         eprintln!("  NOTICE: cairo or pango is not here -- the painter is not exercised");
         return;
     };
-    let Some(font) = Font::new(&lib, &face()) else {
+    let Some(font) = Font::new(&lib, &face(), 1.0) else {
         eprintln!("  NOTICE: no font {:?} here -- the painter is not exercised", face());
         return;
     };
@@ -95,7 +95,7 @@ fn a_picture_is_painted_where_it_stands_over_the_ground_at_its_scale() {
         eprintln!("  NOTICE: cairo or pango is not here -- the painter is not exercised");
         return;
     };
-    let Some(font) = Font::new(&lib, &face()) else {
+    let Some(font) = Font::new(&lib, &face(), 1.0) else {
         eprintln!("  NOTICE: no font {:?} here -- the painter is not exercised", face());
         return;
     };
@@ -158,13 +158,65 @@ fn a_picture_is_painted_where_it_stands_over_the_ground_at_its_scale() {
 }
 
 #[test]
+fn words_are_as_wide_as_they_are_measured_at_every_scale() {
+    use spark_dialog::draw::{Size, Step};
+    let Ok(lib) = Lib::open() else {
+        eprintln!("  NOTICE: cairo or pango is not here -- the painter is not exercised");
+        return;
+    };
+    for scale in [1.0, 2.0, 3.0] {
+        let Some(font) = Font::new(&lib, &face(), scale) else {
+            eprintln!("  NOTICE: no font {:?} here -- the painter is not exercised", face());
+            return;
+        };
+        let sizes = [
+            (Size::Main, font.cell.w),
+            (Size::Small, font.small_cell.w),
+            (Size::Head, font.big_cells[0].0),
+            (Size::Lead, font.big_cells[1].0),
+            (Size::Title3, font.big_cells[4].0),
+        ];
+        for (size, letter) in sizes {
+            let (w, h) = ((800.0 * scale) as usize, (80.0 * scale) as usize);
+            let mut data = vec![0u8; w * h * 4];
+            let px = Pixels {
+                data: &mut data,
+                w: w as i32,
+                h: h as i32,
+                stride: (w * 4) as i32,
+                scale,
+            };
+            let step = Step::Text {
+                x: 0.0,
+                y: 0.0,
+                text: "M".repeat(24),
+                size,
+                color: [255, 255, 255],
+                bold: false,
+            };
+            assert!(paint(&lib, &font, px, &[step]));
+            let last = (0..w).rev().find(|x| (0..h).any(|y| pixel(&data, w * 4, *x, y) != [0, 0, 0])).expect("ink");
+            let (ink, most) = (last as f64 / scale, 24.0 * letter);
+            assert!(
+                ink <= most && ink > most - letter,
+                "{size:?} at scale {scale}: 24 letters of {letter} end at {ink}, measured {most}"
+            );
+        }
+        // a letter is a whole number of the screen's pixels
+        assert_eq!((font.cell.w * scale).fract(), 0.0);
+        assert_eq!((font.small_cell.w * scale).fract(), 0.0);
+        font.free(&lib);
+    }
+}
+
+#[test]
 fn a_typefaces_specimen_is_drawn_only_in_a_family_that_is_here() {
     use spark_dialog::draw::{Size, Step, LETTERS};
     let Ok(lib) = Lib::open() else {
         eprintln!("  NOTICE: cairo or pango is not here -- the painter is not exercised");
         return;
     };
-    let Some(font) = Font::new(&lib, &face()) else {
+    let Some(font) = Font::new(&lib, &face(), 1.0) else {
         eprintln!("  NOTICE: no font {:?} here -- the painter is not exercised", face());
         return;
     };
@@ -214,7 +266,7 @@ fn a_shade_is_clear_at_its_top_and_nearly_solid_at_its_foot() {
         eprintln!("  NOTICE: cairo or pango is not here -- the painter is not exercised");
         return;
     };
-    let Some(font) = Font::new(&lib, &face()) else {
+    let Some(font) = Font::new(&lib, &face(), 1.0) else {
         eprintln!("  NOTICE: no font {:?} here -- the painter is not exercised", face());
         return;
     };

@@ -43,6 +43,7 @@ enum Ev {
     /// The dialog's own window says its size in pixels, and where the pointer is, before the event it belongs to.
     Px(u32, u32),
     At(f64, f64),
+    Font(spark_dialog::draw::Cell, spark_dialog::draw::Cell, (f64, f64), [(f64, f64); 5]),
     Mcp(Incoming),
     Tick,
     Helper(Helper, Result<String, String>),
@@ -156,6 +157,7 @@ fn open_window(font: &str, title: &str, tx: mpsc::Sender<Ev>) -> Result<Window, 
         let _ = tx.send(match o {
             Out::Event(e) => Ev::Term(e),
             Out::Pixels(w, h) => Ev::Px(w, h),
+            Out::Font(cell, small, ascent, big) => Ev::Font(cell, small, ascent, big),
             Out::At(x, y) => Ev::At(x, y),
             Out::Drawn => Ev::Drawn,
             Out::Gone => Ev::Gone,
@@ -763,7 +765,7 @@ fn main() {
     let mut out = std::io::stdout();
     // what shows the dialog: a window of its own, which hands the loop its keys, its pointer and its size, or
     // the terminal it runs in
-    let window: Option<Window> = a.window.then(|| match open_window(&a.font, &app.window_title(), tx.clone()) {
+    let mut window: Option<Window> = a.window.then(|| match open_window(&a.font, &app.window_title(), tx.clone()) {
         Ok(w) => w,
         Err(e) => {
             println!("spark-dialog -- {}", e);
@@ -1599,6 +1601,12 @@ fn main() {
                 dirty = true;
             }
             Ev::At(x, y) => at_px = (x, y),
+            Ev::Font(cell, small, ascent, big) => {
+                if let Some(w) = &mut window {
+                    (w.cell, w.small, w.ascent, w.big) = (cell, small, ascent, big);
+                }
+                app.faces.clear(); // the specimens are measured again too
+            }
             Ev::Px(w, h) => {
                 // the layout in pixels places by them: a frame at the new size, the pictures made again for it
                 window_px = (w as f64, h as f64);

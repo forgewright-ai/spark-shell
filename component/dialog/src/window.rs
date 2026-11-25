@@ -69,6 +69,8 @@ pub enum Out {
     Event(Event),
     /// The window's size in pixels, said before its size in cells: the layout in pixels places by them.
     Pixels(u32, u32),
+    /// The face measured at another scale (Handle's cell, small, ascent and big), said before the size it makes.
+    Font(Cell, Cell, (f64, f64), [(f64, f64); 5]),
     /// Where the pointer is, in pixels, said before the pointer's event it belongs to.
     At(f64, f64),
     /// The frames handed over before `when_drawn` are with the compositor: the window is mapped with them on it.
@@ -248,6 +250,7 @@ struct State {
     window: Window,
     lib: Lib,
     font: Font,
+    face: String,
     send: Say,
     /// The size asked for, in pixels: the window's where the compositor names none.
     want: (u32, u32),
@@ -289,7 +292,7 @@ impl State {
             return Err("libwayland-client.so.0 is missing (Wayland's client library)".into());
         }
         let lib = Lib::open()?;
-        let font = Font::new(&lib, &setup.font).ok_or_else(|| format!("no font for \"{}\"", setup.font))?;
+        let font = Font::new(&lib, &setup.font, 1.0).ok_or_else(|| format!("no font for \"{}\"", setup.font))?;
         let kb = Keyboard::new()?;
         let conn = Connection::connect_to_env().map_err(|e| match e {
             ConnectError::NoWaylandLib => "libwayland-client.so.0 is missing (Wayland's client library)".to_string(),
@@ -359,6 +362,7 @@ impl State {
             window,
             lib,
             font,
+            face: setup.font,
             send,
             want,
             px: want,
@@ -388,12 +392,21 @@ impl State {
         for _ in 0..2 {
             queue.roundtrip(&mut state).map_err(|e| format!("the compositor: {e}"))?;
         }
-        state.scale = input::first_scale(state.outputs.outputs().filter_map(|o| state.outputs.info(&o)).map(|i| i.scale_factor));
-        state.shared.store(state.scale, Ordering::Relaxed);
+        let scale = input::first_scale(state.outputs.outputs().filter_map(|o| state.outputs.info(&o)).map(|i| i.scale_factor));
+        state.rescale(scale);
         WaylandSource::new(conn, queue)
             .insert(state.handle.clone())
             .map_err(|e| format!("event loop: {}", e.error))?;
         Ok((event_loop, state))
+    }
+
+    /// Another scale, and the face measured at it: a letter is as wide as it is drawn there.
+    fn rescale(&mut self, scale: i32) {
+        self.scale = scale;
+        self.shared.store(scale, Ordering::Relaxed);
+        let Some(font) = Font::new(&self.lib, &self.face, scale as f64) else { return };
+        self.want.0 = (self.want.0 as f64 * font.cell.w / self.font.cell.w).ceil() as u32;
+        std::mem::replace(&mut self.font, font).free(&self.lib);
     }
 
     fn say(&self, e: Event) {
@@ -590,9 +603,11 @@ impl WindowHandler for State {
 impl CompositorHandler for State {
     fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlSurface, factor: i32) {
         if self.scale != factor.max(1) {
-            self.scale = factor.max(1);
-            self.shared.store(self.scale, Ordering::Relaxed);
+            self.rescale(factor.max(1));
+            let cell = self.font.cell;
+            self.grid = (((self.px.0 as f64 / cell.w) as u16).max(1), ((self.px.1 as f64 / cell.h) as u16).max(1));
             self.draw();
+            (self.send)(Out::Font(self.font.cell, self.font.small_cell, self.font.ascent, self.font.big_cells));
             // the dialog's loop draws again: its pictures are for the screen's pixels
             self.say(Event::Resize(self.grid.0, self.grid.1));
         }
