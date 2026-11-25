@@ -646,6 +646,23 @@ pub fn mode(v: &Value) -> Option<String> {
     v["name"].as_str().filter(|n| !n.is_empty() && *n != "default").map(String::from)
 }
 
+/// Whether a full-screen window hides an output's bar, by sway's tree: one on the workspace the output shows, or one
+/// over every output. A workspace's own mode is no window's: sway says 1 of each.
+pub fn covered(tree: &Value, output: &str) -> bool {
+    fn kids<'a>(n: &'a Value, k: &str) -> impl Iterator<Item = &'a Value> {
+        n[k].as_array().into_iter().flatten()
+    }
+    fn full(n: &Value, least: i64) -> bool {
+        let own = n["type"] != "workspace" && n["fullscreen_mode"].as_i64() >= Some(least);
+        own || kids(n, "nodes").chain(kids(n, "floating_nodes")).any(|k| full(k, least))
+    }
+    let shown = kids(tree, "nodes").filter(|o| o["name"] == output);
+    full(tree, 2)
+        || shown
+            .flat_map(|o| kids(o, "nodes").filter(|w| w["name"] == o["current_workspace"]))
+            .any(|w| full(w, 1))
+}
+
 impl Workspace {
     /// workspace:N, or workspace:NAME without a number.
     pub fn id(&self) -> String {
@@ -4533,6 +4550,28 @@ mod tests {
         (all[0].visible, all[1].visible) = (true, false);
         assert!(!resting("idle", &all, "A") && resting("idle", &all, "B"));
         assert!(!resting("idle", &five(), "A") && !resting("idle", &[], "A"));
+    }
+
+    #[test]
+    fn a_full_screen_window_hides_its_outputs_bar() {
+        // output A shows workspace 1, which holds a window in a group and a floating one; workspace 2 is A's too and not
+        // shown; B shows 3
+        let tree = |grouped: i32, floats: i32, behind: i32, other: i32| {
+            let win = |kind: &str, full: i32| serde_json::json!({"type": kind, "fullscreen_mode": full, "nodes": [], "floating_nodes": []});
+            let ws = |name: &str, nodes: Vec<Value>, floats: Vec<Value>| serde_json::json!({"type": "workspace", "name": name, "fullscreen_mode": 1, "nodes": nodes, "floating_nodes": floats});
+            let group = serde_json::json!({"type": "con", "fullscreen_mode": 0, "nodes": [win("con", 0), win("con", grouped)]});
+            serde_json::json!({"type": "root", "nodes": [
+                {"type": "output", "name": "A", "current_workspace": "1", "nodes": [ws("1", vec![group], vec![win("floating_con", floats)]), ws("2", vec![win("con", behind)], vec![])]},
+                {"type": "output", "name": "B", "current_workspace": "3", "nodes": [ws("3", vec![win("con", other)], vec![])]}
+            ]})
+        };
+        let hides = |t: Value| (covered(&t, "A"), covered(&t, "B"));
+        assert_eq!(hides(tree(0, 0, 0, 0)), (false, false));
+        assert_eq!((hides(tree(1, 0, 0, 0)), hides(tree(0, 1, 0, 0))), ((true, false), (true, false)));
+        assert_eq!(hides(tree(0, 0, 1, 0)), (false, false), "on a workspace that is not shown");
+        assert_eq!(hides(tree(0, 0, 0, 1)), (false, true));
+        assert_eq!(hides(tree(0, 0, 0, 2)), (true, true), "over every output");
+        assert_eq!(hides(Value::Null), (false, false));
     }
 
     #[test]

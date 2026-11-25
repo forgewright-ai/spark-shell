@@ -11,6 +11,7 @@ pub const RUN_COMMAND: u32 = 0;
 pub const GET_WORKSPACES: u32 = 1;
 pub const SUBSCRIBE: u32 = 2;
 pub const GET_OUTPUTS: u32 = 3;
+pub const GET_TREE: u32 = 4;
 pub const GET_BINDING_STATE: u32 = 12;
 /// An event's type: the high bit and the event's number.
 pub const EVENT_WORKSPACE: u32 = 0x8000_0000;
@@ -88,6 +89,10 @@ impl Ipc {
     /// The binding mode sway is in, by its name.
     pub fn binding_state(&mut self) -> io::Result<Value> {
         self.request(GET_BINDING_STATE, "")
+    }
+
+    pub fn tree(&mut self) -> io::Result<Value> {
+        self.request(GET_TREE, "")
     }
 
     pub fn run(&mut self, command: &str) -> io::Result<Value> {

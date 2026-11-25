@@ -712,7 +712,7 @@ impl App {
     }
 
     /// SIGUSR1: the keyboard on the bar of the output sway has the focus on, the first target picked. An
-    /// output at rest has no bar to take it.
+    /// output at rest has no bar to take it, and one under a full-screen window none to be seen.
     pub fn keys_on(&mut self) {
         let Some(name) = self
             .ipc
@@ -722,7 +722,7 @@ impl App {
         else {
             return;
         };
-        if self.outs.iter().any(|o| o.name == name && o.rests) {
+        if self.outs.iter().any(|o| o.name == name && o.rests) || self.ipc.tree().is_ok_and(|t| bar::covered(&t, &name)) {
             return;
         }
         for o in &mut self.outs {
