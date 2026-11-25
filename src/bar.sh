@@ -839,7 +839,7 @@ bar_status_lines() {   # the lines, one every 15 s and one when asked, in a proc
 bar_pid_drop() { _bpd=''; read -r _bpd 2>/dev/null < "$BAR_PID" || :; [ "$_bpd" != "$$" ] || rm -f "$BAR_PID"; }   # the pid file goes with the loop that wrote it: a loop started since has its own pid in it. No substitution: a trap runs it
 bar_font_follow() {   # BAR_TEXT=auto: the font follows the screen; _bff is the last sent
     wm_live && wm_here || return 0
-    BAR_TEXT=$(bar_style BAR_TEXT auto); [ "$BAR_TEXT" = auto ] || [ -n "${SPARK_BAR:-}" ] || { _bff=''; return 0; }   # a fixed size: already rendered; spark's bar takes a new face too
+    BAR_TEXT=$(bar_style BAR_TEXT auto | tr -d '"'); [ "$BAR_TEXT" = auto ] || [ -n "${SPARK_BAR:-}" ] || { _bff=''; return 0; }   # a fixed size: already rendered; spark's bar takes a new face too
     FONT=$(bar_style FONT "$FONT"); case $FONT in \"*\") FONT=${FONT#\"}; FONT=${FONT%\"} ;; esac   # quoted as load_env takes it
     _bfn=$(bar_line_font "$(font_spec)")
     if [ -n "${SPARK_BAR:-}" ]; then   # spark's bar reads its font at its start

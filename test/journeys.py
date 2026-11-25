@@ -169,8 +169,8 @@ def tabs(d):
 
 
 def loops(d):
-    """A theme with loops of its own: they move, after the theme and after a reload. A player started anew over a
-    still takes some seconds: it must come to move, and move on."""
+    """A theme with loops of its own: they move, after the theme and after a reload, on two screens and on one. A player
+    started anew over a still takes some seconds: it must come to move, and move on."""
     def moving():
         players = d.census()["spark-wallpaper"]
         if len(players) != 1:
@@ -194,24 +194,26 @@ def loops(d):
     d.shell("theme", "motion", "on")
     d.until(lambda: d.census()["spark-wallpaper"], "a player", 40)
     moves("after the theme")
-    if d.sway("reload").returncode:   # no ground here: the loops stand on the background
-        raise Broken("sway refused its reload")
-    time.sleep(2)
-    moves("after a reload")
+    turned, wide = (o["name"] for o in sorted(d.msg("-t", "get_outputs"), key=lambda o: o["transform"] == "normal"))
+    for where in ("two screens", "one screen"):
+        if where == "one screen":   # the wide one alone: no screen's own still starts the drawer then
+            d.sway("output %s unplug" % turned)   # for good: a reload turns a disabled one on again
+            d.until(lambda: [o["name"] for o in d.msg("-t", "get_outputs") if o["active"]] == [wide], "one screen")
+            time.sleep(2)
+            moves("on one screen")
+        if d.sway("reload").returncode:   # no ground here: the loops stand on the background
+            raise Broken("sway refused its reload")
+        time.sleep(2)
+        moves("after a reload, %s" % where)
     d.shell("theme", "none", seconds=60)   # another look, and this one back: its loops are in the cache, so they start before the drawer does
     d.shell("theme", "atlas-awakening", seconds=60)
     d.until(lambda: d.census()["spark-wallpaper"], "a player again", 40)
-    moves("after the theme again")
+    moves("after the theme again, one screen")
 
 
-def loop(d):
-    """The same on one screen, where no screen's own still starts the drawer."""
-    loops(d)
-
-
-SCREENS = {"home": ((1280, 720, "normal"),), "loops": ((1080, 1920, "90"), (1280, 720, "normal")), "loop": ((1280, 720, "normal"),)}
+SCREENS = {"home": ((1280, 720, "normal"),), "loops": ((1080, 1920, "90"), (1280, 720, "normal"))}
 KEYS = {"matrix": {"BAR_TRAY": "yes"}}
-JOURNEYS = {f.__name__: f for f in (home, live, matrix, tabs, loops, loop)}
+JOURNEYS = {f.__name__: f for f in (home, live, matrix, tabs, loops)}
 
 
 MARK = ".spark-shell-journey"
@@ -227,7 +229,7 @@ def main():
         shutil.rmtree(str(out))
     out.mkdir(parents=True, exist_ok=True)
     (out / MARK).write_text("")
-    lacks = [part for part in ("dialog", "bar", "winpad") + (("wallpaper",) if name.startswith("loop") else ()) if not os.access(builds.get(part, ""), os.X_OK)]
+    lacks = [part for part in ("dialog", "bar", "winpad") + (("wallpaper",) if name == "loops" else ()) if not os.access(builds.get(part, ""), os.X_OK)]
     word, d = "NOT-RUN no build of %s" % ", ".join(lacks), None
     try:
         if not lacks:

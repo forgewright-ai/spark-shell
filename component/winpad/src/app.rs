@@ -2232,7 +2232,9 @@ mod tests {
         };
         assert!(bar_runs(&state), "no lock beside it: the file's word is taken");
         // no process has the pid, it is another program's by now, or none is written
-        assert!(!names(&i32::MAX.to_string()) && !names(&std::process::id().to_string()) && !names(""));
+        let mut other = Command::new("sleep").arg("60").spawn().unwrap();
+        assert!(!names(&i32::MAX.to_string()) && !names(&other.id().to_string()) && !names(""));
+        let _ = (other.kill(), other.wait());
         // a process that is the bar, and the same once it has ended
         let mut run = Command::new("sh");
         run.args(["-c", "echo; read x", "spark-bar"]).stdin(Stdio::piped()).stdout(Stdio::piped());

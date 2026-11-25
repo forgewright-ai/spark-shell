@@ -2,8 +2,8 @@
 
 ## v0.168.1
 
-- On one screen a moving wallpaper keeps moving after a reload and after
-  a theme change. It stopped.
+- On one screen a moving wallpaper moves again after a reload and after a
+  theme change. It stopped.
 - A click on the tab in front no longer closes a window hidden in the tab
   behind it.
 - In a tab or a stack, the buttons of two windows beside each other take
@@ -18,7 +18,7 @@
   bottom of the screen first. Where the bar ended and did not come back,
   the pad was off the screen; it stands at the bottom.
 - Where no pad runs, a screen that comes, goes or turns sends the windows
-  the keys placed to their places, as the pad does.
+  the keys placed to their places.
 - The bar at a text size of your own takes a new typeface. It kept the
   old one until the next login.
 - `spark-shell bar` names the modules on the bar. It named the hidden
@@ -27,8 +27,8 @@
   height of its title band each time.
 - End, in system, refuses the bar, the pad and the wallpaper as it does
   the desktop's other parts.
-- A broken link in a listing is red on no ground of its own. On a light
-  palette it stood on a dark block.
+- A broken link in eza's listing is red on no ground of its own. On a
+  light palette it stood on a dark block.
 - The pad is 0.168.1.
 
 ## v0.168

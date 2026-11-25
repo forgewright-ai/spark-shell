@@ -339,7 +339,8 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
             r.y -= d.h * titles;
             // a window behind another tab keeps its title in the tabs' row; any other out of sight has none
             let tabs = n["layout"] == "tabbed" || n["layout"] == "stacked";
-            let titles = if n["layout"] == "stacked" { kids(n).count() as i32 } else { 1 };
+            let row = n["nodes"].as_array().map_or(0, Vec::len); // a workspace's floating windows are none of its stack
+            let titles = if n["layout"] == "stacked" { row as i32 } else { 1 };
             for k in kids(n).filter(|k| shows(k) || tabs && kids(k).next().is_none()) {
                 let afloat = if k["type"] == "floating_con" { k["id"].as_i64() } else { afloat };
                 walk(k, r, titles, afloat, out);
@@ -407,8 +408,9 @@ pub fn bands(tree: &Value, cell: f64) -> Vec<Band> {
             let [a, _, b, _] = glyph_cells(places[i].1, cell);
             let zone = Rect::new(a.x, a.y, b.x + b.w - a.x, a.h);
             // what lies over a band: a floating container that is not the band's own, later in the stacking order, or
-            // another screen's, whose place in that order the tree does not say
-            let over = |j: usize| places[j].0.is_some() && places[j].0 != places[i].0 && (j > i || out[j].output != out[i].output);
+            // another screen's, whose place in that order the tree does not say: the focused one is on top
+            let top = places[i].0.is_some() && out[i].focused;
+            let over = |j: usize| places[j].0.is_some() && places[j].0 != places[i].0 && (j > i || !top && out[j].output != out[i].output);
             !(0..out.len()).any(|j| over(j) && meets(zone, places[j].2))
         })
         .collect();
@@ -520,8 +522,8 @@ mod tests {
             let group = serde_json::json!({"type": "con", "id": 12, "layout": "splith", "rect": b(rect), "deco_rect": b(deco),
                 "nodes": [win(11, b(child), b([0, 0, 416, 28]), true)], "floating_nodes": []});
             let t = serde_json::json!({"type": "root", "nodes": [{"type": "output", "name": "A", "id": 3, "current_workspace": "4", "rect": b([0, 0, 1280, 720]),
-                "nodes": [{"type": "workspace", "name": "4", "id": 8, "layout": "splith", "rect": b([16, 52, 1248, 652]), "deco_rect": b([0; 4]), "floating_nodes": [],
-                    "nodes": [{"type": "con", "id": 10, "layout": layout, "rect": b([16, 52, 1248, 652]), "deco_rect": b([0; 4]), "nodes": [behind, group], "floating_nodes": []}]}]}]});
+                "nodes": [{"type": "workspace", "name": "4", "id": 8, "layout": layout, "rect": b([16, 52, 1248, 652]), "deco_rect": b([0; 4]), "nodes": [behind, group],
+                    "floating_nodes": [{"type": "floating_con", "id": 14, "layout": "none", "visible": true, "rect": b([700, 300, 400, 300]), "deco_rect": b([684, 220, 400, 28])}]}]}]});
             bands(&t, 10.0).iter().find(|b| b.id == 11).map(|b| b.rect)
         };
         assert_eq!(

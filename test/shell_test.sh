@@ -4378,7 +4378,7 @@ if [ -S "$_rsk" ]; then
     _pi=0; while [ "$_pi" -lt 40 ] && ! grep -qxF -- "$_rfl" "$HOME/win.log" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
     [ "$rc" = 0 ] && ! grep -qx 'reload' "$HOME/win.log" && grep -q '^-- bar spark-line mode dock; bar spark-line position bottom; ' "$HOME/win.log" && grep -qxF -- "$_rfl" "$HOME/win.log" \
         && ok "bar bottom: sway's own bar is made at the bottom with no reload, then a refit of the windows the keys placed (#264)" || bad "bar bottom refit" "rc=$rc $out | $(cat "$HOME/win.log" 2>&1)"
-    sleep 2
+    _pi=0; while [ "$_pi" -lt 80 ] && [ "$(grep -cxF -- "$_rfl" "$HOME/win.log" 2>/dev/null || :)" -lt 2 ]; do sleep 0.1; _pi=$((_pi + 1)); done   # both refits of that one
     # a screen came, went or turned, and no pad runs to send the windows to their places
     rm -f "$HOME/win.log" "$H/run/spark-shell-screens.plan"; XDG_RUNTIME_DIR=$H/run SWAYSOCK=$_rsk PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop --screens >/dev/null 2>&1 || :
     _pi=0; while [ "$_pi" -lt 40 ] && ! grep -qxF -- "$_rfl" "$HOME/win.log" 2>/dev/null; do sleep 0.1; _pi=$((_pi + 1)); done
@@ -6135,13 +6135,15 @@ SBSWAY_STUB
         && ! grep -q '^SPARK_BAR=' "$HOME/sbar.env" && grep -q '"name":"look"' "$H/bar.out" \
         && ok "the loop under spark-bar: another font for the screen starts the bar again once, apart from the loop, through sway; a second loop with the same font asks for none, and sway is sent no font; the loop draws for spark-bar and what it starts does not carry that word" || bad "font follow spark-bar" "$(cat "$H/run/spark-shell-bar.font" "$HOME/sbar.log" "$H/bar.err" 2>&1)"
     # a fixed size takes a new face too; a bar that has the font is done with it, so the same font asked for again later starts the bar
-    printf 'BAR_TEXT=14\n' >> "$HOME/.config/spark-shell/config"; _fa=''
+    mkdir -p "$H/nosid"; printf '#!/bin/sh\nexit 0\n' > "$H/nosid/setsid"; chmod +x "$H/nosid/setsid"   # the loop asks for the bar again through it: here nothing starts or ends
+    printf 'BAR_TEXT="14"\n' >> "$HOME/.config/spark-shell/config"; _fa=''; rm -f "$H/run/spark-shell-bar.font"
     for _f in 'Other Mono 14' 'DejaVu Sans Mono 14' 'Other Mono 14'; do
-        SPARK_BAR=1 BAR_FONT="$_f" SPARK_SHELL_BAR=$H/none SWAYSOCK=$H/tray.sock SBSWAY_NEXT=$H/traybin/swaymsg PATH="$H/sbsway:$H/traybin:$PATH" sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
-        for _i in $(seq 1 100); do [ "$(grep -c '^\[{' "$H/bar.out")" -ge 1 ] && break; sleep .1; done; sleep 1; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
+        _fw='DejaVu Sans Mono 14'; [ "$_f" != "$_fw" ] || _fw=''
+        SPARK_BAR=1 BAR_FONT="$_f" SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/tray.sock SBSWAY_NEXT=$H/traybin/swaymsg PATH="$H/nosid:$H/sbsway:$H/traybin:$PATH" sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
+        for _i in $(seq 1 100); do [ "$(grep -c '^\[{' "$H/bar.out")" -ge 1 ] && [ "$(cat "$H/run/spark-shell-bar.font" 2>/dev/null || :)" = "$_fw" ] && break; sleep .1; done; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
         _fa="$_fa$(cat "$H/run/spark-shell-bar.font" 2>/dev/null || :)|"
     done
-    sed -i.bak '/^BAR_TEXT=14$/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak"
+    sed -i.bak '/^BAR_TEXT="14"$/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak"
     [ "$_fa" = 'DejaVu Sans Mono 14||DejaVu Sans Mono 14|' ] && ok "the loop under spark-bar: a fixed size takes a new face, and a font it has is no longer kept as asked for (v0.168.1)" || bad "font follow fixed" "$_fa | $(cat "$H/bar.err")"
     # hidden: spark-bar ends and a bar of sway's, unseen, runs the line; shown again, that bar ends and sway starts spark-bar
     : > "$H/.local/state/swaymsg.log"; sbr bar off --desktop
