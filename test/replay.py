@@ -34,20 +34,28 @@ def tree(tag):
         got = run("git", "-c", "advice.detachedHead=false", "clone", "-q", "--no-hardlinks", "--branch", tag, "file://%s" % REPO, where)
         if got.returncode:
             sys.exit("replay: %s: %s" % (tag, got.stderr.strip()[-200:]))
-        tiny = BASE / "tiny.mp4"
-        if shutil.which("ffmpeg") and not tiny.exists():
-            run("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=12", "-t", "4", "-pix_fmt", "yuv420p", tiny)
-        for loop in where.glob("gallery/**/*.mp4"):
-            if tiny.exists():
-                shutil.copy(str(tiny), str(loop))
     return where
+
+
+def tiny():
+    """A 4-second loop of 320x180: the file, or none without ffmpeg."""
+    file = BASE / "tiny.mp4"
+    if shutil.which("ffmpeg") and not file.exists():
+        BASE.mkdir(parents=True, exist_ok=True)
+        run("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=12", "-t", "4", "-pix_fmt", "yuv420p", file)
+    return file if file.exists() else None
 
 
 def builds(tag):
     """The tag's programs, built offline: part -> file."""
     if tag == "here":
-        made = {part: [REPO / "component" / d / "release" / ("spark-" + part) for d in ("target", part + "/target")] for part in PARTS}
-        return {part: f for part, files in made.items() for f in files if f.exists()}
+        got_here = {}
+        for part in PARTS:   # the workspace's build before a part's own, which may be an old one
+            files = [REPO / "component" / d / "release" / ("spark-" + part) for d in ("target", part + "/target")]
+            got_one = next((f for f in files if f.exists()), None)
+            if got_one:
+                got_here[part] = got_one
+        return got_here
     out, got = BASE / "bin" / tag, {}
     out.mkdir(parents=True, exist_ok=True)
     for part in PARTS:
@@ -71,9 +79,10 @@ def once(journey, tag, n):
     shutil.rmtree(str(out), ignore_errors=True)
     out.mkdir(parents=True)
     root, made, test = tree(tag), builds(tag), REPO / "test"
-    argv = ["bwrap", "--die-with-parent", "--unshare-pid", "--unshare-net", "--unshare-ipc", "--unshare-uts", "--ro-bind", "/", "/",
+    loops = [w for f in sorted(root.glob("gallery/**/*.mp4")) if tiny() for w in ("--ro-bind", tiny(), f)]   # over each 4K one, in the run alone
+    argv = ["bwrap", "--die-with-parent", "--new-session", "--unshare-pid", "--unshare-net", "--unshare-ipc", "--unshare-uts", "--ro-bind", "/", "/",
             "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/run", "--tmpfs", "/tmp", "--tmpfs", "/var/tmp", "--tmpfs", "/home",
-            "--ro-bind", root, root, *(("--ro-bind", BASE / "bin" / tag, BASE / "bin" / tag) if tag != "here" else ()), "--ro-bind", test, test, "--bind", out, out,
+            "--ro-bind", root, root, *(("--ro-bind", BASE / "bin" / tag, BASE / "bin" / tag) if tag != "here" else ()), "--ro-bind", test, test, *loops, "--bind", out, out,
             "--chdir", out, "--clearenv", "--setenv", "PATH", "/usr/local/bin:/usr/bin:/bin:/usr/sbin", "--setenv", "LANG", "C.UTF-8",
             "--setenv", "SPARK_SHELL_FENCE", "desk", "--setenv", "PYTHONDONTWRITEBYTECODE", "1",
             "nice", "-n", "12", "timeout", "420", "python3", "-I", test / "journeys.py", journey, root, out / "desk"]
@@ -81,6 +90,12 @@ def once(journey, tag, n):
     (out / "err").write_text(got.stderr)
     said = got.stdout.strip().splitlines()
     return said[-1] if said else "NOT-RUN no verdict: %s" % got.stderr.strip()[-120:]
+
+
+def twice(journey, tag, n):
+    """A run; one that could not look (NOT-RUN) is taken once more, since only what it judges may be judged once."""
+    first = once(journey, tag, n)
+    return once(journey, tag, n) if first.startswith("NOT-RUN") else first
 
 
 def main():
@@ -94,11 +109,9 @@ def main():
         sys.exit("replay: bwrap is not installed: a release's desktop runs nowhere else")
     bad = 0
     for tag in a.tags:
-        if a.journey == "loops" and "wallpaper" not in builds(tag):
-            print("%-7s %-9s not run: no spark-wallpaper was built" % (a.journey, tag))
-            continue
+        builds(tag)
         with concurrent.futures.ThreadPoolExecutor(a.beside) as pool:
-            verdicts = list(pool.map(lambda n: once(a.journey, tag, n), range(1, a.runs + 1)))
+            verdicts = list(pool.map(lambda n: twice(a.journey, tag, n), range(1, a.runs + 1)))
         count = {w: sum(v.startswith(w) for v in verdicts) for w in ("RED", "GREEN", "NOT-RUN")}
         print("%-7s %-9s %s" % (a.journey, tag, ", ".join("%s %d" % (w.lower(), n) for w, n in count.items() if n)))
         for why in sorted({v for v in verdicts if not v.startswith("GREEN")}):

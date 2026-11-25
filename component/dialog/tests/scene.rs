@@ -1757,8 +1757,8 @@ fn a_works_compositions_are_looked_at_large_and_never_applied() {
     assert!(!a.under_way(), "looking at a composition calls no tool");
 }
 
-/// Every place at every size the layout takes, with names a person's files and screens have: no words start or end
-/// outside the window, and no click lands outside it. (v0.157 and v0.162 each shipped one of these.)
+/// Home, apps, files and workspaces at every size the layout takes, with names a person's files and screens have: no
+/// words and no click stand past the window's edges. (v0.162 shipped a heading that did.)
 #[test]
 fn no_words_and_no_hit_leave_the_window_at_any_size() {
     let long = "a-very-long-name-for-the-quarterly-research-summary-of-the-team-2026-final-final.txt";
@@ -1770,7 +1770,7 @@ fn no_words_and_no_hit_leave_the_window_at_any_size() {
             &json!({"title": "window", "state": "2 windows", "rows": [
                 {"id": "window:focus 11", "sign": "opens", "text": long, "group": "workspace 1 \u{27e8}1\u{27e9} \u{b7} photo editing and the quarterly research \u{b7} this one \u{b7} DELL U2723QE of the long desk",
                  "columns": [long], "children": null, "tool": {"name": "window_focus", "arguments": {"name": "11"}}, "more": []},
-                {"id": "window:focus 12", "sign": "opens", "text": "x", "group": "workspace 10 \u{27e8}10\u{27e9} \u{b7} ASUS PA278CGV turned", "columns": ["docs"], "children": null,
+                {"id": "window:focus 12", "sign": "opens", "text": "\u{56db}\u{534a}\u{671f}\u{7814}\u{7a76}\u{5831}\u{544a}\u{306e}\u{9577}\u{3044}\u{540d}\u{524d}\u{306e}\u{30d5}\u{30a1}\u{30a4}\u{30eb}", "group": "workspace 10 \u{27e8}10\u{27e9} \u{b7} ASUS PA278CGV turned", "columns": ["docs"], "children": null,
                  "tool": {"name": "window_focus", "arguments": {"name": "12"}}, "more": []}
             ]})
             .to_string(),
@@ -1800,13 +1800,14 @@ fn no_words_and_no_hit_leave_the_window_at_any_size() {
                 let mut a = make();
                 let s = scene(&mut a, w, h);
                 for (text, x, y, size, _) in words(&s) {
-                    let right = x + text.chars().count() as f64 * adv(size);
-                    if x < 0.0 || right > w + 1.0 || y < -1.0 || y > h {
+                    let right = x + spark_dialog::scrub::cells(&text) as f64 * adv(size);
+                    let tall = if size == Size::Small { M.sh } else { M.ch };
+                    if x < 0.0 || right > w + 1.0 || y < -1.0 || y + tall > h + 1.0 {
                         left.push(format!("{name} {w}x{h}: {text:?} from {x} to {right}, at {y}"));
                     }
                 }
                 for hit in &s.hits {
-                    if hit.x < -1.0 || hit.x + hit.w > w + 1.0 || hit.y < -1.0 || hit.y > h {
+                    if hit.x < -1.0 || hit.x + hit.w > w + 1.0 || hit.y < -1.0 || hit.y + hit.h > h + 1.0 {
                         left.push(format!("{name} {w}x{h}: a hit for {:?} at {},{} {}x{}", hit.target, hit.x, hit.y, hit.w, hit.h));
                     }
                 }

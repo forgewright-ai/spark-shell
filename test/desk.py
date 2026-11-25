@@ -14,12 +14,16 @@ import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 
 
-def fenced():
-    """Stop a proof that nothing keeps off the machine it runs on."""
-    if not os.environ.get("SPARK_SHELL_FENCE"):
+def fenced(whole=False):
+    """Stop a proof that nothing keeps off the machine it runs on. WHOLE: a journey, which starts every program of the
+    desktop, runs in a bwrap of its own (test/replay.py) or in a CI container, where no login's init runs."""
+    fence = os.environ.get("SPARK_SHELL_FENCE")
+    first = Path("/proc/1/comm").read_text().strip() if whole and Path("/proc/1/comm").exists() else ""
+    if not fence or (whole and not (fence == "desk" and first == "bwrap" or fence == "ci" and first not in ("", "runit", "systemd", "init", "openrc-init", "launchd"))):
         sys.exit("%s: run it through test/prove.sh: its fence keeps a proof off your desktop" % Path(sys.argv[0]).name)
 
 
@@ -128,8 +132,11 @@ class Desktop:
             stub.write_text("#!/bin/sh\nexit %d\n" % (tool in ("sudo", "doas", "tmux")))
             stub.chmod(0o755)
         keys = {"DESKTOP": "sway", "THEME": "nord", "WALLPAPER": "skyline", "DISPLAY_IDLE": "0", "DISPLAY_LOCK": "0",
-                "DIALOG_ANIMATION": "none", "LAYOUT_SEEN": "yes", "BAR_TEXT": "12"}
+                "DIALOG_ANIMATION": "none", "BAR_TEXT": "12"}
         keys.update(dict(config))
+        seen = self.home / ".local/state/spark-shell/desktop.seen"   # a desktop logged into before: home is opened by a check, never by a login
+        seen.parent.mkdir(parents=True, exist_ok=True)
+        seen.write_text("")
         (self.home / ".config/spark-shell/config").write_text("".join("%s=%s\n" % k for k in keys.items()))
         lines, x = [], 0
         for i, (w, h, turn) in enumerate(screens):
@@ -183,14 +190,23 @@ class Desktop:
 
     # --- asking and telling
     def sh(self, *argv, seconds=60):
-        try:
-            return subprocess.run(argv, env=self.env, cwd=str(self.home), stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=seconds)
-        except subprocess.TimeoutExpired as late:
-            return subprocess.CompletedProcess(argv, 124, "", "timed out: %s" % late)
+        """A command's answer. Its words go to files: what it starts (home) may keep them open, and a pipe would wait."""
+        with tempfile.TemporaryFile("w+") as said, tempfile.TemporaryFile("w+") as moaned:
+            try:
+                code = subprocess.run(argv, env=self.env, cwd=str(self.home), stdin=subprocess.DEVNULL, stdout=said, stderr=moaned, timeout=seconds).returncode
+            except subprocess.TimeoutExpired:
+                code = 124
+            said.seek(0)
+            moaned.seek(0)
+            return subprocess.CompletedProcess(argv, code, said.read(), moaned.read() + (" (timed out in %d s)" % seconds if code == 124 else ""))
 
     def shell(self, *verb, seconds=90):
+        """A verb of spark-shell's. One that refuses changed nothing, so what follows would judge nothing."""
         got = self.sh("sh", str(self.tree / "spark-shell"), *verb, seconds=seconds)
-        self.said.append("%s -> %d %s" % (" ".join(verb), got.returncode, " ".join((got.stdout + got.stderr).strip().splitlines()[-1:])))
+        said = " ".join((got.stdout + got.stderr).strip().splitlines()[-1:])
+        self.said.append("%s -> %d %s" % (" ".join(verb), got.returncode, said))
+        if got.returncode:
+            raise NotRun("spark-shell %s said %d: %s" % (" ".join(verb), got.returncode, said))
         return got
 
     def msg(self, *args):
@@ -221,11 +237,17 @@ class Desktop:
         raise kind("waited %d s for %s" % (seconds, what))
 
     def holds(self, read, what, seconds=20):
-        """An invariant: true within SECONDS, and still true at the next look."""
+        """An invariant: true within SECONDS, and true again after a rest. What comes and goes between is not it."""
         self.until(read, what, seconds, Broken)
-        time.sleep(0.7)
-        if not read():
-            raise Broken("%s held and then did not" % what)
+        time.sleep(1.5)
+        self.until(read, what + ", and again", 10, Broken)
+
+    def reload(self):
+        got = self.sway("reload")
+        if got.returncode:
+            raise Broken("sway refused its reload: %s" % (got.stdout + got.stderr).strip()[:120])
+        time.sleep(2)
+        self.ground()
 
     def quiet(self, seconds=20):
         """Wait until the desk is at rest: two snapshots a second apart are the same."""
@@ -311,29 +333,38 @@ class Desktop:
             if w["id"] != d["id"] and w.get("visible") and w["workspace"] == d["workspace"]:
                 raise NotRun("%s stands on home's workspace" % w.get("app_id"))
         r = d["rect"]
+        area = next(w["rect"] for w in self.msg("-t", "get_workspaces") if w["name"] == d["workspace"])
+        strip = self.grab(area["x"] + 4, area["y"] + area["height"] - 12, 40, 8)   # under every window's edge: the ground alone
+        if any(tuple(strip[i:i + 3]) != GROUND for i in range(0, len(strip) - 2, 3)):
+            self.ground()
+            raise NotRun("the ground is not plain beside home")
         px = self.grab(r["x"] + 8, r["y"] + 8, r["width"] - 16, r["height"] - 16)
         points = range(0, len(px) - 2, 3 * 97)
         return 1 - sum(1 for i in points if tuple(px[i:i + 3]) == GROUND) / max(1, len(points))
 
     # --- the invariants
     def whole(self):
-        """The programs are one of each, and none is an older build's."""
-        for name, found in self.census().items():
-            if len(found) > 1:
-                raise Broken("%d %s run" % (len(found), name))
-            if found and found[0][2]:
-                raise Broken("%s runs from a file that is gone" % name)
+        """The bar, the pad and the background drawer run, one of each, the rest one at most, none an older build's."""
+        need = ("swaybg",) + tuple("spark-" + part for part in ("bar", "winpad") if part in self.builds)
+
+        def as_made():
+            got = self.census()
+            return all(len(got[n]) == 1 for n in need) and all(len(f) <= 1 for f in got.values()) and not any(f[2] for found in got.values() for f in found)
+        try:
+            self.holds(as_made, "one of each program")
+        except Broken:
+            raise Broken("the programs are not one of each, or are an older build's: %s"
+                         % ", ".join("%d %s%s" % (len(f), n, " from a file that is gone" if any(x[2] for x in f) else "") for n, f in self.census().items() if f or n in need))
 
     def home_seen(self):
-        d = self.dialog()
-        if d and d.get("visible") and d.get("focused"):
-            self.holds(lambda: (self.seen() or 0) > 0.8, "home seen while it has the keys")
+        if not self.dialog():
+            raise Broken("home is gone")
+        self.until(lambda: (self.dialog() or {}).get("visible") and (self.dialog() or {}).get("focused"), "home to have the keys", 15)
+        self.holds(lambda: (self.seen() or 0) > 0.8, "home seen while it has the keys")
 
     def reload_is_nothing(self):
         before = self.quiet()
-        self.sway("reload")
-        time.sleep(2)
-        self.ground()
+        self.reload()
         after = self.quiet()
         if after != before:
             keys = [k for k in before if before[k] != after[k]]

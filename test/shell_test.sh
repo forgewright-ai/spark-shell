@@ -7464,7 +7464,7 @@ done
 _pd=$(tmpd); echo mine > "$_pd/kept"
 st=0; out=$(PROVE_DIR=$_pd sh "$REPO/test/prove.sh" 2>&1) || st=$?
 [ "$st" -eq 2 ] && [ "$(cat "$_pd/kept" 2>/dev/null)" = mine ] || _lb="$_lb [a folder not its own: st=$st $out]"
-[ "$(sh "$REPO/test/prove.sh" --list | grep -c '^proof ')" = 6 ] && sh "$REPO/test/prove.sh" --list | grep -qx 'suite as root' || _lb="$_lb [the steps: $(sh "$REPO/test/prove.sh" --list | tr '\n' ',')]"
+[ "$(sh "$REPO/test/prove.sh" --list | grep -c '^proof ')" = 7 ] && sh "$REPO/test/prove.sh" --list | grep -qx 'suite as root' || _lb="$_lb [the steps: $(sh "$REPO/test/prove.sh" --list | tr '\n' ',')]"
 [ -z "$_lb" ] && ok "test/prove.sh: every proof of ci.yml's desktop job is in it, with the gate and the suite as you and as CI's root; a folder it did not make is not touched" || bad "prove" "$_lb"
 # the want verb: one entry for words, the plan as JSON, a file asked about
 cat > "$H/.local/bin/spark" <<'STUB'

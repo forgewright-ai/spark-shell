@@ -107,7 +107,6 @@ proof() {   # proof NAME -- one of the desktop job's proofs, on a headless sway 
             winpad) apart "$d" env SPARK_SHELL_WINPAD="$pad" timeout 420 python3 -I "$REPO/test/winpad_desktop_proof.py" "$d/evidence" ;;
             voice) apart "$d" env SPARK_SHELL_WINPAD="$pad" timeout 420 python3 -I "$REPO/test/voice_desktop_proof.py" "$d/evidence" ;;
             journeys)
-                command -v bwrap >/dev/null 2>&1 || { echo "no bwrap here: CI's desktop job runs the journeys"; exit 0; }
                 for j in home live matrix loops; do REPLAY_DIR="$d" apart "$d" timeout 480 python3 -I "$REPO/test/replay.py" "$j" here || exit 1; done ;;
             bar) apart "$d" env SPARK_SHELL_WINPAD="$pad" SPARK_SHELL_BAR="$bar" timeout 600 python3 -I "$REPO/test/bar_desktop_proof.py" "$d/evidence" ;;
         esac
@@ -136,7 +135,10 @@ if [ -z "$quick" ]; then
     else echo "skip  suite as root (unshare cannot map your ids here: CI's rows run it)"; fi
     if command -v sway >/dev/null 2>&1 && command -v cargo >/dev/null 2>&1; then
         step "the builds the proofs run" builds
-        for p in $PROOFS; do step "proof $p" proof "$p"; done
+        for p in $PROOFS; do
+            if [ "$p" = journeys ] && ! command -v bwrap >/dev/null 2>&1; then echo "skip  proof journeys (no bwrap here: CI's desktop job runs them)"; continue; fi
+            step "proof $p" proof "$p"
+        done
     else echo "skip  the desktop's proofs (no sway or no cargo here: CI's desktop job runs them)"; fi
 fi
 step 'nothing left running' left

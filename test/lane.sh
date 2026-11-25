@@ -152,7 +152,7 @@ area() {
         src/config.sh) module "$1" standard ;;        # every setting goes through it
         src/*.sh) module "$1" fast ;;
         lib/*) if either says "$1"; then echo guarded; else echo standard; fi ;;
-        test/*_proof.py|test/*_proof.sh|test/desk.py|test/dialog_pty.py) echo standard ;;   # run by the desktop job or a build job
+        test/*_proof.py|test/*_proof.sh|test/desk.py|test/journeys.py|test/replay.py|test/dialog_pty.py) echo standard ;;   # run by the desktop job or a build job
         test/*) echo fast ;;
         README.md|CHANGELOG.md|CREDITS.md|LICENSE|config.example) echo fast ;;
         *) echo standard ;;

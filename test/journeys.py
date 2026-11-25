@@ -46,9 +46,7 @@ def home(d):
     open_home(d, "5")
     go(d, "files", "notes")
     d.home_seen()
-    d.sway("reload")
-    time.sleep(2)
-    d.ground()
+    d.reload()
     go(d, "theme", "sound")
     d.home_seen()
     d.shell("theme", "tokyonight-night")
@@ -94,6 +92,10 @@ def matrix(d):
         ids, areas = {w["id"] for w in d.windows()}, d.quiet()["areas"]
         d.sway("[con_id=%d] focus" % here[0]["id"])
         d.shell("desktop", "window", "min")
+        one = lambda: next((w for w in d.windows() if w["id"] == here[0]["id"]), None)   # noqa: E731
+        d.until(lambda: one() and not one().get("visible"), "the window on the pad")
+        if len(d.census()["spark-winpad"]) != 1:
+            raise Broken("%d spark-winpad run with a window on the pad" % len(d.census()["spark-winpad"]))
         time.sleep(1.5)
         try:
             d.holds(lambda: d.snapshot()["areas"] == areas, "the windows' area as it was")
@@ -101,10 +103,17 @@ def matrix(d):
             raise Broken("a window put on the pad changed the windows' area at text %s: %s -> %s" % (size, areas, d.snapshot()["areas"]))
         if {w["id"] for w in d.windows()} != ids:
             raise Broken("a window put on the pad is lost")
-        d.shell("desktop", "pad", "keys")   # Super+minus and Enter, a person's way back
-        time.sleep(0.5)
-        d.key("-k", "Return")
-        d.until(lambda: all(w.get("visible") for w in d.windows() if w["id"] == here[0]["id"]), "the window back from the pad")
+        for _ in range(3):   # Super+minus and Enter, a person's way back; a pad not ready yet is asked again
+            d.shell("desktop", "pad", "keys")
+            time.sleep(1)
+            d.key("-k", "Return")
+            end = time.monotonic() + 8
+            while time.monotonic() < end and not (one() or {}).get("visible"):
+                time.sleep(0.3)
+            if (one() or {}).get("visible"):
+                break
+        else:
+            raise NotRun("the window did not come back from the pad")
     d.whole()
 
 
@@ -132,8 +141,10 @@ def loops(d):
         d.until(moving, "the loops move on %s" % when, 15, Broken)
     d.shell("theme", "atlas-awakening", seconds=180)
     d.shell("theme", "motion", "on")
+    d.until(lambda: d.census()["spark-wallpaper"], "a player", 40)
     moves("after the theme")
-    d.sway("reload")
+    if d.sway("reload").returncode:   # no ground here: the loops stand on the background
+        raise Broken("sway refused its reload")
     time.sleep(2)
     moves("after a reload")
 
@@ -143,27 +154,40 @@ KEYS = {"matrix": {"BAR_TRAY": "yes"}}
 JOURNEYS = {f.__name__: f for f in (home, live, matrix, loops)}
 
 
+MARK = ".spark-shell-journey"
+
+
 def main():
-    fenced()
+    fenced(whole=True)
     name, tree, out = sys.argv[1], sys.argv[2], Path(sys.argv[3])
     builds = dict(a.split("=", 1) for a in sys.argv[4:])
-    shutil.rmtree(str(out), ignore_errors=True)
-    out.mkdir(parents=True)
-    more = {"screens": SCREENS[name]} if name in SCREENS else {}
-    d = Desktop(tree, builds, out, config=KEYS.get(name, {}), **more)
+    if out.exists() and any(out.iterdir()):
+        if not (out / MARK).exists():
+            sys.exit("journeys.py: %s is there and is no folder of a journey: not touched" % out)
+        shutil.rmtree(str(out))
+    out.mkdir(parents=True, exist_ok=True)
+    (out / MARK).write_text("")
+    lacks = [part for part in ("dialog", "bar", "winpad") + (("wallpaper",) if name == "loops" else ()) if not os.access(builds.get(part, ""), os.X_OK)]
+    word, d = "NOT-RUN no build of %s" % ", ".join(lacks), None
     try:
-        d.start()
-        JOURNEYS[name](d)
-        word = "GREEN"
+        if not lacks:
+            more = {"screens": SCREENS[name]} if name in SCREENS else {}
+            d = Desktop(tree, builds, out, config=KEYS.get(name, {}), **more)
+            d.start()
+            JOURNEYS[name](d)
+            word = "GREEN"
     except Broken as why:
         word = "RED %s" % why
     except NotRun as why:
         word = "NOT-RUN %s" % why
     except Exception as why:   # the harness itself: no word on the program
         word = "NOT-RUN %s: %s" % (type(why).__name__, why)
-    (out / "said.txt").write_text("\n".join(d.said) + "\n")
-    d.sh("grim", str(out / "last.png"), seconds=20)
-    d.stop()
+    finally:
+        if d:
+            (out / "said.txt").write_text("\n".join(d.said + [word]) + "\n")
+            if shutil.which("grim"):
+                d.sh("grim", str(out / "last.png"), seconds=20)
+            d.stop()
     print(word)
     return {"G": 0, "R": 1, "N": 3}[word[0]]
 
