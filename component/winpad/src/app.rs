@@ -296,6 +296,9 @@ pub struct App {
     bars: Vec<(String, BarAt)>,
     bar_text: String,
     bar_gone: u32,
+    /// The screens whose bar is on its way, and the ticks one that does not rest was waited for.
+    coming: Vec<String>,
+    late: u32,
     icon_paths: HashMap<String, String>,
     pictures: HashMap<String, Option<Picture>>,
     hidden: bool,
@@ -393,6 +396,8 @@ impl App {
             bars: vec![],
             bar_text: String::new(),
             bar_gone: 1,
+            coming: vec![],
+            late: 0,
             icon_paths: HashMap::new(),
             pictures: HashMap::new(),
             hidden: false,
@@ -453,15 +458,17 @@ impl App {
 
     /// The pad on a screen: in sight, the screen not at rest, and a pad whose place is the bar not waiting for it.
     fn visible_on(&self, oi: usize) -> bool {
-        self.visible() && !self.awaits_bar() && self.outs.get(oi).is_some_and(|o| !self.resting.contains(&o.name))
+        self.visible() && self.outs.get(oi).is_some_and(|o| !self.awaits_bar(&o.name) && !self.resting.contains(&o.name))
     }
 
     /// A pad whose place is the bar, while the bar's state is not there: at its start, and while a bar that moves
     /// or takes another look starts again. The pad goes with the bar and comes back with it, for BAR_WAIT ticks
-    /// at most: it never stands at the bar's old edge or at the bottom's middle for the moment between. Not
-    /// while it is dragged.
-    fn awaits_bar(&self) -> bool {
-        self.cfg.place == Place::Bar && self.cfg.bar_state.is_some() && self.drag.is_none() && self.bar_gone > 0 && self.bar_gone < BAR_WAIT
+    /// at most: it never stands at the bar's old edge or at the bottom's middle for the moment between, nor on a
+    /// screen that rested while its bar comes back. Not while it is dragged.
+    fn awaits_bar(&self, name: &str) -> bool {
+        let gone = self.bar_gone > 0 && self.bar_gone < BAR_WAIT;
+        let waits = gone || self.coming.iter().any(|c| c == name);
+        self.cfg.place == Place::Bar && self.cfg.bar_state.is_some() && self.drag.is_none() && waits
     }
 
     /// The windows' apps by name, oldest first: what a group folds by.
@@ -696,6 +703,13 @@ impl App {
     /// The bar's state file read, ten times a second: where each screen's bar stands and the room it keeps. A
     /// file that is gone keeps what it last said for three seconds, a bar started again, and then says no bar.
     pub fn bar_tick(&mut self) {
+        // a bar that does not come is waited for no longer than one that is gone
+        let late = self.coming.iter().any(|c| !self.resting.contains(c));
+        self.late = if late { self.late + 1 } else { 0 };
+        if self.late == BAR_WAIT {
+            self.coming.retain(|c| self.resting.contains(c));
+            self.show_again();
+        }
         let Some(file) = &self.cfg.bar_state else { return };
         // the text, and whether the pad is laid out again whatever it says: a bar back from being gone, or none come
         let (text, again) = match std::fs::read_to_string(file) {
@@ -725,9 +739,11 @@ impl App {
         // is laid out again when a bar came, went or moved, not at every word of that. It was, ten times a second
         // while the pointer crossed the bar
         let bars = pad::bars(&text);
+        let before: Vec<String> = self.bars.iter().map(|b| &b.0).chain(&self.coming).cloned().collect();
+        let coming = pad::coming(&text, &before);
         self.bar_text = text;
-        if again || bars != self.bars {
-            self.bars = bars;
+        if again || bars != self.bars || coming != self.coming {
+            (self.bars, self.coming) = (bars, coming);
             self.show_again();
         }
     }

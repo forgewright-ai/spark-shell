@@ -534,6 +534,22 @@ pub fn bars(text: &str) -> Vec<(String, BarAt)> {
     out
 }
 
+/// The screens whose bar is on its way, from a state file's text: each it says rests, and each of `before` where it
+/// says no bar yet. A bar that says nothing has none on its way.
+pub fn coming(text: &str, before: &[String]) -> Vec<String> {
+    let said = |kind: &str| -> Vec<String> {
+        let name = |l: &str| l.strip_prefix(kind)?.split('\t').next().map(String::from);
+        text.lines().filter_map(name).collect()
+    };
+    let (mut out, stands) = (said("rest\t"), said("output\t"));
+    for b in before.iter().filter(|_| text.starts_with("bar\t")) {
+        if !stands.contains(b) && !out.contains(b) {
+            out.push(b.clone());
+        }
+    }
+    out
+}
+
 /// Whether a dragged pad holds the bar: it takes it with the pointer on the bar itself, `into` the windows' area
 /// from the bar's edge under 0, and keeps it until the pointer is half the bar's height into that area, so a
 /// pointer trembling at the bar's edge never flips the pad's shape. Near that edge and off the bar the pad docks
@@ -1468,6 +1484,26 @@ mod tests {
         assert_eq!(Place::Bar.words(), "bar");
         assert_eq!((Place::Bar.side(), Place::Bar.edge()), (false, None));
         assert_eq!(Place::parse("bar 3"), None);
+    }
+
+    #[test]
+    fn a_pad_on_the_bar_waits_for_the_bar_of_a_screen_that_rested() {
+        let says = |text: &str, before: &[&str]| coming(text, &before.iter().map(|b| b.to_string()).collect::<Vec<_>>());
+        let (b, a) = (
+            "output\tB\t1280\t36\ttop\t1\napps\tB\t270\t300\n",
+            "output\tA\t1920\t36\ttop\t1\napps\tA\t354\t906\n",
+        );
+        // at rest, as the bar says it: the tree may say the screen shows another workspace before the bar has read it
+        assert_eq!(says(&format!("bar\t1\nstatus\tok\nrest\tA\n{b}"), &["A", "B"]), ["A"]);
+        // the bar has read it and waits for its size: neither at rest nor there yet
+        assert_eq!(says(&format!("bar\t1\nstatus\tok\n{b}"), &["A", "B"]), ["A"]);
+        // it stands: the pad goes there at once, and never stood at the bottom for the moment between
+        assert_eq!(says(&format!("bar\t1\nstatus\tok\n{a}{b}"), &["A", "B"]), [""; 0]);
+        // a bar started again has no output in its first words; one that says nothing is none on its way
+        assert_eq!(says("bar\t1\nstatus\tloading\n", &["A", "B"]), ["A", "B"]);
+        assert_eq!((says("", &["A", "B"]), says("bar\t1\nstatus\tloading\n", &[])), (vec![], vec![]));
+        // a name is taken whole
+        assert_eq!(says(&format!("bar\t1\nrest\tAB\n{a}"), &["A"]), ["AB"]);
     }
 
     #[test]
