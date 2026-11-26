@@ -102,6 +102,7 @@ help lists them by subject. The bindings are named actions in
     Print captures the screen, Shift+Print an area, Super+Print the window.
     Super+Ctrl+space goes to the next keyboard layout.
     The volume and mute keys set the sound, and the mic mute key the mic.
+    The media keys play, pause, skip and stop what plays.
     The brightness keys set the screen's brightness.
     Super+equal puts the keyboard on the bar: arrows move and set, Enter acts.
     Typing exit in the first window also leaves the desktop.

@@ -66,6 +66,7 @@ cmd_desktop() {
         pad) shift; layout_pad "$@"; return ;;
         capture) shift; layout_capture "$@"; return ;;
         notifications) shift; layout_notifications "$@"; return ;;
+        media) shift; layout_media "$@"; return ;;
         storage) shift; layout_storage "$@"; return ;;
         power) shift; layout_power "$@"; return ;;
         --first)   # home once, then your shell

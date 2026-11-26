@@ -32,7 +32,7 @@ pub struct Shape {
 }
 
 /// Every drawing's name: an icon, or an icon and its form.
-pub const NAMES: [&str; 41] = [
+pub const NAMES: [&str; 43] = [
     "lan",
     "bt",
     "bt-idle",
@@ -45,6 +45,8 @@ pub const NAMES: [&str; 41] = [
     "out-muted",
     "mic",
     "mic-muted",
+    "media",
+    "media-paused",
     "light",
     "kb",
     "battery-full",
@@ -91,6 +93,8 @@ pub fn shapes(name: &str) -> Option<&'static [Shape]> {
         "out-muted" => OUT_MUTED,
         "mic" => MIC,
         "mic-muted" => MIC_MUTED,
+        "media" => MEDIA,
+        "media-paused" => MEDIA_PAUSED,
         "light" => LIGHT,
         "kb" => KB,
         "battery-full" => BATTERY_FULL,
@@ -200,6 +204,16 @@ const MIC_MUTED: &[Shape] = &[
     Shape { ink: Ink::On, stroke: 1.5, path: &[Seg::M(8.0, 1.55), Seg::L(8.0, 1.55), Seg::C(9.298, 1.55, 10.35, 2.602, 10.35, 3.9), Seg::L(10.35, 7.5), Seg::C(10.35, 8.798, 9.298, 9.85, 8.0, 9.85), Seg::L(8.0, 9.85), Seg::C(6.702, 9.85, 5.65, 8.798, 5.65, 7.5), Seg::L(5.65, 3.9), Seg::C(5.65, 2.602, 6.702, 1.55, 8.0, 1.55), Seg::Z] },
     Shape { ink: Ink::On, stroke: 1.8, path: &[Seg::M(2.4, 7.6), Seg::L(2.4, 8.6), Seg::C(2.4, 11.693, 4.907, 14.2, 8.0, 14.2), Seg::C(11.093, 14.2, 13.6, 11.693, 13.6, 8.6), Seg::L(13.6, 7.6)] },
     Shape { ink: Ink::On, stroke: 1.8, path: &[Seg::M(8.0, 14.2), Seg::L(8.0, 16.0)] },
+];
+
+#[rustfmt::skip]
+const MEDIA: &[Shape] = &[
+    Shape { ink: Ink::On, stroke: 0.0, path: &[Seg::M(3.4, 1.8), Seg::L(14.2, 8.0), Seg::L(3.4, 14.2), Seg::Z] },
+];
+
+#[rustfmt::skip]
+const MEDIA_PAUSED: &[Shape] = &[
+    Shape { ink: Ink::On, stroke: 1.5, path: &[Seg::M(4.4, 3.4), Seg::L(12.4, 8.0), Seg::L(4.4, 12.6), Seg::Z] },
 ];
 
 #[rustfmt::skip]

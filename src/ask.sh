@@ -3,8 +3,8 @@
 # sets: LOCAL_RISK US WANT_ATTACH_MAX WANT_NAMES_SAID
 # reads: APPS LAYOUTS_DIR OS PANEL_CROSS PANEL_GO PANEL_TICK PROVIDE_TOOLS TAB TERM_OWN TMP WM_OWN
 panel_brief_sections() {   # -> the sections the want path offers here, in the brief's order
-    for p in layout apps printers window bar notes reminders display keyboard notifications storage power $(panel_blocks_here); do
-        case $p in lan|bat|clock) continue ;; window|bar|display|keyboard|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; printers) command -v lpstat >/dev/null 2>&1 || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac
+    for p in layout apps printers window bar notes reminders display keyboard notifications media storage power $(panel_blocks_here); do
+        case $p in lan|bat|clock) continue ;; window|bar|display|keyboard|notifications|media|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; printers) command -v lpstat >/dev/null 2>&1 || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac
         printf '%s\n' "$p"
     done
 }

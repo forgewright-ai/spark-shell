@@ -3,7 +3,7 @@
 # sets: ANIMATION_NAMES ANIM_PAINTED ANIM_PAIRED BAR_LEVELS BAR_MODULES CONFIG_BAD CONFIG_MEND CONFIG_UNSET GLYPH_FAMILIES KB_RE LOOK_KEYS PATH_REFUSED PATH_SAID SAVER_NAMES SAVER_OWN THEME_KEYS
 # reads: CONFIG CONFIG_DIR INPUT_KEYS LOOKS_DIR MODE OS PALETTE_DIR REPO TERM_NAME
 GLYPH_FAMILIES='stone star banner'
-BAR_MODULES='workspaces pad lan bt wifi out mic due light kb bat clock notifications'   # what the bar can show, in its order; the workspaces are the bar's own and stay, the rest are its line's modules
+BAR_MODULES='workspaces pad lan bt wifi media out mic due light kb bat clock notifications'   # what the bar can show, in its order; the workspaces are the bar's own and stay, the rest are its line's modules
 BAR_LEVELS='out mic light wifi'   # the modules with a level: a pin puts its control, a gauge and a number, on the bar
 # load_env FILE [env] -> each KEY=value exported; the file wins over the
 # environment (sway's children inherit login's keys), `env` keeps a set key
@@ -93,7 +93,7 @@ config_load() {
     : "${BAR_TRAY:=no}"                    # the apps' own icons (the tray) at the bar's end: yes or no
     : "${BAR_PINS:=out}"                   # the levels whose control is on the bar, a space between, or none; a line that names a module with no level is v0.147's (bar_shown)
     : "${BAR_HIDE:=}"                      # the modules hidden from the bar, a space between
-    : "${BAR_OVERFLOW:=due pad light bt lan wifi kb bat mic out}"   # the modules that leave a bar short of width, the first first; the time and the notifications never leave
+    : "${BAR_OVERFLOW:=media due pad light bt lan wifi kb bat mic out}"   # the modules that leave a bar short of width, the first first; the time and the notifications never leave
     : "${BAR_MOTION:=yes}"                 # the bar's motion, a number's digits flowing to a new level: yes or no
     : "${WINDOWS:=split}"                  # how new windows sit on a workspace: split (side by side), tabs or stacked
     : "${LOGIN:=no}"                       # the login screen on tty1: yes or no

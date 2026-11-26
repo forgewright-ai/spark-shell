@@ -136,7 +136,7 @@ BAR_HIDE=
 
 # What leaves a bar short of width, the first name first. The time and
 # the notifications never leave.
-BAR_OVERFLOW=due pad light bt lan wifi kb bat mic out
+BAR_OVERFLOW=media due pad light bt lan wifi kb bat mic out
 
 # The bar's motion, a number's digits flowing to a new level: yes or no.
 BAR_MOTION=yes

@@ -65,7 +65,7 @@ machine_cmds() {   # -> spark-shell's commands as the help says them, a line a v
               a[key, ++na[key]] = alt }
             END { for (i = 1; i <= k; i++) { key = order[i]; s = ""; for (j = 1; j <= na[key]; j++) s = s (j > 1 ? "|" : "") a[key, j]
                       if (s == "") s = key; else if (bare[key]) s = key " [" s "]"; else s = key " " s
-                      t = top[key]; if (key ~ /^desktop (time|mouse|touchpad|notifications|storage)$/) t = "desktop+"
+                      t = top[key]; if (key ~ /^desktop (time|mouse|touchpad|notifications|media|storage)$/) t = "desktop+"
                       if (t in line) line[t] = line[t] "; " substr(s, index(s, " ") + 1); else { line[t] = "spark-shell " s; to[++m] = t } }
                   for (i = 1; i <= m; i++) if (to[i] != "desktop+" && to[i] != "font") print "- " line[to[i]]
                   if ("font" in line) print "+ " line["font"]

@@ -352,21 +352,34 @@ bindsym $mod+Print exec @REPO@/spark-shell desktop capture window
 # action: desktop.desktop-keyboard-next
 bindsym $mod+Ctrl+space exec @REPO@/spark-shell desktop keyboard next
 
+# The sound, media and brightness keys are bound --locked: they work on the lock screen too.
 # key: The volume and mute keys set the sound, and the mic mute key the mic.
 # action: desktop.bar-volume-up
-bindsym XF86AudioRaiseVolume exec @REPO@/spark-shell bar volume up
+bindsym --locked XF86AudioRaiseVolume exec @REPO@/spark-shell bar volume up
 # action: desktop.bar-volume-down
-bindsym XF86AudioLowerVolume exec @REPO@/spark-shell bar volume down
+bindsym --locked XF86AudioLowerVolume exec @REPO@/spark-shell bar volume down
 # action: desktop.bar-volume-mute
-bindsym XF86AudioMute exec @REPO@/spark-shell bar volume mute
+bindsym --locked XF86AudioMute exec @REPO@/spark-shell bar volume mute
 # action: desktop.bar-volume-mic
-bindsym XF86AudioMicMute exec @REPO@/spark-shell bar volume mic
+bindsym --locked XF86AudioMicMute exec @REPO@/spark-shell bar volume mic
+
+# key: The media keys play, pause, skip and stop what plays.
+# action: desktop.desktop-media-toggle
+bindsym --locked XF86AudioPlay exec @REPO@/spark-shell desktop media toggle
+# action: desktop.desktop-media-pause
+bindsym --locked XF86AudioPause exec @REPO@/spark-shell desktop media pause
+# action: desktop.desktop-media-next
+bindsym --locked XF86AudioNext exec @REPO@/spark-shell desktop media next
+# action: desktop.desktop-media-previous
+bindsym --locked XF86AudioPrev exec @REPO@/spark-shell desktop media previous
+# action: desktop.desktop-media-stop
+bindsym --locked XF86AudioStop exec @REPO@/spark-shell desktop media stop
 
 # key: The brightness keys set the screen's brightness.
 # action: desktop.bar-light-up
-bindsym XF86MonBrightnessUp exec @REPO@/spark-shell bar light up
+bindsym --locked XF86MonBrightnessUp exec @REPO@/spark-shell bar light up
 # action: desktop.bar-light-down
-bindsym XF86MonBrightnessDown exec @REPO@/spark-shell bar light down
+bindsym --locked XF86MonBrightnessDown exec @REPO@/spark-shell bar light down
 
 # key: Super+equal puts the keyboard on the bar: arrows move and set, Enter acts.
 # action: desktop.bar-keys

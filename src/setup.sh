@@ -504,7 +504,7 @@ cmd_check_lines() {   # the checks, a row each; false when one fails
     check_apps
     check_bar
     check_top
-    if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then sound_check; notify_check; portal_check; bt_check; storage_check; power_check; fi
+    if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then sound_check; media_check; notify_check; portal_check; bt_check; storage_check; power_check; fi
     [ "$fails" = 0 ]
 }
 check_rc() {   # the rc files are spark-shell's links

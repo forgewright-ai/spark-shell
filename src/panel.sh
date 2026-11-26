@@ -37,7 +37,7 @@ panel_colors() {   # the SGRs from our own render; a pipe gets none
 }
 
 # --- the sections
-PANEL_ORDER="undo spark apps printers layout notes reminders window display keyboard mouse touchpad notifications out mic bt wifi storage theme bar power system about"   # by use; undo only while there is one
+PANEL_ORDER="undo spark apps printers layout notes reminders window display keyboard mouse touchpad notifications media out mic bt wifi storage theme bar power system about"   # by use; undo only while there is one
 PANEL_BLOCKS="lan wifi bt out mic bat clock theme"      # the bar's blocks in the bar's order, and the palette
 PANEL_LOOKS="lan bat clock"                            # blocks with nothing to set: shown only when they opened the panel
 panel_blocks_here() {   # -> the bar's blocks this machine has, in the bar's order
@@ -57,12 +57,12 @@ panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on
     [ "$_f" = glance ] || echo "$_f"
     for s in $PANEL_ORDER; do
         [ "$s" != "$_f" ] || continue
-        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; system) [ "$OS" != Darwin ] || continue ;; printers) command -v lpstat >/dev/null 2>&1 || continue ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|display|keyboard|mouse|touchpad|notes|reminders|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
+        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; system) [ "$OS" != Darwin ] || continue ;; printers) command -v lpstat >/dev/null 2>&1 || continue ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|display|keyboard|mouse|touchpad|notes|reminders|notifications|media|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
         echo "$s"
     done
 }
 panel_cost() {   # panel_cost SECTION -> instant | fast | slow: what its rows cost to know
-    case $1 in wifi) echo slow ;; bt|printers|out|mic|apps|display|notifications|storage) echo fast ;; *) echo instant ;; esac
+    case $1 in wifi) echo slow ;; bt|printers|out|mic|media|apps|display|notifications|storage) echo fast ;; *) echo instant ;; esac
 }
 panel_section_ok() { case " glance chat $PANEL_ORDER $PANEL_BLOCKS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }   # panel_section_ok WORD
 

@@ -207,13 +207,14 @@ const WORKSPACE_SAYS: [&str; 13] = [
 ];
 /// Settings: a section each, then Talk and Connections, in this order, under their groups (#137); About is a
 /// row of the system place since v0.153 (a place of the home from v0.114, #136). Appearance first since v0.166.
-pub const SETTINGS: [(&str, &str, &str); 18] = [
+pub const SETTINGS: [(&str, &str, &str); 19] = [
     ("theme", "theme", "palette, wallpaper and text"),
     ("wallpaper", "wallpaper", "the desktop picture"),
     ("display", "display", "screens, brightness, idle and lock"),
     ("bar", "bar", "the status bar"),
     ("out", "sound", "output and volume"),
     ("mic", "microphone", "input and level"),
+    ("media", "media", "what plays, and its controls"),
     ("wifi", "Wi-Fi", "networks"),
     ("bt", "Bluetooth", "devices nearby"),
     ("lan", "network", "the wired connection"),
@@ -231,7 +232,7 @@ pub const SETTINGS: [(&str, &str, &str); 18] = [
 /// The group a row of Settings sits under, its heading (#137).
 pub fn setting_group(label: &str) -> &'static str {
     match label {
-        "out" | "mic" => "sound",
+        "out" | "mic" | "media" => "sound",
         "wifi" | "bt" | "lan" => "network",
         "storage" | "keyboard" | "mouse" | "touchpad" => "devices",
         // appearance, the word people search for (v0.161: look before); notifications is no part of it. The screens

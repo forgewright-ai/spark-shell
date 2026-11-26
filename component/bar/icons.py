@@ -131,6 +131,12 @@ def out(muted):
     return poly("1.6,5.6 4.8,5.6 9.2,2 9.2,14 4.8,10.4 1.6,10.4") + poly("11,3.4 15.6,8 11,12.6 11,10 13,8 11,6")
 
 
+def media(paused):
+    if paused:
+        return poly("4.4,3.4 12.4,8 4.4,12.6", w=1.5)
+    return poly("3.4,1.8 14.2,8 3.4,14.2")
+
+
 def mic(muted):
     pill = rect(5.65, 1.55, 4.7, 8.3, 2.35, sw=1.5) if muted else rect(4.9, 0.8, 6.2, 9.8, 3.1)
     return pill + path("M2.4,7.6 V8.6 A5.6,5.6 0 0 0 13.6,8.6 V7.6", w=1.8) + line("8,14.2 8,16")
@@ -249,6 +255,7 @@ ICONS = {
     "lan": lan(), "bt": bt("linked"), "bt-idle": bt("idle"), "bt-off": bt("off"),
     "wifi": wifi("on"), "wifi-fair": wifi("fair"), "wifi-weak": wifi("weak"), "wifi-off": wifi("off"),
     "out": out(False), "out-muted": out(True), "mic": mic(False), "mic-muted": mic(True),
+    "media": media(False), "media-paused": media(True),
     "light": light(), "kb": kb(),
     "battery-full": battery("full"), "battery-half": battery("half"), "battery-low": battery("low"), "battery-charging": battery("charging"),
     "plane": plane(), "flag": flag(True), "flag-none": flag(False), "quiet": quiet(),

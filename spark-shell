@@ -119,6 +119,8 @@
 #                                     the pad with its band, or its handle alone
 #   spark-shell desktop notifications [do-not-disturb on|off|dismiss|restore]
 #                                     do not disturb, and the last few
+#   spark-shell desktop media [play|pause|toggle|next|previous|stop]
+#                                     what plays, and its controls
 #   spark-shell desktop storage [mount|unmount|open|eject NAME]
 #                                     the drives plugged in, the free space
 #   spark-shell desktop power [lock|suspend|logout|restart|shutdown]
@@ -209,6 +211,8 @@ REPO=$(cd "$(dirname "$SELF")" && pwd)
 . "$REPO/src/setup.sh"
 # shellcheck source=src/bar.sh
 . "$REPO/src/bar.sh"
+# shellcheck source=src/media.sh
+. "$REPO/src/media.sh"
 # shellcheck source=src/facts.sh
 . "$REPO/src/facts.sh"
 # shellcheck source=src/panel.sh

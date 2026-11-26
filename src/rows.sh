@@ -6,10 +6,10 @@
 # is built by jq with --arg, every request is parsed by jq; a method or a
 # tool name is matched by case, never run as a name
 PROVIDE_PROTOCOL=2025-06-18
-PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard mouse touchpad notifications storage power notes reminders bar layout apps system about undo files"   # every panel section but spark, and files
+PROVIDE_SECTIONS="lan wifi bt printers out mic media bat clock theme window display keyboard mouse touchpad notifications storage power notes reminders bar layout apps system about undo files"   # every panel section but spark, and files
 PROVIDE_SECTIONS_OLD='tools pointer'   # the names a section had before: tools is system since v0.153, pointer is mouse and touchpad since v0.169. A line spark's MCP list holds under one is ours to take off
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_copy_color theme_export_palette theme_save theme_delete theme_restore theme_rename theme_duplicate theme_export theme_install theme_color theme_colors theme_pointer theme_clock theme_pair theme_portrait theme_panel theme_loop theme_reel theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_icons theme_spacing theme_family theme_face theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_keep display_back display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps keyboard_compose keyboard_add keyboard_remove mouse_speed mouse_acceleration mouse_scroll mouse_scroll_speed mouse_primary touchpad_speed touchpad_tap touchpad_scroll touchpad_scroll_speed touchpad_click touchpad_typing_off touchpad_mouse_off notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open about_site undo_all files_browse files_open files_app files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_sort files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden system_check system_fix system_copy_details system_update system_update_system system_export system_front system_end system_measure system_clean_packages"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute media_play media_pause media_toggle media_next media_previous media_stop theme_palette theme_copy_color theme_export_palette theme_save theme_delete theme_restore theme_rename theme_duplicate theme_export theme_install theme_color theme_colors theme_pointer theme_clock theme_pair theme_portrait theme_panel theme_loop theme_reel theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_icons theme_spacing theme_family theme_face theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_keep display_back display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps keyboard_compose keyboard_add keyboard_remove mouse_speed mouse_acceleration mouse_scroll mouse_scroll_speed mouse_primary touchpad_speed touchpad_tap touchpad_scroll touchpad_scroll_speed touchpad_click touchpad_typing_off touchpad_mouse_off notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open about_site undo_all files_browse files_open files_app files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_sort files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden system_check system_fix system_copy_details system_update system_update_system system_export system_front system_end system_measure system_clean_packages"
 # the scrubber for every string a provider hands on: what can redraw or
 # reorder a screen goes
 #   C0 but the tab, DEL and C1            \u0000-\u0008 \u000b-\u001f \u007f-\u009f
@@ -49,6 +49,7 @@ tool_spec() {
         printers) tool_spec_printers "$1" ;;
         bt) tool_spec_bt "$1" ;;
         out|mic) tool_spec_sound "$1" ;;
+        media) tool_spec_media "$1" ;;
         theme) tool_spec_theme "$1" ;;
         window) tool_spec_window "$1" ;;
         notes) tool_spec_notes "$1" ;;
@@ -92,6 +93,18 @@ tool_spec_bt() {   # the bluetooth tools
         bt_pair)           _ts=bt _ta=pair _tp=name _tk=string _th='' _tt='bt pair NAME' _td='Pair a new device and connect it.' ;;
         bt_scan)           _ts=bt _ta=scan _th='' _tt='bt scan' _td='Look for new devices nearby.' ;;
         bt_power)          _ts=bt _ta=power _tp=state _tk='on|off' _th=i _tt='bt power STATE' _td='Turn Bluetooth on or off.' ;;
+        *) return 1 ;;
+    esac
+}
+# free, each of them: the player decides what it takes, and the one of play and pause its rows show changes as it plays
+tool_spec_media() {   # the media tools: what a player is asked
+    case $1 in
+        media_play)        _ts=media _ta=play _th=if _tt='media play' _td='Play what is paused in the player in use.' ;;
+        media_pause)       _ts=media _ta=pause _th=if _tt='media pause' _td='Pause what plays: music, a video, a podcast.' ;;
+        media_toggle)      _ts=media _ta=toggle _th=f _tt='media toggle' _td='Pause what plays, or play what is paused.' ;;
+        media_next)        _ts=media _ta=next _th=f _tt='media next' _td='Skip to the next track.' ;;
+        media_previous)    _ts=media _ta=previous _th=f _tt='media previous' _td='Go back to the previous track.' ;;
+        media_stop)        _ts=media _ta=stop _th=if _tt='media stop' _td='Stop what plays.' ;;
         *) return 1 ;;
     esac
 }

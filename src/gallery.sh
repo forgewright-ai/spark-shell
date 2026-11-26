@@ -119,8 +119,8 @@ gallery_theme_ok() {   # gallery_theme_ok DIR [NAME] -> 0 when a theme from the 
             family.json) _gw=$(family_why "$_gf") || { echo "its family.json: $_gw"; return 1; } ;;
             "$_gn"-landscape-[1-9].jpg|"$_gn"-landscape-[1-9].png|"$_gn"-portrait.jpg|"$_gn"-portrait.png) _gw=$(gallery_picture_ok "$_gf" "$THEME_FILE_PICTURE_MAX") || { gallery_named "$_gb" "$_gw"; return 1; } ;;
             "$_gn"-landscape-[1-9].mp4|"$_gn"-portrait.mp4) [ -f "${_gf%.mp4}.jpg" ] || [ -f "${_gf%.mp4}.png" ] || { echo "its loop $_gb has no picture of its own"; return 1; }
-                _gw=$(media_ok "$_gf" mp4) || { echo "its loop $_gb: $_gw"; return 1; } ;;
-            "$_gn"-dialog-open.webp|"$_gn"-dialog-close.webp) _gw=$(media_ok "$_gf" webp) || { echo "its reel $_gb: $_gw"; return 1; } ;;
+                _gw=$(art_media_ok "$_gf" mp4) || { echo "its loop $_gb: $_gw"; return 1; } ;;
+            "$_gn"-dialog-open.webp|"$_gn"-dialog-close.webp) _gw=$(art_media_ok "$_gf" webp) || { echo "its reel $_gb: $_gw"; return 1; } ;;
             *) echo "it holds a file that is none of its own: $_gb"; return 1 ;;
         esac
     done

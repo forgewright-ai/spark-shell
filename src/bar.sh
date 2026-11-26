@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # ---------------------------------------------------------------- the bar
-# sets: BAR_BT BAR_BT_OFF BAR_DEV BAR_DND BAR_DND_PLAIN BAR_DUE BAR_DUE_PLAIN BAR_FULL BAR_GAP BAR_GROUP_GAP BAR_KB BAR_KB_PLAIN BAR_LAN BAR_LIGHT BAR_MIC BAR_MIC_OFF BAR_NOTE BAR_OUT BAR_OUT_OFF BAR_PAD BAR_PALETTE BAR_PID BAR_PROC BAR_SHADE BAR_STEPS BAR_SYS BAR_WIFI BAR_WS_ORDER
+# sets: BAR_BT BAR_BT_OFF BAR_DEV BAR_DND BAR_DND_PLAIN BAR_DUE BAR_DUE_PLAIN BAR_FULL BAR_GAP BAR_GROUP_GAP BAR_KB BAR_KB_PLAIN BAR_LAN BAR_LIGHT BAR_MIC BAR_MIC_OFF BAR_NOTE BAR_OUT BAR_OUT_OFF BAR_PAD BAR_PALETTE BAR_PID BAR_PLAY BAR_PLAY_OFF BAR_PROC BAR_SHADE BAR_STEPS BAR_SYS BAR_WIFI BAR_WS_ORDER
 # reads: BAR_ASOUNDRC BAR_LEVELS BAR_MODULES CONFIG GLYPH_FAMILIES LAYOUT_ON NOTIFY_MODE OS PANEL_DOT PANEL_PROMPT PANEL_SEP PANEL_WARN REPO STATE_DIR TAB THEME_KEYS TMP WM_TRAY
 # spark's bar, or sway's own where it cannot run, reads `spark-shell bar status`:
 # i3bar JSON every 15 s and on SIGUSR1 to the pid in STATE_DIR/bar.pid
@@ -26,6 +26,8 @@ BAR_DUE=$(printf '\342\247\227')      # U+29D7 black hourglass
 BAR_DND=$(printf '\342\217\276')      # U+23FE power sleep symbol
 BAR_NOTE=$(printf '\342\232\221')     # U+2691 black flag
 BAR_PAD=$(printf '\342\212\237')      # U+229F squared minus
+BAR_PLAY=$(printf '\342\226\266')     # U+25B6 black right-pointing triangle
+BAR_PLAY_OFF=$(printf '\342\226\267') # U+25B7 white right-pointing triangle
 # the three signs above that only the Monaspace faces draw (keyboard, reminder, do not disturb), as every family's DejaVu Sans Mono has them
 BAR_KB_PLAIN=$(printf '\342\214\250')    # U+2328 keyboard
 BAR_DUE_PLAIN=$(printf '\342\227\267')   # U+25F7 white circle with upper right quadrant
@@ -119,6 +121,14 @@ bar_ws_watch() {   # on sway's workspace events: the labels again; on its output
         kill -0 "$$" 2>/dev/null || break   # the loop that started this is gone, its group not ended (its bar crashed): the reader leaves, and the subscriber ends at its next write
         case $_e in *'"change": "init"'*|*'"change":"init"'*|*'"change": "rename"'*|*'"change":"rename"'*) bar_ws_names ;; esac   # sway spaces its JSON; a rename drops the label
         case $_e in *'"change": "unspecified"'*|*'"change":"unspecified"'*) "$REPO/spark-shell" desktop --screens </dev/null >/dev/null 2>&1 & ;; esac   # an output event: drawn again only when the screens changed
+    done
+}
+# a player's change is a line asked for. playerctl follows until it writes to no reader, which may be hours on: its pid
+# is kept in a file, and the loop's end ends it (bar_status_end). Its own end, with no bus to ask, ends this
+bar_media_watch() {
+    { media_follow & printf '%s\n' "$!" > "$TMP/bar.media"; wait "$!" 2>/dev/null || :; } | while IFS= read -r _mwl; do
+        kill -0 "$$" 2>/dev/null || break   # the loop that started this is gone
+        kill -USR1 "$$" 2>/dev/null || :
     done
 }
 bar_timeout() { if command -v timeout >/dev/null 2>&1; then timeout 3 "$@"; else "$@"; fi; }
@@ -495,7 +505,7 @@ bar_shown() {   # -> _pinned and _hidden, a list of names each
     _pinned=$(bar_style BAR_PINS out | tr -d '"'); _hidden=$(bar_style BAR_HIDE '' | tr -d '"')
     [ "$_pinned" != none ] || _pinned=''
     ! words_in "$_pinned" "$BAR_LEVELS" || return 0
-    for _bsm in ${BAR_MODULES#workspaces }; do case " $_pinned " in *" $_bsm "*) ;; *) _hidden="$_hidden $_bsm" ;; esac; done
+    for _bsm in ${BAR_MODULES#workspaces }; do [ "$_bsm" != media ] || continue; case " $_pinned " in *" $_bsm "*) ;; *) _hidden="$_hidden $_bsm" ;; esac; done   # a line of v0.147 says nothing of media, made after it
     _pinned=out
 }
 # the look, the line's first object: the colors as they are now, so a theme change and a preview show with no start, the
@@ -513,14 +523,14 @@ bar_sign() { _bg=$1; _bi=${3:-}; [ -z "$_bw" ] || { _bg=$2; _bi=''; }; }
 # STATE is ok, muted, off, missing, wrong, asks or records; LEVEL, 0 to 100, where the module has one, and SET, true where the bar can set it; LABEL is
 # the module and its state in words. Pinned is the config's word: the level's gauge and number are on the bar. Toggle
 # is true where a click on the sign or the text changes the module in place and opens nothing (bar_click): out's
-# mute, the keyboard's next layout, the pad shown or hidden
+# mute, the keyboard's next layout, the pad shown or hidden, what plays paused or played
 bar_fact() {   # bar_fact NAME GROUP SIGN TEXT CELLS STATE LABEL [LEVEL [SET]] -- added to the line, unless the module is hidden
     _bfi=${_bi:-}; _bi=''   # the icon is this fact's alone: the next one names its own, or has none
     case " $_hidden " in *" $1 "*) return 0 ;; esac
     _bfl=''; [ -z "${8:-}" ] || { _bfl=$8; [ "$_bfl" -le 100 ] || _bfl=100; _bfl=",\"level\":$_bfl"; }
     _bfb=false; [ "$1" != clock ] || _bfb=true   # the time alone is bold
     _bfp=false; case " $_pinned " in *" $1 "*) _bfp=true ;; esac
-    _bfg=false; case $1 in out|kb|pad) _bfg=true ;; esac
+    _bfg=false; case $1 in out|kb|pad|media) _bfg=true ;; esac
     bar_str "$3"; _bfs=$_bs; bar_str "$4"; _bft=$_bs; bar_str "$7"
     line="$line,{\"name\":\"$1\",\"group\":\"$2\",\"sign\":\"$_bfs\",\"icon\":\"$_bfi\",\"text\":\"$_bft\",\"cells\":$5,\"bold\":$_bfb,\"state\":\"$6\"$_bfl,\"set\":${9:-false},\"pinned\":$_bfp,\"label\":\"$_bs\",\"toggle\":$_bfg}"
 }
@@ -557,6 +567,16 @@ bar_fact_wifi() {   # wifi: its signal a level the bar reads and cannot set, and
         _wfi=wifi; [ "${wifi%% *}" -ge 67 ] 2>/dev/null || _wfi=wifi-fair; [ "${wifi%% *}" -ge 34 ] 2>/dev/null || _wfi=wifi-weak
         bar_sign "$BAR_WIFI" wifi "$_wfi"; bar_fact wifi connections "$_bg" '' 0 ok "wifi ${wifi%% *}%" "${wifi%% *}"
     elif [ -n "$(bar_wireless)" ]; then bar_sign "$BAR_WIFI" wifi wifi-off; bar_fact wifi connections "$_bg" '' 0 off 'wifi not connected'; fi
+}
+# what plays, on spark's bar alone: the sign, hollow while it is paused, then the artist and the title in the cells they
+# take, 30 at most; no module with no player. Its tone is the muted one while paused
+bar_fact_media() {
+    _mdl=$(media_now); [ -n "$_mdl" ] || return 0
+    _mdt=$(printf '%s' "$_mdl" | cut -f3 | cut_chars 30); bar_cells "$_mdt"
+    case $_mdl in
+        *"${TAB}Paused${TAB}"*) bar_sign "$BAR_PLAY_OFF" media media-paused; bar_fact media sound "$_bg" "$_mdt" "$_bc" muted "paused: $_mdt" ;;
+        *) bar_sign "$BAR_PLAY" media media; bar_fact media sound "$_bg" "$_mdt" "$_bc" ok "playing: $_mdt" ;;
+    esac
 }
 # sound's two are always on the line, with a level, 0 where none is read, so a pinned control keeps its cells: the hollow
 # sign while muted, and in words, where no word is hollow, off, so the tone says it; missing with no device or no level
@@ -620,7 +640,7 @@ bar_facts() {   # -> the line for spark's bar: the look, then a fact a module, i
     bar_signs
     bar_shown
     line=$(bar_look)
-    bar_fact_pad; bar_fact_lan; bar_fact_bt; bar_fact_wifi; bar_fact_audio out; bar_fact_audio mic; bar_fact_due
+    bar_fact_pad; bar_fact_lan; bar_fact_bt; bar_fact_wifi; bar_fact_media; bar_fact_audio out; bar_fact_audio mic; bar_fact_due
     bar_fact_light; bar_fact_kb; bar_fact_bat; bar_fact_clock; bar_fact_notifications
     printf '[%s],\n' "$line"
 }
@@ -730,6 +750,9 @@ bar_click() {   # bar_click NAME INSTANCE BUTTON RELX WIDTH X; 4 and 5 are the w
         due:*:1) bar_panel_open reminders ;;
         notifications:*:1) notify_seen; bar_panel_open notifications ;;
         kb:*:1) wm_kb_layout next >/dev/null 2>&1 || : ;;
+        media:*:1) media_act toggle >/dev/null 2>&1 || : ;;   # the wheel skips: up to the next track, down to the one before
+        media:*:4) media_act next >/dev/null 2>&1 || : ;;
+        media:*:5) media_act previous >/dev/null 2>&1 || : ;;
         out:*:4|mic:*:4) bar_snd "$1" +5 ;;
         out:*:5|mic:*:5) bar_snd "$1" -5 ;;
         out:*:2|out:*:3|mic:*:2|mic:*:3) bar_snd "$1" mute ;;
@@ -777,7 +800,7 @@ bar_status() {   # bar_status [--once]
     # looks for, and its one-second sleep ended. The signal is caught, never ignored: what is ignored here stays
     # ignored in every program a click starts, and a status loop among them could not take its redraw
     mkdir_private "$STATE_DIR"
-    reader=''; watcher=''; loop=''
+    reader=''; watcher=''; follower=''; loop=''
     _bsw=0; wm_session || _bsw=1
     : > "$TMP/bar.sleeper"
     trap 'bar_ask' USR1
@@ -787,6 +810,8 @@ bar_status() {   # bar_status [--once]
     exec 3<&0; bar_clicks <&3 &   # a background job's stdin is /dev/null in dash
     reader=$!
     [ "$_bsw" = 1 ] || { bar_ws_watch </dev/null & watcher=$!; }
+    : > "$TMP/bar.media"
+    [ -z "$SPARK_BAR" ] || ! media_here || { bar_media_watch </dev/null & follower=$!; }   # sway's own bar shows no media
     bar_status_lines &
     loop=$!
     while :; do   # a redraw asked for ends the wait with a status past 128, and so does a loop a signal ended: the second is gone
@@ -800,11 +825,12 @@ bar_ask() {   # SIGUSR1: a redraw asked for. The file says so to a line being dr
     _bas=''; read -r _bas 2>/dev/null < "$TMP/bar.sleeper" || :
     [ -z "$_bas" ] || kill "$_bas" 2>/dev/null || :
 }
-bar_status_end() {   # the lines, their sleep, the clicks' reader and the workspaces' watcher ended; the pid file dropped
+bar_status_end() {   # the lines, their sleep, the clicks' reader, the workspaces' watcher and the players' ended; the pid file dropped
     trap '' USR1 INT TERM HUP PIPE
     _bse=''; read -r _bse 2>/dev/null < "$TMP/bar.sleeper" || :
+    _bsf=''; read -r _bsf 2>/dev/null < "$TMP/bar.media" || :
     # shellcheck disable=SC2086   # each a pid or nothing
-    kill ${loop:-} ${reader:-} ${watcher:-} ${_bse:-} 2>/dev/null || :
+    kill ${loop:-} ${reader:-} ${watcher:-} ${follower:-} ${_bse:-} ${_bsf:-} 2>/dev/null || :
     bar_pid_drop
 }
 bar_status_lines() {   # the lines, one every 15 s and one when asked, in a process of its own: it holds no trap (bar_status says why)
@@ -986,6 +1012,7 @@ bar_module_words() {   # bar_module_words NAME -> what the module shows
     case $1 in
         workspaces) echo "the workspaces: ten places, and a plate with the number where you are" ;; pad) echo 'the windows that wait on the pad' ;;
         lan) echo 'the wired network' ;; bt) echo 'bluetooth' ;; wifi) echo 'wifi; pinned, its signal as a gauge and a number' ;;
+        media) echo 'what plays: a click plays or pauses it, the wheel skips' ;;
         out) echo 'the sound, its sign mutes; pinned, a gauge and a number set the level' ;; mic) echo 'the microphone, a red dot while something records; pinned, its level' ;;
         due) echo 'a reminder that is due' ;; light) echo "the screen's brightness; pinned, a gauge and a number set it" ;;
         kb) echo 'the keyboard layout in use' ;; bat) echo 'the battery' ;; clock) echo 'the time' ;; notifications) echo 'the notifications not seen; a moon in do not disturb' ;;

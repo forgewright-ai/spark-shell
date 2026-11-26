@@ -190,6 +190,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line; exit 1 when not do
         notes) notes_act "$_a" "$_arg" ;;
         reminders) rem_act "$_a" "$_arg" ;;
         notifications) notify_act "$_a" "$_arg" ;;
+        media) media_act "$_a" ;;
         storage) storage_act "$_a" "$_arg" ;;
         power) power_act "$_a" ;;
         display) panel_act_display ;;

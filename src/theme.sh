@@ -472,8 +472,8 @@ theme_look_over() {   # theme_look_over FILE picture|loop|reel -- FILE with no m
     command -v python3 >/dev/null 2>&1 || refuse_in theme "python3 is not installed, and it reads $_tkn"
     _tki='it is '; case $2 in loop) _tke=mp4 ;; reel) _tke=webp ;; *) _tki=''; _tke=$(printf '%s' "${1##*.}" | tr 'A-Z' 'a-z'); [ "$_tke" != jpeg ] || _tke=jpg ;; esac
     rm -rf "$TMP/take"; mkdir -p "$TMP/take"; _tkt=$TMP/take/taken.$_tke
-    _tky=$(python3 -I "$REPO/lib/look.py" bare "$1" "$_tkt" "$2" 2>&1) || refuse_in theme "$_tkn not taken: $_tki$(media_why "$_tky")"
-    case $2 in picture) _tky=$(gallery_picture_ok "$_tkt" "$THEME_FILE_PICTURE_MAX" 2>&1) ;; loop) _tky=$(media_ok "$_tkt" mp4) ;; reel) _tky=$(media_ok "$_tkt" webp) ;; esac || refuse_in theme "$_tkn not taken: ${_tky#its picture is }"   # a picture is the theme's own 4K still, as a theme file holds it
+    _tky=$(python3 -I "$REPO/lib/look.py" bare "$1" "$_tkt" "$2" 2>&1) || refuse_in theme "$_tkn not taken: $_tki$(art_media_why "$_tky")"
+    case $2 in picture) _tky=$(gallery_picture_ok "$_tkt" "$THEME_FILE_PICTURE_MAX" 2>&1) ;; loop) _tky=$(art_media_ok "$_tkt" mp4) ;; reel) _tky=$(art_media_ok "$_tkt" webp) ;; esac || refuse_in theme "$_tkn not taken: ${_tky#its picture is }"   # a picture is the theme's own 4K still, as a theme file holds it
 }
 theme_take() {   # theme_take BASE -- the file looked over, beside the theme's own files (_tkw); _tkf the name it goes by, BASE.EXT
     _tkf=$1.$_tke

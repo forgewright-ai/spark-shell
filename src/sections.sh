@@ -35,6 +35,7 @@ panel_title() {   # panel_title SECTION -> the lines that say what opened the pa
         touchpad) echo "$(panel_col touchpad)tap to click $TOUCHPAD_TAP $PANEL_SEP natural scroll $TOUCHPAD_SCROLL" ;;
         keyboard) _k=$(kb_active); if [ -n "$_k" ]; then echo "$(panel_col keyboard)$_k $PANEL_SEP $(printf '%s\n' $KEYBOARD | grep -c .) layouts"; elif [ -n "$KEYBOARD" ]; then echo "$(panel_col keyboard)$KEYBOARD"; else echo "$(panel_col keyboard)sway's own layout"; fi ;;
         bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown $(bar_place_words "$BAR_POSITION")"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys "$(layout_keys | awk '$2 == "home.open." {print $1; exit}')") opens the dialog"; fi ;;
+        media) media_title ;;
         notifications) if ! mako_here; then echo "$(panel_col notifications)mako is not installed"
             elif ! notify_up; then echo "$(panel_col notifications)not running yet"
             elif notify_dnd; then echo "$(panel_col notifications)do not disturb"
@@ -115,6 +116,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
         mouse) panel_rows_mouse ;;
         touchpad) panel_rows_touchpad ;;
         notifications) panel_rows_notifications "$@" ;;
+        media) panel_rows_media ;;
         storage) panel_rows_storage "$@" ;;
         power) panel_rows_power "$@" ;;
         notes) panel_rows_notes "$@" ;;

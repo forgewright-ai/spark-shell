@@ -308,26 +308,26 @@ pic_why() {   # pic_why FILE -> nothing and 0 for a whole picture a screen can s
     _pwn=$(file_named "$1"); [ -f "$1" ] && [ -r "$1" ] || { echo "$_pwn is not a file that can be read"; return 1; }
     pic_magic "$1" || { echo "$_pwn is not a PNG, a JPEG, a WebP or a GIF"; return 1; }
     command -v python3 >/dev/null 2>&1 || return 0   # its first bytes alone, then
-    _pwo=$(python3 -I "$REPO/lib/look.py" shown "$1" 2>&1) || { echo "$_pwn is $(media_why "$_pwo")"; return 1; }
+    _pwo=$(python3 -I "$REPO/lib/look.py" shown "$1" 2>&1) || { echo "$_pwn is $(art_media_why "$_pwo")"; return 1; }
 }
-media_ok() {   # media_ok FILE mp4|webp -> nothing and 0 for a loop (an MP4 of one H.264 video, every byte of it in the file, 7680 by 4320 and 64 MiB at most) or a reel (an animated WebP of frames the size they say, 16 MiB at most); else why in one line and 1
+art_media_ok() {   # art_media_ok FILE mp4|webp -> nothing and 0 for a loop (an MP4 of one H.264 video, every byte of it in the file, 7680 by 4320 and 64 MiB at most) or a reel (an animated WebP of frames the size they say, 16 MiB at most); else why in one line and 1
     [ -f "$1" ] && [ ! -L "$1" ] && [ -r "$1" ] || { echo "it is not a plain file"; return 1; }
     command -v python3 >/dev/null 2>&1 || { echo "python3 is not installed, and it reads a loop and a reel"; return 1; }
     _mos=$(wc -c < "$1" | tr -d ' ')
     case $2 in
         mp4) [ "$_mos" -le 67108864 ] || { echo "a loop is 64 MiB at most"; return 1; }
-            _moc=$(python3 -I "$REPO/lib/look.py" loop "$1" 2>&1) || { echo "it is $(media_why "$_moc")"; return 1; }
+            _moc=$(python3 -I "$REPO/lib/look.py" loop "$1" 2>&1) || { echo "it is $(art_media_why "$_moc")"; return 1; }
             command -v ffprobe >/dev/null 2>&1 || return 0
             _moc=$(ffprobe -v error -protocol_whitelist file -select_streams v:0 -show_entries stream=codec_name,width,height -of csv=p=0 "$1" 2>/dev/null | head -1)
             case $_moc in h264,[0-9]*,[0-9]*) ;; *) echo "its video is not H.264"; return 1 ;; esac
             _mow=${_moc#h264,}; _mow=${_mow%%,*}; _moh=${_moc##*,}
             [ "$_mow" -le 7680 ] && [ "$_moh" -le 7680 ] && [ $((_mow * _moh)) -le $((7680 * 4320)) ] || { echo "it is ${_mow}x$_moh, past 7680x4320"; return 1; } ;;
         webp) [ "$_mos" -le 16777216 ] || { echo "a reel is 16 MiB at most"; return 1; }
-            _moc=$(python3 -I "$REPO/lib/look.py" reel "$1" 2>&1) || { echo "it is $(media_why "$_moc")"; return 1; } ;;
+            _moc=$(python3 -I "$REPO/lib/look.py" reel "$1" 2>&1) || { echo "it is $(art_media_why "$_moc")"; return 1; } ;;
         *) echo "no such kind"; return 1 ;;
     esac
 }
-media_why() { printf '%s\n' "$1" | scrub_text | sed -n 1p | cut -c1-120; }   # media_why WHAT look.py SAID -> its first line, as plain words
+art_media_why() { printf '%s\n' "$1" | scrub_text | sed -n 1p | cut -c1-120; }   # art_media_why WHAT look.py SAID -> its first line, as plain words
 art_loop_of() {   # art_loop_of PICTURE -> the loop beside a picture of the theme's own (NAME.mp4 beside NAME.jpg), a plain MP4; else false
     _ald=$(theme_dir "${THEME:-none}"); [ -n "$_ald" ] || return 1
     case $1 in "$_ald"/*) ;; *) return 1 ;; esac

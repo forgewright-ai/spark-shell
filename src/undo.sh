@@ -312,6 +312,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         notes:add|notes:find|reminders:add) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo "$1: $2 takes the words"; return 1 ;;
         display:brightness) case $3 in up|down|[1-9]|[1-9][0-9]|100) echo "$3"; return 0 ;; *) echo "display: brightness takes 1 to 100, up or down"; return 1 ;; esac ;;
         bar:on|bar:off|bar:top|bar:bottom) echo ''; return 0 ;;   # set, never toggled
+        media:play|media:pause|media:toggle|media:next|media:previous|media:stop) echo ''; return 0 ;;   # the player says what it takes
         bar:text) case ${3:-} in auto|bigger|smaller|[6-9]|[1-3][0-9]|40) echo "$3"; return 0 ;; *) echo "bar: text takes auto, a size from 6 to 40, bigger or smaller"; return 1 ;; esac ;;
         bar:tray) case ${3:-} in on|off) echo "$3"; return 0 ;; *) echo "bar: tray takes on or off"; return 1 ;; esac ;;
         notifications:do-not-disturb) case ${3:-} in on|off) echo "$3"; return 0 ;; *) echo "notifications: do-not-disturb takes on or off"; return 1 ;; esac ;;

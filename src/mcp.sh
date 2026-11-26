@@ -14,7 +14,7 @@ fifo_put() {   # fifo_put LINE -- to fd 5 under the lock; lines never interleave
 }
 PROVIDE_POLL=${SPARK_SHELL_PROVIDE_POLL:-}   # the watcher's poll seconds; the tests set it
 # the sections that change behind the dialog; the rest only by a step
-PROVIDE_WATCHED=${SPARK_SHELL_PROVIDE_WATCHED:-wifi bt out mic storage window notifications}
+PROVIDE_WATCHED=${SPARK_SHELL_PROVIDE_WATCHED:-wifi bt out mic media storage window notifications}
 provide_seen() { cksum < "$TMP/rows.last" > "$TMP/rows.seen"; }   # the sum of the rows the host has
 provide_watch() {   # provide_watch SECTION [PAGE] -- polls; a change pokes the loop
     _seen=$TMP/rows.seen; _wpage=${2:-}; TMP=$TMP/watch; mkdir -p "$TMP"
