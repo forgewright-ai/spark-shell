@@ -16,6 +16,11 @@ power_tool() {   # -> systemd | sudo | nothing
 }
 power_sleeps() { grep -qwE 'mem|freeze' "$BAR_SYS/power/state" 2>/dev/null; }
 power_why() { if [ "$(init_shape)" = runit ]; then echo "restart and shut down: spark-shell on desktop at a terminal sets them up (sudo once)"; else echo "restart and shut down: no logind or sudo rule here"; fi; }
+power_closes() {   # -> what logout, restart and shutdown close: "closes 2 windows: firefox, foot", "nothing open to close"
+    wm_session || { echo 'closes everything open'; return 0; }
+    win_facts | jq -r '[.windows[]? | .label | split(": ")[0]] as $a | ($a | length) as $n
+        | if $n == 0 then "nothing open to close" else "closes \($n) window\(if $n == 1 then "" else "s" end): \($a | unique | join(", "))" end' 2>/dev/null || echo 'closes every window'
+}
 power_up() {   # -> "up 3 days", "up 12 minutes"
     awk '{ s = int($1); if (s >= 172800) printf "up %d days\n", s / 86400; else if (s >= 86400) print "up 1 day"; else if (s >= 7200) printf "up %d hours\n", s / 3600; else if (s >= 3600) print "up 1 hour"; else printf "up %d minutes\n", s / 60 }' "$BAR_PROC/uptime" 2>/dev/null
 }
@@ -189,7 +194,8 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line; exit 1 when not do
         power) power_act "$_a" ;;
         display) panel_act_display ;;
         clock) time_setting "$_a" "$_arg" ;;
-        pointer) input_setting pointer "$_a" "$_arg" ;;
+        mouse) input_setting mouse "$_a" "$_arg" ;;
+        touchpad) input_setting touchpad "$_a" "$_arg" ;;
         keyboard) panel_act_keyboard ;;
         about) case $_a in open) panel_about 72 ;; site) about_site ;; *) echo "$_a is not something about does"; return 1 ;; esac ;;
         system) system_act "$_a" "$_arg" ;;
@@ -329,7 +335,8 @@ panel_act_display() {   # the display steps: the idle and lock minutes, the save
 }
 panel_act_keyboard() {   # the keyboard steps: the repeat and caps settings, the next layout, one by name
     case $_a in
-        repeat-delay|repeat-rate|caps) input_setting keyboard "$_a" "$_arg" ;;
+        repeat-delay|repeat-rate|caps|compose) input_setting keyboard "$_a" "$_arg" ;;
+        add|remove) _kr=$(layout_keyboard "$_a" "$_arg" 2>&1) || { printf '%s\n' "$_kr" | tail -1; return 1; }; printf '%s\n' "$_kr" | tail -1 ;;
         next) wm_up || { echo "a layout switch needs the desktop"; return 1; }
             wm_kb_layout next >/dev/null 2>&1 || { echo "$WM_NAME took no layout switch"; return 1; }
             bar_redraw; echo "the keyboard is $(kb_active)" ;;

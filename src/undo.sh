@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- undo: the step and its journal
-# reads: ANIMATION_NAMES BAR_FULL BAR_SYS CONFIG FONT_FACES GLYPH_FAMILIES LAYOUTS_DIR LAYOUT_LAST MODE OS PANEL_CACHE PROVIDE_CLIENT ROOT TAB THEME_COLOR_WORDS TMP US WALL_NAMES WORDS_TAKE YES
+# reads: ANIMATION_NAMES BAR_FULL BAR_SYS CONFIG FONT_FACES GLYPH_FAMILIES KB_RE LAYOUTS_DIR LAYOUT_LAST MODE OS PANEL_CACHE PROVIDE_CLIENT ROOT TAB THEME_COLOR_WORDS TMP US WALL_NAMES WORDS_TAKE YES
 panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORDS" that takes the step back, or nothing
     _p=$1; _a=$2; shift 2; _arg=$*
     case $_p:$_a in
@@ -21,7 +21,7 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         clock:format) printf 'format %s\tclock format restored\n' "$(time_pref CLOCK_FORMAT 24)" ;;
         clock:week) printf 'week %s\tfirst weekday restored\n' "$(time_pref WEEK_START sunday)" ;;
         clock:zone) _z=$(time_zone); time_zone_valid "$_z" && printf 'zone %s\ttime zone restored\n' "$_z" ;;
-        pointer:*|keyboard:repeat-delay|keyboard:repeat-rate|keyboard:caps)
+        mouse:*|touchpad:*|keyboard:repeat-delay|keyboard:repeat-rate|keyboard:caps|keyboard:compose)
             input_spec "$_p" "$_a" || return 0
             eval "_old=\$$input_key"
             printf '%s %s\t%s %s %s\n' "$_a" "$_old" "$_p" "$_a" "$_old" ;;
@@ -241,9 +241,12 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         clock:format|clock:week|clock:zone)
             time_valid "$2" "${3:-}" || { echo "invalid time $2"; return 1; }
             echo "$3"; return 0 ;;
-        pointer:*|keyboard:repeat-delay|keyboard:repeat-rate|keyboard:caps)
+        mouse:*|touchpad:*|keyboard:repeat-delay|keyboard:repeat-rate|keyboard:caps|keyboard:compose)
             if input_spec "$1" "$2" && input_valid "$input_key" "${3:-}"; then echo "$3"; return 0; fi
             echo "$1: invalid $2 value"; return 1 ;;
+        keyboard:add) case ${3:-} in *' '*|'') ;; *) if printf '%s\n' "$3" | grep -qE "$KB_RE" && kb_known "$3"; then echo "$3"; return 0; fi ;; esac
+            echo "keyboard: add takes one layout xkb knows (us, br, de, us+intl)"; return 1 ;;
+        keyboard:remove) case " $KEYBOARD " in *" ${3:-?} "*) echo "$3"; return 0 ;; esac; echo "keyboard: no layout ${3:-?} to remove"; return 1 ;;
         lan:address|lan:auto|lan:dns|lan:restore|wifi:address|wifi:auto|wifi:dns|wifi:restore)
             if [ "$2" != restore ]; then
                 case $1 in lan) _ifs=$(bar_wired) ;; wifi) _ifs=$(bar_wireless) ;; esac

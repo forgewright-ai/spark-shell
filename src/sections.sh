@@ -25,13 +25,14 @@ panel_title() {   # panel_title SECTION -> the lines that say what opened the pa
         clock) date '+%A %d %B %Y' ;;   # the time and the month are drawn under it (clock_view)
         theme) echo "$(panel_col theme)$(theme_words_of "${THEME:-none}")" ;;   # the palette or the theme alone
         window) echo "$(panel_col window)$(win_words "$WINDOWS")" ;;
-        notes) _n=$(notes_list | grep -c . || :); echo "$(panel_col notes)${_n:-0} in ~/notes" ;;
+        notes) _n=$(notes_list | grep -c . || :); case ${_n:-0} in 0) echo "$(panel_col notes)no notes yet" ;; 1) echo "$(panel_col notes)1 note" ;; *) echo "$(panel_col notes)$_n notes" ;; esac ;;
         reminders) _now=$(date +%Y%m%d%H%M); rem_list > "$TMP/rem.t"; _d=$(awk -F '\t' -v n="$_now" '$1 <= n {t = $3} END {print t}' "$TMP/rem.t")
             if [ -n "$_d" ]; then echo "$(panel_col reminders)due now: $_d"
             else _td=$(awk -F '\t' -v n="$_now" -v d="$(date +%Y%m%d)" '$1 > n && substr($1, 1, 8) == d' "$TMP/rem.t" | grep -c . || :); _all=$(grep -c . "$TMP/rem.t" || :)
                 if [ "${_all:-0}" -eq 0 ]; then echo "$(panel_col reminders)none ahead"; else echo "$(panel_col reminders)${_td:-0} today, $((_all - ${_td:-0})) after"; fi; fi ;;
         display) _b=$(light_get); if [ -n "$_b" ]; then echo "$(panel_col display)brightness $_b%"; else echo "$(panel_col display)idle $(idle_words "$DISPLAY_IDLE")"; fi ;;   # short: the rows say the minutes
-        pointer) echo "$(panel_col pointer)tap $POINTER_TAP $PANEL_SEP scroll $POINTER_SCROLL $PANEL_SEP speed $POINTER_SPEED" ;;
+        mouse) echo "$(panel_col mouse)speed $MOUSE_SPEED $PANEL_SEP natural scroll $MOUSE_SCROLL" ;;
+        touchpad) echo "$(panel_col touchpad)tap to click $TOUCHPAD_TAP $PANEL_SEP natural scroll $TOUCHPAD_SCROLL" ;;
         keyboard) _k=$(kb_active); if [ -n "$_k" ]; then echo "$(panel_col keyboard)$_k $PANEL_SEP $(printf '%s\n' $KEYBOARD | grep -c .) layouts"; elif [ -n "$KEYBOARD" ]; then echo "$(panel_col keyboard)$KEYBOARD"; else echo "$(panel_col keyboard)sway's own layout"; fi ;;
         bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown $(bar_place_words "$BAR_POSITION")"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys "$(layout_keys | awk '$2 == "home.open." {print $1; exit}')") opens the dialog"; fi ;;
         notifications) if ! mako_here; then echo "$(panel_col notifications)mako is not installed"
@@ -111,9 +112,8 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
         window) panel_rows_window "$@" ;;
         display) panel_rows_display "$@" ;;
         keyboard) panel_rows_keyboard "$@" ;;
-        pointer)
-            for _v in on off; do printf -- '-\ttap to click %s\ttap %s\n-\tnatural scroll %s\tscroll %s\n' "$_v" "$_v" "$_v" "$_v"; done
-            for _v in -1 -0.5 0 0.5 1; do printf -- '-\tpointer speed %s\tspeed %s\n' "$_v" "$_v"; done ;;
+        mouse) panel_rows_mouse ;;
+        touchpad) panel_rows_touchpad ;;
         notifications) panel_rows_notifications "$@" ;;
         storage) panel_rows_storage "$@" ;;
         power) panel_rows_power "$@" ;;
@@ -283,17 +283,24 @@ panel_rows_display() {   # the idle and lock minutes (the other picks in a full 
         if [ "$_on" = on ]; then printf -- '-\tscreen %s %s %s%s %s scale %s\tshow\n' "$_n" "$PANEL_SEP" "${_mo:+$_mo $PANEL_SEP }" "$_md" "$PANEL_SEP" "$_sc"; else printf -- '-\tscreen %s %s off\tshow\n' "$_n" "$PANEL_SEP"; fi
     done
 }
-panel_rows_keyboard() {   # the layouts, the active one marked, then the repeat and caps settings with their picks
-    if [ -z "$KEYBOARD" ]; then printf -- "-\tsway's own layout: spark-shell desktop keyboard us br sets some\tshow\n"
+panel_rows_keyboard() {   # the layouts, the one in use marked, a new one; then typing: each setting a row that changes in place (v0.169)
+    if [ -z "$KEYBOARD" ]; then printf -- "-\tsway's own layout\tshow\tlayouts\n"
     else
         _a=$(kb_active)
-        for _x in $KEYBOARD; do if [ "$_x" = "$_a" ] || [ -z "$_a" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$_x"; else printf -- '-\t%s\tuse %s\n' "$_x" "$_x"; fi; done
-        [ -z "$_a" ] || printf '%s\tthe next layout\tnext\n' "$PANEL_GO"
+        for _x in $KEYBOARD; do if [ "$_x" = "$_a" ] || [ -z "$_a" ]; then printf '%s\t%s\tshow\tlayouts\n' "$PANEL_TICK" "$_x"; else printf -- '-\t%s\tuse %s\tlayouts\n' "$_x" "$_x"; fi; done
+        [ -z "$_a" ] || printf '%s\tthe next layout\tnext\tlayouts\n' "$PANEL_GO"
     fi
-    printf -- '-\trepeat delay %s ms\tshow\n-\trepeat rate %s per second\tshow\n-\tcaps key %s\tshow\n' "$KEY_REPEAT_DELAY" "$KEY_REPEAT_RATE" "$KEY_CAPS"
-    for _v in 250 400 600 1000; do printf -- '-\trepeat after %s ms\trepeat-delay %s\n' "$_v" "$_v"; done
-    for _v in 0 15 25 40; do printf -- '-\trepeat %s per second\trepeat-rate %s\n' "$_v" "$_v"; done
-    for _v in caps control escape; do printf -- '-\tcaps key as %s\tcaps %s\n' "$_v" "$_v"; done
+    printf '%s\tadd a layout\tadd\tlayouts\n' "$PANEL_GO"
+    printf -- '-\tRepeat delay\tshow\ttyping\n-\tRepeat rate\tshow\ttyping\n-\tCaps Lock\tshow\ttyping\n-\tCompose key\tshow\ttyping\n'
+}
+input_here() { wm_session || return 0; wm_inputs | jq -e --arg t "$1" 'any(.[]?; .type == $t)' >/dev/null 2>&1; }   # input_here pointer|touchpad -> 0 when one is plugged in, or no desktop says
+panel_rows_mouse() {   # each setting a row that changes in place (v0.169); a word when none is plugged in, the settings kept for one
+    input_here pointer || printf -- '-\tno mouse plugged in: these apply when one is\tshow\n'
+    printf -- '-\tSpeed\tshow\n-\tAcceleration\tshow\n-\tNatural scroll\tshow\n-\tScroll speed\tshow\n-\tPrimary button\tshow\n'
+}
+panel_rows_touchpad() {
+    input_here touchpad || printf -- '-\tno touchpad here: these apply when one is\tshow\n'
+    printf -- '-\tSpeed\tshow\n-\tTap to click\tshow\n-\tNatural scroll\tshow\n-\tScroll speed\tshow\n-\tRight click\tshow\n-\tOff while typing\tshow\n-\tOff with a mouse in\tshow\n'
 }
 panel_rows_notifications() {   # do not disturb, the ones on the screen, then the history, newest first: what each said, its app a column; five unless full
     if ! notify_up; then printf -- '-\t%s\tshow\n' "$(notify_why)"; return 0; fi
@@ -324,13 +331,14 @@ panel_rows_storage() {   # a drive is a group: its filesystems, mounted or not, 
     done < "$TMP/storage.d"
     _sh=$(storage_here); [ -z "$_sh" ] || printf -- '-\t%s\tshow\tthis computer||\n' "$_sh"
 }
-panel_rows_power() {   # one word a row, what it does as its wide column; the uptime a fact under them
-    _pt=$(power_tool)
-    [ -z "${WAYLAND_DISPLAY:-}" ] || printf -- '-\tlock\tlock\t|the screen %s Super+Escape\n' "$PANEL_SEP"
-    [ -z "$_pt" ] || ! power_sleeps || printf -- '-\tsuspend\tsuspend\t|the screen locks first\n'
-    ! wm_session || printf -- '-\tlogout\tlogout\t|every window closes\n'
-    if [ -n "$_pt" ]; then printf -- '-\trestart\trestart\t|asks first\n-\tshutdown\tshutdown\t|asks first\n'; else printf -- '-\t%s\tshow\n' "$(power_why)"; fi   # what the machine's buttons do is no step here
-    _pu=$(power_up); [ -z "$_pu" ] || printf -- '-\t%s\tshow\n' "$_pu"
+panel_rows_power() {   # two groups by what becomes of your work (v0.169): lock and suspend keep the windows; logout,
+    # restart and shutdown close them, their group named by what is open. The uptime is the section's state
+    _pt=$(power_tool); _pk='keeps your windows'; _pc=$(power_closes)
+    [ -z "${WAYLAND_DISPLAY:-}" ] || printf -- '-\tlock\tlock\t%s|\n' "$_pk"
+    if [ -n "$_pt" ] && power_sleeps; then printf -- '-\tsuspend\tsuspend\t%s|\n' "$_pk"
+    elif [ -n "$_pt" ]; then printf -- '-\tsuspend: this machine cannot suspend\tshow\t%s|\n' "$_pk"; fi
+    ! wm_session || printf -- '-\tlogout\tlogout\t%s|\n' "$_pc"
+    if [ -n "$_pt" ]; then printf -- '-\trestart\trestart\t%s|\n-\tshutdown\tshutdown\t%s|\n' "$_pc" "$_pc"; else printf -- '-\t%s\tshow\t%s|\n' "$(power_why)" "$_pc"; fi   # what the machine's buttons do is no step here
 }
 panel_rows_notes() {   # a new note, the newest five and a more row; full, all of them; a search from Home keeps the notes that say every word
     printf '%s\tnew note\tnew\n' "$PANEL_GO"
@@ -338,12 +346,12 @@ panel_rows_notes() {   # a new note, the newest five and a more row; full, all o
     while IFS="$TAB" read -r _e _nm _f; do
         [ -z "${NOTES_WORDS:-}" ] || note_says "$_f" "$NOTES_WORDS" || continue   # a search from Home: the notes that say every word
         _n=$((_n + 1)); if [ "${2:-}" != full ] && [ "$_n" -gt 5 ]; then continue; fi
-        printf -- '-\t%s\topen %s\trecent|%s|\n' "$_nm" "${_f##*/}" "$(read_once "when.$_e" note_when "$_e")"   # its day once a read
+        grep -q '[^[:space:]]' "$_f" 2>/dev/null || _nm='empty note'   # nothing written: its file's stamp is no title
+        printf -- '-\t%s\topen %s\t|%s|\n' "$_nm" "${_f##*/}" "$(read_once "when.$_e" note_when "$_e")"   # its day once a read
     done < "$TMP/notes.l"
-    [ "${2:-}" = full ] || [ "$_n" -le 5 ] || printf -- '-\t%s more\tmore\trecent||\n' $((_n - 5))
+    [ "${2:-}" = full ] || [ "$_n" -le 5 ] || printf -- '-\t%s more\tmore\t||\n' $((_n - 5))
 }
-panel_rows_reminders() {   # a new reminder, the ones due (the first with done and a snooze), then the ones ahead: all when full, else the next one
-    printf '%s\tnew reminder\tadd\n' "$PANEL_GO"
+panel_rows_reminders() {   # the ones due (the first with done and a snooze), then the ones ahead: all when full, else the next one; a muted line when none is; then a new reminder (v0.169)
     _first=1; _next=1
     rem_rows > "$TMP/rem.rows"
     while IFS="$TAB" read -r _s _u _t _f _x _o; do
@@ -357,6 +365,8 @@ panel_rows_reminders() {   # a new reminder, the ones due (the first with done a
             if [ "$_o" = 1 ]; then printf '%s\t%s\tdone %s\t%s\n' "$PANEL_RING" "$_t" "$_u" "$_x"; else printf '%s\t%s\tshow\t%s\n' "$PANEL_RING" "$_t" "$_x"; fi
         elif [ -n "$_next" ]; then printf '%s\t%s\tmore\t|%s|\n' "$PANEL_RING" "$_t" "$(rem_said "$_s")"; _next=''; fi   # short: the next one ahead; Enter opens the rest
     done < "$TMP/rem.rows"
+    [ -s "$TMP/rem.rows" ] || printf -- '-\tno reminders ahead\tshow\n'
+    printf '%s\tnew reminder\tadd\n' "$PANEL_GO"
 }
 panel_rows_bar() {   # the place, a check; then the text size and the tray. A place is one word under its group, so
     # the dialog sets the three side by side on one row (v0.161); the state line keeps the words of a sentence

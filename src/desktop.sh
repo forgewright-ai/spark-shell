@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # on_console -> 0 on /dev/tty1 and up (not XDG_VTNR: Void has no logind)
-# sets: IDLE_ALPHA IDLE_APP IDLE_FROM IDLE_HUSH IDLE_STILL LOCK_WAIT
+# sets: IDLE_ALPHA IDLE_APP IDLE_FROM IDLE_HUSH IDLE_STILL INPUT_KEYS LOCK_WAIT
 # reads: BAR_PROC BAR_WS_ORDER CONFIG_UNSET KB_RE LAYOUT_PENDING LAYOUT_SEEN NOTIFY_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SAVER_OWN STATE_DIR TAB TERM_NAME TMP US WM_NAME
 on_console() { case $(tty 2>/dev/null) in /dev/tty[1-9]*) return 0 ;; *) return 1 ;; esac; }
 # runtime_dir -- XDG_RUNTIME_DIR when unset (Void has no logind)
@@ -54,10 +54,11 @@ cmd_desktop() {
         time) shift; layout_time "$@"; return ;;
         display) shift; layout_display "$@"; return ;;
         keyboard) shift; layout_keyboard "$@"; return ;;
-        pointer) shift
-            [ "$OS" != Darwin ] || refuse "not on macOS, which has its own pointer settings"
-            if [ "$#" = 0 ]; then panel_title pointer; else [ "$#" = 2 ] || refuse "pointer takes tap on|off, scroll on|off or speed N"; input_setting pointer "$1" "$2"; fi
+        mouse|touchpad) _di=$1; shift
+            [ "$OS" != Darwin ] || refuse "not on macOS, which has its own $_di settings"
+            if [ "$#" = 0 ]; then panel_title "$_di"; else [ "$#" = 2 ] || refuse "$_di takes a setting and its value: $(input_said "$_di")"; input_setting "$_di" "$1" "$2"; fi
             return ;;
+        pointer) refuse "the pointer's settings are the mouse's and the touchpad's: spark-shell desktop mouse or touchpad" ;;
         portals) layout_portals; return ;;
         --machine) case ${2:-all} in all|now|tick) machine_write "${2:-all}"; return ;; *) refuse "--machine takes all, now or tick" ;; esac ;;   # the tests' door to machine_write
         screen|screens) shift; layout_screen "$@"; return ;;
@@ -261,23 +262,48 @@ layout_display() {   # layout_display [idle|lock N | saver [NAME] | brightness N
     esac
 }
 
-# Input settings
+# Input settings: the keyboard's, the mouse's and the touchpad's (v0.169), each written as its own config key
+INPUT_KEYS='MOUSE_SPEED MOUSE_ACCEL MOUSE_SCROLL MOUSE_SCROLL_SPEED MOUSE_PRIMARY TOUCHPAD_SPEED TOUCHPAD_TAP TOUCHPAD_SCROLL TOUCHPAD_SCROLL_SPEED TOUCHPAD_CLICK TOUCHPAD_TYPING_OFF TOUCHPAD_MOUSE_OFF KEY_REPEAT_DELAY KEY_REPEAT_RATE KEY_CAPS KEY_COMPOSE'
 input_spec() {
     case $1:$2 in
-        pointer:tap) input_key=POINTER_TAP; input_targets=touchpad; input_command=tap ;;
-        pointer:scroll) input_key=POINTER_SCROLL; input_targets='pointer touchpad'; input_command=natural_scroll ;;
-        pointer:speed) input_key=POINTER_SPEED; input_targets='pointer touchpad'; input_command=pointer_accel ;;
+        mouse:speed) input_key=MOUSE_SPEED; input_targets=pointer; input_command=pointer_accel ;;
+        mouse:acceleration) input_key=MOUSE_ACCEL; input_targets=pointer; input_command=accel_profile ;;
+        mouse:scroll) input_key=MOUSE_SCROLL; input_targets=pointer; input_command=natural_scroll ;;
+        mouse:scroll-speed) input_key=MOUSE_SCROLL_SPEED; input_targets=pointer; input_command=scroll_factor ;;
+        mouse:primary) input_key=MOUSE_PRIMARY; input_targets=pointer; input_command=left_handed ;;
+        touchpad:speed) input_key=TOUCHPAD_SPEED; input_targets=touchpad; input_command=pointer_accel ;;
+        touchpad:tap) input_key=TOUCHPAD_TAP; input_targets=touchpad; input_command=tap ;;
+        touchpad:scroll) input_key=TOUCHPAD_SCROLL; input_targets=touchpad; input_command=natural_scroll ;;
+        touchpad:scroll-speed) input_key=TOUCHPAD_SCROLL_SPEED; input_targets=touchpad; input_command=scroll_factor ;;
+        touchpad:click) input_key=TOUCHPAD_CLICK; input_targets=touchpad; input_command=click_method ;;
+        touchpad:typing-off) input_key=TOUCHPAD_TYPING_OFF; input_targets=touchpad; input_command=dwt ;;
+        touchpad:mouse-off) input_key=TOUCHPAD_MOUSE_OFF; input_targets=touchpad; input_command=events ;;
         keyboard:repeat-delay) input_key=KEY_REPEAT_DELAY; input_targets=keyboard; input_command=repeat_delay ;;
         keyboard:repeat-rate) input_key=KEY_REPEAT_RATE; input_targets=keyboard; input_command=repeat_rate ;;
         keyboard:caps) input_key=KEY_CAPS; input_targets=keyboard; input_command=xkb_options ;;
+        keyboard:compose) input_key=KEY_COMPOSE; input_targets=keyboard; input_command=xkb_options ;;
         *) return 1 ;;
+    esac
+}
+input_json() {   # -> the input settings as JSON, KEY: value, for the rows' steps and switches
+    for _ij in $INPUT_KEYS; do eval "_iv=\${$_ij:-}"; printf '%s\t%s\n' "$_ij" "$_iv"; done | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add // {}'
+}
+input_said() {   # input_said mouse|touchpad -> what its verb takes, for a refusal
+    case $1 in
+        mouse) echo 'speed -1 to 1, acceleration adaptive|flat, scroll on|off, scroll-speed 0.5|1|1.5|2|3, primary left|right' ;;
+        *) echo 'speed -1 to 1, tap on|off, scroll on|off, scroll-speed 0.5|1|1.5|2|3, click standard|fingers|corners, typing-off on|off, mouse-off on|off' ;;
     esac
 }
 input_valid() {
     case $1 in
-        POINTER_TAP|POINTER_SCROLL) case $2 in on|off) return 0 ;; esac ;;
+        MOUSE_SCROLL|TOUCHPAD_TAP|TOUCHPAD_SCROLL|TOUCHPAD_TYPING_OFF|TOUCHPAD_MOUSE_OFF) case $2 in on|off) return 0 ;; esac ;;
+        MOUSE_ACCEL) case $2 in adaptive|flat) return 0 ;; esac ;;
+        MOUSE_PRIMARY) case $2 in left|right) return 0 ;; esac ;;
+        TOUCHPAD_CLICK) case $2 in standard|fingers|corners) return 0 ;; esac ;;
+        MOUSE_SCROLL_SPEED|TOUCHPAD_SCROLL_SPEED) case $2 in 0.5|1|1.5|2|3) return 0 ;; esac ;;
         KEY_CAPS) case $2 in caps|control|escape) return 0 ;; esac ;;
-        POINTER_SPEED) [ ${#2} -le 32 ] && printf '%s\n' "$2" | awk '/^-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$/ { if ($0 + 0 >= -1 && $0 + 0 <= 1) ok = 1 } END { exit !ok }' && return 0 ;;
+        KEY_COMPOSE) case $2 in none|ralt|menu|rwin) return 0 ;; esac ;;
+        MOUSE_SPEED|TOUCHPAD_SPEED) [ ${#2} -le 32 ] && printf '%s\n' "$2" | awk '/^-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$/ { if ($0 + 0 >= -1 && $0 + 0 <= 1) ok = 1 } END { exit !ok }' && return 0 ;;
         KEY_REPEAT_DELAY|KEY_REPEAT_RATE)
             case $2 in ''|*[!0-9]*|0[0-9]*) return 1 ;; esac
             if [ "$1" = KEY_REPEAT_DELAY ]; then [ "$2" -ge 100 ] && [ "$2" -le 2000 ] && return 0
@@ -286,9 +312,23 @@ input_valid() {
     return 1
 }
 input_caps() { case $1 in control) echo ctrl:nocaps ;; escape) echo caps:escape ;; *) echo caps:capslock ;; esac; }
+input_xkb() {   # input_xkb CAPS COMPOSE -> the keyboard's xkb options: what Caps Lock is, then the compose key's
+    case $2 in ralt|menu|rwin) printf '%s,compose:%s\n' "$(input_caps "$1")" "$2" ;; *) input_caps "$1" ;; esac
+}
+input_sway() {   # input_sway KEY VALUE -> the value as sway's input command takes it
+    case $1:$2 in
+        KEY_CAPS:*) input_xkb "$2" "$KEY_COMPOSE" ;;
+        KEY_COMPOSE:*) input_xkb "$KEY_CAPS" "$2" ;;
+        MOUSE_PRIMARY:right) echo enabled ;; MOUSE_PRIMARY:*) echo disabled ;;
+        TOUCHPAD_CLICK:corners) echo button_areas ;; TOUCHPAD_CLICK:fingers) echo clickfinger ;; TOUCHPAD_CLICK:*) ;;   # standard: the touchpad's own, said by no line
+        TOUCHPAD_MOUSE_OFF:on) echo disabled_on_external_mouse ;; TOUCHPAD_MOUSE_OFF:*) echo enabled ;;
+        *:on) echo enabled ;; *:off) echo disabled ;;
+        *) printf '%s\n' "$2" ;;
+    esac
+}
 input_live() {
-    _input_value=$2
-    case $1 in POINTER_TAP|POINTER_SCROLL) if [ "$2" = on ]; then _input_value=enabled; else _input_value=disabled; fi ;; KEY_CAPS) _input_value=$(input_caps "$2") ;; esac
+    _input_value=$(input_sway "$1" "$2")
+    [ -n "$_input_value" ] || return 0   # the device's own: nothing to send now, the next login has no line for it
     for _input_type in $input_targets; do
         wm_input "type:$_input_type" "$input_command" "$_input_value" >/dev/null 2>&1 || return 1
     done
@@ -329,10 +369,18 @@ kb_known() {   # kb_known LAYOUT -> 0 when xkb lists it (or has no list)
     [ -r "$_lst" ] || return 0
     awk -v n="${1%%+*}" '/^! layout/ {on = 1; next} /^!/ {on = 0} on && $1 == n {f = 1} END {exit !f}' "$_lst"
 }
-layout_keyboard() {   # layout_keyboard [next | LAYOUT...]
+layout_keyboard() {   # layout_keyboard [next | add LAYOUT | remove LAYOUT | LAYOUT...]
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own keyboard settings"
     case ${1:-} in
-        repeat-delay|repeat-rate|caps) [ "$#" = 2 ] || refuse "keyboard $1 takes one value"; input_setting keyboard "$1" "$2" ;;
+        repeat-delay|repeat-rate|caps|compose) [ "$#" = 2 ] || refuse "keyboard $1 takes one value"; input_setting keyboard "$1" "$2" ;;
+        add) [ "$#" = 2 ] || refuse "keyboard add takes one layout (us, br, de+nodeadkeys)"
+            case " $KEYBOARD " in *" $2 "*) echo "keyboard $KEYBOARD"; return 0 ;; esac
+            layout_keyboard ${KEYBOARD:-${XKB_DEFAULT_LAYOUT:-us}} "$2" ;;   # sway's own layout stays, the new one beside it
+        remove) [ "$#" = 2 ] || refuse "keyboard remove takes one layout"
+            case " $KEYBOARD " in *" $2 "*) ;; *) refuse "no layout $2 in KEYBOARD (${KEYBOARD:-none})" ;; esac
+            _kr=$(printf '%s\n' $KEYBOARD | grep -vxF -- "$2" | tr '\n' ' ' | sed 's/ $//')
+            [ -n "$_kr" ] || refuse "$2 is the only layout: add another first"
+            layout_keyboard $_kr ;;
         '') if [ -z "$KEYBOARD" ]; then echo "keyboard: sway's own layout (spark-shell desktop keyboard us br sets some)"; return 0; fi
             _a=$(kb_names | cut -f1); _i=0
             for _x in $KEYBOARD; do if [ "$_i" = "${_a:-0}" ]; then echo "$PANEL_TICK $_x"; else echo "  $_x"; fi; _i=$((_i + 1)); done ;;

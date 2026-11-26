@@ -63,6 +63,8 @@ pub struct Row {
     pub front: bool,
     /// A fact, in muted words: it opens nothing.
     pub muted: bool,
+    /// Its columns stand at the row's end, as a time does: a note's day, a reminder's hour (v0.169).
+    pub end: bool,
     /// A choice among choices: a pick goes back to where the list was opened.
     pub back: bool,
     /// A row that shows what it holds before its arrow, a choice with a list behind it.
@@ -114,6 +116,8 @@ pub struct Step {
     pub key: String,
     /// What left and right do, in a word each: smaller and bigger, less and more.
     pub words: (String, String),
+    /// Its values go to the tool as numbers, as a speed or a delay is taken (v0.169).
+    pub number: bool,
 }
 
 impl Step {
@@ -126,7 +130,14 @@ impl Step {
     pub fn call_at(&self, i: usize) -> Option<Call> {
         let sent = self.values.get(i)?.sent.clone();
         let mut c = self.set.clone();
-        c.arguments.insert(self.key.clone(), Value::String(sent));
+        let number = sent.parse::<f64>().ok().filter(|_| self.number).and_then(|n| {
+            if n.fract() == 0.0 && n.abs() < 1e15 {
+                Some(Value::from(n as i64))
+            } else {
+                serde_json::Number::from_f64(n).map(Value::Number)
+            }
+        });
+        c.arguments.insert(self.key.clone(), number.unwrap_or(Value::String(sent)));
         Some(c)
     }
 
@@ -267,6 +278,7 @@ fn step(v: Option<&Value>) -> Option<Step> {
         set: call(v.get("set")?)?,
         key,
         words: (word(0, "less"), word(1, "more")),
+        number: v.get("number").and_then(Value::as_bool).unwrap_or(false),
     })
 }
 
@@ -529,6 +541,7 @@ pub fn rows(text: &str) -> Option<Rows> {
             line: r.get("line").and_then(Value::as_str).map(scrub).filter(|l| !l.is_empty()),
             front: r.get("front").and_then(Value::as_bool).unwrap_or(false),
             muted: r.get("muted").and_then(Value::as_bool).unwrap_or(false),
+            end: r.get("end").and_then(Value::as_bool).unwrap_or(false),
             back: r.get("back").and_then(Value::as_bool).unwrap_or(false),
             choice: r.get("choice").and_then(Value::as_bool).unwrap_or(false),
             when_model: r.get("when_model").and_then(Value::as_bool),

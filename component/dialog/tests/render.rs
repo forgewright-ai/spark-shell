@@ -555,10 +555,22 @@ fn help_is_a_list_by_subject_with_key_chips() {
         .collect();
     assert_eq!(
         groups,
-        vec!["general", "files", "view", "display", "windows", "workspaces", "desktop", "prompt"]
+        vec![
+            "general",
+            "files",
+            "view",
+            "notes",
+            "calendar",
+            "apps",
+            "display",
+            "windows",
+            "workspaces",
+            "desktop",
+            "prompt"
+        ]
     );
     assert_eq!(app.selected_line().as_deref(), Some("ask spark \u{b7} Ctrl+Enter"));
-    assert_eq!(app.shortcuts(), 40, "22 of the dialog's and 18 of the desktop's");
+    assert_eq!(app.shortcuts(), 46, "28 of the dialog's and 18 of the desktop's");
     render(&app, "help");
     // words typed keep the rows they name, under their subjects, and the note goes
     app.input = "window".into();

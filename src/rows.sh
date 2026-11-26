@@ -6,10 +6,10 @@
 # is built by jq with --arg, every request is parsed by jq; a method or a
 # tool name is matched by case, never run as a name
 PROVIDE_PROTOCOL=2025-06-18
-PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps system about undo files"   # every panel section but spark, and files
-PROVIDE_SECTIONS_OLD='tools'   # the names a section had before: tools is system since v0.153. A line spark's MCP list holds under one is ours to take off
+PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard mouse touchpad notifications storage power notes reminders bar layout apps system about undo files"   # every panel section but spark, and files
+PROVIDE_SECTIONS_OLD='tools pointer'   # the names a section had before: tools is system since v0.153, pointer is mouse and touchpad since v0.169. A line spark's MCP list holds under one is ours to take off
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_copy_color theme_export_palette theme_save theme_delete theme_restore theme_rename theme_duplicate theme_export theme_install theme_color theme_colors theme_pointer theme_clock theme_pair theme_portrait theme_panel theme_loop theme_reel theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_icons theme_spacing theme_family theme_face theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_keep display_back display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open about_site undo_all files_browse files_open files_app files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden system_check system_fix system_copy_details system_update system_update_system system_export system_front system_end system_measure system_clean_packages"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_copy_color theme_export_palette theme_save theme_delete theme_restore theme_rename theme_duplicate theme_export theme_install theme_color theme_colors theme_pointer theme_clock theme_pair theme_portrait theme_panel theme_loop theme_reel theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_icons theme_spacing theme_family theme_face theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_keep display_back display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps keyboard_compose keyboard_add keyboard_remove mouse_speed mouse_acceleration mouse_scroll mouse_scroll_speed mouse_primary touchpad_speed touchpad_tap touchpad_scroll touchpad_scroll_speed touchpad_click touchpad_typing_off touchpad_mouse_off notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open about_site undo_all files_browse files_open files_app files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_sort files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden system_check system_fix system_copy_details system_update system_update_system system_export system_front system_end system_measure system_clean_packages"
 # the scrubber for every string a provider hands on: what can redraw or
 # reorder a screen goes
 #   C0 but the tab, DEL and C1            \u0000-\u0008 \u000b-\u001f \u007f-\u009f
@@ -54,7 +54,7 @@ tool_spec() {
         notes) tool_spec_notes "$1" ;;
         reminders) tool_spec_reminders "$1" ;;
         display|clock) tool_spec_display "$1" ;;
-        keyboard|pointer) tool_spec_input "$1" ;;
+        keyboard|mouse|touchpad) tool_spec_input "$1" ;;
         notifications|storage|power|bar) tool_spec_system "$1" ;;
         layout|apps|about|system|undo) tool_spec_desktop "$1" ;;
         files) tool_spec_files "$1" ;;
@@ -213,11 +213,23 @@ tool_spec_display() {   # the display and clock tools
 tool_spec_input() {   # the keyboard and pointer tools
     case $1 in
         keyboard_use)      _ts=keyboard _ta=use _tp=name _tk=string _th=i _tt='keyboard use NAME' _td='Type in another of the keyboard layouts.' ;;
-        pointer_tap)       _ts=pointer _ta=tap _tp=state _tk='on|off' _th=if _tt='pointer tap STATE' _td='Enable or disable tap to click on touchpads.' ;;
-        pointer_scroll)    _ts=pointer _ta=scroll _tp=state _tk='on|off' _th=if _tt='pointer scroll STATE' _td='Set natural scrolling for mouse and touchpad.' ;;
-        pointer_speed)     _ts=pointer _ta=speed _tp=value _tk=speed _th=if _tt='pointer speed N' _td='Set mouse and touchpad acceleration, -1 to 1; 0 is the default.' ;;
+        mouse_speed)       _ts=mouse _ta=speed _tp=value _tk=speed _th=if _tt='mouse speed N' _td='Set the mouse speed, -1 to 1; 0 is the default.' ;;
+        mouse_acceleration) _ts=mouse _ta=acceleration _tp=profile _tk='adaptive|flat' _th=if _tt='mouse acceleration PROFILE' _td='Speed the mouse up with a quick move (adaptive), or keep one speed (flat).' ;;
+        mouse_scroll)      _ts=mouse _ta=scroll _tp=state _tk='on|off' _th=if _tt='mouse scroll STATE' _td='Natural scrolling for the mouse: the content follows the wheel.' ;;
+        mouse_scroll_speed) _ts=mouse _ta=scroll-speed _tp=value _tk='0.5|1|1.5|2|3' _th=if _tt='mouse scroll-speed N' _td='How far one notch of the wheel scrolls: 1 is the default.' ;;
+        mouse_primary)     _ts=mouse _ta=primary _tp=button _tk='left|right' _th=if _tt='mouse primary BUTTON' _td='The primary button: right swaps the buttons, for the left hand.' ;;
+        touchpad_speed)    _ts=touchpad _ta=speed _tp=value _tk=speed _th=if _tt='touchpad speed N' _td='Set the touchpad speed, -1 to 1; 0 is the default.' ;;
+        touchpad_tap)      _ts=touchpad _ta=tap _tp=state _tk='on|off' _th=if _tt='touchpad tap STATE' _td='Tap the touchpad to click.' ;;
+        touchpad_scroll)   _ts=touchpad _ta=scroll _tp=state _tk='on|off' _th=if _tt='touchpad scroll STATE' _td='Natural scrolling for the touchpad: the content follows the fingers.' ;;
+        touchpad_scroll_speed) _ts=touchpad _ta=scroll-speed _tp=value _tk='0.5|1|1.5|2|3' _th=if _tt='touchpad scroll-speed N' _td='How far two fingers scroll: 1 is the default.' ;;
+        touchpad_click)    _ts=touchpad _ta=click _tp=method _tk='standard|fingers|corners' _th=if _tt='touchpad click METHOD' _td='A right click as the touchpad gives it (standard), by two fingers on the pad, or by its lower right corner.' ;;
+        touchpad_typing_off) _ts=touchpad _ta=typing-off _tp=state _tk='on|off' _th=if _tt='touchpad typing-off STATE' _td='Ignore the touchpad while you type.' ;;
+        touchpad_mouse_off) _ts=touchpad _ta=mouse-off _tp=state _tk='on|off' _th=if _tt='touchpad mouse-off STATE' _td='Turn the touchpad off while a mouse is plugged in.' ;;
         keyboard_repeat_delay) _ts=keyboard _ta=repeat-delay _tp=value _tk=delay _th=if _tt='keyboard repeat-delay N' _td='Milliseconds before a held key repeats, 100 to 2000.' ;;
         keyboard_repeat_rate) _ts=keyboard _ta=repeat-rate _tp=value _tk=level _th=if _tt='keyboard repeat-rate N' _td='Key repeats per second, 0 to 100; 0 disables repeat.' ;;
+        keyboard_compose)  _ts=keyboard _ta=compose _tp=key _tk='none|ralt|menu|rwin' _th=if _tt='keyboard compose KEY' _td='A key that composes accents on any layout (right Alt, Menu or right Super), or none.' ;;
+        keyboard_add)      _ts=keyboard _ta=add _tp=layout _tk=string _tw='a layout by its xkb name: br, de, us+intl' _th=if _tt='keyboard add LAYOUT' _td='Add a keyboard layout by its xkb name (br, de, fr, us+intl); Super+Space moves between them.' ;;
+        keyboard_remove)   _ts=keyboard _ta=remove _tp=layout _tk=string _th=d _tt='keyboard remove LAYOUT' _td='Remove a keyboard layout; the last one stays.' ;;
         keyboard_caps)     _ts=keyboard _ta=caps _tp=key _tk='caps|control|escape' _th=if _tt='keyboard caps KEY' _td='Use Caps Lock as itself, Control or Escape.' ;;
         keyboard_next)     _ts=keyboard _ta=next _th='' _tt='keyboard next' _td='Go to the next keyboard layout.' ;;
         *) return 1 ;;
@@ -291,6 +303,7 @@ tool_spec_files() {   # the files tools
         files_restore)     _ts=files _ta=restore _tp=path _tk=path _te='item?:filename' _th=f _tt='files restore PATH' _td='Bring a file or folder back from the trash to the path it had: item, a trash row'"'"'s own, when given; else the newest the trash holds from path.' ;;
         files_purge)       _ts=files _ta=purge _tp=path _tk=path _te='item?:filename' _th=d _tt='files purge PATH' _td='Delete for good a file or folder in the trash: item, a trash row'"'"'s own, when given; else the newest the trash holds from path, the path it had. It cannot be brought back.' ;;
         files_empty)       _ts=files _ta=empty _th=d _tt='files empty' _td='Empty the trash of your home folder: every file and folder in it is deleted for good.' ;;
+        files_sort)        _ts=files _ta=sort _tp=path _tk=path _te='by:name|kind|date|size' _th=i _tt='files sort PATH' _td='Sort a folder by name, kind, date (its last change, the newest first) or size (the largest first); its present order again reverses it. Each folder keeps its own; your downloads start with the newest first.' ;;
         files_new_folder)  _ts=files _ta=new-folder _tp=path _tk=path _te='name:filename' _th='' _tt='files new-folder PATH' _td='Make a folder inside the folder path names, with the name given. Undo trashes it.' ;;
         files_new_text)    _ts=files _ta=new-text _tp=path _tk=path _te='name:filename' _th='' _tt='files new-text PATH' _td='Make an empty text file inside the folder path names, with the name given, and open it in the editor. Undo trashes it.' ;;
         files_find)        _ts=files _ta=find _tp=words _tk=string _th=rf _tt='files find WORDS' _td='Which files and folders under your home and your drives have these words in their name; the list opens.' ;;
@@ -373,6 +386,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
     fi
     [ "$1" != theme ] || [ -s "$TMP/theme.type" ] || appearance_type > "$TMP/theme.type"   # what each typeface and family looks like: once for the provider's life
     _pr_type='{}'; [ ! -s "$TMP/theme.type" ] || _pr_type=$(cat "$TMP/theme.type")
+    _pr_input='{}'; case $1 in keyboard|mouse|touchpad) _pr_input=$(input_json) ;; esac   # the input settings now, for their rows' steps
     _pr_bar=''; [ "$1" != bar ] || { _pr_bar=$(BAR_TEXT=auto; bar_line_font "$(font_spec)"); _pr_bar=${_pr_bar##* }; _pr_bar=${_pr_bar%px}; _pr_bar=${_pr_bar%%.*}; }   # auto's own size, whatever size is in use
     _asks='[]'
     if [ "$1" = wifi ] && [ -n "$(wifi_tool)" ]; then   # a secured network not saved yet: its password is asked, masked
@@ -386,11 +400,14 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 columns: ((.[5] // "") | split("|") | .[1:2] | map(select(. != ""))),
                 children: (if .[0] == ($s + ":more") then $u else null end), group: ((.[5] // "") | split("|") | .[0] | if . == "" or . == null then null else . end)}
                 + ((.[5] // "") | split("|") | .[2] // "" | if . == "" then {} else {date: .} end)
+                + (if ($s == "notes" and .[3] == "notes_open") or ($s == "reminders" and ((.[5] // "") | split("|") | .[2] // "") != "") then {end: true} else {} end)   # a time stands at the end of its row (v0.169)
+                + (if ($s == "power" or $s == "reminders" or (($s == "mouse" or $s == "touchpad") and (.[2] | startswith("no ")))) and .[3] == "" and .[1] == "blank" and .[0] != ($s + ":more") then {muted: true} else {} end)   # what cannot be done or is not there is said, muted
+                + (if $s == "power" and .[3] == "power_lock" then {key: "Super+Escape"} else {} end)
                 + (if $s == "reminders" then ((.[5] // "") | split("|") | .[3] // "") as $id |
                     if ($id | startswith("spark-shell-")) then {more: [{name:"reminders_done", arguments:{name:$id}, said:"done"}, {name:"reminders_snooze", arguments:{name:$id}, said:"again in 10 minutes"}, {name:"reminders_delete", arguments:{name:$id}, said:"delete"}]} else {} end
                    else {} end)] as $rows
             | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
-        | jq -c --argjson desktopkeys "$_pr_keys" --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --slurpfile chipf "$TMP/rows.chips" --arg size "$_pr_size" --arg anim "$_pr_anim" --arg pointer "${POINTER:-default}" --arg glyphs "$BAR_GLYPHS" --arg icons "$DIALOG_ICONS" --arg spacing "$DIALOG_SPACING" --arg family "$GLYPH_FAMILY" --arg face "$(face_word "${FONT%%:*}" || :)" --arg motion "$WALLPAPER_MOTION" --argjson trn "$_pr_trn" --arg tr "$_pr_tr" --arg bartext "$BAR_TEXT" --arg barsize "$_pr_bar" --arg tray "$BAR_TRAY" --argjson type "$_pr_type" '
+        | jq -c --argjson desktopkeys "$_pr_keys" --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --slurpfile chipf "$TMP/rows.chips" --arg size "$_pr_size" --arg anim "$_pr_anim" --arg pointer "${POINTER:-default}" --arg glyphs "$BAR_GLYPHS" --arg icons "$DIALOG_ICONS" --arg spacing "$DIALOG_SPACING" --arg family "$GLYPH_FAMILY" --arg face "$(face_word "${FONT%%:*}" || :)" --arg motion "$WALLPAPER_MOTION" --argjson trn "$_pr_trn" --arg tr "$_pr_tr" --arg bartext "$BAR_TEXT" --arg barsize "$_pr_bar" --argjson input "$_pr_input" --arg tray "$BAR_TRAY" --argjson type "$_pr_type" '
             $chipf[0] as $chips | .rows |= map(
                 (if $s == "theme" and ((.group // "") | test("^(dark|light|custom)$")) and $chips[.text] != null then .chip = $chips[.text] else . end)
                 | (if $s == "theme" and ((.group // "") | test("^(dark|light)$")) and (.tool.name // "") == "theme_palette"
@@ -419,6 +436,48 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                      | ([{shown: "auto \($a)", sent: "auto"}] + [range(6; 41) | tostring | {shown: ., sent: .}]) as $v
                      | .step = {values: $v, at: (($v | map(.sent) | index($bartext)) // 0), set: {name: "bar_text", arguments: {}}, key: "size", words: ["smaller", "bigger"]}
                    elif $s == "bar" and .id == "bar:show:App icons (the tray)" then .switch = {on: ($tray == "yes"), turn_on: {name: "bar_tray", arguments: {state: "on"}}, turn_off: {name: "bar_tray", arguments: {state: "off"}}}
+                   elif ($s == "mouse" or $s == "touchpad") and .id == ($s + ":show:Speed") then   # the speed in words, a value of your own kept among them
+                     ($input[($s | ascii_upcase) + "_SPEED"] | tonumber? // 0) as $cur | (([-1, -0.5, 0, 0.5, 1] + [$cur]) | unique) as $v
+                     | .step = {values: [$v[] | {shown: ({"-1": "slowest", "-0.5": "slow", "0": "standard", "0.5": "fast", "1": "fastest"}[tostring] // tostring), sent: tostring}],
+                                at: ($v | index($cur)), set: {name: ($s + "_speed"), arguments: {}}, key: "value", words: ["slower", "faster"], number: true}
+                   elif ($s == "mouse" or $s == "touchpad") and .id == ($s + ":show:Scroll speed") then
+                     (["0.5", "1", "1.5", "2", "3"]) as $v
+                     | .step = {values: [$v[] | {shown: (if . == "1" then "standard" else . + "x" end), sent: .}], at: (($v | index($input[($s | ascii_upcase) + "_SCROLL_SPEED"])) // 1),
+                                set: {name: ($s + "_scroll_speed"), arguments: {}}, key: "value", words: ["less", "more"]}
+                   elif ($s == "mouse" or $s == "touchpad") and .id == ($s + ":show:Natural scroll") then
+                     .switch = {on: ($input[($s | ascii_upcase) + "_SCROLL"] == "on"), turn_on: {name: ($s + "_scroll"), arguments: {state: "on"}}, turn_off: {name: ($s + "_scroll"), arguments: {state: "off"}}}
+                   elif $s == "mouse" and .id == "mouse:show:Acceleration" then
+                     (["adaptive", "flat"]) as $v
+                     | .step = {values: [$v[] | {shown: ., sent: .}], at: (($v | index($input.MOUSE_ACCEL)) // 0), set: {name: "mouse_acceleration", arguments: {}}, key: "profile", words: ["back", "next"]}
+                   elif $s == "mouse" and .id == "mouse:show:Primary button" then
+                     (["left", "right"]) as $v
+                     | .step = {values: [$v[] | {shown: ., sent: .}], at: (($v | index($input.MOUSE_PRIMARY)) // 0), set: {name: "mouse_primary", arguments: {}}, key: "button", words: ["back", "next"]}
+                   elif $s == "touchpad" and .id == "touchpad:show:Tap to click" then
+                     .switch = {on: ($input.TOUCHPAD_TAP == "on"), turn_on: {name: "touchpad_tap", arguments: {state: "on"}}, turn_off: {name: "touchpad_tap", arguments: {state: "off"}}}
+                   elif $s == "touchpad" and .id == "touchpad:show:Right click" then
+                     (["standard", "fingers", "corners"]) as $v
+                     | .step = {values: [{shown: "standard", sent: "standard"}, {shown: "two fingers", sent: "fingers"}, {shown: "the corner", sent: "corners"}], at: (($v | index($input.TOUCHPAD_CLICK)) // 0),
+                                set: {name: "touchpad_click", arguments: {}}, key: "method", words: ["back", "next"]}
+                   elif $s == "touchpad" and .id == "touchpad:show:Off while typing" then
+                     .switch = {on: ($input.TOUCHPAD_TYPING_OFF == "on"), turn_on: {name: "touchpad_typing_off", arguments: {state: "on"}}, turn_off: {name: "touchpad_typing_off", arguments: {state: "off"}}}
+                   elif $s == "touchpad" and .id == "touchpad:show:Off with a mouse in" then
+                     .switch = {on: ($input.TOUCHPAD_MOUSE_OFF == "on"), turn_on: {name: "touchpad_mouse_off", arguments: {state: "on"}}, turn_off: {name: "touchpad_mouse_off", arguments: {state: "off"}}}
+                   elif $s == "keyboard" and .id == "keyboard:show:Repeat delay" then
+                     ($input.KEY_REPEAT_DELAY | tonumber? // 600) as $cur | (([250, 400, 600, 1000] + [$cur]) | unique) as $v
+                     | .step = {values: [$v[] | {shown: "\(.) ms", sent: tostring}], at: ($v | index($cur)), set: {name: "keyboard_repeat_delay", arguments: {}}, key: "value", words: ["sooner", "later"], number: true}
+                   elif $s == "keyboard" and .id == "keyboard:show:Repeat rate" then
+                     ($input.KEY_REPEAT_RATE | tonumber? // 25) as $cur | (([0, 15, 25, 40, 60] + [$cur]) | unique) as $v
+                     | .step = {values: [$v[] | {shown: (if . == 0 then "off" else "\(.) a second" end), sent: tostring}], at: ($v | index($cur)), set: {name: "keyboard_repeat_rate", arguments: {}}, key: "value", words: ["slower", "faster"], number: true}
+                   elif $s == "keyboard" and .id == "keyboard:show:Caps Lock" then
+                     (["caps", "control", "escape"]) as $v
+                     | .step = {values: [{shown: "Caps Lock", sent: "caps"}, {shown: "Control", sent: "control"}, {shown: "Escape", sent: "escape"}], at: (($v | index($input.KEY_CAPS)) // 0),
+                                set: {name: "keyboard_caps", arguments: {}}, key: "key", words: ["back", "next"]}
+                   elif $s == "keyboard" and .id == "keyboard:show:Compose key" then
+                     (["none", "ralt", "menu", "rwin"]) as $v
+                     | .step = {values: [{shown: "none", sent: "none"}, {shown: "right Alt", sent: "ralt"}, {shown: "Menu", sent: "menu"}, {shown: "right Super", sent: "rwin"}], at: (($v | index($input.KEY_COMPOSE)) // 0),
+                                set: {name: "keyboard_compose", arguments: {}}, key: "key", words: ["back", "next"]}
+                   elif $s == "keyboard" and .group == "layouts" and (.sign == "check" or (.tool.name // "") == "keyboard_use") then   # a layout: removed among its steps
+                     .more += [{name: "keyboard_remove", arguments: {layout: .text}, said: "remove"}]
                    else . end))
             | (if $s == "theme" then .look_back = {name: "theme_preview", arguments: {name: "off"}}
                  | .rows += [{id:"theme:gallery:open", text:"The Gallery", sign:"opens", choice:true, columns:[.state],
@@ -426,6 +485,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                else . end)
             | .rows |= map(
                 if $s == "theme" and (.tool.name // "") == "theme_save" then .tool.ask = ["name"]
+                elif $s == "keyboard" and (.tool.name // "") == "keyboard_add" then .tool.ask = ["layout"] | .tool.arguments = {}
                 elif $s == "theme" and .id == "theme:picture" then .children = "spark-shell://files/rows" | .pick = {tool: "theme_picture", types: ($types | split(" "))}
                 elif $s == "theme" and .id == "theme:wallpaper" then .children = "spark-shell://theme/rows/wallpapers" | .tool = null
                 elif $s == "theme" and .id == "theme:show:Animation" then .children = "spark-shell://theme/rows/animations" | .tool = null | .columns = [$anim] | .text = "Dialog motion"
@@ -634,6 +694,6 @@ provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION [GROUP|COLUMN
     printf '%s\n' "$_id$US$_sg$US$_tx$US$_tn$US$_ag$US${5:-}"
 }
 provide_clock_rows() {
-    jq -cn --arg state "$(time_zone), $(time_sync)" '{title: "clock", state: $state, rows: [{id: "clock:settings", sign: "opens", text: "time settings", tool: null, more: [], columns: [], children: "spark-shell://clock/rows/settings", group: null}], short: ["clock:settings"]}'
+    jq -cn --arg state "$(time_zone), $(time_sync)" '{title: "clock", state: $state, rows: [{id: "clock:settings", sign: "opens", text: "time", tool: null, more: [], columns: [$state], children: "spark-shell://clock/rows/settings", group: null}], short: ["clock:settings"]}'
 }
-provide_title() { [ "$1" != about ] || return 0; [ "$1" != system ] || return 0; [ "$1" != files ] || { echo "your home folder"; return; }; [ "$1" != display ] || { display_state; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }
+provide_title() { [ "$1" != about ] || return 0; [ "$1" != system ] || return 0; [ "$1" != files ] || { files_home_state; return; }; [ "$1" != display ] || { display_state; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }

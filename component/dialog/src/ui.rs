@@ -629,7 +629,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: 
     let top = cr.saturating_sub(n - 1).min(rows.len().saturating_sub(n));
     drawn.prompt = (hd.prompt, hd.prompt + n as u16 - 1);
     if app.input.is_empty() && (app.mode == Mode::Normal || app.prompt_form()) {
-        pen.put(tx, hd.prompt, app.placeholder(), pal.muted, false, false);
+        pen.put(tx, hd.prompt, &app.placeholder(), pal.muted, false, false);
     } else {
         for (k, r) in rows.iter().skip(top).take(n).enumerate() {
             let y = hd.prompt + k as u16;

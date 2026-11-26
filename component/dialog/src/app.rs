@@ -38,6 +38,10 @@ pub enum HintKey {
     Pane,
     /// The lit screen moved to a side of its neighbor (the display page's map, v0.167).
     Place(Side),
+    /// Help, the keys of the page it is opened from first (v0.169).
+    Help,
+    /// The folder shown sorted in an order; its present order again reverses it (v0.169).
+    Sort(crate::files::SortBy),
 }
 
 use crate::animation::Reel;
@@ -83,11 +87,11 @@ impl App {
         matches!(&self.mode, Mode::Ask { step, .. } if matches!(step.call.name.as_str(), "layout_save" | "layout_rename" | "notes_rename" | "files_rename"))
     }
 
-    pub fn placeholder(&self) -> &'static str {
+    pub fn placeholder(&self) -> String {
         if let Mode::Ask { step, .. } = &self.mode {
             match step.call.name.as_str() {
-                "layout_save" => return "a name for this layout",
-                "layout_rename" | "notes_rename" | "files_rename" => return "new name",
+                "layout_save" => return "a name for this layout".into(),
+                "layout_rename" | "notes_rename" | "files_rename" => return "new name".into(),
                 _ => {}
             }
         }
@@ -97,16 +101,20 @@ impl App {
                     crate::apps::Form::AddCategory => "a name for the category",
                     crate::apps::Form::RenameCategory(_) => "new name",
                     crate::apps::Form::AddMapping => "a desktop category, such as Network",
-                };
+                }
+                .into();
             }
         }
         if let Some(p) = self.files_placeholder() {
-            return p;
+            return p.into();
         }
-        if self.answers() {
-            PLACEHOLDER
-        } else {
-            PLACEHOLDER_SEARCH
+        let said = if self.answers() { PLACEHOLDER } else { PLACEHOLDER_SEARCH };
+        // a place says what its words search (v0.169): search notes or ask
+        match &self.view {
+            View::Apps | View::Help | View::Dest(_) | View::Section(_) | View::Folder(..) if self.cfg.title.is_none() => {
+                said.replacen("search", &format!("search {}", self.title()), 1)
+            }
+            _ => said.into(),
         }
     }
 
@@ -151,7 +159,7 @@ pub const DESTS: [Dest; 9] = [
     Dest {
         name: "calendar",
         purpose: "dates and reminders",
-        sections: &["clock", "reminders"],
+        sections: &["reminders", "clock"],
     },
     Dest {
         name: "settings",
@@ -199,7 +207,7 @@ const WORKSPACE_SAYS: [&str; 13] = [
 ];
 /// Settings: a section each, then Talk and Connections, in this order, under their groups (#137); About is a
 /// row of the system place since v0.153 (a place of the home from v0.114, #136). Appearance first since v0.166.
-pub const SETTINGS: [(&str, &str, &str); 17] = [
+pub const SETTINGS: [(&str, &str, &str); 18] = [
     ("theme", "theme", "palette, wallpaper and text"),
     ("wallpaper", "wallpaper", "the desktop picture"),
     ("display", "display", "screens, brightness, idle and lock"),
@@ -210,8 +218,9 @@ pub const SETTINGS: [(&str, &str, &str); 17] = [
     ("bt", "Bluetooth", "devices nearby"),
     ("lan", "network", "the wired connection"),
     ("storage", "storage", "drives and free space"),
-    ("keyboard", "keyboard", "layouts and key repeat"),
-    ("pointer", "pointer", "mouse and touchpad"),
+    ("keyboard", "keyboard", "layouts, repeat and compose"),
+    ("mouse", "mouse", "speed, scroll and buttons"),
+    ("touchpad", "touchpad", "tap, scroll and clicks"),
     ("notifications", "notifications", "do not disturb, the last few"),
     ("power", "power", "lock, suspend, restart"),
     ("bat", "battery", "charge"),
@@ -224,7 +233,7 @@ pub fn setting_group(label: &str) -> &'static str {
     match label {
         "out" | "mic" => "sound",
         "wifi" | "bt" | "lan" => "network",
-        "storage" | "keyboard" | "pointer" => "devices",
+        "storage" | "keyboard" | "mouse" | "touchpad" => "devices",
         // appearance, the word people search for (v0.161: look before); notifications is no part of it. The screens
         // are how the desktop looks, so display is there too (v0.167)
         "theme" | "wallpaper" | "display" | "bar" => "appearance",
@@ -1061,6 +1070,22 @@ fn view_named(providers: &[Provider], name: &str) -> Option<View> {
     }
 }
 
+/// The steps that make a new thing in a place (a note, a reminder): the row that offers one wears the New key, which
+/// does it there (v0.169), as F7 makes a folder among files.
+const NEW_STEPS: [&str; 2] = ["notes_new", "reminders_add"];
+
+fn key_new_rows(rows: &mut [model::Row], key: &str) {
+    if key.is_empty() {
+        return;
+    }
+    for r in rows
+        .iter_mut()
+        .filter(|r| r.key.is_none() && r.tool.as_ref().is_some_and(|t| NEW_STEPS.contains(&t.name.as_str())))
+    {
+        r.key = Some(key.to_string());
+    }
+}
+
 /// A window's name and title are labels, lowercase (the dialog design notes); here rather than at the provider, which has
 /// no lowercase past ASCII.
 fn lower_titles(rows: &mut [model::Row]) {
@@ -1645,6 +1670,7 @@ impl App {
                     if self.providers[idx].label == "window" {
                         lower_titles(&mut rows.rows); // a window's title is a label (the dialog design notes)
                     }
+                    key_new_rows(&mut rows.rows, self.cfg.keys.label(HintKey::New));
                     self.providers[idx].rows = rows;
                     self.hold_rows(idx);
                     self.providers[idx].ready = true;
@@ -1934,8 +1960,20 @@ impl App {
 
     /// Every word typed is in the row's words, its line, or its section's name.
     fn row_matches(&self, prov: usize, row: &model::Row, words: &str) -> bool {
+        if self.takes_words(row).is_some() {
+            return true;
+        }
         let hay = format!("{} {} {}", self.providers[prov].label, row.text, row.line.as_deref().unwrap_or("")).to_lowercase();
         words.to_lowercase().split_whitespace().all(|w| hay.contains(w))
+    }
+
+    /// The words typed over a place, where the row makes a new thing from words it would ask for (v0.169): over the
+    /// calendar, "fri 9 call the vet" is the new reminder. None elsewhere, and on a home-wide search.
+    pub fn takes_words(&self, row: &model::Row) -> Option<String> {
+        let typed = self.query().trim().to_string();
+        let own = matches!(self.view, View::Dest(_) | View::Section(_));
+        let call = row.tool.as_ref()?;
+        (own && !typed.is_empty() && call.ask.len() == 1 && NEW_STEPS.contains(&call.name.as_str())).then_some(typed)
     }
 
     pub fn pickable(row: &model::Row) -> bool {
@@ -2124,6 +2162,7 @@ impl App {
             ("general", "rename the selected row", k(HintKey::Rename)),
             ("general", "scroll by page", format!("{}  {}", k(HintKey::PageUp), k(HintKey::PageDown))),
             ("general", "quit", k(HintKey::Quit)),
+            ("general", "help for the page you are on", k(HintKey::Help)),
             ("files", "select a file for copy, move or trash", k(HintKey::Select)),
             ("files", "open in its app", k(HintKey::Open)),
             ("files", "copy", k(HintKey::Copy)),
@@ -2132,6 +2171,19 @@ impl App {
             ("files", "move to trash", k(HintKey::Trash)),
             ("files", "copy path", k(HintKey::CopyPath)),
             ("files", "open the second pane, or go to the other", k(HintKey::Pane)),
+            (
+                "files",
+                "sort by name, kind, date or size; again reverses",
+                self.cfg.keys.labels(
+                    &[
+                        crate::files::SortBy::Name,
+                        crate::files::SortBy::Kind,
+                        crate::files::SortBy::Date,
+                        crate::files::SortBy::Size,
+                    ]
+                    .map(HintKey::Sort),
+                ),
+            ),
             (
                 "view",
                 "zoom in, zoom out, fit",
@@ -2142,6 +2194,10 @@ impl App {
                 "previous page, next page",
                 format!("{}  {}", k(HintKey::Char('<')), k(HintKey::Char('>'))),
             ),
+            ("notes", "new note", k(HintKey::New)),
+            ("calendar", "new reminder", k(HintKey::New)),
+            ("calendar", "the month before or after", self.cfg.keys.labels(&[HintKey::Left, HintKey::Right])),
+            ("apps", "move the lit app's category up or down", "Ctrl+\u{2191} Ctrl+\u{2193}".to_string()),
             (
                 "display",
                 "move the lit screen beside another",
@@ -2175,10 +2231,38 @@ impl App {
 
     /// Help as a list (the dialog design notes, v0.127): the rows under their subjects, the ones the words typed name when
     /// there are words; then the note that says where to change them.
+    /// F1: help, the keys of the page it is opened from first; F1 on help goes back, as Esc does (v0.169).
+    fn help_key(&mut self) {
+        if self.key_held() {
+            return;
+        }
+        if self.view == View::Help {
+            return self.escape();
+        }
+        self.go(View::Help);
+    }
+
+    /// The group of keys help puts first: the page's it was opened from, where that page has keys of its own.
+    fn help_first(&self) -> Option<&'static str> {
+        let label = |p: &usize| self.providers.get(*p).map(|x| x.label.as_str()).unwrap_or("");
+        match self.came_from.last()? {
+            View::Folder(p, _) | View::Section(p) if label(p) == "files" => Some("files"),
+            View::Folder(p, _) | View::Section(p) if label(p) == "display" => Some("display"),
+            View::Section(p) if label(p) == "notes" => Some("notes"),
+            View::Dest(d) if *d == CALENDAR_DEST => Some("calendar"),
+            View::Preview => Some("view"),
+            View::Apps => Some("apps"),
+            _ => None,
+        }
+    }
+
     fn help_items(&self, list: &mut Vec<Item>) {
         let filtering = !self.query().trim().is_empty();
         let mut group: Option<String> = None;
-        for (g, words, key) in self.help_rows() {
+        let first = self.help_first();
+        let mut rows = self.help_rows();
+        rows.sort_by_key(|(g, _, _)| Some(g.as_str()) != first);
+        for (g, words, key) in rows {
             if filtering && !self.word_in(&format!("{} {} {}", g, words, key)) {
                 continue;
             }
@@ -2522,11 +2606,11 @@ impl App {
                 }
             }
             View::Dest(d) if *d == CALENDAR_DEST => {
-                // the months are drawn above; clock preferences and reminders below them
-                if let Some(p) = self.providers.iter().position(|p| p.label == "clock" && p.dead.is_none()) {
-                    self.section_rows(p, &mut list, false);
-                }
-                if let Some(p) = self.providers.iter().position(|p| p.label == "reminders" && p.dead.is_none()) {
+                // the months are drawn above; under them the reminders, then the time (v0.169)
+                for p in self.dest_sections(*d) {
+                    if !list.is_empty() {
+                        list.push(Item::Blank);
+                    }
                     self.section_rows(p, &mut list, false);
                 }
             }
@@ -2638,8 +2722,7 @@ impl App {
                 && (words.is_empty() || self.row_matches(p, r, words))
         };
         let mut list = vec![];
-        // the layout in pixels names a folder's own two groups (v0.160): its folders, then its files
-        let mut named: Option<&str> = None;
+        let mut trash = None;
         for (i, r) in rows.rows.iter().enumerate() {
             if !shown(r) {
                 continue;
@@ -2661,27 +2744,26 @@ impl App {
             if i + 1 == rows.rows.len() && i > 0 && r.tool.is_none() && r.children.is_none() && r.page.is_none() && r.step.is_none() && r.switch.is_none() {
                 list.push(Item::Blank); // the summary at the end stands apart; a setting is no summary
             }
-            // a group starts under its heading, with air above it, as in a section
+            // the trash is a place of its own, not a folder of your home: it stands apart, last
+            if counted && r.id == "files:trash" {
+                trash = Some(i);
+                continue;
+            }
+            // a group starts under its heading, with air above it, as in a section. Your home's own rows need none:
+            // the location line says where they are
             let prev = rows.rows[..i].iter().rev().find(|q| shown(q)).map(|q| q.group.clone());
-            let heading = !(shape.own && r.group.as_deref() == Some("home"));
+            let heading = !((shape.own || counted) && r.group.as_deref() == Some("home"));
             if r.group.is_some() && prev.as_ref() != Some(&r.group) && heading {
                 if !list.is_empty() || shape.lead {
                     list.push(Item::Blank);
                 }
                 list.push(Item::Heading(r.group.clone().unwrap_or_default()));
             }
-            if counted && r.group.is_none() {
-                let part = if r.id.starts_with("files:dir:") {
-                    Some("folders")
-                } else if r.id.starts_with("files:file:") || r.id.starts_with("files:link:") {
-                    Some("files")
-                } else {
-                    None
-                };
-                if let Some(word) = part.filter(|_| part != named) {
-                    list.push(Item::Heading(word.to_string()));
-                    named = part;
-                }
+            list.push(Item::Folder(i));
+        }
+        if let Some(i) = trash {
+            if !list.is_empty() {
+                list.push(Item::Blank);
             }
             list.push(Item::Folder(i));
         }
@@ -3379,7 +3461,7 @@ impl App {
     }
 
     /// A place's state for the home (the dialog design notes): what it holds now, from what the dialog already has, cheaply;
-    /// None keeps what it is for. Power has no state worth more than its purpose.
+    /// None keeps what it is for until it is known.
     pub fn dest_state(&self, d: usize) -> Option<String> {
         let sep = crate::ui::SEP;
         let prov = |l: &str| self.providers.iter().find(|p| p.label == l && p.dead.is_none() && p.ready);
@@ -3399,10 +3481,9 @@ impl App {
                 }
                 return Some(s);
             }
-            "files" => {
-                // the folder's own summary, as the files section writes it
-                let total = prov("files")?.rows.rows.iter().find(|r| r.id == "files:total")?.text.clone();
-                return Some(format!("~{}{}", sep, total));
+            // what the section says it holds now: your home's count, the time since the machine started (v0.169)
+            "files" | "power" => {
+                return prov(DESTS[d].name).map(|p| p.title.clone()).filter(|t| !t.trim().is_empty());
             }
             "settings" => {
                 // the look and the screens, from what their sections say, whichever are known; never the network: a
@@ -3474,15 +3555,17 @@ impl App {
         let count = |n: usize, one: &str, many: &str| if n == 1 { format!("1 {}", one) } else { format!("{} {}", n, many) };
         let said = match DESTS[d].name {
             "notes" => {
-                // the count, the newest note's title and its date
+                // the count and the newest note's day: what a note says is no business of home's first screen, as a
+                // network's name is not (v0.169)
                 let p = prov("notes")?;
                 let notes: Vec<&model::Row> = p.rows.rows.iter().filter(|r| r.tool.as_ref().is_some_and(|t| t.name == "notes_open")).collect();
+                let total = p.title.split_whitespace().next().and_then(|n| n.parse::<usize>().ok()).unwrap_or(notes.len());
                 match notes.first() {
                     None => "no notes yet".to_string(),
                     Some(n) => {
-                        let mut s = format!("{}{}{}", count(notes.len(), "note", "notes"), sep, n.text.to_lowercase());
+                        let mut s = count(total, "note", "notes");
                         if let Some(when) = n.columns.first().filter(|c| !c.is_empty()) {
-                            s.push_str(&format!(", {}", when));
+                            s.push_str(&format!("{}last {}", sep, when));
                         }
                         s
                     }
@@ -3927,8 +4010,29 @@ impl App {
         match key {
             HintKey::Rename => self.rename_key(),
             HintKey::Actions => self.actions_key(),
+            _ if self.row_named_key(key) => {}
             _ => self.files_key(key),
         }
+    }
+
+    /// A key a row of the view wears as its own (new note: F7) does that row, as Enter on it would (v0.169). Files
+    /// keep their own keys.
+    fn row_named_key(&mut self, key: HintKey) -> bool {
+        let label = self.cfg.keys.label(key).to_string();
+        if label.is_empty() || self.files_pane_view().is_some() {
+            return false;
+        }
+        let picks = self.picks();
+        let Some(at) = picks
+            .iter()
+            .position(|it| self.row_ref(it).is_some_and(|r| r.key.as_deref() == Some(label.as_str())))
+        else {
+            return false;
+        };
+        self.sel = at;
+        self.in_list = true;
+        self.enter();
+        true
     }
 
     /// A printable key not bound to an action. Remapping removes its old shortcut.
@@ -4870,7 +4974,7 @@ impl App {
             View::Found(_, w) => w.clone(),
             _ => words.clone(),
         };
-        if self.by_meaning(&item, &searched) {
+        if self.by_meaning(&item, &searched) && !self.row_ref(&item).is_some_and(|r| self.takes_words(r).is_some()) {
             if let Some(step) = self.meaning_step(&item) {
                 self.set_input(String::new()); // the words go with the pick, as a row's found by name do
                 return self.stage(vec![step]);
@@ -4885,7 +4989,9 @@ impl App {
         ) || (self.view == View::Help && !matches!(item, Item::Key(..)))
         {
             self.staged = None;
-            if !words.is_empty() && !matches!(item, Item::Dest(_) | Item::Setting(_) | Item::OpenModels | Item::More(..)) {
+            // a row that makes a new thing from the words keeps them for its step, which takes them (v0.169)
+            let takes = self.row_ref(&item).is_some_and(|r| self.takes_words(r).is_some());
+            if !words.is_empty() && !takes && !matches!(item, Item::Dest(_) | Item::Setting(_) | Item::OpenModels | Item::More(..)) {
                 self.set_input(String::new());
             }
         }
@@ -5984,6 +6090,14 @@ impl App {
             self.want_cancel();
             self.target = None;
         }
+        // a new thing made from the words typed over its place (v0.169): they are what its step would ask for
+        let mut step = step;
+        let typed = self.query().trim().to_string();
+        if step.who != Who::Model && !typed.is_empty() && step.call.ask.len() == 1 && NEW_STEPS.contains(&step.call.name.as_str()) {
+            let field = step.call.ask.remove(0);
+            step.call.arguments.insert(field, Value::String(typed));
+            self.set_input(String::new());
+        }
         if let Some(field) = step.call.ask.first().cloned() {
             // files' rename, new folder and new file: a form typed in the prompt (the dialog design notes)
             if self.files_form(step.clone()) {
@@ -6356,6 +6470,8 @@ impl App {
         if let Some(st) = &rows.state {
             self.providers[idx].title = st.clone();
         }
+        let mut rows = rows;
+        key_new_rows(&mut rows.rows, self.cfg.keys.label(HintKey::New));
         self.providers[idx].rows = rows;
         self.providers[idx].dirty = false;
         self.providers[idx].last_read = Some(Instant::now());
@@ -6418,6 +6534,72 @@ impl App {
 
     /// A click on a category's heading in the list of apps (the dialog design notes, v0.124.4): the list narrows to that
     /// category; on the heading of the category shown alone, it widens to all. `label` is the heading as drawn.
+    /// Ctrl+Up and Ctrl+Down over the apps: the lit app's category moves a place, or the lit category on the
+    /// categories page; the app stays lit where its group went (v0.169). False where no category is lit.
+    pub(crate) fn apps_move_category(&mut self, side: Side) -> bool {
+        use crate::apps::{Action, Page};
+        if self.view != View::Apps || self.mode != Mode::Normal || !self.in_list || !matches!(side, Side::Above | Side::Below) {
+            return false;
+        }
+        let lit = match self.picks().get(self.sel) {
+            Some(Item::Apps(l)) => l.action.clone(),
+            _ => None,
+        };
+        let name = match (&self.apps.page, &lit) {
+            (Page::List, Some(Action::Launch(id))) if self.apps.filter.is_none() => self.apps.entry(id).map(|a| self.apps.category_of(a)),
+            (Page::Categories, Some(Action::Category(c))) => Some(c.clone()),
+            _ => None,
+        };
+        let Some(name) = name else { return false };
+        self.reply = None;
+        // the list shows the categories that hold an app: the lit one goes past the one shown next to it, never past an
+        // empty one no one sees
+        let shown: Vec<String> = self
+            .apps
+            .lines(60, "", None)
+            .iter()
+            .filter(|l| l.heading)
+            .filter_map(|l| self.apps.prefs.categories.iter().find(|c| c.to_lowercase() == l.label).cloned())
+            .collect();
+        let next = shown.iter().position(|c| *c == name).and_then(|at| {
+            if side == Side::Above {
+                at.checked_sub(1).and_then(|k| shown.get(k))
+            } else {
+                shown.get(at + 1)
+            }
+        });
+        match (&self.apps.page, next) {
+            (Page::List, Some(other)) => self.apps_activate(Action::PlaceCategory(name, other.clone())),
+            (Page::List, None) => self.refuse(if side == Side::Above {
+                "that category is first already"
+            } else {
+                "that category is last already"
+            }),
+            _ => self.apps_activate(Action::MoveCategory(name, side == Side::Above)),
+        }
+        if let Some(at) = self.picks().iter().position(|it| matches!(it, Item::Apps(l) if l.action == lit)) {
+            self.sel = at;
+        }
+        true
+    }
+
+    /// A category's name dragged onto another's over the list of apps: it takes that place (v0.169).
+    pub fn apps_place_category(&mut self, from: &str, onto: &str) {
+        if self.view != View::Apps || self.apps.page != crate::apps::Page::List || self.mode != Mode::Normal {
+            return;
+        }
+        let named = |label: &str| self.apps.prefs.categories.iter().find(|c| c.to_lowercase() == label).cloned();
+        if let (Some(a), Some(b)) = (named(from), named(onto)) {
+            self.reply = None;
+            self.apps_activate(crate::apps::Action::PlaceCategory(a, b));
+        }
+    }
+
+    /// Whether a press on a category's name reorders when dragged, rather than scrolling the list.
+    pub fn apps_reorders(&self) -> bool {
+        self.view == View::Apps && self.apps.page == crate::apps::Page::List && self.apps.filter.is_none() && self.mode == Mode::Normal
+    }
+
     pub fn apps_heading(&mut self, label: &str) {
         if self.view == View::Dest(WORKSPACE_DEST) {
             return self.workspace_heading(label);
@@ -6840,7 +7022,10 @@ impl App {
                     self.files_pane_key();
                 }
             }
+            HintKey::Place(side) if self.apps_move_category(side) => {}
             HintKey::Place(side) => self.map_place(side),
+            HintKey::Help => self.help_key(),
+            HintKey::Sort(by) => self.files_sort(by),
             HintKey::Rename | HintKey::Open | HintKey::Copy | HintKey::Move | HintKey::New | HintKey::Trash | HintKey::Actions | HintKey::CopyPath => {
                 self.row_key(key)
             }
@@ -7083,11 +7268,16 @@ impl App {
                 if self.pixels && rows.iter().any(|r| r.map.is_some()) {
                     add(&mut v, "Open", "Enter");
                 }
-                if rows.iter().any(|r| !r.more.is_empty()) {
-                    add(&mut v, "Actions", "F9");
-                }
+                // the function keys in their order, each with its one word (v0.169): view, new, actions
                 if rows.iter().any(|r| r.page.is_some()) {
                     add(&mut v, if crate::appearance::gallery(&self.view) { "Wallpaper" } else { "View" }, "F3");
+                }
+                let new = self.cfg.keys.label(HintKey::New).to_string();
+                if !new.is_empty() && rows.iter().any(|r| r.key.as_deref() == Some(new.as_str())) {
+                    add(&mut v, "New", &new);
+                }
+                if rows.iter().any(|r| !r.more.is_empty()) {
+                    add(&mut v, "Actions", "F9");
                 }
                 if rows.iter().any(|r| r.step.is_some()) {
                     add(&mut v, "Change", "\u{2190} \u{2192}");

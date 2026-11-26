@@ -3,14 +3,14 @@
   ❯ search or ask                                     talk  
                                                             
     spark-shell  v0.90               released 5 Nov 2026    
-    spark-dialog v0.168.4                                   
+    spark-dialog v0.169.0                                   
                                                             
     a lightweight sway shell                                
                                                             
     project  github.com/forgewright-ai/spark-shell          
     license  MIT                                            
     credits  48 projects and their licenses                 
-    help     40 shortcuts                                   
+    help     46 shortcuts                                   
                                                             
     installed at ~/.spark-shell                             
                                                             

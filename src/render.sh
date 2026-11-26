@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --------------------------------------------------------------- renders
 # sets: DESKTOP_RENDERED RENDERED USER_DIRS USER_DIRS_ROLES
-# reads: CONFIG_DIR HEX_KEYS MODE NEON NEON_OLD NL OS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_SEEN POINTER_THEMES REPO SCREENS_CONF SLOT_KEYS STATE_DIR TAB TERM_APP_RE TERM_CONFIG_REL TERM_DIALOG_REL TERM_NAME THEME_KEYS TMP WALL_COVER WALL_KEYS WIN_KEYS WM_CONFIG_REL WM_LINE WM_NAME
+# reads: CONFIG_DIR HEX_KEYS INPUT_KEYS MODE NEON NEON_OLD NL OS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_SEEN POINTER_THEMES REPO SCREENS_CONF SLOT_KEYS STATE_DIR TAB TERM_APP_RE TERM_CONFIG_REL TERM_DIALOG_REL TERM_NAME THEME_KEYS TMP WALL_COVER WALL_KEYS WIN_KEYS WM_CONFIG_REL WM_LINE WM_NAME
 # a symlink for a file used as-is, a rendered file where a value is baked
 # in. A file marked `rendered by spark-shell` is ours to render again; any
 # other is yours and moves to <path>.bak. The first .bak stays for off; a
@@ -85,12 +85,12 @@ render_expr() {   # -> the sed script that renders a template, one s command a l
     e="$e${NL}s|@FOOT_COLORS@|$(term_colors_section)|g${NL}s|@FOOT_FILL@|$(term_fill)|g${NL}s|@FOOT_SECURITY_SECTION@|$(term_security_section)|g${NL}s|@FOOT_SECURITY@|$(term_security)|g${NL}s|@TERM_APPS@|$(esc "$TERM_APP_RE")|g"
     if desktop_wanted; then e="$e${NL}s|@LAYOUT_SLOTS@|yes|g"; else e="$e${NL}s|@LAYOUT_SLOTS@|no|g"; fi   # sgr.sh: the five slots in foot only where the desktop's foot.ini sets them
     e="$e${NL}s|@SCREENS_CONF@|$(esc "$SCREENS_CONF")|g${NL}s|@IDLE_EXEC@|$(esc "$(idle_exec)")|g${NL}s|@KB_LAYOUT@|$(esc "$(kb_line layout)")|g${NL}s|@KB_VARIANT@|$(esc "$(kb_line variant)")|g"
-    for k in POINTER_TAP POINTER_SCROLL POINTER_SPEED KEY_REPEAT_DELAY KEY_REPEAT_RATE; do
+    _rtc=$(input_sway TOUCHPAD_CLICK "$TOUCHPAD_CLICK")   # the touchpad's right click: a line only where one is chosen, before the keys' own
+    if [ -n "$_rtc" ]; then e="$e${NL}s|^@TOUCHPAD_CLICK@$|input type:touchpad click_method $_rtc|"; else e="$e${NL}s|^@TOUCHPAD_CLICK@$|# the touchpad's own right click|"; fi
+    for k in $INPUT_KEYS; do
         eval "v=\$$k"
-        case $v in on) v=enabled ;; off) v=disabled ;; esac
-        e="$e${NL}s|@$k@|$(esc "$v")|g"
+        e="$e${NL}s|@$k@|$(esc "$(input_sway "$k" "$v")")|g"
     done
-    e="$e${NL}s|@KEY_CAPS@|$(input_caps "$KEY_CAPS")|g"
     printf '%s' "$e"
 }
 render_sed() { printf '%s\n' "$1" > "$TMP/render.sed" && sed -f "$TMP/render.sed" "$2"; }   # render_sed SCRIPT SRC -> SRC through the script, from a file (never one -e line)

@@ -3647,3 +3647,98 @@ fn a_credential_typed_for_a_proposed_step_is_not_written_back_into_the_box() {
     );
     assert!(app.input.contains("password: hidden"), "it is named, its value kept back: {:?}", app.input);
 }
+
+/// A stub provider of one section whose rows are `rows` and whose tools are `tools`; each call's name and arguments
+/// land in `seen`, answered with a receipt.
+fn rows_stub(label: &'static str, tools: Value, rows: Value, seen: Arc<Mutex<Vec<Value>>>) -> Script {
+    Box::new(move |v, send| {
+        if let Some(r) = ordinary(label, v, &tools, &rows) {
+            return send(r);
+        }
+        if v.get("method").and_then(Value::as_str) == Some("tools/call") {
+            seen.lock()
+                .unwrap()
+                .push(json!({"name": v["params"]["name"], "arguments": v["params"]["arguments"]}));
+            send(result(
+                &v["id"],
+                json!({"content": [], "structuredContent": {"receipt": "done"}, "isError": false}),
+            ));
+        }
+    })
+}
+
+#[test]
+fn words_typed_over_the_calendar_are_the_new_reminder() {
+    // v0.169: the row that makes a reminder stands whatever is typed, shows the words, and makes it from them: no
+    // question asked after
+    let (mut app, rx, tx) = app_with(&["reminders"]);
+    let tools = json!([{"name": "reminders_add", "title": "reminders add WORDS", "inputSchema": {"type": "object", "properties": {"words": {"type": "string"}}, "required": ["words"]}, "annotations": {"destructiveHint": false}}]);
+    let rows = json!({"title": "reminders", "rows": [
+        {"id": "reminders:show:a", "sign": "ring", "text": "water the plants", "tool": null, "more": [], "columns": ["18:00"], "children": null, "group": "today", "end": true},
+        {"id": "reminders:add", "sign": "opens", "text": "new reminder", "tool": {"name": "reminders_add", "arguments": {}, "ask": ["words"]}, "more": [], "columns": [], "children": null}], "short": []});
+    let seen = Arc::new(Mutex::new(vec![]));
+    app.servers.push(stub(0, "reminders", rows_stub("reminders", tools, rows, seen.clone()), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    assert_eq!(
+        app.providers[0].rows.rows[1].key.as_deref(),
+        Some("F7"),
+        "the row that makes one wears the New key"
+    );
+    at_row(&mut app, View::Section(0), 0);
+    app.in_list = false;
+    typed(&mut app, "fri 9 call the vet");
+    let found: Vec<String> = app
+        .picks()
+        .iter()
+        .filter_map(|it| match it {
+            Item::Row(p, r) => Some(app.providers[*p].rows.rows[*r].text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(found, vec!["new reminder".to_string()], "the words find no reminder, and the new one stands");
+    let row = app.providers[0].rows.rows[1].clone();
+    assert_eq!(app.takes_words(&row).as_deref(), Some("fri 9 call the vet"));
+    app.hint_key(HintKey::New);
+    assert!(
+        !matches!(app.mode, Mode::Ask { .. }),
+        "nothing is asked: the words are the reminder: {:?}",
+        app.mode
+    );
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && !seen.lock().unwrap().is_empty()));
+    assert_eq!(
+        seen.lock().unwrap()[0],
+        json!({"name": "reminders_add", "arguments": {"words": "fri 9 call the vet"}})
+    );
+    assert!(app.input.is_empty(), "the words went with the reminder");
+}
+
+#[test]
+fn the_new_key_does_the_row_that_wears_it_and_help_starts_with_the_page() {
+    let (mut app, rx, tx) = app_with(&["notes"]);
+    let tools =
+        json!([{"name": "notes_new", "title": "notes new", "inputSchema": {"type": "object", "properties": {}}, "annotations": {"destructiveHint": false}}]);
+    let rows = json!({"title": "notes", "state": "2 notes", "rows": [
+        {"id": "notes:new", "sign": "opens", "text": "new note", "tool": {"name": "notes_new", "arguments": {}}, "more": [], "columns": [], "children": null},
+        {"id": "notes:open a.md", "sign": "blank", "text": "a", "tool": null, "more": [], "columns": ["Nov 15"], "children": null, "end": true}], "short": []});
+    let seen = Arc::new(Mutex::new(vec![]));
+    app.servers.push(stub(0, "notes", rows_stub("notes", tools, rows, seen.clone()), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    at_row(&mut app, View::Section(0), 1);
+    let bar: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
+    assert!(
+        bar.contains(&"New ".to_string()) && bar.contains(&"F7".to_string()),
+        "the key bar offers it: {bar:?}"
+    );
+    app.hint_key(HintKey::New);
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && !seen.lock().unwrap().is_empty()));
+    assert_eq!(seen.lock().unwrap()[0]["name"], "notes_new", "F7 made a note from the list's other row");
+    // F1 from the calendar: its keys first; F1 again goes back
+    app.view = View::Dest(CALENDAR_DEST);
+    app.hint_key(HintKey::Help);
+    assert_eq!(app.view, View::Help);
+    assert_eq!(app.list_items().first(), Some(&Item::Heading("calendar".into())), "the page's keys lead");
+    app.hint_key(HintKey::Help);
+    assert_eq!(app.view, View::Dest(CALENDAR_DEST), "F1 again goes back");
+}

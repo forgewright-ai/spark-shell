@@ -311,7 +311,7 @@ impl App {
         };
         if matches!(self.apps.page, Page::List | Page::Hidden) {
             keys.push(("   ".into(), false));
-            keys.extend(pair("Details", "F9"));
+            keys.extend(pair("Actions", "F9"));
         }
         keys
     }
@@ -340,7 +340,11 @@ impl App {
         }
         if listing {
             keys.push(gap());
-            keys.extend(pair("Details", if beside { "Tab" } else { "F9" }));
+            keys.extend(pair("Actions", if beside { "Tab" } else { "F9" }));
+            if self.apps.page == Page::List && self.apps.filter.is_none() {
+                keys.push(gap());
+                keys.extend(pair("Move", "Ctrl+\u{2191} Ctrl+\u{2193}"));
+            }
         } else if beside && matches!(self.apps.page, Page::Details(_)) {
             keys.push(gap());
             keys.extend(pair("List", "Tab"));

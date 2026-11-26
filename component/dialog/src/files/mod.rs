@@ -455,6 +455,42 @@ pub fn short_summary(text: &str) -> Option<String> {
     Some(size.map_or(count.clone(), |z| format!("{}{}{}", count, sep, z)))
 }
 
+/// The orders a folder is sorted in (v0.169): the provider keeps each folder's, the same order again reversing it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SortBy {
+    Name,
+    Kind,
+    Date,
+    Size,
+}
+
+impl SortBy {
+    /// The provider's word for it.
+    pub fn word(self) -> &'static str {
+        match self {
+            SortBy::Name => "name",
+            SortBy::Kind => "kind",
+            SortBy::Date => "date",
+            SortBy::Size => "size",
+        }
+    }
+
+    /// The order a folder's state says it is in ("newest first"), and the one a click on it takes next: name, date,
+    /// size, kind, then name again.
+    pub fn after(state: &str) -> SortBy {
+        let s = state.to_lowercase();
+        if s.contains("newest") || s.contains("oldest") {
+            SortBy::Size
+        } else if s.contains("largest") || s.contains("smallest") {
+            SortBy::Kind
+        } else if s.contains("by kind") {
+            SortBy::Name
+        } else {
+            SortBy::Date
+        }
+    }
+}
+
 /// A row of the folder's own: a file or a folder in it, never a recent file, a drive, the trash, `..`, the
 /// next page or the summary. The names a copy or a move may run into are these rows' alone.
 pub fn in_folder(row: &Row) -> bool {

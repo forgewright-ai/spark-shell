@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the files provider
 # sets: FILES_DEPTH FILES_FOUND_MAX FILES_MATCH_MAX FILES_NAMES FILES_NAMES_AGE FILES_RECENT_DAYS FILES_RECENT_MAX FILES_ROWS_BYTES FILES_ROWS_MAX FILES_SEARCH_T FILES_SHOW_LINES FILES_SHOW_MAX FILES_SKIP FILES_THUMB_DIR FILES_WALK_T
-# reads: NOTES_DIR OS SCRUB_AWK TAB THUMB_DIR TMP US
+# reads: NOTES_DIR OS SCRUB_AWK STATE_DIR TAB THUMB_DIR TMP US
 FILES_SHOW_MAX=1048576   # a file shown or attached: a megabyte at most
 FILES_SHOW_LINES=12      # the lines a show puts in the exchange
 FILES_RECENT_DAYS=7      # the files touched in the last days, at the top of your home
@@ -146,7 +146,7 @@ files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' line
                 nf++; nb += $2
                 print "1" us "files:file:" id us "blank" us text us "" us p us size($2) us when(substr($4, 1, 4) substr($4, 6, 2) substr($4, 9, 2)) us group us c3 us "file" us "" us kindof(name) us stamp($4)
             } else if (t ~ /^symbolic/) {
-                print "2" us "files:link:" id us "blank" us text " -> " clean(to[p]) us "" us "" us "" us "" us group us "" us "link" us ""
+                print "2" us "files:link:" id us "blank" us text " -> " clean(to[p]) us "" us p us "" us "" us group us "" us "link" us ""
             }   # a device, a socket, a pipe: not listed
         }
         END { printf "%d %d %.0f\n", nf, nd, nb > sum }'
@@ -159,13 +159,43 @@ files_slice() {   # files_slice FROM < row lines -> the page's rows from FROM: F
         { k++; print }
         END { printf "%d %d\n", (stop ? at : NR), rest > left }'
 }
-files_list() {   # files_list FOLDER [GROUP] [FROM] -> a page of the folder's rows from FROM, folders then files by name; FILES_N, FILES_D, FILES_B count the whole folder, FILES_NEXT and FILES_LEFT the rest
+files_order() {   # files_order FOLDER -> its order: the one kept for it, else date in your downloads (the newest first), else name
+    _fod=''; [ ! -f "$STATE_DIR/files.order" ] || _fod=$(FOLDER=$1 awk -F '\t' '$1 == ENVIRON["FOLDER"] { o = $2 } END { print o }' "$STATE_DIR/files.order")   # ENVIRON: -v reads a backslash as an escape
+    [ -n "$_fod" ] || case ${1##*/} in [Dd]ownloads) _fod=date ;; *) _fod=name ;; esac
+    printf '%s\n' "$_fod"
+}
+files_order_words() {   # files_order_words ORDER -> how the location line says it
+    case $1 in name) echo 'by name' ;; name-) echo 'by name, z to a' ;; kind) echo 'by kind' ;; kind-) echo 'by kind, z to a' ;;
+        date) echo 'newest first' ;; date-) echo 'oldest first' ;; size) echo 'largest first' ;; size-) echo 'smallest first' ;; esac
+}
+files_order_set() {   # files_order_set FOLDER BY -> the folder's order kept: BY, or BY reversed where BY is its order now
+    _fos=$(files_order "$1"); if [ "$_fos" = "$2" ]; then _fos="$2-"; else _fos=$2; fi
+    mkdir_private "$STATE_DIR"
+    { [ ! -f "$STATE_DIR/files.order" ] || FOLDER=$1 awk -F '\t' '$1 != ENVIRON["FOLDER"]' "$STATE_DIR/files.order"; printf '%s\t%s\n' "$1" "$_fos"; } > "$STATE_DIR/files.order.new" \
+        && mv "$STATE_DIR/files.order.new" "$STATE_DIR/files.order"
+    printf '%s\n' "$_fos"
+}
+files_sorted() {   # files_sorted ORDER < files_rows_fmt's lines (the key first, the path sixth) -> the lines in ORDER: by name or
+    # kind the folders first; by date the day each row shows (its last change; a download's is when it came), the newest
+    # first, folders among the files; by size the largest first, the folders before them. A trailing - reverses
+    _fsr=''; case $1 in *-) _fsr=r ;; esac
+    case ${1%-} in
+        kind) sort -t "$US" -k1,1 -k13,13$_fsr -k4,4$_fsr ;;
+        date|size)
+            awk -F "$US" -v us="$US" -v by="${1%-}" -v stats="$TMP/files.stats" '
+                BEGIN { while ((getline l < stats) > 0) { split(l, f, us); p = substr(l, length(f[1] f[2] f[3] f[4] f[5]) + 6); t[p] = f[3] + 0; z[p] = f[2] + 0 } }
+                { printf "%.0f%s%s\n", (by == "date" ? t[$6] : ($1 == "0" ? 1e15 : z[$6])), us, $0 }' \
+                | if [ -n "$_fsr" ]; then sort -t "$US" -k1,1n -k5,5; else sort -t "$US" -k1,1nr -k5,5; fi | cut -d "$US" -f2- ;;
+        *) sort -t "$US" -k1,1 -k4,4$_fsr ;;
+    esac
+}
+files_list() {   # files_list FOLDER [GROUP] [FROM] -> a page of the folder's rows from FROM, in the folder's order; FILES_N, FILES_D, FILES_B count the whole folder, FILES_NEXT and FILES_LEFT the rest
     rm -f "$TMP/walk.stopped"
     find "$1" -mindepth 1 -maxdepth 1 ! -name '.*' -print0 2>/dev/null | files_nul | files_stats > "$TMP/files.stats"
     awk -F "$US" 'tolower($1) ~ /^symbolic/ { print substr($0, length($1 $2 $3 $4 $5) + 6) }' "$TMP/files.stats" \
         | while IFS= read -r _fll; do printf '%s%s%s\n' "$_fll" "$US" "$(readlink "$_fll")"; done > "$TMP/files.links"   # a folder's links are few
     files_counts "$1" > "$TMP/files.counts"
-    files_rows_fmt "${2:-}" no "$TMP/files.counts" < "$TMP/files.stats" | sort -t "$US" -k1,1 -k4,4 | cut -d "$US" -f2- | files_slice "${3:-0}"
+    files_rows_fmt "${2:-}" no "$TMP/files.counts" < "$TMP/files.stats" | files_sorted "$(files_order "$1")" | cut -d "$US" -f2- | files_slice "${3:-0}"
     read -r FILES_N FILES_D FILES_B < "$TMP/files.sum"; read -r FILES_NEXT FILES_LEFT < "$TMP/files.left"
 }
 files_walk() {   # files_walk ROOT f|fd [FIND-TESTS...] -> the files (f) or files and folders (fd) under ROOT, FILES_DEPTH deep, FILES_WALK_LIMIT (else FILES_WALK_T) seconds at most

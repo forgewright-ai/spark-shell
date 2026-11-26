@@ -122,6 +122,8 @@ pub enum Target {
     OtherPane,
     /// A row of the list of files while a file's details hold the keys: the list takes them, on that row.
     ListRow(usize),
+    /// A folder's order on the location line: the next order (v0.169).
+    Sort,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -792,17 +794,39 @@ fn path(app: &App, pen: &mut Pen, g: &Geo, items: &[Item], k: Kind) {
         }
         // a folder of files: how much it holds, which its summary row said in the grid. A page alone over the
         // list says what it is of, and no count
-        _ if k == Kind::Files && !(app.files_page_open() && !app.files.form() && !app.files_details_beside()) => app
-            .folder
-            .as_ref()
-            .and_then(|(_, _, rows)| rows.rows.iter().find(|r| files::is_summary(r)))
-            .and_then(|r| files::short_summary(&r.text))
-            .unwrap_or_default(),
+        _ if k == Kind::Files && !(app.files_page_open() && !app.files.form() && !app.files_details_beside()) => {
+            // its count, then its order (v0.169): a click on them takes the next order
+            let rows = app.folder.as_ref().map(|(_, _, rows)| rows);
+            let count = rows
+                .and_then(|rows| rows.rows.iter().find(|r| files::is_summary(r)))
+                .and_then(|r| files::short_summary(&r.text))
+                .unwrap_or_default();
+            let order = rows
+                .and_then(|rows| rows.state.clone())
+                .filter(|_| app.files_pane_view().is_some())
+                .unwrap_or_default();
+            [count, order].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(crate::ui::SEP)
+        }
+        (View::Help, _) => format!("{} shortcuts", app.shortcuts()),
         _ => String::new(),
     };
+    // what a place holds now is no level under it: it stands at the line's end, where a list's count does (v0.169)
+    let holds = app.mode == Mode::Normal && (matches!(app.view, View::Section(_)) || matches!(app.view, View::Dest(_)) && app.ws_filter.is_none());
+    let (place, mut sub) = (app.title(), if beside { String::new() } else { app.subtitle() });
+    let count = if holds && count.is_empty() { std::mem::take(&mut sub) } else { count };
     let right = g.w - g.inset;
-    let end = right - pen.text_end(right, base, &count, Size::Small, t.muted, false) - if count.is_empty() { 0.0 } else { m.px(16.0) };
-    let (place, sub) = (app.title(), if beside { String::new() } else { app.subtitle() });
+    let count = pen.fit(&count, Size::Small, ((right - g.inset) / 2.0).floor()); // a long state leaves the place its names
+    let said = pen.text_end(right, base, &count, Size::Small, t.muted, false);
+    if k == Kind::Files && app.files_pane_view().is_some() && app.folder.as_ref().is_some_and(|(_, _, rows)| rows.state.is_some()) {
+        pen.hit(
+            right - said - m.px(4.0),
+            base - m.sup - m.px(6.0),
+            said + m.px(8.0),
+            m.sh + m.px(10.0),
+            Target::Sort,
+        );
+    }
+    let end = right - said - if count.is_empty() { 0.0 } else { m.px(16.0) };
     let mut names = vec![("home".to_string(), Some(Target::Home))];
     // the view of a file: its folder, then the file's own name, which is where you are
     let viewed = (app.view == View::Preview)
@@ -836,9 +860,7 @@ fn path(app: &App, pen: &mut Pen, g: &Geo, items: &[Item], k: Kind) {
     } else if sub.trim().is_empty() {
         names.push((place, None));
     } else {
-        // what a place holds now is no level under it: its name is where you are
-        let holds = matches!(app.view, View::Section(_)) || matches!(app.view, View::Dest(_)) && app.ws_filter.is_none();
-        names.push((place, (!holds || app.mode != Mode::Normal).then_some(Target::Back)));
+        names.push((place, (!holds).then_some(Target::Back)));
         names.push((sub, None));
     }
     let mut x = g.inset;
@@ -1120,9 +1142,9 @@ enum K {
     Rule,
     Palette(String, Vec<Rgb>),
     Color(String, String, Rgb),
-    /// A group's heading; whether it is set large (a group of apps, of files: v0.160, where a count stood beside
-    /// it before); the category a click on it shows alone.
-    Head(String, bool, Option<String>),
+    /// A group's name, small and in the accent (v0.169: one size in every list); the category a click on it
+    /// shows alone.
+    Head(String, Option<String>),
     /// A place of home: its name, and what it holds now.
     Dest(String, String),
     /// An app in the list of apps: its name over what it is.
@@ -1159,13 +1181,14 @@ enum K {
     Choice(choice::Choice),
     /// The screens to scale (v0.167).
     Map(Box<crate::display::screens::Map>),
-    /// A file or a folder in a list of files, as an app's row is (v0.160): its name leads, and under it what it
-    /// is, its size, its date and, where the row carries one, its own folder.
+    /// A file or a folder in a list of files, one line as every list's row (v0.169): its name leads, then its size
+    /// (a folder's count) and, where the row carries one, its own folder in the list's column, and its day at the end.
     File {
         name: String,
         /// A folder: its name ends in a slash.
         dir: bool,
         what: String,
+        when: String,
         check: bool,
         muted: bool,
     },
@@ -1203,12 +1226,8 @@ struct Shape {
     /// A row's words start this far inside its fill, in the sheets' pixels: 24 in a list, 12 in the details
     /// beside one.
     pad: f64,
-    /// A heading of the list is set large, as a group of apps is: a list of files.
-    heads: bool,
     /// A row's key stands in the smaller text with no box around it: a page in large type.
     bare: bool,
-    /// Its small headings have air over them, so each stands nearer its own rows than the ones before it.
-    aired: bool,
     /// A setting is one row, its options side by side (C3, v0.161): a page of settings.
     c3: bool,
 }
@@ -1248,6 +1267,8 @@ fn of_row(r: &crate::model::Row) -> K {
         End::Switch(sw.on)
     } else if r.choice && r.children.is_some() && !r.columns.is_empty() {
         End::Words(r.columns[0].clone())
+    } else if r.end && !r.columns.is_empty() {
+        End::Words(r.columns.join(crate::ui::SEP))
     } else {
         End::None
     };
@@ -1277,25 +1298,17 @@ fn of_row(r: &crate::model::Row) -> K {
 
 /// A provider's row of a list of files as the row its list draws.
 fn file_row(r: &crate::model::Row, check: bool) -> K {
-    let dir = r.id.starts_with("files:dir:");
-    // what it is by its name, then the row's own columns: its size (a folder's count), its date, its folder
-    let kind = if dir { "" } else { files::kind_word(&r.text) };
-    let what: Vec<&str> = std::iter::once(kind)
-        .chain(r.columns.iter().take(3).map(String::as_str))
-        .filter(|w| !w.is_empty())
-        .collect();
+    // the row's own columns: its size (a folder's count), its day, its folder
+    let col = |k: usize| r.columns.get(k).map(String::as_str).unwrap_or("");
+    let what: Vec<&str> = [col(0), col(2)].into_iter().filter(|w| !w.is_empty()).collect();
     K::File {
         name: r.text.clone(),
-        dir,
+        dir: r.id.starts_with("files:dir:"),
         what: what.join(crate::ui::SEP),
+        when: col(1).to_string(),
         check,
         muted: r.muted,
     }
-}
-
-/// A file's row: two lines where it says what it is, one for a bare name (the folder above).
-fn file_row_h(m: &Metrics, k: &K) -> f64 {
-    m.px(if matches!(k, K::File { what, .. } if what.is_empty()) { 44.0 } else { 52.0 })
 }
 
 /// A line of a page of files as a row: an action with its key, air, or words.
@@ -1356,7 +1369,7 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
                 gap(&mut out, m.px(16.0));
                 None
             }
-            Item::Heading(h) => Some((m.px(if shape.heads { 44.0 } else { 36.0 }), K::Head(h.clone(), shape.heads, None))),
+            Item::Heading(h) => Some((m.px(36.0), K::Head(h.clone(), None))),
             Item::Dest(d) => {
                 let words = app.dest_state(*d).unwrap_or_else(|| DESTS[*d].purpose.to_string());
                 Some((m.px(44.0), K::Dest(DESTS[*d].name.to_string(), words)))
@@ -1393,7 +1406,12 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
                 } else if app.screen_off(row) {
                     (one, of_row(&crate::model::Row { muted: true, ..row.clone() }))
                 } else {
-                    (one, of_row(row))
+                    let mut k = of_row(row);
+                    // a row that makes a new thing shows the words typed as what it will make (v0.169)
+                    if let (Some(typed), K::One { words, .. }) = (app.takes_words(row), &mut k) {
+                        *words = typed;
+                    }
+                    (one, k)
                 }
             }),
             // a key of help (v0.162): what you do, the key at the row's end in the smaller text
@@ -1412,10 +1430,7 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
                 },
             )),
             Item::Hit(_) | Item::Row(..) => app.row_ref(it).map(|r| (one, of_row(r))),
-            Item::Folder(_) => app.row_ref(it).map(|r| {
-                let k = file_row(r, app.files_checks_any() && app.files.checked(&r.id));
-                (file_row_h(m, &k), k)
-            }),
+            Item::Folder(_) => app.row_ref(it).map(|r| (one, file_row(r, app.files_checks_any() && app.files.checked(&r.id)))),
             Item::Files(l) => {
                 let made = files_line(m, l);
                 if made.is_none() {
@@ -1441,7 +1456,7 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
                     None
                 } else if l.heading {
                     let click = (!shape.narrow && app.view == View::Apps && app.apps.page == Page::List).then(|| l.label.clone());
-                    Some((m.px(if shape.two { 44.0 } else { 36.0 }), K::Head(l.label.clone(), shape.two, click)))
+                    Some((m.px(36.0), K::Head(l.label.clone(), click)))
                 } else if let Some(a) = launch {
                     let name = a.name.to_lowercase();
                     if shape.two {
@@ -1540,10 +1555,6 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
             _ => None,
         };
         if let Some((h, kind)) = made {
-            // a heading brings its own air over it
-            if matches!(kind, K::Head(..)) && !shape.aired && matches!(out.last(), Some(Row { k: K::Gap(_), .. })) {
-                out.pop();
-            }
             out.push(Row {
                 h,
                 pick: if shape.still { None } else { pick(at) },
@@ -1758,6 +1769,7 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                         cells(name) as f64 * m.cw + if icon.is_some() { m.px(36.0) } else { 0.0 } + if !sign.is_empty() || checked { 2.0 * m.cw } else { 0.0 },
                     ),
                     K::Dest(name, _) => Some(cells(name) as f64 * m.cw),
+                    K::File { name, dir, .. } => Some((cells(name) + usize::from(*dir)).min(30) as f64 * m.cw),
                     _ => None,
                 })
                 .fold(0.0, f64::max);
@@ -1814,27 +1826,25 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                     pen.fill(x + edge(i), top + h - m.px(20.0), edge(i + 1) - edge(i), m.px(8.0), *c);
                 }
             }
-            K::Head(text, big, click) => {
-                // a group of apps or of files is named in large type, and the name is all there is: no count, no rule;
-                // what follows a workspace's name (this one, its screen) stands after it in the small type, both cut to
-                // the room
-                let w = if *big {
+            K::Head(text, click) => {
+                // a group's name, small and in the accent, as every list has it (v0.169); what follows a workspace's
+                // name (this one, its screen) stands after it, muted, both cut to the room. One the list's edge
+                // would cut is left out: its rows say where they are
+                let w = if top + m.px(8.0) >= area.top && top + m.px(30.0) <= area.bottom {
                     let words = heading_words(text);
                     let (name, rest) = heading_parts(&words);
-                    let base = top + m.px(32.0);
-                    let name = pen.fit(name, Size::Head, end - x);
-                    let w = pen.text(x, base, &name, Size::Head, t.accent, false);
-                    let rx = x + w + m.px(16.0);
+                    let base = top + m.px(24.0);
+                    let name = pen.fit(name, Size::Small, end - x);
+                    let w = pen.text(x, base, &name, Size::Small, t.accent, true);
+                    let rx = x + w + m.px(12.0);
                     let rest = pen.fit(rest, Size::Small, end - rx);
                     if cells(&rest) > 1 {
-                        w + m.px(16.0) + pen.text(rx, base, &rest, Size::Small, t.muted, false)
+                        w + m.px(12.0) + pen.text(rx, base, &rest, Size::Small, t.muted, false)
                     } else {
                         w
                     }
-                } else if top + m.px(8.0) >= area.top && top + m.px(30.0) <= area.bottom {
-                    pen.text(x, top + m.px(24.0), text, Size::Small, t.accent, true)
                 } else {
-                    0.0 // a small group name the list's edge would cut is left out: its rows say where they are
+                    0.0
                 };
                 if let Some(label) = click {
                     let (a, b) = (inside(top + m.px(6.0)), inside(top + h - m.px(2.0)));
@@ -1936,7 +1946,12 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                 match at_end {
                     End::None => {}
                     End::Words(v) => {
-                        let v = pen.fit(v, Size::Small, (e - nx - pen.width(name, Size::Main) - m.px(16.0)).max(4.0 * m.sw));
+                        // the value keeps its room while the name keeps twelve letters: a day stands whole, a long title is cut
+                        let v = pen.fit(
+                            v,
+                            Size::Small,
+                            (e - nx - pen.width(name, Size::Main).min(12.0 * m.cw) - m.px(16.0)).max(4.0 * m.sw),
+                        );
                         e -= pen.text_end(e, base, &v, Size::Small, t.muted, false) + m.px(8.0);
                     }
                     End::Switch(is_on) => {
@@ -2058,28 +2073,39 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                     pen.text(nx, top + m.px(56.0) + i as f64 * m.px(17.0), l, Size::Small, t.muted, false);
                 }
             }
-            K::File { name, dir, what, check, muted } => {
-                let (nb, wb) = if what.is_empty() {
-                    (mid + m.px(6.0), 0.0)
-                } else {
-                    (mid - m.px(5.0), mid + m.px(16.0))
-                };
+            K::File {
+                name,
+                dir,
+                what,
+                when,
+                check,
+                muted,
+            } => {
+                let base = mid + m.px(6.0);
                 if *check {
-                    pen.text(x - 2.0 * m.cw, nb, crate::ui::CHECK, Size::Main, t.accent, false);
+                    pen.text(x - 2.0 * m.cw, base, crate::ui::CHECK, Size::Main, t.accent, false);
                 }
-                // the name has the row, cut in its middle so its type stays; a folder's slash after it, muted
+                // from the end backward: its day; then the name, cut in its middle so its type stays, a folder's slash
+                // after it, muted; then what it holds in the list's column
+                let e = if when.is_empty() {
+                    end
+                } else {
+                    end - pen.text_end(end, base, when, Size::Small, t.muted, false) - m.px(16.0)
+                };
                 let slash = if *dir { m.cw } else { 0.0 };
-                let cells_wide = ((end - x - slash) / m.cw).floor().max(4.0) as usize;
-                let w = pen.text(x, nb, &cut_middle(name, cells_wide), Size::Main, if *muted { t.muted } else { t.ink }, on);
+                let wx = (area.left + column).max(x + 6.0 * m.cw);
+                let room = if what.is_empty() { e - x } else { wx - m.px(16.0) - x };
+                let cells_wide = ((room - slash) / m.cw).floor().max(4.0) as usize;
+                let w = pen.text(x, base, &cut_middle(name, cells_wide), Size::Main, if *muted { t.muted } else { t.ink }, on);
                 if *dir {
-                    pen.text(x + w, nb, "/", Size::Main, t.muted, false);
+                    pen.text(x + w, base, "/", Size::Main, t.muted, false);
                 }
                 if !what.is_empty() {
-                    let what = pen.fit(what, Size::Small, end - x);
-                    pen.text(x, wb, &what, Size::Small, t.muted, false);
+                    let what = pen.fit(what, Size::Small, e - wx);
+                    pen.text(wx, base, &what, Size::Small, t.muted, false);
                 }
                 if on && focus {
-                    pen.fill(x, nb + m.px(4.0), w, 2.0, t.accent);
+                    pen.fill(x, base + m.px(5.0), w, 2.0, t.accent);
                 }
             }
             K::Shown {
@@ -2175,9 +2201,7 @@ fn home(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         narrow: false,
         still: false,
         pad: 24.0,
-        heads: false,
         bare: false,
-        aired: false,
         c3: false,
     };
     let rows = rows_of(app, pen, items, shape, area.right - area.left - pen.m.px(48.0));
@@ -2212,9 +2236,7 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         narrow: false,
         still: false,
         pad: 24.0,
-        heads: false,
         bare: false,
-        aired: false,
         c3: false,
     };
     // the details beside the list: the list a narrow column of names, the details the rest
@@ -2253,9 +2275,7 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         narrow: true,
         still: false,
         pad: 24.0,
-        heads: false,
         bare: false,
-        aired: false,
         c3: false,
     };
     let page = Shape {
@@ -2264,9 +2284,7 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         narrow: true,
         still: false,
         pad: 12.0,
-        heads: false,
         bare: false,
-        aired: false,
         c3: false,
     };
     let room = |a: Area| a.right - a.left - m.px(36.0);
@@ -2458,18 +2476,13 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         from: 0.0,
         to: g.w,
     };
-    // a theme list names its groups small, in the accent, as the palette's columns are: its rows and the poster's
-    // title carry the weight (v0.165.1)
-    let theme_list = crate::appearance::section(&app.view) || crate::appearance::gallery(&app.view) || crate::appearance::display(app);
     let shape = Shape {
         two: false,
         one: 44.0,
         narrow: false,
         still: false,
         pad: 24.0,
-        heads: !theme_list,
         bare: true,
-        aired: crate::appearance::display(app),
         c3: true,
     };
     if matches!(&app.view, View::Folder(_, uri) if uri.starts_with(crate::appearance::PALETTES) || uri == crate::appearance::COLORS)
@@ -2529,17 +2542,12 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
 /// Pair normal and bright terminal colors so the same ANSI hue lines up across columns.
 fn terminal_colors(app: &App, pen: &mut Pen, whole: Area, shape: Shape) {
     let m = *pen.m;
-    let shape = Shape {
-        one: 44.0,
-        pad: 8.0,
-        heads: false,
-        ..shape
-    };
+    let shape = Shape { one: 44.0, pad: 8.0, ..shape };
     let mid = ((whole.left + whole.right) / 2.0).round();
     let head = |s: &str| Row {
         h: m.px(32.0),
         pick: None,
-        k: K::Head(s.into(), false, None),
+        k: K::Head(s.into(), None),
     };
     let mut columns = [vec![head("Base colors")], vec![head("Accents")]];
     let mut export = Vec::new();
@@ -2652,17 +2660,15 @@ fn row_two(m: &Metrics, r: &crate::model::Row, one: f64) -> (f64, K) {
     }
 }
 
-/// The shape of a place's rows (v0.162): its groups named large, a row of words two lines, a setting one row, a key in
-/// the smaller text with no box.
+/// The shape of a place's rows (v0.169, as home's): a row one line, its name and what it holds now in a column, a
+/// setting one row, a key at the row's end in the smaller text with no box.
 const PLACE_SHAPE: Shape = Shape {
-    two: true,
+    two: false,
     one: 44.0,
     narrow: false,
     still: false,
     pad: 24.0,
-    heads: true,
     bare: true,
-    aired: false,
     c3: true,
 };
 
@@ -2682,7 +2688,7 @@ fn place(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     let cols = ((whole.right - whole.left) / m.px(600.0)).floor() as usize;
     if app.view == View::Help && wide(&m, g.w) && cols >= 2 {
         let col_w = ((whole.right - whole.left) / cols as f64).floor();
-        let rows = rows_of(app, pen, items, PLACE_SHAPE, col_w - m.px(48.0));
+        let rows = place_rows(app, pen, items, col_w - m.px(48.0));
         let mut groups: Vec<Vec<Row>> = vec![];
         for r in rows {
             if matches!(r.k, K::Head(..)) || groups.is_empty() {
@@ -2717,11 +2723,23 @@ fn place(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         }
         return;
     }
-    let rows = rows_of(app, pen, items, PLACE_SHAPE, whole.right - whole.left - m.px(36.0));
+    let rows = place_rows(app, pen, items, whole.right - whole.left - m.px(36.0));
     list(app, pen, &rows, whole, lit(app), list_focus(app), PLACE_SHAPE, app.scroll, key);
 }
 
-/// A group's name in large type, its number said once: a workspace's name carries its number framed as the bar draws
+/// A place's rows (v0.169), as home's places are: no arrow on a row that opens a page, since every row of a place
+/// opens or does something; a choice keeps the arrow after what it holds.
+fn place_rows(app: &App, pen: &Pen, items: &[Item], room: f64) -> Vec<Row> {
+    let mut rows = rows_of(app, pen, items, PLACE_SHAPE, room);
+    for r in rows.iter_mut() {
+        if let K::One { tail, end: End::None, .. } = &mut r.k {
+            *tail = false;
+        }
+    }
+    rows
+}
+
+/// A group's name, its number said once: a workspace's name carries its number framed as the bar draws
 /// it ("workspace 1 {1}"), which large type repeats for nothing.
 fn heading_words(text: &str) -> String {
     let words: Vec<&str> = text.split(' ').collect();
@@ -2736,20 +2754,10 @@ fn heading_words(text: &str) -> String {
     out.join(" ")
 }
 
-/// A large heading's name and what follows it, split at the first middle dot the provider joins them with:
+/// A group's name and what follows it, split at the first middle dot the provider joins them with:
 /// "workspace 1", then its label, "this one" and its screen (v0.162.1).
 fn heading_parts(words: &str) -> (&str, &str) {
     words.split_once(" \u{b7} ").unwrap_or((words, ""))
-}
-
-/// The time the header's clock says (the day, a middle dot, then 19:21 or 7:21 pm): its figures and its half of the day.
-fn clock_time(clock: &str) -> Option<(String, Option<String>)> {
-    let t = clock.rsplit('\u{b7}').next()?.trim();
-    let (hm, half) = match t.split_once(' ') {
-        Some((a, b)) => (a, Some(b.to_string())),
-        None => (t, None),
-    };
-    (hm.contains(':') && hm.chars().all(|c| c.is_ascii_digit() || c == ':')).then(|| (hm.to_string(), half))
 }
 
 /// A month's block in the Calendar (v0.162): its name, the days' initials, six weeks' room.
@@ -2759,13 +2767,16 @@ const MONTH_AIR: f64 = 48.0;
 
 /// Where the Calendar's rows start: under the time and the day, and under the months.
 fn calendar_top(app: &App, m: &Metrics, g: &Geo) -> f64 {
-    let timed = clock_time(&app.clock).is_some();
-    g.top + if timed { m.px(150.0) } else { 0.0 } + m.px(MONTH_H) + m.px(20.0)
+    g.top + if app.today.is_some() { m.px(DAY_H) } else { 0.0 } + m.px(MONTH_H) + m.px(20.0)
 }
 
-/// The Calendar in the new type (v0.162): the time at 72 pixels and the day under it; then as many months side by
-/// side as the window holds, each named at 28 pixels, today in the accent and underlined, a day with a reminder in
-/// the accent; then its rows (the time's settings, a new reminder, the reminders). Left and Right move the months.
+/// Today's block over the months (v0.169): its weekday small in the accent, its date in large type.
+const DAY_H: f64 = 84.0;
+
+/// The Calendar (v0.169): today leads, its weekday small in the accent over its date in large type (the bar says
+/// the time); then as many months side by side as the window holds, each named as a group is, today in the accent
+/// and underlined, a day with a reminder in the accent; then its rows (the reminders, a new reminder, the time).
+/// Left and Right move the months.
 fn calendar(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     use crate::calendar::{shift, weekday, weeks_from, ymd, DAYS, MONTHS};
     const WEEKDAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -2773,16 +2784,12 @@ fn calendar(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     let t = pen.t;
     let x0 = g.inset + m.px(24.0);
     let mut y = g.top;
-    if let Some((hm, half)) = clock_time(&app.clock) {
-        let w = pen.text(x0, y + m.px(84.0), &hm, Size::Title, t.ink, false);
-        if let Some(h) = half {
-            pen.text(x0 + w + m.px(12.0), y + m.px(84.0), &h, Size::Lead, t.muted, false);
-        }
-        if let Some((ty, tm, td)) = app.today {
-            let day = format!("{}, {} {} {}", WEEKDAYS[weekday(ty, tm, td) as usize % 7], td, MONTHS[(tm - 1) as usize], ty);
-            pen.text(x0, y + m.px(124.0), &day, Size::Lead, t.muted, false);
-        }
-        y += m.px(150.0);
+    if let Some((ty, tm, td)) = app.today {
+        pen.text(x0, y + m.px(24.0), WEEKDAYS[weekday(ty, tm, td) as usize % 7], Size::Small, t.accent, true);
+        let day = format!("{} {} {}", td, MONTHS[(tm - 1) as usize], ty);
+        let day = pen.fit(&day, Size::Title3, g.w - g.inset - x0);
+        pen.text(x0, y + m.px(64.0), &day, Size::Title3, t.ink, false);
+        y += m.px(DAY_H);
     }
     let dated: Vec<(i32, u32, u32)> = app
         .providers
@@ -2799,11 +2806,11 @@ fn calendar(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             let (yr, mo) = shift(ty, tm, app.month_offset + k);
             pen.text(
                 mx,
-                y + m.px(32.0),
+                y + m.px(24.0),
                 &format!("{} {}", MONTHS[(mo - 1) as usize], yr),
-                Size::Head,
+                Size::Small,
                 t.accent,
-                false,
+                true,
             );
             for i in 0..7 {
                 let d = DAYS[(i + usize::from(app.monday_first)) % 7];
@@ -2834,13 +2841,13 @@ fn calendar(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         from: 0.0,
         to: g.w,
     };
-    let rows = rows_of(app, pen, items, PLACE_SHAPE, whole.right - whole.left - m.px(36.0));
+    let rows = place_rows(app, pen, items, whole.right - whole.left - m.px(36.0));
     let key = format!("calendar\u{1f}{}", app.input);
     list(app, pen, &rows, whole, lit(app), list_focus(app), PLACE_SHAPE, app.scroll, key);
 }
 
-/// Settings (v0.161): its groups named at 28 pixels, a setting two lines, its name over what it is set to now. What
-/// was typed finds settings with no headings, in the same rows.
+/// Settings (v0.169, as home): its groups named small, a setting one line, its name and what it is set to now in a
+/// column. What was typed finds settings with no headings, in the same rows.
 fn settings(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     let m = *pen.m;
     let whole = Area {
@@ -2852,14 +2859,12 @@ fn settings(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         to: g.w,
     };
     let shape = Shape {
-        two: true,
+        two: false,
         one: 44.0,
         narrow: false,
         still: false,
         pad: 24.0,
-        heads: true,
         bare: false,
-        aired: false,
         c3: false,
     };
     // a wide window (v0.161): the list keeps its column, the lit setting's page stands beside it in large type, as an
@@ -2898,17 +2903,13 @@ fn settings(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             what: crate::ui::setting_words(app, label, purpose),
         },
     }];
-    // the display page names its groups small, here as on its own
-    let small = label == "display";
     let still = Shape {
         two: false,
         one: 44.0,
         narrow: false,
         still: true,
         pad: 12.0,
-        heads: !small,
         bare: true,
-        aired: small,
         c3: true,
     };
     if let Some(p) = app.providers.iter().position(|p| p.label == label && p.dead.is_none()) {
@@ -2948,9 +2949,9 @@ fn pane_rows(app: &App, m: &Metrics, pane: &files::Pane) -> Vec<Row> {
                     out.pop();
                 }
                 out.push(Row {
-                    h: m.px(44.0),
+                    h: m.px(36.0),
                     pick: None,
-                    k: K::Head(h, true, None),
+                    k: K::Head(h, None),
                 });
             }
             Item::Folder(i) => {
@@ -2959,8 +2960,11 @@ fn pane_rows(app: &App, m: &Metrics, pane: &files::Pane) -> Vec<Row> {
                         n += 1;
                         n - 1
                     });
-                    let k = file_row(r, pane.checks.contains(&r.id));
-                    out.push(Row { h: file_row_h(m, &k), pick, k });
+                    out.push(Row {
+                        h: m.px(44.0),
+                        pick,
+                        k: file_row(r, pane.checks.contains(&r.id)),
+                    });
                 }
             }
             _ => {}
@@ -3149,9 +3153,7 @@ fn file_page(app: &App, pen: &mut Pen, g: &Geo, area: Area, items: &[Item]) {
         narrow: true,
         still: !details,
         pad: 12.0,
-        heads: false,
         bare: true,
-        aired: false,
         c3: false,
     };
     let lines: Vec<Item> = if details {
@@ -3304,9 +3306,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         narrow: false,
         still: false,
         pad: 24.0,
-        heads: true,
         bare: false,
-        aired: false,
         c3: false,
     };
     let room = |a: Area, s: Shape| a.right - a.left - m.px(s.pad) - m.px(12.0);
@@ -3391,9 +3391,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
                 narrow: true,
                 still: false,
                 pad: 24.0,
-                heads: false,
                 bare: false,
-                aired: false,
                 c3: false,
             };
             let rows = page_rows(pen, shape, act);
@@ -3488,9 +3486,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             narrow: true,
             still: !details,
             pad: 12.0,
-            heads: false,
             bare: false,
-            aired: false,
             c3: false,
         };
         let lines: Vec<Item> = if details {
@@ -3516,9 +3512,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
             narrow: false,
             still: false,
             pad: 24.0,
-            heads: false,
             bare: false,
-            aired: false,
             c3: false,
         };
         let rows = page_rows(pen, shape, whole);

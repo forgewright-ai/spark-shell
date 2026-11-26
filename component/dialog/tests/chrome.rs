@@ -650,10 +650,8 @@ fn a_places_second_column_is_its_state_from_what_the_dialog_already_holds() {
     // the files section's own summary, the newest note and its date, the look, the screens and the network
     app.providers.push(provider(
         "files",
-        "~",
-        json!({"title": "~", "rows": [
-            {"id": "files:total", "sign": "blank", "text": "2 files \u{b7} 3 KB", "tool": null, "more": [], "columns": [], "children": null, "group": "this folder"}
-        ], "short": []}),
+        "11 items in ~",
+        json!({"title": "files", "rows": [], "short": []}),
         json!([]),
     ));
     let mut shopping = row("notes:1", "", "Shopping list", Some(("notes_open", json!({"path": "/n/1"}))), None);
@@ -683,8 +681,9 @@ fn a_places_second_column_is_its_state_from_what_the_dialog_already_holds() {
     about.version = "0.124".into();
     app.providers.push(about);
     app.about_idx = Some(app.providers.len() - 1);
-    assert_eq!(state(&app, "files").as_deref(), Some("~ \u{b7} 2 files \u{b7} 3 KB"));
-    assert_eq!(state(&app, "notes").as_deref(), Some("2 notes \u{b7} shopping list, 4 Nov"));
+    // v0.169: what the files section says your home holds; the notes' count and the newest's day, never what it says
+    assert_eq!(state(&app, "files").as_deref(), Some("11 items in ~"));
+    assert_eq!(state(&app, "notes").as_deref(), Some("2 notes \u{b7} last 4 Nov"));
     assert_eq!(
         state(&app, "settings").as_deref(),
         Some("tokyonight-night \u{b7} 2 screens"),
@@ -695,7 +694,10 @@ fn a_places_second_column_is_its_state_from_what_the_dialog_already_holds() {
         "about is a row of the system place, no place of the home (v0.153)"
     );
     assert_eq!(state(&app, "system"), None, "before its check is known, its purpose stands");
-    assert_eq!(state(&app, "power"), None);
+    assert_eq!(state(&app, "power"), None, "before the power section is read, its purpose stands");
+    app.providers
+        .push(provider("power", "up 3 days", json!({"title": "power", "rows": [], "short": []}), json!([])));
+    assert_eq!(state(&app, "power").as_deref(), Some("up 3 days"), "then the time since the machine started");
     // the about page opens on the versions, the dialog's own aligned under the installed release (the dialog design notes, v0.127)
     app.view = View::About;
     let (buf, _, _) = draw(&mut app, 60, 40);

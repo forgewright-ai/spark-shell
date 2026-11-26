@@ -45,21 +45,28 @@ system_check_state() {   # -> "2 problems", "1 problem", "no problems", "not che
     _tcn=$(sed 1d "$SYSTEM_CHECK" | grep -cE '^(warn|FAIL) ' || :)
     case $_tcn in 0) echo 'no problems' ;; 1) echo '1 problem' ;; *) echo "$_tcn problems" ;; esac
 }
-system_menu() {   # -> NAME<tab>STATE<tab>LINE, the six in their order
+system_menu() {   # -> NAME<tab>STATE<tab>LINE, by what needs you first (v0.169): its health, then what it runs
     printf 'check\t%s\ttest the setup and fix problems\n' "$(system_check_state)"
+    printf 'updates\t%s\tupdate spark-shell and the system\n' "$(system_updates_state)"
     printf 'space\t%s\tsee what uses the disk\n' "$(system_space_state)"
     printf 'running\t%s\tsee what uses the cpu and memory\n' "$(system_running_state)"
-    printf 'details\t%s\thardware and software details\n' "$(system_details_state)"
-    printf 'updates\tspark-shell v%s\tupdate spark-shell and the system\n' "$(panel_version)"
     printf 'software\t%s\tinstalled packages and their licenses\n' "$(system_software_state)"
+}
+system_updates_state() {   # -> "v0.169, released 26 Nov 2026": the release in use and its day; a newer one is the network's to say
+    _tuv=$(panel_version); [ -n "$_tuv" ] || { echo 'no release named'; return 0; }
+    _tud=$(release_day "$_tuv"); printf 'v%s%s\n' "$_tuv" "${_tud:+, released $_tud}"
 }
 system_os() { sed -n "s/^$1=//p" "${SPARK_OS_RELEASE:-/etc/os-release}" 2>/dev/null | head -1 | tr -d '"'; }   # system_os KEY -> os-release's value
 system_space_state() { _tsh=$(storage_here); case $_tsh in *', '*) printf '%s\n' "${_tsh#*, }" ;; *) echo 'the system disk' ;; esac; }   # -> "120.3 GB free"
-system_running_state() { _trn=0; for _trp in "$BAR_PROC"/[0-9]*; do [ ! -d "$_trp" ] || _trn=$((_trn + 1)); done; echo "$_trn processes"; }   # -> "412 processes"
+system_running_state() {   # -> "3.1 of 15 GB in use": the memory the running programs hold; the processes where no meminfo says it
+    _trt=$(system_mem_kb MemTotal); _tra=$(system_mem_kb MemAvailable)
+    if [ -n "$_trt" ] && [ -n "$_tra" ]; then awk -v t="$_trt" -v a="$_tra" 'BEGIN { printf "%.1f of %d GB in use\n", (t - a) / 1048576, t / 1048576 + 0.5 }'; return 0; fi
+    _trn=0; for _trp in "$BAR_PROC"/[0-9]*; do [ ! -d "$_trp" ] || _trn=$((_trn + 1)); done; echo "$_trn processes"
+}
 system_mem_kb() { awk -v k="$1" '$1 == k ":" { print $2; exit }' "$BAR_PROC/meminfo" 2>/dev/null || :; }   # system_mem_kb MemTotal -> kB
-system_details_state() {   # -> "Void Linux, 16 GB"
+system_details_state() {   # -> "Void Linux, 16 GB memory"
     _tsn=$(system_os NAME); _tsm=$(system_mem_kb MemTotal)
-    _tsg=''; [ -z "$_tsm" ] || _tsg=$(awk -v k="$_tsm" 'BEGIN { printf "%d GB", k / 1048576 + 0.5 }')
+    _tsg=''; [ -z "$_tsm" ] || _tsg=$(awk -v k="$_tsm" 'BEGIN { printf "%d GB memory", k / 1048576 + 0.5 }')
     printf '%s\n' "${_tsn:-Linux}${_tsg:+, $_tsg}"
 }
 system_package_count() {   # -> how many packages the package manager has installed, or nothing
@@ -69,10 +76,10 @@ system_package_count() {   # -> how many packages the package manager has instal
     esac
 }
 system_software_state() { _tpc=$(panel_cache system.packages 3600 system_package_count); case $_tpc in ''|0|*[!0-9]*) echo 'no package list' ;; *) echo "$_tpc packages" ;; esac; }
-provide_system_rows() {   # -> the system section's rows resource: the six, each with its page as children, then about, whose page is the about section's own
-    { system_menu; printf 'about\tlicense and credits\tthe project, the license, the credits\n'; } | jq -Rn --arg sep "$PANEL_SEP" '
+provide_system_rows() {   # -> the system section's rows resource: the five, each with its page as children, then about: the machine, whose page holds its details and the license
+    { system_menu; printf 'about\t%s\tthe machine, the project, the license, the credits\n' "$(system_details_state)"; } | jq -Rn --arg sep "$PANEL_SEP" '
         [inputs | split("\t") | {id: ("system:" + .[0]), sign: "blank", text: .[0], tool: null, more: [], columns: [.[1]],
-            children: (if .[0] == "about" then "spark-shell://about/rows" else "spark-shell://system/rows/" + .[0] end), group: null, line: (.[0] + " " + $sep + " " + .[2])}]
+            children: (if .[0] == "about" then "spark-shell://system/rows/details" else "spark-shell://system/rows/" + .[0] end), group: null, line: (.[0] + " " + $sep + " " + .[2])}]
         | {title: "system", state: "", rows: ., short: [.[].id]}'
 }
 provide_system_page() {   # provide_system_page PATH -> a row's page, a rows resource: check, check/passed
@@ -162,8 +169,10 @@ system_details_page() {   # -> the details' page: the machine's facts in three g
     system_details_facts | scrub_text | system_rows_of | jq -c --arg sep "$PANEL_SEP" '
         . + [{id: "system:gap:1", sign: "blank", text: "", tool: null, more: [], columns: [], children: null, group: null, muted: true},
              {id: "system:copy-details", sign: "blank", text: "copy details", tool: {name: "system_copy_details", arguments: {}}, more: [], columns: [], children: null, group: null,
-              line: ("copy details " + $sep + " to the clipboard, for bug reports")}]
-        | {title: "details", state: "", rows: ., short: []}'
+              line: ("copy details " + $sep + " to the clipboard, for bug reports")},
+             {id: "system:license", sign: "blank", text: "license and credits", tool: null, more: [], columns: [], children: "spark-shell://about/rows", group: null,
+              line: ("license and credits " + $sep + " the project, the license, the credits")}]
+        | {title: "about", state: "", rows: ., short: []}'
 }
 system_details_text() {   # -> the system's facts as text, a group under its heading, for a bug report
     system_details_facts | scrub_text | awk -F '\t' '$3 != "" { if ($1 != g) { if (g != "") print ""; print $1; g = $1 } printf "  %-12s %s\n", $2, $3 }'

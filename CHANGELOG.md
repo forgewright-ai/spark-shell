@@ -1,5 +1,51 @@
 # Changelog
 
+## v0.169
+
+- The places of home are drawn as home is: each row one line, its name
+  and what it holds now side by side, and a group named small in the
+  accent. Files, notes, system, help and power drew two lines a row or
+  large group names.
+- What a place holds now stands at the end of the line under the
+  prompt: 5 notes, up 2 hours, 44 shortcuts. It stood in the path as a
+  level of its own.
+- F9 is actions everywhere; files and apps called it details. The keys
+  at the bottom come in their order: view, new, actions.
+- The prompt says what it searches: search notes, search files.
+- F1 opens help with the keys of the page you are on first.
+- Home says what each place holds: the count of your home folder, the
+  time since the machine started, the count of notes and the day of the
+  last. It showed the newest note's title, lowercased.
+- Files: a row is one line, its size or count beside its name and its
+  day at the end. Your home folder's name no longer stands large over
+  its list, and the trash comes last.
+- Files sort by name, kind, date or size with Ctrl+F3 to Ctrl+F6, or a
+  click on the order at the end of the line under the prompt. The same
+  order again reverses it, and each folder keeps its own. Your
+  downloads start with the newest first.
+- Notes: F7 makes a note, each note's day stands at the end of its row,
+  and a note with nothing written says so in place of its file's name.
+- The calendar starts with today's date; the bar keeps the time. Under
+  the months come the reminders, then a new reminder (F7), then the
+  time with its zone. Words typed there are the new reminder: fri 9 call
+  the vet, then Enter.
+- System: check, updates and space come first, running says the memory
+  in use, and about holds the details of the machine with the license
+  and the credits.
+- Power: lock and suspend keep your windows; logout, restart and
+  shutdown stand under the windows they close. The uptime is said once.
+- Apps: Ctrl+Up and Ctrl+Down move the category of the app lit, and a
+  category's name dragged onto another's takes its place, each with
+  undo.
+- Settings has a mouse and a touchpad of their own. The mouse takes a
+  speed, acceleration, natural scroll, a scroll speed and its primary
+  button; the touchpad a speed, tap to click, natural scroll, a scroll
+  speed, a right click by two fingers or the corner, off while typing
+  and off with a mouse in. Each changes in place, and the pointer
+  settings of a config carry over to both.
+- Keyboard: add and remove a layout, and a compose key for accents on
+  any layout. Its settings change in place too.
+
 ## v0.168.5
 
 - Cinematic Worlds has its second work, The Sounding Gate:

@@ -54,7 +54,7 @@ machine_no_tool() {   # -> MACHINE_NO_TOOL as the help writes them, one line
 }
 machine_cmds() {   # -> spark-shell's commands as the help says them, a line a verb; the keys and idle left out
     usage | sed -n 's/^ *\(spark-shell [^ ].*\)$/\1/p' | sed 's/   *.*$//' \
-        | grep -E '^spark-shell (theme|font|layout|notes|reminders|desktop [a-z]+|bar|dialog)( |$)' | grep -vxE 'spark-shell desktop (portals|keys|idle .*)|spark-shell theme (variant .*|screens|rename .*|duplicate .*|color .*|colors .*|pointer .*|clock .*|pair .*|portrait .*|panel .*|loop .*|reel .*|install FILE|export NAME spark-theme)' \
+        | grep -E '^spark-shell (theme|font|layout|notes|reminders|desktop [a-z]+|bar|dialog)( |$)' | grep -vxE 'spark-shell desktop (portals|keys|idle .*|keyboard add .*|keyboard compose .*)|spark-shell theme (variant .*|screens|rename .*|duplicate .*|color .*|colors .*|pointer .*|clock .*|pair .*|portrait .*|panel .*|loop .*|reel .*|install FILE|export NAME spark-theme)' \
         | awk '
             { n = split($0, w, " "); key = w[2]; s = 3; if (key == "desktop") { key = key " " w[3]; s = 4 }
               alt = ""; for (i = s; i <= n; i++) alt = alt (alt == "" ? "" : " ") w[i]
@@ -65,7 +65,7 @@ machine_cmds() {   # -> spark-shell's commands as the help says them, a line a v
               a[key, ++na[key]] = alt }
             END { for (i = 1; i <= k; i++) { key = order[i]; s = ""; for (j = 1; j <= na[key]; j++) s = s (j > 1 ? "|" : "") a[key, j]
                       if (s == "") s = key; else if (bare[key]) s = key " [" s "]"; else s = key " " s
-                      t = top[key]; if (key ~ /^desktop (time|pointer|notifications|storage)$/) t = "desktop+"
+                      t = top[key]; if (key ~ /^desktop (time|mouse|touchpad|notifications|storage)$/) t = "desktop+"
                       if (t in line) line[t] = line[t] "; " substr(s, index(s, " ") + 1); else { line[t] = "spark-shell " s; to[++m] = t } }
                   for (i = 1; i <= m; i++) if (to[i] != "desktop+" && to[i] != "font") print "- " line[to[i]]
                   if ("font" in line) print "+ " line["font"]
@@ -140,7 +140,7 @@ machine_facts() {   # -> the .facts lines
         _mkl=$(_mki=0; for _mkx in $KEYBOARD; do _mki=$((_mki + 1)); _mkn=$(sed -n "${_mki}p" "$TMP/machine.kb"); printf '%s%s\n' "$_mkx" "${_mkn:+ ($_mkn)}"; done | machine_join)
         _mkl="Keyboard layouts: $_mkl"
     else _mkl="Keyboard: sway's own layout (spark-shell desktop keyboard us br sets some)"; fi
-    printf -- '- %s; caps key %s, repeat %s ms, %s a second. Pointer: tap to click %s, natural scroll %s, speed %s.\n' "$_mkl" "$KEY_CAPS" "$KEY_REPEAT_DELAY" "$KEY_REPEAT_RATE" "$POINTER_TAP" "$POINTER_SCROLL" "$POINTER_SPEED"
+    printf -- '- %s; caps key %s, repeat %s ms, %s a second. Mouse: speed %s, scroll %s. Touchpad: tap %s, scroll %s.\n' "$_mkl" "$KEY_CAPS" "$KEY_REPEAT_DELAY" "$KEY_REPEAT_RATE" "$MOUSE_SPEED" "$MOUSE_SCROLL" "$TOUCHPAD_TAP" "$TOUCHPAD_SCROLL"
     # the names: the notes by file, never a word of one
     _mly=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | head -8 | machine_names)
     _mnt=''; _mnn=0

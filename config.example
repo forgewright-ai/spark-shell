@@ -87,12 +87,28 @@ KEYBOARD=
 KEY_REPEAT_DELAY=600
 KEY_REPEAT_RATE=25
 KEY_CAPS=caps
+# The compose key, for accents on any layout: none, ralt, menu or rwin.
+KEY_COMPOSE=none
 
-# Mouse and touchpad: tap to click on touchpads, natural scrolling for
-# both, and acceleration from -1 to 1 (0 keeps the default speed).
-POINTER_TAP=on
-POINTER_SCROLL=off
-POINTER_SPEED=0
+# The mouse: its speed from -1 to 1 (0 keeps the default), acceleration
+# adaptive or flat, natural scrolling, a scroll speed of 0.5, 1, 1.5, 2 or 3,
+# and its primary button, left or right.
+MOUSE_SPEED=0
+MOUSE_ACCEL=adaptive
+MOUSE_SCROLL=off
+MOUSE_SCROLL_SPEED=1
+MOUSE_PRIMARY=left
+
+# The touchpad: its speed, tap to click, natural scrolling, its scroll speed,
+# a right click its own way (standard), by two fingers or by the corner
+# (fingers or corners), off while you type, and off while a mouse is in.
+TOUCHPAD_SPEED=0
+TOUCHPAD_TAP=on
+TOUCHPAD_SCROLL=off
+TOUCHPAD_SCROLL_SPEED=1
+TOUCHPAD_CLICK=standard
+TOUCHPAD_TYPING_OFF=on
+TOUCHPAD_MOUSE_OFF=off
 
 # Do not disturb: yes keeps the desktop's notifications out of sight (a
 # critical one still shows) until you turn it off, logins included.

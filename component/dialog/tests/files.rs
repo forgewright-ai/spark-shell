@@ -2258,7 +2258,7 @@ fn every_key_on_every_kind_of_row_acts_or_says_why() {
         let mut app = lit_at(row, DOCS, docs_rows());
         app.hint_key(HintKey::New);
         assert!(app.files.form(), "F7 on {}", row);
-        assert_eq!((app.placeholder(), app.subtitle().as_str()), ("folder name", "new folder"));
+        assert_eq!((app.placeholder().as_str(), app.subtitle().as_str()), ("folder name", "new folder"));
         assert!(app.input.is_empty());
     }
     let mut app = lit_at("old.txt", TRASH, trash_rows());
@@ -3557,4 +3557,21 @@ fn a_files_kind_word_knows_every_ending_the_provider_views() {
         ("markdown", "picture", "slides")
     );
     assert_eq!((kind_word("README"), kind_word(".bashrc"), kind_word("data.xyz")), ("", "", ""));
+}
+
+#[test]
+fn a_click_on_the_order_takes_the_next_and_ctrl_f_keys_name_each() {
+    // v0.169: name, date, size, kind, then name again, whichever way the present one runs
+    use spark_dialog::files::SortBy;
+    let next: Vec<SortBy> = ["by name", "newest first", "largest first", "by kind, z to a", "oldest first", ""]
+        .iter()
+        .map(|s| SortBy::after(s))
+        .collect();
+    assert_eq!(next, [SortBy::Date, SortBy::Size, SortBy::Kind, SortBy::Name, SortBy::Size, SortBy::Date]);
+    let keys = spark_dialog::keys::Bindings::default();
+    let labels: Vec<&str> = [SortBy::Name, SortBy::Kind, SortBy::Date, SortBy::Size]
+        .iter()
+        .map(|b| keys.label(HintKey::Sort(*b)))
+        .collect();
+    assert_eq!(labels, ["Ctrl+F3", "Ctrl+F4", "Ctrl+F5", "Ctrl+F6"]);
 }

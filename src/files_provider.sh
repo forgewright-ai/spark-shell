@@ -1,8 +1,12 @@
 # shellcheck extended-analysis=false
 # --- the files provider: the rows, the trash, opening, the calls
 # reads: FILES_SHOW_LINES FILES_SHOW_MAX FILES_THUMB_DIR OS PANEL_SEP REPO SCRUB_AWK SCRUB_JQ TAB TMP US
+files_home_state() {   # -> "11 items in ~": what your home holds at its top, one read of the folder, for home's line
+    _fhn=0; for _fhe in "$(files_home_root)"/*; do { [ -e "$_fhe" ] || [ -L "$_fhe" ]; } || continue; _fhn=$((_fhn + 1)); done
+    case $_fhn in 0) echo 'nothing in ~ yet' ;; 1) echo '1 item in ~' ;; *) echo "$_fhn items in ~" ;; esac
+}
 provide_files_rows() {   # provide_files_rows [URI] -> the rows the uri names: the roots', a folder's, the trash's, a search's; false when it names no folder files_ok allows
-    _fu=${1:-spark-shell://files/rows}; _fhere=''; FILES_N=0; FILES_B=0; FILES_D=0
+    _fu=${1:-spark-shell://files/rows}; _fhere=''; _fst=''; FILES_N=0; FILES_B=0; FILES_D=0
     [ ! -d "$FILES_THUMB_DIR" ] || rm -rf "$FILES_THUMB_DIR"   # an old cache, removed
     _ffm=''; ! files_manager_ok || _ffm=1   # browse and reveal only where a system file manager is configured
     case $_fu in
@@ -19,7 +23,7 @@ provide_files_rows() {   # provide_files_rows [URI] -> the rows the uri names: t
             _fq=${_fu#spark-shell://files/rows/}; _ffrom=0   # a page of a large folder: ?from=N
             case $_fq in *'?from='*) _ffrom=${_fq##*'?from='}; _fq=${_fq%%'?'*}; case $_ffrom in ''|*[!0-9]*) return 1 ;; esac ;; esac
             _fp=$(files_unb64 "$_fq") && _fp=$(files_ok "$_fp" dir) || return 1
-            _ft=$(files_home "$_fp" | scrub_text); _fhere=$_fp; _fg=''; : > "$TMP/files.rows"
+            _ft=$(files_home "$_fp" | scrub_text); _fhere=$_fp; _fg=''; : > "$TMP/files.rows"; _fst=$(files_order_words "$(files_order "$_fp")")
             files_is_root "$_fp" || printf 'files:up\037opens\037..\037%s\037\037\037\037\037\037up\037\n' "$(files_uri "$(dirname "$_fp")")" >> "$TMP/files.rows"
             _fr=''; if [ "$_fp" = "$(files_home_root)" ] && [ "$_ffrom" = 0 ]; then files_recent > "$TMP/files.recent"; [ ! -s "$TMP/files.recent" ] || { _fr=1; _fg=home; }; fi
             files_list "$_fp" "$_fg" "$_ffrom" >> "$TMP/files.rows"
@@ -32,7 +36,7 @@ provide_files_rows() {   # provide_files_rows [URI] -> the rows the uri names: t
             [ "$FILES_N" -eq 0 ] || { _fx="files"; [ "$FILES_N" != 1 ] || _fx="file"; _fw="${_fw:+$_fw $PANEL_SEP }$(files_num "$FILES_N") $_fx $PANEL_SEP $(files_size "$FILES_B")"; }
             printf 'files:here\037opens\037this folder %s %s\037\037%s\037\037\037\037\037here\037\n' "$PANEL_SEP" "${_fw:-empty}" "$_fp" >> "$TMP/files.rows" ;;
     esac
-    jq -Rn --arg t "$_ft" --arg here "$_fhere" --arg fm "$_ffm" '
+    jq -Rn --arg t "$_ft" --arg here "$_fhere" --arg fm "$_ffm" --arg st "${_fst:-}" '
         def steps: (if $fm != "" then [{name: "files_reveal", said: "reveal in the system file manager"}] else [] end) + [{name: "files_rename", ask: ["name"], said: "rename"},
             {name: "files_move", pick: "to", said: "move to a folder"}, {name: "files_copy", pick: "to", said: "copy to a folder"}, {name: "files_trash", said: "trash"}];
         # the steps once a list, by kind: a row of a kind takes them with its own path, so a page of a thousand stays small
@@ -51,7 +55,8 @@ provide_files_rows() {   # provide_files_rows [URI] -> the rows the uri names: t
                       elif .kind == "trash-here" then [{name: "files_empty", arguments: {}, said: "empty the trash"}] else null end),
                preview: (if .preview != "" then .preview else null end)}
               | with_entries(select(.value != null))] as $rows
-        | {title: $t, kinds: $kinds, rows: $rows, short: [$rows[] | select(.id | startswith("files:root:")) | .id]} + (if $here == "" then {} else {here: $here} end)' "$TMP/files.rows"
+        | {title: $t, kinds: $kinds, rows: $rows, short: [$rows[] | select(.id | startswith("files:root:")) | .id]} + (if $here == "" then {} else {here: $here} end)
+          + (if $st == "" then {} else {state: $st} end)' "$TMP/files.rows"
 }
 files_urlenc() { printf '%s' "$1" | od -An -tx1 -v | tr -s ' \n' ' ' | awk '{ o = ""; for (i = 1; i <= NF; i++) { h = tolower($i); d = (index("0123456789abcdef", substr(h, 1, 1)) - 1) * 16 + index("0123456789abcdef", substr(h, 2, 1)) - 1; if ((d >= 48 && d <= 57) || (d >= 65 && d <= 90) || (d >= 97 && d <= 122) || d == 45 || d == 46 || d == 95 || d == 126 || d == 47) o = o sprintf("%c", d); else o = o "%" toupper(h) } printf "%s", o }'; }   # files_urlenc PATH -> the path as a.trashinfo writes it (RFC 2396: the unreserved and the slash as they are, every other byte %XX)
 files_urldec() {   # files_urldec TEXT -> the path a .trashinfo holds: its %XX bytes back, through octal escapes (awk's %c is a character, not a byte, under gawk); a backslash of its own is one too
@@ -174,6 +179,12 @@ files_trash_rows() {   # -> the rows of your home's trash, the newest first, the
     printf 'files:here\037opens\037the trash %s %s\037\037\037\037\037\037\037trash-here\037\n' "$PANEL_SEP" "$_ftw"
 }
 files_unreplace() { [ -z "${_fend:-}" ] || files_restore "$_fone" >/dev/null 2>&1 || :; }   # a replace whose move or copy failed: the one there comes back from the trash
+files_call_sort() {   # files_call_sort ID TOOL ARGUMENTS -- the folder's order kept, said as the location line says it; the list read again in it
+    _fsp=$(printf '%s' "$3" | jq -r '.path // ""'); _fsb=$(printf '%s' "$3" | jq -r '.by // ""')
+    case $_fsb in name|kind|date|size) ;; *) provide_refuse "$1" "files: sort by name, kind, date or size"; return 0 ;; esac
+    _fsf=$(files_ok "$_fsp" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; }
+    files_result "$1" "$(files_order_words "$(files_order_set "$_fsf" "$_fsb")")"
+}
 files_result() {   # files_result ID RECEIPT [UNDO-TOOL UNDO-ARGS-JSON] [open=URI] -- a step's result: the receipt, its undo, the uri to open
     _fr=$(jq -cn --arg r "$2" '{receipt: $r}')
     [ -z "${3:-}" ] || _fr=$(printf '%s' "$_fr" | jq -c --arg n "$3" --argjson a "$4" '. + {undo: {name: $n, arguments: $a}}')
@@ -222,6 +233,7 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
         files_find|files_say) files_call_search "$@"; return 0 ;;
         files_restore|files_purge) files_call_trashed "$@"; return 0 ;;
         files_new_folder|files_new_text) files_call_new "$@"; return 0 ;;
+        files_sort) files_call_sort "$@"; return 0 ;;
         files_browse) _ff=$(files_ok "$_fa" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; } ;;
         files_open|files_show|files_attach|files_play) _ff=$(files_ok "$_fa" file) || { provide_refuse "$1" "files: that is not a file in the folders given"; return 0; } ;;
         *) _ff=$(files_ok "$_fa" any) || { provide_refuse "$1" "files: that is not a file or a folder in the folders given"; return 0; } ;;

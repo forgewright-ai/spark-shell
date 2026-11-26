@@ -11,6 +11,43 @@ const NOT_COME: &str = "the rows have not come yet: a moment";
 
 impl App {
     /// The files provider and its folder on screen: the active pane, when the view is one.
+    /// The folder shown sorted by an order (v0.169): the provider keeps it, and its list comes back in it.
+    pub fn files_sort(&mut self, by: crate::files::SortBy) {
+        if self.key_held() {
+            return;
+        }
+        let here = self.folder.as_ref().and_then(|(_, _, rows)| rows.here.clone());
+        let (Some((p, _)), Some(path)) = (self.files_pane_view(), here) else {
+            return self.refuse("nothing to sort here");
+        };
+        let mut arguments = serde_json::Map::new();
+        arguments.insert("path".into(), Value::String(path));
+        arguments.insert("by".into(), Value::String(by.word().into()));
+        let call = Call {
+            name: "files_sort".into(),
+            arguments,
+            ask: vec![],
+            said: None,
+            pick: None,
+            value: None,
+            children: None,
+        };
+        let line = format!("sort by {}", by.word());
+        self.run(Step {
+            prov: p,
+            call,
+            who: Who::Person,
+            line,
+            typed: false,
+        });
+    }
+
+    /// A click on the folder's order on the location line: the next order.
+    pub fn files_sort_next(&mut self) {
+        let state = self.folder.as_ref().and_then(|(_, _, rows)| rows.state.clone()).unwrap_or_default();
+        self.files_sort(crate::files::SortBy::after(&state));
+    }
+
     pub fn files_pane_view(&self) -> Option<(usize, String)> {
         match &self.view {
             View::Folder(p, uri) if self.providers.get(*p).is_some_and(|x| x.label == "files") => Some((*p, uri.clone())),
@@ -957,7 +994,7 @@ impl App {
                 }
                 add(&mut k, "View", "F3");
                 // beside two panes Tab is the other pane's: the details keep their own key
-                add(&mut k, "Details", if beside && !self.panes_drawn() { "Tab" } else { "F9" });
+                add(&mut k, "Actions", if beside && !self.panes_drawn() { "Tab" } else { "F9" });
                 if self.panes_drawn() {
                     add(&mut k, "Pane", "Tab");
                 }

@@ -34,12 +34,19 @@ for_window [shell="xwayland"] exec @REPO@/spark-shell desktop screen --x11-main
 input type:keyboard repeat_delay @KEY_REPEAT_DELAY@
 input type:keyboard repeat_rate @KEY_REPEAT_RATE@
 input type:keyboard xkb_options @KEY_CAPS@
-# Pointer preferences follow new devices and the next login too.
-input type:touchpad tap @POINTER_TAP@
-input type:touchpad natural_scroll @POINTER_SCROLL@
-input type:pointer natural_scroll @POINTER_SCROLL@
-input type:touchpad pointer_accel @POINTER_SPEED@
-input type:pointer pointer_accel @POINTER_SPEED@
+# The mouse's and the touchpad's settings follow new devices and the next login too.
+input type:pointer pointer_accel @MOUSE_SPEED@
+input type:pointer accel_profile @MOUSE_ACCEL@
+input type:pointer natural_scroll @MOUSE_SCROLL@
+input type:pointer scroll_factor @MOUSE_SCROLL_SPEED@
+input type:pointer left_handed @MOUSE_PRIMARY@
+input type:touchpad pointer_accel @TOUCHPAD_SPEED@
+input type:touchpad tap @TOUCHPAD_TAP@
+input type:touchpad natural_scroll @TOUCHPAD_SCROLL@
+input type:touchpad scroll_factor @TOUCHPAD_SCROLL_SPEED@
+@TOUCHPAD_CLICK@
+input type:touchpad dwt @TOUCHPAD_TYPING_OFF@
+input type:touchpad events @TOUCHPAD_MOUSE_OFF@
 gaps inner @GAPS_INNER@
 gaps outer @GAPS_OUTER@
 workspace_layout @WS_LAYOUT@

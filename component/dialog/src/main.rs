@@ -707,6 +707,7 @@ fn act(app: &mut App, target: scene::Target) {
             app.files_pane();
         }
         scene::Target::ListRow(n) => app.files_list_row(n, Instant::now()),
+        scene::Target::Sort => app.files_sort_next(),
     }
 }
 
@@ -1841,7 +1842,19 @@ fn main() {
                         }
                     }
                     MouseEventKind::Drag(MouseButton::Left) => {
-                        if let Some(p) = press.as_mut() {
+                        if let Some(p) = press
+                            .as_mut()
+                            .filter(|p| matches!(p.target, Some(scene::Target::Head(_))) && app.apps_reorders())
+                        {
+                            // a category's name dragged: it goes where it is let go (v0.169); the list stays still
+                            if p.moved || (at_px.1 - p.y0).abs() > DRAG_SLOP {
+                                p.moved = true;
+                                if pointer != "grabbing" {
+                                    pointer = "grabbing";
+                                    point(&window, &mut out, pointer);
+                                }
+                            }
+                        } else if let Some(p) = press.as_mut() {
                             // past a few pixels it is a drag: the list follows the pointer, as far as it scrolls
                             let dy = at_px.1 - p.y0;
                             if p.moved || dy.abs() > DRAG_SLOP {
@@ -1882,7 +1895,10 @@ fn main() {
                     MouseEventKind::Up(button) => {
                         // a press on a list let go: where it began, it is the click
                         if let Some(p) = press.take().filter(|_| button == MouseButton::Left) {
-                            if let Some(target) = p.target.filter(|t| !p.moved && pressed(&app, t) == p.row) {
+                            let onto = shown.as_ref().and_then(|sc| sc.hit(at_px.0, at_px.1)).cloned();
+                            if let (true, Some(scene::Target::Head(from)), Some(scene::Target::Head(to))) = (p.moved, &p.target, &onto) {
+                                app.apps_place_category(from, to);
+                            } else if let Some(target) = p.target.filter(|t| !p.moved && pressed(&app, t) == p.row) {
                                 act(&mut app, target);
                             }
                             dirty = true;

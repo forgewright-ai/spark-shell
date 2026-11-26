@@ -115,6 +115,8 @@ pub enum Action {
     Delete(String),
     /// A category one place up (true) or down (false) the list (#233).
     MoveCategory(String, bool),
+    /// A category put where another stands (its name dragged onto the other's, v0.169).
+    PlaceCategory(String, String),
     AddCategory,
     Mappings,
     Mapping(String),
@@ -470,10 +472,26 @@ impl State {
                 }
             }
             Action::MoveCategory(name, up) => {
-                // the page stays, its row lit: Enter again moves it another place (#233)
+                // the page stays, its row lit: Enter again moves it another place (#233). The receipt names the
+                // category it passed (v0.169)
                 let mut prefs = self.prefs.clone();
                 prefs.shift(&name, up)?;
-                let words = format!("{} moved {}", name.to_lowercase(), if up { "up" } else { "down" });
+                let at = prefs.categories.iter().position(|c| *c == name).unwrap_or(0);
+                let passed = prefs
+                    .categories
+                    .get(if up { at + 1 } else { at.saturating_sub(1) })
+                    .cloned()
+                    .unwrap_or_default();
+                let words = format!("{} moved {} {}", name.to_lowercase(), if up { "above" } else { "below" }, passed.to_lowercase());
+                self.change(prefs, words, &mut out)?;
+            }
+            Action::PlaceCategory(name, at) => {
+                if name == at {
+                    return Ok(out);
+                }
+                let mut prefs = self.prefs.clone();
+                let up = prefs.place(&name, &at)?;
+                let words = format!("{} moved {} {}", name.to_lowercase(), if up { "above" } else { "below" }, at.to_lowercase());
                 self.change(prefs, words, &mut out)?;
             }
             Action::ChooseCategory(id) => out.navigation = Some(self.navigate(Page::CategoryPicker(id), nav)),

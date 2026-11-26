@@ -3711,22 +3711,35 @@ rm -f "$HOME/kb-virtual-only"
 [ "$(grep -c '^input type:touchpad tap enabled$' "$swc")" = 1 ] && grep -qx 'input type:keyboard repeat_rate 25' "$swc" \
     && ok "input defaults: tap to click on touchpads, repeat at 25 per second" || bad "input defaults" "$(grep '^input' "$swc")"
 rm -f "$HOME/swaymsg.log"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop mouse speed 0.5 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = 'mouse speed 0.5' ] && grep -qx 'MOUSE_SPEED=0.5' "$HOME/.config/spark-shell/config" \
+    && grep -qx -- '-- input type:pointer pointer_accel 0.5' "$HOME/swaymsg.log" && ! grep -q -- 'type:touchpad pointer_accel' "$HOME/swaymsg.log" \
+    && grep -qx 'input type:pointer pointer_accel 0.5' "$swc" && grep -qx 'input type:touchpad pointer_accel 0' "$swc" \
+    && ok "mouse speed: the mouse alone takes it, now and at login; the touchpad keeps its own" || bad "mouse speed" "rc=$rc $out"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop touchpad tap off 2>&1) || rc=$?
+[ "$rc" = 0 ] && grep -qx 'TOUCHPAD_TAP=off' "$HOME/.config/spark-shell/config" && grep -qx 'input type:touchpad tap disabled' "$swc" \
+    && ok "touchpad tap: disabled, saved for the next login" || bad "touchpad tap" "rc=$rc $out"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop touchpad click corners 2>&1) || rc=$?
+rc2=0; out2=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop touchpad mouse-off on 2>&1) || rc2=$?
+rc3=0; out3=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop mouse primary right 2>&1) || rc3=$?
+rc4=0; out4=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop mouse acceleration flat 2>&1) || rc4=$?
+[ "$rc$rc2$rc3$rc4" = 0000 ] && grep -qx 'input type:touchpad click_method button_areas' "$swc" && grep -qx 'input type:touchpad events disabled_on_external_mouse' "$swc" \
+    && grep -qx 'input type:pointer left_handed enabled' "$swc" && grep -qx 'input type:pointer accel_profile flat' "$swc" \
+    && grep -qx -- '-- input type:touchpad click_method button_areas' "$HOME/swaymsg.log" && grep -qx 'input type:touchpad dwt enabled' "$swc" \
+    && ok "touchpad and mouse: a corner's right click, off with a mouse in, the primary button on the right, flat acceleration, each in sway's own words" \
+    || bad "touchpad and mouse words" "rc=$rc$rc2$rc3$rc4 $out | $out2 | $out3 | $out4 | $(grep '^input' "$swc")"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop pointer speed 0.5 2>&1) || rc=$?
-[ "$rc" = 0 ] && [ "$out" = 'pointer speed 0.5' ] && grep -qx 'POINTER_SPEED=0.5' "$HOME/.config/spark-shell/config" \
-    && grep -qx -- '-- input type:pointer pointer_accel 0.5' "$HOME/swaymsg.log" && grep -qx -- '-- input type:touchpad pointer_accel 0.5' "$HOME/swaymsg.log" \
-    && grep -qx 'input type:pointer pointer_accel 0.5' "$swc" && ok "pointer speed: mouse and touchpad take it now and at login" || bad "pointer speed" "rc=$rc $out"
-rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop pointer tap off 2>&1) || rc=$?
-[ "$rc" = 0 ] && grep -qx 'POINTER_TAP=off' "$HOME/.config/spark-shell/config" && grep -qx 'input type:touchpad tap disabled' "$swc" \
-    && ok "pointer tap: disabled on touchpads, saved for the next login" || bad "pointer tap" "rc=$rc $out"
+[ "$rc" = 1 ] && printf '%s' "$out" | grep -q 'desktop mouse or touchpad' && ok "desktop pointer: says where its settings went" || bad "pointer verb" "rc=$rc $out"
 before=$(cksum < "$HOME/.config/spark-shell/config")
-rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop pointer speed 2 2>&1) || rc=$?
-[ "$rc" != 0 ] && [ "$before" = "$(cksum < "$HOME/.config/spark-shell/config")" ] && ok "pointer speed: an out of range value leaves settings alone" || bad "pointer bounds" "rc=$rc $out"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop mouse speed 2 2>&1) || rc=$?
+rc2=0; out2=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop touchpad scroll-speed 9 2>&1) || rc2=$?
+[ "$rc" != 0 ] && [ "$rc2" != 0 ] && [ "$before" = "$(cksum < "$HOME/.config/spark-shell/config")" ] && ok "mouse and touchpad: a value out of range leaves the settings alone" || bad "input bounds" "rc=$rc $out | $rc2 $out2"
 mkdir -p "$H/inputfail"
 printf '#!/bin/sh\ncase "$*" in "-- input type:pointer pointer_accel 1") exit 1 ;; esac\nexec "%s" "$@"\n' "$H/lx/swaymsg" > "$H/inputfail/swaymsg"
 chmod +x "$H/inputfail/swaymsg"
-rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/inputfail:$H/lx:$PATH" sh "$SH" desktop pointer speed 1 2>&1) || rc=$?
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/inputfail:$H/lx:$PATH" sh "$SH" desktop mouse speed 1 2>&1) || rc=$?
 [ "$rc" != 0 ] && [ "$before" = "$(cksum < "$HOME/.config/spark-shell/config")" ] && printf '%s' "$out" | grep -q 'saved setting is unchanged' \
-    && ok "pointer: native refusal leaves the saved preference alone" || bad "pointer native refusal" "rc=$rc $out"
+    && ok "mouse: native refusal leaves the saved preference alone" || bad "mouse native refusal" "rc=$rc $out"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop keyboard repeat-delay 400 2>&1) || rc=$?
 [ "$rc" = 0 ] && grep -qx 'KEY_REPEAT_DELAY=400' "$HOME/.config/spark-shell/config" && grep -qx 'input type:keyboard repeat_delay 400' "$swc" \
     && ok "keyboard delay: applied and saved without changing layouts" || bad "keyboard delay" "rc=$rc $out"
@@ -3738,10 +3751,28 @@ rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop keyboard caps e
 before=$(cksum < "$HOME/.config/spark-shell/config")
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop keyboard repeat-delay 99 2>&1) || rc=$?
 [ "$rc" != 0 ] && [ "$before" = "$(cksum < "$HOME/.config/spark-shell/config")" ] && ok "keyboard delay: refuses too small a delay before a write" || bad "keyboard delay bounds" "rc=$rc $out"
-rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel pointer speed -0.5 2>&1) || rc=$?
-[ "$rc" = 0 ] && grep -qx 'POINTER_SPEED=-0.5' "$HOME/.config/spark-shell/config" && ok "pointer: the dialog uses the same setting" || bad "pointer panel" "rc=$rc $out"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel mouse speed -0.5 2>&1) || rc=$?
+[ "$rc" = 0 ] && grep -qx 'MOUSE_SPEED=-0.5' "$HOME/.config/spark-shell/config" && ok "mouse: the dialog uses the same setting" || bad "mouse panel" "rc=$rc $out"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel undo all 2>&1) || rc=$?
-[ "$rc" = 0 ] && grep -qx 'POINTER_SPEED=0.5' "$HOME/.config/spark-shell/config" && ok "pointer: undo restores the prior value" || bad "pointer undo" "rc=$rc $out"
+[ "$rc" = 0 ] && grep -qx 'MOUSE_SPEED=0.5' "$HOME/.config/spark-shell/config" && ok "mouse: undo restores the prior value" || bad "mouse undo" "rc=$rc $out"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop keyboard compose ralt 2>&1) || rc=$?
+[ "$rc" = 0 ] && grep -qx 'KEY_COMPOSE=ralt' "$HOME/.config/spark-shell/config" && grep -qx 'input type:keyboard xkb_options caps:escape,compose:ralt' "$swc" \
+    && grep -qx -- '-- input type:keyboard xkb_options caps:escape,compose:ralt' "$HOME/swaymsg.log" \
+    && ok "keyboard compose: the right Alt composes, beside what Caps Lock is, live and kept" || bad "keyboard compose" "rc=$rc $out | $(grep xkb_options "$swc")"
+kb0=$(sed -n 's/^KEYBOARD=//p' "$HOME/.config/spark-shell/config" | tr -d '"')
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel keyboard add de 2>&1) || rc=$?
+kb1=$(sed -n 's/^KEYBOARD=//p' "$HOME/.config/spark-shell/config" | tr -d '"')
+rc2=0; out2=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel keyboard remove de 2>&1) || rc2=$?
+kb2=$(sed -n 's/^KEYBOARD=//p' "$HOME/.config/spark-shell/config" | tr -d '"')
+[ "$rc$rc2" = 00 ] && [ "$kb1" = "${kb0:-us} de" ] && [ "$kb2" = "${kb0:-us}" ] \
+    && ok "keyboard: the dialog adds a layout beside the ones there are, and removes it" || bad "keyboard add and remove" "rc=$rc$rc2 $out | $out2 | $kb0 | $kb1 | $kb2"
+# a config written before v0.169 keeps its pointer settings, for the mouse and the touchpad both
+mkdir -p "$H/oldptr/.config/spark-shell"
+printf 'POINTER_TAP=off\nPOINTER_SCROLL=on\nPOINTER_SPEED=0.25\n' > "$H/oldptr/.config/spark-shell/config"
+rc=0; out=$(XDG_CONFIG_HOME="$H/oldptr/.config" sh "$SH" desktop mouse 2>&1) || rc=$?
+rc2=0; out2=$(XDG_CONFIG_HOME="$H/oldptr/.config" sh "$SH" desktop touchpad 2>&1) || rc2=$?
+[ "$rc$rc2" = 00 ] && printf '%s' "$out" | grep -q 'speed 0.25' && printf '%s' "$out" | grep -q 'natural scroll on' && printf '%s' "$out2" | grep -q 'tap to click off' \
+    && ok "a config of before: its pointer speed, scroll and tap carry over to the mouse and the touchpad" || bad "old pointer config" "rc=$rc$rc2 $out | $out2"
 # the screens
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen 2>&1) || rc=$?
 [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -qx 'HDMI-A-1  Lenovo Group Limited T24i-30 V30A1  1920x1080  scale 1  at 1920,0' && ok "desktop screen: each screen by port, make, model and serial, its mode, scale and place" || bad "screen list" "rc=$rc $out"
@@ -4631,8 +4662,9 @@ rows=$(NL notes --list)
 rm -f "$HOME/swaymsg.log"; out=$(NL notes open the jabra mic levels)
 [ "$out" = 'opened the jabra mic levels' ] && grep -qxF -- "-- exec foot -e true '$HOME/notes/jabra.md'" "$HOME/swaymsg.log" && ok "notes open: the note in your editor, in a terminal window" || bad "notes open" "$out $(cat "$HOME/swaymsg.log" 2>&1)"
 j=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://notes/rows"}}' | SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" provide notes 2>/dev/null | jq -r 'select(.id == 2) | .result.contents[0].text')
-printf '%s' "$j" | jq -e '[.rows[] | select(.text == "the jabra mic levels")][0] | .group == "recent" and .columns == ["Jan 1"] and .tool.name == "notes_open"' >/dev/null \
-    && ok "provide notes: a note's row, its date a column, in the group recent, Enter opens it" || bad "provide notes" "$j"
+printf '%s' "$j" | jq -e '([.rows[] | select(.text == "the jabra mic levels")][0] | .group == null and .columns == ["Jan 1"] and .end == true and .tool.name == "notes_open")
+    and ([.rows[] | select(.id == "notes:new")][0] | .tool.name == "notes_new") and (.state | test("^[0-9]+ notes$"))' >/dev/null \
+    && ok "provide notes: a note's row, its date at its end and no group over it, Enter opens it; the state counts the notes" || bad "provide notes" "$j"
 # the reminders read today and tomorrow off the clock: in a zone where it is about noon now, a run that crosses
 # midnight (CI's clock is UTC) never turns tomorrow into today halfway through
 _ntz=$(noon_tz); [ -z "$_ntz" ] || { TZ=$_ntz; export TZ; }
@@ -4689,8 +4721,8 @@ rm -f "$HOME/calendar/other.ics"
 j=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://reminders/rows"}}' | SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" provide reminders 2>/dev/null | jq -r 'select(.id == 2) | .result.contents[0].text')
 printf '%s' "$j" | jq -e '[.rows[] | select(.text | startswith("the vet"))][0] | .date == "2030-01-02" and .group == "later" and (.columns[0] | endswith("10:00"))' >/dev/null \
     && ok "provide reminders: a reminder's row carries its day for the Calendar, its group and its time" || bad "provide reminders" "$j"
-printf '%s' "$j" | jq -e '(.rows[0] | .id == "reminders:add" and .text == "new reminder" and .tool.ask == ["words"]) and ([.rows[] | select(.id == "reminders:more")][0] | .children == "spark-shell://reminders/rows" and (.columns[0] | startswith("tomorrow 09:00"))) and ([.rows[] | select(.text | startswith("say it"))] | length == 0)' >/dev/null \
-    && ok "provide reminders: new reminder first, asking for its words; the next one ahead, its day and time, opens the rest; no hint posing as a row" || bad "provide reminders rows" "$j"
+printf '%s' "$j" | jq -e '([.rows[] | select(.id == "reminders:add")][0] | .text == "new reminder" and .tool.ask == ["words"]) and ((.rows | map(.id) | index("reminders:add")) > (.rows | map(.id | startswith("reminders:done")) | rindex(true))) and ([.rows[] | select(.id == "reminders:more")][0] | .children == "spark-shell://reminders/rows" and (.columns[0] | startswith("tomorrow 09:00"))) and ([.rows[] | select(.text | startswith("say it"))] | length == 0)' >/dev/null \
+    && ok "provide reminders: new reminder last, under the reminders, asking for its words; the next one ahead, its day and time, opens the rest; no hint posing as a row" || bad "provide reminders rows" "$j"
 j=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" provide reminders 2>/dev/null | jq -c 'select(.id == 2) | .result.tools')
 printf '%s' "$j" | jq -e '.[] | select(.name == "reminders_add") | .inputSchema.properties.words.description == "when and what: fri 9am call the vet"' >/dev/null \
     && ok "provide reminders: the words of reminders_add say what they are, for the dialog's hint when it asks" || bad "reminders_add description" "$j"
@@ -6350,13 +6382,13 @@ for _mf in "$REPO"/lib/motion_*.py; do _mn=${_mf##*/motion_}; wall_n=${_mn%.py};
 [ -z "$_wb" ] && [ "$(ls "$REPO/gallery/wallpaper" | wc -l | tr -d ' ')" = 36 ] && ok "gallery/wallpaper/: the 18 drawings, each its SVG and a 3840 by 2160 PNG; lib/motion_NAME.py a script of a shipped one alone, lib/wallpaper.py the scenes'" || bad "wallpaper files" "$_wb $(ls "$REPO/gallery/wallpaper")"
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
-for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps system about undo files; do mcp "$s" "$(pinit spark-dialog)" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 176 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-five sections hold the 176 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
-jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
+for s in lan wifi bt printers out mic bat clock theme window display keyboard mouse touchpad notifications storage power notes reminders bar layout apps system about undo files; do mcp "$s" "$(pinit spark-dialog)" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
+[ "$(grep -c '' "$H/tools.all")" = 189 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-six sections hold the 189 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+jq -e -s 'any(.name == "mouse_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
-mcp pointer "$(call 1 pointer_speed '{"value":2}')"
-[ "$(ans 1 | jq -r .error.code)" = -32602 ] && ok "pointer MCP: an invalid speed is refused before native execution" || bad "pointer MCP bounds" "$(cat "$H/mcp.out")"
+mcp touchpad "$(call 1 touchpad_speed '{"value":2}')"
+[ "$(ans 1 | jq -r .error.code)" = -32602 ] && ok "touchpad MCP: an invalid speed is refused before native execution" || bad "touchpad MCP bounds" "$(cat "$H/mcp.out")"
 mcp notes "$(call 1 notes_add '{"text":"AX result fixture"}')" "$(call 2 notes_add '{"text":"AX result fixture: one more line"}')" "$(call 3 notes_find '{"words":"AX result fixture"}')"
 ans 1 | jq -e '.result.isError == false and .result.structuredContent.effect == {kind:"note",operation:"created",id:"ax-result-fixture.md",title:"AX result fixture"}' >/dev/null \
     && ans 2 | jq -e '.result.structuredContent.effect.operation == "appended" and .result.structuredContent.effect.id == "ax-result-fixture.md"' >/dev/null \
@@ -6516,7 +6548,7 @@ mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},
 jq -e -s 'all(.[]; (.name | test("^[a-z][a-z0-9_]{0,63}$")) and (.title | test("^[a-z][a-z-]*( [a-z-]+| [A-Z]+)*$")) and (.title | length) <= 60)' "$H/tools.all" >/dev/null \
     && ok "provide: every tool name is lower case with underscores, every title a sentence of plain words with its argument in capitals, 60 at most" || bad "tool shapes" "$(jq -r '.name + " | " + .title' "$H/tools.all")"
 jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.destructiveHint | type) == "boolean" and (.idempotentHint | type) == "boolean" and .openWorldHint == false)' "$H/tools.all" >/dev/null \
-    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove clock_zone files_empty files_purge lan_address lan_auto lan_dns lan_restore power_logout power_restart power_shutdown printers_cancel system_end theme_delete wifi_address wifi_auto wifi_dns wifi_forget wifi_hidden wifi_restore wifi_setup window_close' ] \
+    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove clock_zone files_empty files_purge keyboard_remove lan_address lan_auto lan_dns lan_restore power_logout power_restart power_shutdown printers_cancel system_end theme_delete wifi_address wifi_auto wifi_dns wifi_forget wifi_hidden wifi_restore wifi_setup window_close' ] \
     && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = 'notes_find system_check system_measure about_open files_show files_attach files_find files_say' ] \
     && ok "provide: every hint spelled out (the spec's default is destructive); destructive where something is lost (#112): forget, close, remove, delete, delete for good and empty the trash (#130), the power steps, a print job cancelled, the network manager installed, a program ended (v0.129); and where the typed verb asks for a yes: the network's address and DNS, a hidden network, the time zone; the printer settings carry undo instead; read only: notes find, the check and the measure of system, about, files show, attach, find and say" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
 [ "$(jq -r 'select(._meta["spark-shell/opens"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'about_site apps_open apps_terminal files_app files_browse files_open files_reveal notes_open power_lock storage_open system_clean_packages system_fix system_front system_update system_update_system window_focus' ] \
@@ -6563,10 +6595,10 @@ if [ "$(uname -s)" != Darwin ]; then
         "$(call 16 system_end '{"name":"swaybar"}')" "$(call 17 system_end '{"name":"spark-bar"}')" "$(call 18 system_end '{"name":"spark-winpad"}')" "$(call 19 system_end '{"name":"spark-wallpaper"}')")   # a subshell: sh keeps a variable set before a function after it
     rows() { ans "$1" | jq -c '.result.contents[0].text | fromjson'; }
     said() { ans "$1" | jq -r '.result.content[0].text'; }
-    [ "$(rows 1 | jq -c '[.rows[] | [.id, .text, .children]]')" = '[["system:check","check","spark-shell://system/rows/check"],["system:space","space","spark-shell://system/rows/space"],["system:running","running","spark-shell://system/rows/running"],["system:details","details","spark-shell://system/rows/details"],["system:updates","updates","spark-shell://system/rows/updates"],["system:software","software","spark-shell://system/rows/software"],["system:about","about","spark-shell://about/rows"]]' ] \
-        && [ "$(rows 1 | jq -r '.rows[0].columns[0], .rows[2].columns[0], .rows[0].line')" = "$(printf '3 problems\n8 processes\ncheck %s test the setup and fix problems' "$SEP")" ] \
+    [ "$(rows 1 | jq -c '[.rows[] | [.id, .text, .children]]')" = '[["system:check","check","spark-shell://system/rows/check"],["system:updates","updates","spark-shell://system/rows/updates"],["system:space","space","spark-shell://system/rows/space"],["system:running","running","spark-shell://system/rows/running"],["system:software","software","spark-shell://system/rows/software"],["system:about","about","spark-shell://system/rows/details"]]' ] \
+        && [ "$(rows 1 | jq -r '.rows[0].columns[0], .rows[3].columns[0], .rows[0].line')" = "$(printf '3 problems\n8 processes\ncheck %s test the setup and fix problems' "$SEP")" ] \
         && rows 1 | jq -e 'all(.rows[]; (.columns[0] | length) > 0)' >/dev/null \
-        && ok "provide system: six rows, one word each, each its state (the last check, the processes) and its page as children, then about, whose page is the about section's own (v0.153)" || bad "system rows" "$(rows 1)"
+        && ok "provide system: what needs you first (check, updates, space), then running, software and about, each its state and its page as children; about holds the details of the machine (v0.169)" || bad "system rows" "$(rows 1)"
     [ "$(rows 2 | jq -c '[.rows[] | select(.text != "") | [.text, .group, (.columns[0] // ""), (.tool.arguments.command // "")]]')" = '[["programs","problems","missing: fzf zoxide",""],["config files","problems","out of date: .tmux.conf",""],["screen saver","problems","no screen saver",""],["fix",null,"spark-shell on","spark-shell on"],["fix",null,"spark-shell desktop","spark-shell desktop"],["1 passed",null,"",""],["1 not applicable",null,"",""],["check again",null,"checked at '"$(date -d "@$(sed -n 1p "$_ts/check.last")" +%H:%M)"'",""]]' ] \
         && [ "$(rows 2 | jq -r .state)" = '3 problems' ] && [ "$(rows 3 | jq -c '[.rows[] | [.text, .columns[0]]]')" = '[["shell startup","sourced from .zshrc"]]' ] \
         && ok "system check: the problems by plain name, one fix for the two that share it, the passed and the not applicable counted apart, check again with its time" || bad "system check" "$(rows 2)"
@@ -6865,7 +6897,7 @@ case $order in "r1 notifications/progress r2 notifications/resources/updated r3"
     && ok "provide: the watcher said the palette change made outside it once, and never the step's own, whose rows went with its answer (#196); progress only grows" || bad "provide watcher" "$(cat "$H/mcp.out")"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 st=0; out=$(sh "$SH" provide spark 2>&1 >/dev/null) || st=$?
-[ "$st" -eq 1 ] && [ "$out" = 'spark-shell provide: spark is not one: lan, wifi, bt, printers, out, mic, bat, clock, theme, window, display, keyboard, pointer, notifications, storage, power, notes, reminders, bar, layout, apps, system, about, undo, files' ] && ok "provide spark: no provider (the dialog holds the chat itself), the list on stderr, exit 1" || bad "provide spark" "st=$st $out"
+[ "$st" -eq 1 ] && [ "$out" = 'spark-shell provide: spark is not one: lan, wifi, bt, printers, out, mic, bat, clock, theme, window, display, keyboard, mouse, touchpad, notifications, storage, power, notes, reminders, bar, layout, apps, system, about, undo, files' ] && ok "provide spark: no provider (the dialog holds the chat itself), the list on stderr, exit 1" || bad "provide spark" "st=$st $out"
 st=0; out=$(sh "$SH" provide theme wifi 2>&1 >/dev/null) || st=$?
 [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell provide: one section: lan, ' && ok "provide with two words: one section, refused on stderr" || bad "provide two" "st=$st $out"
 # the dialog exits without waiting for its providers (#60): an answer that finds the reader gone (SIGPIPE)
@@ -7990,22 +8022,23 @@ case $1 in
 esac
 STUB
     chmod +x "$H/.local/bin/spark"; mcpf=$HOME/.config/spark/mcp.env; mkdir -p "$HOME/.config/spark"; rm -f "$HOME/mcp.log"
-    printf 'MCP_SERVER_FILES="/opt/mine/files-server"\nMCP_SERVER_WIFI="/old/clone/spark-shell provide wifi"\nMCP_SERVER_TOOLS="/old/clone/spark-shell provide tools"\n' > "$mcpf"   # tools: the system section's name through v0.152
+    printf 'MCP_SERVER_FILES="/opt/mine/files-server"\nMCP_SERVER_WIFI="/old/clone/spark-shell provide wifi"\nMCP_SERVER_TOOLS="/old/clone/spark-shell provide tools"\nMCP_SERVER_POINTER="/old/clone/spark-shell provide pointer"\n' > "$mcpf"   # tools: the system section's name through v0.152; pointer: mouse and touchpad's through v0.168
     out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes 2>&1 || :)
-    printf '%s\n' "$out" | grep -q "^ok     mcp          24 providers on spark's MCP list: the prompt line and spark do know the desktop's tools$" \
+    printf '%s\n' "$out" | grep -q "^ok     mcp          25 providers on spark's MCP list: the prompt line and spark do know the desktop's tools$" \
         && printf '%s\n' "$out" | grep -q "^todo   mcp          already on spark's MCP list as servers of yours, left as they are: files$" \
         && grep -qx 'MCP_SERVER_FILES="/opt/mine/files-server"' "$mcpf" && grep -qx "MCP_SERVER_WIFI=\"$C/spark-shell provide wifi\"" "$mcpf" && grep -qx "MCP_SERVER_CLOCK=\"$C/spark-shell provide clock\"" "$mcpf" \
-        && [ "$(grep -c '^MCP_SERVER_' "$mcpf")" = 25 ] && grep -qx 'mcp rm wifi' "$HOME/mcp.log" && ! grep -q 'mcp add files' "$HOME/mcp.log" \
+        && [ "$(grep -c '^MCP_SERVER_' "$mcpf")" = 26 ] && grep -qx 'mcp rm wifi' "$HOME/mcp.log" && ! grep -q 'mcp add files' "$HOME/mcp.log" \
         && grep -qx 'mcp rm tools' "$HOME/mcp.log" && ! grep -q '^MCP_SERVER_TOOLS=' "$mcpf" && grep -qx "MCP_SERVER_SYSTEM=\"$C/spark-shell provide system\"" "$mcpf" \
+        && grep -qx 'mcp rm pointer' "$HOME/mcp.log" && ! grep -q '^MCP_SERVER_POINTER=' "$mcpf" && grep -qx "MCP_SERVER_TOUCHPAD=\"$C/spark-shell provide touchpad\"" "$mcpf" \
         && ok "on desktop: each provider on spark's MCP list through spark mcp add; a server of yours under one of the names stays; an older clone's line replaced; our line under a name a section had before (tools, system since v0.153) taken off, so spark starts no provider that is no section" || bad "mcp add" "$(printf '%s\n' "$out" | grep mcp); $(cat "$mcpf")"
     rm -f "$HOME/mcp.log"; SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes >/dev/null 2>&1 || :
-    [ ! -e "$HOME/mcp.log" ] && sh "$C/spark-shell" check 2>&1 | grep -q "^warn   mcp          24 of 25 providers on spark's MCP list -- spark-shell on desktop$" \
+    [ ! -e "$HOME/mcp.log" ] && sh "$C/spark-shell" check 2>&1 | grep -q "^warn   mcp          25 of 26 providers on spark's MCP list -- spark-shell on desktop$" \
         && ok "on desktop again: nothing asked of spark; check counts the providers on the list" || bad "mcp again" "$(cat "$HOME/mcp.log" 2>&1); $(sh "$C/spark-shell" check 2>&1 | grep mcp)"
     out=$(sh "$C/spark-shell" off desktop --dry-run 2>&1 || :)
-    printf '%s\n' "$out" | grep -q "^would  mcp          take lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps system about undo off spark's MCP list$" \
+    printf '%s\n' "$out" | grep -q "^would  mcp          take lan wifi bt printers out mic bat clock theme window display keyboard mouse touchpad notifications storage power notes reminders bar layout apps system about undo off spark's MCP list$" \
         && ok "off desktop --dry-run: the lines that are ours, by name; a server of yours is not among them" || bad "mcp off would" "$(printf '%s\n' "$out" | grep mcp)"
     st=0; out=$(sh "$C/spark-shell" off desktop 2>&1) || st=$?
-    printf '%s\n' "$out" | grep -q "^ok     mcp          24 providers off spark's MCP list$" && [ "$(cat "$mcpf")" = 'MCP_SERVER_FILES="/opt/mine/files-server"' ] \
+    printf '%s\n' "$out" | grep -q "^ok     mcp          25 providers off spark's MCP list$" && [ "$(cat "$mcpf")" = 'MCP_SERVER_FILES="/opt/mine/files-server"' ] \
         && ok "off desktop: spark-shell's lines off spark's MCP list through spark mcp rm, a server of yours left" || bad "mcp off" "st=$st $(printf '%s\n' "$out" | grep mcp); $(cat "$mcpf")"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"; rm -f "$mcpf" "$H/.local/bin/spark"
     SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes >/dev/null 2>&1 || :
@@ -10752,9 +10785,10 @@ STUB
     pw sh -c 'sh "$1" provide power' _ "$SH" > "$H/mcp.out" 2>/dev/null <<EOF
 $(rq 1 resources/read '{"uri":"spark-shell://power/rows"}')
 EOF
-    [ "$(ans 1 | jq -r '.result.contents[0].text' | jq -c '[.rows[] | .text]')" = '["lock","suspend","logout","restart","shutdown","up 3 days"]' ] \
-        && [ "$(ans 1 | jq -r '.result.contents[0].text' | jq -c '[.rows[] | [.columns, .wide]]')" = "$(printf '[[[],["the screen \302\267 Super+Escape"]],[[],["the screen locks first"]],[[],["every window closes"]],[[],["asks first"]],[[],["asks first"]],[[],null]]')" ] \
-        && ok "power rows with logind: lock, suspend, logout, restart, shutdown, one word each, what each does its wide column, the uptime a fact; what the buttons do is no row (#143)" || bad "power systemd rows" "$(cat "$H/mcp.out")"
+    [ "$(ans 1 | jq -r '.result.contents[0].text' | jq -c '[.rows[] | .text]')" = '["lock","suspend","logout","restart","shutdown"]' ] \
+        && ans 1 | jq -r '.result.contents[0].text' | jq -e '(.state == "up 3 days") and ([.rows[0:2][] | .group] | unique == ["keeps your windows"])
+            and ([.rows[2:5][] | .group] | unique | length == 1 and (.[0] | test("^(closes |nothing open)"))) and (.rows[0].key == "Super+Escape")' >/dev/null \
+        && ok "power rows with logind: lock and suspend keep your windows, logout, restart and shutdown under what they close, lock's key at its end, the uptime the state; what the buttons do is no row (#143)" || bad "power systemd rows" "$(cat "$H/mcp.out")"
     rm -f "$HOME/power.log" "$HOME/swaymsg.log"
     pw sh -c 'sh "$1" provide power' _ "$SH" > "$H/mcp.out" 2>/dev/null <<EOF
 $(call 1 power_restart)

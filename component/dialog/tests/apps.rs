@@ -9,6 +9,7 @@ use spark_dialog::apps::{
     preferences::{Preference, Preferences},
     Action, Line, Navigation, Page,
 };
+use spark_dialog::display::screens::Side;
 use spark_dialog::grid::{Buffer, Modifier, Rect};
 use spark_dialog::reply::Mark;
 use std::path::PathBuf;
@@ -231,7 +232,7 @@ fn the_frame_is_the_dialogs_own_column_in_the_middle() {
 fn the_key_row_is_the_pages_whatever_is_lit_or_typed() {
     let mut a = app();
     let list = words(&a);
-    assert_eq!(list, "Back Esc   Details F9", "Esc and the list's own key; Enter has no chip");
+    assert_eq!(list, "Back Esc   Actions F9", "Esc and the list's own key; Enter has no chip");
     a.light(2);
     assert_eq!(words(&a), list, "a row lit");
     a.set_draft("fire");
@@ -404,7 +405,7 @@ fn hidden_apps_are_a_list_of_their_own_and_never_leak_into_the_homes_search() {
         .map(|l| l.label.as_str())
         .collect();
     assert_eq!(hidden, ["foot client", "foot server"], "each a row that opens, as in the list");
-    assert_eq!(words(&a), "All apps Esc   Details F9", "the list's keys, Esc showing all apps again (v0.124.4)");
+    assert_eq!(words(&a), "All apps Esc   Actions F9", "the list's keys, Esc showing all apps again (v0.124.4)");
     pick(&mut a, Action::Launch("footclient.desktop".into()));
     assert!(a.apps_details(), "Right opens its details, where the switch is");
     act(&mut a, Action::Visibility("footclient.desktop".into()));
@@ -653,6 +654,44 @@ fn categories_and_mappings_change_at_once_with_undo_and_a_form_types_in_the_prom
 }
 
 #[test]
+fn ctrl_and_an_arrow_move_the_lit_apps_category_and_a_dragged_name_takes_its_place() {
+    // v0.169: in the list itself, the app lit stays lit where its group went; each move said with its undo
+    let mut a = app();
+    let groups = |a: &App| -> Vec<String> { lines(a).iter().filter(|l| l.heading).map(|l| l.label.clone()).collect() };
+    assert_eq!(groups(&a), ["development", "web", "other"]);
+    pick(&mut a, Action::Launch("firefox.desktop".into()));
+    a.in_list = true;
+    a.hint_key(HintKey::Place(Side::Above));
+    assert_eq!(groups(&a), ["web", "development", "other"]);
+    assert_eq!(a.reply.as_ref().map(|r| (r.text.as_str(), r.undo)), Some(("web moved above development", true)));
+    assert!(
+        matches!(a.picks().get(a.sel), Some(Item::Apps(l)) if l.action == Some(Action::Launch("firefox.desktop".into()))),
+        "the app stays lit"
+    );
+    a.hint_key(HintKey::Place(Side::Below));
+    assert_eq!(groups(&a), ["development", "web", "other"]);
+    a.undo_now();
+    assert_eq!(groups(&a), ["web", "development", "other"], "undo takes the last move back");
+
+    // a name dragged onto another's takes its place, the others closing up behind it
+    assert!(a.apps_reorders());
+    a.apps_place_category("other", "web");
+    assert_eq!(groups(&a), ["other", "web", "development"]);
+    assert_eq!(a.reply.as_ref().map(|r| r.text.as_str()), Some("other moved above web"));
+    a.apps_place_category("other", "development");
+    assert_eq!(groups(&a), ["web", "development", "other"]);
+    assert_eq!(a.reply.as_ref().map(|r| r.text.as_str()), Some("other moved below development"));
+
+    // on the categories page, the category lit
+    act(&mut a, Action::Categories);
+    pick(&mut a, Action::Category("Web".into()));
+    a.in_list = true;
+    a.hint_key(HintKey::Place(Side::Below));
+    assert_eq!(&a.apps.prefs.categories[..3], ["Development", "Web", "Other"]);
+    cleanup(&a);
+}
+
+#[test]
 fn a_category_moves_up_and_down_at_once_with_undo_and_the_list_follows_its_order() {
     // #233: a category's page has move up and move down; the list of apps shows its groups in that order
     let mut a = app();
@@ -672,7 +711,7 @@ fn a_category_moves_up_and_down_at_once_with_undo_and_the_list_follows_its_order
     a.enter();
     assert_eq!(&a.apps.prefs.categories[..3], ["Development", "Web", "System"]);
     assert!(matches!(&a.apps.page, Page::Category(c) if c == "Web"), "the page stays: {:?}", a.apps.page);
-    assert_eq!(a.reply.as_ref().map(|r| (r.text.as_str(), r.undo)), Some(("web moved up", true)));
+    assert_eq!(a.reply.as_ref().map(|r| (r.text.as_str(), r.undo)), Some(("web moved above system", true)));
     a.enter();
     assert_eq!(&a.apps.prefs.categories[..3], ["Web", "Development", "System"], "Enter again: another place up");
     assert_eq!(

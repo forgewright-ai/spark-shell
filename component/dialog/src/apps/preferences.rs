@@ -215,6 +215,16 @@ impl Preferences {
     }
 
     /// A category one place up or down the list (#233): the apps list and every list of categories follow its order.
+    /// A category put where another stands, the others closing up behind it (a name dragged onto another's):
+    /// true when it went up.
+    pub fn place(&mut self, name: &str, at: &str) -> Result<bool, String> {
+        let from = self.categories.iter().position(|c| c == name).ok_or("Category no longer exists")?;
+        let to = self.categories.iter().position(|c| c == at).ok_or("Category no longer exists")?;
+        let moved = self.categories.remove(from);
+        self.categories.insert(to, moved);
+        Ok(to < from)
+    }
+
     pub fn shift(&mut self, name: &str, up: bool) -> Result<(), String> {
         let at = self.categories.iter().position(|c| c == name).ok_or("Category no longer exists")?;
         let to = if up {

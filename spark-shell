@@ -83,10 +83,19 @@
 #                                     the screen's brightness, 1 to 100
 #   spark-shell desktop keyboard [us br|next]
 #                                     the keyboard's layouts, or the next one
+#   spark-shell desktop keyboard add NAME|remove NAME
+#                                     a layout more, or one less
 #   spark-shell desktop keyboard repeat-delay N|repeat-rate N|caps KEY
-#                                     key repeat and caps, control or escape
-#   spark-shell desktop pointer [tap on|off|scroll on|off|speed N]
-#                                     tap to click, natural scroll and speed
+#                                     key repeat, and caps, control or escape
+#   spark-shell desktop keyboard compose none|ralt|menu|rwin
+#                                     the key that composes accents
+#   spark-shell desktop mouse [speed N|acceleration adaptive|flat|scroll on|off]
+#   spark-shell desktop mouse scroll-speed N|primary left|right
+#                                     the mouse's speed, scroll and buttons
+#   spark-shell desktop touchpad [speed N|tap on|off|scroll on|off]
+#   spark-shell desktop touchpad scroll-speed N|click fingers|corners
+#   spark-shell desktop touchpad typing-off on|off|mouse-off on|off
+#                                     the touchpad's speed, tap, scroll and clicks
 #   spark-shell desktop portals       refresh the desktop portal environment
 #   spark-shell desktop time [format 12|24|week sunday|monday|zone NAME]
 #                                     clock preferences and native time zone

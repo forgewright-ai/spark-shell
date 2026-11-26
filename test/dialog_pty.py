@@ -703,7 +703,7 @@ def tools_walk(binary, env, home):
     os.write(fd, b"system")
     time.sleep(0.5)
     os.write(fd, b"\r")
-    ok(wait_for(lambda: "processes" in tail() and "packages" in tail()), "system opens on its rows, each its state", tail()[-600:])
+    ok(wait_for(lambda: ("in use" in tail() or "processes" in tail()) and "packages" in tail()), "system opens on its rows, each its state (running: the memory in use, or the processes where no meminfo says it)", tail()[-600:])
     seen.clear()
     os.write(fd, b"\x1b[B")   # opened from words typed, nothing is lit: an arrow lights the first row
     ok(wait_for(lambda: "test the setup and fix problems" in tail()), "Down lights check, its line on the status row", tail()[-600:])
