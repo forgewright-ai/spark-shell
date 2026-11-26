@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- devices: wifi, bluetooth and sound, as their tools answer
 # reads: BAR_SHADE BAR_STEPS DISTRO MODE OS REPO ROOT STATE_DIR TAB TMP YES
-panel_lower() { printf '%s' "$*" | tr 'A-Z' 'a-z'; }
+panel_lower() { printf '%s\n' "$*" | awk '{ print tolower($0) }'; }   # as awk lowers a list's names, so a name outside ASCII matches its own row
 panel_bars() { bar_bars_plain "$1"; }
 bar_bars_plain() {   # bar_bars_plain LEVEL (0-4) -> the four rising bars as text, the unlit ones as a light shade
     i=1; out=''
@@ -102,7 +102,7 @@ wifi_scan_now() {
             | while IFS="$TAB" read -r n dbm sec; do printf '%s\t%s\t%s\n' "$n" "$(wifi_level "$dbm")" "$sec"; done ;;
     esac | awk -F '\t' '!seen[$1]++ || $2 > best[$1] { best[$1] = $2; sec[$1] = $3 } END { for (n in best) print n "\t" best[n] "\t" sec[n] }' | scrub_text | sort -t "$TAB" -k2,2nr -k1,1
 }
-wifi_known_id() { wifi_known | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($2) == n && !done { print $1; done = 1 }'; }   # wifi_known_id NAME -> its handle, or nothing
+wifi_known_id() { wifi_known | LOWER=$(panel_lower "$1") awk -F '\t' 'tolower($2) == ENVIRON["LOWER"] && !done { print $1; done = 1 }'; }   # wifi_known_id NAME -> its handle, or nothing
 wifi_said() { sed 's/\x1b\[[0-9;?]*[A-Za-z]//g; s/^[ >]*//; s/^Password[^:]*: *//; s/^Passphrase[^:]*: *//; s/ *$//' | grep -v -e '^$' -e '^Type the network passphrase' | tail -1 | scrub_text; }   # a tool's answer -> its last line that says something: no escapes, no prompt of its own
 # a password reaches the tool on stdin, never as an argument: a command line is anyone's to
 # read in /proc. nmcli takes it at its --ask prompt, iwctl at its agent's, wpa_cli on stdin
@@ -267,14 +267,35 @@ bt_list() { read_once bt.list panel_cache bt.list 30 bt_list_now; }   # -> MAC<t
 bt_list_now() {
     _p=$(bar_timeout bluetoothctl devices Paired 2>/dev/null | awk '$1 == "Device" {print $2}')
     _c=$(bt_connected | awk '$1 == "Device" {print $2}')
-    bar_timeout bluetoothctl devices 2>/dev/null | scrub_text | awk '$1 == "Device" { mac = $2; $1 = ""; $2 = ""; sub(/^ +/, ""); print mac "\t" $0 }' | while IFS="$TAB" read -r mac name; do
+    bar_timeout bluetoothctl devices 2>/dev/null | scrub_text | awk '$1 == "Device" { mac = $2; $1 = ""; $2 = ""; sub(/^ +/, ""); print mac "\t" $0 }' \
+        | awk -F '\t' '{ m[NR] = $1; n[NR] = $2; c[$2]++ } END { for (i = 1; i <= NR; i++) print m[i] "\t" (c[n[i]] > 1 ? n[i] " (" substr(m[i], length(m[i]) - 4) ")" : n[i]) }' \
+        | while IFS="$TAB" read -r mac name; do
         p=0; c=0
         printf '%s\n' "$_p" | grep -qx "$mac" && p=1
         printf '%s\n' "$_c" | grep -qx "$mac" && c=1
         printf '%s\t%s\t%s\t%s\n' "$mac" "$name" "$p" "$c"
     done
 }
-bt_mac() { bt_list | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($2) == n && !done { print $1; done = 1 }'; }   # bt_mac NAME -> its address, or nothing (the whole list read: no broken pipe)
+bt_mac() { bt_list | LOWER=$(panel_lower "$1") awk -F '\t' 'tolower($2) == ENVIRON["LOWER"] && !done { print $1; done = 1 }'; }   # bt_mac NAME -> its address, or nothing (the whole list read: no broken pipe)
+bt_step() { if command -v timeout >/dev/null 2>&1; then timeout 12 bluetoothctl "$@"; else bluetoothctl "$@"; fi >/dev/null 2>&1 || :; }   # bt_step WORDS -- a step a person waits for, with the time a speaker takes: three seconds cut a connect short
+bt_listed() { awk -v m="$1" '$1 == "Device" && $2 == m { f = 1 } END { exit !f }'; }   # bt_listed MAC < bluetoothctl's devices -> 0 when it is among them
+# bt_state MAC connected|apart|unpaired, or - on|off for the adapter -> 0 once bluez says so, three seconds at most after a step. A step is
+# judged by this, never by bluetoothctl's sentence: it changes between versions (5.88 says "Disconnection successful").
+# A list that cannot be read is no answer: the device is not said apart or gone by it
+bt_state() {
+    _bsn=0
+    while :; do
+        case $2 in
+            connected) bar_timeout bluetoothctl devices Connected 2>/dev/null | bt_listed "$1" && return 0 ;;
+            apart) _bsl=$(bar_timeout bluetoothctl devices Connected 2>/dev/null) && ! printf '%s\n' "$_bsl" | bt_listed "$1" && return 0 ;;
+            unpaired) _bsl=$(bar_timeout bluetoothctl devices Paired 2>/dev/null) && ! printf '%s\n' "$_bsl" | bt_listed "$1" && return 0 ;;   # the paired list: a device still calling to be paired is listed among all at once
+            on) bar_timeout bluetoothctl show 2>/dev/null | grep -q 'Powered: yes' && return 0 ;;
+            off) bar_timeout bluetoothctl show 2>/dev/null | grep -q 'Powered: no' && return 0 ;;
+        esac
+        [ "$_bsn" -lt 6 ] || return 1
+        sleep 0.5; _bsn=$((_bsn + 1))
+    done
+}
 bt_act() {   # bt_act connect|disconnect|pair|remove NAME | scan | power on|off -> one line
     panel_forget bt.list
     bt_running || { echo "bluetoothd is not running (spark-shell on desktop)"; return 1; }
@@ -282,18 +303,22 @@ bt_act() {   # bt_act connect|disconnect|pair|remove NAME | scan | power on|off 
         connect|disconnect|pair|remove)
             _m=$(bt_mac "$2"); [ -n "$_m" ] || { echo "no device named $2"; return 1; }
             case $1 in
-                connect) bar_timeout bluetoothctl connect "$_m" 2>&1 | grep -q 'successful' && echo "connected $2" || { echo "could not connect $2 (is it on, and near?)"; return 1; } ;;
-                disconnect) bar_timeout bluetoothctl disconnect "$_m" 2>&1 | grep -q 'Successful' && echo "disconnected $2" || { echo "could not disconnect $2"; return 1; } ;;
-                remove) bar_timeout bluetoothctl remove "$_m" 2>&1 | grep -q 'removed' && echo "removed $2" || { echo "could not remove $2"; return 1; } ;;
+                connect) bt_step connect "$_m"; panel_forget bt.list
+                    bt_state "$_m" connected && echo "connected $2" || { echo "could not connect $2 (is it on, and near?)"; return 1; } ;;
+                disconnect) bt_step disconnect "$_m"; panel_forget bt.list
+                    bt_state "$_m" apart && echo "disconnected $2" || { echo "could not disconnect $2"; return 1; } ;;
+                remove) bt_step remove "$_m"; panel_forget bt.list
+                    bt_state "$_m" unpaired && echo "removed $2" || { echo "could not remove $2"; return 1; } ;;
                 pair) if [ -n "${BT_BRIDGE:-}" ]; then python3 "$REPO/lib/bluetooth.py" "$_m" --bridge "$BT_BRIDGE" || return 1
                       else python3 "$REPO/lib/bluetooth.py" "$_m" || return 1; fi
                       bar_timeout bluetoothctl trust "$_m" >/dev/null 2>&1
-                      bar_timeout bluetoothctl connect "$_m" >/dev/null 2>&1 && echo "paired and connected $2" || echo "paired $2" ;;
+                      bt_step connect "$_m"; panel_forget bt.list
+                      bt_state "$_m" connected && echo "paired and connected $2" || echo "paired $2" ;;
             esac ;;
         scan) timeout 10 bluetoothctl --timeout 8 scan on >/dev/null 2>&1 || :
               _n=$(bt_list | awk -F '\t' '$3 == 0 {print $2}' | paste -sd, - | sed 's/,/, /g')
               if [ -n "$_n" ]; then echo "new: $_n (Enter on one pairs it)"; else echo "nothing new near (put the device in pairing mode)"; fi ;;
-        power) bar_timeout bluetoothctl power "$2" >/dev/null 2>&1 && echo "bluetooth $2" || { echo "could not turn bluetooth $2"; return 1; } ;;
+        power) bt_step power "$2"; bt_state - "$2" && echo "bluetooth $2" || { echo "could not turn bluetooth $2"; return 1; } ;;
         *) echo "$1 is not something bt does"; return 1 ;;
     esac
 }
@@ -314,11 +339,22 @@ snd_devices_now() {
             al_bt "$_k" | while IFS="$TAB" read -r n v; do d=0; [ "$v" != "$_b" ] || d=1; printf '%s\t%s\n' "$n" "$d"; done ;;
     esac
 }
+# snd_bt_silent -> the connected Bluetooth speakers and headphones that give no output now, a name a line. Connected
+# is the radio link: one that came back by itself may have no sound link, and the sound then goes elsewhere unsaid
+snd_bt_silent() {
+    case ${SND:-} in wpctl|pactl) ;; *) return 0 ;; esac
+    command -v bluetoothctl >/dev/null 2>&1 && bt_running || return 0
+    _sbo=$(snd_devices out | cut -f1)
+    bt_list | awk -F '\t' '$4 == 1 { print $1 "\t" $2 }' | while IFS="$TAB" read -r _sbm _sbn; do
+        case $(machine_bt_kind "$_sbm") in speaker|headphones|headset) ;; *) continue ;; esac
+        printf '%s\n' "$_sbo" | grep -qF -- "${_sbn% (??:??)}" || printf '%s\n' "$_sbn"
+    done
+}
 snd_use() {   # snd_use out|mic NAME -> one line; on plain ALSA the output's card holds for programs started from now
     _n=$(panel_lower "$2")
     case $SND in
         wpctl) _s=Sinks; [ "$1" = out ] || _s=Sources
-            _id=$(wp_rows "$_s" | awk -F '\t' -v n="$_n" 'tolower($3) == n && !done {print $2; done = 1}'); [ -n "$_id" ] || { echo "no $1 named $2"; return 1; }
+            _id=$(wp_rows "$_s" | LOWER=$_n awk -F '\t' 'tolower($3) == ENVIRON["LOWER"] && !done {print $2; done = 1}'); [ -n "$_id" ] || { echo "no $1 named $2"; return 1; }
             wpctl set-default "$_id" >/dev/null 2>&1 && echo "$1 $2" || { echo "could not switch $1 to $2"; return 1; } ;;
         pactl) _k=sinks; _v=set-default-sink; [ "$1" = out ] || { _k=sources; _v=set-default-source; }
             _id=$(pactl list short "$_k" 2>/dev/null | cut -f2 | while IFS= read -r s; do d=$(pa_desc "$_k" "$s"); [ "$(panel_lower "${d:-$s}")" != "$_n" ] || { echo "$s"; break; }; done)

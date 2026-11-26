@@ -324,8 +324,8 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
     fi
     [ -z "${PANEL_ROW_MATCHED:-}" ] || { printf '%s\n' "${3:-}"; return 0; }   # a host's call matched a row it was sent, exactly
     _want=$(panel_lower "$2 $3" | sed 's/ *$//')
-    _m=$(panel_rows "$1" full | cut -f3 | awk -v w="$_want" 'tolower($0) == w { print; exit }')
-    [ "$1" != theme ] || [ -n "$_m" ] || _m=$(panel_rows wallpapers full | cut -f3 | awk -v w="$_want" 'tolower($0) == w { print; exit }')   # the wallpaper list is the theme's too
+    _m=$(panel_rows "$1" full | cut -f3 | LOWER=$_want awk 'tolower($0) == ENVIRON["LOWER"] { print; exit }')
+    [ "$1" != theme ] || [ -n "$_m" ] || _m=$(panel_rows wallpapers full | cut -f3 | LOWER=$_want awk 'tolower($0) == ENVIRON["LOWER"] { print; exit }')   # the wallpaper list is the theme's too
     if [ -z "$_m" ]; then   # a step naming what is in use (a show row) is a receipt, not a refusal
         _tx=$(panel_lower "${3:-$2}")
         { panel_rows "$1" full; [ "$1" != theme ] || panel_rows wallpapers full; } | awk -F '\t' -v t="$_tx" '$3 == "show" && tolower($2) == t { f = 1; exit } END { exit !f }' && { echo "${3:-}"; return 0; }

@@ -193,6 +193,7 @@ panel_rows_sound() {   # panel_rows_sound out|mic -- the devices, the one in use
     else
         snd_devices "$1" | while IFS="$TAB" read -r n d; do if [ "$d" = 1 ]; then printf '%s\t%s\tshow\n' "$PANEL_DOT" "$n"; else printf '%s\t%s\tuse %s\n' "$PANEL_RING" "$n" "$n"; fi; done
     fi
+    [ "$1" != out ] || snd_bt_silent | while IFS= read -r n; do printf -- '%s\t%s is connected and gives no sound: disconnect it and connect it again\tshow\n' "$PANEL_WARN" "$n"; done
     if [ "$1" = out ]; then _o=$(snd_out); _m=$(printf '%s\n' "$_o" | sed -n 3p); _lv=$(printf '%s\n' "$_o" | sed -n 2p)
     else _o=$(snd_mic); _m=$(printf '%s\n' "$_o" | sed -n 3p); _lv=$(printf '%s\n' "$_o" | sed -n 4p); fi
     [ "$_lv" = - ] || [ -z "$_lv" ] || { if [ "$_m" = 1 ]; then printf -- '-\tunmute\tunmute\n'; else printf -- '-\tmute\tmute\n'; fi; }

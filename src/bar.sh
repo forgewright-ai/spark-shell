@@ -188,8 +188,9 @@ bar_wifi() { _wp=$(bar_wifi_pct); [ -z "$_wp" ] || printf '%s %s\n' "$(( (${_wp%
 bar_bt() {   # -> "name NAME", "on", "off", or nothing
     ls -d "$BAR_SYS"/class/bluetooth/hci* >/dev/null 2>&1 || return 0
     command -v bluetoothctl >/dev/null 2>&1 || { echo on; return; }
+    bt_running || { echo off; return; }   # with bluetoothd down bluetoothctl waits for it, three seconds at every line
     bt_powered || { echo off; return; }
-    dev=$(bt_connected | awk '$1 == "Device" { $1 = ""; $2 = ""; sub(/^ +/, ""); print; exit }')
+    dev=$(bt_connected | awk '$1 == "Device" { $1 = ""; $2 = ""; sub(/^ +/, ""); print; exit }' | tr -d '\000-\010\013-\037\177')   # a device's own name: no escape of it reaches a terminal
     if [ -n "$dev" ]; then printf 'name %s\n' "$dev"; else echo on; fi
 }
 mac_battery() {   # -> CAPACITY<tab>STATE<tab>LEFT from pmset
@@ -222,15 +223,15 @@ snd_tool() {   # -> wpctl | pactl | alsa | nothing
     fi
 }
 # wpctl status rows: "N. Description [vol:...]", the default starred
-wp_rows() { read_once wpctl.status wpctl status 2>/dev/null | awk -v sec="$1:" 'index($0, sec) {on = 1; next} on && !/[0-9]+\. / {exit} on { star = index($0, "*") ? 1 : 0; id = $0; sub(/^[^0-9]*/, "", id); sub(/\..*$/, "", id); d = $0; sub(/^.*[0-9]+\. /, "", d); sub(/[ \t]+\[vol:.*$/, "", d); sub(/[ \t]+$/, "", d); print star "\t" id "\t" d }'; }   # wp_rows Sinks|Sources -> STAR<tab>ID<tab>DESCRIPTION
+wp_rows() { read_once wpctl.status wpctl status 2>/dev/null | awk -v sec="$1:" 'index($0, sec) {on = 1; next} on && !/[0-9]+\. / {exit} on { star = index($0, "*") ? 1 : 0; id = $0; sub(/^[^0-9]*/, "", id); sub(/\..*$/, "", id); d = $0; sub(/^.*[0-9]+\. /, "", d); sub(/[ \t]+\[vol:.*$/, "", d); sub(/[ \t]+$/, "", d); print star "\t" id "\t" d }' | tr -d '\000-\010\013-\037\177'; }   # wp_rows Sinks|Sources -> STAR<tab>ID<tab>DESCRIPTION, a device's own words with no escape in them
 wp_default() { wp_rows "$1" | awk -F '\t' '$1 == 1 {print $3; exit}'; }
 wp_level() { read_once "wpctl.volume$1" wpctl get-volume "$1" 2>/dev/null | awk '{printf "%d", $2 * 100 + 0.5}'; }   # wp_level @DEFAULT_AUDIO_SINK@|SOURCE@
 wp_muted() { _wm=$(read_once "wpctl.volume$1" wpctl get-volume "$1" 2>/dev/null) || return 1; case $_wm in 'Volume: '*) case $_wm in *MUTED*) echo 1 ;; *) echo 0 ;; esac ;; *) return 1 ;; esac; }
 wp_live() { command -v pw-dump >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && pw-dump 2>/dev/null | jq -e 'any(.[]; .info.props["media.class"]? == "Stream/Input/Audio" and .info.state? == "running")' >/dev/null 2>&1 && echo 1 || echo 0; }
 # pactl
-pa_desc() { pactl list "$1" 2>/dev/null | awk -v n="$2" '/^\tName: / {cur = $2} /^\tDescription: / && cur == n {sub(/^\tDescription: /, ""); print; exit}'; }   # pa_desc sinks|sources NAME
+pa_desc() { LC_ALL=C pactl list "$1" 2>/dev/null | awk -v n="$2" '/^\tName: / {cur = $2} /^\tDescription: / && cur == n {sub(/^\tDescription: /, ""); print; exit}' | tr -d '\000-\010\013-\037\177'; }   # pa_desc sinks|sources NAME
 pa_level() { pactl "get-$1-volume" "$2" 2>/dev/null | grep -o '[0-9]*%' | head -1 | tr -d %; }   # pa_level sink|source @DEFAULT_SINK@|@DEFAULT_SOURCE@
-pa_muted() { _pm=$(pactl "get-$1-mute" "$2" 2>/dev/null) || return 1; case $_pm in 'Mute: yes') echo 1 ;; 'Mute: no') echo 0 ;; *) return 1 ;; esac; }
+pa_muted() { _pm=$(LC_ALL=C pactl "get-$1-mute" "$2" 2>/dev/null) || return 1; case $_pm in 'Mute: yes') echo 1 ;; 'Mute: no') echo 0 ;; *) return 1 ;; esac; }
 pa_live() { [ -n "$(pactl list short source-outputs 2>/dev/null)" ] && echo 1 || echo 0; }
 # plain ALSA
 al_cards() { awk '/^ *[0-9]+ \[/ { n = $1; id = $0; sub(/^[^[]*\[/, "", id); sub(/ *\].*$/, "", id); long = $0; sub(/^[^:]*: [^ ]* - /, "", long); print n "\t" id "\t" long }' "$BAR_PROC/asound/cards" 2>/dev/null; }   # -> N<tab>ID<tab>LONG NAME; USB-Audio's hyphen is not the dash
@@ -537,7 +538,7 @@ bar_fact() {   # bar_fact NAME GROUP SIGN TEXT CELLS STATE LABEL [LEVEL [SET]] -
 bar_fact_pad() {   # the windows that wait on the pad, and how many; off while the pad is hidden. While the pad is on the bar and in sight it says itself there, and spark's bar is told to keep its room (v0.166)
     _pdn=$(winpad_count); [ "${_pdn:-0}" -gt 0 ] 2>/dev/null || return 0
     if [ "$(bar_style WINPAD_PLACE bar)" = bar ] && ! winpad_hidden; then   # the place as the config has it now: a drag changes it while this loop runs
-        [ -z "${SPARK_BAR:-}" ] || bar_fact room pad '' '' 0 ok "the pad on the bar, $_pdn windows"   # drawn as nothing: its grip and one cell kept before the bar's own modules
+        [ -z "${SPARK_BAR:-}" ] || bar_fact room pad '' '' "$_pdn" ok "the pad on the bar, $_pdn windows"   # drawn as nothing: its grip and one cell kept before the bar's own modules; its cells say the windows, for the room what plays leaves them
         return 0
     fi
     bar_sign "$BAR_PAD" pad pad; _pdw=2; [ "${#_pdn}" -le 2 ] || _pdw=${#_pdn}

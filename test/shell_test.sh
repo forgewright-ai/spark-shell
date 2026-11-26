@@ -557,12 +557,19 @@ STUB
 #!/bin/sh
 log=${XDG_STATE_HOME:-$HOME/.local/state}/bt.log; mkdir -p "$(dirname "$log")"
 case "$*" in
-    show) printf 'Controller 00:11:22:33:44:55 (public)\n\tPowered: yes\n' ;;
-    "devices Connected") [ -e "$HOME/bt-none" ] || echo 'Device 00:25:D1:4A:C2:AA MAJOR V' ;;
-    "devices Paired") echo 'Device 00:25:D1:4A:C2:AA MAJOR V' ;;
-    devices) printf 'Device 00:25:D1:4A:C2:AA MAJOR V\nDevice 11:22:33:44:55:66 Buds\n' ;;
-    "connect "*) echo "$*" >> "$log"; echo 'Connection successful' ;;
-    "disconnect "*) echo "$*" >> "$log"; echo 'Successful disconnected' ;;
+    show) _pw=yes; [ ! -e "$HOME/bt-poff" ] || _pw=no; printf 'Controller 00:11:22:33:44:55 (public)\n\tPowered: %s\n' "$_pw" ;;
+    "devices Connected") [ -e "$HOME/bt-none" ] || printf 'Device 00:25:D1:4A:C2:AA %s\n' "$(cat "$HOME/bt-name" 2>/dev/null || echo 'MAJOR V')" ;;
+    "devices Paired") [ -e "$HOME/bt-gone" ] || printf 'Device 00:25:D1:4A:C2:AA %s\n' "$(cat "$HOME/bt-name" 2>/dev/null || echo 'MAJOR V')" ;;
+    devices) printf 'Device 00:25:D1:4A:C2:AA %s\nDevice 11:22:33:44:55:66 Buds\n' "$(cat "$HOME/bt-name" 2>/dev/null || echo 'MAJOR V')"; [ ! -e "$HOME/bt-twin" ] || printf 'Device 77:88:99:AA:BB:CC %s\n' "$(cat "$HOME/bt-name" 2>/dev/null || echo 'MAJOR V')" ;;
+    "info "*) [ ! -e "$HOME/bt-audio" ] || printf 'Device %s\n\tIcon: audio-headphones\n' "$2" ;;
+    # a step changes the state (bt-none: none connected; bt-gone: MAJOR V paired no more, and still listed among all, as a
+    # device calling to be paired is; bt-poff: the adapter off) unless bt-stuck is there, and says what bluez 5.88 says:
+    # older ones said "Successful disconnected", and spark-shell reads neither sentence. bt-name: MAJOR V's name
+    "power off") echo "$*" >> "$log"; [ -e "$HOME/bt-stuck" ] || touch "$HOME/bt-poff" ;;
+    "power on") echo "$*" >> "$log"; [ -e "$HOME/bt-stuck" ] || rm -f "$HOME/bt-poff" ;;
+    "connect "*) echo "$*" >> "$log"; [ -e "$HOME/bt-stuck" ] || rm -f "$HOME/bt-none"; echo 'Connection successful' ;;
+    "disconnect "*) echo "$*" >> "$log"; [ -e "$HOME/bt-stuck" ] || touch "$HOME/bt-none"; echo 'Disconnection successful' ;;
+    "remove "*) echo "$*" >> "$log"; [ -e "$HOME/bt-stuck" ] || touch "$HOME/bt-gone"; echo 'Device has been removed' ;;
     *) echo "$*" >> "$log" ;;
 esac
 STUB
@@ -4251,7 +4258,7 @@ padsign=$(printf '\342\212\237')
 # there, only its room, drawn as nothing, which the bar keeps before its own modules (v0.166). The rest of this block
 # is a pad at an edge
 _pf0=$(_pdf); printf 'WINPAD_PLACE=bottom center\n' >> "$HOME/.config/spark-shell/config"
-[ "$_pf0" = "room|pad|||0|false|ok|-|false|false|the pad on the bar, 2 windows|false" ] && ok "spark's bar, the pad on the bar (v0.149): in sight there it says itself, the line has no pad module, only the room it keeps (v0.166)" || bad "facts pad on the bar" "$_pf0"
+[ "$_pf0" = "room|pad|||2|false|ok|-|false|false|the pad on the bar, 2 windows|false" ] && ok "spark's bar, the pad on the bar (v0.149): in sight there it says itself, the line has no pad module, only the room it keeps (v0.166)" || bad "facts pad on the bar" "$_pf0"
 line=$(_pdl); _pf1=$(_pdf)
 [ "$(printf '%s' "$line" | jq -r '.[0].name')" = pad ] && [ "$(printf '%s' "$line" | jq -r '.[0].full_text')" = "<span foreground='#555555'>$padsign</span> 2" ] \
     && ok "bar: the pad's block first while windows wait on it, its sign muted while the pad is in sight, and how many (v0.133)" || bad "bar pad shown" "$line"
@@ -5705,6 +5712,12 @@ STUB
     printf '#!/bin/sh\nexit 0\n' > "$H/.local/bin/pipewire"
     printf '#!/bin/sh\n[ "$*" = "-x bluealsa" ] && [ -e "$HOME/bluealsa-runs" ]\n' > "$H/.local/bin/pgrep"
     chmod +x "$H/.local/bin/wpctl" "$H/.local/bin/pw-dump" "$H/.local/bin/pipewire" "$H/.local/bin/pgrep"
+    # a connected speaker with no sound link (v0.170.1): the sound section says so, where the list of outputs alone said nothing
+    btfresh() { rm -f "$H/.local/state/spark-shell/panel/bt.list"; }   # the list of devices read again: it is kept thirty seconds
+    touch "$H/bt-audio"; btfresh; out=$(sh "$SH" bar panel out --list); printf 'Jabra SPEAK 410\n' > "$H/bt-name"; btfresh; out0=$(sh "$SH" bar panel out --list)
+    rm -f "$H/bt-audio" "$H/bt-name"; btfresh; out2=$(sh "$SH" bar panel out --list)
+    printf '%s\n' "$out" | grep -q 'MAJOR V is connected and gives no sound: disconnect it and connect it again' && ! printf '%s\n%s\n' "$out0" "$out2" | grep -q 'gives no sound' \
+        && ok "panel out: Bluetooth headphones connected with no output of their own are said, with what to do; ones that have their output, and a device of another kind, are not" || bad "out silent bt" "$out | $out0 | $out2"
     line=$(sh "$SH" bar status --once)
     [ "$(t out name)" = "<span foreground='#ff5555'>$(printf '\342\227\200')</span>" ] && [ "$(t mic name)" = "<span foreground='#ff5555'>$(printf '\342\227\211')</span>" ] && cur out | grep -q 'jabra speak' && cur mic | grep -q 'jabra speak' \
         && ok "PipeWire: out and mic are WirePlumber's defaults (the panel names them)" || bad "wp names" "$(t out name) / $(t mic name) / $(cur out) / $(cur mic)"
@@ -5915,7 +5928,41 @@ STUB
         && ans 2 | jq -r '.result.contents[0].text' | jq -e '.lines[0] == "MAJOR V" and (.lines | index("connected   yes")) and (.lines | index("address     00:25:D1:4A:C2:AA"))' >/dev/null \
         && ok "provide bt: remove is behind a paired device, no row of its own; Space shows a device, connected, paired, its address (#169)" || bad "bt remove behind" "$(head -c 1200 "$H/mcp.out")"
     rm -f "$blog"; st=0; out=$(sh "$SH" bar panel bt disconnect MAJOR V 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = 'disconnected MAJOR V' ] && grep -qx 'disconnect 00:25:D1:4A:C2:AA' "$blog" && ok "panel bt disconnect NAME: the device's address told to bluetoothctl" || bad "bt disconnect" "st=$st $out; $(cat "$blog" 2>&1)"
+    [ "$st" -eq 0 ] && [ "$out" = 'disconnected MAJOR V' ] && grep -qx 'disconnect 00:25:D1:4A:C2:AA' "$blog" && [ -e "$H/bt-none" ] \
+        && ok "panel bt disconnect NAME: the device's address told to bluetoothctl, and done because the device is connected no more, whatever sentence bluetoothctl says (v0.170.1)" || bad "bt disconnect" "st=$st $out; $(cat "$blog" 2>&1)"
+    # a step is judged by the device's state: one that bluetoothctl calls done and that did not happen is not done
+    rm -f "$H/bt-none"; touch "$H/bt-stuck"; st=0; out=$(sh "$SH" bar panel bt disconnect MAJOR V 2>&1) || st=$?
+    st2=0; out2=$(sh "$SH" bar panel bt remove MAJOR V 2>&1) || st2=$?
+    touch "$H/bt-none"; st3=0; out3=$(sh "$SH" bar panel bt connect MAJOR V 2>&1) || st3=$?
+    rm -f "$H/bt-stuck"; st4=0; out4=$(sh "$SH" bar panel bt connect MAJOR V 2>&1) || st4=$?
+    [ "$st" -ne 0 ] && [ "$out" = 'could not disconnect MAJOR V' ] && [ "$st2" -ne 0 ] && [ "$out2" = 'could not remove MAJOR V' ] && [ "$st3" -ne 0 ] && [ "$out3" = 'could not connect MAJOR V (is it on, and near?)' ] \
+        && [ "$st4" -eq 0 ] && [ "$out4" = 'connected MAJOR V' ] && [ ! -e "$H/bt-none" ] \
+        && ok "bt connect, disconnect and remove: each is done when bluez lists the device so, and not done when it does not, in its own words" || bad "bt steps by state" "$st $out | $st2 $out2 | $st3 $out3 | $st4 $out4"
+    st=0; out=$(sh "$SH" bar panel bt remove MAJOR V 2>&1) || st=$?; rm -f "$H/bt-gone" "$H/bt-none"
+    [ "$st" -eq 0 ] && [ "$out" = 'removed MAJOR V' ] && ok "bt remove NAME: done when the device is paired no more, though bluez still lists it among all, as it does one that calls to be paired" || bad "bt remove" "st=$st $out"
+    # the adapter's power, by what the adapter says; and not done when it does not change
+    st=0; out=$(sh "$SH" bar panel bt power off 2>&1) || st=$?; _p1=$([ -e "$H/bt-poff" ] && echo off)
+    touch "$H/bt-stuck"; st2=0; out2=$(sh "$SH" bar panel bt power on 2>&1) || st2=$?; rm -f "$H/bt-stuck"
+    st3=0; out3=$(sh "$SH" bar panel bt power on 2>&1) || st3=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'bluetooth off' ] && [ "$_p1" = off ] && [ "$st2" -ne 0 ] && [ "$out2" = 'could not turn bluetooth on' ] && [ "$st3" -eq 0 ] && [ "$out3" = 'bluetooth on' ] && [ ! -e "$H/bt-poff" ] \
+        && ok "bt power on and off: done when the adapter says so, not done when it stays as it was" || bad "bt power" "$st $out $_p1 | $st2 $out2 | $st3 $out3"
+    # two devices of one name are told apart by the end of their address, and a step is told its own device's
+    touch "$H/bt-twin"; rm -f "$blog"; btfresh; out=$(sh "$SH" bar panel bt --list)
+    st=0; out2=$(sh "$SH" bar panel bt disconnect 'MAJOR V (C2:AA)' 2>&1) || st=$?; rm -f "$H/bt-twin" "$H/bt-none"
+    printf '%s\n' "$out" | grep -q "MAJOR V (C2:AA)	bt disconnect MAJOR V (C2:AA)$" && printf '%s\n' "$out" | grep -q "MAJOR V (BB:CC) $SEP new	bt pair MAJOR V (BB:CC)$" \
+        && [ "$st" -eq 0 ] && [ "$out2" = 'disconnected MAJOR V (C2:AA)' ] && grep -qx 'disconnect 00:25:D1:4A:C2:AA' "$blog" \
+        && ok "bt: two devices of one name each say the end of their address, and a step is told its own device's" || bad "bt twins" "$out | $st $out2 | $(cat "$blog" 2>&1)"
+    # a name outside ASCII, with a backslash in it, matches its own row; one with an escape in it reaches no terminal whole
+    printf 'Колонка AC\\DC\n' > "$H/bt-name"; btfresh; st=0; out=$(sh "$SH" bar panel bt disconnect 'Колонка AC\DC' 2>&1) || st=$?; rm -f "$H/bt-none"
+    printf 'bad\033[2Jname\n' > "$H/bt-name"; btfresh; out2=$(sh "$SH" bar panel bt --list 2>&1 | sed -n 1p); rm -f "$H/bt-name"; btfresh
+    [ "$st" -eq 0 ] && [ "$out" = 'disconnected Колонка AC\DC' ] && ! printf '%s' "$out2" | LC_ALL=C grep -q "$(printf '\033')" && printf '%s' "$out2" | grep -q 'bad\[2Jname' \
+        && ok "bt: a name outside ASCII with a backslash matches its own row, and a name with an escape in it is said without the escape" || bad "bt names" "st=$st $out | $(printf '%s' "$out2" | od -c | head -3)"
+    # bluetoothd down: the bar says off at once, and bluetoothctl, which would wait for it, is not asked
+    mv "$H/.local/bin/dbus-send" "$H/dbus-send.keep"; printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/dbus-send"; chmod +x "$H/.local/bin/dbus-send"; rm -f "$blog"
+    printf '#!/bin/sh\necho "$*" >> "%s/bt.asked"\nexec "%s/bluetoothctl.real" "$@"\n' "$H" "$H" > "$H/bt.wrap"; cp "$H/.local/bin/bluetoothctl" "$H/bluetoothctl.real"; cp "$H/bt.wrap" "$H/.local/bin/bluetoothctl"; chmod +x "$H/.local/bin/bluetoothctl" "$H/bluetoothctl.real"
+    out=$(sh "$SH" bar panel bt --list 2>&1 | sed -n 1p); _asked=$(cat "$H/bt.asked" 2>/dev/null || :)
+    mv "$H/bluetoothctl.real" "$H/.local/bin/bluetoothctl"; mv "$H/dbus-send.keep" "$H/.local/bin/dbus-send"; rm -f "$H/bt.wrap" "$H/bt.asked"
+    case $out in *' off') : ;; *) false ;; esac && [ -z "$_asked" ] && ok "bluetoothd down: bluetooth is said off at once, and bluetoothctl is asked nothing" || bad "bt down" "$out | $_asked"
     out=$(sh "$SH" bar panel out --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "out        Jabra $SEP 40%" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT out        Jabra	out show" ] && printf '%s\n' "$out" | grep -q "^$RING out        HDMI	out use HDMI$" && printf '%s\n' "$out" | grep -q "^  out        mute	out mute$" && ! printf '%s\n' "$out" | grep -q " mic  " \
         && ok "panel out: the cards that play, the one in use named, and mute; the out section alone (#186)" || bad "panel out" "$out"
@@ -6058,6 +6105,7 @@ EOF
     st=0; out=$(sh "$SH" bar quiet please 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> quiet please' "  $TICK out muted" "  $TICK mic muted" "  $TICK bluetooth off" "  $CROSS x is not in the list now" "  $CROSS theme: alpha takes 0 to 1" "  $CROSS no desktop here")" ] \
         && ok "bar WORDS: one line per step with its sign and no why line; a step the panel does not offer, or a section it does not have, is refused in a few words, the rest played" || bad "bar want" "st=$st $out"
+    rm -f "$H/bt-poff"   # the adapter on again, for what follows
     [ "$(cat "$amlog")" = "$(printf '%s\n' '-c 0 sset Master mute' '-c 0 sset Capture nocap')" ] && grep -qx 'power off' "$blog" && ok "bar WORDS: the steps reached amixer and bluetoothctl" || bad "want steps" "$(cat "$amlog" "$blog" 2>&1)"
     grep -q '^do this on the desktop: quiet please$' "$H/spark.argv" && grep -q 'bt: disconnect MAJOR V, remove MAJOR V, pair Buds, scan, power off' "$H/spark.argv" && grep -q 'out: use HDMI, mute, level N' "$H/spark.argv" && grep -q 'layout: new TASK' "$H/spark.argv" && grep -q 'theme: .*dracula, .*text bigger' "$H/spark.argv" && grep -q "What the bar shows now: lan up $SEP 192.0.2.10; wifi .* home $SEP 192.0.2.20; bt $DOT MAJOR V; out Jabra $SEP 40%" "$H/spark.argv" \
         && ok "bar WORDS: spark gets the words, what the bar shows now (a question has its facts) and what each section offers, a new layout among them" || bad "want brief" "$(cat "$H/spark.argv")"

@@ -833,7 +833,9 @@ class Desk:
                  "bluetoothctl": BLUETOOTHCTL, "ip": "#!/bin/sh\nexit 0\n"}
         # no other sound system, the kernel's own link quality, no light to set, and nothing of the machine's that a verb
         # could reach: its tmux, its spark, its players; and no sound and no notification of the proof's reach the machine's
-        tools.update((name, "#!/bin/sh\nexit 1\n") for name in ("pactl", "amixer", "iw", "tmux", "spark", "brightnessctl", "ddcutil", "playerctl", "dbus-send"))
+        tools.update((name, "#!/bin/sh\nexit 1\n") for name in ("pactl", "amixer", "iw", "tmux", "spark", "brightnessctl", "ddcutil", "playerctl"))
+        # the bus's word that bluetoothd runs, which spark-shell asks before it asks bluetoothctl; nothing else is answered
+        tools["dbus-send"] = '#!/bin/sh\ncase "$*" in *NameHasOwner*org.bluez*) echo "   boolean true" ;; *) exit 1 ;; esac\n'
         tools.update((name, "#!/bin/sh\nexit 0\n") for name in ("notify-send", "pw-play", "aplay"))
         for name, text in tools.items():
             (fake / name).write_text(text)

@@ -40,6 +40,12 @@ pub const DIGIT_CELLS: i32 = 3;
 /// The cells between a module's parts, between the modules of a group, and between groups: an icon and the
 /// next one of its group are four cells apart, a finger's width on a touch screen.
 const PART_GAP: i32 = 1;
+/// The module that gives way before the pad's room does: what plays, whose title is as long as its track's.
+pub const ELASTIC: &str = "media";
+/// A text cut for that room says four cells at least: with fewer it is left out, and the sign stands alone.
+const TEXT_LEAST: i32 = 4;
+/// The pad's cells that what plays leaves room for, at most: a pad with more windows folds them while a title shows.
+const PAD_MOST: i32 = 3;
 const MODULE_GAP: i32 = 2;
 const GROUP_GAP: i32 = 4;
 /// How far a part's target reaches into the room beside it, in cells: a click that far from a part is on it, so
@@ -1054,6 +1060,8 @@ struct Piece<'a> {
     level: i32,
     gauge: bool,
     number: bool,
+    /// The cells of its text that stay: all of them, but for the one that gives way (ELASTIC).
+    text: i32,
 }
 
 impl Piece<'_> {
@@ -1063,11 +1071,17 @@ impl Piece<'_> {
             if self.icon { ICON_CELLS } else { self.sign.len() as i32 },
             if self.gauge { GAUGE_CELLS } else { 0 },
             if self.number { DIGIT_CELLS + 1 } else { 0 },
-            self.m.cells,
+            self.text,
         ];
         let n = parts.iter().filter(|p| **p > 0).count() as i32;
         parts.iter().sum::<i32>() + (n - 1).max(0) * PART_GAP
     }
+}
+
+/// Whether a glyph is wider than a cell in the bar's face: a Chinese, Japanese or Korean character, most emoji. A
+/// title is any track's own words: such a glyph is drawn as wide as its cell, never over the ones beside it.
+fn wide(glyph: &str) -> bool {
+    glyph.chars().next().and_then(unicode_width::UnicodeWidthChar::width) == Some(2)
 }
 
 /// The cells between two modules next to each other: two inside a group, four between groups.
@@ -1128,6 +1142,7 @@ fn drop_order(pieces: &[Piece], overflow: &[String]) -> Vec<String> {
 /// status, or one cell before the mode's name: the pad stands there when it is on the bar, and the bar
 /// draws nothing in it. While the line says the pad stands on the bar (PAD_ROOM), that room is the pad's grip
 /// and one cell at least: numbers, gauges, modules and the mode's name leave first, so the pad never leaves the bar.
+/// What plays (ELASTIC) gives way before any of them, and on every bar: it takes only the room the pad does not need.
 pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
     let (cell, h) = (m.cell.max(1), m.height);
     let mut lay = Layout {
@@ -1192,6 +1207,7 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
                 level: level.unwrap_or(0),
                 gauge: control,
                 number: control,
+                text: module.cells,
             };
             if piece.cells() > 0 {
                 pieces.push(piece);
@@ -1200,11 +1216,32 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
     }
     // the pad's room, while it stands here: one cell after the run, then its grip and one cell (the pad's lengths at
     // the bar's text, 20 and 36 at 16 px, as the bar is 36 high: 14 ninths of the height, and 2 for their rounding)
-    let pad = scene.status == Status::Ok && scene.modules.iter().any(|module| module.name == PAD_ROOM);
-    let keep = if pad { cell + (h * 14 + 8) / 9 + 2 } else { 0 };
+    let room = scene
+        .modules
+        .iter()
+        .find(|module| module.name == PAD_ROOM)
+        .filter(|_| scene.status == Status::Ok);
+    let least = cell + (h * 14 + 8) / 9 + 2;
+    let keep = if room.is_some() { least } else { 0 };
     let fits = |cells: i32| cells == 0 || run_end + keep + (GROUP_GAP + cells) * cell <= right;
     let mut dropped: Vec<String> = vec![];
     let mut more = false;
+    // what plays takes only the room the pad does not need: a cell (the bar's height) for each window that waits on a
+    // pad standing here, as the line says how many, PAD_MOST at most; the least where the pad stands elsewhere, so one
+    // dragged to this bar finds its room. Its title is cut a cell at a time and left out when four cells would not
+    // stay; then its sign goes too, with no dots for it. No number, no gauge and no module leaves for it
+    if let Some(i) = pieces.iter().position(|p| p.m.name == ELASTIC) {
+        let wanted = least + room.map_or(0, |r| (r.cells.clamp(1, PAD_MOST) - 1) * h);
+        let roomy = |cells: i32| run_end + wanted + (GROUP_GAP + cells) * cell <= right;
+        while pieces[i].text > 0 && !roomy(status_cells(&pieces, false)) {
+            pieces[i].text = if pieces[i].text > TEXT_LEAST { pieces[i].text - 1 } else { 0 };
+        }
+        if !roomy(status_cells(&pieces, false)) {
+            dropped.push(pieces.remove(i).m.name.clone());
+        } else if pieces[i].text <= 0 && pieces[i].m.cells > 0 {
+            dropped.push(format!("{}.text", pieces[i].m.name));
+        }
+    }
     if !fits(status_cells(&pieces, more)) {
         for p in pieces.iter_mut().filter(|p| p.number) {
             p.number = false;
@@ -1363,7 +1400,15 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
             }
             x += (DIGIT_CELLS + 1 + PART_GAP) * cell;
         }
-        let text: Vec<String> = glyphs(&p.m.text).into_iter().take(p.m.cells.max(0) as usize).collect();
+        let said = glyphs(&p.m.text);
+        let kept = p.text.max(0) as usize;
+        let mut text: Vec<String> = said.iter().take(kept).cloned().collect();
+        if kept < said.len().min(p.m.cells.max(0) as usize) {
+            // a title cut for the pad's room ends in an ellipsis
+            if let Some(last) = text.last_mut() {
+                *last = ELLIPSIS.into();
+            }
+        }
         if !text.is_empty() && !p.m.text.trim().is_empty() {
             let rect = Rect::new(x, 0, text.len() as i32 * cell, h);
             let text = What::Text { glyphs: text, bold: p.m.bold };
@@ -1691,7 +1736,7 @@ impl Layout {
             }
             What::Text { glyphs, bold } => {
                 for (i, g) in glyphs.iter().enumerate() {
-                    out.push(glyph(slot(i as i32), g, tone, *bold, false, 0.0));
+                    out.push(glyph(slot(i as i32), g, tone, *bold, wide(g), 0.0));
                 }
             }
             What::Icon(name) => out.push(Draw::Icon {
@@ -5287,6 +5332,113 @@ mod tests {
         );
         // a screen shorter than the bar: its top, never under it
         assert_eq!(follow_top(Edge::Top, 10.0, 0.0, 36, 20), 0);
+    }
+
+    /// The sheet's line with what plays in it, before the output (none: nothing plays); and with the word that the pad
+    /// stands on the bar with so many windows.
+    fn playing(title: Option<&str>, pad: Option<i32>) -> Vec<Module> {
+        let mut line = SHEET.to_string();
+        if let Some(title) = title {
+            let media = format!(
+                r#"{{"name":"media","group":"sound","sign":"\u25b6","text":"{title}","cells":{},"bold":false,"state":"ok","set":false,"pinned":false,"label":"playing"}},{{"name":"out""#,
+                title.chars().count()
+            );
+            line = line.replacen(r#"{"name":"out""#, &media, 1);
+        }
+        if let Some(n) = pad {
+            let room = format!(
+                r#"{{"name":"room","group":"pad","sign":"","text":"","cells":{n},"bold":false,"state":"ok","set":false,"pinned":false,"label":"the pad on the bar"}},{{"name":"lan""#
+            );
+            line = line.replacen(r#"{"name":"lan""#, &room, 1);
+        }
+        mods(&line)
+    }
+
+    /// What the bar says of what plays: its title as drawn, none when it is left out.
+    fn title(l: &Layout) -> Option<String> {
+        l.targets.iter().find(|t| t.id == "media.text").map(|t| match &t.what {
+            What::Text { glyphs, .. } => glyphs.concat(),
+            _ => String::new(),
+        })
+    }
+
+    const LONG: &str = "A long artist name - A title!!";
+
+    #[test]
+    fn what_plays_cuts_its_title_before_the_pads_room_goes() {
+        // the pad's least room at 36 px: its grip and one cell, 56, and two for their rounding
+        let least = 58;
+        assert_eq!(LONG.chars().count(), 30);
+        // a short title stands whole, and the room is what the status leaves
+        let l = lay(1200, &playing(Some("Song"), None), &five());
+        assert_eq!((l.apps.w, title(&l).as_deref(), l.dropped.len()), (226, Some("Song"), 0));
+        // a long one is cut, with the pad elsewhere too: the room a pad dragged here needs stays, and nothing else leaves
+        let l = lay(1200, &playing(Some(LONG), None), &five());
+        let said = title(&l).unwrap();
+        assert!(l.apps.w >= least && l.apps.w < least + 10, "{}", l.apps.w);
+        assert!(
+            said.ends_with(ELLIPSIS) && LONG.starts_with(said.trim_end_matches(ELLIPSIS)) && said.chars().count() == 20,
+            "{said}"
+        );
+        assert_eq!(l.dropped, Vec::<String>::new());
+        assert!(l.targets.iter().any(|t| t.id == "out.pct"), "the output keeps its number");
+        // with one window on a pad that stands here the title is cut the same; with three it leaves a cell for each
+        let on = lay(1200, &playing(Some(LONG), Some(1)), &five());
+        assert_eq!((title(&on), on.apps.w, on.dropped.len()), (title(&l), l.apps.w, 0));
+        let three = lay(1200, &playing(Some(LONG), Some(3)), &five());
+        assert!(
+            three.apps.w >= least + 2 * 36 && title(&three).unwrap().chars().count() == 13,
+            "{} {:?}",
+            three.apps.w,
+            title(&three)
+        );
+        // and no more than three: a pad with nine windows folds them while a title shows
+        assert_eq!(lay(1200, &playing(Some(LONG), Some(9)), &five()).apps.w, three.apps.w);
+        // a bar too narrow for four cells of it: the sign alone, said in the state
+        let l = lay(1030, &playing(Some(LONG), None), &five());
+        assert_eq!((title(&l), l.dropped.as_slice()), (None, ["media.text".to_string()].as_slice()));
+        assert!(l.targets.iter().any(|t| t.id == "media.name") && l.apps.w >= least, "{}", l.apps.w);
+        // narrower still, the sign leaves too, with no dots, before the output's number does
+        let l = lay(970, &playing(Some(LONG), None), &five());
+        assert_eq!(l.dropped, ["media".to_string()]);
+        assert!(!l.targets.iter().any(|t| t.id.starts_with("media") || t.id == "more") && l.targets.iter().any(|t| t.id == "out.pct"));
+        // nothing plays: every bar as it was
+        assert_eq!(sheet(1200).apps, Rect::new(354, 0, 306, 36));
+    }
+
+    #[test]
+    fn what_plays_costs_no_one_else_their_place() {
+        for width in (600..=2000).step_by(20) {
+            for pad in [None, Some(1), Some(3)] {
+                let quiet = lay(width, &playing(None, pad), &five());
+                let needs = 58 + (pad.unwrap_or(1) - 1) * 36;
+                for n in [0, 1, 4, 5, 12, 30] {
+                    let l = lay(width, &playing(Some(&LONG[..n]), pad), &five());
+                    let at = format!("{width} wide, {n} cells, pad {pad:?}");
+                    // the pad has the room it needs, wherever the bar had it with nothing playing
+                    assert!(l.apps.w >= needs.min(quiet.apps.w), "{at}: {} of {}", l.apps.w, quiet.apps.w);
+                    // nothing else left the bar for it
+                    let others: Vec<&String> = l.dropped.iter().filter(|d| !d.starts_with("media")).collect();
+                    assert_eq!(others, quiet.dropped.iter().collect::<Vec<_>>(), "{at}");
+                    // and nothing at its right moved
+                    for t in quiet.targets.iter().filter(|t| ["out.name", "out.pct", "clock.text"].contains(&t.id.as_str())) {
+                        assert_eq!(l.targets.iter().find(|x| x.id == t.id).map(|x| x.rect), Some(t.rect), "{at}: {}", t.id);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_pads_least_room_holds_its_grip_and_a_cell_at_every_text_size() {
+        // the pad's own lengths (component/winpad, pad.rs): 20 and 36 at 16 px of text, rounded; the bar is 2.25 times its text high
+        for px in 8..=40 {
+            let h = (px as f64 * 2.25).round() as i32;
+            let (lead, tool) = ((20.0 * px as f64 / 16.0 + 0.5) as i32, (36.0 * px as f64 / 16.0 + 0.5) as i32);
+            assert!((h * 14 + 8) / 9 + 2 >= lead + tool, "{px} px: {} under {}", (h * 14 + 8) / 9 + 2, lead + tool);
+        }
+        // a character wider than a cell is fitted to its cell, never drawn over its neighbors
+        assert!(wide("\u{65e5}") && wide("\u{1f3b5}") && !wide("a") && !wide("\u{25b6}") && !wide("\u{2026}"));
     }
 
     #[test]
