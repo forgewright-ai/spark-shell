@@ -971,7 +971,7 @@ dependencies = [
 
 [[package]]
 name = "spark-bar"
-version = "0.170.0"
+version = "0.170.1"
 dependencies = [
  "calloop",
  "libc",

@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.170.1
+
+- The pad can be dropped on the bar while something plays. On a
+  narrow screen the title of what plays took the space the pad needs.
+  It takes only what the pad's windows leave now: it is cut first,
+  then left out, then its sign too.
+- Bluetooth: disconnect said it could not when it did. Connect,
+  disconnect, pair, remove and power are judged by what bluez lists,
+  never by bluetoothctl's sentence, and a speaker gets twelve seconds.
+- The sound section says when a Bluetooth speaker is connected and
+  gives no sound, and what to do.
+- Two Bluetooth devices of one name are told apart by the end of
+  their address. A name outside ASCII, or with a backslash, matches
+  its own row.
+- A device's name with an escape in it reaches no terminal whole.
+- With bluetoothd stopped the bar says bluetooth off at once. It
+  waited three seconds at every line.
+- A title in Chinese, Japanese or Korean, or an emoji, is drawn
+  inside its cell on the bar.
+
 ## v0.170
 
 - The bar says what plays: the artist and the title beside a play
