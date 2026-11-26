@@ -64,6 +64,8 @@ fresh() {   # a new throwaway HOME with the stubs in place
     # the root files land under a throwaway root, never in this
     # machine's /etc; systemctl is whatever PATH has (a stub)
     export SPARK_SHELL_ROOT=$H/root
+    # and mpv's plugin, a package's own file, is looked for under it too: never this machine's
+    export SPARK_SHELL_MPV_ROOT=$H/root
     # the open terminals theme repaints: plain files under $H/pts, never
     # this machine's /dev/pts (a test must not repaint the terminal it runs in)
     export SPARK_SHELL_PTS_DIR=$H/pts
@@ -7390,7 +7392,7 @@ page 2 | jq -e '(.sound.picture | endswith("-sound.png")) and .sound.wave == 160
     && ok "provide files: a long sound's page comes at once with its facts and Play, its waveform drawn aside at an idle priority and named for the dialog to draw when it is there (#124)" || bad "preview sound aside" "$((_t1 - _t0)) s $(page 2)"
 # a picture stopped before it is drawn takes its folder with it: mpv's folder stayed in the temp folder, the picture in it, each time
 _st=$(tmpd); rm -rf "$F2/.cache/spark-shell"; ( TMPDIR=$_st SLOW_WAVE=1 mcpv "$(pvr 2 "$PVR/song.flac")" )
-_i=0; while [ "$_i" -lt 30 ] && [ -n "$(ls -A "$_st")" ]; do sleep 0.1; _i=$((_i + 1)); done
+_i=0; while [ "$_i" -lt 100 ] && [ -n "$(ls -A "$_st")" ]; do sleep 0.1; _i=$((_i + 1)); done   # ten seconds: a loaded runner took more than three (Void's row, 2026-11-26)
 [ -z "$(ls -A "$_st")" ] && ok "provide files: a sound's picture stopped midway leaves no folder behind" || bad "sound folder" "$(ls -A "$_st") $(page 2 | head -c 200)"
 # #125: where sway is, a video plays over its frame: the page offers play and stop; the player laid at the dialog's corner, foot's padding and the frame's box
 mkdir -p "$H/pvsw" "$F2/.config/foot"; printf '[main]\npad=24x19\n' > "$F2/.config/foot/dialog.ini"

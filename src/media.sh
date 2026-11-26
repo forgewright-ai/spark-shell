@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- media: what plays in any player that speaks MPRIS, and its controls
-# sets: MEDIA_ACTIONS MEDIA_MPV_PLUGINS MEDIA_MPV_RECORD
-# reads: MODE OS PANEL_DOT PANEL_SEP ROOT SCRUB_AWK STATE_DIR TAB
+# sets: MEDIA_ACTIONS MEDIA_MPV_PLUGINS MEDIA_MPV_RECORD MEDIA_MPV_ROOT
+# reads: MODE OS PANEL_DOT PANEL_SEP SCRUB_AWK STATE_DIR TAB
 # playerctl asks the players. It acts on the first it finds, so the player is chosen here: the one that plays, else the
 # first paused one. A title is a page's or a file's own words: every field is scrubbed before anything draws or says it
 MEDIA_ACTIONS='play pause toggle next previous stop'   # what a key, a click, a row or a tool asks of the player
@@ -32,12 +32,13 @@ media_check() {   # the media row of check, on a desktop machine
 # it into your own mpv scripts folder then, by a record, and off takes away the link the record names
 MEDIA_MPV_PLUGINS='usr/lib/mpv-mpris/mpris.so usr/lib64/mpv-mpris/mpris.so usr/lib64/mpv/mpris.so usr/lib/mpv/mpris.so'
 MEDIA_MPV_RECORD=$STATE_DIR/media.mpv   # the link on desktop made, a line: off removes that one and no other
+MEDIA_MPV_ROOT=${SPARK_SHELL_MPV_ROOT:-}   # a package's files are read where they are, never under ROOT (the files spark-shell writes as root); SPARK_SHELL_MPV_ROOT=DIR (tests) prefixes them
 media_mpv_plugin() {   # -> the plugin as the family's package installed it; nothing where it is not installed
-    for _mpp in $MEDIA_MPV_PLUGINS; do [ ! -f "$ROOT/$_mpp" ] || { printf '%s\n' "$ROOT/$_mpp"; return 0; }; done
-    for _mpp in "$ROOT"/usr/lib/*/mpv/mpris.so "$ROOT"/usr/lib/*/mpv-mpris/mpris.so; do [ ! -f "$_mpp" ] || { printf '%s\n' "$_mpp"; return 0; }; done   # under the architecture's own folder
+    for _mpp in $MEDIA_MPV_PLUGINS; do [ ! -f "$MEDIA_MPV_ROOT/$_mpp" ] || { printf '%s\n' "$MEDIA_MPV_ROOT/$_mpp"; return 0; }; done
+    for _mpp in "$MEDIA_MPV_ROOT"/usr/lib/*/mpv/mpris.so "$MEDIA_MPV_ROOT"/usr/lib/*/mpv-mpris/mpris.so; do [ ! -f "$_mpp" ] || { printf '%s\n' "$_mpp"; return 0; }; done   # under the architecture's own folder
 }
 media_mpv_link() { printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/mpv/scripts/mpris.so"; }
-media_mpv_loads() { [ -e "$ROOT/etc/mpv/scripts/mpris.so" ] || [ -e "$(media_mpv_link)" ]; }   # mpv loads the plugin: by the system's link, or by a file or a link in your folder
+media_mpv_loads() { [ -e "$MEDIA_MPV_ROOT/etc/mpv/scripts/mpris.so" ] || [ -e "$(media_mpv_link)" ]; }   # mpv loads the plugin: by the system's link, or by a file or a link in your folder
 media_apply() {   # on desktop's media row: nothing where mpv loads the plugin already, where it is not installed, or where a link of yours stands
     ! media_mpv_loads || return 0
     _mas=$(media_mpv_plugin); [ -n "$_mas" ] || return 0
