@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # ---------------------------------------------------------------- the bar
 # sets: BAR_BT BAR_BT_OFF BAR_DEV BAR_DND BAR_DND_PLAIN BAR_DUE BAR_DUE_PLAIN BAR_FULL BAR_GAP BAR_GROUP_GAP BAR_KB BAR_KB_PLAIN BAR_LAN BAR_LIGHT BAR_MIC BAR_MIC_OFF BAR_NOTE BAR_OUT BAR_OUT_OFF BAR_PAD BAR_PALETTE BAR_PID BAR_PLAY BAR_PLAY_OFF BAR_PROC BAR_SHADE BAR_STEPS BAR_SYS BAR_WIFI BAR_WS_ORDER
-# reads: BAR_ASOUNDRC BAR_LEVELS BAR_MODULES CONFIG GLYPH_FAMILIES LAYOUT_ON NOTIFY_MODE OS PANEL_DOT PANEL_PROMPT PANEL_SEP PANEL_WARN REPO STATE_DIR TAB THEME_KEYS TMP WM_TRAY
+# reads: BAR_ASOUNDRC BAR_LEVELS BAR_MODULES CONFIG GLYPH_FAMILIES LAYOUT_ON OS PANEL_DOT PANEL_PROMPT PANEL_SEP PANEL_WARN REPO STATE_DIR TAB THEME_KEYS TMP WM_TRAY
 # spark's bar, or sway's own where it cannot run, reads `spark-shell bar status`:
 # i3bar JSON every 15 s and on SIGUSR1 to the pid in STATE_DIR/bar.pid
 BAR_SYS=${SPARK_SHELL_SYS:-/sys}      # tests: a fixture /sys and /proc
@@ -623,12 +623,12 @@ bar_fact_clock() {   # the time alone: 21:41 in five cells, 12:41 PM in eight
     _ct=$(clock_text); bar_cells "$_ct"; [ "$_bc" -ge 5 ] || _bc=5; [ "$_bc" -le 5 ] || [ "$_bc" -ge 8 ] || _bc=8
     bar_fact clock time '' "$_ct" "$_bc" ok "time $_ct"
 }
-# always there where mako is: the flag, solid while some wait and hollow with none, or the sign of do not disturb, and
-# how many nobody looked at
+# always there where the notifications can show, a session bus and what the server takes: the flag, solid while some
+# wait and hollow with none, or the sign of do not disturb, and how many nobody looked at
 bar_fact_notifications() {
-    command -v makoctl >/dev/null 2>&1 && _nm=$(makoctl mode 2>/dev/null) || return 0
+    notify_up || return 0
     _nu=$(notify_unseen); [ "${_nu:-0}" -le 9 ] || _nu='9+'; [ "${_nu:-0}" != 0 ] || _nu=''
-    if printf '%s\n' "$_nm" | grep -qx "$NOTIFY_MODE"; then bar_sign "$BAR_DND" quiet quiet; _nl='do not disturb'
+    if notify_dnd; then bar_sign "$BAR_DND" quiet quiet; _nl='do not disturb'
     else _nfi=flag-none; [ -z "$_nu" ] || _nfi=flag; bar_sign "$BAR_NOTE" notes "$_nfi"; _nl=notifications; fi
     bar_fact notifications time "$_bg" "$_nu" 2 ok "$_nl${_nu:+, $_nu not seen}"
 }
@@ -695,9 +695,9 @@ bar_line() {   # -> a refresh's JSON array: the facts for spark's bar, the block
         bar_add "$(bar_block due '' "$(bar_span "$HEX_ACCENT" "$k_due") $(bar_esc "$due")" "$((_kw + 29))" "reminder due: $due")"; bar_group
     fi
     # notifications
-    if command -v makoctl >/dev/null 2>&1 && _nm=$(makoctl mode 2>/dev/null); then
+    if notify_up; then
         _nu=$(notify_unseen); [ "${_nu:-0}" -le 9 ] || _nu='9+'
-        if printf '%s\n' "$_nm" | grep -qx "$NOTIFY_MODE"; then
+        if notify_dnd; then
             bar_kw "$k_dnd"
             if [ "${_nu:-0}" = 0 ]; then bar_add "$(bar_block notifications dnd "$(bar_span "$HEX_MUTED" "$k_dnd")" "$_kw" 'do not disturb')"
             else bar_add "$(bar_block notifications dnd "$(bar_span "$HEX_MUTED" "$k_dnd")" "$_kw" 'do not disturb' 6)"; fi
@@ -1072,7 +1072,7 @@ bar_pin() {   # bar_pin pin|unpin|hide|show [MODULE...] -- pin alone lists the m
     esac
 }
 bar_modules_only() { for _bmo in "$@"; do case " $BAR_MODULES " in *" $_bmo "*) ;; *) return 1 ;; esac; done; }   # bar_modules_only WORD... -> 0 when each is a module's name, and with no word at all
-cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | top|bottom | text [auto|N|bigger|smaller] | tray [on|off] | pin [MODULE...] | unpin|hide|show MODULE... | keys | start | again | seen [ID...] | status [--once] | due | volume up|down|mute|mic | panel [PAGE] ... | WORDS
+cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | top|bottom | text [auto|N|bigger|smaller] | tray [on|off] | pin [MODULE...] | unpin|hide|show MODULE... | keys | start | again | status [--once] | due | volume up|down|mute|mic | panel [PAGE] ... | WORDS
     config_load
     # pin, unpin, hide and show are verbs before modules' names alone; a sentence that begins with one (show the clock) is words, below
     case ${1:-} in pin|unpin|hide|show) _cbv=$1; shift; if bar_modules_only "$@"; then bar_desktop_here; bar_pin "$_cbv" "$@"; return; fi; set -- "$_cbv" "$@" ;; esac
@@ -1088,8 +1088,8 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | top|bottom | text [aut
         keys) bar_desktop_here; sparkbar_keys; return ;;   # Super+equal
         start) [ "$OS" = Darwin ] || sparkbar_wake; return ;;   # sway's, at login: resident
         fallback) [ "$OS" = Darwin ] || sparkbar_fallback; return ;;   # the keeper's, when it gives up
+        seen) return 0 ;;   # v0.169's mako config says it at each one it shows, until that mako ends: the server counts them now
         again) [ "$OS" = Darwin ] || { [ "${2:-}" = font ] && sparkbar_has_font; } || { sparkbar_again; layout_refit_soon; }; return 0 ;;   # the status loop's, apart from it: a new font, which a verb may have given the bar already
-        seen) shift; notify_seen "$@"; return ;;   # mako's clicks
         on|off|'') ;;
         -*) refuse_in bar "$1 is not a bar command: on, off, top, bottom, text, tray, pin, unpin, hide, show, keys, status, volume, panel, or words for what you want" ;;
         *) [ "$OS" != Darwin ] || refuse_in bar "not on macOS, which has its own desktop"; bar_want "$*"; return ;;

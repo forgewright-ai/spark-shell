@@ -276,7 +276,7 @@ rem_due() {   # -> UID<tab>SUMMARY of the latest reminder due, and one chime whe
         cp "$TMP/rem.keys" "$REM_FIRED"   # the ones due now, and no more: the file never grows
         lock_drop "$REM_FIRED.lock"
         [ "${_new:-0}" -eq 0 ] || [ -n "${SPARK_SHELL_NO_CHIME:-}" ] || rem_chime
-        [ "${_new:-0}" -eq 0 ] || notify_send x-spark-shell.reminder "$(tail -1 "$TMP/rem.due" | cut -f3)" "due now"
+        [ "${_new:-0}" -eq 0 ] || notify_send x-spark-shell.reminder "$(tail -1 "$TMP/rem.due" | cut -f3)" "due now" reminders 'open Reminders'
     fi
     [ -s "$TMP/rem.due" ] || return 0
     tail -1 "$TMP/rem.due" | cut -f2,3

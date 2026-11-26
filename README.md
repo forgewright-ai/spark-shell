@@ -99,6 +99,7 @@ help lists them by subject. The bindings are named actions in
     Super+PageUp/PageDown go to the previous or next workspace.
     Super+Shift+PageUp/PageDown take the window there too.
     Super+Escape locks the screen; it locks by itself after idle minutes.
+    Super+n puts the keys on the notifications: arrows move, Delete dismisses.
     Print captures the screen, Shift+Print an area, Super+Print the window.
     Super+Ctrl+space goes to the next keyboard layout.
     The volume and mute keys set the sound, and the mic mute key the mic.

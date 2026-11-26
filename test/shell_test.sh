@@ -31,7 +31,7 @@ tmpd() { _td=$(mktemp -d) && printf '%s\n' "$_td" >> "$TMPDIRS" && printf '%s\n'
 # the suite with 1 after 0 failed
 _rc=0   # set again inside the trap; named here so shellcheck sees it
 _ended=1   # empty while a run holds sections: one that stops before its last line (set -e, a command no test guards) says so, with the status, in place of ending without a word
-trap '_rc=$?; [ -n "$_ended" ] || printf "  FAIL the suite stopped before its end   status %s, at the command after the last line above\n" "$_rc"; while IFS= read -r _td; do [ -z "$_td" ] || { chmod -R u+rwX "$_td" 2>/dev/null || :; rm -rf "$_td" 2>/dev/null || :; }; done < "$TMPDIRS" || :; rm -f "$TMPDIRS" || :; exit "$_rc"' EXIT
+trap '_rc=$?; [ -z "${NSTAND:-}" ] || kill "$NSTAND" 2>/dev/null || :; [ -n "$_ended" ] || printf "  FAIL the suite stopped before its end   status %s, at the command after the last line above\n" "$_rc"; while IFS= read -r _td; do [ -z "$_td" ] || { chmod -R u+rwX "$_td" 2>/dev/null || :; rm -rf "$_td" 2>/dev/null || :; }; done < "$TMPDIRS" || :; rm -f "$TMPDIRS" || :; exit "$_rc"' EXIT
 # never the person's own session: a test that notifies, locks or asks a compositor must reach none of it,
 # whatever the shell that started the suite carries
 unset WAYLAND_DISPLAY SWAYSOCK I3SOCK DISPLAY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR TMUX TMUX_PANE
@@ -238,6 +238,39 @@ esac
 PLAYERCTL
     chmod +x "$H/.local/bin/playerctl"
 }
+notify_stub() {   # the notifications' server stood in for in this home: a dbus-send that writes what it is asked to $HOME/bus.asked and does a step's part on the state file notify_state wrote; the session bus is a name alone, nothing is sent to one
+    cat > "$H/.local/bin/dbus-send" <<'DBUS'
+#!/bin/sh
+printf '%s\n' "$*" >> "$HOME/bus.asked"
+f=$(cat "$HOME/bus.state" 2>/dev/null)
+edit() { [ -s "$f" ] && jq -c "$@" "$f" > "$f.new" && mv "$f.new" "$f"; }
+count='([.shown[], .history[]] | map(.id)) as $held | .unseen = ([$held[] | select(. as $x | ($r.seen // []) | index($x) | not)] | length)'
+case "$*" in
+    *GetConnectionUnixProcessID*) [ -s "$HOME/bus.owner" ] || exit 1; printf 'method return\n   uint32 %s\n' "$(cat "$HOME/bus.owner")" ;;
+    *Notifications.CloseNotification*) edit --argjson i "${*##*uint32:}" '(.shown | map(select(.id == $i))) as $g | .shown |= map(select(.id != $i)) | .history = ($g + .history)' ;;
+    *Notifications.Dismiss*) edit --arg i "${*##*array:uint32:}" '($i | split(",") | map(tonumber)) as $l | (.shown | map(select(.id as $x | $l | index($x)))) as $g | .shown |= map(select(.id as $x | $l | index($x) | not))
+        | .history = ($g + .history) | .seen = (((.seen // []) + $l) | unique) | . as $r | '"$count" ;;
+    *Notifications.Seen*) edit --arg i "${*##*array:uint32:}" '($i | split(",") | map(tonumber)) as $l | ([.shown[], .history[]] | map(.id)) as $held
+        | .seen = (((.seen // []) + (if ($l | index(0)) then $held else [$l[] | select(. as $x | $held | index($x))] end)) | unique) | . as $r | '"$count" ;;
+    *Notifications.Restore*) if [ -e "$HOME/bus.held" ]; then printf 'method return\n   boolean false\n'; else edit '.shown = (.history[0:1] + .shown) | .history |= .[1:]'; printf 'method return\n   boolean true\n'; fi ;;
+    *Notifications.Pause*) edit '.paused = true' ;;
+    *Notifications.Resume*) edit '.paused = false' ;;
+esac
+DBUS
+    chmod +x "$H/.local/bin/dbus-send"
+}
+nfile() { printf '%s' "${XDG_RUNTIME_DIR:-$HOME/.local/state/spark-shell}/spark-shell-notifications.$1"; }   # nfile state|look -> the server's file of that kind, where spark-shell has it now
+NSTAND=''
+nstand() {   # NSTAND: a process that stands in for the notifications' server, a sleep that is nobody's child, started when none lives. Never this shell: off and a new login end the server by its pid. The suite's end ends it
+    [ -n "$NSTAND" ] && [ "$(pstate "$NSTAND")" = S ] || NSTAND=$( (sleep 86400 >/dev/null 2>&1 & echo $!) )
+}
+notify_state() {   # notify_state SHOWN HISTORY [PID] -- the server's state file as it would write it, for a server that runs: PID with when it was born, the stand-in's by default; SHOWN and HISTORY are JSON lists of [id, app, summary], newest first, none of them looked at
+    _nsf=$(nfile state); mkdir -p "${_nsf%/*}"; printf '%s\n' "$_nsf" > "$HOME/bus.state"
+    if [ -n "${3:-}" ]; then _nsp=$3; else nstand; _nsp=$NSTAND; fi
+    jq -cn --argjson p "$_nsp" --arg b "$(sed 's/.*) //' "/proc/$_nsp/stat" 2>/dev/null | cut -d ' ' -f 20)" --argjson s "$1" --argjson h "$2" 'def n: map({id: .[0], app: .[1], summary: .[2]});
+        {pid: $p, born: $b, last: 0, drawer: true, dnd: false, paused: false, unseen: (($s + $h) | length), shown: ($s | n), history: ($h | n)}' > "$_nsf"
+}
+pstate() { sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -c1; }   # pstate PID -> its state's letter: S while it sleeps, Z once it ended and nobody took its end, nothing after
 desktop_stubs() {
     for t in sway swaymsg foot; do
         printf '#!/bin/sh\necho "%s-stub $*" >&2\n' "$t" > "$H/.local/bin/$t"; chmod +x "$H/.local/bin/$t"
@@ -3301,7 +3334,7 @@ printf '%s\n' "$out" | grep -q '^todo   sound        pulseaudio is installed, an
     && ok "Arch with pulseaudio: pipewire-pulse is left out of the install, one todo says how to take it" || bad "arch pulseaudio" "$out"
 grep -q '^PKG_SOUND=pipewire wireplumber alsa-pipewire libspa-bluetooth$' "$REPO/distro/void.env" && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa libspa-0.2-bluetooth$' "$REPO/distro/debian.env" \
     && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa$' "$REPO/distro/arch.env" && ok "distro: the sound's packages, each family's names" || bad "PKG_SOUND" "$(grep -h PKG_SOUND "$REPO"/distro/*.env)"
-grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg librsvg-utils poppler mako libnotify udisks2 dbus xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk gsettings-desktop-schemas bluez python3-dbus python3-gobject mpv mpv-mpris playerctl mesa-vaapi python3-numpy xorg-server-xwayland xrandr wtype$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd, librsvg and rsvg-convert, poppler, mako, notify-send, udisks2, the session bus, mpv, the VA-API driver, numpy, Xwayland and xrandr among them" || bad "void.env desktop"
+grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg librsvg-utils poppler libnotify udisks2 dbus xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk gsettings-desktop-schemas bluez python3-dbus python3-gobject mpv mpv-mpris playerctl mesa-vaapi python3-numpy xorg-server-xwayland xrandr wtype$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd, librsvg and rsvg-convert, poppler, notify-send, udisks2, the session bus, mpv with its MPRIS plugin and playerctl, the VA-API driver, numpy, Xwayland and xrandr among them" || bad "void.env desktop"
 
 fi
 
@@ -4891,7 +4924,7 @@ spark-shell changes how this machine works:
 
   packages     sway swaybg foot foot-terminfo ttf-dejavu curl openssh swayidle
                swaylock grim slurp wl-clipboard brightnessctl ddcutil librsvg
-               poppler otf-monaspace mako libnotify udisks2 xdg-desktop-portal
+               poppler otf-monaspace libnotify udisks2 xdg-desktop-portal
                xdg-desktop-portal-wlr xdg-desktop-portal-gtk
                gsettings-desktop-schemas bluez bluez-utils python-dbus
                python-gobject xorg-xwayland xorg-xrandr mpv mpv-mpris playerctl
@@ -5178,7 +5211,7 @@ else
     over() { printf '%s' "$1" | jq -r '[.[] | select(((.full_text | gsub("<[^>]*>"; "") | gsub("&amp;"; "&") | gsub("&lt;"; "<") | gsub("&gt;"; ">") | length) > .cells) or (.label | length) == 0 or (.control | IN("open", "toggle", "level") | not) or (.state | IN("ok", "unavailable", "error") | not) or has("level")) | .name + ":" + .instance] | join(" ")' || echo unread; }   # a line jq cannot read is no pass
     sb() { SPARK_BAR=1 sh "$SH" bar status --once; }
     l1=$(sh "$SH" bar status --once); l2=$(sb)
-    lifted() { sed -n 's/^format=<span foreground="#\([0-9a-f]\{6\}\)">&#x25B8; and %h more<\/span>$/\1/p' "$HOME/.config/mako/config"; }   # -> the muted lifted until it reads at 4.5 to 1, as the notifications wear it
+    lifted() { sed -n 's/^20=\([0-9a-f]\{6\}\)$/\1/p' "$HOME/.config/foot/foot.ini"; }   # -> the muted lifted until it reads at 4.5 to 1, as the dialog and the notifications wear it
     pm=$(lifted)
     printf 'BAR_GLYPHS=words\n' >> "$cfg"; touch "$H/muted"; echo 'state: RUNNING' > "$P/asound/card0/pcm0c/sub0/status"; echo 0 > "$S/class/net/eth0/carrier"; l3=$(sb); l4=$(sh "$SH" bar status --once)
     sed -i.bak '/^BAR_GLYPHS=/d' "$cfg"; rm -f "$cfg.bak" "$H/muted"; echo closed > "$P/asound/card0/pcm0c/sub0/status"; echo 1 > "$S/class/net/eth0/carrier"
@@ -5946,21 +5979,21 @@ STUB
         && ok "panel bar on: back where it was, the top checked and hidden a step again" || bad "bar on" "st=$st $out $(sh "$SH" panel bar --list)"
     # the bar's place (top or bottom), its text size and the tray, from the panel
     rm -f "$journal/undo"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar bottom 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = 'bar at the bottom of the screen' ] && grep -q '^BAR_POSITION=bottom$' "$HOME/.config/spark-shell/config" && grep -q '^    position bottom$' "$sway" && grep -qx 'anchor=bottom-right' "$HOME/.config/mako/config" \
+    [ "$st" -eq 0 ] && [ "$out" = 'bar at the bottom of the screen' ] && grep -q '^BAR_POSITION=bottom$' "$HOME/.config/spark-shell/config" && grep -q '^    position bottom$' "$sway" \
         && [ "$(sh "$SH" panel bar --list | sed -n 3p)" = "$TICK bar        bottom	bar show" ] && [ "$(sh "$SH" panel bar --list | sed -n 1p)" = "bar        shown at the bottom of the screen" ] && sh "$SH" panel --list | grep -q "^  undo       bar at the top of the screen	undo all$" \
-        && ok "panel bar bottom: BAR_POSITION=bottom, the bar at the bottom in the render and the notifications in the bottom corner, the row checked, the undo names the top" || bad "bar bottom" "st=$st $out $(grep -n 'position' "$sway"; sh "$SH" panel bar --list)"
+        && ok "panel bar bottom: BAR_POSITION=bottom, the bar at the bottom in the render, the row checked, the undo names the top" || bad "bar bottom" "st=$st $out $(grep -n 'position' "$sway"; sh "$SH" panel bar --list)"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar off 2>&1 && SWAYSOCK=/tmp/x sh "$SH" panel bar on 2>&1) || st=$?
     [ "$st" -eq 0 ] && grep -q '^    position bottom$' "$sway" && grep -q '^    mode dock$' "$sway" && ok "panel bar off, then on: back at the bottom, where it was" || bad "bar on bottom" "st=$st $out $(grep -n 'position\|mode' "$sway")"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar top 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = 'bar at the top of the screen' ] && grep -q '^    position top$' "$sway" && grep -qx 'anchor=top-right' "$HOME/.config/mako/config" && ok "panel bar top: the top again, the notifications in the top corner" || bad "bar top" "st=$st $out"
+    [ "$st" -eq 0 ] && [ "$out" = 'bar at the top of the screen' ] && grep -q '^    position top$' "$sway" && ok "panel bar top: the top again" || bad "bar top" "st=$st $out"
     grep -q '^    tray_output none$' "$sway" && ok "sway: the tray off by default, the bar in its own glyphs (BAR_TRAY=no)" || bad "tray default" "$(grep -n tray "$sway")"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar tray on 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = "tray on $SEP the apps' icons show at the bar's end" ] && grep -q '^BAR_TRAY=yes$' "$HOME/.config/spark-shell/config" && grep -q '^    tray_output \*$' "$sway" && sh "$SH" panel --list | grep -q "^  undo       tray off	undo all$" \
         && ok "panel bar tray on: BAR_TRAY=yes, the tray on every screen's bar in the render, the undo turns it off" || bad "bar tray on" "st=$st $out $(grep -n tray "$sway")"
     SWAYSOCK=/tmp/x sh "$SH" panel bar tray off >/dev/null 2>&1 || :
     st=0; out=$(sh "$SH" panel bar text 15 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = 'bar text 15' ] && grep -q '^BAR_TEXT=15$' "$HOME/.config/spark-shell/config" && grep -q '^    font pango:DejaVu Sans Mono 15$' "$sway" && grep -qx 'font=DejaVu Sans Mono 13' "$HOME/.config/mako/config" \
-        && ok "panel bar text 15: BAR_TEXT=15, the bar's font at 15, the text and the notifications at the text size" || bad "bar text" "st=$st $out $(grep -n font "$sway" "$HOME/.config/mako/config")"
+    [ "$st" -eq 0 ] && [ "$out" = 'bar text 15' ] && grep -q '^BAR_TEXT=15$' "$HOME/.config/spark-shell/config" && grep -q '^    font pango:DejaVu Sans Mono 15$' "$sway" \
+        && ok "panel bar text 15: BAR_TEXT=15, the bar's font at 15, the text at the text size" || bad "bar text" "st=$st $out $(grep -n font "$sway")"
     st=0; out=$(sh "$SH" panel bar text 41 2>&1) || st=$?
     [ "$st" -eq 1 ] && grep -q '^BAR_TEXT=15$' "$HOME/.config/spark-shell/config" && ok "panel bar text 41: refused, nothing written" || bad "bar text 41" "st=$st $out"
     st=0; out=$(sh "$SH" panel bar text auto 2>&1) || st=$?
@@ -6257,7 +6290,7 @@ SBSWAY_STUB
     rm -rf "$H/deadsway"
     printf 'GLYPH_FAMILY=star\nBAR_MOTION=no\n' >> "$HOME/.config/spark-shell/config"   # the next start's look is the config's: star's pair, no motion
     sbr bar bottom; sb_up 2; sed -i.bak '/^GLYPH_FAMILY=/d; /^BAR_MOTION=/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak"
-    [ "$rc" = 0 ] && sbe 'BAR_POSITION=bottom' && sbe "BAR_GAUGE_FULL=$(printf '\342\224\201')" && sbe "BAR_GAUGE_LIGHT=$(printf '\342\224\200')" && sbe 'BAR_MOTION=no' && [ "$(grep -c '' "$HOME/sbar.log")" = 2 ] && grep -q '^anchor=bottom-right$' "$HOME/.config/mako/config" && ok "bar bottom: the bar starts again at the bottom, the notifications by it" || bad "bar bottom again" "rc=$rc $out $(cat "$HOME/sbar.log" 2>&1)"
+    [ "$rc" = 0 ] && sbe 'BAR_POSITION=bottom' && sbe "BAR_GAUGE_FULL=$(printf '\342\224\201')" && sbe "BAR_GAUGE_LIGHT=$(printf '\342\224\200')" && sbe 'BAR_MOTION=no' && [ "$(grep -c '' "$HOME/sbar.log")" = 2 ] && ok "bar bottom: the bar starts again at the bottom" || bad "bar bottom again" "rc=$rc $out $(cat "$HOME/sbar.log" 2>&1)"
     sbr bar top; sb_up 3; _bp0=$(cat "$block" 2>/dev/null || :); sbr bar top; sleep 0.3
     [ "$rc" = 0 ] && sbe 'BAR_POSITION=top' && sbe "BAR_GAUGE_FULL=$pip" && sbe 'BAR_MOTION=yes' && [ -n "$_bp0" ] && [ "$(cat "$block" 2>/dev/null)" = "$_bp0" ] && [ "$(grep -c '' "$HOME/sbar.log")" = 3 ] && ok "bar top: the bar starts again at the top; asked again where it sits already, it is left running" || bad "bar top again" "rc=$rc $out $(cat "$HOME/sbar.log" 2>&1)"
     [ ! -e "$HOME/sbsway.log" ] && [ -z "$(sb_bar_ids)" ] && ! grep -q '^bar ' "$H/.local/state/swaymsg.log" && ok "bar bottom and bar top beside spark-bar: sway is sent no reload, and has no bar of its own" || bad "bar move reload" "$(cat "$HOME/sbsway.log" 2>&1) $(sb_bar_ids) $(cat "$H/.local/state/swaymsg.log")"
@@ -6534,16 +6567,13 @@ case "$t $*" in
     lsblk*) echo '{"blockdevices": [{"name":"sdb","path":"/dev/sdb","type":"disk","rm":true,"hotplug":true,"size":31004295168,"model":"Ultra","vendor":"SanDisk","label":null,"fstype":null,"mountpoint":null,
         "children":[{"name":"sdb1","path":"/dev/sdb1","type":"part","rm":true,"hotplug":true,"size":31003246592,"label":"STICK","fstype":"exfat","mountpoint":"/run/media/ada/STICK"}]}]}' ;;
     df*) printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/x 30000000 27000000 3000000 90%% /\n' ;;
-    'makoctl mode') echo default ;;
-    'makoctl list') printf 'Notification 9: Download complete\n  App name: firefox\n' ;;
-    'makoctl history') printf 'Notification 5: Build passed\n  App name: aerc\n' ;;
     'swaymsg -t get_inputs') echo '[{"type":"keyboard","xkb_layout_names":["English (US)","Portuguese (Brazil)"],"xkb_active_layout_index":1}]' ;;
     'swaymsg -t get_outputs') echo '[{"name":"DP-1","active":true,"make":"Fake","model":"Screen","serial":"1","scale":1,"rect":{"x":0,"y":0,"width":2560,"height":1440},"current_mode":{"width":2560,"height":1440,"refresh":60000}}]' ;;
     'brightnessctl -m -c backlight info') echo 'panel,backlight,750,75%,1000' ;;
 esac
 STUB
     chmod +x "$H/once/stub"
-    for t in wpctl pw-dump dbus-send bluetoothctl lsblk df makoctl mako swaymsg brightnessctl stat; do ln -sf stub "$H/once/$t"; done
+    for t in wpctl pw-dump dbus-send bluetoothctl lsblk df swaymsg brightnessctl stat; do ln -sf stub "$H/once/$t"; done
     ONCE_PATH=$PATH; export ONCE_PATH   # the stub's stat runs the real one
     asks() {   # asks SECTION PATTERN -> the calls PATTERN matches in two rows reads, less a provider that only pings; the second read's rows in $H/once.json
         rm -f "$HOME/once.log"; rq 1 ping | SWAYSOCK=$H/sock PATH="$H/once:$PATH" sh "$SH" provide "$1" >/dev/null 2>&1
@@ -6555,15 +6585,15 @@ STUB
     _ob=''; _os=''
     for c in 'out:wpctl status' 'out:wpctl get-volume @DEFAULT_AUDIO_SINK@' 'mic:wpctl get-volume @DEFAULT_AUDIO_SOURCE@' 'mic:pw-dump' \
         'bt:dbus-send' 'bt:bluetoothctl show' 'bt:bluetoothctl devices Connected' 'storage:lsblk' 'storage:df -Pk /$' 'storage:df -Pk /run/media/ada/STICK' \
-        'notifications:makoctl mode$' 'notifications:makoctl list' 'notifications:makoctl history' 'keyboard:swaymsg -t get_inputs' \
+        'keyboard:swaymsg -t get_inputs' \
         'display:swaymsg -t get_outputs' 'display:brightnessctl' 'reminders:stat -c %n %s %Y'; do
         _n=$(asks "${c%%:*}" "${c#*:}"); [ "$_n" = 2 ] || _ob="$_ob [$c] $_n"
         _os="$_os$(jq -r '.state' "$H/once.json" 2>/dev/null)|"
     done
     _nn=$(ls "$HOME/notes"/*.md 2>/dev/null | wc -l | tr -d ' '); _n=$(asks notes "stat -c %Y $HOME/notes/"); [ "$_n" = $((2 * _nn)) ] || _ob="$_ob [notes] $_n of $((2 * _nn))"
     _sp=" $(printf '\302\267') "; _dt=$(printf '\342\227\217')   # the panel's middle dot and its dot for in use
-    [ -z "$_ob" ] && [ "$_nn" -gt 0 ] && [ "$_os" = "Studio Speakers${_sp}40%|Studio Speakers${_sp}40%|Studio Mic${_sp}40%|Studio Mic${_sp}40%|$_dt MAJOR V|$_dt MAJOR V|$_dt MAJOR V|1 drive|1 drive|1 drive|1 on the screen|1 on the screen|1 on the screen|br${_sp}2 layouts|1 screen|1 screen|0 today, 1 after|" ] \
-        && ok "provide: one rows read asks each device, list and file once, its title, short form and full form sharing the answer, and the next read asks again: sound, bluetooth, drives, notifications, keyboard, screens, brightness, notes and reminders (#196)" \
+    [ -z "$_ob" ] && [ "$_nn" -gt 0 ] && [ "$_os" = "Studio Speakers${_sp}40%|Studio Speakers${_sp}40%|Studio Mic${_sp}40%|Studio Mic${_sp}40%|$_dt MAJOR V|$_dt MAJOR V|$_dt MAJOR V|1 drive|1 drive|1 drive|br${_sp}2 layouts|1 screen|1 screen|0 today, 1 after|" ] \
+        && ok "provide: one rows read asks each device, list and file once, its title, short form and full form sharing the answer, and the next read asks again: sound, bluetooth, drives, keyboard, screens, brightness, notes and reminders (#196)" \
         || bad "one probe per read" "asked otherwise:$_ob; states: $_os"
     cp "$H/config.once" "$HOME/.config/spark-shell/config"; rm -rf "$H/once" "$H/sys/class/backlight" "$HOME/calendar/once-196.ics" "$H/.local/state/spark-shell/panel/bt.list" "$HOME/once.log" "$H/once.json" "$H/config.once"; unset ONCE_PATH
 fi
@@ -9721,31 +9751,31 @@ case "$*" in
     "-t get_outputs") echo '[{"name":"HDMI-A-1","make":"Test","model":"Wide","serial":"1","active":true,"focused":true,"current_workspace":"1","scale":1,"rect":{"x":0,"y":0,"width":1920,"height":1080}}]' ;;
 esac
 STUB
-printf '#!/bin/sh\necho "$*" >> "$HOME/mako.log"\ncase "$*" in mode) cat "$HOME/mako.mode" 2>/dev/null || echo default ;; esac\n' > "$H/ia/makoctl"
+notify_stub; notify_state '[]' '[]'
 printf '#!/bin/sh\nexit 1\n' > "$H/ia/sleep"   # the clock's minute ends at once
-chmod +x "$H/ia/swaymsg" "$H/ia/makoctl" "$H/ia/sleep"
+chmod +x "$H/ia/swaymsg" "$H/ia/sleep"
 cp "$cfg" "$H/cfg-before-rest"
-art_rest() { rm -f "$HOME/swaymsg.log" "$HOME/mako.log"; : > "$H/run/spark-shell-motion.want"; SPARK_SHELL_SYS=$1 SWAYSOCK=$H/sock PATH="$H/ia:$PATH" sh "$SH" desktop idle >/dev/null 2>&1 || :; }   # art_rest SYS
-art_rest_off() { rm -f "$HOME/mako.log"; SPARK_SHELL_SYS=$1 SWAYSOCK=$H/sock PATH="$H/ia:$PATH" sh "$SH" desktop idle off >/dev/null 2>&1 || :; }   # art_rest_off SYS
+art_rest() { rm -f "$HOME/swaymsg.log" "$HOME/bus.asked"; : > "$H/run/spark-shell-motion.want"; SPARK_SHELL_SYS=$1 SWAYSOCK=$H/sock PATH="$H/ia:$PATH" sh "$SH" desktop idle >/dev/null 2>&1 || :; }   # art_rest SYS
+art_rest_off() { rm -f "$HOME/bus.asked"; SPARK_SHELL_SYS=$1 SWAYSOCK=$H/sock PATH="$H/ia:$PATH" sh "$SH" desktop idle off >/dev/null 2>&1 || :; }   # art_rest_off SYS
 rst=$HOME/.local/state/spark-shell
-printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\nDISPLAY_SAVER=art\n' > "$cfg"; rm -f "$HOME/mako.mode"
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\nDISPLAY_SAVER=art\n' > "$cfg"
 art_rest "$H/sysac"
-r1=$(grep -c 'alpha=0 ' "$HOME/swaymsg.log" || :); r2=$(grep -c 'alpha=0\.8' "$HOME/swaymsg.log" || :); r3=$(cat "$HOME/mako.log" 2>/dev/null || :)
+r1=$(grep -c 'alpha=0 ' "$HOME/swaymsg.log" || :); r2=$(grep -c 'alpha=0\.8' "$HOME/swaymsg.log" || :); r3=$(cat "$HOME/bus.asked" 2>/dev/null || :)
 [ -f "$rst/idle.hush" ] && h1=1 || h1=0; [ -f "$rst/idle.still" ] && s1=1 || s1=0; [ -f "$H/run/spark-shell-motion.want" ] && w1=1 || w1=0
-art_rest_off "$H/sysac"; r4=$(cat "$HOME/mako.log" 2>/dev/null || :)
-[ "$r1" = 1 ] && [ "$r2" = 0 ] && printf '%s\n' "$r3" | grep -qx 'mode -a do-not-disturb' && [ "$h1$s1$w1" = 110 ] \
-    && printf '%s\n' "$r4" | grep -qx 'mode -r do-not-disturb' && [ ! -f "$rst/idle.hush" ] && [ ! -f "$rst/idle.still" ] \
-    && ok "desktop idle, saver art: the window clear over the screen's still, the loop stopped, do not disturb on; idle off: do not disturb off again, the loop asked back" \
+art_rest_off "$H/sysac"; r4=$(cat "$HOME/bus.asked" 2>/dev/null || :)
+[ "$r1" = 1 ] && [ "$r2" = 0 ] && printf '%s\n' "$r3" | grep -q 'SparkShell\.Notifications\.Pause$' && [ "$h1$s1$w1" = 110 ] \
+    && printf '%s\n' "$r4" | grep -q 'SparkShell\.Notifications\.Resume$' && [ ! -f "$rst/idle.hush" ] && [ ! -f "$rst/idle.still" ] \
+    && ok "desktop idle, saver art: the window clear over the screen's still, the loop stopped, what would pop up held by the server; idle off: it shows what waited, the loop asked back" \
     || bad "idle art" "$r1 $r2 $h1$s1$w1 | $r3 | $r4 | $(grep 'exec foot' "$HOME/swaymsg.log")"
-printf 'default\ndo-not-disturb\n' > "$HOME/mako.mode"
-art_rest "$H/sysac"; r5=$(cat "$HOME/mako.log" 2>/dev/null || :); art_rest_off "$H/sysac"; r6=$(cat "$HOME/mako.log" 2>/dev/null || :)
-printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\nDISPLAY_SAVER=clock\n' > "$cfg"; rm -f "$HOME/mako.mode"
-art_rest "$H/sysbat"; [ -f "$rst/idle.still" ] && s2=1 || s2=0; [ -f "$H/run/spark-shell-motion.want" ] && w2=1 || w2=0; r7=$(grep -c 'alpha=0\.8' "$HOME/swaymsg.log" || :); r8=$(cat "$HOME/mako.log" 2>/dev/null || :)
+jq -c '.paused = true' "$(cat "$HOME/bus.state")" > "$H/state.held" && mv "$H/state.held" "$(cat "$HOME/bus.state")"   # held already, by another hand
+art_rest "$H/sysac"; r5=$(cat "$HOME/bus.asked" 2>/dev/null || :); art_rest_off "$H/sysac"; r6=$(cat "$HOME/bus.asked" 2>/dev/null || :)
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\nDISPLAY_SAVER=clock\n' > "$cfg"; notify_state '[]' '[]'
+art_rest "$H/sysbat"; [ -f "$rst/idle.still" ] && s2=1 || s2=0; [ -f "$H/run/spark-shell-motion.want" ] && w2=1 || w2=0; r7=$(grep -c 'alpha=0\.8' "$HOME/swaymsg.log" || :); r8=$(cat "$HOME/bus.asked" 2>/dev/null || :)
 art_rest_off "$H/sysbat"
 art_rest "$H/sysac"; [ -f "$rst/idle.still" ] && s3=1 || s3=0; [ -f "$H/run/spark-shell-motion.want" ] && w3=1 || w3=0
 art_rest_off "$H/sysac"
-! printf '%s\n' "$r5$r6" | grep -q 'mode -[ar]' && [ "$s2$w2" = 10 ] && [ "$r7" = 1 ] && ! printf '%s\n' "$r8" | grep -q 'mode -a' && [ "$s3$w3" = 01 ] \
-    && ok "desktop idle: do not disturb that was on stays on, never turned off by the idle screen; on battery any idle screen shows stills, on mains the clock's loop plays on" \
+! printf '%s\n' "$r5$r6" | grep -q 'Notifications\.Pause$\|Notifications\.Resume$' && [ "$s2$w2" = 10 ] && [ "$r7" = 1 ] && ! printf '%s\n' "$r8" | grep -q 'Notifications\.Pause$' && [ "$s3$w3" = 01 ] \
+    && ok "desktop idle: notifications held already stay held, never let go by the idle screen; the clock's idle screen holds none; on battery any idle screen shows stills, on mains the clock's loop plays on" \
     || bad "idle rest" "$r5 | $r6 | $s2$w2 $r7 | $r8 | $s3$w3"
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\nDISPLAY_SAVER=art\n' > "$cfg"
 c1=$(PATH="$H/ia:$PATH" sh "$SH" desktop idle --clock 2>&1 || :)
@@ -9758,7 +9788,7 @@ printf '%s' "$c1" | grep -q "${esc}\[[0-9]*;2H${esc}\[48;2;46;52;64;38;2;136;192
     && ! printf '%s' "$c1" | grep -q '38;5;1[6-9]m\|38;5;20m' && ! printf '%s' "$c2" | grep -q '48;2;' \
     && ok "desktop idle --clock, saver art: the time in the accent and the date in the text color, each on a plate of the background, the palette's own colors whatever the terminal's slots; a family that rests without a clock shows the art alone" \
     || bad "idle art clock" "$(printf '%s' "$c1" | od -c | head -5) | $(printf '%s' "$c2" | od -c | head -3)"
-rm -rf "$fam" "$th_dir/still-night"; cp "$H/cfg-before-rest" "$cfg"; rm -f "$HOME/swaymsg.log" "$HOME/mako.log" "$HOME/mako.mode" "$H/run/spark-shell-motion.want"
+rm -rf "$fam" "$th_dir/still-night"; cp "$H/cfg-before-rest" "$cfg"; rm -f "$HOME/swaymsg.log" "$HOME/bus.asked" "$(cat "$HOME/bus.state")" "$H/run/spark-shell-motion.want"
 fi
 # a value set as it is, the dialog's own way (#183); a palette looked at is on the screen and nothing is kept
 mcp theme "$(call 1 theme_text '{"size":"14"}')" "$(call 2 theme_transparency '{"amount":"30"}')" "$(call 3 theme_preview '{"name":"nord"}')" "$(call 4 theme_preview '{"name":"none"}')" "$(call 5 theme_preview '{"name":"off"}')"
@@ -10581,9 +10611,10 @@ fi
 
 # --- 25. the notifications, the drives and the power (#71, #72, #73) ------
 if want 25; then
-# mako's config from the palette, the session bus at the desktop's start,
-# then the three sections as providers against stand-ins for makoctl,
-# notify-send, lsblk, udisksctl, df, systemctl, sudo and zzz, and the two
+# the notifications' service file and their look, the session bus at the
+# desktop's start, then the three sections as providers against stand-ins
+# for the notifications' server (its state file, dbus-send), notify-send,
+# lsblk, udisksctl, df, systemctl, sudo and zzz, and the two
 # rules of runit written once and taken back. The Linux half is guarded
 # by uname like 14.
 fresh
@@ -10601,65 +10632,46 @@ if [ "$(uname -s)" = Darwin ]; then
     printf '%s\n' "$out" | grep -qE '^. (notifications|storage|power) ' && bad "macOS: a desktop section is listed" "$out" || ok "macOS: the panel lists no notifications, storage or power"
 else
     nlog=$HOME/notify.log
-    cat > "$H/.local/bin/makoctl" <<'STUB'
-#!/bin/sh
-[ -e "$HOME/mako.up" ] || exit 1
-printf '%s\n' "$*" >> "$HOME/mako.log"
-case $1 in
-    mode) shift; if [ $# -eq 0 ]; then echo default; [ ! -e "$HOME/mako.dnd" ] || echo do-not-disturb; exit 0; fi
-        case $1 in -a) touch "$HOME/mako.dnd" ;; -r) rm -f "$HOME/mako.dnd" ;; esac ;;
-    list|history) cat "$HOME/mako.$1" 2>/dev/null || : ;;
-esac
-STUB
-    printf '#!/bin/sh\nexit 0\n' > "$H/.local/bin/mako"
-    printf '#!/bin/sh\nprintf "%%s|" "$@" >> "$HOME/notify.log"; echo >> "$HOME/notify.log"\n' > "$H/.local/bin/notify-send"
-    chmod +x "$H/.local/bin/makoctl" "$H/.local/bin/mako" "$H/.local/bin/notify-send"
-    # the render: mako's config in the palette and the text size, a click on spark-shell's own opening the dialog
+    notify_stub
+    printf '#!/bin/sh\nprintf "%%s|" "$@" >> "$HOME/notify.log"; echo >> "$HOME/notify.log"\n[ ! -e "$HOME/notify.click" ] || echo default\n' > "$H/.local/bin/notify-send"
+    chmod +x "$H/.local/bin/notify-send"
+    nb_bus() { DBUS_SESSION_BUS_ADDRESS=unix:path=/nowhere "$@"; }   # nb_bus COMMAND... -- with a session bus's name: the stand-in dbus-send answers for it
+    # the render: the bus's service file names this clone's verb, sway starts the server at login and Super+n is the keys' verb; no file of mako's
     sh "$SH" on --yes >/dev/null 2>&1 || :
-    mk=$HOME/.config/mako/config
-    grep -q '^# rendered by spark-shell from templates/.config/mako/config' "$mk" && ! grep -q '@[A-Z_0-9]*@' "$mk" \
-        && grep -qx 'font=DejaVu Sans Mono 12' "$mk" && grep -qx 'background-color=#0f0f0f' "$mk" && grep -qx 'text-color=#aaaaaa' "$mk" && grep -qx 'progress-color=over #ff555540' "$mk" \
-        && grep -qx 'padding=12,18' "$mk" && grep -qx 'width=360' "$mk" && grep -qx 'height=96' "$mk" && grep -qx 'border-size=0' "$mk" && ! grep -q '^border-color=' "$mk" && grep -qx 'anchor=top-right' "$mk" \
-        && ok "mako's config: the dialog's surface and the text color, the bar's face, half the dialog's air and thirty cells from the text size, the accent at a quarter for a progress, no frame on any (#71)" || bad "mako config" "$(cat "$mk" 2>&1)"
-    # the look: spark's angle in the accent before the app's name, the edge on the windows' content (gaps 16 and the clear border 4), 8 between, an app's own together and counted, one line for the rest, a low one muted through, a glyph before what a card says where its category names the kind, a critical one's a red warning sign, a middle click clears
-    _pm=$(sed -n 's/^format=<span foreground="#ff5555">&#x276F;<\/span> <span foreground="#\([0-9a-f]*\)">%a<\/span>\\n&#x25CF; <b>%s<\/b>\\n%b$/\1/p' "$mk" | head -1)
-    _a='<span foreground="#ff5555">&#x276F;</span> <span foreground="#'"$_pm"'">'   # the first line's head: the angle, then the muted span open
-    _t='</span>\n&#x25CF; <b>%s</b>\n%b'   # the plain tail, the filled dot before the summary (a literal backslash-n, as the file has it)
-    glyph() { printf '</span>\\n&#x%s; <b>%%s</b>\\n%%b' "$1"; }   # glyph HEX -> the tail with that glyph before the summary
-    after() { sed -n "/^\\[$1\\]\$/{n;p;}" "$mk"; }   # after CRITERIA -> the line under that section's header
-    block() { sed -n "/^\\[$1\\]\$/,/^\$/p" "$mk" | sed -n '2,4p'; }   # block CRITERIA -> the three lines under the header
-    [ -n "$_pm" ] && [ "$_pm" != aaaaaa ] && grep -qx 'margin=8' "$mk" && grep -qx 'outer-margin=12' "$mk" && grep -qx 'group-by=app-name' "$mk" && grep -qxF "on-button-middle=exec makoctl dismiss -a; $REPO/spark-shell bar seen" "$mk" && grep -qxF "on-button-right=exec makoctl dismiss -n \"\$id\"; $REPO/spark-shell bar seen \"\$id\"" "$mk" && grep -qx 'icons=0' "$mk" && grep -qx 'default-timeout=6000' "$mk" \
-        && [ "$(after grouped)" = "format=$_a%a &#183; %g$_t" ] \
-        && [ "$(after hidden)" = "format=<span foreground=\"#$_pm\">&#x25B8; and %h more</span>" ] \
-        && [ "$(block 'urgency=low')" = "$(printf '%s\n' "text-color=#$_pm" 'default-timeout=4000' "format=<span foreground=\"#$_pm\">&#x276F; %a$_t")" ] \
-        && [ "$(after 'category=email.arrived')" = "format=$_a%a$(glyph 2261)" ] && [ "$(after 'category=email')" = "format=$_a%a$(glyph 2261)" ] \
-        && [ "$(after 'grouped category=email.arrived')" = "format=$_a%a &#183; %g$(glyph 2261)" ] && [ "$(after 'grouped category=email')" = "format=$_a%a &#183; %g$(glyph 2261)" ] \
-        && [ "$(after 'category=transfer.complete')" = "format=$_a%a$(glyph 2713)" ] && [ "$(after 'category=transfer.error')" = "format=$_a%a$(glyph 2717)" ] && [ "$(after 'category=device.added')" = "format=$_a%a$(glyph 25AD)" ] \
-        && [ "$(block 'urgency=critical')" = "$(printf '%s\n' 'default-timeout=0' 'layer=overlay' "format=$_a%a</span>\n<span foreground=\"#aa0000\">&#x26A0;</span> <b>%s</b>\n%b")" ] && ! grep -q '^border-color=' "$mk" \
-        && ok "mako's config: the angle in the accent, the edge on the windows' content and 8 between, an app's own together with their count, 'and N more' under three, a low one muted through and gone in four seconds, a filled dot before what any card says, a low one's too (quiet is not off), three lines, a check or a cross and a hollow stick before what mail, a transfer and a drive say, a red warning sign before a critical one with no frame and over a full-screen window, a middle click dismisses all and a right click one, each looked at for the bar's count (#71)" || bad "mako look" "$(cat "$mk")"
-    grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; $REPO/spark-shell bar seen \"\$id\"; $REPO/spark-shell desktop home reminders" "$mk" \
-        && grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; $REPO/spark-shell bar seen \"\$id\"; $REPO/spark-shell desktop home storage" "$mk" \
-        && [ "$(after 'app-name=spark-shell category=x-spark-shell.reminder')" = "format=${_a}reminder &#x25B8; a click opens it$(glyph 29D7)" ] \
-        && [ "$(after 'app-name=spark-shell category=device.added')" = "format=${_a}drive &#x25B8; a click opens Storage$(glyph 25AD)" ] \
-        && [ "$(sed -n '/^\[mode=do-not-disturb\]$/,$p' "$mk" | grep -c .)" = 4 ] && tail -1 "$mk" | grep -qx 'invisible=0' \
-        && ok "mako's config: a reminder or a drive says so on its first line, the bar's hourglass or a hollow stick before what it says, and a click opens the dialog there; do not disturb last, a critical one through it" || bad "mako criteria" "$(cat "$mk")"
-    grep -qx 'exec mako' "$HOME/.config/sway/config" && ok "sway config: mako starts with the desktop" || bad "sway exec mako" "$(grep -n mako "$HOME/.config/sway/config")"
-    # a new look: the file again, and a mako that runs reads it at once
-    touch "$HOME/mako.up"; rm -f "$HOME/mako.log"
-    sh "$SH" theme nord >/dev/null 2>&1 || :
-    grep -qx 'reload' "$HOME/mako.log" && ! grep -qx 'background-color=#0f0f0f' "$mk" && ok "theme NAME: mako's config in the new palette, and mako told to read it (#71)" || bad "mako reload" "$(cat "$HOME/mako.log" 2>&1)"
-    sh "$SH" theme none >/dev/null 2>&1 || :; theme_fixture '#ff5555'; sh "$SH" on --yes >/dev/null 2>&1 || :; rm -f "$HOME/mako.up"
+    svc=$HOME/.local/share/dbus-1/services/org.freedesktop.Notifications.service
+    grep -q '^# rendered by spark-shell from templates/.local/share/dbus-1/services/org.freedesktop.Notifications.service' "$svc" && ! grep -q '@[A-Z_0-9]*@' "$svc" \
+        && [ "$(grep -v '^#' "$svc")" = "$(printf '[D-BUS Service]\nName=org.freedesktop.Notifications\nExec=%s/spark-shell desktop notifications start --bus' "$REPO")" ] && [ ! -e "$HOME/.config/mako/config" ] \
+        && ok "the notifications' service file (v0.170): the session bus starts this clone's server for the notifications' name, from your own folder, which comes before the system's; mako's config is rendered no more" || bad "notifications service file" "$(cat "$svc" 2>&1)"
+    grep -qxF "exec $REPO/spark-shell desktop notifications start" "$HOME/.config/sway/config" && grep -qxF "bindsym Mod4+n exec $REPO/spark-shell desktop notifications open" "$HOME/.config/sway/config" && ! grep -q 'mako' "$HOME/.config/sway/config" \
+        && sh "$SH" desktop keys | grep -qx 'Super+n desktop.desktop-notifications-open.' \
+        && ok "sway config: the notifications' server starts with the desktop, and Super+n puts the keys on the ones on the screen" || bad "sway notifications" "$(grep -n 'notifications' "$HOME/.config/sway/config")"
+    # the look: written for a server that runs, and the server told to read it; the dialog's surface and the text color in the bar's face at the text's size, a card thirty cells wide with half the dialog's air, by the bar
+    notify_state '[]' '[]'; rm -f "$HOME/bus.asked" "$(nfile look)"
+    nb_bus sh "$SH" theme nord >/dev/null 2>&1 || :; _l1=$(cat "$(nfile look)" 2>/dev/null || :); _a1=$(grep -c 'SparkShell.Notifications.Reload$' "$HOME/bus.asked" 2>/dev/null || :)
+    nb_bus sh "$SH" theme nord >/dev/null 2>&1 || :; _a2=$(grep -c 'SparkShell.Notifications.Reload$' "$HOME/bus.asked" 2>/dev/null || :)
+    rm -f "$HOME/bus.asked"; nb_bus sh "$SH" theme solarized-light >/dev/null 2>&1 || :; _nl=$(cat "$(nfile look)" 2>/dev/null || :); _a3=$(grep -c 'SparkShell.Notifications.Reload$' "$HOME/bus.asked" 2>/dev/null || :)
+    nlk() { printf '%s\n' "$_nl" | sed -n "s/^$1=//p"; }
+    _fg=$(sed -n 's/^foreground=//p' "$HOME/.config/foot/foot.ini" | head -1); _r1=$(sed -n 's/^regular1=//p' "$HOME/.config/foot/foot.ini" | head -1); _m20=$(sed -n 's/^20=//p' "$HOME/.config/foot/foot.ini")
+    sh "$SH" theme none >/dev/null 2>&1 || :
+    [ "$(printf '%s\n' "$_nl" | cut -d= -f1 | paste -sd' ' -)" = 'fg accent muted ground lit alert font width pad_x pad_y anchor motion dnd' ] \
+        && [ "$(printf '%s\n' "$_nl" | tail -7)" = "$(printf 'font=DejaVu Sans Mono 12\nwidth=360\npad_x=18\npad_y=12\nanchor=top\nmotion=yes\ndnd=no')" ] \
+        && ! printf '%s\n' "$_nl" | head -6 | grep -qvE '^[a-z]+=[0-9a-f]{6}$' \
+        && [ -n "$_fg" ] && [ "$(nlk fg)" = "$_fg" ] && [ "$(nlk alert)" = "$_r1" ] && [ "$(nlk muted)" = "$_m20" ] \
+        && [ -n "$_l1" ] && [ "$_l1" != "$_nl" ] && [ "$_a1" = 1 ] && [ "$_a2" = 1 ] && [ "$_a3" = 1 ] \
+        && ok "the notifications' look (v0.170): the dialog's surface, the palette's text and the muted lifted for it, the bar's face at the text's size, a card thirty cells wide with half the dialog's air, by the bar; a new palette writes it again and tells a server that runs, once: the same look again tells it nothing" || bad "notifications look" "$_nl | $_fg $_r1 $_m20 | $_a1 $_a2 $_a3 | $(cat "$HOME/bus.asked" 2>&1)"
+    rm -f "$(cat "$HOME/bus.state")" "$HOME/bus.asked" "$(nfile look)"; nb_bus sh "$SH" theme nord >/dev/null 2>&1 || :; sh "$SH" theme none >/dev/null 2>&1 || :; theme_fixture '#ff5555'; sh "$SH" on --yes >/dev/null 2>&1 || :
+    [ ! -e "$(nfile look)" ] && ! grep -q 'Notifications' "$HOME/bus.asked" 2>/dev/null && ok "a new look with no server running: nothing written and nothing asked of the bus, so none is started for it" || bad "look with no server" "$(cat "$HOME/bus.asked" 2>&1)"
     # the session bus: sway inside dbus-run-session where there is none, never where logind made one
     printf '#!/bin/sh\necho "dbus-run-session $*" >> "%s/bus.log"\nexec "$@"\n' "$H" > "$H/.local/bin/dbus-run-session"
     printf '#!/bin/sh\necho "sway $*" >> "%s/bus.log"\n' "$H" > "$H/.local/bin/sway"
     chmod +x "$H/.local/bin/dbus-run-session" "$H/.local/bin/sway"
     rm -f "$H/bus.log"; env -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS TEST_TTY=/dev/tty1 sh "$SH" desktop >/dev/null 2>&1 || :
     [ "$(sed -n 1p "$H/bus.log" 2>/dev/null)" = 'dbus-run-session sway' ] && [ "$(sed -n 2p "$H/bus.log")" = 'sway ' ] \
-        && ok "desktop: with no session bus, sway starts inside dbus-run-session, so a program reaches mako (#71)" || bad "desktop bus" "$(cat "$H/bus.log" 2>&1)"
+        && ok "desktop: with no session bus, sway starts inside dbus-run-session, so a program's notification reaches the server (#71)" || bad "desktop bus" "$(cat "$H/bus.log" 2>&1)"
     rm -f "$H/bus.log"; env -u WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1/bus TEST_TTY=/dev/tty1 sh "$SH" desktop >/dev/null 2>&1 || :
     [ "$(cat "$H/bus.log" 2>/dev/null)" = 'sway ' ] && ok "desktop: a session bus there already (logind's), sway starts as it was" || bad "desktop own bus" "$(cat "$H/bus.log" 2>&1)"
     desktop_stubs
-    # the notifications section: mako not there, not running, then running
+    # the notifications section: what the server takes not there, no bus, another program's, then spark-shell's own
     rq() { jq -cn --argjson i "$1" --arg m "$2" --argjson p "${3:-null}" '{jsonrpc: "2.0", id: $i, method: $m} + (if $p == null then {} else {params: $p} end)'; }
     call() { rq "$1" tools/call "$(jq -cn --arg n "$2" --argjson a "${3:-"{}"}" '{name: $n, arguments: $a}')"; }
     mcp() { _s=$1; shift; printf '%s\n' "$@" | sh "$SH" provide "$_s" > "$H/mcp.out" 2> "$H/mcp.err" || { _ms=$?; printf '  provide %s ended %s: %s\n' "$_s" "$_ms" "$(tail -3 "$H/mcp.err" | tr '\n' ' ')"; return "$_ms"; }; }
@@ -10688,67 +10700,127 @@ STUB
         && [ "$(jq -c 'select(.id == 6) | [.result.isError, .result.content[0].text]' "$H/mcp6.out")" = '[true,"nothing to play: no player is running"]' ] \
         && ok "media tools: six, play, pause and stop idempotent; a step asks the player that plays and its receipt says what was asked, with nothing to undo; a tool that is none is refused, and with no player a step is not done and says so" || bad "media tools" "$_mt | $_ma | $(cut -c1-500 "$H/mcp1.out") | $(cut -c1-300 "$H/mcp6.out")"
     rm -f "$H/.local/bin/playerctl" "$HOME/players" "$HOME/players.asked"; printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/playerctl"; chmod +x "$H/.local/bin/playerctl"
-    out=$(env -u DBUS_SESSION_BUS_ADDRESS SPARK_SHELL_NO_MAKO=1 sh "$SH" panel notifications --list 2>&1 | sed -n 2p)   # a runner may have a mako of its own: the switch, never PATH
-    [ "$out" = "  notifications  mako is not installed (spark-shell on desktop)	notifications show" ] && ok "notifications: no mako, said as the section's one row" || bad "notifications no mako" "$out"
+    out=$(env -u DBUS_SESSION_BUS_ADDRESS SPARK_SHELL_NO_NOTIFY=1 sh "$SH" panel notifications --list 2>&1 | sed -n 2p)   # a runner has python3 and may have dbus-send: the switch, never PATH
+    [ "$out" = "  notifications  python3 or dbus-send is not installed (spark-shell on desktop)	notifications show" ] && ok "notifications: what the server takes is not installed, said as the section's one row" || bad "notifications not installed" "$out"
     out=$(env -u DBUS_SESSION_BUS_ADDRESS sh "$SH" panel notifications --list 2>&1 | sed -n 2p)
     [ "$out" = "  notifications  no session bus yet: notifications start at your next login	notifications show" ] && ok "notifications: no session bus, the next login says when" || bad "notifications no bus" "$out"
-    out=$(DBUS_SESSION_BUS_ADDRESS=unix:path=/nowhere sh "$SH" panel notifications --list 2>&1 | sed -n 2p)
-    [ "$out" = "  notifications  the notifications are not running: they start at your next login	notifications show" ] && ok "notifications: a bus but no mako answering, said so" || bad "notifications not running" "$out"
-    touch "$HOME/mako.up"
-    printf 'Notification 9: Download complete\n  App name: firefox\n  Urgency: normal\n' > "$HOME/mako.list"
-    printf 'Notification 5: Build passed\n  App name: \nNotification 4: New mail from Ada\n  App name: aerc\n  Category: email\nNotification 3: New mail from Ada\n  App name: aerc\n' > "$HOME/mako.history"
+    sleep 300 & _op=$!; printf '%s\n' "$_op" > "$HOME/bus.owner"
+    out=$(nb_bus sh "$SH" panel notifications --list 2>&1 | sed -n 2p); st=0; out2=$(nb_bus sh "$SH" desktop notifications dismiss 2>&1) || st=$?
+    kill "$_op" 2>/dev/null || :; rm -f "$HOME/bus.owner"
+    [ "$out" = "  notifications  sleep shows the notifications here, not spark-shell	notifications show" ] && [ "$st" = 1 ] && [ "$out2" = 'sleep shows the notifications here, not spark-shell' ] \
+        && ok "notifications: another program holds their name on the bus: it is named as the section's one row, and a step is refused in the same words; it is yours and stays" || bad "notifications another program" "$out | $st $out2"
+    out=$(nb_bus sh "$SH" panel notifications --list 2>&1 | sed -n '1,3p' | cut -f1 | paste -sd'|' -)
+    [ "$out" = 'notifications  on|  notifications  turn on do not disturb' ] && ok "notifications: a bus and no server yet: on, the bus starts it at the first one; do not disturb can be set meanwhile" || bad "notifications before the first" "$out"
+    notify_state '[[9, "firefox", "Download complete"]]' '[[5, "", "Build passed"], [4, "aerc", "New mail from Ada"], [3, "aerc", "New mail from Ada"]]'
+    rows() { mcp "$1" "$(rq 1 resources/read "{\"uri\":\"spark-shell://$1/rows\"}")"; ans 1 | jq -r '.result.contents[0].text'; }
+    export DBUS_SESSION_BUS_ADDRESS=unix:path=/nowhere   # the rest of the notifications' tests have a bus by name
     rows notifications > "$H/n.json"
     jq -e '.state == "1 on the screen"
         and ([.rows[] | .text] == ["turn on do not disturb", "dismiss the one on the screen", "show the last one again", "Build passed", "New mail from Ada", "New mail from Ada"])
         and (.rows[0].tool == {name: "notifications_do_not_disturb", arguments: {state: "on"}}) and (.rows[1].tool.name == "notifications_dismiss") and (.rows[2].tool.name == "notifications_restore")
         and ([.rows[3:][] | .group] == ["earlier", "earlier", "earlier"]) and (.rows[4].columns == ["aerc"]) and (.rows[3].columns == []) and ([.rows[] | .id] | unique | length) == 6' "$H/n.json" >/dev/null \
-        && ok "notifications rows: do not disturb, dismiss what is on the screen, the last one again, then the history, newest first, each its app a column, two alike apart by mako's id (#71)" || bad "notifications rows" "$(cat "$H/n.json")"
-    printf '{"type":"aa{sv}","data":[[{"id":{"type":"u","data":12},"app-name":{"type":"s","data":"firefox"},"summary":{"type":"s","data":"Saved"}}]]}\n' > "$HOME/mako.history"
-    [ "$(rows notifications | jq -c '[.rows[] | select(.group == "earlier") | [.text, .columns]]')" = '[["Saved",["firefox"]]]' ] && ok "notifications rows: mako 1.7 and 1.8's history, busctl's JSON, read the same" || bad "mako 1.7 history" "$(rows notifications)"
-    rm -f "$HOME/mako.log"
+        && ok "notifications rows: do not disturb, dismiss what is on the screen, the last one again, then the history, newest first, each its app a column, two alike apart by their id (#71)" || bad "notifications rows" "$(cat "$H/n.json")"
+    rm -f "$HOME/bus.asked"
     mcp notifications "$(call 1 notifications_do_not_disturb '{"state":"on"}')" "$(call 2 notifications_do_not_disturb '{"state":"on"}')" "$(call 3 notifications_do_not_disturb '{"state":"maybe"}')"
     [ "$(ans 1 | jq -c '.result.structuredContent | del(.rows)')" = '{"receipt":"do not disturb on: notifications wait out of sight","undo":{"name":"notifications_do_not_disturb","arguments":{"state":"off"}}}' ] \
         && [ "$(ans 2 | jq -c '.result.structuredContent | del(.rows)')" = '{"receipt":"do not disturb on: notifications wait out of sight"}' ] && [ "$(ans 3 | jq -r .error.message)" = 'notifications_do_not_disturb: state is one of on, off' ] \
-        && [ -e "$HOME/mako.dnd" ] && grep -qx 'DO_NOT_DISTURB=yes' "$HOME/.config/spark-shell/config" \
-        && ok "notifications do-not-disturb on: mako's mode and the config, undo puts it off; asked again, a receipt with nothing to undo (#71)" || bad "dnd on" "$(cat "$H/mcp.out")"
+        && grep -qx 'DO_NOT_DISTURB=yes' "$HOME/.config/spark-shell/config" && grep -qx 'dnd=yes' "$(nfile look)" && [ "$(grep -c 'SparkShell.Notifications.Reload$' "$HOME/bus.asked")" = 1 ] \
+        && ok "notifications do-not-disturb on: the config's word, the server told once through its look file, undo puts it off; asked again, a receipt with nothing to undo (#71)" || bad "dnd on" "$(cat "$H/mcp.out") | $(cat "$HOME/bus.asked" 2>&1)"
     [ "$(rows notifications | jq -r '.state + " | " + .rows[0].text + " | " + .rows[0].sign')" = 'do not disturb | turn off do not disturb | dot' ] && ok "notifications: with do not disturb on, the row in use turns it off" || bad "dnd row" "$(rows notifications | head -c 300)"
     REM_LOOK=1 sh "$SH" bar status --once 2>/dev/null | jq -e 'any(.[]; .name == "notifications" and (.full_text | test("\u263e")))' >/dev/null && ok "bar: do not disturb is said while it is on, a click opens its section" || bad "bar dnd" "$(REM_LOOK=1 sh "$SH" bar status --once 2>&1 | head -c 400)"
-    # the bar's count: mako's notifications, on the screen (9) and gone (12), that nobody looked at; bar seen ID (mako's click) and bare (the block's click, dismiss) count them looked at
-    nb() { REM_LOOK=1 XDG_RUNTIME_DIR=$H/run sh "$SH" bar status --once 2>/dev/null | jq -r '[.[] | select(.name == "notifications") | .instance + "=" + (.full_text | gsub("<[^>]*>"; ""))] | join(" ")'; }
-    mkdir -p "$H/run"; rm -f "$H/run/spark-shell/notify-seen"
-    nf() { REM_LOOK=1 SPARK_BAR=1 XDG_RUNTIME_DIR=$H/run sh "$SH" bar status --once 2>/dev/null | jq -r '. as $l | [.[1:][] | select(.name == "notifications") | [.name, .group, .sign, .text, .cells, .bold, .state, (.level // "-"), .set, .pinned, .label, .toggle, .icon] | map(tostring) | join("|")] | join(" ") + (if $l[-1].name == "notifications" then "" else " not last" end)' || echo unread; }   # -> the notifications module of spark's bar's line, its fields with a bar between, its icon last; said when it is not the line's last
-    _n1=$(nb); _nf1=$(nf); XDG_RUNTIME_DIR=$H/run sh "$SH" bar seen 12 >/dev/null 2>&1; _n2=$(nb); XDG_RUNTIME_DIR=$H/run sh "$SH" bar seen 9 77 >/dev/null 2>&1; _n3=$(nb); _nf3=$(nf)
+    # the bar's count: the notifications, on the screen (9) and gone (12), that nobody looked at, as the server counts them; a step that looks at one by its id, and at every one
+    nb() { REM_LOOK=1 sh "$SH" bar status --once 2>/dev/null | jq -r '[.[] | select(.name == "notifications") | .instance + "=" + (.full_text | gsub("<[^>]*>"; ""))] | join(" ")'; }
+    nf() { REM_LOOK=1 SPARK_BAR=1 sh "$SH" bar status --once 2>/dev/null | jq -r '. as $l | [.[1:][] | select(.name == "notifications") | [.name, .group, .sign, .text, .cells, .bold, .state, (.level // "-"), .set, .pinned, .label, .toggle, .icon] | map(tostring) | join("|")] | join(" ") + (if $l[-1].name == "notifications" then "" else " not last" end)' || echo unread; }   # -> the notifications module of spark's bar's line, its fields with a bar between, its icon last; said when it is not the line's last
+    notify_state '[[9, "firefox", "Download complete"]]' '[[12, "firefox", "Saved"]]'
+    _n1=$(nb); _nf1=$(nf)
     _dnd=$(printf '\342\230\276'); _note=$(printf '\342\232\221')
-    [ "$_n1" = "dnd=$_dnd count=$_note 2" ] && [ "$_n2" = "dnd=$_dnd count=$_note 1" ] && [ "$_n3" = "dnd=$_dnd" ] && [ "$(cat "$H/run/spark-shell/notify-seen")" = "$(printf '9\n12')" ] \
-        && ok "bar: the notifications nobody looked at, the flag and how many beside do not disturb; one looked at by its id, then the other: do not disturb alone, an id mako does not hold not kept (#71)" || bad "bar count" "$_n1 | $_n2 | $_n3 | $(cat "$H/run/spark-shell/notify-seen" 2>&1)"
-    printf 'Notification 14: Ping\n  App name: chat\n' > "$HOME/mako.list"; _n4=$(nb)
+    rm -f "$HOME/bus.asked"; SWAYSOCK=$H/sock sh "$SH" desktop notifications dismiss >/dev/null 2>&1 || :; _a1=$(grep -c 'Notifications' "$HOME/bus.asked" || :); _a2=$(paste -sd'|' - < "$HOME/bus.asked" | sed 's/[^|]*Notifications\.//g'); _n3=$(nb); _nf3=$(nf)
+    [ "$_n1" = "dnd=$_dnd count=$_note 2" ] && [ "$_a1" = 1 ] && [ "$_a2" = 'Dismiss array:uint32:9' ] && [ "$_n3" = "dnd=$_dnd count=$_note 1" ] && [ "$(jq -c '[.shown, [.history[] | .id]]' "$(cat "$HOME/bus.state")")" = '[[],[9,12]]' ] \
+        && ok "bar: the notifications nobody looked at, the flag and how many beside do not disturb; dismiss sends the one on the screen away as a person's own hand does, by its id, so it is looked at: the one that left before stays counted (#71)" || bad "bar count" "$_n1 | $_a1 $_a2 | $_n3 | $(cat "$(cat "$HOME/bus.state")")"
+    notify_state '[[14, "chat", "Ping"]]' '[[12, "firefox", "Saved"]]'; _n4=$(nb)
     cp "$HOME/.config/spark-shell/config" "$H/config.keep"; printf 'BAR_GLYPHS=words\n' >> "$HOME/.config/spark-shell/config"; _n5=$(nb); _nf5=$(nf); cp "$H/config.keep" "$HOME/.config/spark-shell/config"
-    XDG_RUNTIME_DIR=$H/run sh "$SH" bar seen >/dev/null 2>&1; _n6=$(nb)
-    [ "$_n4" = "dnd=$_dnd count=$_note 1" ] && [ "$_n5" = "dnd=do not disturb count=new 1" ] && [ "$_n6" = "dnd=$_dnd" ] \
-        && ok "bar: a new one on the screen counts, the one looked at stays looked at; in words, new 1; bar seen, bare, looks at them all" || bad "bar count new" "$_n4 | $_n5 | $_n6"
-    rm -f "$HOME/mako.dnd"; sh "$SH" desktop --pending >/dev/null 2>&1 || :; _i=0; while [ "$_i" -lt 20 ] && [ ! -e "$HOME/mako.dnd" ]; do sleep 0.25; _i=$((_i + 1)); done
-    [ -e "$HOME/mako.dnd" ] && ok "desktop --pending (the desktop's start): do not disturb as the config left it" || bad "dnd kept" "$(cat "$HOME/mako.log")"
-    out=$(sh "$SH" desktop notifications do-not-disturb off 2>&1 || :); [ "$out" = 'do not disturb off' ] && [ ! -e "$HOME/mako.dnd" ] && grep -qx 'DO_NOT_DISTURB=no' "$HOME/.config/spark-shell/config" \
-        && ok "desktop notifications do-not-disturb off: said, mako's mode gone, the config too" || bad "dnd off cli" "$out"
+    # the block's click on the bar looks at every one: an id of 0 says so
+    rm -f "$HOME/bus.asked"; printf '[\n,{"name":"notifications","instance":"count","button":1}\n' | SWAYSOCK=$H/sock sh "$SH" bar status > /dev/null 2>&1 & _bp=$!
+    for _i in $(seq 1 60); do grep -q 'Seen array:uint32:0$' "$HOME/bus.asked" 2>/dev/null && break; sleep .1; done; kill "$_bp" 2>/dev/null || :; wait "$_bp" 2>/dev/null || :; _n6=$(nb)
+    [ "$_n4" = "dnd=$_dnd count=$_note 2" ] && [ "$_n5" = "dnd=do not disturb count=new 2" ] && grep -q 'Seen array:uint32:0$' "$HOME/bus.asked" && [ "$_n6" = "dnd=$_dnd" ] \
+        && ok "bar: a new one on the screen counts; in words, new 2; a click on the block looks at every one, and the count goes" || bad "bar count new" "$_n4 | $_n5 | $_n6 | $(cat "$HOME/bus.asked" 2>&1)"
+    out=$(sh "$SH" desktop notifications do-not-disturb off 2>&1 || :); [ "$out" = 'do not disturb off' ] && grep -qx 'DO_NOT_DISTURB=no' "$HOME/.config/spark-shell/config" && grep -qx 'dnd=no' "$(nfile look)" \
+        && ok "desktop notifications do-not-disturb off: said, the config's word and the server's look file" || bad "dnd off cli" "$out"
     [ -z "$(nb)" ] && ok "bar: do not disturb off and every notification looked at: no notifications block" || bad "bar no count" "$(nb)"
-    _nf6=$(nf); cp "$HOME/mako.list" "$H/mako.keep"; printf 'Notification 15: Pong\n  App name: chat\n' > "$HOME/mako.list"; _nf7=$(nf)
-    cp "$HOME/.config/spark-shell/config" "$H/config.keep"; printf 'BAR_GLYPHS=words\n' >> "$HOME/.config/spark-shell/config"; _nf8=$(nf); mv "$H/config.keep" "$HOME/.config/spark-shell/config"; mv "$H/mako.keep" "$HOME/mako.list"
-    [ "$_nf1" = "notifications|time|$_dnd|2|2|false|ok|-|false|false|do not disturb, 2 not seen|false|quiet" ] && [ "$_nf3" = "notifications|time|$_dnd||2|false|ok|-|false|false|do not disturb|false|quiet" ] \
-        && [ "$_nf5" = 'notifications|time|quiet|1|2|false|ok|-|false|false|do not disturb, 1 not seen|false|' ] && [ "$_nf8" = 'notifications|time|notes|1|2|false|ok|-|false|false|notifications, 1 not seen|false|' ] && [ "$_nf6" = "notifications|time|$_note||2|false|ok|-|false|false|notifications|false|flag-none" ] \
-        && [ "$_nf7" = "notifications|time|$_note|1|2|false|ok|-|false|false|notifications, 1 not seen|false|flag" ] \
-        && ok "spark's bar, the notifications (v0.148): one module, always there where mako is and the line's last: the moon in do not disturb, else the flag, with nothing after it when every one was looked at; how many were not is its text, in two cells; in words, notes for the flag and quiet for do not disturb; its icon (v0.149) the sign of do not disturb, else the flag, solid while some wait and hollow with none, and none in words" || bad "facts notifications" "$_nf1 | $_nf3 | $_nf5 | $_nf6 | $_nf7 | $_nf8"
+    _nf6=$(nf); notify_state '[[15, "chat", "Pong"]]' '[]'; _nf7=$(nf)
+    cp "$HOME/.config/spark-shell/config" "$H/config.keep"; printf 'BAR_GLYPHS=words\n' >> "$HOME/.config/spark-shell/config"; _nf8=$(nf); mv "$H/config.keep" "$HOME/.config/spark-shell/config"
+    rm -f "$(cat "$HOME/bus.state")"; _nf9=$(nf); _nf10=$(SPARK_SHELL_NO_NOTIFY=1 nf)
+    [ "$_nf1" = "notifications|time|$_dnd|2|2|false|ok|-|false|false|do not disturb, 2 not seen|false|quiet" ] && [ "$_nf3" = "notifications|time|$_dnd|1|2|false|ok|-|false|false|do not disturb, 1 not seen|false|quiet" ] \
+        && [ "$_nf5" = 'notifications|time|quiet|2|2|false|ok|-|false|false|do not disturb, 2 not seen|false|' ] && [ "$_nf8" = 'notifications|time|notes|1|2|false|ok|-|false|false|notifications, 1 not seen|false|' ] && [ "$_nf6" = "notifications|time|$_note||2|false|ok|-|false|false|notifications|false|flag-none" ] \
+        && [ "$_nf7" = "notifications|time|$_note|1|2|false|ok|-|false|false|notifications, 1 not seen|false|flag" ] && [ "$_nf9" = "$_nf6" ] && [ "$_nf10" = ' not last' ] \
+        && ok "spark's bar, the notifications (v0.148): one module, always there where they can show and the line's last, with no server running yet too, and gone where they cannot: the moon in do not disturb, else the flag, with nothing after it when every one was looked at; how many were not is its text, in two cells; in words, notes for the flag and quiet for do not disturb; its icon (v0.149) the sign of do not disturb, else the flag, solid while some wait and hollow with none, and none in words" || bad "facts notifications" "$_nf1 | $_nf3 | $_nf5 | $_nf6 | $_nf7 | $_nf8 | $_nf9 | $_nf10"
+    notify_state '[]' '[[12, "firefox", "Saved"]]'
     out=$(sh "$SH" desktop notifications 2>&1 || :); [ "$out" = "$(printf 'do not disturb off\n  firefox: Saved')" ] && ok "desktop notifications: do not disturb, then the last few with their app" || bad "notifications cli" "$out"
+    # restore: the last one that left on the screen again, or said to stay in the list when nothing pops up; open hands the keys to the ones on the screen
+    rm -f "$HOME/bus.asked"; st=0; out=$(sh "$SH" desktop notifications restore 2>&1) || st=$?; _r1=$(jq -c '[[.shown[] | .id], [.history[] | .id]]' "$(cat "$HOME/bus.state")")
+    st2=0; out2=$(sh "$SH" desktop notifications restore 2>&1) || st2=$?
+    notify_state '[]' '[[12, "firefox", "Saved"]]'; touch "$HOME/bus.held"; st3=0; out3=$(sh "$SH" desktop notifications restore 2>&1) || st3=$?; rm -f "$HOME/bus.held"
+    st4=0; out4=$(sh "$SH" desktop notifications open 2>&1) || st4=$?; notify_state '[[12, "firefox", "Saved"]]' '[]'; rm -f "$HOME/bus.asked"; st5=0; out5=$(sh "$SH" desktop notifications open 2>&1) || st5=$?
+    [ "$st" = 0 ] && [ "$out" = 'the last one is on the screen again' ] && [ "$_r1" = '[[12],[]]' ] && [ "$st2" = 1 ] && [ "$out2" = 'nothing in the history' ] && [ "$st3" = 1 ] && [ "$out3" = 'the last one stays in the list: nothing pops up now' ] \
+        && [ "$st4" = 1 ] && [ "$out4" = 'nothing on the screen to open' ] && [ "$st5" = 0 ] && [ "$out5" = 'the notifications have the keys' ] && grep -q 'SparkShell.Notifications.Open$' "$HOME/bus.asked" \
+        && ok "desktop notifications restore and open: the last one that left is on the screen again; with none, or with nothing popping up, said in one line; open hands the keys to the ones on the screen, and with none says so" || bad "notifications restore open" "$st $out $_r1 | $st2 $out2 | $st3 $out3 | $st4 $out4 | $st5 $out5"
     # a notification's words are any site's: scrubbed text stays plain, dash's echo made \033 a real escape again
-    _mk=$(cat "$HOME/mako.history"); printf 'Notification 21: hello\\033[2Jgone\n  App name: browser\n' > "$HOME/mako.history"
+    jq -c '.history = [{id: 21, app: "brow\u202eser", summary: "hello\\033[2Jgone\u0007\ttab", body: "", urgency: 1, category: "", time: 0}] | .shown = []' "$(cat "$HOME/bus.state")" > "$H/state.new" && mv "$H/state.new" "$(cat "$HOME/bus.state")"
     out=$(sh "$SH" desktop notifications 2>&1 || :)
-    printf '%s\n' "$out" | grep -qF 'browser: hello\033[2Jgone' && ! printf '%s' "$out" | LC_ALL=C grep -q "$(printf '\033')" && ok "desktop notifications: an escape written out in a notification stays words" || bad "notification escape" "$(printf '%s' "$out" | od -c | head -5)"
-    printf '%s\n' "$_mk" > "$HOME/mako.history"
-    rc=0; out=$(sh "$SH" desktop notifications loud 2>&1) || rc=$?; [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: notifications takes do-not-disturb on|off, dismiss or restore' ] && ok "desktop notifications WORD: refused in one line" || bad "notifications refuse" "rc=$rc $out"
+    printf '%s\n' "$out" | grep -qF 'browser: hello\033[2Jgone tab' && ! printf '%s' "$out" | LC_ALL=C grep -q "$(printf '\033\|\007\|\342\200\256')" && ok "desktop notifications: an escape written out in a notification stays words, and its control and bidi characters go" || bad "notification escape" "$(printf '%s' "$out" | od -c | head -5)"
+    rc=0; out=$(sh "$SH" desktop notifications loud 2>&1) || rc=$?; [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: notifications takes do-not-disturb on|off, dismiss, restore or open' ] && ok "desktop notifications WORD: refused in one line" || bad "notifications refuse" "rc=$rc $out"
+    # the server's start: nothing where what it takes is not there or no bus is; one that runs is left alone; else the look file is written and python3 runs the server on the state file and the look, with the drawer a spark-bar here gives it
+    rm -f "$(cat "$HOME/bus.state")" "$(nfile look)"; printf '#!/bin/sh\ncase "$1" in */lib/notifications.py) printf "%%s\\n" "$*" >> "$HOME/server.asked"; exit 0 ;; esac\nexec %s "$@"\n' "$fixture_python" > "$H/.local/bin/python3"; chmod +x "$H/.local/bin/python3"
+    printf '#!/bin/sh\nexit 0\n' > "$H/ndraw"; chmod +x "$H/ndraw"
+    env -u DBUS_SESSION_BUS_ADDRESS sh "$SH" desktop notifications start >/dev/null 2>&1 || :; SPARK_SHELL_NO_NOTIFY=1 sh "$SH" desktop notifications start >/dev/null 2>&1 || :; sleep 0.3; _s0=$(cat "$HOME/server.asked" 2>/dev/null || :)
+    WAYLAND_DISPLAY=wayland-1 SPARK_SHELL_BAR=$H/ndraw sh "$SH" desktop notifications start >/dev/null 2>&1 || :
+    for _i in $(seq 1 30); do [ -s "$HOME/server.asked" ] && break; sleep .1; done; _s1=$(cat "$HOME/server.asked" 2>/dev/null || :); _l2=$(grep -c . "$(nfile look)" 2>/dev/null || :)
+    rm -f "$HOME/server.asked"; WAYLAND_DISPLAY=wayland-1 sh "$SH" desktop notifications start >/dev/null 2>&1 || :; for _i in $(seq 1 30); do [ -s "$HOME/server.asked" ] && break; sleep .1; done; _s2=$(cat "$HOME/server.asked" 2>/dev/null || :)
+    WAYLAND_DISPLAY=wayland-1 sleep 300 & _np1=$!
+    notify_state '[]' '[]' "$_np1"; rm -f "$HOME/server.asked"; WAYLAND_DISPLAY=wayland-1 sh "$SH" desktop notifications start >/dev/null 2>&1 || :; sleep 0.3; _s3=$(cat "$HOME/server.asked" 2>/dev/null || :); _k3=$(pstate "$_np1")
+    kill "$_np1" 2>/dev/null || :; wait "$_np1" 2>/dev/null || :
+    # one a desktop before this one left: another compositor's socket in its environment
+    WAYLAND_DISPLAY=wayland-0 sleep 300 & _np0=$!
+    notify_state '[]' '[]' "$_np0"; rm -f "$HOME/server.asked"; WAYLAND_DISPLAY=wayland-1 sh "$SH" desktop notifications start >/dev/null 2>&1 || :; for _i in $(seq 1 60); do [ -s "$HOME/server.asked" ] && break; sleep .1; done; _s4=$(cat "$HOME/server.asked" 2>/dev/null || :); _k4=$(pstate "$_np0")
+    kill "$_np0" 2>/dev/null || :; wait "$_np0" 2>/dev/null || :
+    # the bus's own start: the command is the server, and with nothing to serve on it is false
+    rm -f "$(nfile state)" "$HOME/server.asked"; rc5=0; WAYLAND_DISPLAY=wayland-1 sh "$SH" desktop notifications start --bus >/dev/null 2>&1 || rc5=$?; _s5=$(cat "$HOME/server.asked" 2>/dev/null || :)
+    rm -f "$HOME/server.asked"; rc6=0; env -u DBUS_SESSION_BUS_ADDRESS sh "$SH" desktop notifications start --bus >/dev/null 2>&1 || rc6=$?; _s6=$(cat "$HOME/server.asked" 2>/dev/null || :)
+    rm -f "$H/.local/bin/python3" "$H/ndraw" "$HOME/server.asked"
+    [ -z "$_s0" ] && [ "$_s1" = "$REPO/lib/notifications.py $(nfile state) $(nfile look) $H/ndraw notifications" ] && [ "$_l2" = 13 ] && [ "$_s2" = "$REPO/lib/notifications.py $(nfile state) $(nfile look)" ] && [ -z "$_s3" ] && [ "$_k3" = S ] \
+        && ok "desktop notifications start (v0.170): with no bus, or without what the server takes, nothing; else the look is written and the server runs on its state file and the look, its drawer the spark-bar that can run here, none where none can; one that runs on this desktop is left alone" || bad "notifications start" "[$_s0] | $_s1 | $_l2 | $_s2 | [$_s3] $_k3"
+    [ "$_s4" = "$REPO/lib/notifications.py $(nfile state) $(nfile look)" ] && case $_k4 in ''|Z) : ;; *) false ;; esac \
+        && ok "desktop notifications start: a server that a desktop before this one left ends, and this desktop's own starts: no login pops nothing up because an old one held the name" || bad "notifications start stale" "$_s4 | $_k4"
+    [ "$rc5" = 0 ] && [ "$_s5" = "$REPO/lib/notifications.py $(nfile state) $(nfile look)" ] && [ "$rc6" = 1 ] && [ -z "$_s6" ] \
+        && ok "desktop notifications start --bus, the session bus's: the server is the command itself, so a bus that ends what it started keeps it; with no bus to serve on it is false at once, and who notified hears so" || bad "notifications start bus" "rc=$rc5 $_s5 | rc=$rc6 [$_s6]"
+    # what v0.169 left of mako: its render handed back, once; a config of your own stays; the verb its config called is nothing now
+    notify_state '[]' '[]'
+    mkdir -p "$HOME/.config/mako"; printf '# rendered by spark-shell from templates/.config/mako/config -- edit the template, then spark-shell on\non-notify=exec spark-shell bar seen\n' > "$HOME/.config/mako/config"
+    out=$(sh "$SH" on --yes 2>&1 || :); out2=$(sh "$SH" on --yes 2>&1 || :)
+    [ ! -e "$HOME/.config/mako/config" ] && printf '%s\n' "$out" | grep -q "^render *notify *mako's config, rendered before v0.170, handed back" && ! printf '%s\n' "$out2" | grep -q 'mako' \
+        && ok "on: mako's config as v0.169 rendered it is handed back, once" || bad "mako render" "$out | $(ls -la "$HOME/.config/mako" 2>&1)"
+    rm -rf "$HOME/.config/mako"; mkdir -p "$HOME/.config/mako"; printf 'font=mine 11\n' > "$HOME/.config/mako/config"; out=$(sh "$SH" on --yes 2>&1 || :)
+    [ "$(cat "$HOME/.config/mako/config" 2>/dev/null)" = 'font=mine 11' ] && ! printf '%s\n' "$out" | grep -q 'mako' && ok "on: a mako config of your own stays, and that mako is yours" || bad "mako yours" "$out"
+    rm -rf "$HOME/.config/mako"
+    rc=0; out=$(sh "$SH" bar seen 12 2>&1) || rc=$?
+    [ "$rc" = 0 ] && [ -z "$out" ] && ok "bar seen, which v0.169's mako says until it ends: nothing, and never words for spark" || bad "bar seen" "rc=$rc $out"
+    cp "$HOME/.config/spark-shell/config" "$H/config.keep"; { grep -v '^DO_NOT_DISTURB=' "$H/config.keep" || :; echo 'DO_NOT_DISTURB="yes"'; } > "$HOME/.config/spark-shell/config"
+    out=$(sh "$SH" desktop notifications 2>&1 | head -1 || :); cp "$H/config.keep" "$HOME/.config/spark-shell/config"; rm -f "$H/config.keep"
+    [ "$out" = 'do not disturb on' ] && ok "do not disturb: the config's word in quotes is the same word" || bad "dnd quoted" "$out"
+    unset DBUS_SESSION_BUS_ADDRESS
     # a reminder due comes as a notification once, on the desktop alone
     mkdir -p "$HOME/calendar"; rm -f "$nlog"
     printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:spark-shell-test-n@box\r\nDTSTART:%s\r\nSUMMARY:call the vet\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' "$(ago 1)" > "$HOME/calendar/vet.ics"
     SPARK_SHELL_NO_CHIME=1 WAYLAND_DISPLAY=wayland-1 sh "$SH" bar due >/dev/null 2>&1 || :; SPARK_SHELL_NO_CHIME=1 WAYLAND_DISPLAY=wayland-1 sh "$SH" bar due >/dev/null 2>&1 || :
-    [ "$(cat "$nlog" 2>/dev/null)" = '-a|spark-shell|-c|x-spark-shell.reminder|--|call the vet|due now|' ] && ok "a reminder due: one notification, spark-shell's, its category for a click to open the reminders (#71)" || bad "reminder notification" "$(cat "$nlog" 2>&1)"
+    for _i in $(seq 1 30); do [ -s "$nlog" ] && break; sleep .1; done; sleep 0.3
+    [ "$(cat "$nlog" 2>/dev/null)" = '-a|spark-shell|-c|x-spark-shell.reminder|-A|default=open Reminders|--|call the vet|due now|' ] && ok "a reminder due: one notification, spark-shell's, with its kind and what a click on it does, in words (#71)" || bad "reminder notification" "$(cat "$nlog" 2>&1)"
+    # a click on it: notify-send says the action, and home opens at the reminders
+    rm -f "$HOME/.local/state/spark-shell/reminders.fired" "$nlog" "$HOME/home.asked"; touch "$HOME/notify.click"
+    printf '#!/bin/sh\ncase "$2" in open) printf "%%s\\n" "$4" >> "$HOME/home.asked"; exit 0 ;; esac\nexec %s "$@"\n' "$fixture_python" > "$H/.local/bin/python3"; chmod +x "$H/.local/bin/python3"
+    SPARK_SHELL_NO_CHIME=1 WAYLAND_DISPLAY=wayland-1 sh "$SH" bar due >/dev/null 2>&1 || :
+    for _i in $(seq 1 50); do [ -s "$HOME/home.asked" ] && break; sleep .1; done
+    [ "$(cat "$HOME/home.asked" 2>/dev/null)" = reminders ] && ok "a click on a reminder's notification: its sender hears the action and opens home at the reminders" || bad "reminder click" "$(cat "$HOME/home.asked" "$nlog" 2>&1)"
+    rm -f "$H/.local/bin/python3" "$HOME/notify.click" "$HOME/home.asked"
     rm -f "$HOME/calendar/vet.ics"
     # the drives: what lsblk and df say, a stand-in udisksctl
     cat > "$H/.local/bin/lsblk" <<'STUB'
@@ -10872,7 +10944,7 @@ JSON
     cp "$H/lsblk.full" "$HOME/lsblk.json"; mkdir -p "$S/block/sdb"
     _i=0; while [ "$_i" -lt 120 ] && [ ! -s "$nlog" ]; do sleep 0.25; _i=$((_i + 1)); done
     pkill -P "$bp" 2>/dev/null || :; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :   # its own bar alone, by its parent: another suite's may run beside it
-    [ "$(cat "$nlog" 2>/dev/null)" = '-a|spark-shell|-c|device.added|--|SanDisk Ultra plugged in|28.9 GB, not mounted|' ] && ! grep -q 'Elements\|drive plugged' "$nlog" \
+    [ "$(cat "$nlog" 2>/dev/null)" = '-a|spark-shell|-c|device.added|-A|default=open Storage|--|SanDisk Ultra plugged in|28.9 GB, not mounted|' ] && ! grep -q 'Elements\|drive plugged' "$nlog" \
         && ok "bar: a drive plugged in while it runs is said once, within its second's look; what was there at its start is not (#73)" || bad "drive notice" "$(cat "$nlog" 2>&1) $(head -c 300 "$H/bar.out")"
     # the bar's redraw signals while the lines are drawn, under bash where there is one: the loop lives on. Two faults ended
     # it there. bash ends a shell under set -e when a trapped signal comes while it waits on a command that failed, the
@@ -10972,16 +11044,19 @@ EOF
     out=$(sh "$SH" check 2>&1 || :)
     printf '%s\n' "$out" | grep -q '^ok     storage      udisks2 mounts and ejects drives for you$' && printf '%s\n' "$out" | grep -q '^ok     power        lock, log out' && printf '%s\n' "$out" | grep -q '^ok     notify       the notifications show on the desktop$' \
         && ok "check: the notify, storage and power rows" || bad "check rows" "$out"
-    sh "$SH" off desktop >/dev/null 2>&1 || :
+    sleep 300 & _nop=$!
+    notify_state '[]' '[]' "$_nop"; _noff=$(sh "$SH" off desktop 2>&1 || :); _nok=$(pstate "$_nop"); kill "$_nop" 2>/dev/null || :; wait "$_nop" 2>/dev/null || :
+    printf '%s\n' "$_noff" | grep -q "^ok *notify *the notifications' server ended" && case $_nok in ''|Z) : ;; *) false ;; esac \
+        && ok "off desktop: the notifications' server ends, and the name is free for a program of yours" || bad "off notify" "$_nok | $_noff"
     [ ! -e "$hook" ] && [ ! -e "$HOME/.local/state/spark-shell/power.sleep" ] && ok "off desktop: the sleep hook gone, by its record" || bad "off sleep hook" "$(ls -R "$H/root/etc/zzz.d" 2>&1)"
-    [ ! -e "$sud" ] && [ ! -e "$pol" ] && [ ! -e "$HOME/.local/state/spark-shell/power.sudoers" ] && [ ! -e "$HOME/.local/state/spark-shell/storage.polkit" ] && [ ! -e "$mk" ] \
-        && ok "off desktop: both rules gone, by spark-shell's records, and mako's config with them" || bad "off rules" "$(ls -R "$H/root/etc" 2>&1)"
+    [ ! -e "$sud" ] && [ ! -e "$pol" ] && [ ! -e "$HOME/.local/state/spark-shell/power.sudoers" ] && [ ! -e "$HOME/.local/state/spark-shell/storage.polkit" ] && [ ! -e "$svc" ] \
+        && ok "off desktop: both rules gone, by spark-shell's records, and the notifications' service file with them" || bad "off rules" "$(ls -R "$H/root/etc" 2>&1)"
     rm -rf "$H/root/etc/runit"
 fi
 
 # --- the machine folder (#159): what only the desktop knows, for spark's prompt line ---
 # spark-shell.facts and spark-shell.now in spark's machine folder, against stand-ins for
-# sway, wpctl, bluetoothctl, wpa_cli, makoctl and lsblk that also hold what must never be
+# sway, wpctl, bluetoothctl, wpa_cli, the notifications' state file and lsblk that also hold what must never be
 # written there: a window's title, a network around that is not saved, a note's words, a
 # reminder's, a notification's, the wire's address, a screen's serial, a device's address.
 # The Linux half is guarded by uname like 25.
@@ -11028,10 +11103,10 @@ case "$*" in
     'info 00:25:D1:4A:C2:BB') printf 'Device 00:25:D1:4A:C2:BB (public)\n\tName: Fake Speaker\n\tIcon: audio-card\n' ;;
 esac
 STUB
-    printf '#!/bin/sh\ncase $1 in mode) echo default ;; list|history) echo "1 app SECRET NOTICE TEXT" ;; esac\n' > "$H/.local/bin/makoctl"
+    notify_state '[[2, "app", "SECRET NOTICE TEXT"]]' '[[1, "app", "SECRET NOTICE TEXT"]]'
     printf '#!/bin/sh\necho %s\n' "'{\"blockdevices\":[{\"name\":\"sdb\",\"path\":\"/dev/sdb\",\"type\":\"disk\",\"rm\":true,\"hotplug\":true,\"size\":16000000000,\"model\":\"Fakestick\",\"vendor\":\"Acme\",\"label\":null,\"fstype\":null,\"mountpoint\":null}]}'" > "$H/.local/bin/lsblk"
     for t in grim wl-copy notify-send; do printf '#!/bin/sh\n:\n' > "$H/.local/bin/$t"; done
-    chmod +x "$H/.local/bin/swaymsg" "$H/.local/bin/wpctl" "$H/.local/bin/bluetoothctl" "$H/.local/bin/makoctl" "$H/.local/bin/lsblk" "$H/.local/bin/grim" "$H/.local/bin/wl-copy" "$H/.local/bin/notify-send"
+    chmod +x "$H/.local/bin/swaymsg" "$H/.local/bin/wpctl" "$H/.local/bin/bluetoothctl" "$H/.local/bin/lsblk" "$H/.local/bin/grim" "$H/.local/bin/wl-copy" "$H/.local/bin/notify-send"
     mkdir -p "$HOME/notes" "$HOME/calendar" "$HOME/.config/spark-shell/layouts"
     printf '# my hidden words\nmore of them\n' > "$HOME/notes/alpha.md"; printf 'x\n' > "$HOME/notes/beta.md"
     printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:r1\r\nDTSTART:20991231T090000\r\nSUMMARY:call the dentist\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' > "$HOME/calendar/r1.ics"

@@ -335,10 +335,14 @@ workspace idle gaps inner 0
 workspace idle gaps outer 0
 exec @IDLE_EXEC@
 
-# The notifications (#71): mako draws them in the right corner by the bar, in the
-# palette (~/.config/mako/config); spark-shell desktop --pending, below, keeps do not
-# disturb as it was left.
-exec mako
+# The notifications: spark-shell's own server keeps them and spark-bar draws them in the right
+# corner by the bar, in the palette. Started here at login; the session bus starts it too when
+# a program notifies and none runs (~/.local/share/dbus-1/services).
+exec @REPO@/spark-shell desktop notifications start
+
+# key: Super+n puts the keys on the notifications: arrows move, Delete dismisses.
+# action: desktop.desktop-notifications-open
+bindsym $mod+n exec @REPO@/spark-shell desktop notifications open
 
 # key: Print captures the screen, Shift+Print an area, Super+Print the window.
 # action: desktop.desktop-capture-screen

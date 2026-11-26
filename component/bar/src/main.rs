@@ -1,12 +1,14 @@
 //! spark-bar: the desktop's status bar on a sway desktop, a layer of its own on each output: spark's
 //! mark, the workspaces' ten places, and the status spark-shell says, each module's facts drawn in the
-//! bar's own look. Started with the desktop by spark-shell, for the session.
+//! bar's own look. Started with the desktop by spark-shell, for the session. `spark-bar notifications` is its
+//! other job, a process of its own: the notifications' stack, drawn for spark-shell's server.
 
 use std::process::ExitCode;
 
 const USAGE: &str = "spark-bar -- the desktop's status bar: spark's mark, the workspaces, the status spark-shell says (run by spark-shell)
 
   spark-bar
+  spark-bar notifications   the notifications' stack, drawn for spark-shell's server (below)
 
   --version  the version
 
@@ -146,6 +148,24 @@ mark, a workspace and more); FLAGS are focused, hover, selected, urgent,
 visible (the plate), empty (a place with no workspace), joined by commas,
 or -; NAME is the control's name. A dropped line names a number
 (MODULE.pct), a gauge (MODULE.gauge) or a module left out for width.
+
+spark-bar notifications draws the notifications in the corner by the bar,
+on the screen with the keyboard, and holds no list of its own: the
+server (spark-shell's lib/notifications.py) starts it and says each one
+on its stdin, a JSON object a line: look (the colors fg, accent, muted,
+ground, lit and alert as rrggbb, font, the card's width and its pad_x and
+pad_y in pixels, anchor top or bottom, motion yes or no, each a string),
+show (a notification: id, app, summary, body, urgency 0 to 2, category,
+actions as pairs of key and words, ms on the screen or 0 to stay), close
+(an id) and open (true: the stack takes the keys). The newest stands in
+front, two older ones a sliver each behind it. The pointer over the
+stack opens it into a list, and so does open, with Up, Down, Enter,
+Delete and Escape. A click does what the app offers, a card dragged
+aside 45 pixels or flicked is dismissed, the right button dismisses one
+and the middle one all. A card's time runs while it is in sight and the
+stack is closed. What the person did goes to stdout, a line each: event
+expired, dismissed or action (with id, and key for an action), or seen.
+It ends when its stdin does.
 ";
 
 #[derive(Debug, PartialEq)]
@@ -153,11 +173,13 @@ enum Ask {
     Help,
     Version,
     Run,
+    Notifications,
 }
 
 fn parse(args: &[String]) -> Result<Ask, String> {
     match args.first().map(String::as_str) {
         None => Ok(Ask::Run),
+        Some("notifications") if args.len() == 1 => Ok(Ask::Notifications),
         Some("-h" | "--help") => Ok(Ask::Help),
         Some("--version") => Ok(Ask::Version),
         Some(a) => Err(format!("unknown argument {a:?}")),
@@ -186,6 +208,13 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Ok(Ask::Notifications) => match notifications() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("spark-bar notifications: {e}");
+                ExitCode::FAILURE
+            }
+        },
         Err(e) => {
             eprintln!("spark-bar: {e}\n\n{USAGE}");
             ExitCode::from(2)
@@ -196,6 +225,17 @@ fn main() -> ExitCode {
 #[cfg(not(target_os = "linux"))]
 fn run() -> Result<(), String> {
     Err("runs only on Linux, under sway".into())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn notifications() -> Result<(), String> {
+    Err("runs only on Linux, under sway".into())
+}
+
+/// The notifications' stack, until the server's end of the pipe goes.
+#[cfg(target_os = "linux")]
+fn notifications() -> Result<(), String> {
+    spark_bar::notifications::ui::run()
 }
 
 /// A file of the bar's under XDG_RUNTIME_DIR, or where the environment names it.
@@ -390,6 +430,8 @@ mod tests {
         assert_eq!(ask(&["--help"]), Ok(Ask::Help));
         assert_eq!(ask(&["-h"]), Ok(Ask::Help));
         assert_eq!(ask(&["--version"]), Ok(Ask::Version));
+        assert_eq!(ask(&["notifications"]), Ok(Ask::Notifications));
+        assert_eq!(ask(&["notifications", "now"]), Err("unknown argument \"notifications\"".into()));
         assert_eq!(ask(&["--all"]), Err("unknown argument \"--all\"".into()));
     }
 

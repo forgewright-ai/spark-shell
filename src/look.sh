@@ -332,8 +332,8 @@ win_said() { case ${1:-split} in tabs) echo 'in tabs' ;; *) win_words "$1" ;; es
 transparency_of() { awk -v a="${1:-1}" 'BEGIN { printf "%d", (1 - a) * 100 + 0.5 }'; }   # transparency_of ALPHA -> a percent
 
 # PANEL_PAD 0x0: the dialog draws the margins
-PANEL_KEYS="PANEL_SIZE PANEL_PAD PANEL_LOW PANEL_BG PANEL_HI PANEL_BAND PANEL_MUTED PANEL_INK PANEL_INK_URGENT PANEL_ATTENTION NOTIFY_PAD NOTIFY_WIDTH NOTIFY_HEIGHT"   # NOTIFY_*: mako's air, width and most height, pixels
-panel_load() {   # the dialog's, the titles' and mako's own colors from the palette's, all in one awk: it runs at every start
+PANEL_KEYS="PANEL_SIZE PANEL_PAD PANEL_LOW PANEL_BG PANEL_HI PANEL_BAND PANEL_MUTED PANEL_INK PANEL_INK_URGENT PANEL_ATTENTION"
+panel_load() {   # the dialog's, the titles' and the notifications' own colors from the palette's, all in one awk: it runs at every start
     # shellcheck disable=SC2046   # eight colors, split on purpose
     set -- $(awk -v bg="$HEX_BG" -v fg="$HEX_FG" -v accent="$HEX_ACCENT" -v muted="$HEX_MUTED" -v red="$HEX_ANSI_1" -v yellow="$HEX_ANSI_3" '
         function h(c, i) { return index("0123456789abcdef", substr(tolower(c), i, 1)) - 1 }
@@ -359,9 +359,6 @@ panel_load() {   # the dialog's, the titles' and mako's own colors from the pale
     # focus) and on the red (an urgent band's title, close's chip); PANEL_ATTENTION: the attention color on the ground
     # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
     { PANEL_LOW=$1; PANEL_BG=$2; PANEL_HI=$3; PANEL_BAND=$4; PANEL_MUTED=$5; PANEL_INK=$6; PANEL_INK_URGENT=$7; PANEL_ATTENTION=$8; PANEL_PAD=0x0; }
-    _ns=$(look_font_size); : "${_ns:=12}"
-    # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
-    { NOTIFY_PAD="$_ns,$((_ns * 3 / 2))"; NOTIFY_WIDTH=$((_ns * 30)); NOTIFY_HEIGHT=$((_ns * 8)); }   # half the dialog's air, thirty cells, four lines
     for k in $PANEL_KEYS; do export "${k?}"; done
 }
 hex_lit() { if [ "$(hex_contrast "$2" 000000)" -le "$(hex_contrast "$1" 000000)" ]; then hex_mix "$1" ffffff 40; else hex_mix "$1" 000000 40; fi; }   # hex_lit FILL INK -> FILL two fifths away from INK, to white where INK is the darker: a chip under the pointer, on which INK reads no worse

@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.170
+
+- The bar says what plays: the artist and the title beside a play
+  sign, hollow while paused. A click plays or pauses, and the wheel
+  goes to the next track or the one before. Nothing playing, no item.
+- The media keys work: play, pause, next, previous and stop. They, the
+  sound keys and the brightness keys work on the lock screen too.
+- spark-shell desktop media plays, pauses, skips and stops from a
+  terminal. Settings has a media place, and spark has six tools for it.
+- Notifications are spark-shell's own: cards in the bar's corner, the
+  newest in front and three in sight. The pointer over them, or
+  Super+n, opens the list. mako is no longer installed or used.
+- A click on a card does what its sender offers. A swipe or the right
+  button dismisses it, and the middle button dismisses all. After
+  Super+n the arrows move, Enter acts and Delete dismisses.
+- A card's time runs only while you can see it, and waits while the
+  list is open. A critical one stays until you dismiss it.
+- Do not disturb keeps all but the critical ones out of sight, in the
+  list. The idle screen holds them too, and they show when you are
+  back.
+- A click on a reminder's notification opens reminders, and on a
+  plugged-in drive's, storage.
+- spark-shell desktop notifications restore brings back the last one
+  dismissed; ten are kept.
+- The desktop's packages gain playerctl and mpv-mpris.
+
 ## v0.169.1
 
 - Your themes counts the themes its page lists. A theme of yours under a

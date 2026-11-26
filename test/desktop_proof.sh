@@ -5,9 +5,11 @@
 # the palette through rsvg-convert, the sway config read by sway -C, then a
 # headless sway (no seat, no GPU: wlroots' headless backend and the pixman
 # renderer) with a foot window in it, asked through swaymsg, on a session
-# bus of its own as the desktop has where no logind makes one; then mako's
-# notifications in it, drawn in two palettes and with do not disturb on,
-# each captured into $HOME/proof for a look (CI keeps them). Every step
+# bus of its own as the desktop has where no logind makes one; then the
+# notifications in it: spark-shell's own server, started by the sway config,
+# keeps what three programs send, in two palettes and with do not disturb on
+# (no spark-bar is installed here, so nothing pops up: the stack's picture is
+# the notifications journey's, test/journeys.py). Every step
 # prints what it found; the first failure ends it. REPO is the clone.
 # The root tools a plain user cannot run (usermod, gpasswd) are shims that
 # edit the throwaway root's group file, as the suite's do.
@@ -46,7 +48,7 @@ echo "== spark-shell on --yes -v ($distro, as $me)"
 sh "$REPO/spark-shell" on --yes -v 2>&1 | tee "$HOME/on.out"
 grep -q '^ok     packages     installed$' "$HOME/on.out" || { echo "FAIL: the packages row is not ok"; exit 1; }
 grep -q '^render wallpaper    skyline drawn in nord ' "$HOME/on.out" || { echo "FAIL: skyline was not drawn in nord (rsvg-convert)"; exit 1; }
-for f in .config/sway/config .config/foot/foot.ini .config/foot/dialog.ini .config/mako/config .tmux.conf .config/spark-shell/sgr.sh; do
+for f in .config/sway/config .config/foot/foot.ini .config/foot/dialog.ini .local/share/dbus-1/services/org.freedesktop.Notifications.service .tmux.conf .config/spark-shell/sgr.sh; do
     [ -f "$HOME/$f" ] || { echo "FAIL: $f was not rendered"; exit 1; }
 done
 png=$HOME/.local/state/spark-shell/wallpapers/skyline-nord.png
@@ -66,7 +68,10 @@ cat "$HOME/sway-C.out"
 
 echo "== a session bus, then a headless sway on it, then a foot window in it"
 # a container has no logind, as Void has none: the bus is the desktop's own (layout_start runs sway
-# inside dbus-run-session); here one bus for sway and for this script's notify-send and makoctl
+# inside dbus-run-session); here one bus for sway, for the notifications' server and for this script's
+# notify-send. The bus finds a home's service files by the password database, never by HOME: the data
+# folder named, it reads this home's own
+export XDG_DATA_HOME=$HOME/.local/share
 command -v dbus-daemon >/dev/null 2>&1 || { echo "FAIL: no dbus-daemon for a session bus"; exit 1; }
 dbus-daemon --session --fork --print-address=1 --print-pid=1 > "$HOME/bus.out" || { echo "FAIL: dbus-daemon gave no session bus"; exit 1; }
 DBUS_SESSION_BUS_ADDRESS=$(sed -n 1p "$HOME/bus.out"); buspid=$(sed -n 2p "$HOME/bus.out"); export DBUS_SESSION_BUS_ADDRESS
@@ -153,27 +158,30 @@ else
     echo "note: foot ${fv:-of no version} has no line in foot.ini for this: not checked here"
 fi
 
-echo "== the notifications: mako started by the sway config, three drawn, in two palettes, then do not disturb (#71)"
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do makoctl mode >/dev/null 2>&1 && break; sleep 1; done
-makoctl mode >/dev/null 2>&1 || { echo "FAIL: mako does not answer on the session bus"; tail -20 "$HOME/sway.log"; exit 1; }
+echo "== the notifications: spark-shell's own server started by the sway config, three kept, in two palettes, then do not disturb (#71, v0.170)"
+nstate=$XDG_RUNTIME_DIR/spark-shell-notifications.state; nlook=$XDG_RUNTIME_DIR/spark-shell-notifications.look
 proof=$HOME/proof; mkdir -p "$proof"
-corner=$(swaymsg -t get_outputs | jq -r '.[0] | "\(.rect.width - 560),0 560x420"')
-shot() {   # shot NAME [LINES]: notifications sent, the screen's top right corner captured into proof/NAME.png, what mako lists said
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do [ -s "$nstate" ] && break; sleep 1; done
+[ -s "$nstate" ] || { echo "FAIL: the notifications' server did not start with the desktop"; cat "$XDG_RUNTIME_DIR/spark-shell-notifications.log" 2>/dev/null || :; tail -20 "$HOME/sway.log"; exit 1; }
+echo "ok: the server runs; $(jq -r 'if .drawer then "spark-bar draws what pops up" else "no spark-bar here, so it keeps the list and nothing pops up" end' "$nstate")"
+kept() {   # kept NAME: three notifications sent; the server keeps each, and counts it not looked at
+    _before=$(jq '.unseen' "$nstate")
     notify-send -a firefox "Download finished" "report.pdf, 2.4 MB, in your downloads"
     notify-send -a spark-shell -c x-spark-shell.reminder "call the vet" "due now"
     notify-send -u critical -a power "Battery at 5%" "Plug the charger in"
-    sleep 2
-    grim -g "$corner" "$proof/$1.png" || { echo "FAIL: grim took no picture"; exit 1; }
-    _n=$(makoctl list | grep -c '^Notification' || :)
-    [ "$_n" = 3 ] || [ "$(makoctl list | head -c 1)" = '{' ] || { echo "FAIL: mako lists $_n notifications, not 3"; makoctl list; exit 1; }
-    echo "ok: $1, the corner in $proof/$1.png ($(wc -c < "$proof/$1.png" | tr -d ' ') bytes)"
-    makoctl dismiss -a >/dev/null 2>&1 || :
+    for _ in 1 2 3 4 5 6 7 8 9 10; do _n=$(jq '.unseen' "$nstate" 2>/dev/null || echo 0); [ "$_n" = $((_before + 3)) ] && break; sleep 0.5; done
+    [ "$_n" = $((_before + 3)) ] || { echo "FAIL: $1: the server counts $_n not looked at, not $((_before + 3))"; cat "$nstate"; exit 1; }
+    cp "$nstate" "$proof/$1.json" 2>/dev/null || :   # what the server holds, for a look (CI keeps it)
+    echo "ok: $1, three kept: $(jq -c '[.shown[], .history[]] | map(.summary) | .[0:3]' "$nstate")"
 }
+_ground=''
 for pal in tokyonight-night solarized-light; do
     sh "$REPO/spark-shell" theme "$pal" > "$HOME/theme.out" 2>&1 || { cat "$HOME/theme.out"; echo "FAIL: theme $pal"; exit 1; }
-    grep -q "^background-color=#" "$HOME/.config/mako/config" || { echo "FAIL: mako's config has no background"; exit 1; }
+    _g=$(sed -n 's/^ground=//p' "$nlook" 2>/dev/null)
+    [ -n "$_g" ] && [ "$_g" != "$_ground" ] || { echo "FAIL: the notifications' look did not take $pal's ground"; cat "$nlook" 2>&1; exit 1; }
+    _ground=$_g
     sleep 1
-    shot "notifications-$pal"
+    kept "notifications-$pal"
 done
 echo "== the wallpaper: one process draws it after two themes changed it (v0.149.1)"
 # each change draws the new picture under a cover of its own, which goes once sway's own has drawn: a cover that stays
@@ -183,13 +191,40 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do [ "$(walls)" = 1 ] && break; sleep 0.5; done
 [ "$(walls)" = 1 ] || { echo "FAIL: $(walls) wallpaper processes draw on this sway, not 1: a cover stayed"; exit 1; }
 echo "ok: one wallpaper process"
 sh "$REPO/spark-shell" desktop notifications do-not-disturb on
-makoctl mode | grep -qx do-not-disturb || { echo "FAIL: do not disturb is not mako's mode"; exit 1; }
+grep -qx 'dnd=yes' "$nlook" || { echo "FAIL: do not disturb is not in the look the server reads"; exit 1; }
 grep -qx 'DO_NOT_DISTURB=yes' "$HOME/.config/spark-shell/config" || { echo "FAIL: do not disturb is not in the config"; exit 1; }
-shot "notifications-do-not-disturb"   # a look: only the critical one shows
+[ "$(jq -r .dnd "$nstate")" = true ] || { echo "FAIL: the server did not take do not disturb"; cat "$nstate"; exit 1; }
+kept "notifications-do-not-disturb"
 sh "$REPO/spark-shell" desktop notifications do-not-disturb off
 sh "$REPO/spark-shell" panel notifications --list | sed -n '1,4p'
+
+echo "== media: a real player, mpv with its MPRIS plugin, seen and paused through playerctl (v0.170)"
+python3 -I -c 'import sys, wave
+w = wave.open(sys.argv[1], "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(8000); w.writeframes(bytes(16000 * 120)); w.close()' "$HOME/proof-tone.wav"
+mpv --no-terminal --ao=null --vo=null --loop-file=inf "$HOME/proof-tone.wav" > "$HOME/mpv.log" 2>&1 &
+mpvpid=$!
+trap 'kill "$mpvpid" "$swaypid" "$buspid" 2>/dev/null || :' EXIT
+said() {   # said WORD: spark-shell desktop media names mpv's file with WORD (playing, paused) within twenty seconds -> the line
+    for _ in $(seq 1 40); do _m=$(sh "$REPO/spark-shell" desktop media 2>&1 || :); case $_m in 'mpv: '*proof-tone*"($1)") printf '%s\n' "$_m"; return 0 ;; esac; sleep 0.5; done
+    echo "FAIL: mpv plays a file and spark-shell desktop media never says it $1: $_m"; echo "playerctl lists: $(playerctl --list-all 2>&1 || :)"; tail -5 "$HOME/mpv.log"; return 1
+}
+_m1=$(said playing) || { echo "$_m1"; exit 1; }
+echo "ok: $_m1"
+_p=$(sh "$REPO/spark-shell" desktop media pause 2>&1) || { echo "FAIL: spark-shell desktop media pause: $_p"; exit 1; }
+_m2=$(said paused) || { echo "$_m2"; exit 1; }
+echo "ok: $_p, then $_m2"
+kill "$mpvpid" 2>/dev/null || :; wait "$mpvpid" 2>/dev/null || :
+trap 'kill "$swaypid" "$buspid" 2>/dev/null || :' EXIT
+
+npid=$(jq -r '.pid // empty' "$nstate")
 swaymsg exit >/dev/null 2>&1 || true
 wait "$swaypid" 2>/dev/null || true
+# the server is its desktop's: sway gone, it ends by itself with the bus still up, so the next login starts its own
+ended() { case $(sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -c1) in ''|Z) return 0 ;; esac; return 1; }   # gone, or ended with nobody to take its end (a container's first process)
+for _ in $(seq 1 20); do ended "$npid" && break; sleep 0.5; done
+ended "$npid" || { echo "FAIL: the notifications' server outlived its desktop"; cat "$nstate"; cat "$XDG_RUNTIME_DIR/spark-shell-notifications.log" 2>/dev/null || :; exit 1; }
+[ "$(jq -r '.pid' "$nstate")" = null ] || { echo "FAIL: the server ended and its state file still names it"; cat "$nstate"; exit 1; }
+echo "ok: the notifications' server ended with its desktop"
 kill "$buspid" 2>/dev/null || true
 grep -i 'error' "$HOME/sway.log" | head -5 || true
 echo "== done: $distro installs the desktop, renders it, and sway runs it headless"

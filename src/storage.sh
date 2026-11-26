@@ -81,7 +81,7 @@ storage_notice() {   # a new drive, said once
         storage_drives > "$TMP/drives.now"
         if [ -n "${_storage_seen:-}" ] && [ -f "$STORAGE_SEEN" ]; then
             grep -vxF -f "$STORAGE_SEEN" "$TMP/drives.now" | while IFS="$TAB" read -r _d _s _n; do
-                notify_send device.added "$_n plugged in" "$(files_size "$_s"), not mounted"   # a click opens Storage in the dialog
+                notify_send device.added "$_n plugged in" "$(files_size "$_s"), not mounted" storage 'open Storage'
             done
         fi
         mkdir_private "$STATE_DIR" && cp "$TMP/drives.now" "$STORAGE_SEEN"

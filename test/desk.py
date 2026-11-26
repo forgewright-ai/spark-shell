@@ -111,7 +111,7 @@ class Broken(Exception):
 
 
 GROUND = (0, 255, 0)
-PARTS = ("swaybg", "swaybar", "spark-bar", "spark-winpad", "spark-dialog", "spark-wallpaper")
+PARTS = ("swaybg", "swaybar", "spark-bar", "spark-notify", "spark-winpad", "spark-dialog", "spark-wallpaper")   # spark-notify: the notifications' drawer, spark-bar's other job under its own name
 
 
 class Desktop:
@@ -147,6 +147,8 @@ class Desktop:
         self.env = {"HOME": str(self.home), "PATH": "%s:%s/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" % (self.home / "bin", "/opt/nocap:" if os.path.exists("/opt/nocap/sway") else ""),
                     "LANG": "C.UTF-8", "TERM": "xterm-256color", "USER": "ada", "SPARK_SHELL_FENCE": "desk",
                     "XDG_RUNTIME_DIR": str(self.run), "TMUX_TMPDIR": str(self.out), "SPARK_SHELL_ROOT": str(self.home / "root"),
+                    # the session bus finds a home's service files by the password database, never by HOME: named, it reads this home's
+                    "XDG_DATA_HOME": str(self.home / ".local/share"),
                     "SPARK_SHELL_PTS_DIR": str(self.out / "pts"), "SPARK_SHELL_DIALOG_URL": "none", "SPARK_SHELL_FONT_URL": "none",
                     "SPARK_SHELL_SEMANTIC_URL": "none", "WLR_BACKENDS": "headless", "WLR_RENDERER": "pixman",
                     "WLR_LIBINPUT_NO_DEVICES": "1", "WLR_HEADLESS_OUTPUTS": str(len(screens)), "LIBGL_ALWAYS_SOFTWARE": "1"}

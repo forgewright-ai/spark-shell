@@ -237,8 +237,7 @@ machine_now() {   # -> the .now lines
         _mdr=$(storage_drives | cut -f3 | machine_names)
         if [ -n "$_mdr" ]; then printf -- '- Drives plugged in: %s.\n' "$_mdr"; else echo '- No drive is plugged in.'; fi
     fi
-    if notify_up; then if notify_dnd; then _mdd=on; else _mdd=off; fi
-    elif [ "$DO_NOT_DISTURB" = yes ]; then _mdd=on; else _mdd=off; fi
+    if notify_dnd; then _mdd=on; else _mdd=off; fi
     if [ "$DESKTOP_BAR" = yes ]; then _mbs="shown $(bar_place_words "$BAR_POSITION")"; else _mbs=hidden; fi
     printf -- '- The bar is %s; do not disturb is %s.\n' "$_mbs" "$_mdd"
 }

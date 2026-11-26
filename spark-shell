@@ -117,8 +117,9 @@
 #   spark-shell desktop pad band [on|off]
 #   spark-shell desktop voice [status|toggle|off]  the ear types what you say
 #                                     the pad with its band, or its handle alone
-#   spark-shell desktop notifications [do-not-disturb on|off|dismiss|restore]
-#                                     do not disturb, and the last few
+#   spark-shell desktop notifications [do-not-disturb on|off|dismiss|restore|open]
+#                                     do not disturb, the last few, and the
+#                                     keys on the ones on the screen
 #   spark-shell desktop media [play|pause|toggle|next|previous|stop]
 #                                     what plays, and its controls
 #   spark-shell desktop storage [mount|unmount|open|eject NAME]

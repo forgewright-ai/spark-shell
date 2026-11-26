@@ -117,7 +117,7 @@ DO_NOT_DISTURB=no
 
 # The bar on the desktop's screen: yes (shown) or no (hidden). It shows
 # the workspaces, then the windows on the pad, lan, bluetooth, wifi,
-# sound out and mic, a reminder that is due, brightness, the keyboard's
+# what plays, sound out and mic, a reminder that is due, brightness, the keyboard's
 # layout, battery, the time and the notifications, each only when this
 # machine has it. spark-shell bar on|off --desktop sets this.
 DESKTOP_BAR=yes
@@ -127,8 +127,8 @@ DESKTOP_BAR=yes
 # spark-shell bar pin and unpin set this.
 BAR_PINS=out
 
-# What is hidden from the bar: names from pad lan bt wifi out mic due
-# light kb bat clock notifications, a space between. Hiding takes the
+# What is hidden from the bar: names from pad lan bt wifi media out mic
+# due light kb bat clock notifications, a space between. Hiding takes the
 # shortcut off the bar, not the device. spark-shell bar hide and show
 # set this. Where spark-bar cannot run, sway's bar draws the bar and
 # shows every one.

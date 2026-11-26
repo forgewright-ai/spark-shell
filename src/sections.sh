@@ -36,8 +36,7 @@ panel_title() {   # panel_title SECTION -> the lines that say what opened the pa
         keyboard) _k=$(kb_active); if [ -n "$_k" ]; then echo "$(panel_col keyboard)$_k $PANEL_SEP $(printf '%s\n' $KEYBOARD | grep -c .) layouts"; elif [ -n "$KEYBOARD" ]; then echo "$(panel_col keyboard)$KEYBOARD"; else echo "$(panel_col keyboard)sway's own layout"; fi ;;
         bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown $(bar_place_words "$BAR_POSITION")"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys "$(layout_keys | awk '$2 == "home.open." {print $1; exit}')") opens the dialog"; fi ;;
         media) media_title ;;
-        notifications) if ! mako_here; then echo "$(panel_col notifications)mako is not installed"
-            elif ! notify_up; then echo "$(panel_col notifications)not running yet"
+        notifications) if ! notify_up || [ -n "$(notify_other)" ]; then echo "$(panel_col notifications)$(notify_why)"
             elif notify_dnd; then echo "$(panel_col notifications)do not disturb"
             else _nn=$(notify_list list | grep -c . || :); if [ "${_nn:-0}" -gt 0 ]; then echo "$(panel_col notifications)$_nn on the screen"; else echo "$(panel_col notifications)on"; fi; fi ;;   # short
         storage) _sn=$(storage_drives | grep -c . || :)   # the drives alone: free space is a row
@@ -305,7 +304,7 @@ panel_rows_touchpad() {
     printf -- '-\tSpeed\tshow\n-\tTap to click\tshow\n-\tNatural scroll\tshow\n-\tScroll speed\tshow\n-\tRight click\tshow\n-\tOff while typing\tshow\n-\tOff with a mouse in\tshow\n'
 }
 panel_rows_notifications() {   # do not disturb, the ones on the screen, then the history, newest first: what each said, its app a column; five unless full
-    if ! notify_up; then printf -- '-\t%s\tshow\n' "$(notify_why)"; return 0; fi
+    if ! notify_up || [ -n "$(notify_other)" ]; then printf -- '-\t%s\tshow\n' "$(notify_why)"; return 0; fi
     if notify_dnd; then printf '%s\tturn off do not disturb\tdo-not-disturb off\n' "$PANEL_DOT"; else printf -- '-\tturn on do not disturb\tdo-not-disturb on\n'; fi
     _nn=$(notify_list list | grep -c . || :)
     case ${_nn:-0} in 0) ;; 1) printf -- '-\tdismiss the one on the screen\tdismiss\n' ;; *) printf -- '-\tdismiss the %s on the screen\tdismiss\n' "$_nn" ;; esac

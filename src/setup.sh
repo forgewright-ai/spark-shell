@@ -284,6 +284,7 @@ cmd_off() {   # cmd_off [desktop|login]
         semantic_off
         voice_off
         sparkbar_off
+        notify_off
         machine_off
         echo "packages stay installed -- the package manager removes them if you want"
         return 0
@@ -295,7 +296,7 @@ cmd_off() {   # cmd_off [desktop|login]
             case $(readlink "$p") in "$REPO"/*) restore_one "$p" ;; esac
         fi
     done
-    hand_back $RENDERED .config/starship.toml .config/starship-foot.toml .config/yazi/theme.toml $DESKTOP_RENDERED .config/alsa/asoundrc   # alsa: the bar's default card; yazi: a render no longer made, its.bak yours
+    hand_back $RENDERED .config/starship.toml .config/starship-foot.toml .config/yazi/theme.toml $DESKTOP_RENDERED .config/mako/config .config/alsa/asoundrc   # alsa: the bar's default card; yazi and mako: renders no longer made, their .bak yours
     [ "$OS" = Darwin ] || user_dirs_off
     portal_off
     [ "$OS" = Darwin ] || pointer_off
@@ -310,6 +311,7 @@ cmd_off() {   # cmd_off [desktop|login]
     mcp_off
     semantic_off
     [ "$OS" = Darwin ] || sparkbar_off
+    [ "$OS" = Darwin ] || notify_off
     machine_off
     pm_detect
     console_off   # the palette, the font, the login screen and the boot, as they were

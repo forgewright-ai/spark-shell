@@ -76,7 +76,7 @@ render_expr() {   # -> the sed script that renders a template, one s command a l
     e="$e${NL}s|@FONT@|$(esc "$_ff")|g"
     e="$e${NL}s|@BAND_GLYPHS@|$(esc "$(winpad_buttons)")|g${NL}s|@BAND_MIC@|$(esc "$(winpad_mic)")|g"
     e="$e${NL}s|@BAR_MODE@|$(bar_mode)|g${NL}s|@BAR_FONT@|$(esc "$(bar_font "$_fs")")|g${NL}s|@BAR_LINE_FONT@|$(esc "$(bar_line_font "$_fs")")|g"
-    e="$e${NL}s|@BAR_POSITION@|$BAR_POSITION|g${NL}s|@BAR_TRAY@|$(bar_tray_output)|g${NL}s|@NOTIFY_ANCHOR@|$(notify_anchor)|g"
+    e="$e${NL}s|@BAR_POSITION@|$BAR_POSITION|g${NL}s|@BAR_TRAY@|$(bar_tray_output)|g"
     # the bar's lines in sway's config: spark-bar's start, or sway's own bar where spark-bar draws none; the tray's host with the first alone
     _rbh='/^@BAR_HOST@/d'
     if sparkbar_draws; then e="$e${NL}s|^@BAR_OWN@||${NL}/^@BAR_SWAY@/d"; [ "$BAR_TRAY" != yes ] || _rbh='s|^@BAR_HOST@||'
@@ -142,7 +142,7 @@ rc_files() { if [ "$OS" = Darwin ]; then echo ".zshrc .zprofile"; else echo ".ba
 rc_tree() { if [ "$OS" = Darwin ]; then echo "$REPO/template/macos"; else echo "$REPO/template/linux"; fi; }
 # the desktop's renders, only with DESKTOP=sway on Linux; off hands them
 # back whatever the config says
-DESKTOP_RENDERED="$TERM_CONFIG_REL $TERM_DIALOG_REL $WM_CONFIG_REL .local/share/applications/spark-shell-tmux.desktop .config/fontconfig/conf.d/50-spark-shell.conf .config/mako/config .config/xdg-desktop-portal/sway-portals.conf"   # fontconfig: the wifi bars' family, unhinted; mako: the notifications
+DESKTOP_RENDERED="$TERM_CONFIG_REL $TERM_DIALOG_REL $WM_CONFIG_REL .local/share/applications/spark-shell-tmux.desktop .config/fontconfig/conf.d/50-spark-shell.conf .local/share/dbus-1/services/org.freedesktop.Notifications.service .config/xdg-desktop-portal/sway-portals.conf"   # fontconfig: the wifi bars' family, unhinted; the service file: the bus starts the notifications' server
 desktop_na() {   # -> why this machine has no desktop of spark-shell's, or nothing: macOS draws its own, WSL has no seat and Windows draws it
     if [ "$OS" = Darwin ]; then echo "not on macOS, which has its own desktop"; elif is_wsl; then echo "not on WSL, where Windows draws the desktop"; fi
 }
@@ -220,15 +220,14 @@ user_pictures() {   # -> the pictures folder the file names under your home (~/p
     _up=$(sed -n 's|^XDG_PICTURES_DIR="\$HOME/\([A-Za-z0-9._ -]*\)"$|\1|p' "$USER_DIRS" 2>/dev/null | head -1)
     case $_up in ''|.*|*/*) echo "$HOME/pictures" ;; *) echo "$HOME/$_up" ;; esac
 }
-desktop_files() {   # the desktop's renders: foot's, the dialog's, sway's, the tmux entry, mako's, the screens' file, the home's folders; a mako that runs reads its new file
-    _mk=$({ cksum < "$HOME/.config/mako/config"; } 2>/dev/null || :)
+desktop_files() {   # the desktop's renders: foot's, the dialog's, sway's, the tmux entry, the notifications' service file, the screens' file, the home's folders; a server that runs is told of a new look
     for rel in $DESKTOP_RENDERED; do
         render_one "$REPO/template/$rel" "$HOME/$rel"
     done
     user_dirs_apply
     [ "$MODE" = dry ] || mkdir -p "$(wm_config_file).d"   # your own sway lines: the config reads the folder last
     [ "$MODE" = dry ] || [ -f "$SCREENS_CONF" ] || { mkdir -p "$CONFIG_DIR" && echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them' > "$SCREENS_CONF"; }   # the template includes it
-    [ "$MODE" = dry ] || [ "$({ cksum < "$HOME/.config/mako/config"; } 2>/dev/null || :)" = "$_mk" ] || notify_reload   # a new look reaches the next notification, with no login
+    [ "$MODE" = dry ] || notify_reload   # a new look reaches the next notification, with no login
 }
 desktop_look_apply() {   # on and on desktop: the renders, the pointer, and a running sway reloaded when its file changed (its keys may have)
     wall_missing
@@ -263,6 +262,6 @@ desktop_apply() {
     winpad_session
     motion_row
     mcp_apply
-    notify_start
+    notify_apply
 }
 

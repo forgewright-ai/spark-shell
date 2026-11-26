@@ -143,7 +143,7 @@ config_load() {
     : "${VOICE:=yes}"   # the ear on the terminal's band and under Super+Space held; no leaves it out
     : "${VOICE_ENGINE:=}"   # your own engine's command, speaking the ear's contract; empty: spark-ear
     : "${VOICE_PREFIX:=}" "${VOICE_SUFFIX:=}"   # typed before the first words and after the last, to open a prompt of your own
-    : "${DO_NOT_DISTURB:=no}"   # the notifications kept out of sight, as mako's do-not-disturb mode, across logins
+    : "${DO_NOT_DISTURB:=no}"   # the notifications kept out of sight, a critical one let through, across logins
     # the pad: its place, its most width at the top, the bottom or floating (0: the screen's) and at a side,
     # its most height (0: as many rows as its windows need)
     for k in PLACE WIDTH SIDE_WIDTH HEIGHT VIEW BAND; do   # a config from v0.142 or before names them PAD_*: read here, written under the new names by spark-shell on

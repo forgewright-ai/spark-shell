@@ -59,11 +59,15 @@ portal_check() {
 }
 
 notify_check() {   # the notify row of check, on a desktop machine
-    if ! mako_here; then chk notify warn "mako is not installed, so no notification shows" "spark-shell on desktop"
+    if ! notify_here; then chk notify warn "python3 or dbus-send is not installed, so no notification shows" "spark-shell on desktop"
     elif ! command -v notify-send >/dev/null 2>&1; then chk notify warn "notify-send is not installed, so a reminder or a drive plugged in says nothing" "spark-shell on desktop"
     elif [ -z "${WAYLAND_DISPLAY:-}" ]; then chk notify ok "the notifications show on the desktop"
-    elif notify_up; then _nw=''; ! notify_dnd || _nw=', do not disturb on'; chk notify ok "the notifications show$_nw"
-    else chk notify warn "$(notify_why)" "log out and in again"; fi
+    elif ! notify_bus; then chk notify warn "$(notify_why)" "log out and in again"
+    elif ! python3 -c 'import dbus, dbus.service, gi' 2>/dev/null; then chk notify warn "python3 has no dbus or gobject module, so no notification shows" "spark-shell on desktop"
+    elif [ -n "$(notify_other)" ]; then chk notify warn "$(notify_why)" "end it, and spark-shell's own show at the next one"
+    else _nw=''; ! notify_dnd || _nw=', do not disturb on'
+        if notify_pid >/dev/null && ! notify_draws; then _nw="$_nw, in home's list alone: no spark-bar draws them here"; fi
+        chk notify ok "the notifications show$_nw"; fi
 }
 storage_check() {   # the storage row of check
     if ! udisks_here; then chk storage warn "udisks2 is not installed, so no drive shows" "spark-shell on desktop"

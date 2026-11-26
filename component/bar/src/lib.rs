@@ -5,10 +5,12 @@
 //! and mark) is the Wayland side: it draws the frame the bar says and hands the pointer and the keys back
 //! to it. The values are spark-shell's (status): the bar holds no battery, sound, network, clock or
 //! brightness logic, and takes its palette from there too. sway (sway) lists the workspaces, shows one
-//! and names its binding mode.
+//! and names its binding mode. The notifications' stack (notifications) is the program's other job, a process
+//! of its own: pure in the same way, with a surface of its own (notifications::ui).
 
 pub mod bar;
 pub mod icons;
+pub mod notifications;
 pub mod sway;
 
 #[cfg(target_os = "linux")]

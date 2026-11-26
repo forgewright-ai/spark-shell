@@ -201,6 +201,7 @@ jobs:
           python3 -I test/layout_test.py
           python3 -I test/home_test.py
           python3 -I test/wifi_test.py
+          python3 -I test/notifications_test.py
   debian:
     # the same suite on Debian itself, where distro/debian.env's names are
     # looked up. The privacy and ascii gates ran once, on linux.
@@ -369,8 +370,8 @@ jobs:
     # family's container, spark-shell on as a plain user (the renders, the
     # palette, a drawing drawn again in it through rsvg-convert), the sway
     # config read by sway -C, then a headless sway with a foot in it, asked
-    # through swaymsg, on a session bus of its own; mako's notifications
-    # drawn in it in two palettes, the pictures kept for a look. No seat,
+    # through swaymsg, on a session bus of its own; spark-shell's own
+    # notifications server keeps three in it, in two palettes. No seat,
     # no GPU, no sound card: a proof of the install and the render, said
     # so; a screen is a machine's proof.
     needs: [lint, plan, pins, winpad, ear, bar, dialog-build]   # the pad's, the ear's, the bar's and the dialog's builds, proven on each family's sway (test/winpad_desktop_proof.py, test/voice_desktop_proof.py, test/bar_desktop_proof.py)
@@ -394,13 +395,13 @@ jobs:
             image: ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
             prep: printf 'http://mirrors.edge.kernel.org/ubuntu/\tpriority:1\nhttp://azure.archive.ubuntu.com/ubuntu/\tpriority:2\nhttp://archive.ubuntu.com/ubuntu/\tpriority:3\n' > /etc/apt/mirrors.txt && sed -i -E 's|^(URIs:) .*|\1 mirror+file:/etc/apt/mirrors.txt|' /etc/apt/sources.list.d/ubuntu.sources && apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update -qq && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq git jq diffutils >/dev/null
             install: DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq
-            proof: dbus systemd   # mako 1.8's makoctl asks the bus through systemd's busctl, which a real Ubuntu always has
+            proof: dbus
           - family: ubuntu-26.04   # sudo-rs and uutils' coreutils (#107)
             distro: debian
             image: ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
             prep: printf 'http://mirrors.edge.kernel.org/ubuntu/\tpriority:1\nhttp://azure.archive.ubuntu.com/ubuntu/\tpriority:2\nhttp://archive.ubuntu.com/ubuntu/\tpriority:3\n' > /etc/apt/mirrors.txt && sed -i -E 's|^(URIs:) .*|\1 mirror+file:/etc/apt/mirrors.txt|' /etc/apt/sources.list.d/ubuntu.sources && apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update -qq && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq git jq diffutils >/dev/null
             install: DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq
-            proof: dbus systemd   # makoctl asks the bus through systemd's busctl, as on 24.04
+            proof: dbus
           - family: arch
             distro: arch
             image: archlinux:latest   # zizmor: ignore[unpinned-images] a rolling distro
@@ -427,7 +428,7 @@ jobs:
             # the packages from the origin, as the opensuse job's: the mirrors served half-synced metadata (2026-11-24)
             prep: sed -i 's|https\?://download\.opensuse\.org|https://downloadcontent.opensuse.org|' /etc/zypp/repos.d/*.repo; zypper --non-interactive refresh >/dev/null; zypper --non-interactive dup >/dev/null; zypper --non-interactive install git jq diffutils findutils gawk tar gzip libstdc++6 shadow
             install: zypper --non-interactive --quiet install
-            proof: dbus-1-daemon dbus-1-tools
+            proof: dbus-1-daemon
     container: ${{ matrix.image }}   # zizmor: ignore[unpinned-images] the matrix above pins each versioned image by digest; the rolling ones are latest by nature
     env:
       FAMILY: ${{ matrix.family }}
@@ -503,7 +504,7 @@ jobs:
         run: |
           chmod 755 dialog-build/spark-dialog
           rc=0
-          for j in home live matrix; do
+          for j in home live matrix notifications; do
             go() { su ada -c "SPARK_SHELL_FENCE=ci PATH=/opt/nocap:\$PATH python3 -I '$GITHUB_WORKSPACE/test/journeys.py' $j '$GITHUB_WORKSPACE' \$HOME/journey-$j dialog='$GITHUB_WORKSPACE/dialog-build/spark-dialog' bar='$GITHUB_WORKSPACE/bar-build/spark-bar' winpad='$GITHUB_WORKSPACE/winpad-build/spark-winpad'"; }
             got=0; go || got=$?
             [ "$got" != 3 ] || { got=0; go || got=$?; }   # NOT-RUN: it could not look, so it looks once more

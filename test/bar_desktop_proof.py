@@ -99,8 +99,8 @@ W, H = 1920, 1080
 OUT = "HEADLESS-1"
 BAR, TEXT, MARK, CELL = 36, 16, 24, 10       # the spec's sizes at 12 points: the bar, its text, the logo, a cell
 OVERFLOW = "kb wifi mic out bat"             # the config's order here, not the default one; lan and bt are not named
-MODULES = "pad lan bt wifi out mic due light kb bat clock notifications".split()   # the line's order
-GROUPS = dict(pad="windows", lan="connections", bt="connections", wifi="connections", out="sound", mic="sound", due="tasks",
+MODULES = "pad lan bt wifi media out mic due light kb bat clock notifications".split()   # the line's order
+GROUPS = dict(pad="windows", lan="connections", bt="connections", wifi="connections", media="sound", out="sound", mic="sound", due="tasks",
               light="seat", kb="seat", bat="seat", clock="time", notifications="time")
 LOOK = ("fg", "accent", "muted", "ground", "lit", "attention", "alert", "alpha", "full", "light", "motion", "ink")   # the look's slots, as BAR_FG and the rest
 SLOTS = ("BAR_FG", "BAR_ACCENT", "BAR_MUTED", "BAR_GROUND", "BAR_LIT", "BAR_ATTENTION", "BAR_ALERT", "BAR_ALPHA", "BAR_GAUGE_FULL", "BAR_GAUGE_LIGHT", "BAR_MOTION", "BAR_INK")
@@ -149,16 +149,10 @@ case ${1:-} in
     *) echo "$*" >> "$d/log" ;;
 esac
 """
-# what records, as pw-dump says it; the notifications nobody looked at, as makoctl lists them; bluetooth's switch
+# what records, as pw-dump says it; bluetooth's switch. The notifications nobody looked at are a file, the server's own
+# state file in the proof's runtime folder (notes), and do not disturb is the config's word
 PWDUMP = "#!/bin/sh\ncat \"${PROOF_SND:?}/pw-dump\" 2>/dev/null || echo '[]'\n"
 RECORDING = '[{"info":{"props":{"media.class":"Stream/Input/Audio"},"state":"running"}}]\n'
-MAKOCTL = """#!/bin/sh
-d=${PROOF_SND:?}
-case ${1:-} in
-    mode) echo default; [ ! -e "$d/dnd" ] || echo do-not-disturb ;;
-    list) cat "$d/notes" 2>/dev/null || : ;;
-esac
-"""
 BLUETOOTHCTL = """#!/bin/sh
 d=${PROOF_SND:?}
 case "$*" in
@@ -835,11 +829,11 @@ class Desk:
             folder.mkdir(parents=True)
         self.run.mkdir(mode=0o700)
         self.real_foot = shutil.which("foot")
-        tools = {"wpctl": WPCTL, "foot": FOOT % self.real_foot, "swaymsg": SWAYMSG % shutil.which("swaymsg"), "pw-dump": PWDUMP, "makoctl": MAKOCTL,
+        tools = {"wpctl": WPCTL, "foot": FOOT % self.real_foot, "swaymsg": SWAYMSG % shutil.which("swaymsg"), "pw-dump": PWDUMP,
                  "bluetoothctl": BLUETOOTHCTL, "ip": "#!/bin/sh\nexit 0\n"}
         # no other sound system, the kernel's own link quality, no light to set, and nothing of the machine's that a verb
-        # could reach: its tmux, its spark; and no sound and no notification of the proof's reach the machine's
-        tools.update((name, "#!/bin/sh\nexit 1\n") for name in ("pactl", "amixer", "iw", "tmux", "spark", "brightnessctl", "ddcutil"))
+        # could reach: its tmux, its spark, its players; and no sound and no notification of the proof's reach the machine's
+        tools.update((name, "#!/bin/sh\nexit 1\n") for name in ("pactl", "amixer", "iw", "tmux", "spark", "brightnessctl", "ddcutil", "playerctl", "dbus-send"))
         tools.update((name, "#!/bin/sh\nexit 0\n") for name in ("notify-send", "pw-play", "aplay"))
         for name, text in tools.items():
             (fake / name).write_text(text)
@@ -888,7 +882,9 @@ class Desk:
                     "SPARK_SHELL_BAR": str(self.binary), "SPARK_SHELL_PTS_DIR": str(self.work / "pts"), "SPARK_SHELL_ROOT": str(self.work / "root"),
                     "SPARK_SHELL_SYS": str(sys_), "SPARK_SHELL_PROC": str(proc_), "SPARK_SHELL_DEV": str(self.work / "dev"),
                     "SPARK_SHELL_SEMANTIC_URL": "none", "SPARK_SHELL_DIALOG_URL": "none", "SPARK_SHELL_FONT_URL": "none", "SPARK_SHELL_NO_APPLY": "1",
-                    "SPARK_SHELL_NO_CHIME": "1", "PROOF_SND": str(self.snd), "PROOF_OPENED": str(self.opened_file), "PROOF_ASKED": str(self.asked_file)})
+                    "SPARK_SHELL_NO_CHIME": "1", "PROOF_SND": str(self.snd), "PROOF_OPENED": str(self.opened_file), "PROOF_ASKED": str(self.asked_file),
+                    # a session bus named, so the notifications' module stands, and nothing on it: the list is the state file's
+                    "DBUS_SESSION_BUS_ADDRESS": "unix:path=" + str(self.work / "no-bus")})
         if self.pad:
             env["SPARK_SHELL_WINPAD"] = str(self.pad)
         self.env = env
@@ -1230,8 +1226,15 @@ class Desk:
             ics.unlink()
 
     def notes(self, n):
-        """So many notifications nobody looked at, as mako lists them."""
-        self.flag("notes", n, "".join("Notification %d: note %d\n  App name: proof\n" % (i, i) for i in range(1, n + 1)))
+        """So many notifications nobody looked at, as the server's state file says them: this proof's own pid for a
+        server that runs. None, and no file."""
+        file = self.run / "spark-shell-notifications.state"
+        if n:
+            shown = [{"id": i, "app": "proof", "summary": "note %d" % i} for i in range(1, n + 1)]
+            born = Path("/proc/self/stat").read_text().rsplit(") ", 1)[1].split()[19]   # when this process started: a server is its pid and that
+            file.write_text(json.dumps({"pid": os.getpid(), "born": born, "last": n, "drawer": True, "dnd": False, "paused": False, "unseen": n, "shown": shown, "history": []}) + "\n")
+        elif file.exists():
+            file.unlink()
 
     def nudge(self):
         """A line now, as spark-shell asks its loop for one after any change (bar_redraw): SIGUSR1 to the loop."""
@@ -1366,8 +1369,9 @@ class Desk:
         """The bar as a gate finds it: running as the config first had it, in the dark palette, one screen 1920
         wide, at the top, the first workspace shown, the machine as it first was, the sound at 40 and 50, the
         pointer and the keys off it."""
-        for name in ("down", "fail", "slow", "bt-off", "bt-alone", "dnd", "notes", "pw-dump"):
+        for name in ("down", "fail", "slow", "bt-off", "bt-alone", "pw-dump"):
             self.flag(name, False)
+        self.notes(0)
         for name, text in MACHINE:
             if (self.work / "sys" / name).read_text() != text:
                 self.machine(name, text)
@@ -1823,7 +1827,7 @@ def behavior(d):
     typing.wait(timeout=5)
     d.away()
     # pins and what is hidden: the config's, said by the next line to the same bar
-    shown = "workspaces, pad, lan, bt, wifi, out, mic, due, light, kb, bat, clock, notifications"   # what the config does not hide
+    shown = "workspaces, pad, lan, bt, wifi, media, out, mic, due, light, kb, bat, clock, notifications"   # what the config does not hide
     left = ("lan.name", "bt.name", "wifi.name", "out.name", "out.gauge", "out.pct", "mic.name")
     said = d.shell("bar", "pin", "mic")
     both = d.until(lambda s: s.find("mic.gauge") and s.find("mic.pct"), "the mic's gauge and number on the bar")
@@ -2072,7 +2076,7 @@ def states(d):
     d.rest()
     d.remind(True)
     d.flag("bt-alone", True)
-    d.flag("dnd", True)
+    d.configure("DO_NOT_DISTURB=yes\n")
     d.sway("[pid=%d]" % d.windows[1].pid, "urgent", "enable")
     asks = d.told(lambda s: s.find("due.name").state == "asks" and "urgent" in s.find("workspace:2").flags and s.find("bt.name").state == "missing" and s.named("notifications.name") == "do not disturb",
                   "a reminder due, workspace 2 asking, bluetooth alone, do not disturb")

@@ -401,6 +401,24 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    /// A line of plain text at the left of a box `w` wide and `h` tall at x, y, in the middle of its height and
+    /// cut at the box, as solid as `alpha`: a notification's line.
+    #[allow(clippy::too_many_arguments)]
+    pub fn text(&self, x: f64, y: f64, w: f64, h: f64, s: &str, c: Rgb, bold: bool, alpha: f64) {
+        unsafe {
+            let l = self.lib.layout(self.cr, self.font, s, bold);
+            let (_, th) = self.lib.size(l);
+            (self.lib.save)(self.cr);
+            (self.lib.rectangle)(self.cr, x, y, w, h);
+            (self.lib.clip)(self.cr);
+            (self.lib.set_source_rgba)(self.cr, c.0, c.1, c.2, alpha);
+            (self.lib.move_to)(self.cr, self.snap(x), self.snap(y + (h - th) / 2.0));
+            (self.lib.cairo_show_layout)(self.cr, l);
+            (self.lib.restore)(self.cr);
+            (self.lib.object_unref)(l as *mut c_void);
+        }
+    }
+
     /// An icon's drawing in a square of `side` at x, y, in one color. It is drawn apart and then laid on
     /// the bar, so a shape with no ink cuts a hole in the icon and the ground or the chip shows through.
     pub fn icon(&self, shapes: &[icons::Shape], x: f64, y: f64, side: f64, c: Rgb) {

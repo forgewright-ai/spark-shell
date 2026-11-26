@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # on_console -> 0 on /dev/tty1 and up (not XDG_VTNR: Void has no logind)
 # sets: IDLE_ALPHA IDLE_APP IDLE_FROM IDLE_HUSH IDLE_STILL INPUT_KEYS LOCK_WAIT
-# reads: BAR_PROC BAR_WS_ORDER CONFIG_UNSET KB_RE LAYOUT_PENDING LAYOUT_SEEN NOTIFY_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SAVER_OWN STATE_DIR TAB TERM_NAME TMP US WM_NAME
+# reads: BAR_PROC BAR_WS_ORDER CONFIG_UNSET KB_RE LAYOUT_PENDING LAYOUT_SEEN OS PANEL_SEP PANEL_TICK REPO SAVER_NAMES SAVER_OWN STATE_DIR TAB TERM_NAME TMP US WM_NAME
 on_console() { case $(tty 2>/dev/null) in /dev/tty[1-9]*) return 0 ;; *) return 1 ;; esac; }
 # runtime_dir -- XDG_RUNTIME_DIR when unset (Void has no logind)
 runtime_dir() {
@@ -157,7 +157,7 @@ idle_back() {   # never a toggle: off and each window's end may all run it
     idle_close
 }
 IDLE_STILL=$STATE_DIR/idle.still   # the loops were stopped for the idle screen: they play again after it
-IDLE_HUSH=$STATE_DIR/idle.hush   # the idle screen turned do not disturb on: it turns it off after
+IDLE_HUSH=$STATE_DIR/idle.hush   # the idle screen holds the notifications: they show after it
 idle_rest_begin() {   # the art shows still and clean: the loops stopped (on battery, under any saver), the notifications out of sight; each noted to undo
     if [ "$DISPLAY_SAVER" = art ] || on_battery; then
         if [ -n "$(motion_ours)" ] || [ -f "$(motion_want)" ]; then mkdir_private "$STATE_DIR"; : > "$IDLE_STILL"; motion_stop; fi
@@ -477,16 +477,17 @@ layout_screen() {   # layout_screen [NAME [scale N | mode WxH | transform normal
 }
 
 # Notifications, storage and power
-layout_notifications() {   # layout_notifications [do-not-disturb on|off | dismiss | restore]
+layout_notifications() {   # layout_notifications [do-not-disturb on|off | dismiss | restore | open | start]
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own notifications"
     case ${1:-} in
-        '') notify_up || { notify_why; return 0; }
+        start) shift; notify_serve "$@" || exit 1 ;;   # sway's at login, and the bus's (--bus) when a program notifies and no server runs
+        '') notify_up && [ -z "$(notify_other)" ] || { notify_why; return 0; }
             if notify_dnd; then echo "do not disturb on"; else echo "do not disturb off"; fi
-            notify_list history | while IFS="$US" read -r _ni _na _ns; do echo "  ${_na:-an app}: $_ns"; done ;;
+            notify_list history | while IFS="$US" read -r _ni _na _ns; do printf '  %s: %s\n' "${_na:-an app}" "$_ns"; done ;;   # an app's words: printed as they are, never read by echo
         do-not-disturb) case ${2:-} in on|off) ;; *) refuse "do-not-disturb takes on or off" ;; esac
             notify_act do-not-disturb "$2" || exit 1 ;;
-        dismiss|restore) notify_act "$1" || exit 1 ;;
-        *) refuse "notifications takes do-not-disturb on|off, dismiss or restore" ;;
+        dismiss|restore|open) notify_act "$1" || exit 1 ;;
+        *) refuse "notifications takes do-not-disturb on|off, dismiss, restore or open" ;;
     esac
 }
 layout_storage() {   # layout_storage [mount|unmount|open|eject NAME]
@@ -618,15 +619,16 @@ layout_start() {   # layout_start PENDING -- sway on this console, PENDING a lay
     log_dir=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell
     mkdir_private "$log_dir"
     [ -z "${pending:-}" ] || printf '%s\n' "$pending" > "$LAYOUT_PENDING"
-    rm -f "$BAR_WS_ORDER" "$STATE_DIR/ws-pool" "$NOTIFY_SEEN"   # a new login; mako's ids start again
+    rm -f "$BAR_WS_ORDER" "$STATE_DIR/ws-pool"   # a new login
     st=0; _started=$(date +%s)
     sound_start "$log_dir/sound.log"
-    # no session bus from logind (Void): dbus-run-session, so notifications reach mako
+    # no session bus from logind (Void): dbus-run-session, so a program's notification reaches the server
     _bus=''; notify_bus || ! command -v dbus-run-session >/dev/null 2>&1 || _bus=dbus-run-session
     # shellcheck disable=SC2086   # the -u words and the bus, split on purpose: sway and all it starts read the file, never a key from this login
     wm_start $CONFIG_UNSET $_bus 2>"$log_dir/$WM_NAME.log" || st=$?
     sound_stop
     semantic_stop
+    notify_stop   # the server is this desktop's: the next one starts its own
     machine_rm now
     [ "${TERM:-}" != linux ] || printf '\033[?25h'
     # a desktop that ran and then crashed ends the login as leaving it does: its screen may have been locked, and the

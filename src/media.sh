@@ -50,7 +50,7 @@ media_follow() { exec playerctl --all-players --no-messages --follow metadata --
 media_title() {   # the section's line: what plays, or why nothing shows
     _mtl=$(media_now); [ -n "$_mtl" ] || { echo "$(panel_col media)$(media_why)"; return 0; }
     _mts=playing; case $_mtl in *"${TAB}Paused${TAB}"*) _mts=paused ;; esac
-    echo "$(panel_col media)$_mts $PANEL_SEP $(printf '%s' "$_mtl" | cut -f3 | cut_chars 44)"
+    printf '%s\n' "$(panel_col media)$_mts $PANEL_SEP $(printf '%s' "$_mtl" | cut -f3 | cut_chars 44)"   # a title is a player's words: printed as they are, never read by echo
 }
 panel_rows_media() {   # what plays, a look-only row with its player a column, the dot while it plays; then the one of play and pause that changes it, next, previous, stop
     _mrl=$(media_now); [ -n "$_mrl" ] || { printf -- '-\t%s\tshow\n' "$(media_why)"; return 0; }

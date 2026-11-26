@@ -971,7 +971,7 @@ dependencies = [
 
 [[package]]
 name = "spark-bar"
-version = "0.168.4"
+version = "0.170.0"
 dependencies = [
  "calloop",
  "libc",
@@ -979,6 +979,7 @@ dependencies = [
  "serde_json",
  "smithay-client-toolkit",
  "spark-theme",
+ "unicode-width",
  "wayland-backend",
  "wayland-client",
  "wayland-sys",
@@ -986,7 +987,7 @@ dependencies = [
 
 [[package]]
 name = "spark-dialog"
-version = "0.169.0"
+version = "0.170.0"
 dependencies = [
  "calloop",
  "gif",

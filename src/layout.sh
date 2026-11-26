@@ -703,7 +703,6 @@ cmd_layout() {   # cmd_layout [save [NAME] | delete NAME | rename NAME NEW | NAM
     esac
 }
 layout_pending() {   # at the desktop's start
-    ( notify_keep ) </dev/null >/dev/null 2>&1 &
     # the dialog opens warm
     ( _dw=$(dialog_transitions); cat "$REPO/spark-shell" "$DIALOG_BIN" ${_dw:+"$_dw"/*.gif} ) </dev/null >/dev/null 2>&1 &
     # search ranks by meaning

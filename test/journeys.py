@@ -7,13 +7,15 @@ when it is red on a release that had a bug and green on the fix (test/replay.py)
 It says nothing of words, glyphs, colors, times or order: what stands, what is seen, what runs.
 """
 from pathlib import Path
+import json
 import os
 import shutil
+import subprocess
 import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from desk import Broken, Desktop, NotRun, Pointer, fenced  # noqa: E402
+from desk import GROUND, Broken, Desktop, NotRun, Pointer, fenced  # noqa: E402
 
 
 def open_home(d, workspace):
@@ -211,9 +213,101 @@ def loops(d):
     moves("after the theme again, one screen")
 
 
-SCREENS = {"home": ((1280, 720, "normal"),), "loops": ((1080, 1920, "90"), (1280, 720, "normal"))}
+def notifications(d):
+    """A program's notification is kept and shown by the bar; a click reaches the program that sent it and the keys
+    dismiss; do not disturb keeps one out of sight and lets a critical one through; the server gone, the session bus
+    starts spark-shell's own again, whatever other notification program this machine has; one of each program all along."""
+    file = d.run / "spark-shell-notifications.state"
+    width, height = d.screens[0][0], d.screens[0][1]
+
+    def state():
+        try:
+            return json.loads(file.read_text())
+        except (OSError, ValueError):
+            return {}
+
+    def shown():
+        return [n["summary"] for n in state().get("shown", [])]
+
+    def send(*words):
+        got = d.sh("notify-send", *words, seconds=20)
+        if got.returncode:
+            raise NotRun("notify-send said %d: %s" % (got.returncode, got.stderr.strip()[:80]))
+
+    def stack():
+        """The box something is drawn in on the right of the screen, under the bar; None when the ground is plain there."""
+        side = 420
+        px = d.grab(width - side, 0, side, height)
+        rows = [y for y in range(0, height, 2) if any(tuple(px[(y * side + x) * 3:(y * side + x) * 3 + 3]) != GROUND for x in range(0, side, 6))]
+        while rows and rows[0] == 0:   # the bar, at the top
+            last = rows.pop(0)
+            while rows and rows[0] == last + 2:
+                last = rows.pop(0)
+        while rows and rows[-1] >= height - 2:   # or at the bottom
+            last = rows.pop()
+            while rows and rows[-1] == last - 2:
+                last = rows.pop()
+        if not rows:
+            return None
+        cols = [x for x in range(0, side, 2) if tuple(px[(rows[0] * side + x) * 3:(rows[0] * side + x) * 3 + 3]) != GROUND]
+        return (width - side + cols[0], rows[0], width - side + cols[-1], rows[-1]) if cols else None
+
+    d.until(lambda: state().get("drawer"), "the notifications' server and its drawer, started at login", 40)
+    d.whole()
+    send("-a", "mail", "one", "kept")
+    send("-u", "critical", "-a", "power", "two", "stays")
+    said = d.out / "action.txt"
+    with open(str(said), "w") as out:
+        d.procs.append(subprocess.Popen(["notify-send", "-a", "chat", "-A", "default=Open", "three", "asks"], env=d.env, cwd=str(d.home), stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.DEVNULL))
+    d.until(lambda: shown() == ["three", "two", "one"], "three on the screen, the newest first", 20, Broken)
+    box = d.until(stack, "the notifications drawn by the bar", 15, Broken)
+    time.sleep(0.6)
+    d.sh("grim", str(d.out / "stack.png"), seconds=20)   # for a look: the stack closed
+    if state().get("unseen") != 3:
+        raise Broken("three came and nobody looked: the count says %s" % state().get("unseen"))
+    # a click on the newest: what its program offered reaches that program, and the card leaves
+    pointer = Pointer(d.env)
+    pointer.click(round((box[0] + 60) * 1440 / width), round((box[1] + 16) * 1000 / height))
+    d.until(lambda: said.read_text().strip() == "default", "the click to reach the program that sent it", 15, Broken)
+    d.until(lambda: shown() == ["two", "one"], "the clicked one to leave the screen", 10, Broken)
+    pointer.close()
+    # the keys: Super+n's verb opens the stack, Delete sends the chosen one away
+    d.shell("desktop", "notifications", "open")
+    time.sleep(1)
+    d.sh("grim", str(d.out / "open.png"), seconds=20)   # and open, under the keys
+    d.sh("wtype", "-k", "Delete")
+    d.until(lambda: shown() == ["one"], "Delete to dismiss the one the keys are on", 10, Broken)
+    d.sh("wtype", "-k", "Escape")
+    d.shell("desktop", "notifications", "dismiss")
+    d.until(lambda: shown() == [] and stack() is None, "the screen clear after dismiss", 15, Broken)
+    if state().get("unseen") != 0:
+        raise Broken("each was sent away by hand, and the count still says %s" % state().get("unseen"))
+    # do not disturb: one waits in the list, unseen and undrawn; a critical one shows
+    d.shell("desktop", "notifications", "do-not-disturb", "on")
+    send("-a", "mail", "quiet", "waits")
+    d.until(lambda: [n["summary"] for n in state().get("history", [])][:1] == ["quiet"] and state().get("unseen") == 1, "the quiet one in the list", 10, Broken)
+    time.sleep(1)
+    if shown() or stack():
+        raise Broken("do not disturb is on and a notification shows")
+    send("-u", "critical", "-a", "power", "loud", "shows")
+    d.until(lambda: shown() == ["loud"] and stack(), "a critical one through do not disturb", 15, Broken)
+    d.shell("desktop", "notifications", "do-not-disturb", "off")
+    d.shell("desktop", "notifications", "dismiss")
+    d.whole()
+    # the server ended: the bus starts spark-shell's own at the next notification, by the service file on desktop rendered
+    pid = state().get("pid")
+    os.kill(pid, 15)
+    d.until(lambda: state().get("pid") is None and state().get("last"), "the ended server's state file to name no server, and keep its newest id", 10)
+    send("-a", "mail", "again", "after the server's end")
+    d.until(lambda: state().get("pid") not in (None, pid) and shown() == ["again"], "the bus to start the server again", 40, Broken)
+    d.until(lambda: state().get("drawer") and stack(), "its drawer, in the session's own environment", 20, Broken)
+    d.shell("desktop", "notifications", "dismiss")
+    d.whole()
+
+
+SCREENS = {"home": ((1280, 720, "normal"),), "loops": ((1080, 1920, "90"), (1280, 720, "normal")), "notifications": ((1280, 720, "normal"),)}
 KEYS = {"matrix": {"BAR_TRAY": "yes"}}
-JOURNEYS = {f.__name__: f for f in (home, live, matrix, tabs, loops)}
+JOURNEYS = {f.__name__: f for f in (home, live, matrix, tabs, loops, notifications)}
 
 
 MARK = ".spark-shell-journey"

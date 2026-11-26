@@ -1,9 +1,10 @@
 # shellcheck extended-analysis=false
 # --- sparkbar: spark's own bar (spark-bar), pinned like the pad; it runs `spark-shell bar status` and draws its line
-# sets: SPARKBAR_BIN SPARKBAR_KEEP SPARKBAR_TRAY_SLOTS
+# sets: SPARKBAR_BIN SPARKBAR_KEEP SPARKBAR_NOTIFY SPARKBAR_TRAY_SLOTS
 # reads: DIALOG_URL MODE OS REPO STATE_DIR TMP WM_LINE WM_TRAY
 SPARKBAR_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-bar
 SPARKBAR_TRAY_SLOTS=4   # the apps' icons the strip at the bar's end holds
+SPARKBAR_NOTIFY=notifications   # the program's other job, by its first word: the notifications' drawer (src/notifications.sh starts it)
 sparkbar_file() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-bar.$1"; }   # sparkbar_file pid|state|log|font|tray -> the bar's file of that kind, in the runtime folder
 sparkbar_release_tag() {   # -> clone_tag when it pins a bar and its sources, including the shared theme, match; false otherwise
     _sbr=$(clone_tag) || return 1
@@ -48,7 +49,7 @@ sparkbar_pid() {   # -> the running bar's pid, from its lock; false when none ru
     _sbp=''; read -r _sbp 2>/dev/null < "$_sbl" || [ -n "$_sbp" ] || return 1   # a pid with no new line after it is read too
     case $_sbp in ''|*[!0-9]*) return 1 ;; esac
     kill -0 "$_sbp" 2>/dev/null || return 1
-    [ ! -r "/proc/$_sbp/cmdline" ] || tr '\0' ' ' < "/proc/$_sbp/cmdline" | grep -q 'spark-bar' || return 1
+    [ ! -r "/proc/$_sbp/cmdline" ] || tr '\0' ' ' < "/proc/$_sbp/cmdline" | grep -v "spark-bar $SPARKBAR_NOTIFY" | grep -q 'spark-bar' || return 1   # never the notifications' drawer, the program's other job
     printf '%s\n' "$_sbp"
 }
 sparkbar_height() {   # -> the bar's height in pixels: 2.25 times its text's, 36 at 12 points (16 pixels)

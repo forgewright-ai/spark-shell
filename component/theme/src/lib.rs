@@ -4,6 +4,7 @@
 pub mod animation;
 pub mod glyphs;
 pub mod palette;
+pub mod scrub;
 
 /// A red, green and blue channel in display order.
 pub type Rgb = [u8; 3];

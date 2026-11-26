@@ -130,6 +130,14 @@ impl Keyboard {
         }
     }
 
+    /// A pressed key's keysym as the layout names it; none when there is no keymap to read.
+    pub fn sym(&self, evdev: u32) -> Option<u32> {
+        match (&self.lib, self.state.is_null()) {
+            (Some(l), false) => Some(unsafe { (l.state_key_get_one_sym)(self.state, evdev + 8) }),
+            _ => None,
+        }
+    }
+
     /// What a pressed key (its evdev code) is: by the layout's keysym, or by its US position when
     /// there is no keymap to read.
     pub fn key(&self, evdev: u32) -> Option<Key> {

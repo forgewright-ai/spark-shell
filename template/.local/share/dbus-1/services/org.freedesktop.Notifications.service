@@ -1,0 +1,6 @@
+# rendered by spark-shell from templates/.local/share/dbus-1/services/org.freedesktop.Notifications.service -- edit the template, then spark-shell on
+# The session bus starts the notifications' server when a program notifies and none runs. A file in
+# your own folder comes before the system's: another notification program's there is not asked.
+[D-BUS Service]
+Name=org.freedesktop.Notifications
+Exec=@REPO@/spark-shell desktop notifications start --bus
