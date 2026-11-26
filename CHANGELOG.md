@@ -9,6 +9,9 @@
   Xenon with the Banner glyphs, its chapel doors opening and closing.
   Each moves with the moving wallpaper on, gets its own portrait on a
   turned screen, and a panel on each of two screens.
+- With the login screen on, `spark-shell theme wallpaper` and
+  `theme text` end with their receipt and the login screen takes the
+  change. They ended in status 2 and the login screen kept the old look.
 
 ## v0.170.1
 

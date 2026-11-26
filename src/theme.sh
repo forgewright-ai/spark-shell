@@ -632,6 +632,7 @@ theme_wallpaper() {   # theme_wallpaper [PATH|DRAWING|COLOR|default]
     WALLPAPER=$want; export WALLPAPER
     wall_follow
     look_apply "the wallpaper is $want" || return 1
+    [ -n "${LOGIN_ACCOUNT+set}" ] || pm_detect   # the login screen's account: from the command line no detection ran, and the step ended in status 2
     login_follow
     _tr="the windows keep their transparency, $(transparency_of "$ALPHA")%"; [ "$(transparency_of "$ALPHA")" -ne 0 ] || _tr="the windows are solid (spark-shell theme transparency N)"
     if [ "$1" = none ]; then echo "the ground is back: none is the ground now, and $_tr"
@@ -651,7 +652,7 @@ text_step() {   # text_step N|bigger|smaller -> the receipt; 1 when refused
     case $1 in bigger) _new=$((_sz + 1)) ;; smaller) _new=$((_sz - 1)) ;; *) _new=$1 ;; esac
     [ "$_new" -ge 6 ] && [ "$_new" -le 40 ] || { echo "text size $_sz stays (6 to 40)"; return 1; }
     _f=$(printf '%s' "$FONT" | sed "s/size=$_sz/size=$_new/")
-    config_set FONT "$_f" >/dev/null; FONT=$_f; export FONT; look_apply "the text is at $_new" || return 1; login_follow >/dev/null 2>&1 || :
+    config_set FONT "$_f" >/dev/null; FONT=$_f; export FONT; look_apply "the text is at $_new" || return 1; [ -n "${LOGIN_ACCOUNT+set}" ] || pm_detect; login_follow >/dev/null 2>&1 || :
     echo "text at $_new $PANEL_SEP new windows and the bar take it; the pointer $(pointer_size_for "$_new") pixels"
 }
 theme_face() {   # theme_face [neon|argon|xenon|radon|krypton]
@@ -665,7 +666,7 @@ face_step() {   # face_step NAME -> the receipt; 1 when refused
     _fn=$(face_name "$1")
     [ "${FONT%%:*}" != "$_fn" ] || ! config_is FONT "$FONT" || { echo "the text is in $1 already"; return 1; }
     _f="$_fn${FONT#"${FONT%%:*}"}"   # the face swapped, the rest kept
-    config_set FONT "$_f" >/dev/null; FONT=$_f; export FONT; look_apply "the text is in $1" || return 1; login_follow >/dev/null 2>&1 || :
+    config_set FONT "$_f" >/dev/null; FONT=$_f; export FONT; look_apply "the text is in $1" || return 1; [ -n "${LOGIN_ACCOUNT+set}" ] || pm_detect; login_follow >/dev/null 2>&1 || :
     if [ "$1" = neon ] || face_ours "$1"; then echo "text in $1 $PANEL_SEP new windows and the bar take it"
     else echo "text in $1 $PANEL_SEP from spark-shell on, which installs it; neon until then"; fi
 }

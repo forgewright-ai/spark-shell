@@ -9786,6 +9786,13 @@ l5=0; for l6 in "$lgn"/wallpaper.*; do [ ! -e "$l6" ] || l5=$((l5 + 1)); done; l
     && [ "$l3" = 0 ] && [ "$l4" = 1 ] && [ "$l5" = 0 ] && [ "$l6" = 0 ] \
     && ok "login: each screen wears the picture it has on the desktop; a screen gone takes its picture along; screens.conf's own lines alone reach the login account" \
     || bad "login pictures" "$l1 | $l2 | $l3 $l4 $l5 $l6 $(cat "$lgn/screens.conf" 2>&1)"
+# with the login screen on, a wallpaper and a text size from the command line end well: no detection ran there before the login
+# screen's step, which read an account never set and ended in status 2 after writing the config (v0.170)
+lw=0; lo1=$(XDG_RUNTIME_DIR=$H/run scr theme wallpaper "$th_dir/study-night/test-wide-1.png" 2>&1 </dev/null) || lw=$?
+lt=0; lo2=$(XDG_RUNTIME_DIR=$H/run scr theme text 13 2>&1 </dev/null) || lt=$?
+[ "$lw" = 0 ] && [ "$lt" = 0 ] && grep -qx "WALLPAPER=$th_dir/study-night/test-wide-1.png" "$cfg" && ! printf '%s\n' "$lo1" "$lo2" | grep -q 'parameter not set' \
+    && ok "login on: theme wallpaper and theme text from the command line end with their receipt, never in status 2" \
+    || bad "login on from the command line" "$lw $lt | $(printf '%s' "$lo1" | tail -1) | $(printf '%s' "$lo2" | tail -1)"
 rm -rf "$lgn"; if [ -f "$H/sc-before" ]; then cp "$H/sc-before" "$sc_f"; else rm -f "$sc_f"; fi
 cp "$H/cfg-before-screens" "$cfg"; if [ -f "$H/hist-before-screens" ]; then cp "$H/hist-before-screens" "$st_dir/theme.history"; else rm -f "$st_dir/theme.history"; fi; rm -rf "$fam" "$th_dir/study-night" "$th_dir/study-day" "$HOME/screens" "$HOME/scr.log"
 # the art at rest (#36): the idle windows clear over each screen's own still, the clock on a plate of the background; the loops
