@@ -5953,9 +5953,10 @@ STUB
         && [ "$st" -eq 0 ] && [ "$out2" = 'disconnected MAJOR V (C2:AA)' ] && grep -qx 'disconnect 00:25:D1:4A:C2:AA' "$blog" \
         && ok "bt: two devices of one name each say the end of their address, and a step is told its own device's" || bad "bt twins" "$out | $st $out2 | $(cat "$blog" 2>&1)"
     # a name outside ASCII, with a backslash in it, matches its own row; one with an escape in it reaches no terminal whole
-    printf 'Колонка AC\\DC\n' > "$H/bt-name"; btfresh; st=0; out=$(sh "$SH" bar panel bt disconnect 'Колонка AC\DC' 2>&1) || st=$?; rm -f "$H/bt-none"
+    _ru=$(printf '\320\232\320\276\320\273\320\276\320\275\320\272\320\260')   # a speaker's name in Cyrillic, said in bytes: this file is ASCII
+    printf '%s AC\\DC\n' "$_ru" > "$H/bt-name"; btfresh; st=0; out=$(sh "$SH" bar panel bt disconnect "$_ru AC\\DC" 2>&1) || st=$?; rm -f "$H/bt-none"
     printf 'bad\033[2Jname\n' > "$H/bt-name"; btfresh; out2=$(sh "$SH" bar panel bt --list 2>&1 | sed -n 1p); rm -f "$H/bt-name"; btfresh
-    [ "$st" -eq 0 ] && [ "$out" = 'disconnected Колонка AC\DC' ] && ! printf '%s' "$out2" | LC_ALL=C grep -q "$(printf '\033')" && printf '%s' "$out2" | grep -q 'bad\[2Jname' \
+    [ "$st" -eq 0 ] && [ "$out" = "disconnected $_ru AC\\DC" ] && ! printf '%s' "$out2" | LC_ALL=C grep -q "$(printf '\033')" && printf '%s' "$out2" | grep -q 'bad\[2Jname' \
         && ok "bt: a name outside ASCII with a backslash matches its own row, and a name with an escape in it is said without the escape" || bad "bt names" "st=$st $out | $(printf '%s' "$out2" | od -c | head -3)"
     # bluetoothd down: the bar says off at once, and bluetoothctl, which would wait for it, is not asked
     mv "$H/.local/bin/dbus-send" "$H/dbus-send.keep"; printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/dbus-send"; chmod +x "$H/.local/bin/dbus-send"; rm -f "$blog"
