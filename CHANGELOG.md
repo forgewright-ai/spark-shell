@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.170.2
+
+- Cinematic Worlds has two new works. Mars Conquest:
+  `spark-shell theme mars-conquest`, set in Monaspace Krypton, its
+  ship launching and caught as the dialog opens and closes. The
+  Pilgrim's Vow: `spark-shell theme the-pilgrims-vow`, in Monaspace
+  Xenon with the Banner glyphs, its chapel doors opening and closing.
+  Each moves with the moving wallpaper on, gets its own portrait on a
+  turned screen, and a panel on each of two screens.
+
 ## v0.170.1
 
 - The pad can be dropped on the bar while something plays. On a

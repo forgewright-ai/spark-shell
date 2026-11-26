@@ -9652,7 +9652,7 @@ sh "$SH" theme amber-drizzle >/dev/null 2>&1; a5=$(sh "$SH" theme show 2>&1 | se
 [ "$a1" = 'tokyonight, light (dark: tokyonight-night), vector, still, portrait fitted' ] && [ "$v1" = "variant light $(printf '\302\267') dark or light" ] && [ "$t1" = tokyonight-night ] \
     && [ "$a2" = 'tokyonight-night is the dark variant already' ] && [ "$rc" = 1 ] && [ "$a3" = 'spark-shell theme: variant takes dark or light' ] \
     && [ "$rc2" = 1 ] && [ "$a4" = 'spark-shell theme: nord has no light variant' ] && [ "$a5" = 'amber-drizzle, dark, pixel, ambient, portrait authored' ] \
-    && [ "$(art_row)" = '8 families, each read' ] \
+    && [ "$(art_row)" = '10 families, each read' ] \
     && ok "theme variant: a family's other variant is its own theme with its own drawing, said by theme show; one variant or a word not dark or light refused in one line; a theme with no family read from itself (a pixel scene moves and draws its own portrait view)" \
     || bad "theme variant" "$a1 | $v1 | $t1 | $a2 | $a3 | $a4 | $a5 | $(art_row)"
 fam=${cfg%/*}/families; mkdir -p "$fam" "$th_dir/study-night" "$th_dir/study-day"
@@ -9665,7 +9665,7 @@ study() {   # study 'DARK-VARIANT-JSON' -- the family file of the TEST-ONLY stud
 study '{"theme": "study-night", "portrait": "test-tall.png", "motion": "still", "panels": {"2": [{"landscape": "test-wide-1.png"}, {"landscape": "test-wide-2.png", "portrait": "test-tall.png"}], "3": [{"landscape": "test-wide-1.png"}, {"landscape": "test-wide-2.png"}, {"landscape": "test-wide-3.png"}]}}'
 sh "$SH" theme study-night >/dev/null 2>&1
 a1=$(sh "$SH" theme show 2>&1 | sed -n 's/^  art *//p'); c1=$(art_row)
-[ "$a1" = 'study, dark (light: study-day), cinematic, still, portrait authored, panels for 2 and 3 screens' ] && [ "$c1" = '9 families, each read' ] \
+[ "$a1" = 'study, dark (light: study-day), cinematic, still, portrait authored, panels for 2 and 3 screens' ] && [ "$c1" = '11 families, each read' ] \
     && ok "a family of yours (families/): its portrait and its panels for two and three screens read from its own folder, the check counts it" || bad "family of yours" "$a1 | $c1"
 why=''
 for case in \

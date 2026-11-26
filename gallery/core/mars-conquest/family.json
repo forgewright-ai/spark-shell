@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "id": "mars-conquest",
+  "title": "Mars Conquest",
+  "media": "cinematic",
+  "variants": {
+    "dark": {
+      "theme": "mars-conquest",
+      "portrait": "mars-conquest-portrait.jpg",
+      "panels": {
+        "2": [
+          {
+            "landscape": "mars-conquest-landscape-1.jpg"
+          },
+          {
+            "landscape": "mars-conquest-landscape-2.jpg"
+          }
+        ]
+      }
+    }
+  }
+}

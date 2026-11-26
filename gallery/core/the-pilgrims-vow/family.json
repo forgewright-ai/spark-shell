@@ -1,0 +1,40 @@
+{
+  "format": 1,
+  "id": "the-pilgrims-vow",
+  "title": "The Pilgrim's Vow",
+  "media": "cinematic",
+  "note": "A knight keeps vigil. Saint Michael lands on the road. They walk on together.",
+  "variants": {
+    "dark": {
+      "theme": "the-pilgrims-vow",
+      "portrait": "the-pilgrims-vow-portrait.jpg",
+      "motion": "ambient",
+      "panels": {
+        "2": [
+          {
+            "landscape": "the-pilgrims-vow-landscape-1.jpg",
+            "portrait": "the-pilgrims-vow-portrait.jpg"
+          },
+          {
+            "landscape": "the-pilgrims-vow-landscape-2.jpg",
+            "portrait": "the-pilgrims-vow-portrait.jpg"
+          }
+        ],
+        "3": [
+          {
+            "landscape": "the-pilgrims-vow-landscape-1.jpg",
+            "portrait": "the-pilgrims-vow-portrait.jpg"
+          },
+          {
+            "landscape": "the-pilgrims-vow-landscape-2.jpg",
+            "portrait": "the-pilgrims-vow-portrait.jpg"
+          },
+          {
+            "landscape": "the-pilgrims-vow-landscape-2.jpg",
+            "portrait": "the-pilgrims-vow-portrait.jpg"
+          }
+        ]
+      }
+    }
+  }
+}
