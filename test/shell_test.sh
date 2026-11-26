@@ -3769,10 +3769,12 @@ kb2=$(sed -n 's/^KEYBOARD=//p' "$HOME/.config/spark-shell/config" | tr -d '"')
 # a config written before v0.169 keeps its pointer settings, for the mouse and the touchpad both
 mkdir -p "$H/oldptr/.config/spark-shell"
 printf 'POINTER_TAP=off\nPOINTER_SCROLL=on\nPOINTER_SPEED=0.25\n' > "$H/oldptr/.config/spark-shell/config"
-rc=0; out=$(XDG_CONFIG_HOME="$H/oldptr/.config" sh "$SH" desktop mouse 2>&1) || rc=$?
-rc2=0; out2=$(XDG_CONFIG_HOME="$H/oldptr/.config" sh "$SH" desktop touchpad 2>&1) || rc2=$?
-[ "$rc$rc2" = 00 ] && printf '%s' "$out" | grep -q 'speed 0.25' && printf '%s' "$out" | grep -q 'natural scroll on' && printf '%s' "$out2" | grep -q 'tap to click off' \
-    && ok "a config of before: its pointer speed, scroll and tap carry over to the mouse and the touchpad" || bad "old pointer config" "rc=$rc$rc2 $out | $out2"
+if [ "$(uname -s)" != Darwin ]; then   # macOS has its own mouse and touchpad settings: the verbs refuse there
+    rc=0; out=$(XDG_CONFIG_HOME="$H/oldptr/.config" sh "$SH" desktop mouse 2>&1) || rc=$?
+    rc2=0; out2=$(XDG_CONFIG_HOME="$H/oldptr/.config" sh "$SH" desktop touchpad 2>&1) || rc2=$?
+    [ "$rc$rc2" = 00 ] && printf '%s' "$out" | grep -q 'speed 0.25' && printf '%s' "$out" | grep -q 'natural scroll on' && printf '%s' "$out2" | grep -q 'tap to click off' \
+        && ok "a config of before: its pointer speed, scroll and tap carry over to the mouse and the touchpad" || bad "old pointer config" "rc=$rc$rc2 $out | $out2"
+fi
 # the screens
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen 2>&1) || rc=$?
 [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -qx 'HDMI-A-1  Lenovo Group Limited T24i-30 V30A1  1920x1080  scale 1  at 1920,0' && ok "desktop screen: each screen by port, make, model and serial, its mode, scale and place" || bad "screen list" "rc=$rc $out"
