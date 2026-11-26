@@ -243,14 +243,15 @@ notify_stub() {   # the notifications' server stood in for in this home: a dbus-
 #!/bin/sh
 printf '%s\n' "$*" >> "$HOME/bus.asked"
 f=$(cat "$HOME/bus.state" 2>/dev/null)
+for last in "$@"; do :; done; ids=${last##*uint32:}   # the ids a step names, in its last word. Never a pattern on $*: dash cuts the words joined, bash each word
 edit() { [ -s "$f" ] && jq -c "$@" "$f" > "$f.new" && mv "$f.new" "$f"; }
 count='([.shown[], .history[]] | map(.id)) as $held | .unseen = ([$held[] | select(. as $x | ($r.seen // []) | index($x) | not)] | length)'
 case "$*" in
     *GetConnectionUnixProcessID*) [ -s "$HOME/bus.owner" ] || exit 1; printf 'method return\n   uint32 %s\n' "$(cat "$HOME/bus.owner")" ;;
-    *Notifications.CloseNotification*) edit --argjson i "${*##*uint32:}" '(.shown | map(select(.id == $i))) as $g | .shown |= map(select(.id != $i)) | .history = ($g + .history)' ;;
-    *Notifications.Dismiss*) edit --arg i "${*##*array:uint32:}" '($i | split(",") | map(tonumber)) as $l | (.shown | map(select(.id as $x | $l | index($x)))) as $g | .shown |= map(select(.id as $x | $l | index($x) | not))
+    *Notifications.CloseNotification*) edit --argjson i "$ids" '(.shown | map(select(.id == $i))) as $g | .shown |= map(select(.id != $i)) | .history = ($g + .history)' ;;
+    *Notifications.Dismiss*) edit --arg i "$ids" '($i | split(",") | map(tonumber)) as $l | (.shown | map(select(.id as $x | $l | index($x)))) as $g | .shown |= map(select(.id as $x | $l | index($x) | not))
         | .history = ($g + .history) | .seen = (((.seen // []) + $l) | unique) | . as $r | '"$count" ;;
-    *Notifications.Seen*) edit --arg i "${*##*array:uint32:}" '($i | split(",") | map(tonumber)) as $l | ([.shown[], .history[]] | map(.id)) as $held
+    *Notifications.Seen*) edit --arg i "$ids" '($i | split(",") | map(tonumber)) as $l | ([.shown[], .history[]] | map(.id)) as $held
         | .seen = (((.seen // []) + (if ($l | index(0)) then $held else [$l[] | select(. as $x | $held | index($x))] end)) | unique) | . as $r | '"$count" ;;
     *Notifications.Restore*) if [ -e "$HOME/bus.held" ]; then printf 'method return\n   boolean false\n'; else edit '.shown = (.history[0:1] + .shown) | .history |= .[1:]'; printf 'method return\n   boolean true\n'; fi ;;
     *Notifications.Pause*) edit '.paused = true' ;;
@@ -10804,6 +10805,17 @@ else
     rm -rf "$HOME/.config/mako"
     rc=0; out=$(sh "$SH" bar seen 12 2>&1) || rc=$?
     [ "$rc" = 0 ] && [ -z "$out" ] && ok "bar seen, which v0.169's mako says until it ends: nothing, and never words for spark" || bad "bar seen" "rc=$rc $out"
+    # mpv's MPRIS plugin: linked into your own mpv scripts folder where the family's package leaves it in a library folder
+    _ml=$HOME/.config/mpv/scripts/mpris.so; mkdir -p "$H/root/usr/lib64/mpv" "$H/root/etc/mpv/scripts" "${_ml%/*}"; : > "$H/root/usr/lib64/mpv/mpris.so"
+    : > "$H/root/etc/mpv/scripts/mpris.so"; out=$(sh "$SH" on --yes 2>&1 || :); _m1=$(ls -A "${_ml%/*}"); rm -rf "$H/root/etc/mpv"
+    echo mine > "$_ml"; out0=$(sh "$SH" on --yes 2>&1 || :); _m2=$(cat "$_ml"); rm -f "$_ml"
+    media_stub; _c1=$(sh "$SH" check 2>&1 | grep '^[a-z]* *media ' || :)
+    out1=$(sh "$SH" on --yes 2>&1 || :); out2=$(sh "$SH" on --yes 2>&1 || :); _c2=$(sh "$SH" check 2>&1 | grep '^[a-z]* *media ' || :)
+    [ -z "$_m1" ] && [ "$_m2" = mine ] && ! printf '%s\n%s\n' "$out" "$out0" | grep -q '^link *media ' && [ -L "$_ml" ] && [ "$(readlink "$_ml")" = "$H/root/usr/lib64/mpv/mpris.so" ] \
+        && printf '%s\n' "$out1" | grep -q "^link *media *$_ml: mpv loads its MPRIS plugin" && ! printf '%s\n' "$out2" | grep -q '^link *media ' && [ "$(cat "$HOME/.local/state/spark-shell/media.mpv")" = "$_ml" ] \
+        && ok "on desktop: mpv's MPRIS plugin, which the family's package left in a library folder (Void, openSUSE), is linked into your own mpv scripts folder, once and by a record, so mpv is one of the players; where the system links it for everyone, or a file of yours stands there, nothing" || bad "media mpv link" "[$_m1] $_m2 | $(ls -la "${_ml%/*}" 2>&1) | $out1"
+    case $_c1 in 'warn   media        mpv does not load its MPRIS plugin'*'spark-shell on desktop') : ;; *) false ;; esac && case $_c2 in 'ok     media '*) : ;; *) false ;; esac \
+        && ok "check: mpv installed with its plugin and not loading it is said, with its remedy; once linked the media row is ok" || bad "media check mpv" "$_c1 | $_c2"
     cp "$HOME/.config/spark-shell/config" "$H/config.keep"; { grep -v '^DO_NOT_DISTURB=' "$H/config.keep" || :; echo 'DO_NOT_DISTURB="yes"'; } > "$HOME/.config/spark-shell/config"
     out=$(sh "$SH" desktop notifications 2>&1 | head -1 || :); cp "$H/config.keep" "$HOME/.config/spark-shell/config"; rm -f "$H/config.keep"
     [ "$out" = 'do not disturb on' ] && ok "do not disturb: the config's word in quotes is the same word" || bad "dnd quoted" "$out"
@@ -11048,6 +11060,9 @@ EOF
     notify_state '[]' '[]' "$_nop"; _noff=$(sh "$SH" off desktop 2>&1 || :); _nok=$(pstate "$_nop"); kill "$_nop" 2>/dev/null || :; wait "$_nop" 2>/dev/null || :
     printf '%s\n' "$_noff" | grep -q "^ok *notify *the notifications' server ended" && case $_nok in ''|Z) : ;; *) false ;; esac \
         && ok "off desktop: the notifications' server ends, and the name is free for a program of yours" || bad "off notify" "$_nok | $_noff"
+    [ ! -L "$HOME/.config/mpv/scripts/mpris.so" ] && [ ! -e "$HOME/.local/state/spark-shell/media.mpv" ] && printf '%s\n' "$_noff" | grep -q '^ok *media .*mpris.so removed' \
+        && ok "off desktop: the link to mpv's MPRIS plugin goes, by its record" || bad "off media link" "$(ls -la "$HOME/.config/mpv/scripts" 2>&1) | $_noff"
+    rm -rf "$H/root/usr/lib64/mpv"
     [ ! -e "$hook" ] && [ ! -e "$HOME/.local/state/spark-shell/power.sleep" ] && ok "off desktop: the sleep hook gone, by its record" || bad "off sleep hook" "$(ls -R "$H/root/etc/zzz.d" 2>&1)"
     [ ! -e "$sud" ] && [ ! -e "$pol" ] && [ ! -e "$HOME/.local/state/spark-shell/power.sudoers" ] && [ ! -e "$HOME/.local/state/spark-shell/storage.polkit" ] && [ ! -e "$svc" ] \
         && ok "off desktop: both rules gone, by spark-shell's records, and the notifications' service file with them" || bad "off rules" "$(ls -R "$H/root/etc" 2>&1)"

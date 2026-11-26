@@ -245,6 +245,7 @@ desktop_apply() {
     desktop_look_apply
     seat_apply
     sound_apply
+    media_apply
     bt_apply
     light_apply
     storage_apply

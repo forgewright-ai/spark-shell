@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- media: what plays in any player that speaks MPRIS, and its controls
-# sets: MEDIA_ACTIONS
-# reads: OS PANEL_DOT PANEL_SEP SCRUB_AWK TAB
+# sets: MEDIA_ACTIONS MEDIA_MPV_PLUGINS MEDIA_MPV_RECORD
+# reads: MODE OS PANEL_DOT PANEL_SEP ROOT SCRUB_AWK STATE_DIR TAB
 # playerctl asks the players. It acts on the first it finds, so the player is chosen here: the one that plays, else the
 # first paused one. A title is a page's or a file's own words: every field is scrubbed before anything draws or says it
 MEDIA_ACTIONS='play pause toggle next previous stop'   # what a key, a click, a row or a tool asks of the player
@@ -23,8 +23,37 @@ media_now() {   # -> the player the bar shows and the keys reach, as media_list 
     media_list | awk -F '\t' '$2 == "Playing" { print; f = 1; exit } $2 == "Paused" && p == "" { p = $0 } END { if (!f && p != "") print p }'
 }
 media_check() {   # the media row of check, on a desktop machine
-    if media_here; then chk media ok "the bar shows what plays, and the media keys control it"
-    else chk media warn "playerctl is not installed, so the bar shows nothing of what plays and the media keys do nothing" "spark-shell on desktop"; fi
+    if ! media_here; then chk media warn "playerctl is not installed, so the bar shows nothing of what plays and the media keys do nothing" "spark-shell on desktop"
+    elif [ -n "$(media_mpv_plugin)" ] && ! media_mpv_loads; then chk media warn "mpv does not load its MPRIS plugin, so the bar never shows what mpv plays" "spark-shell on desktop"
+    else chk media ok "the bar shows what plays, and the media keys control it"; fi
+}
+# mpv is one of the players through its MPRIS plugin (mpv-mpris). Some families' packages link the plugin into mpv's
+# system scripts folder; Void's and openSUSE's leave it in a library folder, where mpv never looks. On desktop links
+# it into your own mpv scripts folder then, by a record, and off takes away the link the record names
+MEDIA_MPV_PLUGINS='usr/lib/mpv-mpris/mpris.so usr/lib64/mpv-mpris/mpris.so usr/lib64/mpv/mpris.so usr/lib/mpv/mpris.so'
+MEDIA_MPV_RECORD=$STATE_DIR/media.mpv   # the link on desktop made, a line: off removes that one and no other
+media_mpv_plugin() {   # -> the plugin as the family's package installed it; nothing where it is not installed
+    for _mpp in $MEDIA_MPV_PLUGINS; do [ ! -f "$ROOT/$_mpp" ] || { printf '%s\n' "$ROOT/$_mpp"; return 0; }; done
+    for _mpp in "$ROOT"/usr/lib/*/mpv/mpris.so "$ROOT"/usr/lib/*/mpv-mpris/mpris.so; do [ ! -f "$_mpp" ] || { printf '%s\n' "$_mpp"; return 0; }; done   # under the architecture's own folder
+}
+media_mpv_link() { printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/mpv/scripts/mpris.so"; }
+media_mpv_loads() { [ -e "$ROOT/etc/mpv/scripts/mpris.so" ] || [ -e "$(media_mpv_link)" ]; }   # mpv loads the plugin: by the system's link, or by a file or a link in your folder
+media_apply() {   # on desktop's media row: nothing where mpv loads the plugin already, where it is not installed, or where a link of yours stands
+    ! media_mpv_loads || return 0
+    _mas=$(media_mpv_plugin); [ -n "$_mas" ] || return 0
+    _mal=$(media_mpv_link); [ ! -L "$_mal" ] || return 0
+    changes=$((changes + 1))
+    if [ "$MODE" = dry ]; then row would media "$_mal: mpv loads its MPRIS plugin, so the bar shows what it plays"; return 0; fi
+    mkdir -p "${_mal%/*}" && ln -s "$_mas" "$_mal" || return 0
+    mkdir_private "$STATE_DIR"; printf '%s\n' "$_mal" > "$MEDIA_MPV_RECORD"
+    row link media "$_mal: mpv loads its MPRIS plugin, so the bar shows what it plays"
+}
+media_off() {   # off, off desktop: the link on desktop made goes, by its record; one you made stays
+    [ -s "$MEDIA_MPV_RECORD" ] || return 0
+    _mol=''; read -r _mol < "$MEDIA_MPV_RECORD" || :
+    if [ "$MODE" = dry ]; then row would media "$_mol removed"; return 0; fi
+    [ ! -L "$_mol" ] || rm -f "$_mol"
+    rm -f "$MEDIA_MPV_RECORD"; row ok media "$_mol removed"
 }
 media_why() { if media_here; then echo "nothing is playing"; else echo "playerctl is not installed (spark-shell on desktop)"; fi; }
 # media_act ACTION -> one line, what the player was asked and its name; 1 when not done: no playerctl, no player, or a

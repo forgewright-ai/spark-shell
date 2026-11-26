@@ -284,6 +284,7 @@ cmd_off() {   # cmd_off [desktop|login]
         semantic_off
         voice_off
         sparkbar_off
+        media_off
         notify_off
         machine_off
         echo "packages stay installed -- the package manager removes them if you want"
@@ -311,6 +312,7 @@ cmd_off() {   # cmd_off [desktop|login]
     mcp_off
     semantic_off
     [ "$OS" = Darwin ] || sparkbar_off
+    [ "$OS" = Darwin ] || media_off
     [ "$OS" = Darwin ] || notify_off
     machine_off
     pm_detect
