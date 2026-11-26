@@ -8603,6 +8603,28 @@ y4=$(ans 4 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.gro
     && ans 5 | jq -e '.result.isError == false and .result.structuredContent.undo.name == "theme_rename"' >/dev/null && [ -d "$th_dir/nord-two" ] \
     && ok "provide theme: Your themes in place of Manage themes: the ways to make one, then each theme of yours with rename, duplicate and delete; its page has them too, a bundled one Duplicate as yours; rename from the dialog, its undo the name back" \
     || bad "your themes" "$y1 | $y2 | $y3 | $y4 | $(ans 5 | head -c 300)"
+# a theme of yours under a bundled work's name (one imported before a release bundled it) is that work in the gallery and
+# no row of Your themes: the row counts what its page lists, never the folders (3 themes over a page of two, v0.169)
+cp -R "$REPO/gallery/core/the-sounding-gate" "$th_dir/the-sounding-gate"
+mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/yours"}')"
+n1=$(ans 1 | jq -r '.result.contents[0].text | fromjson | .rows[] | select(.id == "theme:settings:yours") | .columns[0]')
+n2=$(ans 2 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.group == "yours") | .text] | join(" ")')
+n3=$(ans 2 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.group == "yours")] | length')
+n4=$(ans 2 | jq -r '.result.contents[0].text | fromjson | .state')
+n5=0; for _yd in "$th_dir"/*/palette.env; do [ ! -f "$_yd" ] || n5=$((n5 + 1)); done   # the folders: one more than the page lists
+[ -f "$th_dir/the-sounding-gate/palette.env" ] && [ "$n3" -ge 2 ] && [ "$n5" = $((n3 + 1)) ] && [ "$n1" = "$n3 themes" ] && [ "$n4" = "$n1" ] \
+    && ! printf ' %s ' "$n2" | grep -q ' the-sounding-gate ' \
+    && ok "provide theme: the Your themes row counts the themes its page lists; one of yours under a bundled work's name is that work in the gallery, in neither" \
+    || bad "your themes count" "$n1 | $n2 | $n3 | $n4 | $n5"
+# deleted, the copy leaves the bundled work, which still answers to the name: it stays among the last looks
+[ ! -f "$st_dir/theme.history" ] || cp "$st_dir/theme.history" "$H/history.yours"
+printf '1\tthe-sounding-gate\n' >> "$st_dir/theme.history"
+out=$(sh "$SH" theme delete the-sounding-gate 2>&1 </dev/null) || :
+[ "$out" = 'deleted the-sounding-gate' ] && [ ! -e "$th_dir/the-sounding-gate" ] && cut -f2 "$st_dir/theme.history" | grep -qx the-sounding-gate \
+    && ok "theme delete: a copy of yours under a bundled work's name goes, and the name stays among the last looks, the bundled work's now" \
+    || bad "theme delete over a bundled work" "$out | $(ls "$th_dir" | paste -sd ' ' -) | $(cut -f2 "$st_dir/theme.history" | paste -sd ' ' -)"
+rm -rf "$th_dir/the-sounding-gate"
+if [ -f "$H/history.yours" ]; then cp "$H/history.yours" "$st_dir/theme.history"; else rm -f "$st_dir/theme.history"; fi
 for _yt in sea-two nord-two; do sh "$SH" theme delete "$_yt" >/dev/null 2>&1 </dev/null; done
 # the theme's fields (v0.165): a bundled theme changed as a look of its own (NAME-changed) with its files, until it is saved
 _fa=$REPO/gallery/core/atlas-awakening; cp "$_fa/atlas-awakening-portrait.jpg" "$H/tall.jpg"; cp "$_fa/atlas-awakening-landscape-2.jpg" "$H/third.jpg"

@@ -421,7 +421,9 @@ appearance_preview_art() (
 )
 
 appearance_sections() {
-    _asn=$(theme_saved_names | grep -c '' || :)
+    # the themes its page lists, counted from the same rows: one of yours under a bundled work's name is that work
+    # in the gallery and no row of the page (a count of the folders said 3 themes over a page of two)
+    _asn=$(appearance_gallery_entries < /dev/null | jq '[.rows[] | select(._kind == "saved")] | length' || :)
     jq -c --arg label "$(theme_label "${THEME:-none}")" --arg yours "$_asn $([ "$_asn" = 1 ] && echo theme || echo themes)" '
         .rows as $rows | (.state // "none") as $active
         | def section($id;$text;$ids):

@@ -293,7 +293,7 @@ theme_delete_now() {   # theme_delete_now NAME
         { mkdir_private "$THEME_TRASH" && rm -rf "${THEME_TRASH:?}/$1" && mv "$_tdd" "$THEME_TRASH/$1" && touch "$THEME_TRASH/$1"; } 2>"$TMP/store.why"
     else dir_drop "$_tdd"; fi || refuse_in theme "could not delete $1$(store_said)"
     families_drop "$1"
-    kept_drop theme "$1" || :
+    [ -n "$(theme_kind "$1")" ] || kept_drop theme "$1" || :   # a name a bundled work still answers to (the copy of yours stood over it) stays among the last looks
     [ -z "$_ltk" ] || look_apply "deleted $1" || return 1
     echo "deleted $1${_ltk:+; its picture was the wallpaper, $(wall_now) is now}"
 }

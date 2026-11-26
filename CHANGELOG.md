@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.169.1
+
+- Your themes counts the themes its page lists. A theme of yours under a
+  bundled work's name is that work in the gallery, and the row counted
+  it too: 3 themes over a page of two.
+- Deleting such a copy keeps the name among the last looks, where the
+  bundled work answers to it now. `spark-shell theme back` skipped it.
+
 ## v0.169
 
 - The places of home are drawn as home is: each row one line, its name
