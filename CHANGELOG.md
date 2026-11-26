@@ -12,6 +12,9 @@
 - With the login screen on, `spark-shell theme wallpaper` and
   `theme text` end with their receipt and the login screen takes the
   change. They ended in status 2 and the login screen kept the old look.
+- After an update that brought a new bar, the pad left the bar and
+  could not be dropped back on it until the next login. The update
+  starts the pad again once the new bar runs.
 
 ## v0.170.1
 
