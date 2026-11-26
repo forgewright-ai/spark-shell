@@ -24,7 +24,9 @@
   plugged-in drive's, storage.
 - spark-shell desktop notifications restore brings back the last one
   dismissed; ten are kept.
-- The desktop's packages gain playerctl and mpv-mpris.
+- The desktop's packages gain playerctl and mpv-mpris. Where a family's
+  package leaves mpv's plugin unlinked (Void, openSUSE), on desktop
+  links it into your mpv scripts folder, and off removes that link.
 
 ## v0.169.1
 
