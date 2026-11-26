@@ -1226,6 +1226,30 @@ else
     ! printf '%s\n' "$out" | grep -q '^[a-z]* *pad  .*for this session' && ! padasked \
         && ok "on: a pad running, or one on started again, is left as it is, sway not asked for another" || bad "pad session running" "$out | $(cat "$pslog" 2>&1)"
     [ ! -s "$plock" ] || kill "$(cat "$plock")" 2>/dev/null || :; kill "$ppad" 2>/dev/null || :; wait "$ppad" 2>/dev/null || :; rm -f "$plock"
+    # an update that brings a new spark-bar starts the pad again before that bar is installed: the pad then runs with no
+    # word of the bar (WINPAD_BAR_STATE empty), stands off it and takes no drop on it. on starts it again once spark's bar
+    # draws, and the new one knows the bar's state file; a pad that knows it is left as it is (v0.170.2)
+    padend() { [ ! -s "$plock" ] || kill "$(cat "$plock")" 2>/dev/null || :; i=0; while [ -s "$plock" ] && [ "$i" -lt 30 ]; do sleep 0.1; i=$((i + 1)); done; rm -f "$plock"; }   # the pad that holds the lock ended, its keeper with it
+    padenv() { tr '\0' '\n' < "/proc/$(cat "$plock" 2>/dev/null)/environ" 2>/dev/null | sed -n 's/^WINPAD_BAR_STATE=//p'; }   # -> the bar's state file the pad that runs was started with
+    padbar() { rm -f "$pslog"; XDG_RUNTIME_DIR=$H/padrun SPARK_SHELL_BAR=$psd/spark-bar SPARK_SHELL_WINPAD=$psd/spark-winpad SWAYSOCK=/nonexistent PATH="$psd:$PATH" sh "$SH" on --yes "$@" 2>&1; }   # as padon, where spark's bar draws
+    printf '#!/bin/sh\ntrap "exit 0" TERM\nwhile :; do sleep 0.1; done\n' > "$psd/spark-bar"; chmod +x "$psd/spark-bar"
+    cp "$HOME/.config/spark-shell/config" "$H/config.padkeep"; printf 'DESKTOP=sway\nDESKTOP_BAR=yes\n' > "$HOME/.config/spark-shell/config"   # the bar shown, for these steps
+    padbar > /dev/null || :; padend   # the config rendered for spark's bar once, so nothing reloads in what follows; a pad it started is ended
+    "$psd/spark-bar" & pbar=$!; echo "$pbar" > "$H/padrun/spark-shell-bar.pid"   # a spark-bar that runs and holds its lock, as the new one does by then
+    WINPAD_BAR_STATE='' WINPAD_LOCK=$plock "$psd/spark-winpad" & ppad=$!
+    i=0; while [ ! -s "$plock" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+    out=$(padbar --dry-run || :); _bd=$(pstate "$ppad")
+    out2=$(padbar || :); _bk=$(pstate "$ppad"); _be=$(padenv); _bq=$(padasked && echo asked || echo not)
+    kill "$ppad" 2>/dev/null || :; wait "$ppad" 2>/dev/null || :; padend
+    WINPAD_BAR_STATE=$H/padrun/spark-shell-bar.state WINPAD_LOCK=$plock "$psd/spark-winpad" & ppad=$!
+    i=0; while [ ! -s "$plock" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+    out3=$(padbar --dry-run || :); _b3=$(pstate "$ppad")
+    kill "$ppad" "$pbar" 2>/dev/null || :; wait "$ppad" "$pbar" 2>/dev/null || :; padend; rm -f "$psd/spark-bar" "$H/padrun/spark-shell-bar.pid"
+    mv "$H/config.padkeep" "$HOME/.config/spark-shell/config"; padon > /dev/null || :; padend   # the bar hidden again and the config as it is with no spark-bar here, for what follows
+    printf '%s\n' "$out" | grep -qx 'would  pad          start the pad again: it was started before the bar, and knows nothing of it' && [ "$_bd" = S ] \
+        && case $_bk in ''|Z) : ;; *) false ;; esac && { [ "$_be" = "$H/padrun/spark-shell-bar.state" ] || [ "$_bq" = asked ]; } \
+        && ! printf '%s\n' "$out3" | grep -q 'start the pad again' && [ "$_b3" = S ] \
+        && ok "on: a pad started with no word of the bar (an update that brought a new spark-bar started it first) is named by a dry run and ended by a run, and the pad that runs after knows the bar's state file; one that knows the bar is named by no row" || bad "pad blind to the bar" "$_bd | $(printf '%s\n' "$out" | grep ' pad ') | $_bk [$_be] $_bq | $(printf '%s\n' "$out3" | grep ' pad ') | $_b3"
     out=$(padon --dry-run || :)
     printf '%s\n' "$out" | grep -qx 'would  pad          start the pad for this session, through sway as at login' && ! padasked \
         && ok "on --dry-run: the pad it would start is said, sway not asked" || bad "pad session dry" "$out | $(cat "$pslog" 2>&1)"

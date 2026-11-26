@@ -40,11 +40,24 @@ winpad_install() {   # the pad's row of on desktop: in place as pinned, or fetch
 }
 winpad_session() {   # on desktop's last pad row: the pad runs for the session (v0.140), and sway starts it at login alone, so a session that began before, as an update's, has none until this starts it, through sway, as login does
     wm_up && winpad_cmd >/dev/null || return 0
-    ! winpad_pid >/dev/null || return 0
+    if _wsp=$(winpad_pid); then
+        winpad_blind "$_wsp" || return 0
+        need pad "start the pad again: it was started before the bar, and knows nothing of it" || return 0
+        _winpad_again=''; winpad_again
+        row ok pad "the pad started again, after the bar: it stands on it and takes a drop there"; acting=0
+        return 0
+    fi
     [ -z "${_winpad_started:-}" ] || return 0   # this run started one already (winpad_again), its lock not taken yet
     need pad "start the pad for this session, through sway as at login" || return 0
     wm_exec "$REPO/spark-shell desktop pad start" >/dev/null 2>&1 || { row todo pad "sway did not start the pad -- it starts at the next login"; return 0; }
     ok pad "the pad runs for this session now"
+}
+# winpad_blind PID -> 0 for a pad that was started with no word of the bar while spark's bar draws now. winpad_again
+# runs once a run, and an update that brings a new spark-bar ran it before that bar was installed, when the one in
+# place was no longer the pinned one: the pad stood off the bar, and took no drop on it, until the next login (v0.170.2)
+winpad_blind() {
+    sparkbar_draws && [ -r "/proc/$1/environ" ] || return 1
+    ! tr '\0' '\n' < "/proc/$1/environ" 2>/dev/null | grep -qxF "WINPAD_BAR_STATE=$(sparkbar_file state)"
 }
 winpad_pid_in() {   # winpad_pid_in LOCK -> the pid in LOCK when it runs; false otherwise
     _pdl=$1; [ -s "$_pdl" ] || return 1
