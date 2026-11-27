@@ -19,6 +19,11 @@ pub const PAD_ROOM: &str = "room";
 pub const TIME: &str = "time";
 /// The id of the cell that stands for the modules left out.
 pub const MORE: &str = "more";
+/// The click that asks spark-shell to move a module or its group: its part is the move's own word.
+pub const MOVE: &str = "move";
+/// How long a bar holds the order it drew at a drop, in milliseconds, while no line says it: a line that says an
+/// older order in that time is not drawn, and after it the line's word stands again.
+pub const HOLD_MS: u64 = 1000;
 /// What the cell for the modules left out shows, and the cell before the first line: three dots.
 pub const ELLIPSIS: &str = "\u{2026}";
 /// What stands where the status would be while spark-shell's status is broken: a warning sign, as text.
@@ -256,8 +261,11 @@ pub struct Module {
     pub level: Option<i32>,
     /// The level can be set from the bar.
     pub set: bool,
-    /// Its control is on the bar: the gauge and the number.
+    /// Its control is on the bar: the number, where it has a level.
     pub pinned: bool,
+    /// A pinned level draws its gauge beside its number. A line that does not say is one from before v0.171,
+    /// where every pinned level drew it.
+    pub gauge: bool,
     /// A click on its sign or its text changes something in place and opens nothing: the keys stay on it.
     pub toggle: bool,
     /// Its name and state in words.
@@ -288,6 +296,7 @@ impl Module {
             level: o.get("level").and_then(Value::as_i64).map(|n| n.clamp(0, 100) as i32),
             set: flag("set"),
             pinned: flag("pinned"),
+            gauge: o.get("gauge").and_then(Value::as_bool).unwrap_or_else(|| flag("pinned")),
             toggle: flag("toggle"),
             label: Some(said("label").trim().to_string()).filter(|s| !s.is_empty()),
         })
@@ -874,6 +883,21 @@ pub fn stand_at(edge: Edge) -> Click {
     }
 }
 
+/// The click that asks spark-shell for a move: the verb's own words in the part's place, a colon between.
+pub fn move_click(mv: &crate::arrange::Move) -> Click {
+    Click {
+        name: MOVE.into(),
+        instance: mv.word(),
+        button: 1,
+        x: 0,
+        y: 0,
+        relative_x: 0,
+        relative_y: 0,
+        width: 0,
+        height: 0,
+    }
+}
+
 /// What a target is, in the state file's words.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -941,6 +965,8 @@ pub enum What {
     Plate(String),
     /// A sign, a text or the three dots: glyphs, a cell each.
     Text { glyphs: Vec<String>, bold: bool },
+    /// A text longer than the cells it has, all of it: it rolls through them, by the time since its module said it.
+    Roll { glyphs: Vec<String>, module: String },
     /// An icon, by its drawing's name: a sign drawn, in the middle of its two cells.
     Icon(String),
     /// A gauge: so many of its five cells full.
@@ -1205,7 +1231,7 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
                 icon,
                 sign: if icon { vec![] } else { glyphs(&module.sign) },
                 level: level.unwrap_or(0),
-                gauge: control,
+                gauge: control && module.gauge,
                 number: control,
                 text: module.cells,
             };
@@ -1402,16 +1428,21 @@ pub fn layout(scene: &Scene, prefs: &Prefs, m: &Metrics) -> Layout {
         }
         let said = glyphs(&p.m.text);
         let kept = p.text.max(0) as usize;
-        let mut text: Vec<String> = said.iter().take(kept).cloned().collect();
-        if kept < said.len().min(p.m.cells.max(0) as usize) {
-            // a title cut for the pad's room ends in an ellipsis
-            if let Some(last) = text.last_mut() {
-                *last = ELLIPSIS.into();
-            }
-        }
-        if !text.is_empty() && !p.m.text.trim().is_empty() {
-            let rect = Rect::new(x, 0, text.len() as i32 * cell, h);
-            let text = What::Text { glyphs: text, bold: p.m.bold };
+        if kept > 0 && !p.m.text.trim().is_empty() {
+            // a text longer than the cells it has, its own or what the pad's room left it, rolls through them while
+            // its module is well (what plays, playing); in any other state it is cut, and ends in an ellipsis
+            let rect = Rect::new(x, 0, said.len().min(kept) as i32 * cell, h);
+            let text = if crate::roll::rolls(said.len(), kept) && state == State::Ok {
+                What::Roll {
+                    glyphs: said,
+                    module: p.m.name.clone(),
+                }
+            } else {
+                What::Text {
+                    glyphs: crate::roll::cut(&said, kept),
+                    bold: p.m.bold,
+                }
+            };
             lay.targets.push(part("text", rect, switch, worded, text));
         }
         x = end;
@@ -1493,6 +1524,11 @@ pub enum Key {
     /// Enter or Space.
     Activate,
     Escape,
+    /// Ctrl+Left and Ctrl+Right: the module the keys are on moves a place, as home's move keys move a row.
+    MoveLeft,
+    MoveRight,
+    /// F9, actions everywhere: the module's row in home's bar section.
+    Actions,
 }
 
 impl Key {
@@ -1510,8 +1546,18 @@ impl Key {
             0xfe20 => Key::BackTab,
             0xff09 if shift => Key::BackTab,
             0xff09 => Key::Tab,
+            0xffc6 => Key::Actions,
             _ => return None,
         })
+    }
+
+    /// The key as it is with Ctrl held: Left and Right move what the keys are on.
+    pub fn with_ctrl(self, ctrl: bool) -> Key {
+        match (self, ctrl) {
+            (Key::Left, true) => Key::MoveLeft,
+            (Key::Right, true) => Key::MoveRight,
+            (k, _) => k,
+        }
     }
 
     /// An evdev code read as its place on a US keyboard: when no keymap can be read.
@@ -1527,6 +1573,7 @@ impl Key {
             1 => Key::Escape,
             15 if shift => Key::BackTab,
             15 => Key::Tab,
+            67 => Key::Actions,
             _ => return None,
         })
     }
@@ -1545,7 +1592,21 @@ pub enum KeyAct {
     },
     /// The keyboard goes back.
     Leave,
+    /// A module moves a step, to the left or to the right; the keys stay on it.
+    Step {
+        module: String,
+        left: bool,
+    },
     Nothing,
+}
+
+/// A module, or its group, while it is dragged: the modules that move, how far the pointer has gone since the
+/// press, and where the line that shows the landing stands, when a drop now would move something.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Dragged {
+    pub names: Vec<String>,
+    pub dx: i32,
+    pub line: Option<i32>,
 }
 
 /// What a frame is drawn with: where the pointer and the keys are, the family's pair, and the numbers on
@@ -1562,6 +1623,10 @@ pub struct View<'a> {
     /// Whether the look says an ink.
     pub ink: bool,
     pub at: u64,
+    /// What is dragged on this bar, when something is.
+    pub drag: Option<&'a Dragged>,
+    /// Since when each module's text stands: a roll counts from there.
+    pub rolls: &'a crate::roll::Rolls,
 }
 
 impl View<'_> {
@@ -1673,11 +1738,32 @@ impl Layout {
         self.act(i, button, x.floor() as i32 - r.x, y.floor() as i32 - r.y, levels)
     }
 
+    /// The module a target is a part of, and the part's word; none for the mark, a workspace and the three dots.
+    pub fn part(&self, target: usize) -> Option<(&str, &str)> {
+        match &self.targets.get(target)?.to {
+            To::Shell { name, instance } if !instance.is_empty() => Some((name, instance)),
+            _ => None,
+        }
+    }
+
+    /// Whether the left button on a target waits for its release: a module's sign, number or text, which a press
+    /// held and moved drags. A gauge that sets a level acts at the press, and so do the bar's own parts.
+    pub fn waits(&self, target: usize) -> bool {
+        self.part(target).is_some() && self.targets[target].kind != Kind::Level
+    }
+
+    /// The left button let go on the part it was pressed on, `rx`, `ry` inside it: the part by its id, since a
+    /// line may have laid the bar out again in between. Nothing when the part is gone.
+    pub fn click_on(&self, id: &str, rx: i32, ry: i32, levels: &Levels) -> Press {
+        self.find(id).map_or_else(Press::default, |i| self.act(i, 1, rx, ry, levels))
+    }
+
     /// A key with the focus on a target. Tab and Shift+Tab go round the targets, left to right, and Left
     /// and Right do too, on every part. Up and Down are the wheel's step up and down on any part of a
     /// module whose level can be set, and the keys stay; elsewhere they do nothing. Home and End set a
     /// level to its ends on its gauge; Enter or Space is the left button at the part's center, and nothing
-    /// on such a gauge. After it the keyboard goes back, except on a toggle, to be switched again.
+    /// on such a gauge. After it the keyboard goes back, except on a toggle, to be switched again. Ctrl+Left
+    /// and Ctrl+Right move the module a step, and F9 is the right button on it: its row in home.
     pub fn key(&self, focus: usize, k: Key, levels: &Levels) -> KeyAct {
         let n = self.targets.len();
         if n == 0 {
@@ -1703,6 +1789,19 @@ impl Layout {
                 press: self.act(focus, 1, cx, cy, levels),
                 leave: t.kind != Kind::Toggle,
             },
+            Key::MoveLeft | Key::MoveRight => match self.part(focus) {
+                Some((module, _)) => KeyAct::Step {
+                    module: module.to_string(),
+                    left: k == Key::MoveLeft,
+                },
+                None => KeyAct::Nothing,
+            },
+            // the right button's click, which opens the module's row in home: home takes the keys itself
+            Key::Actions if self.part(focus).is_some() => KeyAct::Do {
+                press: self.act(focus, 3, cx, cy, levels),
+                leave: true,
+            },
+            Key::Actions => KeyAct::Nothing,
         }
     }
 
@@ -1739,6 +1838,17 @@ impl Layout {
                     out.push(glyph(slot(i as i32), g, tone, *bold, wide(g), 0.0));
                 }
             }
+            What::Roll { glyphs, module } => {
+                // the window by the time since the text came; cut, with no motion or before any line said it
+                let cells = (t.rect.w / cell.max(1)).max(0) as usize;
+                let shown = match v.rolls.since(module).filter(|_| v.motion) {
+                    Some(since) => crate::roll::window(glyphs, cells, crate::roll::offset(glyphs.len(), v.at.saturating_sub(since))),
+                    None => crate::roll::cut(glyphs, cells),
+                };
+                for (i, g) in shown.iter().enumerate() {
+                    out.push(glyph(slot(i as i32), g, tone, false, wide(g), 0.0));
+                }
+            }
             What::Icon(name) => out.push(Draw::Icon {
                 rect: Rect::new(t.rect.x + (t.rect.w - self.icon) / 2, (h - self.icon) / 2, self.icon, self.icon),
                 name: name.clone(),
@@ -1765,6 +1875,35 @@ impl Layout {
         }
     }
 
+    /// What a drag draws over the bar: a line in the accent where a drop now would land, and a copy of what is
+    /// dragged, on a chip, as far from its place as the pointer has gone and never past the bar's ends.
+    fn show_drag(&self, d: &Dragged, dragged: &dyn Fn(&Target) -> bool, v: &View, out: &mut Vec<Draw>) {
+        if let Some(x) = d.line {
+            out.push(Draw::Fill {
+                rect: Rect::new(x - GUIDE / 2, self.inset, GUIDE, self.height - 2 * self.inset),
+                tone: Tone::Accent,
+            });
+        }
+        let parts: Vec<&Target> = self.targets.iter().filter(|t| dragged(t)).collect();
+        let (Some(first), Some(last)) = (parts.iter().map(|t| t.rect.x).min(), parts.iter().map(|t| t.rect.right()).max()) else {
+            return;
+        };
+        let half = self.cell / 2;
+        let dx = d.dx.clamp(half - first, (self.width - half - last).max(half - first));
+        out.push(Draw::Fill {
+            rect: self.boxed(Rect::new(first - half + dx, 0, last - first + 2 * half, self.height)),
+            tone: Tone::Lit,
+        });
+        for t in parts {
+            let mut copy = t.clone();
+            copy.rect.x += dx;
+            if let What::Number { x, .. } = &mut copy.what {
+                *x += dx;
+            }
+            self.show(&copy, true, v, out);
+        }
+    }
+
     /// A frame: everything the bar draws over its ground, in order. What stands whatever happens, then
     /// each target in its tone; the part under the pointer last, on a chip of the lit tone (the plate does
     /// not change); and over all, the line under the part the keys are on, in the accent, or on the plate
@@ -1772,10 +1911,17 @@ impl Layout {
     pub fn frame(&self, v: &View) -> Vec<Draw> {
         let mut out = self.fixed.clone();
         let hover = v.hover.filter(|i| self.targets.get(*i).is_some_and(|t| !matches!(t.what, What::Plate(_))));
+        let dragged = |t: &Target| v.drag.is_some_and(|d| d.names.iter().any(|n| t.id.strip_prefix(n.as_str()).is_some_and(|part| part.starts_with('.'))));
         for (i, t) in self.targets.iter().enumerate() {
-            if hover != Some(i) {
+            if dragged(t) {
+                // what is dragged keeps its place, dim: nothing moves until it is let go
+                self.show(&Target { tone: Tone::Dim, ..t.clone() }, false, v, &mut out);
+            } else if hover != Some(i) {
                 self.show(t, false, v, &mut out);
             }
+        }
+        if let Some(d) = v.drag {
+            self.show_drag(d, &dragged, v, &mut out);
         }
         if let Some(t) = hover.map(|i| &self.targets[i]) {
             out.push(Draw::Fill {
@@ -1797,6 +1943,22 @@ impl Layout {
             });
         }
         out
+    }
+
+    /// The milliseconds until a text that rolls on this bar stands a cell farther: the surface draws again then,
+    /// and at no other time for it. None while nothing rolls: no text is longer than its cells, or the look says
+    /// motion no.
+    pub fn next_roll(&self, v: &View) -> Option<u64> {
+        if !v.motion {
+            return None;
+        }
+        self.targets
+            .iter()
+            .filter_map(|t| match &t.what {
+                What::Roll { glyphs, module } => v.rolls.since(module).map(|since| crate::roll::next(glyphs.len(), v.at.saturating_sub(since))),
+                _ => None,
+            })
+            .min()
     }
 
     /// Whether a frame drawn with this view shows a number on its way: the surface asks for the next frame
@@ -2115,8 +2277,13 @@ mod tests {
             motion: true,
             ink: false,
             at: 0,
+            drag: None,
+            rolls: &NO_ROLLS,
         }
     }
+
+    /// No text has rolled: what a test's frame is drawn with unless it says another.
+    static NO_ROLLS: crate::roll::Rolls = crate::roll::Rolls::new();
 
     /// What one target draws at rest, or on its chip.
     fn shows(l: &Layout, id: &str, chip: bool, v: &View) -> Vec<Draw> {
@@ -2603,6 +2770,24 @@ mod tests {
             (Kind::Open, What::Gauge { full: 4 })
         );
         assert_eq!(target(&sheet(1200), "out.gauge").kind, Kind::Level);
+    }
+
+    #[test]
+    fn a_pinned_level_draws_its_gauge_only_where_the_line_says_so() {
+        // pinned, the gauge off: the sign and the number, four cells after one of room, and no gauge
+        let m = mods(r#"[{"name":"out","group":"sound","sign":"◀","level":55,"set":true,"pinned":true,"gauge":false}]"#);
+        let l = lay(1200, &m, &[]);
+        assert_eq!(status_ids(&l), ["out.name", "out.pct"]);
+        assert_eq!(target(&l, "out.pct").rect.x - target(&l, "out.name").rect.right(), 2 * M.cell, "one cell of room, one blank digit");
+        // the gauge on: the control as it was
+        let m = mods(r#"[{"name":"out","group":"sound","sign":"◀","level":55,"set":true,"pinned":true,"gauge":true}]"#);
+        assert_eq!(status_ids(&lay(1200, &m, &[])), ["out.name", "out.gauge", "out.pct"]);
+        // a line from before v0.171 says nothing of the gauge: every pinned level draws it
+        let m = mods(r#"[{"name":"out","group":"sound","sign":"◀","level":55,"set":true,"pinned":true}]"#);
+        assert_eq!(status_ids(&lay(1200, &m, &[])), ["out.name", "out.gauge", "out.pct"]);
+        // a gauge with no pin is nothing: the sign alone
+        let m = mods(r#"[{"name":"out","group":"sound","sign":"◀","level":55,"set":true,"pinned":false,"gauge":true}]"#);
+        assert_eq!(status_ids(&lay(1200, &m, &[])), ["out.name"]);
     }
 
     #[test]
@@ -5354,12 +5539,74 @@ mod tests {
         mods(&line)
     }
 
-    /// What the bar says of what plays: its title as drawn, none when it is left out.
+    /// What the bar says of what plays: its title as drawn, none when it is left out. One that rolls is as it
+    /// stands with no motion: cut to its window.
     fn title(l: &Layout) -> Option<String> {
         l.targets.iter().find(|t| t.id == "media.text").map(|t| match &t.what {
             What::Text { glyphs, .. } => glyphs.concat(),
+            What::Roll { glyphs, .. } => crate::roll::cut(glyphs, (t.rect.w / M.cell) as usize).concat(),
             _ => String::new(),
         })
+    }
+
+    /// What plays alone before the time, its title in a window of 24 cells, playing or paused.
+    fn window_of(title: &str, state: &str) -> Vec<Module> {
+        mods(&format!(
+            r#"[{{"name":"media","group":"now","sign":"▶","text":"{title}","cells":24,"state":"{state}","toggle":true}},{{"name":"lan","group":"network","sign":"⇅"}},{{"name":"clock","group":"time","text":"13:29","cells":5,"bold":true}}]"#
+        ))
+    }
+
+    /// What a frame draws in a part's cells, left to right.
+    fn drawn_in(l: &Layout, id: &str, v: &View) -> String {
+        let r = rect_of(l, id);
+        let mut cells: Vec<(i32, String)> = l
+            .frame(v)
+            .into_iter()
+            .filter_map(|d| match d {
+                Draw::Glyph { rect, text, .. } if rect.x >= r.x && rect.x < r.right() => Some((rect.x, text)),
+                _ => None,
+            })
+            .collect();
+        cells.sort();
+        cells.into_iter().map(|(_, g)| g).collect()
+    }
+
+    #[test]
+    fn what_plays_keeps_a_window_of_its_cells_and_a_longer_title_rolls_in_it() {
+        const TRACK: &str = "A Love Supreme, Pt. 1 - Acknowledgement";
+        let (short, long) = (lay(1200, &window_of("Blue in Green", "ok"), &[]), lay(1200, &window_of(TRACK, "ok"), &[]));
+        // the sign and what stands beside it are where they were, whatever the title's length
+        for id in ["media.name", "lan.name", "clock.text"] {
+            assert_eq!(rect_of(&short, id), rect_of(&long, id), "{id}");
+        }
+        assert_eq!((rect_of(&short, "media.text").w, rect_of(&long, "media.text").w), (13 * M.cell, 24 * M.cell));
+        assert!(matches!(&target(&long, "media.text").what, What::Roll { glyphs, module } if glyphs.len() == 39 && module == "media"));
+        assert!(matches!(target(&short, "media.text").what, What::Text { .. }));
+        // it rolls by the time since a line said it: at rest for two seconds, then a cell each quarter of one
+        let levels = Levels::default();
+        let mut rolls = crate::roll::Rolls::new();
+        rolls.said(&window_of(TRACK, "ok"), 1000);
+        let at = |ms: u64| drawn_in(&long, "media.text", &View { at: ms, rolls: &rolls, ..view(&levels) });
+        assert_eq!(at(1000), "A Love Supreme, Pt. 1 - ");
+        assert_eq!(at(2999), "A Love Supreme, Pt. 1 - ");
+        assert_eq!(at(3000), " Love Supreme, Pt. 1 - A");
+        assert_eq!(at(3000 + 8 * 250), "preme, Pt. 1 - Acknowled");
+        assert_eq!(at(3000 + 17 * 250), ". 1 - Acknowledgement   ", "its end, and the gap before it comes round");
+        assert_eq!(long.next_roll(&View { at: 1000, rolls: &rolls, ..view(&levels) }), Some(2000));
+        assert_eq!(long.next_roll(&View { at: 3100, rolls: &rolls, ..view(&levels) }), Some(150));
+        assert_eq!(short.next_roll(&View { at: 3100, rolls: &rolls, ..view(&levels) }), None, "a title that fits asks for no frame");
+        // with no motion it never rolls: cut, the last cell an ellipsis; and no frame is asked for
+        let still = View { motion: false, at: 5000, rolls: &rolls, ..view(&levels) };
+        assert_eq!(drawn_in(&long, "media.text", &still), format!("A Love Supreme, Pt. 1 -{ELLIPSIS}"));
+        assert_eq!(long.next_roll(&still), None);
+        // paused it stands cut too, and a title a cell or two too long is cut, never rolled
+        let paused = lay(1200, &window_of(TRACK, "muted"), &[]);
+        assert_eq!(title(&paused), Some(format!("A Love Supreme, Pt. 1 -{ELLIPSIS}")));
+        assert!(matches!(target(&paused, "media.text").what, What::Text { .. }));
+        let near = lay(1200, &window_of("Twenty-six cells of title!", "ok"), &[]);
+        assert_eq!(title(&near), Some(format!("Twenty-six cells of tit{ELLIPSIS}")));
+        assert!(matches!(target(&near, "media.text").what, What::Text { .. }));
+        assert_eq!(rect_of(&near, "media.name"), rect_of(&long, "media.name"));
     }
 
     const LONG: &str = "A long artist name - A title!!";
@@ -5573,5 +5820,126 @@ mod tests {
             state_text(Status::Error, Some("re\tsize\r\nnow"), &levels, &[], &[]),
             "bar\t1\nstatus\terror\nmode\tre size  now\n"
         );
+    }
+
+    #[test]
+    fn a_modules_sign_number_and_text_wait_for_the_release_and_a_gauge_acts_at_the_press() {
+        let l = sheet(1200);
+        let waits = |id: &str| l.waits(l.find(id).unwrap());
+        assert!(waits("out.name") && waits("out.pct") && waits("kb.text") && waits("clock.text"));
+        assert!(!waits("out.gauge"), "a gauge sets its level where the button goes down");
+        assert!(!waits("mark") && !l.waits(1), "the mark and a workspace are the bar's own");
+        assert_eq!(l.part(l.find("out.pct").unwrap()), Some(("out", "pct")));
+        assert_eq!((l.part(0), l.part(1), l.part(999)), (None, None, None));
+        // let go where it went down: the click on that part, by its id, the place in it as it was pressed
+        let levels = levels_of(&mods(SHEET));
+        let click = send(l.click_on("out.name", 3, 7, &levels).act);
+        assert_eq!((click.name.as_str(), click.instance.as_str(), click.button, click.relative_x, click.relative_y), ("out", "name", 1, 3, 7));
+        // a part a new line took off the bar: nothing
+        assert_eq!(l.click_on("media.text", 1, 1, &levels), Press::default());
+    }
+
+    #[test]
+    fn ctrl_and_an_arrow_step_the_module_and_f9_is_the_right_button_on_it() {
+        assert_eq!(Key::of_sym(0xff51, false).map(|k| k.with_ctrl(true)), Some(Key::MoveLeft));
+        assert_eq!(Key::of_sym(0xff53, false).map(|k| k.with_ctrl(true)), Some(Key::MoveRight));
+        assert_eq!(Key::of_sym(0xff53, false).map(|k| k.with_ctrl(false)), Some(Key::Right));
+        assert_eq!(Key::of_sym(0xff52, false).map(|k| k.with_ctrl(true)), Some(Key::Up), "Ctrl changes the two arrows alone");
+        assert_eq!((Key::of_sym(0xffc6, false), Key::of_evdev(67, false)), (Some(Key::Actions), Some(Key::Actions)));
+        let l = sheet(1200);
+        let levels = levels_of(&mods(SHEET));
+        let on = |id: &str| l.find(id).unwrap();
+        assert_eq!(
+            l.key(on("mic.name"), Key::MoveLeft, &levels),
+            KeyAct::Step {
+                module: "mic".into(),
+                left: true
+            }
+        );
+        assert_eq!(
+            l.key(on("out.gauge"), Key::MoveRight, &levels),
+            KeyAct::Step {
+                module: "out".into(),
+                left: false
+            },
+            "on any part of the module"
+        );
+        assert_eq!(l.key(on("mark"), Key::MoveLeft, &levels), KeyAct::Nothing);
+        assert_eq!(l.key(on("mark"), Key::Actions, &levels), KeyAct::Nothing);
+        match l.key(on("kb.text"), Key::Actions, &levels) {
+            KeyAct::Do { press, leave } => {
+                let click = send(press.act);
+                assert_eq!((click.name.as_str(), click.button, leave, press.set), ("kb", 3, true, None));
+            }
+            other => panic!("F9 on a module: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_drag_draws_its_module_dim_in_place_a_line_where_it_lands_and_a_copy_under_the_pointer() {
+        let l = sheet(1200);
+        let levels = levels_of(&mods(SHEET));
+        let mic = rect_of(&l, "mic.name");
+        let drag = Dragged {
+            names: vec!["mic".into()],
+            dx: -30,
+            line: Some(500),
+        };
+        let frame = l.frame(&View { drag: Some(&drag), ..view(&levels) });
+        let glyphs: Vec<(i32, Tone)> = frame
+            .iter()
+            .filter_map(|d| match d {
+                Draw::Glyph { rect, text, tone, .. } if text == "\u{25c9}" => Some((rect.x, *tone)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(glyphs, [(mic.x, Tone::Dim), (mic.x - 30, Tone::Text)], "in its place dim, then the copy as far as the pointer went");
+        let fills: Vec<(Rect, Tone)> = frame
+            .iter()
+            .filter_map(|d| match d {
+                Draw::Fill { rect, tone } if matches!(tone, Tone::Accent | Tone::Lit) => Some((*rect, *tone)),
+                _ => None,
+            })
+            .collect();
+        let chip = l.boxed(Rect::new(mic.x - M.cell / 2 - 30, 0, mic.w + M.cell, M.height));
+        assert!(fills.contains(&(Rect::new(500 - GUIDE / 2, M.inset(), GUIDE, M.height - 2 * M.inset()), Tone::Accent)), "{fills:?}");
+        assert!(fills.contains(&(chip, Tone::Lit)), "{fills:?}");
+        // no line while a drop would move nothing, and the copy never leaves the bar
+        let drag = Dragged {
+            names: vec!["mic".into()],
+            dx: -100_000,
+            line: None,
+        };
+        let frame = l.frame(&View { drag: Some(&drag), ..view(&levels) });
+        let lit: Vec<Rect> = frame
+            .iter()
+            .filter_map(|d| match d {
+                Draw::Fill { rect, tone: Tone::Lit } => Some(*rect),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(lit.iter().map(|r| r.x).collect::<Vec<_>>(), [0]);
+        assert!(!frame.iter().any(|d| matches!(d, Draw::Fill { rect, tone: Tone::Accent } if rect.w == GUIDE)));
+        // a whole group dragged: one chip over its modules
+        let drag = Dragged {
+            names: vec!["out".into(), "mic".into()],
+            dx: 0,
+            line: None,
+        };
+        let frame = l.frame(&View { drag: Some(&drag), ..view(&levels) });
+        let (first, last) = (rect_of(&l, "out.name").x, mic.right());
+        assert!(frame.contains(&Draw::Fill {
+            rect: l.boxed(Rect::new(first - M.cell / 2, 0, last - first + M.cell, M.height)),
+            tone: Tone::Lit
+        }));
+        // the click that says a move
+        let mv = crate::arrange::Move {
+            what: "screen".into(),
+            side: crate::arrange::Side::Before,
+            other: "sound".into(),
+            group: true,
+        };
+        let click = move_click(&mv);
+        assert_eq!((click.name.as_str(), click.instance.as_str(), click.button), ("move", "screen:before:sound", 1));
     }
 }

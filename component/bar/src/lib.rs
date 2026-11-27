@@ -8,9 +8,11 @@
 //! and names its binding mode. The notifications' stack (notifications) is the program's other job, a process
 //! of its own: pure in the same way, with a surface of its own (notifications::ui).
 
+pub mod arrange;
 pub mod bar;
 pub mod icons;
 pub mod notifications;
+pub mod roll;
 pub mod sway;
 
 #[cfg(target_os = "linux")]

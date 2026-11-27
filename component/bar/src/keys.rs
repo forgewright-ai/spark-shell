@@ -52,6 +52,8 @@ pub struct Keyboard {
     state: *mut c_void,
     /// Shift is held: Tab goes back.
     shift: bool,
+    /// Ctrl is held: Left and Right move what the keys are on.
+    ctrl: bool,
 }
 
 impl Keyboard {
@@ -67,6 +69,7 @@ impl Keyboard {
             keymap: std::ptr::null_mut(),
             state: std::ptr::null_mut(),
             shift: false,
+            ctrl: false,
         }
     }
 
@@ -121,8 +124,9 @@ impl Keyboard {
 
     /// The modifiers and the layout group in use (wl_keyboard.modifiers).
     pub fn modifiers(&mut self, depressed: u32, latched: u32, locked: u32, group: u32) {
-        // Shift is the first modifier of every keymap
+        // Shift is the first modifier of every keymap, and Control the third
         self.shift = depressed & 1 != 0;
+        self.ctrl = depressed & 4 != 0;
         if let (Some(l), false) = (&self.lib, self.state.is_null()) {
             unsafe {
                 (l.state_update_mask)(self.state, depressed, latched, locked, 0, 0, group);
@@ -141,10 +145,11 @@ impl Keyboard {
     /// What a pressed key (its evdev code) is: by the layout's keysym, or by its US position when
     /// there is no keymap to read.
     pub fn key(&self, evdev: u32) -> Option<Key> {
-        match (&self.lib, self.state.is_null()) {
+        let key = match (&self.lib, self.state.is_null()) {
             (Some(l), false) => Key::of_sym(unsafe { (l.state_key_get_one_sym)(self.state, evdev + 8) }, self.shift),
             _ => Key::of_evdev(evdev, self.shift),
-        }
+        };
+        key.map(|k| k.with_ctrl(self.ctrl))
     }
 }
 
