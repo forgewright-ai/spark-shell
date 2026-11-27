@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.173.1
+
+- With a turned screen beside two landscape ones, the landscape screens
+  show a work's first and second pictures. Atlas Awakening, Mars Conquest
+  and The Sounding Gate showed the first on both, and a turned screen on
+  the left took the first panel's place. The panels go to the landscape
+  screens from the left, and a turned screen shows its portrait. `theme
+  panel 2` is the second landscape screen.
+- A turned screen and the lock show Nightswim whole, fitted. They showed
+  the picture cropped, the moon cut at its edge.
+- A drawing on a turned screen goes on above and below it. The lines of
+  Ink Atlas, Phosphor Trace, Selenized and Rose Pine stopped at the edges
+  of a band.
+- The Late Edition's second picture moves on its screen when the moving
+  wallpaper is on. A work whose first picture had no loop played none.
+- `theme screens` names the theme's own picture a landscape screen shows.
+
 ## v0.173
 
 - A plan waits as a whole: a rejected step leaves no other step ready
