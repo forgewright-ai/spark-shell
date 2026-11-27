@@ -3742,3 +3742,59 @@ fn the_new_key_does_the_row_that_wears_it_and_help_starts_with_the_page() {
     app.hint_key(HintKey::Help);
     assert_eq!(app.view, View::Dest(CALENDAR_DEST), "F1 again goes back");
 }
+
+#[test]
+fn ctrl_up_and_down_move_a_row_that_says_it_can_move() {
+    // a module of the bar (v0.171): its row carries the two calls that move it. Ctrl+Down runs the one that moves it
+    // down, in place and with no question, as a value is set; a row with no move is nobody's to move
+    use spark_dialog::display::screens::Side;
+    let (mut app, rx, tx) = app_with(&["bar"]);
+    let row = |name: &str, moves: bool| {
+        let mut r = json!({"id": format!("bar:module {name}"), "sign": "blank", "text": name, "columns": [], "more": [], "children": null});
+        if moves {
+            r["place"] = json!({"up": {"name": "bar_move", "arguments": {"name": name, "to": "left"}}, "down": {"name": "bar_move", "arguments": {"name": name, "to": "right"}}});
+        }
+        r
+    };
+    let tools = json!([{"name": "bar_move", "title": "bar move NAME", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "to": {"type": "string"}}},
+        "annotations": {"destructiveHint": false}}]);
+    let sent = Arc::new(Mutex::new(vec![]));
+    let seen = sent.clone();
+    app.servers.push(stub(
+        0,
+        "bar",
+        section_stub(
+            "bar",
+            tools,
+            json!({"title": "bar", "rows": [row("out", true), row("mic", true), row("text size", false)], "short": []}),
+            0,
+            move |v, send| {
+                seen.lock().unwrap().push(v["params"].clone());
+                send(result(
+                    &v["id"],
+                    json!({"content": [{"type": "text", "text": "{}"}], "structuredContent": {"receipt": "volume moved after microphone"}, "isError": false}),
+                ));
+            },
+        ),
+        tx,
+    ));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers.iter().all(|p| p.ready && !p.tools.is_empty())));
+    assert!(pump(&mut app, &rx, |a| a.providers[0].rows.rows.len() == 3));
+    assert_eq!(app.providers[0].rows.rows.iter().map(|r| r.place.is_some()).collect::<Vec<_>>(), [true, true, false], "a row's moves are read, both or none");
+    at_row(&mut app, View::Section(0), 0);
+    app.hint_key(HintKey::Place(Side::Below));
+    assert!(pump(&mut app, &rx, |_| sent.lock().unwrap().len() == 1), "the move was not asked for: {:?} {:?} {:?}", app.reply, app.mode, app.in_list);
+    assert_eq!(sent.lock().unwrap()[0], json!({"name": "bar_move", "arguments": {"name": "out", "to": "right"}}));
+    assert!(matches!(app.mode, Mode::Normal), "it asks nothing");
+    at_row(&mut app, View::Section(0), 1);
+    app.hint_key(HintKey::Place(Side::Above));
+    assert!(pump(&mut app, &rx, |_| sent.lock().unwrap().len() == 2));
+    assert_eq!(sent.lock().unwrap()[1], json!({"name": "bar_move", "arguments": {"name": "mic", "to": "left"}}));
+    // a row with no move, and a side that is no way in a list: nothing is asked of the provider
+    at_row(&mut app, View::Section(0), 2);
+    app.hint_key(HintKey::Place(Side::Below));
+    at_row(&mut app, View::Section(0), 0);
+    app.hint_key(HintKey::Place(Side::Left));
+    assert!(!pump(&mut app, &rx, |_| sent.lock().unwrap().len() > 2));
+}

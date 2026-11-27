@@ -633,6 +633,8 @@ pub enum Held {
     Checked,
     /// A screen's place in a map, in layout pixels (v0.167).
     Placed(String, (i32, i32)),
+    /// A row on its way to another place in its list (v0.171): nothing of it is shown before the rows come back.
+    Moved,
 }
 
 /// How long a value set in place is held over the rows read after its call came back.
@@ -1982,6 +1984,7 @@ impl App {
             || row.children.is_some()
             || row.step.is_some()
             || row.switch.is_some()
+            || row.place.is_some()
             || row.map.is_some()
             || !row.more.is_empty()
             || row.back
@@ -2199,6 +2202,7 @@ impl App {
             ("calendar", "new reminder", k(HintKey::New)),
             ("calendar", "the month before or after", self.cfg.keys.labels(&[HintKey::Left, HintKey::Right])),
             ("apps", "move the lit app's category up or down", "Ctrl+\u{2191} Ctrl+\u{2193}".to_string()),
+            ("bar", "move the lit module, and from its group's end the group", "Ctrl+\u{2191} Ctrl+\u{2193}".to_string()),
             (
                 "display",
                 "move the lit screen beside another",
@@ -7024,6 +7028,7 @@ impl App {
                 }
             }
             HintKey::Place(side) if self.apps_move_category(side) => {}
+            HintKey::Place(side) if self.row_move(side) => {}
             HintKey::Place(side) => self.map_place(side),
             HintKey::Help => self.help_key(),
             HintKey::Sort(by) => self.files_sort(by),
@@ -7283,6 +7288,9 @@ impl App {
                 if rows.iter().any(|r| r.step.is_some()) {
                     add(&mut v, "Change", "\u{2190} \u{2192}");
                 }
+                if rows.iter().any(|r| r.place.is_some()) {
+                    add(&mut v, "Move", "Ctrl+\u{2191} Ctrl+\u{2193}");
+                }
                 if self.pixels && rows.iter().any(|r| r.map.as_ref().is_some_and(|m| m.screens.iter().any(|s| m.moves(&s.name)))) {
                     add(&mut v, "Move", "Ctrl+\u{2190} Ctrl+\u{2192} Ctrl+\u{2191} Ctrl+\u{2193}");
                 }
@@ -7431,6 +7439,20 @@ impl App {
             .collect::<Vec<_>>()
             .join("\n");
         format!("{}\n{}", label, args)
+    }
+
+    /// Ctrl+Up and Ctrl+Down on a row that can move (a module of the bar, v0.171): its move up or down, run in
+    /// place as a value is set. The light stays on the row, wherever the rows that come back have it. False for
+    /// a row with no move.
+    fn row_move(&mut self, side: Side) -> bool {
+        if self.mode != Mode::Normal || !self.in_list || !matches!(side, Side::Above | Side::Below) {
+            return false;
+        }
+        let Some((prov, row)) = self.lit_row() else { return false };
+        let Some((up, down)) = row.place else { return false };
+        self.keep_lit = Some(row.id.clone());
+        self.set_value(prov, &row.id, Held::Moved, if side == Side::Above { up } else { down });
+        true
     }
 
     /// A click on a value row's arrow (#175): the row lit, and its step down or up, as left and right are.
@@ -7730,6 +7752,7 @@ impl App {
                         Self::map_hold(r, &name, at);
                     }
                 }
+                Held::Moved => {}
                 Held::Checked => {
                     if rows.iter().any(|r| r.id == id) {
                         for r in rows.iter_mut().filter(|r| r.quiet) {

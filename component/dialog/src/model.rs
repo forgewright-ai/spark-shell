@@ -42,6 +42,9 @@ pub struct Row {
     pub step: Option<Step>,
     /// A setting that is on or off (#183): one switch, flipped by Enter, Space or a click.
     pub switch: Option<Switch>,
+    /// A row that can move among the rows beside it (a module of the bar, v0.171): the calls that move it up and
+    /// down. Ctrl+Up and Ctrl+Down run them in place, and the light follows the row.
+    pub place: Option<(Call, Call)>,
     /// A row whose tool is a setting changed in place (a palette, #183): it runs as a value does, no turn
     /// in the exchange, nothing said unless it is refused.
     pub quiet: bool,
@@ -81,6 +84,7 @@ impl Row {
         let mut v: Vec<Call> = self.tool.iter().chain(self.more.iter()).cloned().collect();
         v.extend(self.step.iter().flat_map(Step::calls));
         v.extend(self.switch.iter().flat_map(|w| [w.turn_on.clone(), w.turn_off.clone()]));
+        v.extend(self.place.iter().flat_map(|(up, down)| [up.clone(), down.clone()]));
         v.extend(self.look.iter().cloned());
         v
     }
@@ -290,6 +294,12 @@ fn switch(v: Option<&Value>) -> Option<Switch> {
         turn_on: call(v.get("turn_on")?)?,
         turn_off: call(v.get("turn_off")?)?,
     })
+}
+
+/// A row's two moves: the call that moves it up and the one that moves it down. Both, or none.
+fn place(v: Option<&Value>) -> Option<(Call, Call)> {
+    let v = v?;
+    Some((call(v.get("up")?)?, call(v.get("down")?)?))
 }
 
 /// A preview is a path to a PNG, absolute, with no parent step in it; the dialog checks where it lies.
@@ -520,6 +530,7 @@ pub fn rows(text: &str) -> Option<Rows> {
             chip: chip(r.get("chip")),
             step: step(r.get("step")),
             switch: switch(r.get("switch")),
+            place: place(r.get("place")),
             quiet: r.get("quiet").and_then(Value::as_bool).unwrap_or(false),
             look: r.get("look").and_then(call),
             preview: preview(r.get("preview")),
