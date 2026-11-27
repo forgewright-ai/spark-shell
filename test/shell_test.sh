@@ -4238,6 +4238,7 @@ cat > "$H/padbin/spark-winpad" <<'WINPAD_STUB'
 printf '%s\n' "$*" >> "$HOME/pad.log"
 env | grep -E '^(SPARK_SHELL|WINPAD_[A-Z_]+)=' | sort > "$HOME/winpad.env"
 trap 'echo usr1 >> "$HOME/pad.sig"' USR1
+trap 'echo hup >> "$HOME/pad.sig"' HUP
 trap 'echo usr2 >> "$HOME/pad.sig"; if grep -qx "hidden 1" "$WINPAD_STATE"; then printf "hidden 0\n" > "$WINPAD_STATE"; else printf "hidden 1\n" > "$WINPAD_STATE"; fi' USR2
 trap 'rm -f "$WINPAD_LOCK"; exit 0' TERM
 printf 'hidden 0\ncount 2\n' > "$WINPAD_STATE"
@@ -4431,6 +4432,19 @@ _pi=0; while [ "$_pi" -lt 20 ] && ! grep -qx 'WINPAD_VIEW=icons' "$HOME/winpad.e
 [ "$rc" = 0 ] && [ "$out" = "pad view icons $dot one icon a window, its title beside it on hover" ] && grep -qx 'WINPAD_VIEW=icons' "$cfg" && printf '%s\n' "$_pe" | grep -qx 'WINPAD_VIEW=titles' && printf '%s\n' "$_pe" | grep -qx 'WINPAD_HEIGHT=76' \
     && [ "$(grep -c '' "$HOME/pad.log")" = 2 ] && grep -qx 'WINPAD_VIEW=icons' "$HOME/winpad.env" && grep -qx 'WINPAD_HEIGHT=76' "$HOME/winpad.env" && grep -qx 'WINPAD_BAND=off' "$HOME/winpad.env" && grep -qE '^WINPAD_BAND_HEX=[0-9a-f]{6}$' "$HOME/winpad.env" && grep -qx 'WINPAD_GAP=8' "$HOME/winpad.env" \
     && ok "desktop pad view icons: a running pad in titles, its height in its environment, starts again in icons, the band and the gap as they were (#269)" || bad "pad view again pad" "rc=$rc $out $(cat "$HOME/pad.log" "$HOME/winpad.env" 2>&1) | $_pe"
+if [ "$(uname -s)" != Darwin ]; then
+    # a new look is worn by the running pad in place (v0.171): its look file written, then SIGHUP, none started again,
+    # so it never blinks out. This block's config and palette are put back after
+    cp "$cfg" "$H/cfg.relook"; cp "$HOME/.config/spark/theme.env" "$H/theme.relook"
+    _lp=$(cat "$H/run/spark-shell-winpad.pid" 2>/dev/null); _ll=$(grep -c '' "$HOME/pad.log")
+    XDG_RUNTIME_DIR=$H/run SPARK_SHELL_WINPAD=$H/padbin/spark-winpad SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" theme dracula >/dev/null 2>&1 || :
+    pad_sig hup 1
+    [ "$(grep -c '^hup$' "$HOME/pad.sig" 2>/dev/null)" = 1 ] && [ "$(cat "$H/run/spark-shell-winpad.pid" 2>/dev/null)" = "$_lp" ] && [ "$(grep -c '' "$HOME/pad.log")" = "$_ll" ] \
+        && grep -qx 'WINPAD_FG=f8f8f2' "$H/run/spark-shell-winpad.look" && grep -qx "WINPAD_LOOK_FILE=$H/run/spark-shell-winpad.look" "$HOME/winpad.env" \
+        && ok "theme: a running pad wears the new look in place, its look file written and SIGHUP sent, none started again (v0.171)" \
+        || bad "pad relook" "$(tr '\n' ' ' < "$HOME/pad.sig" 2>&1) | $_lp $(cat "$H/run/spark-shell-winpad.pid" 2>&1) | $_ll $(grep -c '' "$HOME/pad.log") | $(head -2 "$H/run/spark-shell-winpad.look" 2>&1 | tr '\n' ' ')"
+    cp "$H/cfg.relook" "$cfg"; cp "$H/theme.relook" "$HOME/.config/spark/theme.env"
+fi
 pad_down
 for _pk in WINPAD_VIEW=grid WINPAD_VIEW=Icons 'WINPAD_VIEW=icons titles'; do
     printf '%s\n' "$_pk" >> "$cfg"; padr view

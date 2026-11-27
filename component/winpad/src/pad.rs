@@ -673,6 +673,41 @@ pub const MARK_PNGS: [i32; 4] = [16, 19, 22, 26];
 
 pub use spark_theme::dark_ground;
 
+/// The look's variables a look file may set (WINPAD_LOOK_FILE): its colors, its transparency and its font, never
+/// the place, the files or what the pad runs.
+pub const LOOK_KEYS: [&str; 17] = [
+    "WINPAD_FG",
+    "WINPAD_ACCENT",
+    "WINPAD_MUTED",
+    "WINPAD_DIM",
+    "WINPAD_GROUND",
+    "WINPAD_SURFACE",
+    "WINPAD_LIT",
+    "WINPAD_BAND_HEX",
+    "WINPAD_ALPHA",
+    "WINPAD_FONT",
+    "WINPAD_CLOSE",
+    "WINPAD_MIN",
+    "WINPAD_FILL",
+    "WINPAD_CLOSE_INK",
+    "WINPAD_BAND_LIT",
+    "WINPAD_URGENT_LIT",
+    "WINPAD_HALF",
+];
+
+/// A look file's text: KEY=VALUE a line, the look's variables alone, a value with no control character in it, the
+/// last of a key the one that counts. A value none or empty is left to the environment's.
+pub fn look_lines(text: &str) -> std::collections::HashMap<String, String> {
+    let mut out = std::collections::HashMap::new();
+    for line in text.lines().take(64) {
+        let Some((k, v)) = line.split_once('=') else { continue };
+        if LOOK_KEYS.contains(&k) && !v.is_empty() && v.len() <= 200 && !v.chars().any(char::is_control) {
+            out.insert(k.to_string(), v.to_string());
+        }
+    }
+    out
+}
+
 /// Spark's mark for an icon of `px` pixels on a ground: its file in the assets, favicon for a dark ground and
 /// favicon-light for a light one, never recolored. The PNG nearest the size at or above it; above the largest,
 /// the SVG, drawn at the size.
@@ -1089,6 +1124,23 @@ mod tests {
 
     fn m() -> Metrics {
         Metrics::for_text(16.0)
+    }
+
+    #[test]
+    fn a_look_file_sets_the_look_alone() {
+        let got = look_lines(
+            "WINPAD_FG=f2e4d9\nWINPAD_FONT=Monaspace Krypton 12\nWINPAD_PLACE=top\nSPARK_SHELL=/tmp/x\nWINPAD_ALPHA=\n\
+             not a line\nWINPAD_ACCENT=e7a979\x1b[31m\nWINPAD_FG=201b20\n",
+        );
+        assert_eq!(got.get("WINPAD_FG").map(String::as_str), Some("201b20"), "the last of a key counts");
+        assert_eq!(got.get("WINPAD_FONT").map(String::as_str), Some("Monaspace Krypton 12"));
+        assert!(
+            !got.contains_key("WINPAD_PLACE") && !got.contains_key("SPARK_SHELL"),
+            "the place and the files stay the environment's"
+        );
+        assert!(!got.contains_key("WINPAD_ALPHA"), "an empty value is the environment's");
+        assert!(!got.contains_key("WINPAD_ACCENT"), "a control character keeps a value out");
+        assert_eq!(got.len(), 2);
     }
 
     /// The room on a 1920 by 1054 area, the gap off each side.

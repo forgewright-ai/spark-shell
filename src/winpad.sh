@@ -92,17 +92,33 @@ winpad_run() {   # winpad_run [--keys] -- spark-winpad started in its own sessio
     mkdir_private "$STATE_DIR"
     (
         # WINPAD_BAND on|off, WINPAD_BAND_HEX its color; WINPAD_GAP the outer gap; WINPAD_VIEW icons|titles; WINPAD_HEIGHT 0 as many as needed
-        SPARK_SHELL=$REPO/spark-shell WINPAD_FG=$HEX_FG WINPAD_ACCENT=$HEX_ACCENT WINPAD_MUTED=$PANEL_MUTED WINPAD_GROUND=$HEX_BG WINPAD_CLOSE=$HEX_ANSI_1 WINPAD_MIN=$HEX_ANSI_3 WINPAD_FILL=$HEX_ANSI_2 WINPAD_SURFACE=$PANEL_BG WINPAD_LIT=$PANEL_HI WINPAD_BAND_HEX=$PANEL_BAND WINPAD_BAND_LIT=$(hex_lit "$HEX_ACCENT" "$PANEL_INK") WINPAD_URGENT_LIT=$(hex_lit "$HEX_ANSI_1" "$PANEL_INK_URGENT") WINPAD_CLOSE_INK=$PANEL_INK_URGENT
+        SPARK_SHELL=$REPO/spark-shell; winpad_look_vars
+        WINPAD_LOOK_FILE=$(winpad_look_file); write_whole "$WINPAD_LOOK_FILE" winpad_look_lines 2>/dev/null || :   # the look of now, for a pad its keeper starts again
         WINPAD_REST=idle   # the idle screen's workspaces (layout_idle): the pad is off a screen that shows one
-        WINPAD_ALPHA=$ALPHA WINPAD_FONT=$(bar_line_font) WINPAD_PLACE=$WINPAD_PLACE WINPAD_WIDTH=$WINPAD_WIDTH WINPAD_SIDE_WIDTH=$WINPAD_SIDE_WIDTH WINPAD_HEIGHT=${WINPAD_HEIGHT:-0} WINPAD_BAR=$(bar_place)
-        WINPAD_DIM=$HEX_MUTED   # the palette's own dim tone, the bar's: the grip's line is the bar's hairline's color
+        WINPAD_PLACE=$WINPAD_PLACE WINPAD_WIDTH=$WINPAD_WIDTH WINPAD_SIDE_WIDTH=$WINPAD_SIDE_WIDTH WINPAD_HEIGHT=${WINPAD_HEIGHT:-0} WINPAD_BAR=$(bar_place)
         WINPAD_BAR_STATE=''; ! sparkbar_draws || WINPAD_BAR_STATE=$(sparkbar_file state)   # where spark's bar draws, its state file says the room it keeps for a pad whose place is the bar; with no such bar that pad stands at the bottom's middle
         WINPAD_VOICE=$(voice_here && echo yes || echo no) WINPAD_VOICE_STATE=$(voice_state)
         WINPAD_TERM=$TERM_NAME WINPAD_TERM_ALSO=$TERM_APP_PREFIX WINPAD_TITLE=$BAND_TITLE WINPAD_TERM_TITLE=$BAND_TERM_TITLE WINPAD_BAND=${WINPAD_BAND:-off} WINPAD_VIEW=${WINPAD_VIEW:-icons} WINPAD_GAP=${GAPS_OUTER:-} WINPAD_LOCK=$(winpad_lock) WINPAD_STATE=$(winpad_state) WINPAD_BAR_PID=$BAR_PID
-        export WINPAD_DIM WINPAD_BAR_STATE WINPAD_BAND_LIT WINPAD_URGENT_LIT WINPAD_CLOSE_INK WINPAD_REST SPARK_SHELL WINPAD_VOICE WINPAD_VOICE_STATE WINPAD_TERM_ALSO WINPAD_FG WINPAD_ACCENT WINPAD_MUTED WINPAD_GROUND WINPAD_CLOSE WINPAD_MIN WINPAD_FILL WINPAD_TERM WINPAD_TITLE WINPAD_TERM_TITLE WINPAD_SURFACE WINPAD_LIT WINPAD_BAND_HEX WINPAD_ALPHA WINPAD_FONT WINPAD_PLACE WINPAD_WIDTH WINPAD_SIDE_WIDTH WINPAD_HEIGHT WINPAD_BAR WINPAD_BAND WINPAD_VIEW WINPAD_GAP WINPAD_LOCK WINPAD_STATE WINPAD_BAR_PID
+        export WINPAD_LOOK_FILE WINPAD_DIM WINPAD_BAR_STATE WINPAD_BAND_LIT WINPAD_URGENT_LIT WINPAD_CLOSE_INK WINPAD_REST SPARK_SHELL WINPAD_VOICE WINPAD_VOICE_STATE WINPAD_TERM_ALSO WINPAD_FG WINPAD_ACCENT WINPAD_MUTED WINPAD_GROUND WINPAD_CLOSE WINPAD_MIN WINPAD_FILL WINPAD_TERM WINPAD_TITLE WINPAD_TERM_TITLE WINPAD_SURFACE WINPAD_LIT WINPAD_BAND_HEX WINPAD_ALPHA WINPAD_FONT WINPAD_PLACE WINPAD_WIDTH WINPAD_SIDE_WIDTH WINPAD_HEIGHT WINPAD_BAR WINPAD_BAND WINPAD_VIEW WINPAD_GAP WINPAD_LOCK WINPAD_STATE WINPAD_BAR_PID
         if command -v setsid >/dev/null 2>&1; then setsid sh -c "$WINPAD_KEEP" "$_pdc" "$@" </dev/null >/dev/null 2>"$_pdlog" &
         else ( trap '' HUP; exec sh -c "$WINPAD_KEEP" "$_pdc" "$@" ) </dev/null >/dev/null 2>"$_pdlog" & fi
     )
+}
+winpad_look_vars() {   # the pad's look from the theme loaded: winpad_run's environment and the lines of its look file
+    WINPAD_FG=$HEX_FG WINPAD_ACCENT=$HEX_ACCENT WINPAD_MUTED=$PANEL_MUTED WINPAD_GROUND=$HEX_BG WINPAD_CLOSE=$HEX_ANSI_1 WINPAD_MIN=$HEX_ANSI_3 WINPAD_FILL=$HEX_ANSI_2 WINPAD_SURFACE=$PANEL_BG WINPAD_LIT=$PANEL_HI WINPAD_BAND_HEX=$PANEL_BAND WINPAD_BAND_LIT=$(hex_lit "$HEX_ACCENT" "$PANEL_INK") WINPAD_URGENT_LIT=$(hex_lit "$HEX_ANSI_1" "$PANEL_INK_URGENT") WINPAD_CLOSE_INK=$PANEL_INK_URGENT
+    WINPAD_ALPHA=$ALPHA WINPAD_FONT=$(bar_line_font)
+    WINPAD_DIM=$HEX_MUTED   # the palette's own dim tone, the bar's: the grip's line is the bar's hairline's color
+}
+WINPAD_LOOK_KEYS='WINPAD_FG WINPAD_ACCENT WINPAD_MUTED WINPAD_GROUND WINPAD_CLOSE WINPAD_MIN WINPAD_FILL WINPAD_SURFACE WINPAD_LIT WINPAD_BAND_HEX WINPAD_BAND_LIT WINPAD_URGENT_LIT WINPAD_CLOSE_INK WINPAD_ALPHA WINPAD_FONT WINPAD_DIM'
+winpad_look_file() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-winpad.look"; }   # KEY=VALUE a line: the pad reads it at its start and on SIGHUP
+winpad_look_lines() { for _wlk in $WINPAD_LOOK_KEYS; do eval "printf '%s=%s\n' \"\$_wlk\" \"\${$_wlk:-}\""; done; }
+winpad_relook() {   # a new look worn by the running pad in place: its file written, then SIGHUP. A pad ended for the bar's move, or one an older spark-shell started (it knows no look file: SIGHUP would end it), starts again, as winpad_again has it
+    [ -z "${_winpad_paused:-}" ] || { winpad_again; return 0; }
+    _wrp=$(winpad_pid) || return 0
+    if tr '\0' '\n' < "/proc/$_wrp/environ" 2>/dev/null | grep -qx "WINPAD_LOOK_FILE=$(winpad_look_file)" \
+        && ( theme_load 2>/dev/null || :; winpad_look_vars; write_whole "$(winpad_look_file)" winpad_look_lines ) 2>/dev/null; then
+        kill -HUP "$_wrp" 2>/dev/null || :
+    else winpad_again; fi
 }
 winpad_wake() { winpad_pid >/dev/null || winpad_run 2>/dev/null || :; }   # the pad up when it is not; never waited for
 winpad_look() { winpad_pid >/dev/null 2>&1 || return 0; wm_tick spark-winpad.look >/dev/null 2>&1 || :; }   # the pad reads the tree now: a window a command moved, which sway tells no one

@@ -33,6 +33,9 @@
 - A click on a module's sign, number or text acts when the button is
   let go. A gauge and the wheel act at once, as before.
 - For voice and the AI: the tools `bar_module` and `bar_move`.
+- A theme change no longer restarts the pad: it takes the new colors,
+  transparency and typeface in place, so it does not blink out.
+- The pad is 0.171.0.
 
 ## v0.170.4
 

@@ -365,11 +365,7 @@ impl App {
         let shm = Shm::bind(globals, qh).map_err(|e| format!("the compositor has no wl_shm: {e}"))?;
         let pool = SlotPool::new(1 << 20, &shm).map_err(|e| format!("shared memory: {e}"))?;
         let fonts = Fonts::new(&lib, &cfg.look.font);
-        // one character of a title, from the buttons' nine in the title's own font
-        let cell = {
-            let mut probe = [0u8; 4 * 8 * 8];
-            Canvas::new(&lib, &fonts, &mut probe, 8, 8, 32, 1.0).map_or(fonts.px * 0.6, |c| c.measure(crate::buttons::GLYPHS, false) / 9.0)
-        };
+        let cell = cell_of(&lib, &fonts);
         let m = Metrics {
             gap: cfg.gap,
             ..Metrics::for_text(fonts.px)
@@ -660,6 +656,34 @@ impl App {
             _ => {}
         }
         self.look();
+    }
+
+    /// A new theme from spark-shell (SIGHUP): its colors, its transparency and its font worn in place, where the pad
+    /// was once started again for it and blinked out. A font of another size lays the pad out again; spark's mark
+    /// (MARK, its file) follows the ground, dark or light; every title band is drawn again in the new buttons.
+    pub fn relook(&mut self, look: Look, style: crate::buttons::Style, mark: Option<String>) {
+        if look.font != self.cfg.look.font {
+            let fonts = Fonts::new(&self.lib, &look.font);
+            std::mem::replace(&mut self.fonts, fonts).free(&self.lib);
+            self.cell = cell_of(&self.lib, &self.fonts);
+            self.m = Metrics {
+                gap: self.cfg.gap,
+                ..Metrics::for_text(self.fonts.px)
+            };
+        }
+        self.cfg.look = look;
+        self.cfg.titles.style = style;
+        if let Some(path) = mark {
+            self.icon_paths.insert(crate::pad::icon_key(crate::pad::DIALOG), path);
+        }
+        for p in self.pictures.drain() {
+            if let (_, Some(p)) = p {
+                p.free(&self.lib);
+            }
+        }
+        self.sent.clear();
+        self.deco_dirty = true;
+        self.apply();
     }
 
     /// The tree read now, and every tick for the next two seconds: a command moved a window, or one may follow.
@@ -1856,6 +1880,12 @@ impl App {
         }
         self.fonts.free(&self.lib);
     }
+}
+
+/// One character of a title, from the buttons' nine in the title's own font.
+fn cell_of(lib: &Lib, fonts: &Fonts) -> f64 {
+    let mut probe = [0u8; 4 * 8 * 8];
+    Canvas::new(lib, fonts, &mut probe, 8, 8, 32, 1.0).map_or(fonts.px * 0.6, |c| c.measure(crate::buttons::GLYPHS, false) / 9.0)
 }
 
 /// The resize pointer for a grip: the side or the corner it moves.

@@ -32,7 +32,7 @@ fine edge, its grip before the icons and hide after them, and it keeps a
 strip of its own beside the windows while it is docked at an edge. A press
 anywhere on it becomes a drag: near an edge it docks there, the bar's too;
 only with the pointer on the bar itself does it land on the bar. SIGUSR1 puts the keyboard on the pad, SIGUSR2 hides
-or shows it, SIGTERM or SIGINT ends it. The close, minimize and fill buttons at the
+or shows it, SIGHUP reads the look again (WINPAD_LOOK_FILE), SIGTERM or SIGINT ends it. The close, minimize and fill buttons at the
 start of every title are sway's own text: the pad tells sway how each
 window's are drawn, by its focus and the pointer, and takes their clicks.
 It keeps the
@@ -57,7 +57,9 @@ WINPAD_SIDE_WIDTH, WINPAD_HEIGHT (the most height, 0: as many rows as needed),
 WINPAD_REST (a workspace's name: no pad and no strip on a screen that shows
 it, or one named with it and a space before more; none: never),
 and the files WINPAD_LOCK, WINPAD_STATE, WINPAD_BAR_PID and
-WINPAD_BAR_STATE; SPARK_SHELL names
+WINPAD_BAR_STATE. WINPAD_LOOK_FILE names a file of KEY=VALUE lines of the
+look's variables, read at the start and on SIGHUP over the environment's:
+a new theme is worn in place, with no pad started again. SPARK_SHELL names
 spark-shell itself, and the assets beside it give the dialog spark's S,
 the dark one or the light one by WINPAD_SURFACE. After a drag or a resize it
 runs spark-shell desktop pad place PLACE WIDTH SIDE_WIDTH HEIGHT, and each
@@ -119,38 +121,64 @@ fn run(_: bool) -> Result<(), String> {
     Err("runs only on Linux, under sway".into())
 }
 
+/// The look's variables: WINPAD_LOOK_FILE's lines over the environment's, so a pad its keeper started again, or one
+/// told SIGHUP, wears the look of now and not the one of its first start.
+#[cfg(target_os = "linux")]
+fn look_source() -> impl Fn(&str) -> Option<String> {
+    let file = std::env::var_os("WINPAD_LOOK_FILE")
+        .and_then(|p| std::fs::read(p).ok())
+        .filter(|b| b.len() <= 64 * 1024)
+        .map(|b| spark_winpad::pad::look_lines(&String::from_utf8_lossy(&b)))
+        .unwrap_or_default();
+    move |k: &str| file.get(k).cloned().or_else(|| std::env::var(k).ok().filter(|v| !v.is_empty()))
+}
+
+/// The colors, the transparency and the font, and the title bands' buttons, from `get`.
+#[cfg(target_os = "linux")]
+fn look_of(get: &impl Fn(&str) -> Option<String>) -> (spark_winpad::app::Look, spark_winpad::buttons::Style) {
+    use spark_winpad::paint::Rgb;
+    let color = |k: &str, d: &str| get(k).and_then(|v| Rgb::hex(&v)).unwrap_or_else(|| Rgb::hex(d).unwrap());
+    let look = spark_winpad::app::Look {
+        fg: color("WINPAD_FG", "383a42"),
+        accent: color("WINPAD_ACCENT", "4078f2"),
+        muted: color("WINPAD_MUTED", "696c77"),
+        dim: get("WINPAD_DIM").and_then(|v| Rgb::hex(&v)).unwrap_or_else(|| color("WINPAD_MUTED", "696c77")),
+        ground: color("WINPAD_GROUND", "fafafa"),
+        surface: color("WINPAD_SURFACE", "ebebec"),
+        lit: color("WINPAD_LIT", "dcdcdd"),
+        band: color("WINPAD_BAND_HEX", "c3d0ee"),
+        alpha: get("WINPAD_ALPHA")
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .filter(|a| a.is_finite())
+            .map_or(1.0, |a| a.clamp(0.0, 1.0)),
+        font: get("WINPAD_FONT").unwrap_or_else(|| "Monaspace Neon 12".into()),
+    };
+    (look, spark_winpad::buttons::Style::read(get))
+}
+
+/// Spark's mark wants the dark ground's S on a dark ground, the light one's on a light one.
+#[cfg(target_os = "linux")]
+fn dark_of(ground: spark_winpad::paint::Rgb) -> bool {
+    let byte = |v: f64| (v * 255.0).round().clamp(0.0, 255.0) as u8;
+    spark_winpad::pad::dark_ground(byte(ground.0), byte(ground.1), byte(ground.2))
+}
+
 #[cfg(target_os = "linux")]
 fn config() -> spark_winpad::app::Config {
-    use spark_winpad::app::{Config, Look, Titles};
-    use spark_winpad::buttons::Style;
+    use spark_winpad::app::{Config, Titles};
     use spark_winpad::pad::{Place, View};
-    use spark_winpad::paint::Rgb;
     let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
-    let color = |k: &str, d: &str| env(k).and_then(|v| Rgb::hex(&v)).unwrap_or_else(|| Rgb::hex(d).unwrap());
     let num = |k: &str, d: i32| {
         env(k)
             .and_then(|v| v.trim().parse::<i32>().ok())
             .filter(|n| (0..=100_000).contains(n))
             .unwrap_or(d)
     };
+    let (look, style) = look_of(&look_source());
     Config {
-        look: Look {
-            fg: color("WINPAD_FG", "383a42"),
-            accent: color("WINPAD_ACCENT", "4078f2"),
-            muted: color("WINPAD_MUTED", "696c77"),
-            dim: env("WINPAD_DIM").and_then(|v| Rgb::hex(&v)).unwrap_or_else(|| color("WINPAD_MUTED", "696c77")),
-            ground: color("WINPAD_GROUND", "fafafa"),
-            surface: color("WINPAD_SURFACE", "ebebec"),
-            lit: color("WINPAD_LIT", "dcdcdd"),
-            band: color("WINPAD_BAND_HEX", "c3d0ee"),
-            alpha: env("WINPAD_ALPHA")
-                .and_then(|v| v.trim().parse::<f64>().ok())
-                .filter(|a| a.is_finite())
-                .map_or(1.0, |a| a.clamp(0.0, 1.0)),
-            font: env("WINPAD_FONT").unwrap_or_else(|| "Monaspace Neon 12".into()),
-        },
+        look,
         titles: Titles {
-            style: Style::read(env),
+            style,
             term: env("WINPAD_TERM").unwrap_or_default(),
             term_also: env("WINPAD_TERM_ALSO").unwrap_or_default(),
             title: env("WINPAD_TITLE").unwrap_or_else(|| "%title".into()),
@@ -316,12 +344,10 @@ fn run(keys: bool) -> Result<(), String> {
     // before the lock, which says this pid to whoever sends the keys: a signal that came before it was taken into
     // the loop would end the pad by its own action, and its keeper would take that for a crash. And before any
     // thread starts: the threads inherit the blocked mask, so the signals reach this loop
-    let signals = Signals::new(&[Signal::SIGUSR1, Signal::SIGUSR2, Signal::SIGTERM, Signal::SIGINT]).map_err(|e| format!("signals: {e}"))?;
+    let signals = Signals::new(&[Signal::SIGUSR1, Signal::SIGUSR2, Signal::SIGHUP, Signal::SIGTERM, Signal::SIGINT]).map_err(|e| format!("signals: {e}"))?;
     let Some(_lock) = lock()? else { return Ok(()) };
     // the ground spark's mark stands on, the pad's own and the bar's: the dark S on a dark ground, the light one on a light one
-    let byte = |v: f64| (v * 255.0).round().clamp(0.0, 255.0) as u8;
-    let s = cfg.look.ground;
-    let dark = spark_winpad::pad::dark_ground(byte(s.0), byte(s.1), byte(s.2));
+    let dark = dark_of(cfg.look.ground);
     if !wayland_sys::client::is_lib_available() {
         return Err("libwayland-client.so.0 is missing (Wayland's client library)".into());
     }
@@ -344,10 +370,17 @@ fn run(keys: bool) -> Result<(), String> {
         .insert(handle.clone())
         .map_err(|e| format!("event loop: {}", e.error))?;
     let stop = event_loop.get_signal();
+    let marks = spark_shell.clone();
     handle
-        .insert_source(signals, |ev, &mut (), app: &mut App| match ev.signal() {
+        .insert_source(signals, move |ev, &mut (), app: &mut App| match ev.signal() {
             Signal::SIGUSR1 => app.keys_on(),
             Signal::SIGUSR2 => app.toggle_hidden(),
+            Signal::SIGHUP => {
+                // a new theme worn in place: spark-shell wrote it to WINPAD_LOOK_FILE first
+                let (look, style) = look_of(&look_source());
+                let mark = mark(&marks, dark_of(look.ground), app.icon_px());
+                app.relook(look, style, mark);
+            }
             _ => app.stop = true,
         })
         .map_err(|e| format!("event loop: {}", e.error))?;
