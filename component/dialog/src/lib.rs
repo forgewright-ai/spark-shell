@@ -20,12 +20,14 @@ pub mod input;
 pub mod interaction;
 pub mod keys;
 pub mod login;
+pub mod look;
 pub mod mcp;
 pub mod model;
 pub mod page;
 #[cfg(target_os = "linux")]
 pub mod paint;
 pub mod palette;
+pub mod picker;
 pub mod pieces;
 pub mod preferences;
 pub mod preview;

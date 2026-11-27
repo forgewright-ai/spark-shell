@@ -189,6 +189,7 @@ impl Window {
     fn face(&self, _: &str) -> Option<f64> {
         None
     }
+    fn font(&self, _: &str) {}
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -708,6 +709,7 @@ fn act(app: &mut App, target: scene::Target) {
         }
         scene::Target::ListRow(n) => app.files_list_row(n, Instant::now()),
         scene::Target::Sort => app.files_sort_next(),
+        scene::Target::Swatch(strip, i) => app.picker_click(strip, i),
     }
 }
 
@@ -898,6 +900,7 @@ fn main() {
     let mut drawn_asked: Option<Instant> = None;
     // the title last written to the terminal, where the window wears the band
     let mut window_title = String::new();
+    let mut look_watch = spark_dialog::look::Watch::new(spark_dialog::look::path());
     let (mut drag_drawn, mut drag_owed) = (Instant::now(), false);
     // how long the last picture of a drag took to make and write: the next waits as long (#148)
     let mut drag_cost = Duration::ZERO;
@@ -1569,6 +1572,29 @@ fn main() {
                 if let Some(name) = spark_dialog::goto::take() {
                     dirty |= app.go_to(&name);
                 }
+                // the look changed while home stands open, wherever it was changed: its colors, its glyph family
+                // and, in a window of its own, the text's font; every place reads its rows again (v0.172)
+                if let Some(look) = look_watch.changed() {
+                    if let (Some(w), Some(font)) = (&window, &look.font) {
+                        w.font(font);
+                    }
+                    app.wear_look(&look);
+                    // and its opening and closing, read aside as after a theme step: home closed with the old one's
+                    match app.films_want.take() {
+                        Some(Some(dir)) => {
+                            let mut pal = piece_pal.clone();
+                            pal.extend(look.palette.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))));
+                            spawn_films(dir, pal, films_as, films_tx.clone())
+                        }
+                        Some(None) => {
+                            films = None;
+                            app.films = false;
+                            app.motion = None;
+                        }
+                        None => {}
+                    }
+                    dirty = true;
+                }
                 // Some launchers do not deliver SIGWINCH to the UI process.
                 // Size is cheap to query; a resize must redraw without a keypress.
                 if term.is_some() && terminal::size().is_ok_and(|size| size != app.size) {
@@ -1817,6 +1843,8 @@ fn main() {
                             // kept as the motion says it: the event's own cells, never the place's rows'
                             drag = Some((m.column, m.row));
                             drag_px = at_px;
+                        } else if let Some((_, _, _, strip, i)) = drawn.swatches.iter().find(|(a, b, y, _, _)| row == *y && col >= *a && col < *b) {
+                            app.picker_click(*strip, *i); // a swatch of the color picker: the color follows it
                         } else if let Some((_, _, _, n, up)) = drawn.steps.iter().find(|(a, b, y, _, _)| row == *y && col >= *a && col < *b) {
                             app.step_at(*n, *up); // a value's arrow steps it, as left and right do (#175)
                         } else if row >= drawn.prompt.0 && row <= drawn.prompt.1 {

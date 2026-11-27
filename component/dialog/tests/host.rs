@@ -380,14 +380,81 @@ fn a_row_that_asks_for_words_says_what_they_are() {
         "the row asks for its words: {:?}",
         app.mode
     );
-    assert_eq!(app.hint()[0].0, "when and what: fri 9am call the vet");
+    // the prompt says what it takes, in the argument's own words, and the keys' line says what Enter does (v0.172:
+    // the words stood in the keys' line, over a prompt left blank)
+    assert_eq!(app.placeholder(), "when and what: fri 9am call the vet");
+    assert!(app.prompt_form());
+    let keys: String = app.hint().iter().map(|(t, _)| t.as_str()).collect();
+    assert!(keys.contains("Cancel") && keys.contains("Add") && keys.contains("Enter"), "{:?}", keys);
+    app.enter();
+    assert!(matches!(app.mode, Mode::Ask { .. }), "Enter on nothing typed keeps the question");
+    assert_eq!(
+        app.reply.as_ref().map(|r| r.text.as_str()),
+        Some("type when and what: fri 9am call the vet, or Esc cancels")
+    );
     for c in "tomorrow 9:00 call the dentist".chars() {
         app.typed(c);
     }
+    assert_eq!(app.picks().len(), 1, "the row that asked stands while its words are typed: they search nothing");
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.running.is_none() && !seen.lock().unwrap().is_empty()));
     assert!(app.reply.is_none(), "a row picked says nothing: the list shows the reminder");
     assert_eq!(seen.lock().unwrap()[0], json!({"words": "tomorrow 9:00 call the dentist"}));
+}
+
+/// A value typed for a step is never searched for (v0.172). At home the words typed are searched once typing rests:
+/// a password asked for there went, letter by letter, to the files' search and the notes'.
+#[test]
+fn a_secret_typed_for_a_step_at_home_is_not_searched_for() {
+    let (mut app, rx, tx) = app_with(&["files", "wifi"]);
+    let seen = Arc::new(Mutex::new(vec![]));
+    let s2 = seen.clone();
+    let none = json!({"title": "files", "rows": [], "short": []});
+    let files: Script = Box::new(move |v, send| {
+        if v.get("method").and_then(Value::as_str) == Some("resources/read") {
+            s2.lock()
+                .unwrap()
+                .push(v.pointer("/params/uri").and_then(Value::as_str).unwrap_or("").to_string());
+        }
+        if let Some(r) = ordinary("files", v, &json!([]), &none) {
+            send(r);
+        }
+    });
+    let tools = json!([{"name": "wifi_connect", "title": "wifi connect NAME", "annotations": {"destructiveHint": false},
+        "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "password": {"type": "string", "format": "password", "maxLength": 256}}, "required": ["name"]}}]);
+    let rows = json!({"title": "wifi", "short": [], "rows": [{"id": "wifi:connect net", "sign": "blank", "text": "net", "more": [], "columns": [], "children": null,
+        "tool": {"name": "wifi_connect", "arguments": {"name": "net"}, "ask": ["password"]}}]});
+    let r2 = rows.clone();
+    let wifi: Script = Box::new(move |v, send| {
+        if let Some(r) = ordinary("wifi", v, &tools, &r2) {
+            send(r);
+        }
+    });
+    app.servers.push(stub(0, "files", files, tx.clone()));
+    app.servers.push(stub(1, "wifi", wifi, tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers.iter().all(|p| p.ready) && !a.providers[1].tools.is_empty()));
+    assert_eq!(app.view, View::Home);
+    let call = spark_dialog::model::rows(&rows.to_string()).unwrap().rows[0].tool.clone().unwrap();
+    app.run(spark_dialog::app::Step {
+        prov: 1,
+        call,
+        who: spark_dialog::app::Who::Person,
+        line: "wifi connect net".into(),
+        typed: false,
+    });
+    assert!(matches!(app.mode, Mode::Ask { masked: true, .. }), "{:?}", app.mode);
+    assert_eq!(app.placeholder(), "the password, not shown");
+    seen.lock().unwrap().clear();
+    typed(&mut app, "hunter2 xyzzy");
+    assert!(app.search_at.is_none(), "no search waits on a value typed for a step");
+    pump_for(&mut app, &rx, QUIET, |_| false);
+    let asked = seen.lock().unwrap().clone();
+    assert!(
+        asked.iter().all(|u| !u.contains("/rows/match/")),
+        "the files were asked for nothing: {:?}",
+        asked
+    );
 }
 
 /// A stub files provider: one root whose rows open a folder; the folder holds a text file and a picture; attach answers with a path.

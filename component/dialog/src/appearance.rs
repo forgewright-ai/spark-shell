@@ -11,6 +11,25 @@ pub(crate) fn gallery(view: &View) -> bool {
     matches!(view, View::Folder(_, uri) if uri == GALLERY || uri.strip_prefix(GALLERY).is_some_and(|tail| tail.starts_with('/')))
 }
 
+pub(crate) const WALLPAPERS: &str = "spark-shell://theme/rows/wallpapers";
+
+/// The wallpaper list's row whose picture stands over the list (v0.172): the row lit, else the one in use. A row
+/// with no picture of its own (a picture to pick, a color to name) leaves the one in use standing.
+pub(crate) fn wallpaper(app: &App) -> Option<&Row> {
+    let View::Folder(_, uri) = &app.view else { return None };
+    if uri != WALLPAPERS || !app.query().is_empty() {
+        return None;
+    }
+    let rows = &app.folder.as_ref().filter(|(_, u, _)| u == uri)?.2.rows;
+    let shown = |r: &&Row| r.preview.is_some() || !r.chip.is_empty();
+    let lit = match app.picks().get(app.sel).filter(|_| app.in_list) {
+        Some(Item::Folder(i)) => rows.get(*i).filter(shown),
+        _ => None,
+    };
+    lit.or_else(|| rows.iter().find(|r| r.sign == "check" && shown(r)))
+        .or_else(|| rows.iter().find(shown))
+}
+
 /// A work's compositions: each row a picture to look at, never applied.
 pub(crate) fn compositions(uri: &str) -> bool {
     uri.strip_prefix(GALLERY)
@@ -51,8 +70,9 @@ pub(crate) fn modes_of(app: &App) -> Option<String> {
 
 /// A folder whose poster is the lit row: the poster says the row's line under its name, so the status line says
 /// nothing of it, and the poster stands still as the row lit changes.
+/// A work's own page too (v0.172): its poster says its kind, the line of its first row, whichever row is lit.
 pub(crate) fn poster_lit(app: &App) -> bool {
-    matches!(&app.view, View::Folder(_, uri) if browsing(uri)) && candidate(app).is_some()
+    gallery(&app.view) && candidate(app).is_some_and(|(_, r)| matches!(&app.view, View::Folder(_, uri) if browsing(uri)) || r.line.is_some())
 }
 
 pub(crate) fn terminal_palette(app: &App) -> Option<(usize, String)> {

@@ -87,6 +87,8 @@ enum Cmd {
     Drawn,
     /// A family asked about, and who waits for the word on it.
     Face(String, mpsc::Sender<Option<f64>>),
+    /// The text's font, as pango's words: the theme changed while the window stands (v0.172).
+    Font(String),
 }
 
 /// How long a family is waited for: pango finds one in a few milliseconds, behind a frame being painted at most.
@@ -154,6 +156,11 @@ impl Handle {
         let (tx, rx) = mpsc::channel();
         self.tx.send(Cmd::Face(family.to_string(), tx)).ok()?;
         rx.recv_timeout(FACE_WAIT).ok().flatten()
+    }
+    /// Another font for the text, as pango's words ("Monaspace Krypton 12"): the cells follow it, as they do when
+    /// the screen's scale changes, and the window keeps its size.
+    pub fn font(&self, words: &str) {
+        let _ = self.tx.send(Cmd::Font(words.to_string()));
     }
     /// Asks the window to say (Out::Drawn) when the frames handed over so far are with the compositor. A window
     /// mapped unseen is shown on that word, never on a guess of how long a frame takes to paint.
@@ -325,6 +332,7 @@ impl State {
                 Msg::Msg(Cmd::Face(family, answer)) => {
                     let _ = answer.send(s.font.letters(&s.lib, &family));
                 }
+                Msg::Msg(Cmd::Font(words)) => s.refont(words),
                 Msg::Msg(Cmd::Title(t)) => s.window.set_title(t),
                 Msg::Msg(Cmd::Pointer(name)) => {
                     s.shape = match name {
@@ -420,6 +428,25 @@ impl State {
         self.shared.store(scale, Ordering::Relaxed);
         let Some(font) = Font::new(&self.lib, &self.face, scale as f64) else { return };
         std::mem::replace(&mut self.font, font).free(&self.lib);
+    }
+
+    /// The font changed for another (a theme's typeface, the text's size): made at the screen's scale, the cells
+    /// counted again in the window as it is, and the dialog told, which draws again. One pango cannot make leaves
+    /// the font as it was.
+    fn refont(&mut self, words: String) {
+        if words == self.face || words.trim().is_empty() {
+            return;
+        }
+        let Some(font) = Font::new(&self.lib, &words, self.scale as f64) else {
+            return;
+        };
+        std::mem::replace(&mut self.font, font).free(&self.lib);
+        self.face = words;
+        let cell = self.font.cell;
+        self.grid = (((self.px.0 as f64 / cell.w) as u16).max(1), ((self.px.1 as f64 / cell.h) as u16).max(1));
+        self.draw();
+        (self.send)(Out::Font(self.font.cell, self.font.small_cell, self.font.ascent, self.font.big_cells));
+        self.say(Event::Resize(self.grid.0, self.grid.1));
     }
 
     fn say(&self, e: Event) {

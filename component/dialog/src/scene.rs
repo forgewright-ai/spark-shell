@@ -124,6 +124,8 @@ pub enum Target {
     ListRow(usize),
     /// A folder's order on the location line: the next order (v0.169).
     Sort,
+    /// A swatch of the color picker (v0.172): its strip, and its place on it.
+    Swatch(crate::picker::Strip, usize),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -247,6 +249,10 @@ pub enum Kind {
 /// Which body the place shown gets: home and apps their rows in pixels, where every row is one the layout
 /// knows; a question's page, a transition and every other place the grid's.
 pub fn kind(app: &App) -> Kind {
+    // a color being picked stands in place of the page, whichever place asked for it (v0.172)
+    if app.picker.is_some() && app.motion.is_none() {
+        return Kind::Page;
+    }
     match app.view {
         View::Home | View::Apps => kind_of(app, &app.list_items()),
         View::Folder(..)
@@ -260,8 +266,15 @@ pub fn kind(app: &App) -> Kind {
         View::Dest(d) if d == crate::app::SETTINGS_DEST => kind_of(app, &app.list_items()),
         View::Section(_) | View::Help => kind_of(app, &app.list_items()),
         View::Dest(d) if d == crate::app::WORKSPACE_DEST || d == crate::app::CALENDAR_DEST => kind_of(app, &app.list_items()),
+        View::Steps(_) if theme_steps(app) => kind_of(app, &app.list_items()),
         _ => Kind::Grid,
     }
+}
+
+/// The steps of a theme's row (rename, duplicate, delete): a page as the theme's other lists are (v0.172; they stood
+/// in the grid's tight lines under pages of rows).
+fn theme_steps(app: &App) -> bool {
+    matches!(app.view, View::Steps(p) if app.providers.get(p).is_some_and(|x| x.label == "theme"))
 }
 
 /// The sections a place of home shows in the new type (v0.162), apart from settings' pages.
@@ -271,6 +284,9 @@ const PLACES: [&str; 3] = ["notes", "system", "power"];
 fn kind_of(app: &App, items: &[Item]) -> Kind {
     if app.motion.is_some() || matches!(app.mode, Mode::Confirm(_)) {
         return Kind::Grid;
+    }
+    if app.picker.is_some() {
+        return Kind::Page;
     }
     match app.view {
         View::Home if items.iter().all(known) => Kind::Home,
@@ -288,6 +304,7 @@ fn kind_of(app: &App, items: &[Item]) -> Kind {
         View::Help if items.iter().all(known) => Kind::Place,
         View::Dest(d) if d == crate::app::WORKSPACE_DEST && items.iter().all(known) => Kind::Place,
         View::Dest(d) if d == crate::app::CALENDAR_DEST && items.iter().all(known) => Kind::Calendar,
+        View::Steps(_) if theme_steps(app) && items.iter().all(known) => Kind::Page,
         _ => Kind::Grid,
     }
 }
@@ -312,6 +329,7 @@ fn known(it: &Item) -> bool {
             | Item::Files(_)
             | Item::Here
             | Item::Key(..)
+            | Item::StepOf(_)
     )
 }
 
@@ -1390,6 +1408,11 @@ fn rows_of(app: &App, pen: &Pen, items: &[Item], shape: Shape, room: f64) -> Vec
                 .and_then(|x| x.tools.iter().find(|t| &t.name == name))
                 .map(|t| (one, plain(&crate::app::step_title(&t.title), t.description.clone(), false))),
             Item::More(_, n) => Some((one, plain(&format!("{} more", n), String::new(), true))),
+            Item::StepOf(n) => app
+                .steps_row
+                .as_ref()
+                .and_then(|r| r.tool.iter().chain(r.more.iter()).nth(*n))
+                .map(|c| (one, plain(&app.step_words(c), String::new(), c.children.is_some()))),
             Item::Ask => {
                 let words: String = app.input.split_whitespace().collect::<Vec<_>>().join(" ");
                 Some((one, plain("ask spark", words, false)))
@@ -2179,8 +2202,9 @@ fn lit(app: &App) -> Option<usize> {
 /// Whether the list holds the keys: a lit row then wears the line under its name, and the line shows no cursor.
 /// A row lit by a key, or lit with nothing typed in a place; never the row home keeps lit at its empty line, nor
 /// the one the words typed light, where the line still holds them.
+/// Nor while a step asks for a value: the prompt holds the keys then, and the row that asked stays lit under it.
 fn list_focus(app: &App) -> bool {
-    app.in_list && app.chip_focus.is_none() && (app.list_keys || (app.input.is_empty() && app.view != View::Home))
+    app.in_list && app.chip_focus.is_none() && !app.prompt_form() && (app.list_keys || (app.input.is_empty() && app.view != View::Home))
 }
 
 // ---------------------------------------------------------------- the bodies
@@ -2433,14 +2457,17 @@ fn theme_poster(app: &App, pen: &mut Pen, whole: Area, row: &crate::model::Row) 
     let caption = pen.fit(caption, Size::Small, w * 0.34);
     pen.text_end(right, base, &caption, Size::Small, pen.t.muted, false);
     let mut bottom = base;
-    if !row.id.starts_with("theme:apply:") {
+    // a work's own page says its kind under its name where its row has the words (v0.172), as the list before it did
+    if !row.id.starts_with("theme:apply:") || row.line.as_ref().is_some_and(|l| !l.is_empty()) {
         bottom += m.px(23.0);
         // a collection's description, a work's kind (pixel scene, dark): the lit row's line is the poster's;
         // the theme in use, with none, says its palette
+        // a palette whose reference is its own title says it once, in the name over this line (v0.172)
         let line = row.line.clone().filter(|l| !l.is_empty()).or_else(|| {
             (!room)
                 .then(|| page.and_then(|pg| pg.facts.get(1)))
                 .flatten()
+                .filter(|reference| reference.as_str() != name)
                 .map(|reference| format!("Palette  {reference}"))
         });
         if let Some(line) = line {
@@ -2461,6 +2488,41 @@ fn theme_poster(app: &App, pen: &mut Pen, whole: Area, row: &crate::model::Row) 
             top: bottom + m.px(16.0),
             ..list_area
         }
+    }
+}
+
+/// The wallpaper list's picture (v0.172): the wallpaper of the row lit, or the one in use, over the list, its name
+/// under it. The list named its wallpapers and showed none of them. The box keeps its place and size as the row
+/// lit changes; the list has what is under it.
+fn wall_poster(pen: &mut Pen, whole: Area, row: &crate::model::Row) -> Area {
+    let m = *pen.m;
+    let (w, height) = (whole.right - whole.left, whole.bottom - whole.top);
+    if height < m.px(360.0) {
+        return whole;
+    }
+    let top = whole.top + m.px(4.0);
+    let h = (w * 9.0 / 16.0).min(height * 0.45).max(m.px(32.0)).round();
+    let pw = w.min((h * 16.0 / 9.0).round());
+    pen.fill(whole.left, top, w, h, row.chip.first().copied().unwrap_or(pen.t.band));
+    if let Some(file) = row.preview.as_ref().filter(|f| std::path::Path::new(f).is_file()) {
+        pen.pictures.push(PictureAt {
+            x: whole.left + ((w - pw) / 2.0).round(),
+            y: top,
+            w: pw,
+            h,
+            file: file.clone(),
+            wave: None,
+            corner: false,
+        });
+    }
+    let base = top + h + m.px(32.0);
+    let label = pen.fit(&row.text, Size::Lead, w * 0.62);
+    pen.text(whole.left, base, &label, Size::Lead, pen.t.ink, true);
+    let caption = pen.fit(row.columns.first().map(String::as_str).unwrap_or(""), Size::Small, w * 0.34);
+    pen.text_end(whole.right, base, &caption, Size::Small, pen.t.muted, false);
+    Area {
+        top: base + m.px(16.0),
+        ..whole
     }
 }
 
@@ -2485,32 +2547,25 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         bare: true,
         c3: true,
     };
+    if let Some(p) = &app.picker {
+        return picker(app, pen, whole, p);
+    }
     if matches!(&app.view, View::Folder(_, uri) if uri.starts_with(crate::appearance::PALETTES) || uri == crate::appearance::COLORS)
-        && app.input.is_empty()
+        && app.query().is_empty()
         && whole.right - whole.left >= m.px(460.0)
         && whole.bottom - whole.top >= m.px(580.0)
     {
         return terminal_colors(app, pen, whole, shape);
     }
     let candidate = crate::appearance::candidate(app).map(|(_, row)| row);
-    let area = candidate.map_or(whole, |r| theme_poster(app, pen, whole, r));
-    let facts: Vec<Item>;
-    let items = if candidate.is_some_and(|r| r.id.starts_with("theme:apply:")) {
-        facts = items
-            .iter()
-            .filter(|it| {
-                app.row_ref(it).is_some_and(|r| {
-                    r.children.is_some()
-                        || r.id.starts_with("theme:apply:")
-                        || (r.id != "theme:detail:wall" && !r.columns.is_empty() && r.columns[0] != "keep current")
-                })
-            })
-            .cloned()
-            .collect();
-        &facts
-    } else {
-        items
+    let area = match (candidate, crate::appearance::wallpaper(app)) {
+        (Some(r), _) => theme_poster(app, pen, whole, r),
+        (None, Some(r)) => wall_poster(pen, whole, r),
+        (None, None) => whole,
     };
+    // a work's page shows the rows its provider gives, each one (v0.172). It once left out what a theme keeps as
+    // it is, and with those every row that had no second words: Duplicate was no longer drawn and still took the
+    // keys, so the row lit was not the row Enter ran, and a click on Export duplicated the theme
     let mut rows = rows_of(app, pen, items, shape, area.right - area.left - m.px(36.0));
     for r in rows.iter_mut().filter(|r| matches!(r.k, K::Map(_))) {
         r.h = screens::height(&m, area.bottom - area.top);
@@ -2539,6 +2594,108 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     list(app, pen, &rows, area, lit(app), list_focus(app), shape, app.scroll, key);
 }
 
+/// A color being picked (v0.172), in place of the page that asked: a sample of it, what it was beside what it is
+/// and how that reads, then a strip of swatches each for its hue, its shade and its strength, and the list's other
+/// colors to take as they are. The strip the arrows are on is lit as a row is, and the swatch in use wears the line
+/// a chosen value wears. The prompt above holds the color's value, to type one.
+fn picker(app: &App, pen: &mut Pen, whole: Area, p: &crate::picker::Picker) {
+    use crate::picker::Strip;
+    let (m, t) = (*pen.m, pen.t);
+    let row = app.asking_row();
+    let now = p.value();
+    let name = row.map_or("color", |r| r.text.as_str()).to_string();
+    let key = row.and_then(|r| r.id.strip_prefix("theme:color:")).map(str::to_string);
+    let wide = whole.right - whole.left;
+    let mut top = whole.top;
+    // the sample: a theme's color in the words a terminal shows in it, the color picked in its own place; a color
+    // those words do not wear is its own name, written in it
+    let of = |k: &str| {
+        if key.as_deref() == Some(k) {
+            return Some(now);
+        }
+        let id = format!("theme:color:{}", k);
+        app.folder.as_ref()?.2.rows.iter().find(|r| r.id == id)?.swatch
+    };
+    let block = m.px(66.0);
+    if let (Some(k), Some(bg), Some(fg), Some(accent), Some(blue), Some(green)) = (key.as_deref(), of("BG"), of("FG"), of("ACCENT"), of("ANSI_4"), of("ANSI_2"))
+    {
+        let x = whole.left + m.px(14.0);
+        pen.fill(whole.left, top, wide, block, bg);
+        let prompt = pen.text(x, top + m.px(24.0), "spark>", Size::Main, accent, true);
+        pen.text(x + prompt + m.cw, top + m.px(24.0), "ls", Size::Main, fg, false);
+        let y = top + m.px(50.0);
+        let src = pen.text(x, y, "src/", Size::Main, blue, false);
+        let readme = pen.text(x + src + 2.0 * m.cw, y, "README.md", Size::Main, fg, false);
+        pen.text(x + src + readme + 4.0 * m.cw, y, "build", Size::Main, green, false);
+        if !matches!(k, "BG" | "FG" | "ACCENT" | "ANSI_4" | "ANSI_2") {
+            let word = name.split_whitespace().last().unwrap_or("color");
+            pen.text_end(whole.right - m.px(14.0), top + m.px(24.0), word, Size::Main, now, false);
+        }
+    } else {
+        pen.fill(whole.left, top, wide, block, now);
+    }
+    top += m.px(74.0);
+    // what it was, touching what it is; its name; how it reads on the color it stands against
+    let one = m.px(44.0);
+    let x = whole.left + m.px(8.0);
+    let chip = m.px(22.0);
+    let mid = (top + one / 2.0).floor();
+    pen.fill(x, mid - chip / 2.0, chip, chip, p.was);
+    pen.fill(x + chip, mid - chip / 2.0, chip, chip, now);
+    let label = x + 2.0 * chip + m.px(10.0);
+    let said = p.contrast().map(|c| {
+        let ratio = format!("{}.{}:1", c / 100, (c % 100) / 10);
+        if c < 450 {
+            (format!("contrast {}, hard to read", ratio), t.alarm)
+        } else {
+            (format!("contrast {}", ratio), t.muted)
+        }
+    });
+    let end = whole.right - m.px(8.0);
+    let taken = said
+        .as_ref()
+        .map_or(0.0, |(s, color)| pen.text_end(end, mid + m.sup / 2.0, s, Size::Small, *color, false));
+    let word = pen.fit(&name, Size::Main, end - taken - label - m.cw);
+    pen.text(label, mid + m.up / 2.0, &word, Size::Main, t.ink, false);
+    top += one;
+    // the strips: a name, then its swatches from one column, each as wide as the room allows
+    let column = x + 12.0 * m.cw;
+    for strip in p.strips() {
+        let words = match strip {
+            Strip::Hue => "hue",
+            Strip::Shade => "shade",
+            Strip::Strength => "strength",
+            Strip::Theirs => "this theme",
+        };
+        let (swatches, at, on) = (p.swatches(strip), p.at(strip), p.strip == strip);
+        let mid = (top + one / 2.0).floor();
+        if on {
+            pen.fill(whole.from, top, whole.to - whole.from, one, t.lit);
+        }
+        let w = pen.text(x, mid + m.up / 2.0, words, Size::Main, t.ink, on);
+        if on {
+            pen.fill(x, mid + m.px(12.0), w, 2.0, t.accent);
+        }
+        let n = swatches.len().max(1);
+        let pitch = ((end - column) / n as f64).floor().min(m.px(30.0)).max(4.0);
+        let (side, tall) = ((pitch - m.px(4.0)).max(2.0), m.px(20.0));
+        for (i, c) in swatches.iter().enumerate() {
+            let cx = column + i as f64 * pitch;
+            // a swatch the ground would hide stands on a hairline of its own
+            if (0..3).all(|k| (i32::from(c[k]) - i32::from(if on { t.lit[k] } else { t.ground[k] })).abs() < 14) {
+                pen.fill(cx - 1.0, mid - tall / 2.0 - 1.0, side + 2.0, tall + 2.0, t.muted);
+            }
+            pen.fill(cx, mid - tall / 2.0, side, tall, *c);
+            // the swatch of the color as it is: the line a chosen value wears; the theme's own only while it is that color
+            if i == at && (strip != Strip::Theirs || *c == now) {
+                pen.fill(cx, mid + tall / 2.0 + m.px(3.0), side, 2.0, t.accent);
+            }
+            pen.hit(cx, top, pitch, one, Target::Swatch(strip, i));
+        }
+        top += one;
+    }
+}
+
 /// Pair normal and bright terminal colors so the same ANSI hue lines up across columns.
 fn terminal_colors(app: &App, pen: &mut Pen, whole: Area, shape: Shape) {
     let m = *pen.m;
@@ -2551,6 +2708,8 @@ fn terminal_colors(app: &App, pen: &mut Pen, whole: Area, shape: Shape) {
     };
     let mut columns = [vec![head("Base colors")], vec![head("Accents")]];
     let mut export = Vec::new();
+    // the theme's other variant: beside another theme's colors, in the second column (v0.172)
+    let mut beside = Vec::new();
     for (i, it) in app.picks().iter().enumerate() {
         let Some(r) = app.row_ref(it) else { continue };
         let row = Row {
@@ -2560,6 +2719,10 @@ fn terminal_colors(app: &App, pen: &mut Pen, whole: Area, shape: Shape) {
         };
         match r.id.as_str() {
             "theme:palette:export" | "theme:colors:from" => export.push(row),
+            "theme:colors:pair" => beside.push(Row {
+                k: of_row(&crate::model::Row { columns: vec![], ..r.clone() }),
+                ..row
+            }),
             "theme:color:BG" | "theme:color:FG" => columns[0].push(row),
             "theme:color:ACCENT" | "theme:color:MUTED" => columns[1].push(row),
             id => {
@@ -2610,17 +2773,26 @@ fn terminal_colors(app: &App, pen: &mut Pen, whole: Area, shape: Shape) {
         controls.top += m.px(32.0);
     }
     let top = controls.top + m.px(shape.one);
-    list(
-        app,
-        pen,
-        &export,
-        Area { bottom: top, ..controls },
-        lit(app),
-        list_focus(app),
-        shape,
-        0,
-        "palette/export".into(),
-    );
+    let first = if beside.is_empty() {
+        Area { bottom: top, ..controls }
+    } else {
+        Area {
+            bottom: top,
+            right: mid - m.px(8.0),
+            to: mid,
+            ..controls
+        }
+    };
+    list(app, pen, &export, first, lit(app), list_focus(app), shape, 0, "palette/export".into());
+    if !beside.is_empty() {
+        let second = Area {
+            bottom: top,
+            left: mid + m.px(8.0),
+            from: mid,
+            ..controls
+        };
+        list(app, pen, &beside, second, lit(app), list_focus(app), shape, 0, "palette/beside".into());
+    }
     for (i, rows) in columns.iter().enumerate() {
         let area = if i == 0 {
             Area {

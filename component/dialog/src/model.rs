@@ -32,6 +32,9 @@ pub struct Row {
     pub group: Option<String>,
     /// A color's sample, drawn beside the row (only a strict #rrggbb is read).
     pub swatch: Option<[u8; 3]>,
+    /// The color the row's own must read against (a text color's ground, the ground's text): the picker says the
+    /// contrast of the two (only a strict #rrggbb is read).
+    pub against: Option<[u8; 3]>,
     /// A row that opens the files to pick one for a tool of its own provider (the wallpaper's picture).
     pub pick: Option<Pick>,
     /// The day a row is for, "YYYY-MM-DD" (only that shape is read): the Calendar marks it.
@@ -521,6 +524,7 @@ pub fn rows(text: &str) -> Option<Rows> {
             children: r.get("children").and_then(Value::as_str).map(scrub),
             group: r.get("group").and_then(Value::as_str).map(scrub).filter(|g| !g.is_empty()),
             swatch: swatch(r.get("swatch")),
+            against: swatch(r.get("against")),
             pick: pick(r.get("pick")),
             date: r
                 .get("date")

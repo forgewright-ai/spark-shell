@@ -248,6 +248,8 @@ pub struct Drawn {
     pub other_columns: (u16, u16),
     /// The apps' icons in their rows (#230): main.rs draws each as sixel in its cells, which the buffer skips.
     pub icons: Vec<IconAt>,
+    /// The color picker's swatches (v0.172): each one's cells (x0, x1, y), its strip and its place on it.
+    pub swatches: Vec<(u16, u16, u16, crate::picker::Strip, usize)>,
 }
 
 /// An app's icon where it is drawn (#230): its first cell, its file, and whether its row is the lit one, since the
@@ -1580,8 +1582,70 @@ pub fn body_scroll(app: &App) -> usize {
     content_start(&items, selected, app.scroll, room)
 }
 
+/// A color being picked (v0.172), in cells: what it was beside what it is, its name and how it reads, then a strip
+/// each for its hue, its shade and its strength and the list's other colors, a swatch two cells wide. The swatch in
+/// use wears a line under it, and the strip the arrows are on is lit.
+fn picker(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn, p: &crate::picker::Picker) {
+    use crate::picker::Strip;
+    let pal = pen.pal.clone();
+    let rgb = |c: [u8; 3]| Color::Rgb(c[0], c[1], c[2]);
+    let block = |pen: &mut Pen, x: u16, y: u16, c: [u8; 3]| {
+        for k in 0..2 {
+            if x + k < pen.end(y) && y < pen.h {
+                let cell = &mut pen.buf[(x + k, y)];
+                cell.set_symbol(" ");
+                cell.set_bg(rgb(c));
+            }
+        }
+    };
+    let mut y = top;
+    if y >= bottom {
+        return;
+    }
+    let now = p.value();
+    block(pen, 4, y, p.was);
+    block(pen, 6, y, now);
+    let name = app.asking_row().map_or("color", |r| r.text.as_str());
+    let x = pen.put(9, y, name, pal.fg, false, false);
+    if let Some(c) = p.contrast() {
+        let said = format!("contrast {}.{}:1{}", c / 100, (c % 100) / 10, if c < 450 { ", hard to read" } else { "" });
+        pen.put(x + 3, y, &said, if c < 450 { pal.alarm } else { pal.muted }, false, false);
+    }
+    y += 2;
+    for strip in p.strips() {
+        if y + 1 >= bottom {
+            break;
+        }
+        let words = match strip {
+            Strip::Hue => "hue",
+            Strip::Shade => "shade",
+            Strip::Strength => "strength",
+            Strip::Theirs => "this theme",
+        };
+        let on = p.strip == strip;
+        pen.put(4, y, words, pal.fg, on, on);
+        let at = p.at(strip);
+        for (i, c) in p.swatches(strip).iter().enumerate() {
+            let cx = 16 + 2 * i as u16;
+            if cx + 2 > pen.end(y) {
+                break;
+            }
+            block(pen, cx, y, *c);
+            if i == at && (strip != Strip::Theirs || *c == now) {
+                pen.put(cx, y + 1, "\u{2594}\u{2594}", pal.accent, false, false);
+            }
+            drawn.swatches.push((cx, cx + 2, y, strip, i));
+        }
+        y += 2;
+    }
+}
+
 fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -> Vec<(u16, usize)> {
     drawn.body = (top, bottom);
+    if let Some(p) = &app.picker {
+        picker(app, pen, top, bottom, drawn, p);
+        return vec![];
+    }
     let mut at = vec![];
     let items = app.list_items();
     let picks: Vec<usize> = items.iter().enumerate().filter(|(_, it)| app.pickable_item(it)).map(|(i, _)| i).collect();

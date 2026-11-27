@@ -82,18 +82,38 @@ pub const WINDOW_TITLE_MAX: usize = 120;
 
 impl App {
     /// What the empty prompt says it takes: a form of apps names the one thing to type (the dialog design notes).
-    /// A name being typed in the prompt, a layout's or a note's: a form, as a category's name is in apps.
+    /// A value being typed in the prompt for a step: a form, as a category's name is in apps. Every step that asks
+    /// is one (v0.172): the prompt says what it takes and holds the cursor, the rows stand as they stood, Enter does
+    /// it. A layout's and a note's name were the only ones; a color or a theme's name left the prompt blank, with no
+    /// cursor, and the first letter typed emptied the page as if it were a search.
     pub fn prompt_form(&self) -> bool {
-        matches!(&self.mode, Mode::Ask { step, .. } if matches!(step.call.name.as_str(), "layout_save" | "layout_rename" | "notes_rename" | "files_rename"))
+        matches!(&self.mode, Mode::Ask { .. })
+    }
+
+    /// What a step asks for, in the words of its argument: the placeholder of its form.
+    fn asked_words(&self) -> Option<String> {
+        let Mode::Ask { step, field, masked } = &self.mode else { return None };
+        match step.call.name.as_str() {
+            "layout_save" => return Some("a name for this layout".into()),
+            "layout_rename" | "notes_rename" | "files_rename" => return Some("new name".into()),
+            _ => {}
+        }
+        let plain = field.replace('_', " ");
+        if *masked {
+            return Some(format!("the {}, not shown", plain));
+        }
+        let said = self
+            .tool_of(step)
+            .and_then(|t| t.schema.pointer(&format!("/properties/{}/description", field)))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|d| !d.is_empty() && d.chars().count() <= 60 && !d.contains('\n'));
+        Some(said.map(str::to_string).unwrap_or_else(|| format!("the {}", plain)))
     }
 
     pub fn placeholder(&self) -> String {
-        if let Mode::Ask { step, .. } = &self.mode {
-            match step.call.name.as_str() {
-                "layout_save" => return "a name for this layout".into(),
-                "layout_rename" | "notes_rename" | "files_rename" => return "new name".into(),
-                _ => {}
-            }
+        if let Some(words) = self.asked_words() {
+            return words;
         }
         if self.view == View::Apps {
             if let crate::apps::Page::Form(form) = &self.apps.page {
@@ -381,6 +401,16 @@ pub fn verb_of(tool: &str) -> &'static str {
     }
 }
 
+/// What Enter does with a value typed for a step, in a word: a name is saved, whatever the step does with it (a
+/// rename, a copy, a new theme), and any other value by its step's own word.
+pub fn ask_verb(tool: &str) -> &'static str {
+    match tool.rsplit('_').next().unwrap_or("") {
+        "rename" | "save" | "duplicate" => "Save",
+        "add" => "Add",
+        _ => verb_of(tool),
+    }
+}
+
 /// HOME, the one root the dialog hands the files provider; an attachment must sit under it.
 /// The one argument a command line gives a tool: its one required argument that is no secret, else
 /// its one argument. None when it takes more, or none.
@@ -474,6 +504,50 @@ fn state_dir() -> Option<std::path::PathBuf> {
         .filter(|s| s.starts_with('/'))
         .or_else(|| home().map(|h| h + "/.local/state"))?;
     Some(std::path::PathBuf::from(base).join("spark-shell").join("dialog"))
+}
+
+/// The folder a pick of these kinds of file starts in: the person's folder for them (XDG user dirs, else its usual
+/// names), when the files' root is the home folder and that folder is in it. None: the root itself.
+fn pick_start(types: &[String], root: &str) -> Option<String> {
+    let has = |kinds: &[&str]| types.iter().any(|t| kinds.contains(&t.as_str()));
+    let (key, names): (&str, [&str; 2]) = if has(&["jpg", "jpeg", "png", "webp", "gif"]) {
+        ("XDG_PICTURES_DIR", ["pictures", "Pictures"])
+    } else if has(&["mp4"]) {
+        ("XDG_VIDEOS_DIR", ["videos", "Videos"])
+    } else if has(&["spark-theme"]) {
+        ("XDG_DOWNLOAD_DIR", ["downloads", "Downloads"])
+    } else {
+        return None;
+    };
+    let home = home()?;
+    let uri = |path: &str| format!("spark-shell://files/rows/{}", search::b64(path));
+    if root != uri(&home) {
+        return None;
+    }
+    let config = std::env::var("XDG_CONFIG_HOME")
+        .ok()
+        .filter(|c| c.starts_with('/'))
+        .unwrap_or_else(|| format!("{}/.config", home));
+    let named = std::fs::read_to_string(format!("{}/user-dirs.dirs", config))
+        .ok()
+        .and_then(|text| user_dir(&text, key, &home));
+    named
+        .into_iter()
+        .chain(names.iter().map(|n| format!("{}/{}", home, n)))
+        .find(|d| d.len() < 1024 && d.starts_with(&format!("{}/", home)) && std::path::Path::new(d).is_dir())
+        .map(|d| uri(&d))
+}
+
+/// A folder of the XDG user dirs file: the line KEY="$HOME/name" or KEY="/whole/path", with HOME in place.
+fn user_dir(text: &str, key: &str, home: &str) -> Option<String> {
+    let value = text.lines().find_map(|l| l.trim().strip_prefix(key)?.strip_prefix('='))?;
+    let value = value.trim().trim_matches('"');
+    let path = match value.strip_prefix("$HOME") {
+        Some(rest) => format!("{}{}", home, rest),
+        None => value.to_string(),
+    };
+    let path = path.trim_end_matches('/').to_string();
+    (path.starts_with('/') && !path.split('/').any(|part| part == "..") && !path.chars().any(char::is_control)).then_some(path)
 }
 
 /// What a folder's list holds and leaves out.
@@ -920,6 +994,8 @@ pub struct App {
     pub cursor: usize,
     /// The name a rename offered, while it stands lit in the prompt (App::offer_name).
     pub name_lit: Option<String>,
+    /// The color being picked for a step that asks for one (v0.172): its strips stand in place of the page.
+    pub picker: Option<crate::picker::Picker>,
     /// Requests from this window only. Forms and confirmations never enter here.
     prompt_history: VecDeque<String>,
     history_at: Option<usize>,
@@ -1138,6 +1214,7 @@ impl App {
             input: String::new(),
             cursor: 0,
             name_lit: None,
+            picker: None,
             prompt_history: VecDeque::new(),
             history_at: None,
             history_draft: None,
@@ -1262,9 +1339,12 @@ impl App {
         self.staged.as_ref().is_some_and(|s| s.text == self.input)
     }
 
-    /// What the list is searched by: the words typed, never the commands spark put in the box.
+    /// What the list is searched by: the words typed, never the commands spark put in the box, and never a value
+    /// being typed in answer: for a step (a color's hex matched no row, so the page emptied at the first letter), a
+    /// pairing code or a provider's question. At home such a value, a password among them, went to the files' and
+    /// the notes' search once typing rested (v0.172).
     pub(crate) fn query(&self) -> &str {
-        if self.staged_now() {
+        if self.staged_now() || matches!(self.mode, Mode::Ask { .. } | Mode::Pair { .. } | Mode::Elicit { .. }) {
             ""
         } else {
             &self.input
@@ -1806,7 +1886,21 @@ impl App {
             }
             Kind::Call(_) => {
                 self.clear_pair(idx);
-                self.called(idx, n, result, error)
+                // arguments a provider would not take (-32602) are a step refused before it began, and the provider
+                // said why: its sentence is the reply. It was worded as a result that could not be reported, which
+                // says the step may have run (v0.172: a name over its length, a value that is none)
+                let refused = valid && has_error && v["error"]["code"] == -32602;
+                match error.filter(|m| refused && !m.trim().is_empty()) {
+                    Some(why) => self.called(idx, n, Some(json!({"content": [{"type": "text", "text": why}], "isError": true})), None),
+                    None => {
+                        let error = if valid {
+                            v.get("error").and_then(|e| e.get("message")).and_then(Value::as_str).map(scrub)
+                        } else {
+                            Some("the provider returned an invalid protocol reply".into())
+                        };
+                        self.called(idx, n, result, error)
+                    }
+                }
             }
             Kind::Set => {
                 let refused = error.is_some() || result.as_ref().and_then(|r| r.get("isError")).and_then(Value::as_bool).unwrap_or(false);
@@ -1972,7 +2066,10 @@ impl App {
         if self.takes_words(row).is_some() {
             return true;
         }
-        let hay = format!("{} {} {}", self.providers[prov].label, row.text, row.line.as_deref().unwrap_or("")).to_lowercase();
+        // a theme is shown by its title (Mars Conquest) and still found by the name a command takes (mars-conquest),
+        // which its row's id ends with
+        let name = row.id.strip_prefix("theme:").and_then(|id| id.rsplit(':').next()).unwrap_or("");
+        let hay = format!("{} {} {} {}", self.providers[prov].label, row.text, row.line.as_deref().unwrap_or(""), name).to_lowercase();
         words.to_lowercase().split_whitespace().all(|w| hay.contains(w))
     }
 
@@ -3400,16 +3497,27 @@ impl App {
         let typed = self.query().trim().to_lowercase();
         let Some(name) = self.name_of(it) else { return 0 };
         if typed.is_empty() || typed.contains('\n') {
-            0
-        } else if name == typed {
-            3
-        } else if name.starts_with(&typed) {
-            2
-        } else if !typed.contains(' ') && name.split_whitespace().any(|w| w.starts_with(&typed)) {
-            1
-        } else {
-            0
+            return 0;
         }
+        let score = |name: &str| {
+            if name == typed {
+                3
+            } else if name.starts_with(&typed) {
+                2
+            } else if !typed.contains(' ') && name.split_whitespace().any(|w| w.starts_with(&typed)) {
+                1
+            } else {
+                0
+            }
+        };
+        // a theme shown by its title is named by the name a command takes too (mars-conquest), the end of its row's id
+        let other = self
+            .row_ref(it)
+            .and_then(|r| r.id.strip_prefix("theme:"))
+            .and_then(|id| id.rsplit(':').next())
+            .map(str::to_lowercase)
+            .unwrap_or_default();
+        score(&name).max(if other.is_empty() { 0 } else { score(&other) })
     }
 
     /// The pick lit as words are typed: the one they name best; the request when they name none (#28),
@@ -3428,6 +3536,10 @@ impl App {
     /// The words changed: the lit row follows them; with no words, nothing is lit.
     fn follow_words(&mut self) {
         self.list_keys = false;
+        // a color typed whole while one is picked: the strips follow it
+        if let (Some(p), Some(c)) = (self.picker.as_mut(), crate::picker::typed(&self.input)) {
+            p.set(c);
+        }
         self.search_later();
         if self.mode != Mode::Normal {
             return;
@@ -3668,7 +3780,50 @@ impl App {
         }
     }
 
+    /// An arrow while a step asks for a value (v0.172): a color's strips take it, and the prompt says the color they
+    /// make; for any other value Up and Down move between the prompt's lines and Left and Right are its cursor's.
+    /// The list behind stands still: its lit row is the one that asked. False where no step asks or the key is the
+    /// cursor's.
+    fn ask_arrow(&mut self, dx: i8, dy: i8) -> bool {
+        if !matches!(self.mode, Mode::Ask { .. }) {
+            return false;
+        }
+        if let Some(p) = self.picker.as_mut() {
+            // up and down change the strip and no color: what is typed stays, a color's name among it
+            if dy != 0 {
+                p.row(dy > 0);
+                return true;
+            }
+            p.step(dx > 0);
+            let hex = crate::picker::hex_of(p.value());
+            self.offer_name(hex);
+            return true;
+        }
+        if dy == 0 {
+            return false;
+        }
+        self.name_lit = None;
+        let (l, c) = self.at();
+        if dy < 0 && l > 0 {
+            self.put_at(l - 1, c);
+        } else if dy > 0 && l + 1 < self.lines() {
+            self.put_at(l + 1, c);
+        }
+        true
+    }
+
+    /// A swatch of the picker clicked: the color follows it, as an arrow's step does.
+    pub fn picker_click(&mut self, strip: crate::picker::Strip, i: usize) {
+        let Some(p) = self.picker.as_mut() else { return };
+        p.pick(strip, i);
+        let hex = crate::picker::hex_of(p.value());
+        self.offer_name(hex);
+    }
+
     pub fn up(&mut self) {
+        if self.ask_arrow(0, -1) {
+            return;
+        }
         self.name_lit = None;
         if self.preview_key() {
             return if self.zoomed() { self.preview_pan(0.0, -1.0) } else { self.preview_file(-1) };
@@ -3697,6 +3852,9 @@ impl App {
     }
 
     pub fn down(&mut self) {
+        if self.ask_arrow(0, 1) {
+            return;
+        }
         self.name_lit = None;
         if self.preview_key() {
             return if self.zoomed() { self.preview_pan(0.0, 1.0) } else { self.preview_file(1) };
@@ -4107,6 +4265,9 @@ impl App {
             .filter(|c| *c == '\n' || (plain && *c == '\t') || !c.is_control())
             .collect();
         self.insert(&t);
+        if let (Some(p), Some(c)) = (self.picker.as_mut(), crate::picker::typed(&self.input)) {
+            p.set(c); // a color pasted whole: the strips follow it, as one typed
+        }
     }
 
     /// A rename starts from the name as it is, lit in the prompt: the first letter typed replaces it whole, as F2
@@ -4216,6 +4377,9 @@ impl App {
     /// whether the focus is in the prompt or in the reminders under them (#59); else the cursor in
     /// the draft.
     pub fn left(&mut self) {
+        if self.ask_arrow(-1, 0) {
+            return;
+        }
         self.name_lit = None;
         if self.preview_key() {
             if self.zoomed() {
@@ -4259,6 +4423,9 @@ impl App {
     }
 
     pub fn right(&mut self) {
+        if self.ask_arrow(1, 0) {
+            return;
+        }
         self.name_lit = None;
         if self.preview_key() {
             return if self.zoomed() {
@@ -4333,6 +4500,11 @@ impl App {
     /// line's start and end.
     pub fn line_start(&mut self) {
         self.name_lit = None;
+        // a value being asked for: the keys are the prompt's, and the list behind stands still (v0.172)
+        if self.prompt_form() {
+            let (l, _) = self.at();
+            return self.put_at(l, 0);
+        }
         if self.preview_key() && self.preview_plays() {
             return self.preview_seek(0.0); // Home: a sound or a video from its start (#151)
         }
@@ -4353,6 +4525,10 @@ impl App {
 
     pub fn line_end(&mut self) {
         self.name_lit = None;
+        if self.prompt_form() {
+            let (l, _) = self.at();
+            return self.put_at(l, usize::MAX);
+        }
         // with nothing typed the line has no end to go to: End is the list's last row, on a page just opened too (v0.129.2)
         if !self.in_list && self.input.is_empty() && self.chip_focus.is_none() && !self.preview_key() && !self.picks().is_empty() {
             self.in_list = true;
@@ -4371,6 +4547,9 @@ impl App {
     /// Page up and down: in a list, the lit row by a screen of rows; else the content area, by most of
     /// its height.
     pub fn page(&mut self, d: i32) {
+        if self.prompt_form() {
+            return; // a value being asked for: the page behind stands still
+        }
         // a page is the content's rows less one, so a line is shared between pages
         let step = self.list_room().saturating_sub(1).max(4) as usize;
         if self.view == View::Apps && matches!(self.apps.page, crate::apps::Page::Details(_) | crate::apps::Page::Technical(_)) {
@@ -4503,6 +4682,7 @@ impl App {
             // a question let go is a step not run: nothing is said, Esc said it (#196)
             Mode::Confirm(_) | Mode::Ask { .. } => {
                 self.hidden = false;
+                self.picker = None;
                 self.input.clear();
                 self.unstash();
                 self.question_left();
@@ -4589,7 +4769,11 @@ impl App {
             field: String::new(),
             what: String::new(),
         });
-        self.open_children(f, &root);
+        // a picture is picked from the pictures folder, a loop from the videos, a file someone sent from the
+        // downloads, where the home folder has one: the pick opened on the home folder's list of folders, with no
+        // file of the kind in sight (v0.172)
+        let start = pick_start(&pk.types, &root).unwrap_or(root);
+        self.open_children(f, &start);
     }
 
     fn go_back(&mut self, v: View) {
@@ -4675,13 +4859,54 @@ impl App {
     /// A bar block clicked while home is open (lib/home.py's request, crate::goto): home goes to that
     /// block's section as a click on its row would, the draft and the way back kept; true when it moved.
     pub fn go_to(&mut self, name: &str) -> bool {
+        // a file being picked, or one to attach, is let go first, at the view it was asked from: left open, the pick
+        // followed home to every place after, each list cut to the files it takes and the footer still asking for one
+        // and a value being asked for, or a question, as Esc lets it go: it stood, unseen, over the place home went to,
+        // and the next Enter there answered it
+        let asked = matches!(self.mode, Mode::Ask { .. } | Mode::Confirm(_));
+        if asked {
+            self.back_key();
+        }
+        let dropped = self.pick_let_go() || asked;
         match view_named(&self.providers, name) {
             Some(v) if v != self.view => {
                 self.go(v);
                 true
             }
-            _ => false,
+            _ => dropped,
         }
+    }
+
+    /// A pick or an attachment under way ends with nothing picked, the view it started from back; true when one was.
+    fn pick_let_go(&mut self) -> bool {
+        let Some((depth, back)) = self
+            .picking
+            .take()
+            .map(|pk| (pk.depth, pk.back))
+            .or_else(|| self.attaching.take().map(|(v, d)| (d, v)))
+        else {
+            return false;
+        };
+        self.files.pending = None;
+        self.came_from.truncate(depth);
+        // a folder picked for a step keeps a copy of the view it began in, so Esc could cancel: it goes with the pick
+        if self.came_from.last() == Some(&back) {
+            self.came_from.pop();
+        }
+        // the words typed to find the file were the pick's: the view it began in has its own again
+        self.set_input(String::new());
+        self.view = back;
+        self.prompt_arrive();
+        self.files_on_view();
+        if let View::Folder(p, uri) = self.view.clone() {
+            self.read_folder(p, &uri);
+        } else {
+            self.folder = None;
+        }
+        self.sel = 0;
+        self.in_list = false;
+        self.scroll = 0;
+        true
     }
 
     pub(crate) fn go(&mut self, v: View) {
@@ -4810,14 +5035,35 @@ impl App {
                 }
             }
         }
-        // a name left empty: the form stands, as files' does
-        if self.prompt_form() && self.input.trim().is_empty() {
-            return self.refuse("type a name, or Esc cancels");
+        // a value left empty: the form stands, as files' does, and says what it takes
+        if self.prompt_form()
+            && if self.plain_text_input() {
+                self.input.is_empty()
+            } else {
+                self.input.trim().is_empty()
+            }
+        {
+            let what = match &self.mode {
+                Mode::Ask { step, .. } if step.call.name.ends_with("_rename") || step.call.name.ends_with("_save") => "a name".to_string(),
+                Mode::Ask { field, masked: true, .. } => format!("the {}", field.replace('_', " ")),
+                _ => self.asked_words().unwrap_or_else(|| "a value".into()),
+            };
+            return self.refuse(&format!("type {}, or Esc cancels", what));
         }
         match std::mem::replace(&mut self.mode, Mode::Normal) {
             Mode::Confirm(_) => return,
             Mode::Ask { mut step, field, .. } => {
-                let typed = std::mem::take(&mut self.input);
+                let mut typed = std::mem::take(&mut self.input);
+                // a color picked: the one in the prompt, as the provider takes it, typed, pasted or made by the
+                // strips; words that are no color (a color's name) go as typed, and the provider says what it makes
+                // of them
+                if let Some(p) = self.picker.take() {
+                    if let Some(c) = crate::picker::typed(&typed) {
+                        typed = crate::picker::hex_of(c);
+                    } else if typed.trim().is_empty() {
+                        typed = crate::picker::hex_of(p.value());
+                    }
+                }
                 self.unstash();
                 let plain = self
                     .tool_of(&step)
@@ -4964,10 +5210,20 @@ impl App {
             // never a row that happens to match them (a question that names an app does not open it)
             let typed = self.input.trim().to_string();
             if typed.is_empty() {
-                return self.refuse("nothing is lit: an arrow or a click lights a row");
+                // a theme's page says what Enter does there (apply, on a work's page; open, explore, details): it
+                // does it with no row lit, on the row the picture is of. The keys' line said apply and Enter
+                // answered that nothing was lit (v0.172)
+                let Some(id) = crate::appearance::candidate(self).map(|(_, r)| r.id.clone()) else {
+                    return self.refuse("nothing is lit: an arrow or a click lights a row");
+                };
+                self.light_row(&id);
+                if !self.in_list {
+                    return self.refuse("nothing is lit: an arrow or a click lights a row");
+                }
+            } else {
+                self.set_input(String::new());
+                return self.request(&typed);
             }
-            self.set_input(String::new());
-            return self.request(&typed);
         }
         let picks = self.picks();
         let sel = self.sel.min(picks.len().saturating_sub(1));
@@ -5296,6 +5552,10 @@ impl App {
     /// the file attached. How talk works is a setting (Settings > Talk), not a control.
     pub fn chip(&mut self, c: usize) {
         self.chip_focus = None;
+        // a value being asked for: attach and talk wait until it is given or let go
+        if self.prompt_form() {
+            return;
+        }
         match c {
             5 => self.ask(),
             6 => self.conversation(),
@@ -6087,15 +6347,46 @@ impl App {
         if !call.name.ends_with("_rename") {
             return None;
         }
-        let holds = |r: &&model::Row| r.tool.iter().chain(r.more.iter()).any(|c| c == call);
-        let folder = self.folder.iter().flat_map(|(_, _, rows)| rows.rows.iter());
-        let hits = self.hits.iter().map(|(_, r)| r);
-        let rows = self.providers.get(prov).into_iter().flat_map(|p| p.rows.rows.iter());
-        if let Some(row) = self.steps_row.iter().chain(rows).chain(folder).chain(hits).find(holds) {
+        // a row that is the thing, its rename among its other steps: its words are the name. A row that is the
+        // rename (a theme's page has one) says "Rename", and offered that: there the argument names the thing
+        if let Some(row) = self.asked_row(prov, call).filter(|r| r.more.iter().any(|c| c == call)) {
             return Some(row.text.clone());
         }
         let name = call.arguments.get("name").or_else(|| call.arguments.get("path"))?.as_str()?;
         Some(name.rsplit('/').next().unwrap_or(name).to_string())
+    }
+
+    /// The row a step was asked from: the one that holds its call, among the steps open, the place's rows, the
+    /// list's and what was found.
+    fn asked_row(&self, prov: usize, call: &Call) -> Option<&model::Row> {
+        let holds = |r: &&model::Row| r.tool.iter().chain(r.more.iter()).any(|c| c == call);
+        let folder = self.folder.iter().flat_map(|(_, _, rows)| rows.rows.iter());
+        let hits = self.hits.iter().map(|(_, r)| r);
+        let rows = self.providers.get(prov).into_iter().flat_map(|p| p.rows.rows.iter());
+        self.steps_row.iter().chain(folder).chain(rows).chain(hits).find(holds)
+    }
+
+    /// The row the step now asking was asked from.
+    pub(crate) fn asking_row(&self) -> Option<&model::Row> {
+        match &self.mode {
+            Mode::Ask { step, .. } => self.asked_row(step.prov, &step.call),
+            _ => None,
+        }
+    }
+
+    /// The picker a step that asks for a color opens: on the color its row shows now, to read against the color
+    /// the row names, with the other colors of the same list to take as they are.
+    fn picker_for(&self, prov: usize, call: &Call) -> crate::picker::Picker {
+        let row = self.asked_row(prov, call);
+        let was = row.and_then(|r| r.swatch.or_else(|| r.chip.first().copied())).unwrap_or([0x80; 3]);
+        let theirs = self
+            .folder
+            .iter()
+            .flat_map(|(_, _, rows)| rows.rows.iter())
+            .filter(|r| row.is_some_and(|me| me.swatch.is_some() && me.id != r.id))
+            .filter_map(|r| r.swatch.map(|c| (r.text.clone(), c)))
+            .collect();
+        crate::picker::Picker::new(was, row.and_then(|r| r.against), theirs)
     }
 
     /// A step: an argument asked when it lacks one; a typed yes when it is risky, then the call. Nothing is
@@ -6123,11 +6414,23 @@ impl App {
                 return;
             }
             let masked = gate::secret(&field, self.tool_of(&step).and_then(|t| t.schema.pointer(&format!("/properties/{}", field))));
+            let color = self
+                .tool_of(&step)
+                .and_then(|t| t.schema.pointer(&format!("/properties/{}/format", field)))
+                .and_then(Value::as_str)
+                == Some("color");
             self.stash_draft();
             let name = self.current_name(step.prov, &step.call);
+            // a color is picked: the strips open on the color the row has now, the theme's other colors beside them
+            self.picker = color.then(|| self.picker_for(step.prov, &step.call));
             self.mode = Mode::Ask { step, field, masked };
+            // the prompt takes the keys, and the row asked from stays lit under it
+            self.list_keys = false;
+            self.chip_focus = None;
             if let Some(name) = name {
                 self.offer_name(name);
+            } else if let Some(p) = &self.picker {
+                self.offer_name(crate::picker::hex_of(p.value()));
             }
             return;
         }
@@ -6529,6 +6832,10 @@ impl App {
     /// A click on row `n` (the dialog design notes): a menu's row acts at once; an object's row is selected by the first
     /// click and acts on a second within DOUBLE_CLICK, as a file does on every desktop.
     pub fn clicked(&mut self, n: usize, now: Instant) {
+        // a value being asked for: the rows behind it take no click, as behind a form of files; the prompt keeps the keys
+        if self.prompt_form() {
+            return;
+        }
         // the page is drawn before the next event is read: a double click's second lands on what the question put under
         // the pointer, and the verb's row stands where the row that asked stood (v0.129.3)
         if matches!(self.mode, Mode::Confirm(_)) && self.question_click.is_some_and(|at| now.saturating_duration_since(at) < DOUBLE_CLICK) {
@@ -7090,29 +7397,16 @@ impl App {
         match &self.mode {
             // the question's page: Esc keeps; Enter has no chip, it acts on the lit row
             Mode::Confirm(_) => return vec![("keep ".to_string(), false), ("Esc".to_string(), true)],
-            Mode::Ask { .. } if self.prompt_form() => {
-                // a form says what to type in the prompt's placeholder, and Enter saves (the dialog design notes)
+            Mode::Ask { step, .. } => {
+                // a form says what to type in the prompt's placeholder, and Enter does it, by the step's own word: a
+                // name is saved, a color used, a network connected (the dialog design notes; every step that asks, v0.172)
                 let mut v = key("Cancel", "Esc");
                 v.push(gap());
-                v.extend(key("Save", "Enter"));
-                return v;
-            }
-            Mode::Ask { step, field, masked } => {
-                // the argument's own description when its tool gives one ("when and what: fri 9am call the vet")
-                let said = self
-                    .tool_of(step)
-                    .and_then(|t| t.schema.pointer(&format!("/properties/{}/description", field)))
-                    .and_then(Value::as_str)
-                    .map(str::to_string);
-                let what = if *masked {
-                    format!("the {} for {}, not shown", field, step.line)
-                } else if let Some(d) = said {
-                    d
-                } else {
-                    format!("the {} for {}", field, step.line)
-                };
-                let mut v = vec![(what, false)];
-                v.extend(esc("Cancel"));
+                v.extend(key(ask_verb(&step.call.name), "Enter"));
+                if self.picker.is_some() {
+                    v.push(gap());
+                    v.extend(key("Change", &self.cfg.keys.labels(&[HintKey::Left, HintKey::Right])));
+                }
                 return v;
             }
             Mode::Pair { message, kind, .. } => {
@@ -7256,8 +7550,11 @@ impl App {
                     .is_some_and(|tail| tail.starts_with("/collection/"))
                 {
                     add(&mut v, "Details", "Enter");
-                } else if self.lit_row().is_some_and(|(_, r)| r.children.is_some()) {
-                    add(&mut v, "Open", "Enter");
+                } else if self.in_list {
+                    // a work's page: the row lit says its own word (Export, Duplicate; Apply stood there whatever was lit)
+                    if let Some(word) = self.lit_enter_word() {
+                        add(&mut v, word, "Enter");
+                    }
                 } else if crate::appearance::candidate(self).is_some_and(|(_, r)| r.sign != "check") {
                     add(&mut v, "Apply", "Enter");
                 }
@@ -7266,25 +7563,41 @@ impl App {
                     add(&mut v, "Palette", "F4");
                 }
             }
+            // the palette, its exports and the colors: Enter's word while a row is lit, the row's own. It stood there
+            // with none lit, when Enter answered that nothing was (v0.172)
             View::Folder(_, uri) if uri.starts_with(crate::appearance::PALETTES) => {
-                add(
-                    &mut v,
-                    if self.lit_row().is_some_and(|(_, r)| r.children.is_some()) {
-                        "Export"
-                    } else {
-                        "Copy hex"
-                    },
-                    "Enter",
-                );
+                if self.in_list {
+                    add(
+                        &mut v,
+                        if self.lit_row().is_some_and(|(_, r)| r.children.is_some()) {
+                            "Export"
+                        } else {
+                            "Copy hex"
+                        },
+                        "Enter",
+                    );
+                }
             }
             View::Folder(_, uri) if uri.starts_with(crate::appearance::EXPORTS) => {
-                add(&mut v, "Save", "Enter");
+                if self.in_list {
+                    add(&mut v, "Save", "Enter");
+                }
             }
             View::Folder(_, uri) if uri == crate::appearance::COLORS => {
-                add(&mut v, "Change", "Enter");
+                if let Some(word) = self.lit_enter_word() {
+                    add(&mut v, word, "Enter");
+                }
             }
             View::Dest(_) | View::Section(_) | View::Folder(..) | View::Found(..) => {
                 let rows = self.view_rows();
+                // a list of the theme's (wallpapers, pointers, motions, your themes) and what its words find: what Enter
+                // does to the row lit, in its word. Such a row had none: a theme found by its name was applied by a
+                // key the line never named
+                let theme = crate::appearance::section(&self.view) || matches!(&self.view, View::Section(p) if self.providers[*p].label == "theme");
+                let found = theme && !self.input.is_empty();
+                if let Some(word) = self.lit_enter_word().filter(|_| theme) {
+                    add(&mut v, word, "Enter");
+                }
                 if self.pixels && rows.iter().any(|r| r.map.is_some()) {
                     add(&mut v, "Open", "Enter");
                 }
@@ -7299,7 +7612,8 @@ impl App {
                 if rows.iter().any(|r| !r.more.is_empty()) {
                     add(&mut v, "Actions", "F9");
                 }
-                if rows.iter().any(|r| r.step.is_some()) {
+                // among what the theme's words found, the arrows change a value only on a row that has one
+                if rows.iter().any(|r| r.step.is_some()) && (!found || (self.in_list && self.lit_row().is_some_and(|(_, r)| r.step.is_some()))) {
                     add(&mut v, "Change", "\u{2190} \u{2192}");
                 }
                 if rows.iter().any(|r| r.place.is_some()) {
@@ -7314,6 +7628,35 @@ impl App {
             }
         }
         v
+    }
+
+    /// What Enter does to the row lit on a page of the theme's, in a word; none while no row is lit, and for a row
+    /// whose value the arrows or a flip change.
+    fn lit_enter_word(&self) -> Option<&'static str> {
+        if !self.in_list {
+            return None;
+        }
+        let (_, r) = self.lit_row()?;
+        if r.switch.is_some() || r.step.is_some() {
+            return None;
+        }
+        if r.pick.is_some() {
+            return Some("Choose");
+        }
+        if r.children.is_some() {
+            return Some("Open");
+        }
+        let tool = r.tool.as_ref()?;
+        Some(match tool.name.as_str() {
+            "theme_palette" if r.sign == "check" => return None,
+            "theme_palette" => "Apply",
+            "theme_copy_color" => "Copy hex",
+            "theme_export_palette" => "Save",
+            "theme_color" => "Change",
+            "theme_export" => "Export",
+            "theme_duplicate" => "Duplicate",
+            name => verb_of(name),
+        })
     }
 
     /// Every row the view holds, the words typed notwithstanding: what its key row offers is read from them all,
@@ -7694,6 +8037,34 @@ impl App {
         if let Some(t) = sc.get("transitions").and_then(Value::as_str) {
             self.want_transitions(t, sc.get("palette").is_some());
         }
+    }
+
+    /// The look changed outside this home (the prompt, a key, another home; crate::look): its colors and its glyph
+    /// family worn as a theme step's answer brings them, and every place read again, the open page with it, so
+    /// what a row says of the theme is the theme in use (v0.172).
+    pub fn wear_look(&mut self, look: &crate::look::Look) {
+        let palette = &look.palette;
+        if crate::palette::step_palette_ok(palette) {
+            self.wear_family(palette);
+            self.palette = Some(palette.clone());
+        }
+        // and its opening and closing: home closed with the animation of the theme before
+        if let Some(t) = &look.transitions {
+            self.want_transitions(t, true);
+        }
+        // a place in view reads again now; any other when it is next opened, once it is watched: what its provider
+        // makes apart for the new look (a screen's small picture) is said only to a host that watches, and a read
+        // made unseen left the display's map empty of pictures
+        let home = self.view == View::Home;
+        for p in self.providers.iter_mut() {
+            if p.subscribed.is_some() || (home && HOME_STATES.contains(&p.label.as_str())) {
+                p.dirty = true;
+            } else {
+                p.last_read = None;
+            }
+        }
+        // the picture of the theme in use is asked for again: its page has the same name under another theme
+        self.files.peek = None;
     }
 
     /// A theme step's animation (#126): a folder of GIFs, `draw:PIECE` (drawn in the palette, #247), or nothing for
@@ -8303,5 +8674,28 @@ impl App {
             Reel::Close if ms >= close => self.quit = Some(0),
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod pick_start_tests {
+    use super::*;
+
+    #[test]
+    fn a_user_dirs_line_names_a_folder_under_home_or_a_whole_path() {
+        let text =
+            "# comment\nXDG_DOWNLOAD_DIR=\"$HOME/downloads\"\nXDG_PICTURES_DIR=\"$HOME/art/\"\nXDG_VIDEOS_DIR=\"/mnt/films\"\nXDG_MUSIC_DIR=\"$HOME/../x\"\n";
+        assert_eq!(user_dir(text, "XDG_PICTURES_DIR", "/srv/ada").as_deref(), Some("/srv/ada/art"));
+        assert_eq!(user_dir(text, "XDG_VIDEOS_DIR", "/srv/ada").as_deref(), Some("/mnt/films"));
+        assert_eq!(user_dir(text, "XDG_MUSIC_DIR", "/srv/ada"), None, "no way up");
+        assert_eq!(user_dir(text, "XDG_DESKTOP_DIR", "/srv/ada"), None);
+    }
+
+    #[test]
+    fn a_pick_starts_in_the_folder_for_its_kind_where_home_has_one() {
+        assert_eq!(pick_start(&["txt".into()], "spark-shell://files/rows/x"), None, "no folder for the kind");
+        assert_eq!(pick_start(&[], "spark-shell://files/rows/x"), None);
+        // a root that is not the home folder is left as it is
+        assert_eq!(pick_start(&["png".into()], "spark-shell://files/rows/aG9tZQ"), None);
     }
 }

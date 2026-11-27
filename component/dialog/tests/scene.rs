@@ -699,8 +699,8 @@ fn every_theme_list_is_a_page() {
     for list in [
         "colors",
         "colors/from",
-        "screens",
-        "screens/pair",
+        "colors/pair",
+        "settings/wallpaper",
         "yours",
         "wallpapers",
         "animations",
@@ -733,15 +733,35 @@ fn every_theme_list_is_a_page() {
         "spark-shell://theme/rows/colors",
         json!({"title": "Colors", "rows": [
             {"id": "theme:colors:from", "text": "another theme's colors", "sign": "opens", "children": "spark-shell://theme/rows/colors/from"},
+            {"id": "theme:colors:pair", "text": "other variant", "sign": "opens", "choice": true, "columns": ["Catppuccin Latte"], "children": "spark-shell://theme/rows/colors/pair"},
             color("BG", "#1c2526"), color("FG", "#e2d6c8"), color("ACCENT", "#d08a52"), color("MUTED", "#8197a0"),
             color("ANSI_0", "#2a3638"), color("ANSI_8", "#64777a")
         ]}),
     );
     let s = scene(&mut a, 600.0, 800.0);
-    for w in ["another theme's colors", "Base colors", "Accents", "ANSI regular", "ANSI bright"] {
+    for w in [
+        "another theme's colors",
+        "other variant",
+        "Base colors",
+        "Accents",
+        "ANSI regular",
+        "ANSI bright",
+    ] {
         word(&s, w);
     }
     assert!(word(&s, "ACCENT").0 > word(&s, "BG").0, "the accents in the second column");
+    // the other variant stands beside another theme's colors, in the second column, on the same line (v0.172): a
+    // row under it would push the last colors out of the window
+    let (from, pair) = (word(&s, "another theme's colors"), word(&s, "other variant"));
+    assert_eq!(from.1, pair.1, "one line");
+    assert!(pair.0 > word(&s, "BG").0 + 200.0, "in the second column: {:?}", pair);
+    // and each of the two takes its own click
+    let picked = |x: f64, y: f64| match s.hit(x, y) {
+        Some(spark_dialog::scene::Target::Pick(n)) => Some(*n),
+        _ => None,
+    };
+    assert_ne!(picked(from.0 + 4.0, from.1 + 4.0), picked(pair.0 + 4.0, pair.1 + 4.0));
+    assert!(picked(pair.0 + 4.0, pair.1 + 4.0).is_some());
 }
 
 /// Settings (v0.161): its groups named at 28 pixels, as apps' and files' are; a setting two lines, its name over
