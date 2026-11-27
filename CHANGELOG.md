@@ -15,6 +15,8 @@
   landed above the top of the screen.
 - The fill button brings back a window maximized twice. It did
   nothing.
+- A theme change starts again a pad that cannot take the new look in
+  place. Now and then it ended it instead.
 
 ## v0.171
 

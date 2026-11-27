@@ -121,8 +121,16 @@ winpad_relook() {   # a new look worn by the running pad in place: its file writ
     else winpad_again; fi
 }
 # winpad_hears_hup PID -- the pad blocks, catches or ignores SIGHUP (bit 0 of a mask in its status), so one sent is read,
-# not its end: a build before v0.171, or one not yet past its start, has none set and dies of it
-winpad_hears_hup() { awk '/^Sig(Blk|Cgt|Ign):/ && index("13579bdf", tolower(substr($2, length($2)))) { f = 1 } END { exit !f }' "/proc/$1/status" 2>/dev/null; }
+# not its end: a build before v0.171, or one not yet past its start, has none set and dies of it. Three reads 20 ms apart:
+# a process blocks every signal for a moment around a fork or a spawn, and one read can land there (1 in 1000, dash)
+winpad_hears_hup() {
+    _whh=0
+    while :; do
+        awk '/^Sig(Blk|Cgt|Ign):/ && index("13579bdf", tolower(substr($2, length($2)))) { f = 1 } END { exit !f }' "/proc/$1/status" 2>/dev/null || return 1
+        _whh=$((_whh + 1)); [ "$_whh" -lt 3 ] || return 0
+        sleep 0.02
+    done
+}
 winpad_wake() { winpad_pid >/dev/null || winpad_run 2>/dev/null || :; }   # the pad up when it is not; never waited for
 winpad_look() { winpad_pid >/dev/null 2>&1 || return 0; wm_tick spark-winpad.look >/dev/null 2>&1 || :; }   # the pad reads the tree now: a window a command moved, which sway tells no one
 winpad_end() {   # winpad_end PID -- that pad ended, waited for two seconds at most; the between file says another is on its way
