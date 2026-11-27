@@ -764,7 +764,7 @@ motion_ours() {   # -> pids of players on our loops
     done || :
 }
 motion_stop() {
-    rm -f "$(motion_want)"
+    rm -f "$(motion_want)" "$(motion_want).put-off"
     for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done
 }
 motion_play() {   # motion_play ARGS... -- in its own session; the loops that played go once the new ones draw over them
@@ -852,11 +852,11 @@ motion_follow_now() {
     if awk -F '\t' '{ print $1 }' "$_mj/plan" | while IFS= read -r _mf; do [ -f "$_mf" ] || exit 1; done; then
         # a look's wallpaper or a screen's still drawn anew covers a player started now: motion_raise starts it once drawn. The
         # old loops go now: kept, they showed through each time sway swapped its drawer (it ends the old before the new draws)
-        if [ -z "$_asl" ] && [ "${WALL_BG:-}" = "$(wall_shown)" ]; then motion_play_want
-        else for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done; fi
+        if [ -z "$_asl" ] && [ "${WALL_BG:-}" = "$(wall_shown)" ]; then rm -f "$(motion_want).put-off"; motion_play_want
+        else : > "$(motion_want).put-off"; for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done; fi
         rm -rf "${_mj:?}"; MOTION_NOW=playing; return 0
     fi
-    MOTION_NOW=making
+    MOTION_NOW=making; rm -f "$(motion_want).put-off"   # the maker plays it
     [ ! -f "$MOTION_DIR/making" ] || ! pid_running "$(cat "$MOTION_DIR/making" 2>/dev/null)" || { rm -rf "${_mj:?}"; return 0; }   # the maker plays the newest want
     for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done   # the old look's loops
     ( trap '' HUP; sh -c 'echo "$PPID"' > "$MOTION_DIR/making"
@@ -875,21 +875,22 @@ motion_follow_now() {
 motion_raise() {   # our loops on top once the background drawer started anew (a look's wallpaper, a screen's still, a reload) has drawn: it covers a player started before, which pauses; one put off until then starts
     _mrh=$(getconf CLK_TCK 2>/dev/null) || _mrh=100
     _mrd=0; while [ -e "$(motion_want).deciding" ] && [ "$_mrd" -lt 20 ]; do sleep 0.1; _mrd=$((_mrd + 1)); done   # the loops wanted, once motion_follow has said them
+    _mrp=''; [ ! -e "$(motion_want).put-off" ] || _mrp=1   # motion_follow put the start off until the drawer drew
     if _mrb=$(wm_background_pid) && _mrt=$(proc_ticks "$_mrb"); then
         if [ $(($(awk -v h="$_mrh" '{ printf "%d", $1 * h }' /proc/uptime) - _mrt)) -lt $((3 * _mrh)) ]; then
             wm_background_drawn "$_mrb" || :   # as soon as it drew: it waited 3 s, the most it takes, and the loop showed the still that long
             _mrt=$(awk -v h="$_mrh" '{ printf "%d", $1 * h }' /proc/uptime)
         else _mrt=$((_mrt + 3 * _mrh)); fi
-    else _mrt=0; fi
-    _mro=$(motion_ours)
-    if [ -z "$_mro" ]; then   # put off by motion_follow; never over a loop still being made, which the maker plays
+    elif [ -z "$_mrp" ]; then return 0
+    fi
+    if [ -n "$_mrp" ]; then   # the loops wanted now, over whatever plays; never over a loop still being made, which the maker plays
+        rm -f "$(motion_want).put-off"
         [ -f "$MOTION_DIR/making" ] && pid_running "$(cat "$MOTION_DIR/making" 2>/dev/null)" || motion_play_want
         return 0
     fi
-    for _mp in $_mro; do   # a player that started before the drawer drew, or that plays loops no longer wanted
-        if [ "$(proc_ticks "$_mp" || echo 0)" -lt "$_mrt" ] || ! tr '\0' '\n' < "/proc/$_mp/cmdline" 2>/dev/null | tail -n "$(grep -c '' "$(motion_want)" 2>/dev/null || echo 1)" | cmp -s - "$(motion_want)"; then   # its words last: a player run by an interpreter has it first
-            motion_play_want; return 0
-        fi
+    for _mp in $(motion_ours); do
+        [ "$(proc_ticks "$_mp" || echo 0)" -lt "$_mrt" ] || continue   # a player that started before the drawer drew
+        motion_play_want; return 0
     done
 }
 proc_ticks() { [ -r "/proc/$1/stat" ] && sed 's/.*) //' "/proc/$1/stat" | awk '{ print $20 }'; }   # proc_ticks PID -> when it started, in clock ticks since boot
