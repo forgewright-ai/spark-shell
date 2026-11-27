@@ -128,7 +128,7 @@ tool_spec_theme() {   # the theme tools
         theme_palette)     _ts=theme _ta='=' _tp=name _tk=${THEME_ENUM_NOW:-$(theme_enum)} _th=i _tt='theme NAME' _td='Use a palette everywhere, a saved theme, a look from the last ten, or none. A near name, heard or typed, is the nearest palette: groove box dark is gruvbox-dark.' ;;
         theme_copy_color)  _ts=theme _ta=copy-color _tp=name _tk=string _te='key:name' _th=f _tt='copy palette color' _td='Copy one hex color from a theme to the clipboard.' ;;
         theme_export_palette) _ts=theme _ta=export-palette _tp=name _tk=string _te="format:$TERM_PALETTE_FORMATS" _th=f _tt='export terminal palette' _td='Save a theme'"'"'s colors for the chosen terminal in the downloads folder.' ;;
-        theme_save)        _ts=theme _ta=save _tp=name _tk=string _th=f _tt='theme save NAME' _td='Keep the look in use under a name: the palette, the wallpaper, the face and its size, the glyph family, the animation, the transparency. After the look is made, never before it.' ;;
+        theme_save)        _ts=theme _ta=save _tp=name _tk=string _tw='a name for this theme' _th=f _tt='theme save NAME' _td='Keep the look in use under a name: the palette, the wallpaper, the face and its size, the glyph family, the animation, the transparency. After the look is made, never before it.' ;;
         theme_delete)      _ts=theme _ta=delete _tp=name _tk=string _th=dif _tt='theme delete NAME' _td='Delete a theme of yours. Undo brings it back.' ;;
         theme_export)      _ts=theme _ta=export _tp=name _tk=string _th=f _tt='theme export NAME' _td='A theme as NAME.spark-theme in the downloads folder, to share: its look, colors, pictures (no metadata), loops and reels.' ;;
         theme_install)     _ts=theme _ta=install _tp=path _tk=path _th=f _tt='theme install FILE' _td='A theme file someone shared (NAME.spark-theme): read as data, checked, put in place and used.' ;;
@@ -147,7 +147,7 @@ tool_spec_theme() {   # the theme tools
         theme_back)        _ts=theme _ta=back _th=f _tt='theme back' _td='The look before this one.' ;;   # free: no row carries it, the gate asks the history
         theme_text)        _ts=theme _ta=text _tp=size _tk='bigger|smaller|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31|32|33|34|35|36|37|38|39|40' _th='' _tt='theme text SIZE' _td='The text one size bigger or smaller, or a size from 6 to 40, on every surface.' ;;
         theme_wallpaper)   _ts=theme _ta=wallpaper _tp=name _tk=string _th=i _tt='theme wallpaper NAME' _td='The wallpaper: one of the drawings, a picture of the theme'"'"'s own by its name, or default (the ground, the palette a shade darker).' ;;
-        theme_wallpaper_color) _ts=theme _ta=wallpaper-color _tp=color _tk=string _th=if _tt='theme wallpaper color COLOR' _td='A plain color as the wallpaper: a name (teal, navy, olive, maroon...) or #rrggbb.' ;;
+        theme_wallpaper_color) _ts=theme _ta=wallpaper-color _tp=color _tk=color _th=if _tt='theme wallpaper color COLOR' _td='A plain color as the wallpaper: a name (teal, navy, olive, maroon...) or #rrggbb.' ;;
         theme_wallpaper_picture) _ts=theme _ta=wallpaper-picture _tp=path _tk=path _th=if _tt='theme wallpaper picture PATH' _td='A picture of yours as the wallpaper.' ;;
         theme_picture)     _ts=theme _ta=picture _tp=path _tk=path _te="face?:$(look_pick_list face) family?:$(look_pick_list family) animation?:$(look_pick_list animation)" _th=f _tt='theme picture PATH' _td='A theme from a picture of yours: its colors as the palette, the picture as the wallpaper; the face, the glyph family and the animation when the words ask for them (as theme words takes them), else the face and the family in use and the animation the colors suggest.' ;;
         theme_words)       _ts=theme _ta=words _tp=hue _tk='red|orange|yellow|green|teal|blue|violet|pink|grey' _te="accent:red|orange|yellow|green|teal|blue|violet|pink|grey|same warmth:warm|neutral|cool contrast:soft|normal|high light:dark|light face:$(look_pick_list face) family:$(look_pick_list family) animation:$(look_pick_list animation) drawing:$(look_pick_list drawing) name:text" _th=f _tt='theme words HUE' _td='One whole look for one request: the hue of the ground, the hue of the accent (same when the words name one color), how warm, how much contrast, dark or light; then the parts that fit the words, each weighed, none by habit. face: neon for plain and modern, argon for soft and friendly, xenon for bookish and old, radon for handwritten and playful, krypton for technical and retro. family: star for night skies, space, magic and fine light looks; banner for bold, old, heraldic, sporty or retro looks; stone for calm, plain and solid ones. animation: moon for night, ripple for water and calm, tide for the sea, embers for fire, warmth and autumn, sun for day and summer, flight for wind, sky and spring. drawing: the scene closest to the words. And a short name from the words. A flag or a brand is one step with two hues, never two steps. A picture of yours as the wallpaper stays.' ;;
@@ -359,10 +359,11 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it
                 elif $k == "alpha" then {type: "number", minimum: 0, maximum: 1}
                 elif $k == "path" then {type: "string", minLength: 2, maxLength: 4096, format: "path"}
                 elif $k == "art" then {type: "string", minLength: 2, maxLength: 4096, description: "a whole path, or none"}
+                elif $k == "color" then {type: "string", format: "color", minLength: 1, maxLength: 40, description: "#rrggbb or a color'"'"'s name"}
                 elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
                 else {type: "string", minLength: 1, maxLength: 256} end) + (if $w == "" then {} else {description: $w} end))} end)
               + (if $q == "" then {} else {($q): {type: "string", format: "password", maxLength: 256}} end)
-              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "scale" then {type: "string", pattern: "^[0-9]+([.][0-9]+)?$", maxLength: 16} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} elif .[1] == "filename" then {type: "string", minLength: 1, maxLength: 255, description: "one name, no slash"} elif .[1] == "path" then {type: "string", minLength: 2, maxLength: 4096, format: "path"} elif .[1] == "art" then {type: "string", minLength: 2, maxLength: 4096, description: "a whole path, or none"} elif .[1] == "color" then {type: "string", pattern: "^#[0-9a-fA-F]{6}$"} elif .[1] == "seconds" then {type: "number", minimum: 0, maximum: 86400, description: "where to start, in seconds"} elif .[1] == "pixels" then {type: "integer", minimum: 0, maximum: 65535, description: "pixels from the corner of the dialog"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
+              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "scale" then {type: "string", pattern: "^[0-9]+([.][0-9]+)?$", maxLength: 16} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} elif .[1] == "filename" then {type: "string", minLength: 1, maxLength: 255, description: "one name, no slash"} elif .[1] == "path" then {type: "string", minLength: 2, maxLength: 4096, format: "path"} elif .[1] == "art" then {type: "string", minLength: 2, maxLength: 4096, description: "a whole path, or none"} elif .[1] == "color" then {type: "string", format: "color", minLength: 1, maxLength: 40, description: "#rrggbb or a color'"'"'s name"} elif .[1] == "seconds" then {type: "number", minimum: 0, maximum: 86400, description: "where to start, in seconds"} elif .[1] == "pixels" then {type: "integer", minimum: 0, maximum: 65535, description: "pixels from the corner of the dialog"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
             required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text" and .[1] != "seconds" and .[1] != "pixels" and (.[2] | not)) | .[0]]), additionalProperties: false},
          outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"}, open: {type: "string"}, rows: {type: "object"},
             effect: {type: "object", properties: {kind: {type: "string"}, operation: {type: "string"}, id: {type: "string"}, title: {type: "string"}, localTime: {type: "string"}, level: {type: "integer"}, muted: {type: "boolean"}}, required: ["kind", "operation", "id", "title"], additionalProperties: false},
@@ -655,32 +656,55 @@ provide_rows_more() {   # provide_rows_more SECTION -- stdin: a rows resource ->
 }
 provide_wall_rows() {   # -> the wallpaper list as a rows resource: the drawings with a preview each, a picture of yours, a color, the ground
     _tp=$(thumb_palette)
-    ( TMP=$(mktemp -d) && { wall_thumbs; rm -rf "$TMP"; } ) >/dev/null 2>&1 </dev/null 3>&- 4<&- 5>&- &   # the previews drawn in the background; a row without one yet draws none
+    provide_wall_thumbs   # the previews drawn apart; a row without one yet draws none, and the host reads the list again once they are made
     _gr=$(wall_ground); _cc=''; ! wall_color || _cc=$(wall_hex "$WALLPAPER")
     panel_rows wallpapers full | rows_plain | while IFS="$TAB" read -r _m _t _a _x; do provide_row_line theme "$_m" "$_t" "$_a" "$_x"; done \
         | jq -Rn --arg types "$WALL_TYPES" --arg dir "$THUMB_DIR" --arg tp "$_tp" --arg ground "$_gr" --arg color "$_cc" --arg theme "${THEME:-}" '
             [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], tool: (if .[3] == "" then null else {name: .[3], arguments: (.[4] | fromjson)} end), more: [],
                 columns: ((.[5] // "") | split("|") | .[1:2] | map(select(. != ""))), children: null, group: ((.[5] // "") | split("|") | .[0] | if . == "" or . == null then null else . end)}
-             | if .group == "drawings" then .preview = ($dir + "/" + .text + "-" + $tp + ".png") elif .group == "this theme" then .preview = ($dir + "/" + $theme + "-" + .text + ".png") else . end
+             | if .group == "drawings" then .preview = ($dir + "/" + .text + "-" + $tp + "-960.png") elif .group == "this theme" then .preview = ($dir + "/" + $theme + "-" + .text + "-960.png") else . end   # the names wall_thumbs gives them
              | if .text == "the ground" then .chip = [$ground] elif .id == ("theme:show:" + .text) and .group == "custom" and $color != "" and .columns == ["a color"] then .chip = [$color] else . end
-             | if .id == "theme:wallpaper-color" then .tool.ask = ["color"] else . end
+             | if .id == "theme:wallpaper-color" then .tool.ask = ["color"] | .swatch = (if $color != "" then $color else $ground end) else . end   # the color the picker opens on: the one in use, else the ground
              | if (.tool.name // "") == "theme_wallpaper" then .quiet = true else . end   # a drawing or the ground kept in place, nothing said
              | if .id == "theme:wallpaper-picture" then .children = "spark-shell://files/rows" | .pick = {tool: "theme_wallpaper_picture", types: ($types | split(" "))} else . end]
-            | {title: "wallpaper", state: "", rows: ., short: []}'
+            | {title: "Wallpaper", state: "", rows: ., short: []}'
 }
-provide_anim_rows() {   # -> the animation list as a rows resource: the pieces and none, the one in use checked, each with its folder in the palette in use
+provide_wall_thumbs() {   # the wallpaper list's pictures made apart, one maker at a time; where it made one the provider is poked, so its host reads the list again and the picture shows (the first opening drew an empty box until a key was pressed)
+    [ -z "$(find "$THUMB_DIR/.making" -mmin +5 2>/dev/null)" ] || lock_drop "$THUMB_DIR/.making"   # a maker that died left its lock
+    _pwi=/dev/null; [ ! -p "$TMP/in" ] || _pwi=$TMP/in
+    ( mkdir_state "$THUMB_DIR" && lock_take "$THUMB_DIR/.making" || exit 0
+      _pwq=$TMP/in; TMP=$(mktemp -d) || { lock_drop "$THUMB_DIR/.making"; exit 0; }   # the read's TMP is gone before the pictures are made
+      trap 'lock_drop "$THUMB_DIR/.making"; rm -rf "$TMP"' EXIT; trap 'exit 143' INT TERM HUP
+      WALL_THUMB_SAID=provide_thumb_said; wall_thumbs
+      _pwm=0; [ ! -f "$TMP/thumbs.made" ] || read -r _pwm < "$TMP/thumbs.made" || :
+      _pws=0; [ ! -f "$TMP/thumbs.said" ] || read -r _pws < "$TMP/thumbs.said" || :
+      [ "$_pwm" = "$_pws" ] || [ ! -p "$_pwq" ] || fifo_put poke   # the ones made since the host was last told
+    ) >/dev/null 2>&1 </dev/null 3>&- 4<&- 5>"$_pwi" &
+}
+provide_thumb_said() {   # provide_thumb_said COUNT -- the host told at the first picture made and at each sixth after it: the list fills as they come, never all at the end
+    case $1 in 1|7|13|19|25|31|37|43|49) [ ! -p "$_pwq" ] || fifo_put poke; echo "$1" > "$TMP/thumbs.said" ;; esac
+}
+provide_anim_rows() {   # -> the dialog's motion as a rows resource: the pieces and none, the one in use checked, each with its folder in the palette in use; then the theme's own opening and closing, each a reel picked from your files
     _ap=$(anim_palette); _an=$(anim_now); _apo=$(anim_for_palette "$_ap"); _anl="$ANIMATION_NAMES none"
     anim_drawn "$_ap" || _apo=''   # no shipped set for this palette: no piece is its own
     ! anim_folder own '' >/dev/null || _anl="own $_anl"   # a theme with its own opening and closing
+    _ard=$(theme_dir "${THEME:-none}"); _aro=''; _arc=''
+    [ -z "$_ard" ] || [ ! -f "$_ard/${_ard##*/}-dialog-open.webp" ] || _aro=1
+    [ -z "$_ard" ] || [ ! -f "$_ard/${_ard##*/}-dialog-close.webp" ] || _arc=1
+    _art=''; case ${THEME:-none} in none) ;; *) _art=1 ;; esac   # a theme in use takes a reel; with none there is no theme to hold one
     for _n in $_anl; do
         _af=''; [ "$_n" = none ] || _af=$(anim_folder "$_n" "$_ap") || _af=''
         printf '%s\t%s\n' "$_n" "$_af"
-    done | jq -Rn --arg now "$_an" --arg paired "$_apo" '
+    done | jq -Rn --arg now "$_an" --arg paired "$_apo" --arg open "$_aro" --arg close "$_arc" --arg theme "$_art" '
+        def reel($id; $text; $which; $set): {id: ("theme:motion:" + $id), group: "the theme'"'"'s own", text: $text, sign: "opens", tool: null, columns: [if $set != "" then "its own" elif $now == "none" then "no motion" else $now end],   # what plays, never none: a reel of its own, the piece in use, or no motion where the dialog has none
+            children: "spark-shell://files/rows", pick: {tool: "theme_reel", types: ["webp"], arguments: {which: $which}},
+            more: (if $set != "" then [{name: "theme_reel", arguments: {which: $which, path: "none"}, said: "take it away"}] else [] end)};
         [inputs | split("\t") | {id: ("theme:animation:" + .[0]), sign: (if .[0] == $now then "check" else "blank" end), text: .[0],
             tool: {name: "theme_animation", arguments: {to: .[0]}}, more: [], children: null, group: null, quiet: true,
             columns: (if .[0] == "none" then ["no motion"] elif .[0] == $paired then ["the palette'"'"'s own"] else [] end)}
           + (if .[1] != "" then {film: .[1]} else {} end)]
-        | {title: "animation", state: "", rows: ., short: []}'
+        + (if $theme != "" then [reel("open"; "opening"; "open"; $open), reel("close"; "closing"; "close"; $close)] else [] end)
+        | {title: "Dialog motion", state: "", rows: ., short: []}'
 }
 theme_chips() {   # theme_chips SECTION -> {NAME: [nine colors]}, {} for any other section
     [ "$1" = theme ] || { printf '{}'; return 0; }

@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # --- the dialog
 # sets: DIALOG_BIN DIALOG_URL PATCH_SIGNER SEMANTIC_LOG SEMANTIC_MODEL SEMANTIC_SHA256 SEMANTIC_SIZE SEMANTIC_URL WALLPAPER_BIN
-# reads: MODE REPO STATE_DIR TMP
+# reads: MODE OS REPO STATE_DIR TMP
 DIALOG_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-dialog
 DIALOG_URL=${SPARK_SHELL_DIALOG_URL:-https://github.com/forgewright-ai/spark-shell/releases/download}   # the release assets; file:// or none in the tests
 # the embedding model, pinned by its sha256 and size
@@ -185,5 +185,19 @@ wallpaper_install() {   # the wallpaper loop's row of on desktop: in place as pi
     [ "$(sha256_of "$_plf")" = "$_plw" ] || { rm -f "$_plf"; row todo motion "the spark-wallpaper fetched for $_plr is not the one the tree pins: not installed"; return 0; }
     mkdir -p "$(dirname "$WALLPAPER_BIN")" && cp "$_plf" "$WALLPAPER_BIN.new" && chmod 755 "$WALLPAPER_BIN.new" && mv "$WALLPAPER_BIN.new" "$WALLPAPER_BIN"
     row ok motion "spark-wallpaper installed for $_plr ($WALLPAPER_BIN), sha256 checked"
+}
+# The look for a home that is open: the dialog reads the file when it changes and wears it, whoever changed the theme
+# (the prompt, a key, the bar, another section). A line a key: the colors as a theme step's answer gives them (six hex
+# digits), the glyph family, the text's face in pango's words, as cmd_dialog passes it, and its opening and closing as
+# a theme step's answer names them (a folder, draw: and a piece, or nothing for none): home closed with the old theme's.
+dialog_look_file() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-dialog.look"; }
+dialog_look_lines() {
+    printf 'HEX_FG=%s\nHEX_ACCENT=%s\nPANEL_MUTED=%s\nPANEL_BG=%s\nPANEL_HI=%s\nPANEL_BAND=%s\n' "$HEX_FG" "$HEX_ACCENT" "$PANEL_MUTED" "$PANEL_BG" "$PANEL_HI" "$PANEL_BAND"
+    _dli=0; while [ "$_dli" -le 15 ]; do eval "printf 'HEX_ANSI_%s=%s\n' \"\$_dli\" \"\${HEX_ANSI_$_dli:-}\""; _dli=$((_dli + 1)); done
+    printf 'GLYPH_FAMILY=%s\nFONT=%s\nTRANSITIONS=%s\n' "$(bar_style GLYPH_FAMILY stone)" "$(bar_font "$(font_spec)")" "$(dialog_transitions 2>/dev/null | head -n 1)"
+}
+dialog_look() {   # the file written in one step from the theme and the config as they are now; quiet where it cannot be: home keeps the look it has
+    [ "$MODE" = apply ] && [ "$OS" != Darwin ] || return 0
+    ( theme_load 2>/dev/null || :; write_whole "$(dialog_look_file)" dialog_look_lines ) >/dev/null 2>&1 || :
 }
 

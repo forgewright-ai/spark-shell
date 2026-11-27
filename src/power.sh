@@ -265,7 +265,7 @@ panel_act_theme() {   # the theme steps: the text, the wallpaper, save, delete, 
         face) face_step "$_arg" ;;
         motion) motion_step "$_arg" ;;
         theme) _r=$(cmd_theme "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "$_arg is on" ;;   # an older spelling
-        *) _r=$(cmd_theme "$_a" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "$_a is on" ;;   # a palette's name
+        *) _r=$(cmd_theme "$_a" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "$(theme_title "$_a") is on" ;;   # a palette's name, said by its title
     esac
 }
 panel_act_layout() {   # the layout steps: open, delete, restore, rename, back, new, save, add

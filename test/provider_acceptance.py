@@ -27,6 +27,18 @@ def call(number, tool_name, **arguments):
     return rpc(number, "tools/call", name=tool_name, arguments=arguments)
 
 
+def title(name, key):
+    """The name home says a bundled theme by (v0.172): its own family's title, its palette's own name, else its
+    name's words with capitals. NAME as the curation lists it, KEY its folder."""
+    family = REPO / "gallery/core" / key / "family.json"
+    if family.exists() and json.loads(family.read_text()).get("id") == key:
+        return json.loads(family.read_text())["title"]
+    stock = REPO / "gallery/theme" / (name + ".env")
+    if stock.exists():
+        return stock.read_text().splitlines()[0][2:].split(" -- ")[0]
+    return " ".join(word[:1].upper() + word[1:] for word in name.split("-"))
+
+
 class Providers(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="provider-acceptance-")
@@ -121,16 +133,18 @@ class Providers(unittest.TestCase):
             self.assertEqual(room["title"], section["title"])
             self.assertEqual(room["state"], section["description"])
             order = [w for w in section["works"] if on_view(w)] + [w for w in section["works"] if not on_view(w)]
-            self.assertEqual([r["text"] for r in room["rows"]], order, "on view first, then supporting")
+            self.assertEqual([r["id"] for r in room["rows"]], ["theme:entry:" + ids[name] for name in order], "on view first, then supporting")
+            self.assertEqual([r["text"] for r in room["rows"]], [title(name, ids[name]) for name in order], "each said by its title")
             self.assertEqual([r["children"] for r in room["rows"]], [base + "/" + ids[name] for name in order])
             split = 0 < sum(map(on_view, section["works"])) < len(section["works"])
-            self.assertTrue(all(r.get("group") == (("on view" if on_view(r["text"]) else "supporting") if split else None)
-                                for r in room["rows"]))
+            self.assertTrue(all(r.get("group") == (("on view" if on_view(name) else "supporting") if split else None)
+                                for name, r in zip(order, room["rows"])))
+            self.assertFalse([k for r in room["rows"] for k in r if k.startswith("_")], "no key of the provider's own reaches the dialog")
             self.assertTrue(all(r.get("line") for r in room["rows"]), "each work says its medium and variant")
             lead = section.get("lead") or next(w for w in section["works"] if on_view(w))
             self.assertEqual(entry["page"], "spark-shell://theme/preview/" + ids[lead])
         for parts, card in zip(names, cards):
-            self.assertEqual(card["title"], parts[0])
+            self.assertEqual(card["title"], title(parts[0], parts[-1]))
             self.assertEqual(card["rows"][0]["tool"],
                              {"name": "theme_palette", "arguments": {"name": parts[-1]}})
         invalid = self.provider("theme", rpc(1, "resources/read", uri=base + "/collection/permanent/missing"))
@@ -163,7 +177,7 @@ class Providers(unittest.TestCase):
         self.assertTrue(all(r["page"].startswith(base + "preview/") for r in gallery["rows"]))
         self.assertEqual(detail["rows"][0]["page"], base+"preview/nightswim")
         self.assertEqual(nord["facts"], ["fjord", "Nord"])
-        self.assertEqual(photo["facts"], ["nightswim.png", "nightswim (from wallpaper)"])
+        self.assertEqual(photo["facts"], ["nightswim.png", "Nightswim (from wallpaper)"])
         if sys.platform != "darwin":
             self.assertEqual(current["facts"], ["fjord", "Nord"])
         self.assertTrue(full["full"])
@@ -196,7 +210,7 @@ class Providers(unittest.TestCase):
         reply = self.provider("theme", *req)
         detail, colors, formats = [json.loads(reply[i]["result"]["contents"][0]["text"])["rows"] for i in (1, 2, 3)]
         self.assertEqual(detail[1]["children"], req[1]["params"]["uri"])
-        self.assertEqual(colors[0]["columns"], ["amber-drizzle (handpicked)"])
+        self.assertEqual(colors[0]["columns"], ["Amber Drizzle (handpicked)"])
         self.assertEqual(colors[1]["children"], req[2]["params"]["uri"])
         self.assertEqual(len(colors[2:]), 20)
         self.assertEqual([r["swatch"] for r in colors[2:]], [r["columns"][0] for r in colors[2:]])
@@ -254,14 +268,17 @@ class Providers(unittest.TestCase):
                                   rpc(i + 2, "resources/read", uri="spark-shell://theme/preview/" + name + "/panels-2")]
         replies = self.provider("theme", rpc(1, "resources/read", uri=base + "/collection/exhibition/cinematic-worlds"),
                                 *[q for i, work in enumerate(works) for q in looked(2 + 3 * i, work[0])])
-        self.assertEqual([(r["text"], r["line"]) for r in text(replies[1])["rows"]],
-                         [(work[0], "cinematic illustration \u00b7 dark") for work in works])
-        for i, (_, title, moves, opens) in enumerate(works):
+        self.assertEqual([(r["id"], r["text"], r["line"]) for r in text(replies[1])["rows"]],
+                         [("theme:entry:" + work[0], work[1], "cinematic illustration \u00b7 dark") for work in works], "each by its title")
+        for i, (_, work_title, moves, opens) in enumerate(works):
             detail, portrait, panels = [text(replies[2 + 3 * i + n]) for n in range(3)]
-            facts = {r["id"]: r.get("columns", [None])[0] for r in detail["rows"]}
-            moves = None if sys.platform == "darwin" else moves   # no desktop on a Mac: no wallpaper motion
-            self.assertEqual((facts["theme:detail:media"], facts["theme:detail:family-of"], facts.get("theme:detail:moves"), facts["theme:detail:animation"]),
-                             ("cinematic illustration", title, moves, opens))
+            facts = {r["id"]: (r.get("columns") or [None])[0] for r in detail["rows"]}
+            # the page says what it is on its poster (apply's line), and what it brings where it sets it: the wallpaper by its
+            # role, moving where its picture has a loop (none on a Mac, which has no desktop), the dialog's motion its own
+            wall = None if sys.platform == "darwin" else "Landscape 1" + (", moving" if moves.startswith("moves") else "")
+            self.assertEqual((detail["title"], detail["rows"][0]["line"], facts.get("theme:detail:wallpaper"), facts["theme:detail:motion"]),
+                             (work_title, "cinematic illustration \u00b7 dark", wall, "its own" if opens == "own" else opens))
+            self.assertFalse([r for r in detail["rows"] if (r.get("columns") or [""])[0] == "keep current"], "nothing a theme leaves alone is listed")
             self.assertEqual((portrait["facts"][0], panels["facts"][0]), ("its own portrait", "2 panels, left to right"))
         # an open exhibition, a supporting work and a section's lead, from a curation of the test's own
         curation["exhibitions"] = [{"id": "study", "title": "Study", "note": "A test exhibition.", "status": "open",
@@ -279,10 +296,10 @@ class Providers(unittest.TestCase):
         self.assertEqual((entry["group"], entry["columns"], entry["line"], entry["children"]),
                          ("Exhibitions", ["2 works"], "A test exhibition.", base + "/collection/exhibition/study"))
         self.assertEqual(entry["page"], "spark-shell://theme/preview/nord")
-        self.assertEqual([(r["text"], r["group"]) for r in show["rows"]], [("nord", "on view"), ("dracula", "supporting")])
+        self.assertEqual([(r["text"], r["group"]) for r in show["rows"]], [("Nord", "on view"), ("Dracula", "supporting")])
         lead = next(r for r in home["rows"] if r["id"] == "theme:room:permanent:" + section["id"])
         self.assertEqual(lead["page"], "spark-shell://theme/preview/nord")
-        self.assertEqual(room["rows"][-1]["text"], "dracula")
+        self.assertEqual(room["rows"][-1]["text"], "Dracula")
         self.assertEqual(room["rows"][-1]["group"], "supporting")
         # a work's details: its family, its other variant as a link, its compositions; nothing applied
         replies = self.provider("theme", rpc(1, "resources/read", uri=base + "/core-tokyonight-day"),
@@ -291,17 +308,14 @@ class Providers(unittest.TestCase):
                                 rpc(4, "resources/read", uri="spark-shell://theme/preview/core-tokyonight-day/panels-3"),
                                 rpc(5, "resources/read", uri=base + "/../nord/art"))
         detail, art, portrait = text(replies[1]), text(replies[2]), text(replies[3])
-        facts = {r["id"]: r.get("columns", [None])[0] for r in detail["rows"]}
-        self.assertEqual((facts["theme:detail:media"], facts["theme:detail:family-of"], facts["theme:detail:variant"]),
-                         ("vector", "Tokyo Night", "light"))
+        self.assertEqual((detail["title"], detail["rows"][0]["line"]), ("Tokyo Night, day style", "vector \u00b7 light"))
         other = next(r for r in detail["rows"] if r["id"] == "theme:variant:dark")
-        self.assertEqual((other["children"], other.get("tool")), (base + "/tokyonight-night", None))
+        self.assertEqual((other["children"], other["columns"], other.get("tool")), (base + "/tokyonight-night", ["Tokyo Night, night style"], None))
         compositions = [r for r in detail["rows"] if r["id"] == "theme:compositions"]
         if sys.platform == "darwin":   # no desktop on a Mac: no screens to compose
-            self.assertEqual((compositions, facts.get("theme:detail:turned")), ([], None))
+            self.assertEqual(compositions, [])
         else:
             self.assertEqual(compositions[0]["children"], base + "/core-tokyonight-day/art")
-            self.assertEqual(facts["theme:detail:turned"], "the art fitted, never cropped")
         self.assertEqual([r["id"] for r in art["rows"]], ["theme:art:landscape", "theme:art:portrait"])
         self.assertTrue(all(not r.get("tool") and not r.get("look") and r["page"].startswith("spark-shell://theme/preview/core-tokyonight-day")
                             for r in art["rows"]))
@@ -336,7 +350,7 @@ class Providers(unittest.TestCase):
         selected = next(r for r in room["rows"] if r["sign"] == "check")
         self.assertEqual((selected["text"], selected["children"]), ("dracula", base + "/first-dracula"))
         for card, expected in ((dracula, "sun"), (ring, "flight")):
-            motion = next(r for r in card["rows"] if r["id"] == "theme:detail:animation")
+            motion = next(r for r in card["rows"] if r["id"] == "theme:detail:motion")
             self.assertEqual(motion["columns"], [expected])
 
     def test_duplicate_notes_keep_exact_identity_and_ambiguous_append_changes_nothing(self):

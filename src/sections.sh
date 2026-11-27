@@ -252,7 +252,7 @@ panel_rows_wallpapers() {   # the theme's wallpaper list: the drawings, each wit
         if [ "$_asf" = "$_cwp" ]; then printf '%s\t%s\tshow\tthis theme|its own picture\n' "$PANEL_TICK" "$_asl"; else printf -- '-\t%s\twallpaper %s\tthis theme|its own picture\n' "$_asl" "$(art_role "$_asf")"; fi
     done
     for w in $(wall_shipped_names); do
-        _pw=$(wall_palette_of "$w"); case $_pw in any) _pw='for any dark palette' ;; every) _pw='moves, in any palette' ;; *) _pw="for $_pw" ;; esac   # the caption under its picture: 24 cells
+        _pw=$(wall_palette_of "$w"); case $_pw in any) _pw='for any dark palette' ;; every) _pw='moves, in any palette' ;; *) theme_title_of "$_pw"; _pw="for $_tit" ;; esac   # the palette it was drawn for, by its title: for Catppuccin Mocha
         if [ "$w" = "$_cur" ]; then printf '%s\t%s\twallpaper %s\tdrawings|%s\n' "$PANEL_TICK" "$w" "$w" "$_pw"; else printf -- '-\t%s\twallpaper %s\tdrawings|%s\n' "$w" "$w" "$_pw"; fi
     done
     [ -n "$_cur" ] || art_stills | grep -qxF -- "$_cwp" || printf '%s\tpicture %s\tshow\tcustom\n' "$PANEL_TICK" "$(basename "$_cwp")"

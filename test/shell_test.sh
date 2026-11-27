@@ -6419,7 +6419,7 @@ STUB
     chmod +x "$H/.local/bin/fzf"; rm -f "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent"
     st=0; out=$(SPARK_SHELL_TEST_TTY=1 sh "$SH" panel 2>&1 </dev/null) || st=$?
     plain=$(printf '%s\n' "$out" | sed "s/$(printf '\033')\[[0-9;]*m//g")
-    [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && sed "s/$(printf '\033')\[[0-9;]*m//g" "$H/fzf.in.2" | grep -q "$TICK nord is on" && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" && grep -q 'bg+:#4c525e,hl:#88c0d0' "$H/fzf.args.2" && ! grep -q 'bg+:#4c525e' "$H/fzf.args.1" && grep -q "undo.*theme none	undo all$" "$H/fzf.in.2" \
+    [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && sed "s/$(printf '\033')\[[0-9;]*m//g" "$H/fzf.in.2" | grep -q "$TICK Nord is on" && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" && grep -q 'bg+:#4c525e,hl:#88c0d0' "$H/fzf.args.2" && ! grep -q 'bg+:#4c525e' "$H/fzf.args.1" && grep -q "undo.*theme none	undo all$" "$H/fzf.in.2" \
         && ok "the window: a palette picked is read anew -- the next list is lit and marked in nord's shades (bg+ a fifth of the way to the text, hl the accent), the undo row goes back to none" || bad "window theme reload" "st=$st calls=$(cat "$H/fzf.calls" 2>&1) a1=$(grep -o 'color=[^ ]*' "$H/fzf.args.1" 2>&1) a2=$(grep -o 'color=[^ ]*' "$H/fzf.args.2" 2>&1) out=$(printf '%s' "$plain" | tr '\n' '|' | tail -c 200)"
     sh "$SH" theme none >/dev/null 2>&1 || true; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"   # as before the pick
     rm -f "$H/.local/bin/fzf" "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent"
@@ -7105,7 +7105,7 @@ ans 2 | jq -r '.result.contents[0].text' > "$H/rows.json"
     && jq -e '.short == ["theme:more"] and (.rows[] | select(.id == "theme:more") | .children == "spark-shell://theme/rows" and .tool == null)' "$H/rows.json" >/dev/null \
     && ok "provide: the rows resource: the palette in use (none, terminal default colors) a check with no tool, every other a row whose tool takes it by name, with its chip; the short form the one row that opens the section" || bad "provide rows" "$(cat "$H/rows.json" | head -c 600)"
 mcp theme "$(call 1 theme_palette '{"name":"nord"}')" "$(call 2 theme_palette '{"name":"nowhere"}')" "$(call 3 theme_text '{"size":"huge"}')" "$(call 4 theme_alpha '{"value":0.9,"x":1}')" "$(call 5 wifi_connect '{"name":"home"}')" "$(call 6 'Theme_Font')" "$(call 7 theme_alpha '{"value":2}')"
-[ "$(ans 1 | jq -c '.result.structuredContent | del(.palette, .transitions, .rows)')" = '{"receipt":"nord is on","undo":{"name":"theme_palette","arguments":{"name":"none"}}}' ] && [ "$(ans 1 | jq -r '.result.structuredContent.transitions')" = "$REPO/gallery/animation/tide/nord" ] && ans 1 | jq -e '.result.isError == false and (.result.content[0].text | fromjson) == (.result.structuredContent | del(.rows)) and .result.structuredContent.rows.title == "theme"' >/dev/null && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
+[ "$(ans 1 | jq -c '.result.structuredContent | del(.palette, .transitions, .rows)')" = '{"receipt":"Nord is on","undo":{"name":"theme_palette","arguments":{"name":"none"}}}' ] && [ "$(ans 1 | jq -r '.result.structuredContent.transitions')" = "$REPO/gallery/animation/tide/nord" ] && ans 1 | jq -e '.result.isError == false and (.result.content[0].text | fromjson) == (.result.structuredContent | del(.rows)) and .result.structuredContent.rows.title == "theme"' >/dev/null && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
     && ok "provide system/call: the palette set, the receipt in the present tense, the undo the step that takes it back, the same JSON in a text block; the animation it brings, for an open dialog to read again (#126)" || bad "provide call" "$(ans 1) $(cat "$H/mcp.err")"
 nfg=$(sed -n 's/^THEME_FG=#//p' "$REPO/gallery/theme/nord.env"); nbg=$(sed -n 's/^THEME_BG=#//p' "$REPO/gallery/theme/nord.env")
 ans 1 | jq -e --arg f "$nfg" --arg b "$nbg" '.result.structuredContent.palette | (.HEX_FG | ascii_downcase) == ($f | ascii_downcase) and (.PANEL_BG | test("^[0-9a-fA-F]{6}$")) and (.PANEL_BG | ascii_downcase) != ($b | ascii_downcase) and (keys == (["GLYPH_FAMILY", "HEX_ACCENT", "HEX_FG", "PANEL_BG", "PANEL_HI", "PANEL_MUTED"] + [range(16) | "HEX_ANSI_\(.)"] | sort)) and .GLYPH_FAMILY == "stone" and all(to_entries[] | select(.key | startswith("HEX_ANSI_")); .value | test("^[0-9a-fA-F]{6}$"))' >/dev/null \
@@ -7795,9 +7795,14 @@ fi
 # the palette's own said, each with its folder in the palette in use (none with none), Enter the step that sets it
 mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/animations"}')"
 ans 2 | jq -r '.result.contents[0].text' > "$H/anims.json"
-[ "$(jq -r '[.rows[] | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "moon:check:the palette's own|ripple:blank:|tide:blank:|embers:blank:|sun:blank:|flight:blank:|atlas:blank:|none:blank:no motion" ] \
-    && jq -e --arg d "$REPO/gallery/animation" --arg a "$REPO/gallery/core/atlas-awakening" '(.rows[0].film == ($d + "/moon/tokyonight-night")) and (.rows[6].film == ($a + "/atlas-awakening-dialog")) and (.rows[-1] | has("film") | not) and all(.rows[]; .tool.name == "theme_animation" and .tool.arguments.to == .text and .quiet == true)' "$H/anims.json" >/dev/null \
+[ "$(jq -r '[.rows[] | select(.id | startswith("theme:animation:")) | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "moon:check:the palette's own|ripple:blank:|tide:blank:|embers:blank:|sun:blank:|flight:blank:|atlas:blank:|none:blank:no motion" ] \
+    && jq -e --arg d "$REPO/gallery/animation" --arg a "$REPO/gallery/core/atlas-awakening" '[.rows[] | select(.id | startswith("theme:animation:"))] as $p | ($p[0].film == ($d + "/moon/tokyonight-night")) and ($p[6].film == ($a + "/atlas-awakening-dialog")) and ($p[-1] | has("film") | not) and all($p[]; .tool.name == "theme_animation" and .tool.arguments.to == .text and .quiet == true)' "$H/anims.json" >/dev/null \
     && ok "provide theme: the animation list: the six and none, the one in use checked, the palette's own said, each piece's folder in the palette in use, Enter sets it in place (#132, #191)" || bad "animation list" "$(cat "$H/anims.json")"
+# the page is the dialog's motion whole (v0.172): its title says so, and under the pieces the theme's own opening and closing are
+# picked from your files, each saying the piece that plays while the theme has none of its own
+_dm=$(jq -r '.title + "|" + ([.rows[] | select(.group == "the theme'"'"'s own") | .id + "=" + .text + "=" + .columns[0] + ":" + .pick.tool + ":" + .pick.arguments.which + ":" + (.pick.types | join(",")) + ":" + .children + ":" + ((.more // []) | length | tostring)] | join("|"))' "$H/anims.json")
+[ "$_dm" = 'Dialog motion|theme:motion:open=opening=moon:theme_reel:open:webp:spark-shell://files/rows:0|theme:motion:close=closing=moon:theme_reel:close:webp:spark-shell://files/rows:0' ] \
+    && ok "provide theme: Dialog motion holds the theme's own opening and closing too, each a reel picked from your files, the piece that plays said where it has none" || bad "dialog motion reels" "$_dm"
 # #247: a palette with no set drawn ahead (a palette of yours, a theme from a picture or words) plays every piece too, the
 # dialog drawing it in the palette's colors: the verb, the list and the row as for a shipped palette, no piece its own, and
 # the step names draw:PIECE where a shipped palette names a folder (#193's lock is gone)
@@ -7810,8 +7815,8 @@ a1=$(sed -n 's/^DIALOG_ANIMATION=//p' "$HOME/.config/spark-shell/config")
 [ "$o1" = "animation ripple $(printf '\302\267') none, moon, ripple, tide, embers, sun, flight, atlas" ] && [ "$a1" = moon ] \
     && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = "animation moon $(printf '\302\267') from the dialog's next opening" ] \
     && [ "$(ans 2 | jq -r '.result.structuredContent.transitions')" = 'draw:moon' ] \
-    && [ "$(jq -r '[.rows[] | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "moon:check:|ripple:blank:|tide:blank:|embers:blank:|sun:blank:|flight:blank:|atlas:blank:|none:blank:no motion" ] \
-    && jq -e 'all(.rows[]; has("film") == (.text == "atlas"))' "$H/anims.json" >/dev/null \
+    && [ "$(jq -r '[.rows[] | select(.id | startswith("theme:animation:")) | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "moon:check:|ripple:blank:|tide:blank:|embers:blank:|sun:blank:|flight:blank:|atlas:blank:|none:blank:no motion" ] \
+    && jq -e 'all(.rows[] | select(.id | startswith("theme:animation:")); has("film") == (.text == "atlas"))' "$H/anims.json" >/dev/null \
     && { [ "$(uname -s)" = Darwin ] || jq -e '.rows[] | select(.id == "theme:show:Animation") | .columns == ["moon"] and .children == "spark-shell://theme/rows/animations" and .tool == null' "$H/trows.json" >/dev/null; } \
     && ok "theme animation, a palette with no pieces drawn ahead (#247): every piece in its list, the one set kept and played, none its own; the step names draw:moon for the dialog to draw" \
     || bad "animation any palette" "$o1 | $a1 | $(ans 2 | jq -c .result.structuredContent 2>&1) | $(cat "$H/anims.json") $(jq -c '.rows[] | select(.id == "theme:show:Animation")' "$H/trows.json" 2>&1)"
@@ -8073,7 +8078,7 @@ if [ "$(uname -s)" != Darwin ]; then
     printf '%s' "$out" | jq -e '.steps[1] == {name: "out_level", arguments: {level: 30}, line: "out level 30"}' >/dev/null && ok "want --json: a level is a number in the arguments, as the tool's schema says" || bad "want json level" "$out"
 fi
 st=0; out=$(sh "$SH" want the nord palette 2>&1) || st=$?
-[ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^$(printf '\342\234\223') nord is on$" && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
+[ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^$(printf '\342\234\223') Nord is on$" && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
     && ok "want WORDS: the same steps run, one line each with its sign and a reply, never the command again (#53)" || bad "want run" "st=$st $out"
 # spark 1.90's planner (issue 7): the desktop's tools on stdin, the names each tool takes now as the about; each step mapped back and gated here
 cat > "$H/.local/bin/spark" <<'STUB'
@@ -8989,7 +8994,7 @@ case $d1 in *sea-copy-landscape-1.jpg*sea-copy-portrait.mp4*) _d1=1 ;; *) _d1=''
 mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/yours"}')" "$(rq 3 resources/read '{"uri":"spark-shell://theme/rows/gallery/sea-two"}')" "$(rq 4 resources/read '{"uri":"spark-shell://theme/rows/gallery/nord"}')" \
     "$(call 5 theme_rename '{"name":"nord-mine","to":"nord-two"}')"
 y1=$(ans 1 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.id | startswith("theme:settings:")) | .text] | join("|")')
-_settings='Wallpaper and motion|Type and glyphs|Interface|Colors|Screens and art|Your themes'   # a Mac has no desktop: no wallpaper, no screens
+_settings='Wallpaper and screens|Type and glyphs|Interface|Colors|Your themes'   # six places with the gallery (v0.172); a Mac has no desktop: no wallpaper, no screens
 [ "$(uname -s)" != Darwin ] || _settings='Type and glyphs|Interface|Colors|Your themes'
 y2=$(ans 2 | jq -r '.result.contents[0].text | fromjson | [.rows[] | .group + ":" + .text + ":" + ((.more // []) | map(.said) | join(","))] | join("|")')
 y3=$(ans 3 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.group == "manage") | .tool.name] | join(" ")')
@@ -9046,26 +9051,115 @@ sh "$SH" theme solarized-light >/dev/null 2>&1; sh "$SH" theme variant dark >/de
     && [ "$rc3" = 1 ] && printf '%s' "$c3" | grep -q '^spark-shell theme: color takes a color.s word (background, text' \
     && [ "$c4" = 'the clock over the art off' ] && [ "$c5" = 'its light variant is solarized-light -- spark-shell theme variant light' ] \
     && [ "$rc6" = 1 ] && [ "$c6" = 'spark-shell theme: nord is dark too: a pair is one dark and one light' ] \
-    && [ "$c7" = 'a turned screen shows atlas-awakening-changed-portrait.jpg' ] && [ "$c8" = 'panels for 2 and 3 screens' ] \
+    && [ "$c7" = 'a turned screen shows atlas-awakening-changed-portrait.jpg' ] && [ "$c8" = 'the second and the third screen have their own pictures' ] \
     && [ "$rc9" = 1 ] && [ "$c9" = 'spark-shell theme: fake.mp4 not taken: it is no MP4' ] \
     && [ "$a10" = atlas ] && [ "$c11" = 'the theme plays its own opening and closing' ] && [ "$a11" = own ] \
     && [ "$s12" = 'atlas-awakening-changed, dark (light: solarized-light), cinematic, ambient, portrait authored, panels for 2 and 3 screens' ] \
     && ok "theme color, clock, pair, portrait, panel, loop, reel: a bundled theme changed as a look of its own with its files; a color's contrast said when low; a dark pair refused, a file that is no MP4 refused; both reels its own" \
     || bad "theme fields" "$t1 | $c1 | $c2 | $rc3 $c3 | $c4 | $c5 | $rc6 $c6 | $c7 | $c8 | $rc9 $c9 | $a10 $c11 $a11 | $s12"
-mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows/colors"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/screens"}')" "$(rq 3 resources/read '{"uri":"spark-shell://theme/rows"}')" \
-    "$(call 4 theme_color '{"word":"accent","color":"#d08a52"}')" "$(call 5 theme_panel '{"n":"3","path":"none"}')"
-f1=$(ans 1 | jq -r '.result.contents[0].text | fromjson | [(.rows | length), .rows[0].children, (.rows[3] | .id + " " + .text + "=" + .swatch + ":" + .tool.name + ":" + .tool.arguments.word), (.rows[13] | .id + " " + .text)] | map(tostring) | join(" ")')
-f2=$(ans 2 | jq -r '.result.contents[0].text | fromjson | [.rows[] | .id + ":" + (.pick.tool // (if .switch then "switch" else "" end))] | join(" ")')
-f3=$(ans 3 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.id | startswith("theme:settings:")) | .text] | join("|")')
-[ "$f1" = "21 spark-shell://theme/rows/colors/from theme:color:ACCENT Accent=#c88850:theme_color:accent theme:color:ANSI_8 8  black" ] \
-    && printf '%s' "$f2" | grep -q '^theme:screens:landscape-2:theme_panel theme:screens:landscape-3:theme_panel theme:screens:portrait:theme_portrait theme:screens:clock:switch theme:screens:pair: ' \
-    && printf '%s' "$f2" | grep -q 'theme:screens:dialog-open:theme_reel theme:screens:dialog-close:theme_reel$' \
-    && [ "$f3" = "$_settings" ] \
+mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows/colors"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/settings/wallpaper"}')" "$(rq 3 resources/read '{"uri":"spark-shell://theme/rows"}')" \
+    "$(call 4 theme_color '{"word":"accent","color":"#d08a52"}')" "$(call 5 theme_panel '{"n":"3","path":"none"}')" "$(rq 6 resources/read '{"uri":"spark-shell://theme/rows/colors/pair"}')" \
+    "$(rq 7 resources/read '{"uri":"spark-shell://theme/rows/screens"}')" "$(rq 8 resources/read '{"uri":"spark-shell://theme/rows/settings/interface"}')" "$(rq 9 resources/read '{"uri":"spark-shell://theme/rows/yours"}')"
+page() { ans "$1" | jq -r '(.result.contents[0].text // "{\"rows\":[]}") | fromjson'; }   # page ID -> that read's rows resource; one with no rows where the read was refused
+_fbg=$(sed -n 's/^THEME_BG=//p' "$_fl/palette.env"); _ffg=$(sed -n 's/^THEME_FG=//p' "$_fl/palette.env")
+f1=$(page 1 | jq -r '[(.rows | length), .rows[0].children, (.rows[1] | .id + "=" + .columns[0] + ">" + .children), (.rows[4] | .id + " " + .text + "=" + .swatch + ":" + .tool.name + ":" + .tool.arguments.word), (.rows[14] | .id + " " + .text)] | map(tostring) | join(" ")')
+f1a=$(page 1 | jq -r '[.rows[] | select(.id | startswith("theme:color:")) | (.id | ltrimstr("theme:color:")) + "=" + (.against // "-")] | (.[0:5] + .[12:13]) | join(" ")')
+f2=$(page 2 | jq -r '(.title // "") + "|" + ([.rows[] | .group + "/" + .id + ":" + (.pick.tool // "")] | join(" "))')
+f2w='Wallpaper and screens|wallpaper/theme:wallpaper: wallpaper/theme:show:Moving wallpaper: loops/theme:screens:loop:landscape-1:theme_loop loops/theme:screens:loop:landscape-2:theme_loop loops/theme:screens:loop:landscape-3:theme_loop loops/theme:screens:loop:portrait:theme_loop idle and lock/theme:screens:clock:'
+[ "$(uname -s)" != Darwin ] || f2w='|'   # a Mac has no wallpaper of spark-shell's: no such page
+f3=$(page 3 | jq -r '[.rows[] | select(.id | startswith("theme:settings:")) | .text] | join("|")')
+f3a=$(page 3 | jq -r '.state + "|" + ([.rows[] | select(.id == "theme:gallery:open") | .columns[0] + "/" + (.chip | length | tostring) + "/" + (.page // "")] | first) + "|" + ([.rows[] | select(.id == "theme:settings:yours") | .columns[0]] | first)')
+f6=$(page 6 | jq -r '[.title, .rows[0].id, ([.rows[] | select(.id == "theme:pair:solarized-light") | .text] | first)] | join("|")')
+f8=$(page 8 | jq -r '[.rows[] | .id | ltrimstr("theme:show:")] | join("|")'); f8a=$(page 8 | jq -r '[.rows[] | select(.id == "theme:show:Animation") | .text + ">" + .children] | first // ""')
+f8w='Transparency|Pointer|Words on the bar|App icons|App spacing|Animation'; f8aw='Dialog motion>spark-shell://theme/rows/animations'
+[ "$(uname -s)" != Darwin ] || { f8w=$f8; f8aw=''; }   # the desktop's rows: none of them on a Mac
+f9=$(page 9 | jq -r '[.rows[] | select(.group == "this look") | .id + "=" + .text + ":" + .tool.name + ":" + (.tool.arguments.name // (.tool.ask | join(",")))] | join("|")')
+[ "$f1" = "22 spark-shell://theme/rows/colors/from theme:colors:pair=Solarized light>spark-shell://theme/rows/colors/pair theme:color:ACCENT Accent=#c88850:theme_color:accent theme:color:ANSI_8 8  black" ] \
+    && [ "$f1a" = "BG=$_ffg FG=$_fbg ACCENT=$_fbg MUTED=$_fbg ANSI_0=- ANSI_8=-" ] \
+    && [ "$f2" = "$f2w" ] && [ "$f3" = "$_settings" ] \
     && ans 4 | jq -e '.result.isError == false and .result.structuredContent.undo == {"name": "theme_color", "arguments": {"word": "accent", "color": "#c88850"}}' >/dev/null \
-    && ans 5 | jq -e '.result.isError == false' >/dev/null && ! jq -e '.variants.dark.panels["3"]' "$_fl/family.json" >/dev/null \
-    && ok "provide theme: Colors (20 and another theme's), Screens and art (pictures picked, the clock a switch, loops and reels), from the settings; a color's undo its value before; a panel taken away" \
-    || bad "theme fields provide" "$f1 | $f2 | $f3 | $(ans 4 | head -c 300) | $(ans 5 | head -c 200)"
+    && ans 5 | jq -e '.result.isError == false' >/dev/null && jq -e '.variants.dark.panels["3"] | length == 3 and .[2].landscape == .[0].landscape and .[1].landscape != .[0].landscape' "$_fl/family.json" >/dev/null \
+    && ok "provide theme: Colors (20, each with the color it is read against, none for the two blacks; another theme's; the other variant by its title); the wallpaper's page holds the loops and the clock; a color's undo its value before; a third screen's picture taken away leaves the second its own" \
+    || bad "theme fields provide" "$f1 | $f1a | $f2 | $f3 | $(ans 4 | head -c 300) | $(ans 5 | head -c 200) $(jq -c '.variants.dark.panels' "$_fl/family.json" 2>&1)"
+[ "$f6" = 'Other variant|theme:pair:none|Solarized light' ] && ans 7 | jq -e '.error != null' >/dev/null && [ "$f8" = "$f8w" ] && [ "$f8a" = "$f8aw" ] \
+    && ok "provide theme: the other variant's list is under Colors, the dialog's motion under Interface, and Screens and art is no page any more" \
+    || bad "theme pages moved" "$f6 | $(ans 7 | head -c 200) | $f8 | $f8a"
+# a look kept to change (v0.172): home says it by the theme it came from, its poster and colors stand, and Your themes offers to
+# save it or to put that theme back (it stood under its folder's name with no poster)
+[ "$f3a" = 'Atlas Awakening, changed|Atlas Awakening, changed/9/spark-shell://theme/current-wallpaper|not saved' ] \
+    && [ "$f9" = 'theme:look:save=save it as a theme:theme_save:name|theme:look:back=put Atlas Awakening back:theme_palette:atlas-awakening' ] \
+    && [ "$(sed -n 's/^ORIGIN=//p' "$_fl/look.env")" = atlas-awakening ] \
+    && ok "provide theme: a look kept to change is said by its theme (Atlas Awakening, changed), keeps its poster, is not saved, and can be saved or put back from Your themes" \
+    || bad "changed look" "$f3a | $f9 | $(grep ORIGIN "$_fl/look.env" 2>&1)"
 sh "$SH" theme "$_ft" >/dev/null 2>&1; cp "$H/cfg.fields" "$cfg"; rm -rf "$_fl"
+# titles (v0.172): home says a theme by the name a person reads (a work's title, a palette's own name, a bundled work's words
+# with capitals), while its id, its uri and its step keep the name a command takes; a theme's page lists what is shown and no
+# more: apply with its kind and light, its palette, what it brings where it sets it, and what can be done with it
+cp "$cfg" "$H/cfg.titles"; printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\n' > "$cfg"
+mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows/gallery/collection/exhibition/cinematic-worlds"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/gallery/mars-conquest"}')" \
+    "$(rq 3 resources/read '{"uri":"spark-shell://theme/rows/gallery/collection/permanent/chromatic-nocturnes"}')" "$(rq 4 resources/read '{"uri":"spark-shell://theme/rows/gallery/amber-drizzle"}')" \
+    "$(rq 5 resources/read '{"uri":"spark-shell://theme/preview/mars-conquest"}')" "$(rq 6 resources/read '{"uri":"spark-shell://theme/rows"}')" "$(rq 7 resources/read '{"uri":"spark-shell://theme/rows/gallery/nord"}')"
+g1=$(page 1 | jq -r '[.rows[] | (.id | ltrimstr("theme:entry:")) + "=" + .text + ">" + (.children | ltrimstr("spark-shell://theme/rows/gallery/"))] | join("|")')
+g1k=$(page 1 | jq -r '[.rows[] | keys[] | select(startswith("_"))] | length')
+g2=$(page 2 | jq -r '.title + "|" + .rows[0].line + "|" + ([.rows[] | select(.id != "theme:compositions" and .id != "theme:detail:wallpaper") | (.group // "-") + "/" + (.id | ltrimstr("theme:")) + "=" + ((.columns // [])[0] // "")] | join("|"))')
+g2d=$(page 2 | jq -r '[.rows[] | select(.id == "theme:compositions" or .id == "theme:detail:wallpaper") | (.group // "-") + "/" + .text + "=" + .columns[0]] | join("|")')
+g2w='-/compositions=panels for 2 screens too|it brings/wallpaper=Landscape 1, moving'; [ "$(uname -s)" != Darwin ] || g2w=''
+g3=$(page 3 | jq -r '[.rows[] | select(.id == "theme:entry:core-dracula" or .id == "theme:entry:tokyonight-night" or .id == "theme:entry:nord") | .text] | sort | join("|")')
+g4=$(page 4 | jq -r .title); g5=$(page 5 | jq -r .title); g6=$(page 6 | jq -r '.state + "|" + ([.rows[] | select(.id == "theme:gallery:open") | .columns[0]] | first)')
+g7=$(page 7 | jq -r '.title + "|" + ([.rows[] | select(.group == "it brings") | .text] | join(","))')
+[ "$g1" = "atlas-awakening=Atlas Awakening>atlas-awakening|the-sounding-gate=The Sounding Gate>the-sounding-gate|mars-conquest=Mars Conquest>mars-conquest|the-pilgrims-vow=The Pilgrim's Vow>the-pilgrims-vow|the-late-edition=The Late Edition>the-late-edition" ] && [ "$g1k" = 0 ] \
+    && [ "$g3" = 'Dracula|Nord|Tokyo Night, night style' ] && [ "$g4" = 'Amber Drizzle' ] && [ "$g5" = 'Mars Conquest' ] && [ "$g6" = 'Nord|Nord' ] \
+    && ok "provide theme: a theme is said by its title in the gallery, on its page, on its poster and at the root (Mars Conquest, Tokyo Night, Amber Drizzle), and its id and uri keep its name" \
+    || bad "theme titles" "$g1 | $g1k | $g3 | $g4 | $g5 | $g6"
+[ "$g2" = "Mars Conquest|cinematic illustration $(printf '\302\267') dark|-/apply:mars-conquest=|-/terminal-palette=Mars Conquest (handpicked)|it brings/detail:type=krypton|it brings/detail:glyphs=stone|it brings/detail:motion=its own|it brings/detail:windows=80% solid|manage/manage:duplicate=|manage/manage:export=a theme file in Downloads" ] \
+    && [ "$g2d" = "$g2w" ] && printf '%s' "$g7" | grep -q '^Nord|' && ! printf '%s' "$g7" | grep -q 'type\|glyphs\|windows' \
+    && ok "provide theme: a theme's page is apply (its kind and light said), its palette, its compositions, what it brings only where it sets it (a palette says nothing of the type) and what can be done with it" \
+    || bad "theme page rows" "$g2 | $g2d | $g7"
+cp "$H/cfg.titles" "$cfg"
+# a color asked from a person (v0.172): its schema says it is a color, so the dialog opens its picker, and what to type; a name of
+# a color is taken as the verb takes it; a word that is none is refused in the verb's own sentence, never as a broken call
+cp "$cfg" "$H/cfg.color"; cp "$st_dir/theme.history" "$H/hist.color" 2>/dev/null || rm -f "$H/hist.color"; sh "$SH" theme nord >/dev/null 2>&1
+mcp theme "$(rq 1 tools/list)" "$(call 2 theme_color '{"word":"accent","color":"banana"}')" "$(call 3 theme_color "$(jq -cn '{word: "accent", color: ("x" * 41)}')")" "$(call 4 theme_color '{"word":"accent","color":"teal"}')"
+k1=$(ans 1 | jq -c '[.result.tools[] | select(.name == "theme_color" or .name == "theme_wallpaper_color") | .inputSchema.properties.color | [.type, .format, .description, .maxLength]] | unique')
+k2=$(ans 1 | jq -r '[.result.tools[] | select(.name == "theme_save") | .inputSchema.properties.name.description] | first')
+k3=$(ans 2 | jq -r '(.result.isError | tostring) + " " + .result.content[0].text'); k4=$(ans 3 | jq -r '(.error.code | tostring) + " " + .error.message')
+k5=$(ans 4 | jq -r '(.result.isError | tostring) + " " + (.result.structuredContent.receipt // "" | .[0:14])'); k6=$(sed -n 's/^THEME=//p' "$cfg")
+[ "$k1" = "[[\"string\",\"color\",\"#rrggbb or a color's name\",40]]" ] && [ "$k2" = 'a name for this theme' ] \
+    && [ "$k3" = "true spark-shell theme: accent takes #rrggbb or a color's name" ] && [ "$k4" = "-32602 theme_color: color is #rrggbb or a color's name, 40 characters at most" ] \
+    && [ "$k5" = 'false accent #008080' ] && [ "$k6" = nord-changed ] \
+    && ok "provide theme: a color's argument says it is a color and what to type, a new theme's name too; a color's name is taken, a word that is no color is refused in the verb's sentence, and only what no schema allows is the call's own error" \
+    || bad "theme color asked" "$k1 | $k2 | $k3 | $k4 | $k5 | $k6"
+sh "$SH" theme nord >/dev/null 2>&1; rm -rf "${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/looks/nord-changed"
+# a provider reads the settings again once another process wrote them (v0.172): each section is a process of its own that read
+# them at its start, so display's map kept the old wallpaper's pictures and a page its old theme after a change made elsewhere
+: > "$H/fresh.out"
+{ printf '%s\n' "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows"}')"
+  _fi=0; while [ "$_fi" -lt 150 ] && ! grep -q '"id":1' "$H/fresh.out" 2>/dev/null; do sleep 0.1; _fi=$((_fi + 1)); done
+  sh "$SH" theme dracula >/dev/null 2>&1 || :
+  printf '%s\n' "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows"}')"; } | sh "$SH" provide theme > "$H/fresh.out" 2>/dev/null || :
+q1=$(jq -r 'select(.id == 1) | .result.contents[0].text | fromjson | .state' "$H/fresh.out" 2>&1); q2=$(jq -r 'select(.id == 2) | .result.contents[0].text | fromjson | .state' "$H/fresh.out" 2>&1)
+[ "$q1" = Nord ] && [ "$q2" = Dracula ] && ok "provide: a theme changed by another process while a provider runs is in its next read (the settings are read again when their file is newer)" || bad "provider fresh" "$q1 | $q2"
+# the look for a home that is open (v0.172): each look change writes the colors, the glyph family and the text's face where the
+# dialog reads them, so it wears a theme changed at the prompt, by a key or in another section
+if [ "$(uname -s)" != Darwin ]; then
+    mkdir -p "$H/run172"; _dl=$H/run172/spark-shell-dialog.look
+    XDG_RUNTIME_DIR=$H/run172 sh "$SH" theme nord >/dev/null 2>&1; d1=$(grep -c '^HEX_ACCENT=88c0d0$' "$_dl" 2>/dev/null || :)
+    XDG_RUNTIME_DIR=$H/run172 sh "$SH" theme dracula >/dev/null 2>&1
+    d2=$(grep -E '^(HEX_ACCENT|HEX_FG)=' "$_dl" 2>/dev/null | paste -sd ' ' -); d3=$(grep -c '^HEX_ANSI_[0-9]*=[0-9a-f]\{6\}$' "$_dl" 2>/dev/null || :)
+    d4=$(grep -c '^PANEL_\(MUTED\|BG\|HI\|BAND\)=[0-9a-f]\{6\}$' "$_dl" 2>/dev/null || :)
+    XDG_RUNTIME_DIR=$H/run172 sh "$SH" theme text 13 >/dev/null 2>&1; d5=$(sed -n 's/^FONT=//p' "$_dl" 2>/dev/null)
+    XDG_RUNTIME_DIR=$H/run172 sh "$SH" theme family banner >/dev/null 2>&1; d6=$(sed -n 's/^GLYPH_FAMILY=//p' "$_dl" 2>/dev/null)
+    XDG_RUNTIME_DIR=$H/run172 sh "$SH" theme family stone >/dev/null 2>&1
+    # and the dialog's opening and closing, as a theme step's answer names them: a folder or draw: and the piece, nothing for none
+    XDG_RUNTIME_DIR=$H/run172 sh "$SH" theme animation moon >/dev/null 2>&1; d7=$(sed -n 's/^TRANSITIONS=//p' "$_dl" 2>/dev/null)
+    XDG_RUNTIME_DIR=$H/run172 sh "$SH" theme animation none >/dev/null 2>&1; d8=$(grep -c '^TRANSITIONS=$' "$_dl" 2>/dev/null || :)
+    [ "$d1" = 1 ] && [ "$d2" = 'HEX_FG=f8f8f2 HEX_ACCENT=bd93f9' ] && [ "$d3" = 16 ] && [ "$d4" = 4 ] \
+        && case $d5 in ?*' 13') true ;; *) false ;; esac && [ "$d6" = banner ] \
+        && case $d7 in draw:moon|/*moon*) true ;; *) false ;; esac && [ "$d8" = 1 ] \
+        && ok "theme NAME, theme text, theme family and theme animation write the dialog's look file: the colors as six hex digits, the 16 of the terminal, the glyph family, the face in pango's words and the dialog's motion" \
+        || bad "dialog look file" "$d1 | $d2 | $d3 | $d4 | $d5 | $d6 | $d7 | $d8 | $(head -3 "$_dl" 2>&1 | tr '\n' ' ')"
+fi
+sh "$SH" theme "$(sed -n 's/^THEME=//p' "$H/cfg.color")" >/dev/null 2>&1 || :; cp "$H/cfg.color" "$cfg"; if [ -f "$H/hist.color" ]; then cp "$H/hist.color" "$st_dir/theme.history"; else rm -f "$st_dir/theme.history"; fi
 # a theme file (v0.165): export puts NAME.spark-theme in Downloads, its look as a shared theme sets it (no pointer, no text size) and its
 # picture with no metadata; install reads one as data alone (plain files in one folder, of the kinds a theme holds), checks it as the gallery's themes are, and wears it
 _xt=$(sed -n 's/^THEME=//p' "$cfg"); cp "$cfg" "$H/cfg.file"; mkdir -p "$th_dir/shore"; cp "$REPO/gallery/core/atlas-awakening/palette.env" "$th_dir/shore/palette.env"
@@ -9409,11 +9503,16 @@ EOF
     held() { cksum "$_hd"/* | sed "s|$_hd/||" | paste -sd ' ' -; left "$_hd"; }   # the theme's files, and none left behind
     h0=$(held)
     # its own file given back to it, and a photo: the same picture (issue: the old one was removed before the copy)
-    heard portrait "$_hd/reef-portrait.jpg"; a1=$hrc$hout; heard panel 2 "$_hd/reef-landscape-2.jpg"; a2=$hrc$hout; h2=$(held)
+    # the family alone changes with the panel: the three screens' panels are written beside the two's (v0.172), the third the picture that leads
+    held_pics() { cksum "$_hd"/* | sed "s|$_hd/||" | grep -v ' family\.json$' | paste -sd ' ' -; left "$_hd"; }   # the theme's files less its family
+    h0p=$(held_pics); heard portrait "$_hd/reef-portrait.jpg"; a1=$hrc$hout; h1=$(held); heard panel 2 "$_hd/reef-landscape-2.jpg"; a2=$hrc$hout; h2=$(held_pics)
+    a2f=$(jq -c '.variants.dark.panels | [(.["2"] | map(.landscape)), (.["3"] | map(.landscape))]' "$_hd/family.json" 2>&1)
     { head -c 2 "$_hd/reef-portrait.jpg"; printf '\377\341\000\020Exif\000\000GPS 51.5'; tail -c +3 "$_hd/reef-portrait.jpg"; } > "$_hp/phone.JPEG"
-    heard portrait "$_hp/phone.JPEG"; a3=$hrc$hout; h3=$(held)
-    [ "$a1" = '0a turned screen shows reef-portrait.jpg' ] && [ "$a2" = '0panels for 2 screens' ] && [ "$a3" = "$a1" ] && [ "$h2" = "$h0" ] && [ "$h3" = "$h0" ] \
-        && ok "theme portrait and panel: the theme's own file given back stays, and a photo loses its metadata, its pixels the same bytes" || bad "theme portrait own" "$a1 | $a2 | $a3 | $h0 | $h2 | $h3"
+    h2f=$(held); heard portrait "$_hp/phone.JPEG"; a3=$hrc$hout; h3=$(held)
+    [ "$a1" = '0a turned screen shows reef-portrait.jpg' ] && [ "$a2" = '0the second screen has its own picture' ] && [ "$a3" = "$a1" ] && [ "$h1" = "$h0" ] && [ "$h2" = "$h0p" ] && [ "$h3" = "$h2f" ] \
+        && [ "$a2f" = '[["reef-landscape-1.jpg","reef-landscape-2.jpg"],["reef-landscape-1.jpg","reef-landscape-2.jpg","reef-landscape-1.jpg"]]' ] \
+        && ok "theme portrait and panel: the theme's own file given back stays, and a photo loses its metadata, its pixels the same bytes; a second screen's picture is kept for three screens too, the third showing the picture that leads" || bad "theme portrait own" "$a1 | $a2 | $a2f | $a3 | $h0 | $h1 | $h2 | $h3"
+    h0=$(held)
     rm -f "$_hp/PIPE.jpg"; mkfifo "$_hp/PIPE.jpg" "$_hp/PIPE.mp4" 2>/dev/null || :
     refused() {   # refused WHY VERB ARG... -- the verb refused with WHY, nothing of the theme's changed
         _rw=$1; shift; heard "$@"
@@ -9865,8 +9964,8 @@ ans 1 | jq -r '.result.contents[0].text' > "$H/theme-gallery.json"
 ans 2 | jq -r '.result.contents[0].text' > "$H/theme-card.json"
 ans 4 | jq -r '.result.contents[0].text' > "$H/theme-studio.json"
 jq -e '[.rows[] | select(.id == "theme:room:local:studio") | [.text, .columns[0]]] == [["studio", "2 works"]] and all(.rows[]; .tool == null and .look == null)' "$H/theme-gallery.json" >/dev/null \
-    && jq -e '[.rows[] | .text] == ["desk","nord"] and all(.rows[]; .tool == null and .look == null and (.chip | length) > 0)' "$H/theme-studio.json" >/dev/null \
-    && jq -e '.title == "desk" and .rows[0].tool == {name:"theme_palette",arguments:{name:"desk"}} and any(.rows[]; .id == "theme:detail:family")' "$H/theme-card.json" >/dev/null \
+    && jq -e '[.rows[] | .text] == ["desk","Nord"] and all(.rows[]; .tool == null and .look == null and (.chip | length) > 0)' "$H/theme-studio.json" >/dev/null \
+    && jq -e '.title == "desk" and .rows[0].tool == {name:"theme_palette",arguments:{name:"desk"}} and (.rows[0].line | type) == "string" and ([.rows[] | select(.group == "manage") | .text] | index("Rename") != null) and all(.rows[]; ((.columns // []) | index("keep current")) == null)' "$H/theme-card.json" >/dev/null \
     && [ "$(ans 3 | jq -r .error.code)" = -32002 ] && [ "$(ans 5 | jq -r .error.code)" = -32002 ] && cmp -s "$cfg" "$H/before-browse" \
     && ok "theme gallery: a local collection is one entry of its own and lists each work once, inspection keeps the current look, apply names the saved theme" || bad "theme gallery" "$(cat "$H/theme-gallery.json" "$H/theme-studio.json" "$H/theme-card.json")"
 # art families (format 1): one concept's variants are themes of their own, each with its own drawing; a theme with no family is read from itself
@@ -9937,10 +10036,11 @@ wide='{"name":"HDMI-A-1","make":"Test","model":"Wide","serial":"1","active":true
 tall='{"name":"DP-3","make":"Test","model":"Tall","serial":"2","active":true,"scale":1,"transform":"270","rect":{"x":-1200,"y":0,"width":1200,"height":1920}}'
 side='{"name":"DP-4","make":"Test","model":"Side","serial":"3","active":true,"scale":2,"transform":"normal","rect":{"x":1920,"y":0,"width":1280,"height":720}}'
 moved='{"name":"HDMI-A-1","make":"Test","model":"Wide","serial":"1","active":true,"scale":1,"transform":"normal","rect":{"x":-3120,"y":0,"width":1920,"height":1080}}'
+far='{"name":"DP-5","make":"Test","model":"Far","serial":"4","active":true,"scale":1,"transform":"normal","rect":{"x":4480,"y":0,"width":1920,"height":1080}}'
 case "$*" in
     "-t get_version") echo '{"human_readable":"1.12"}' ;;
     *get_outputs*) case $(cat "$HOME/screens" 2>/dev/null) in
-        3) echo "[$side,$wide,$tall]" ;; 2) echo "[$wide,$tall]" ;; moved) echo "[$side,$moved,$tall]" ;; *) echo "[$wide]" ;; esac ;;
+        3) echo "[$side,$wide,$tall]" ;; 2) echo "[$wide,$tall]" ;; moved) echo "[$side,$moved,$tall]" ;; ww) echo "[$side,$wide]" ;; www) echo "[$far,$side,$wide]" ;; *) echo "[$wide]" ;; esac ;;
     *) echo "$*" | awk '{ gsub(/;output /, "\n-- output "); print }' >> "$HOME/scr.log"; echo '[{"success":true}]' ;;   # each screen's still a line
 esac
 SCR
@@ -9990,6 +10090,72 @@ printf 'DESKTOP=sway\nTHEME=atlas-awakening\nWALLPAPER=%s\n' "$_aw/atlas-awakeni
     && ok "theme wallpaper NAME: a theme's own landscape picture by its role (landscape-2); the one chosen shows, the landscape screen's panel giving way; the list says each role; a portrait is no wallpaper; an old name in the config becomes the theme's picture" \
     || bad "theme own pictures" "$s8 | $s9 | $w9 | $r9 | $st $o10 | $s11 $w11"
 sh "$SH" theme nord >/dev/null 2>&1   # the look the tests below read
+# Wallpaper and screens (v0.172): one row for each connected screen that is not simply the first landscape one showing the
+# wallpaper, by the name display gives it, with what it shows now, never "none"; a turned screen takes a picture beside a
+# drawing, a scene or a picture, a second or third landscape screen beside a picture; any other row opens the wallpaper list
+mcp_scr() { ( SWAYSOCK=$H/sock; PATH="$H/scr:$PATH"; export SWAYSOCK PATH; mcp "$@" ); }
+wp_rows() { ans "$1" | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.id | startswith("theme:screen:")) | (.id | ltrimstr("theme:screen:")) + "/" + .text + "=" + .columns[0] + ":" + (.pick.tool // "") + ((.pick.arguments.n // "") | tostring) + ":" + (.children | ltrimstr("spark-shell://")) + ":" + ((.more // []) | map(.said + " " + (.arguments | tojson)) | join(","))] | join("|")'; }
+wp_page='{"uri":"spark-shell://theme/rows/settings/wallpaper"}'
+cp "$cfg" "$H/cfg-before-wp"; cp "$st_dir/theme.history" "$H/hist-before-wp" 2>/dev/null || rm -f "$H/hist-before-wp"
+_wl=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/looks; _wa=$REPO/gallery/core/atlas-awakening; _wp=$H/pics172; mkdir -p "$_wp"
+cp "$_wa/atlas-awakening-landscape-2.jpg" "$_wp/Wide.JPG"; cp "$_wa/atlas-awakening-portrait.jpg" "$_wp/tall.jpg"; testpng 64 36 "$_wp/side.png"; testpng 64 36 "$_wp/photo.png"
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\n' > "$cfg"
+echo 1 > "$HOME/screens"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w1=$(wp_rows 1)
+w1g=$(ans 1 | jq -r '.result.contents[0].text | fromjson | .title + ": " + ([.rows[] | .group + "/" + .id] | join(" "))')
+echo 2 > "$HOME/screens"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w2=$(wp_rows 1)
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=watch\n' > "$cfg"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w3=$(wp_rows 1)
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=#224466\n' > "$cfg"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w4=$(wp_rows 1)
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=default\n' > "$cfg"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w5=$(wp_rows 1)
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\n' > "$cfg"; echo ww > "$HOME/screens"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w6=$(wp_rows 1)
+sh "$SH" theme atlas-awakening >/dev/null 2>&1; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w7=$(wp_rows 1)
+echo 3 > "$HOME/screens"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w8=$(wp_rows 1)
+[ "$w1" = '' ] && [ "$w1g" = 'Wallpaper and screens: wallpaper/theme:wallpaper wallpaper/theme:show:Moving wallpaper idle and lock/theme:screens:clock' ] \
+    && [ "$w2" = 'DP-3/Tall (turned)=fjord, fitted:theme_portrait:files/rows:' ] && [ "$w3" = 'DP-3/Tall (turned)=watch, drawn for a turned screen:theme_portrait:files/rows:' ] \
+    && [ "$w4" = 'DP-3/Tall (turned)=#224466::theme/rows/wallpapers:' ] && [ "$w5" = 'DP-3/Tall (turned)=the ground::theme/rows/wallpapers:' ] \
+    && [ "$w6" = 'DP-4/Side=fjord::theme/rows/wallpapers:' ] \
+    && [ "$w7" = 'DP-4/Side=Landscape 2:theme_panel2:files/rows:take it away {"n":"2","path":"none"}' ] \
+    && [ "$w8" = 'DP-3/Tall (turned)=Portrait:theme_portrait:files/rows:take it away {"path":"none"}|DP-4/Side=Landscape 1:theme_panel3:files/rows:' ] \
+    && ok "provide theme: Wallpaper and screens lists each screen that shows something of its own by its name and what it shows (fitted, drawn for a turned screen, a role), never none: one plain screen has no row; a color or the ground and a drawing on a second screen open the wallpaper list; a turned screen picks its picture, a second or third one beside a picture" \
+    || bad "wallpaper and screens rows" "$w1 | $w1g | $w2 | $w3 | $w4 | $w5 | $w6 | $w7 | $w8"
+# the picks leave the picture on that screen: a third screen of a bundled work; a turned screen beside a palette's drawing; a
+# second screen beside a picture of yours, which the look takes under a name a family can say; a turned screen of a saved
+# theme whose wallpaper in use is a picture outside its folder; a third screen with no second of its own
+mcp_scr theme "$(call 1 theme_panel "$(jq -cn --arg p "$_wp/side.png" '{n: "3", path: $p}')")"; p1=$(ans 1 | jq -r '.result.structuredContent.receipt // .result.content[0].text')
+p1s=$(scr theme screens 2>&1 | tail -2 | sed 's/^[^:]*: //' | paste -sd '|' -); p1o=$(sed -n 's/^ORIGIN=//p' "$_wl/atlas-awakening-changed/look.env" 2>/dev/null)
+sh "$SH" theme nord >/dev/null 2>&1; rm -rf "$_wl/atlas-awakening-changed"; printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\n' > "$cfg"; echo 2 > "$HOME/screens"
+mcp_scr theme "$(call 1 theme_portrait "$(jq -cn --arg p "$_wp/tall.jpg" '{path: $p}')")" "$(rq 2 resources/read "$wp_page")"; p2=$(ans 1 | jq -r '.result.structuredContent.receipt // .result.content[0].text'); p2r=$(wp_rows 2)
+p2s=$(scr theme screens 2>&1 | head -1 | sed 's/^[^:]*: //'); p2t=$(sed -n 's/^THEME=//p' "$cfg")
+sh "$SH" theme nord >/dev/null 2>&1; rm -rf "$_wl/nord-changed"; printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=%s\n' "$_wp/Wide.JPG" > "$cfg"; echo ww > "$HOME/screens"
+mcp_scr theme "$(rq 1 resources/read "$wp_page")" "$(call 2 theme_panel "$(jq -cn --arg p "$_wp/side.png" '{n: "2", path: $p}')")"; p3r=$(wp_rows 1); p3=$(ans 2 | jq -r '.result.structuredContent.receipt // .result.content[0].text')
+p3s=$(scr theme screens 2>&1 | sed 's/^[^:]*: //' | paste -sd '|' -); p3f=$(ls "$_wl/nord-changed" 2>/dev/null | paste -sd ' ' -); p3w=$(sed -n 's/^WALLPAPER=//p' "$cfg")
+echo www > "$HOME/screens"; mcp_scr theme "$(call 1 theme_panel '{"n":"2","path":"none"}')" "$(call 2 theme_panel "$(jq -cn --arg p "$_wp/side.png" '{n: "3", path: $p}')")"
+p4=$(ans 2 | jq -r '.result.structuredContent.receipt // .result.content[0].text'); p4s=$(scr theme screens 2>&1 | sed 's/^[^:]*: //' | paste -sd '|' -)
+sh "$SH" theme nord >/dev/null 2>&1; rm -rf "$_wl/nord-changed"; printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\n' > "$cfg"; sh "$SH" theme save mine-172 >/dev/null 2>&1
+printf 'DESKTOP=sway\nTHEME=mine-172\nWALLPAPER=%s\n' "$_wp/photo.png" > "$cfg"; echo 2 > "$HOME/screens"
+mcp_scr theme "$(call 1 theme_portrait "$(jq -cn --arg p "$_wp/tall.jpg" '{path: $p}')")"; p5=$(ans 1 | jq -r '.result.structuredContent.receipt // .result.content[0].text')
+p5s=$(scr theme screens 2>&1 | head -1 | sed 's/^[^:]*: //'); p5l=$(grep -E '^(WALLPAPER|PICTURE)=' "$th_dir/mine-172/look.env" | sort | paste -sd ' ' -); p5w=$(sed -n 's/^WALLPAPER=//p' "$cfg")
+[ "$p1" = 'the second and the third screen have their own pictures' ] && [ "$p1s" = 'the wallpaper (atlas-awakening-changed-landscape-1.jpg)|panel 3 of 3 (atlas-awakening-changed-landscape-3.png)' ] && [ "$p1o" = atlas-awakening ] \
+    && [ "$p2" = 'a turned screen shows nord-changed-portrait.jpg' ] && [ "$p2s" = 'its portrait (nord-changed-portrait.jpg)' ] && [ "$p2t" = nord-changed ] \
+    && [ "$p2r" = 'DP-3/Tall (turned)=Portrait:theme_portrait:files/rows:take it away {"path":"none"}' ] \
+    && [ "$p3r" = 'DP-4/Side=Wide.JPG:theme_panel2:files/rows:' ] && [ "$p3" = 'the second screen has its own picture' ] \
+    && [ "$p3s" = 'panel 1 of 2 (nord-changed-landscape-1.jpg)|panel 2 of 2 (nord-changed-landscape-2.png)' ] \
+    && [ "$p3f" = 'family.json look.env nord-changed-landscape-1.jpg nord-changed-landscape-2.png palette.env' ] && [ "$p3w" = "$_wl/nord-changed/nord-changed-landscape-1.jpg" ] \
+    && [ "$p4" = 'the third screen has its own picture' ] && [ "$p4s" = 'panel 1 of 3 (nord-changed-landscape-1.jpg)|panel 2 of 3 (nord-changed-landscape-1.jpg)|panel 3 of 3 (nord-changed-landscape-3.png)' ] \
+    && [ "$p5" = 'a turned screen shows mine-172-portrait.jpg' ] && [ "$p5s" = 'its portrait (mine-172-portrait.jpg)' ] \
+    && [ "$p5l" = 'PICTURE=mine-172-landscape-1.png WALLPAPER=picture' ] && [ "$p5w" = "$th_dir/mine-172/mine-172-landscape-1.png" ] \
+    && ok "theme panel and portrait from the dialog: the picture picked is on that screen for a bundled work's third screen (the look keeps the theme it came from), a turned screen beside a palette's drawing, a second screen beside a picture of yours (taken in as NAME-landscape-1), a third with no second of its own, and a saved theme whose wallpaper in use was a picture outside its folder" \
+    || bad "screens picks" "$p1 | $p1s | $p1o || $p2 | $p2s | $p2t | $p2r || $p3r | $p3 | $p3s | $p3f | $p3w || $p4 | $p4s || $p5 | $p5s | $p5l | $p5w"
+# refused in words a person can act on in home, and nothing kept to change for it
+sh "$SH" theme nord >/dev/null 2>&1; sh "$SH" theme delete mine-172 >/dev/null 2>&1 </dev/null; rm -rf "$_wl/nord-changed"
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\n' > "$cfg"; rc1=0; r1=$(sh "$SH" theme panel 2 "$_wp/side.png" 2>&1) || rc1=$?
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=#224466\n' > "$cfg"; rc2=0; r2=$(sh "$SH" theme portrait "$_wp/tall.jpg" 2>&1) || rc2=$?
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\n' > "$cfg"; rc3=0; r3=$(sh "$SH" theme panel 2 none 2>&1) || rc3=$?; r3t=$(sed -n 's/^THEME=//p' "$cfg")
+[ "$rc1" = 1 ] && [ "$r1" = 'spark-shell theme: the second screen takes its own picture beside a picture, and the wallpaper is fjord, a drawing made for every screen -- choose a picture as the wallpaper first' ] \
+    && [ "$rc2" = 1 ] && [ "$r2" = 'spark-shell theme: a turned screen takes its own picture beside a drawing or a picture, and the wallpaper is the color #224466, the same on every screen -- choose a drawing or a picture as the wallpaper first' ] \
+    && [ "$rc3" = 0 ] && [ "$r3" = 'the second screen has no picture of its own: it shows the wallpaper' ] && [ "$r3t" = nord ] && [ ! -e "$_wl/nord-changed" ] \
+    && ok "theme panel and portrait: beside a drawing or a color the refusal says what to choose first, in home's words; taking away a picture a screen never had says so and keeps no changed copy" \
+    || bad "screens refusals" "$rc1 $r1 | $rc2 $r2 | $rc3 $r3 $r3t"
+cp "$H/cfg-before-wp" "$cfg"; if [ -f "$H/hist-before-wp" ]; then cp "$H/hist-before-wp" "$st_dir/theme.history"; else rm -f "$st_dir/theme.history"; fi; rm -rf "$_wp"
 # the stills sent to sway, each screen by its port; a screen that comes or goes draws them again, the same screens never twice
 printf 'DESKTOP=sway\nTHEME=study-night\nWALLPAPER=fjord\nWALLPAPER_MOTION=off\n' > "$cfg"; rm -f "$HOME/scr.log" "$H/run/spark-shell-screens.plan"; echo 3 > "$HOME/screens"
 XDG_RUNTIME_DIR=$H/run scr desktop --motion >/dev/null 2>&1; scr_wait 'bg' 3
@@ -10098,15 +10264,37 @@ sh "$SH" theme text 12 >/dev/null 2>&1; sh "$SH" theme transparency 15 >/dev/nul
 if [ "$(uname -s)" != Darwin ]; then
     jq -e '(.rows[] | select(.id == "theme:wallpaper") | .text == "Wallpaper" and .columns == ["dunes"] and .tool == null and .children == "spark-shell://theme/rows/wallpapers")
         and (.rows[] | select(.id == "theme:picture") | .text == "a theme from a picture" and .children == "spark-shell://files/rows" and .pick == {tool: "theme_picture", types: ["jpg", "jpeg", "png", "webp"]})' "$H/trows.json" >/dev/null \
-        && jq -e --arg th "$HOME/.local/state/spark-shell/thumbs" '.title == "wallpaper" and (.rows[] | select(.id == "theme:wallpaper skyline") | .group == "drawings" and .columns == ["for tokyonight-night"] and .preview == ($th + "/skyline-dracula.png") and .tool == {name: "theme_wallpaper", arguments: {name: "skyline"}} and .quiet == true)
+        && jq -e --arg th "$HOME/.local/state/spark-shell/thumbs" '.title == "Wallpaper" and (.rows[] | select(.id == "theme:wallpaper skyline") | .group == "drawings" and .columns == ["for Tokyo Night, night style"] and .preview == ($th + "/skyline-dracula-960.png") and .tool == {name: "theme_wallpaper", arguments: {name: "skyline"}} and .quiet == true)
             and (.rows[] | select(.id == "theme:wallpaper-picture") | .group == "custom" and .text == "a picture" and (has("quiet") | not) and .children == "spark-shell://files/rows" and .pick.tool == "theme_wallpaper_picture")
-            and (.rows[] | select(.id == "theme:wallpaper-color") | .text == "a color" and .tool.name == "theme_wallpaper_color" and .tool.ask == ["color"])
+            and (.rows[] | select(.id == "theme:wallpaper-color") | .text == "a color" and .tool.name == "theme_wallpaper_color" and .tool.ask == ["color"] and (.swatch | test("^#[0-9a-f]{6}$")))
             and (.rows[] | select(.id == "theme:wallpaper default") | .text == "the ground" and .group == "custom" and .quiet == true and (.chip | length) == 1) and ([.rows[] | select(.text == "none" or .group == "colors")] | length == 0)
             and (.rows[] | select(.id == "theme:wallpaper dunes") | .sign == "check" and .quiet == true and .tool.arguments.name == "dunes") and .rows[0].id == "theme:wallpaper skyline"' "$H/wrows.json" >/dev/null \
         && ok "provide theme: the wallpaper row opens the list resource (#36): the drawings first, each with the palette it was drawn for and its picture in this palette, each kept in place (#191); custom: a picture to pick, a color asked for, the ground with its color; no none, no color rows; dunes checked, its step kept" || bad "wallpaper rows" "$(head -c 700 "$H/trows.json"; head -c 900 "$H/wrows.json")"
-    jq -e --arg th "$HOME/.local/state/spark-shell/thumbs" '(.rows[] | select(.id == "theme:wallpaper watch") | .group == "drawings" and .columns == ["moves, in any palette"] and .preview == ($th + "/watch-dracula.png") and .quiet == true)
+    jq -e --arg th "$HOME/.local/state/spark-shell/thumbs" '(.rows[] | select(.id == "theme:wallpaper watch") | .group == "drawings" and .columns == ["moves, in any palette"] and .preview == ($th + "/watch-dracula-960.png") and .quiet == true)
         and ([.rows[] | select(.group == "drawings") | .text] | index("watch") > index("embers")) and ([.rows[] | .text, (.columns[]?)] | map(select(test("^(cozy|night)$"))) | length == 0)' "$H/wrows.json" >/dev/null \
         && ok "provide theme: the scenes are wallpapers after the drawings, each moving in any palette, its picture drawn in this one; no collection named (#188)" || bad "scene rows" "$(jq -c '[.rows[] | select(.text == "watch")]' "$H/wrows.json")"
+    # the list's pictures (v0.172): made apart at 960 wide under names of their own (the lit row's is the poster over the list), the
+    # 480 ones of before removed; the provider is told at the first one made, so an open list shows it without a key; where
+    # nobody was subscribed the word is held and said at the next subscription, never lost
+    if [ -z "${SPARK_SHELL_NO_SVG:-}" ] && { command -v rsvg-convert >/dev/null 2>&1 || command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1; }; then
+        _td=$HOME/.local/state/spark-shell/thumbs; _tt=$(sed -n 's/^THEME=//p' "$cfg"); rm -rf "$_td"; mkdir -p "$_td"; : > "$_td/skyline-$_tt.png"; : > "$H/poke.out"
+        { printf '%s\n' "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows/wallpapers"}')"
+          _pi=0; while [ "$_pi" -lt 600 ] && { [ ! -s "$_td/skyline-$_tt-960.png" ] || [ -e "$_td/.making" ]; }; do sleep 0.2; _pi=$((_pi + 1)); done; sleep 0.5   # every picture made, its maker gone: no word comes after this
+          printf '%s\n' "$(rq 2 resources/subscribe '{"uri":"spark-shell://theme/rows"}')"; sleep 1; } | sh "$SH" provide theme > "$H/poke.out" 2>/dev/null || :
+        k1=$(jq -r 'select(.id == 2 or .method == "notifications/resources/updated") | (.id // .params.uri) | tostring' "$H/poke.out" 2>&1 | sed -n '1,2p' | paste -sd ' ' -)
+        k2=$(od -An -tx1 -N4 "$_td/skyline-$_tt-960.png" 2>/dev/null | tr -d ' \n')
+        k3=$(jq -r 'select(.id == 1) | .result.contents[0].text | fromjson | [.rows[] | select(.id == "theme:wallpaper skyline") | .preview] | first' "$H/poke.out" 2>&1)
+        _pi=0; while [ "$_pi" -lt 600 ] && [ -e "$_td/.making" ]; do sleep 0.2; _pi=$((_pi + 1)); done   # its maker ended: none left behind the suite
+        [ "$k1" = '2 spark-shell://theme/rows' ] && [ "$k2" = 89504e47 ] && [ "$k3" = "$_td/skyline-$_tt-960.png" ] && [ ! -e "$_td/skyline-$_tt.png" ] && [ ! -e "$_td/.making" ] \
+            && ok "provide theme: the wallpaper list's pictures are made at 960 wide under their own names, the 480 one of before removed; a picture made while nobody was subscribed is said at the next subscription" \
+            || bad "wallpaper pictures" "$k1 | $k2 | $k3 | $(ls -A "$_td" | head -6 | tr '\n' ' ')"
+    fi
+    # Dialog motion's two reel rows say what plays, never none (v0.172): no motion where the dialog has none
+    cp "$cfg" "$H/cfg.reel"; { grep -v '^DIALOG_ANIMATION=' "$H/cfg.reel"; echo 'DIALOG_ANIMATION=none'; } > "$cfg"
+    mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows/animations"}')"
+    k4=$(ans 1 | jq -r '.result.contents[0].text | fromjson | [.rows[] | select(.group == "the theme'"'"'s own") | .text + "=" + .columns[0]] | join("|")')
+    cp "$H/cfg.reel" "$cfg"
+    [ "$k4" = 'opening=no motion|closing=no motion' ] && ok "provide theme: with the dialog's motion none, the theme's opening and closing say no motion, never none" || bad "reel rows none" "$k4"
     mcp theme "$(call 1 theme_wallpaper_color '{"color":"teal"}')" "$(call 2 theme_wallpaper_color '{"color":"chartreuse"}')"
     [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'the wallpaper is teal' ] && grep -qx 'WALLPAPER=#008080' "$cfg" && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'theme: a color is a name (black, white, gray, silver, navy, blue, teal, green, olive, maroon, red, purple, brown, orange) or #rrggbb' ] \
         && ok "provide theme_wallpaper_color: a color by its name or #rrggbb, a word that is no color refused" || bad "wallpaper color call" "$(cat "$H/mcp.out" | cut -c1-300)"
@@ -10298,7 +10486,7 @@ if [ "$(uname -s)" != Darwin ]; then
     mcp theme "$(call 1 theme_wallpaper '{"name":"sunset"}')" "$(call 2 theme_wallpaper '{"name":"nowhere"}')" "$(call 3 theme_wallpaper '{"name":"sunset"}')" "$(call 4 theme_palette '{"name":"dracula"}')"
     [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'the wallpaper is sunset' ] && grep -qx 'WALLPAPER=dunes' "$cfg" && [ "$(ans 1 | jq -c '.result.structuredContent.undo')" = '{"name":"theme_wallpaper","arguments":{"name":"dunes"}}' ] \
         && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'nowhere is not in the list now' ] \
-        && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = 'the wallpaper is sunset' ] && [ "$(ans 4 | jq -r '.result.structuredContent.receipt')" = 'dracula is on' ] \
+        && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = 'the wallpaper is sunset' ] && [ "$(ans 4 | jq -r '.result.structuredContent.receipt')" = 'Dracula is on' ] \
         && ok "provide theme_wallpaper: a row of the list is a step with its undo; a name no row holds is refused; what is in use, chosen again, is a receipt (#29), and dracula chosen again brings dunes back over sunset" || bad "theme_wallpaper call" "$(cat "$H/mcp.out")"
 fi
 mcp theme "$(rq 1 tools/list)" "$(call 2 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal"}')" "$(call 3 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal","light":"dim","face":"neon","family":"stone","animation":"tide","drawing":"fjord"}')" "$(call 4 theme_delete '{"name":"nord"}')" "$(call 5 theme_back '{}')" "$(call 6 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal","light":"dark","face":"neon","family":"stone","animation":"tide","drawing":"fjord","name":"a name that runs on and on past forty letters"}')" "$(call 7 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal","light":"dark","face":"comic","family":"stone","animation":"tide","drawing":"fjord"}')"

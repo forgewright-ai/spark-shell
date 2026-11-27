@@ -229,24 +229,32 @@ WALL_TYPES='jpg jpeg png webp'   # the picker's types
 WALL_GROUND_SAID="the palette's own, darker"   # the ground's column
 THUMB_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/thumbs   # DRAWING-PALETTE.png for the list
 thumb_palette() { if [ -n "${THEME:-}" ] && [ "$THEME" != none ] && palette_file "$THEME" >/dev/null; then printf '%s' "$THEME"; else printf none; fi; }   # -> THEME when it has a palette file, else none
-wall_thumbs() {   # draws the small pictures missing or stale; quiet
+wall_thumb_made() {   # one of the list's pictures made: counted in $TMP/thumbs.made, and said to the one who asked (WALL_THUMB_SAID, a command given the count)
+    _wtn=0; [ ! -f "$TMP/thumbs.made" ] || read -r _wtn < "$TMP/thumbs.made" || :
+    case $_wtn in ''|*[!0-9]*) _wtn=0 ;; esac; _wtn=$((_wtn + 1)); echo "$_wtn" > "$TMP/thumbs.made"
+    [ -z "${WALL_THUMB_SAID:-}" ] || "$WALL_THUMB_SAID" "$_wtn"
+}
+wall_thumbs() {   # draws the wallpaper list's pictures missing or stale, 960 wide (a scene 960 by 540): the lit row's is the poster over the list, and 480 stood small in it. Each one made is counted (wall_thumb_made). Quiet
+    mkdir_state "$THUMB_DIR" || return 0
+    # the 480 ones of v0.171 and before went by another name (NAME-PALETTE.png): never shown again, and removed here; one of these 30 days old goes too, as a screen's picture does, and is drawn again when the list opens
+    find "$THUMB_DIR" -maxdepth 1 -type f -name '*.png' \( ! -name '*-960.png' -o -mtime +30 \) -exec rm -f {} + 2>/dev/null || :
     art_stills | while IFS= read -r _asf; do   # the theme's own pictures
-        _t=$THUMB_DIR/$THEME-$(art_label "$_asf").png   # the row's own words name it (provide_wall_rows)
-        [ -f "$_t" ] || { mkdir_state "$THUMB_DIR" && pic_png "$_asf" "$_t" 480; } || :
+        _t=$THUMB_DIR/$THEME-$(art_label "$_asf")-960.png   # the row's own words name it (provide_wall_rows)
+        [ -f "$_t" ] || { pic_png "$_asf" "$_t" 960 && wall_thumb_made; } || :
     done
     [ -n "$(svg_tool)" ] || return 0
-    mkdir_state "$THUMB_DIR"; _tp=$(thumb_palette); _pf=''; [ "$_tp" = none ] || _pf=$(palette_file "$_tp")
+    _tp=$(thumb_palette); _pf=''; [ "$_tp" = none ] || _pf=$(palette_file "$_tp")
     for _w in $(wall_shipped_names); do
-        _t=$THUMB_DIR/$_w-$_tp.png
+        _t=$THUMB_DIR/$_w-$_tp-960.png
         if wall_scene "$_w"; then
             [ -n "$_pf" ] || continue
             [ ! -f "$_t" ] || [ -n "$(find "$SCENE_MAKE" -newer "$_t" 2>/dev/null)" ] || continue
-            scene_still "$_w" "$_pf" 480x270 "$_t" || :; continue
+            ! scene_still "$_w" "$_pf" 960x540 "$_t" || wall_thumb_made; continue
         fi
         [ ! -f "$_t" ] || [ -n "$(find "$REPO/gallery/wallpaper/$_w.svg" -newer "$_t" 2>/dev/null)" ] || continue   # find -newer: -nt is not POSIX
         if [ -z "$_pf" ] || [ "$(wall_palette_of "$_w")" = "$_tp" ]; then _src=$REPO/gallery/wallpaper/$_w.svg
         else wall_recolor "$REPO/gallery/wallpaper/$_w.svg" "$_pf" > "$TMP/thumb.svg" || continue; _src=$TMP/thumb.svg; fi
-        if svg_png "$_src" "$TMP/thumb.png" 480; then cp "$TMP/thumb.png" "$_t.${TMP##*/}" && mv "$_t.${TMP##*/}" "$_t"; fi   # whole or none: the dialog may be reading
+        if svg_png "$_src" "$TMP/thumb.png" 960; then cp "$TMP/thumb.png" "$_t.${TMP##*/}" && mv "$_t.${TMP##*/}" "$_t" && wall_thumb_made; fi   # whole or none: the dialog may be reading
     done
 }
 wall_there() { [ "$WALLPAPER" != none ] && [ "$WALLPAPER" != default ] && ! wall_color && [ -f "$(wall_path)" ] && [ -r "$(wall_path)" ]; }

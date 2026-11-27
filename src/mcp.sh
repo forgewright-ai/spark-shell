@@ -68,12 +68,13 @@ provide_main() {   # provide_main SECTION
     command -v jq >/dev/null 2>&1 || refuse_in provide "jq is not installed (spark-shell on)" >&2
     command -v mkfifo >/dev/null 2>&1 || refuse_in provide "mkfifo is not installed" >&2
     [ "$sec" != theme ] || config_mend
+    : > "$TMP/config.mark"   # before the settings are read: one written while they are is read again (provide_fresh)
     config_load; [ "$OS" = Darwin ] || pm_detect; theme_load; SND=''; [ "$OS" = Darwin ] || SND=$(snd_tool)
     PANEL_VERSION_NOW=$(panel_version); PANEL_VERSION_READ=1   # pinned for the provider's life
     [ "$sec" != display ] || { if saver_can; then SAVER_CAN_NOW=1; else SAVER_CAN_NOW=0; fi; }   # python3 asked once, not per read
     [ "$sec" != system ] || system_sbom_warm
     exec 3>&1 1>&2 6<&0   # fd 3 the wire out, fd 6 the wire in
-    WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; CLIENT_PAIRING=''; : > "$PROOTS"
+    WATCH=''; READER=''; SUBSCRIBED=''; POKE_HELD=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; CLIENT_PAIRING=''; : > "$PROOTS"
     REM_DELETED=$TMP/deleted   # kept for undo until the provider ends
     LAYOUT_DELETED=$TMP/deleted-layouts
     trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; files_stop; files_sound_stop; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # a kill that finds nobody is no failure
@@ -84,10 +85,16 @@ provide_main() {   # provide_main SECTION
     while IFS= read -r _msg <&4; do
         case $_msg in
             eof) break ;;
-            poke) [ -z "$SUBSCRIBED" ] || rpc_note notifications/resources/updated "$(jq -cn --arg u "spark-shell://$sec/rows" '{uri: $u}')" ;;
+            poke) if [ -n "$SUBSCRIBED" ]; then provide_poked; else POKE_HELD=1; fi ;;   # nobody listens: held, and said when the host subscribes (a picture made while the place was not in view was never shown)
             "in "*) provide_one "${_msg#in }" || : ;;
         esac
     done
+}
+provide_poked() { rpc_note notifications/resources/updated "$(jq -cn --arg u "spark-shell://$sec/rows" '{uri: $u}')"; }   # the host told that the section's rows changed
+provide_fresh() {   # the settings read again once another process wrote them: a section is a process of its own that read them at its start, so display's map kept the old wallpaper's pictures after a theme change made in the theme section, at the prompt or by a key
+    [ -n "$(find "$CONFIG" "$THEME_ENV" -newer "$TMP/config.mark" 2>/dev/null)" ] || return 0
+    : > "$TMP/config.mark"
+    for _k in $THEME_KEYS; do unset "$_k"; done; config_load; theme_load
 }
 provide_one() {   # provide_one LINE -- one JSON-RPC message
     [ "${#1}" -le "$PROVIDE_LINE_MAX" ] || { rpc_error null -32600 "a message is $PROVIDE_LINE_MAX bytes at most"; return 0; }
@@ -110,6 +117,7 @@ EOF
         *) rpc_error null -32600 "one JSON-RPC 2.0 object a line"; return 0 ;;
     esac
     case $_id in '"'*|[0-9]*|-[0-9]*) ;; *) rpc_error null -32600 "an id is a string or a number"; return 0 ;; esac
+    provide_fresh
     [ "$sec" != theme ] || themes_settle
     case $_method in
         initialize) provide_initialize "$_id" "$_params" ;;
@@ -143,7 +151,8 @@ provide_resource() {   # provide_resource ID METHOD URI -- a read, a subscriptio
         resources/subscribe) SUBSCRIBED=1
             case " $PROVIDE_WATCHED " in *" $sec "*) [ -n "$WATCH" ] || { provide_watch "$sec" 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; } ;; esac
             [ "$sec" != system ] || [ -n "$WATCH" ] || { _sum=$({ cksum < "$SYSTEM_CHECK"; } 2>/dev/null); provide_watch_check "$_sum" 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; }
-            rpc_result "$1" '{}' ;;
+            rpc_result "$1" '{}'
+            [ -z "$POKE_HELD" ] || { POKE_HELD=''; provide_poked; } ;;   # what changed while nobody listened, said now
         resources/unsubscribe) SUBSCRIBED=''; [ -z "$WATCH" ] || { kill "$WATCH" 2>/dev/null || :; wait "$WATCH" 2>/dev/null || :; WATCH=''; }; rpc_result "$1" '{}' ;;
     esac
 }
@@ -168,7 +177,8 @@ provide_resource_files() {   # provide_resource_files ID METHOD URI -- the files
 provide_resource_special() {   # provide_resource_special ID METHOD URI -- one section's own resources: a read of them, or system's running list watched; false when the uri is not one
     case $sec:$2:$3 in
         theme:resources/read:spark-shell://theme/rows/settings/?*)
-            if provide_rows theme | appearance_section "${3#spark-shell://theme/rows/settings/}" > "$TMP/theme.section"; then
+            _aps=appearance_section; [ "${3#spark-shell://theme/rows/settings/}" != wallpaper ] || _aps=appearance_wallpaper   # the wallpaper's page holds the screens too
+            if provide_rows theme | "$_aps" "${3#spark-shell://theme/rows/settings/}" > "$TMP/theme.section"; then
                 rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.section")"
             else rpc_error "$1" -32002 "no theme settings at that uri"; fi ;;
         theme:resources/read:spark-shell://theme/current-wallpaper|theme:resources/read:spark-shell://theme/current-wallpaper'?full=1')
@@ -188,8 +198,8 @@ provide_resource_special() {   # provide_resource_special ID METHOD URI -- one s
             if "$_read" "${_path#*/}" > "$TMP/terminal.rows"; then
                 rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/terminal.rows")"
             else rpc_error "$1" -32002 "no palette at that uri"; fi ;;
-        theme:resources/read:spark-shell://theme/rows/colors|theme:resources/read:spark-shell://theme/rows/colors/from|theme:resources/read:spark-shell://theme/rows/screens|theme:resources/read:spark-shell://theme/rows/screens/pair|theme:resources/read:spark-shell://theme/rows/pointers)
-            case ${3#spark-shell://theme/rows/} in colors) _apr=appearance_colors ;; colors/from) _apr=appearance_colors_from ;; screens) _apr=appearance_screens ;; screens/pair) _apr=appearance_pairs ;; pointers) _apr=appearance_pointers ;; esac
+        theme:resources/read:spark-shell://theme/rows/colors|theme:resources/read:spark-shell://theme/rows/colors/from|theme:resources/read:spark-shell://theme/rows/colors/pair|theme:resources/read:spark-shell://theme/rows/pointers)
+            case ${3#spark-shell://theme/rows/} in colors) _apr=appearance_colors ;; colors/from) _apr=appearance_colors_from ;; colors/pair) _apr=appearance_pairs ;; pointers) _apr=appearance_pointers ;; esac
             if "$_apr" > "$TMP/theme.part"; then rpc_result "$1" "$(jq -c --arg u "$3" '{contents:[{uri:$u,mimeType:"application/json",text:tojson}]}' "$TMP/theme.part")"
             else rpc_error "$1" -32002 "nothing at that uri: no theme in use"; fi ;;
         theme:resources/read:spark-shell://theme/rows/yours)
@@ -365,7 +375,7 @@ provide_args_bad() {   # provide_args_bad ARGUMENTS -> why they do not fit the t
         elif any($xp[]; . as $e | .[1] == "filename" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | length) < 1 or ($a[$e[0]] | length) > 255 or ($a[$e[0]] | test("[\u0000-\u001f\u007f/]")))) then "name is one name, no slash, 255 characters at most"
         elif any($xp[]; . as $e | .[1] == "path" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | startswith("/") | not) or ($a[$e[0]] | length) > 4096 or ($a[$e[0]] | test("[\u0000-\u001f\u007f]")))) then "to is a whole path, plain text"
         elif any($xp[]; . as $e | .[1] == "art" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] != "none" and (($a[$e[0]] | startswith("/") | not) or ($a[$e[0]] | length) > 4096 or ($a[$e[0]] | test("[\u0000-\u001f\u007f]")))))) then "path is a whole path, or none"
-        elif any($xp[]; . as $e | .[1] == "color" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^#[0-9a-fA-F]{6}$") | not))) then "color is #rrggbb"
+        elif any($xp[]; . as $e | .[1] == "color" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | length) > 40 or ($a[$e[0]] | plain | not))) then "color is #rrggbb or a color'"'"'s name, 40 characters at most"
         elif ([$xs[] | select(.[1] == "text" or .[1] == "name") | . as $e | select(($a | has($e[0])) and ((($a[$e[0]] | type) != "string") or (($a[$e[0]] | length) > 40) or (($a[$e[0]]) | plain | not)))] | length) > 0 then ([$xs[] | select(.[1] == "text" or .[1] == "name") | .[0]][0]) + " is plain text, 40 characters at most"
         elif any($xs[]; . as $e | .[1] == "coordinate" and ($a[$e[0]] | if type == "string" and test("^-?[0-9]{1,5}$") then tonumber else . end | type != "number" or . < -65535 or . > 65535 or . != floor)) then "coordinates are whole numbers, -65535 to 65535"
         elif any($xs[]; . as $e | .[1] == "scale" and (if ($a[$e[0]] | type) != "string" then true else ($a[$e[0]] | length) > 16 or ($a[$e[0]] | test("^[0-9]+([.][0-9]+)?$") | not) or (($a[$e[0]] | tonumber? // 0) <= 0) end)) then "scale is a positive decimal"
@@ -455,6 +465,7 @@ provide_call_step() {   # provide_call_step ID -- the step in a child, progress 
     PANEL_PASS=''; BT_BRIDGE=''; PANEL_INV=''; PANEL_INV_READ=''; PANEL_JOURNAL=''; WIN_LABELS_READ=''; rm -f "$TMP/bt.call-id" "$TMP/bt.ask"
     _rc=$(cat "$TMP/call.rc" 2>/dev/null || echo 1); _out=$(scrub_text < "$TMP/call.out")
     if [ -n "$(find "$CONFIG" "$THEME_ENV" -newer "$TMP/step.mark" 2>/dev/null)" ]; then
+        : > "$TMP/config.mark"   # read here: the next request reads them once more only if another process writes them after this
         for _k in $THEME_KEYS; do unset "$_k"; done; config_load; theme_load
     fi
     return 0

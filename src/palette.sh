@@ -44,6 +44,58 @@ theme_label_of() {   # theme_label_of NAME -> _tal, the name it is shown by
     esac
 }
 theme_label() { theme_label_of "$1"; printf '%s' "$_tal"; }
+# The name a person reads in home: a work's title (Mars Conquest), a palette's own name (Catppuccin Mocha), a bundled
+# work with no title by its name's words (Amber Drizzle), a theme of yours as you named it. A command still takes the
+# name: mars-conquest. No process: the root's rows say one at every read.
+theme_title_of() {   # theme_title_of NAME -> _tit: its title as the files say it; the name itself for a theme of yours and for one that is not here
+    _tit=$1
+    theme_at "$1" || return 0
+    theme_label_of "$1"
+    case $_tak in saved|yours|look|none) _tit=$_tal; return 0 ;; esac   # as you named it (first-NAME, a variant the private preview installed, by NAME)
+    if [ "$_tak" = bundled ] && [ -f "$CORE_DIR/$1/family.json" ]; then   # its own family names it: the file in its folder, its id the folder's name
+        _tti=''; _ttt=''
+        while IFS= read -r _ttl || [ -n "$_ttl" ]; do
+            case $_ttl in
+                '  "id": "'*'",') _tti=${_ttl#'  "id": "'}; _tti=${_tti%'",'} ;;
+                '  "title": "'*'",') _ttt=${_ttl#'  "title": "'}; _ttt=${_ttt%'",'} ;;
+            esac
+        done < "$CORE_DIR/$1/family.json"
+        case $_ttt in ''|*[!\ -~]*|*[\"\\]*) _ttt='' ;; esac
+        if [ "$_tti" = "$1" ] && [ -n "$_ttt" ] && [ "${#_ttt}" -le 40 ]; then _tit=$_ttt; return 0; fi
+    fi
+    if [ -f "$REPO/gallery/theme/$_tal.env" ]; then   # a palette's own name, the first line of its file: # Catppuccin Mocha -- where it is from
+        _ttl=''; IFS= read -r _ttl < "$REPO/gallery/theme/$_tal.env" || :
+        case $_ttl in '# '?*' -- '*) _ttl=${_ttl#'# '}; _ttl=${_ttl%% -- *}; case $_ttl in *[!\ -~]*) ;; *) _tit=$_ttl; return 0 ;; esac ;; esac
+    fi
+    [ "$_tak" = bundled ] || return 0
+    _tit=''; _ttl=$_tal   # the name's words, each with a capital
+    while [ -n "$_ttl" ]; do
+        _ttw=${_ttl%%-*}; case $_ttl in *-*) _ttl=${_ttl#*-} ;; *) _ttl='' ;; esac
+        [ -n "$_ttw" ] || continue
+        _ttr=${_ttw#?}; _ttc=${_ttw%"$_ttr"}
+        case $_ttc in a) _ttc=A ;; b) _ttc=B ;; c) _ttc=C ;; d) _ttc=D ;; e) _ttc=E ;; f) _ttc=F ;; g) _ttc=G ;; h) _ttc=H ;; i) _ttc=I ;; j) _ttc=J ;; k) _ttc=K ;; l) _ttc=L ;; m) _ttc=M ;;
+            n) _ttc=N ;; o) _ttc=O ;; p) _ttc=P ;; q) _ttc=Q ;; r) _ttc=R ;; s) _ttc=S ;; t) _ttc=T ;; u) _ttc=U ;; v) _ttc=V ;; w) _ttc=W ;; x) _ttc=X ;; y) _ttc=Y ;; z) _ttc=Z ;; esac
+        _tit="$_tit${_tit:+ }$_ttc$_ttr"
+    done
+    [ -n "$_tit" ] || _tit=$1
+}
+theme_titles() { dirs_cached theme.titles "$(THEME_DIRS)" theme_titles_now; }   # -> NAME<tab>TITLE for every palette, bundled work and theme of yours, kept until one changes: a list of themes says each by its title
+theme_titles_now() { theme_names | while IFS= read -r _ttn; do theme_title_of "$_ttn"; printf '%s\t%s\n' "$_ttn" "$_tit"; done; }
+theme_origin() {   # theme_origin NAME -> the theme a look kept to change came from, while it is here: the ORIGIN it keeps, or its name before -changed (as v0.171 and before named one); false for any other
+    theme_at "$1" && [ "$_tak" = look ] || return 1
+    _too=$(look_get "$_tad" ORIGIN)
+    [ -n "$_too" ] || case $1 in *-changed) _too=${1%-changed} ;; *-changed-[0-9]|*-changed-[0-9][0-9]) _too=${1%-changed-*} ;; *) return 1 ;; esac
+    for _toc in "$_too" "core-$_too"; do
+        [ "$_toc" != "$1" ] && theme_at "$_toc" || continue
+        case $_tak in shipped|bundled|yours|saved) printf '%s' "$_toc"; return 0 ;; esac
+    done
+    return 1
+}
+theme_title() {   # theme_title NAME -> the name a person reads; a look kept to change is its theme, changed; a look from words is its words
+    if _tio=$(theme_origin "$1"); then theme_title_of "$_tio"; printf '%s, changed' "$_tit"; return 0; fi
+    case $(theme_kind "$1") in ''|none|look) theme_words_of "$1"; return 0 ;; esac
+    theme_title_of "$1"; printf '%s' "$_tit"
+}
 theme_enum() { dirs_cached theme.enum "$(THEME_DIRS)" theme_enum_now; }   # -> the schema's enum, a|b|c
 theme_enum_now() { { theme_facts | cut -f1; echo none; } | sort -u | paste -sd'|' -; }
 look_get() {   # look_get DIR KEY -> the value, control characters dropped
@@ -225,14 +277,14 @@ palette_chip() {   # palette_chip NAME -> bg, fg, accent, ANSI 1 to 6; false whe
 }
 palette_reference() (
     _pal=$(palette_file "$1") || return 1
-    _label=$(theme_label "$1"); _dir=$(theme_dir "$1"); _origin=''
+    _key=$(theme_label "$1"); _label=$(theme_title "$1"); _dir=$(theme_dir "$1"); _origin=''   # the palette by its name; the theme by its title where it is said
     [ -z "$_dir" ] || _origin=$(look_get "$_dir" PALETTE)
     case $_origin in
         handpicked) printf '%s (handpicked)\n' "$_label"; return ;;
         words) printf '%s (from words)\n' "$_label"; return ;;
         picture) printf '%s (from wallpaper)\n' "$_label"; return ;;
     esac
-    _key=${_origin:-$_label}
+    _key=${_origin:-$_key}
     case $_key in ''|.*|*[!A-Za-z0-9._-]*) _key='' ;; esac
     _stock=$REPO/gallery/theme/$_key.env
     if [ -n "$_key" ] && [ -f "$_stock" ]; then
@@ -574,5 +626,6 @@ look_burst() {   # one frame: all made ready, then sent while the wallpaper draw
     wall_uncover "$WALL_BG"
     [ -n "${LOOK_PREVIEW:-}" ] || ! desktop_wanted || motion_follow   # a preview leaves the motion alone
     [ -n "${LOOK_PREVIEW:-}" ] || ! desktop_wanted || winpad_relook   # worn in place: started again, the pad blinked out
+    [ -n "${LOOK_PREVIEW:-}" ] || dialog_look   # a home that is open wears it, whoever changed the look: it kept the old colors and face until it was closed
 }
 

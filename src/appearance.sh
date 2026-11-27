@@ -1,8 +1,9 @@
 # shellcheck extended-analysis=false
 # sets: APPEARANCE_CURATION
-# reads: CONFIG_DIR CORE_DIR FONT_FACES GLYPH_FAMILIES OS PALETTE_DIR PANEL_SEP REPO SCENE_MAKE TAB TERM_NAME THEME_COLOR_WORDS THEME_KEYS THUMB_DIR TMP WALL_TYPES
-appearance_gallery_entries() {   # the colors and the index go by file: a thousand themes pass what one argument holds
+# reads: CONFIG_DIR CORE_DIR FONT_FACES GLYPH_FAMILIES OS PALETTE_DIR PANEL_SEP REPO SCENE_MAKE SCREEN_CALLED_JQ TAB TERM_NAME THEME_COLOR_WORDS THEME_KEYS THUMB_DIR TMP WALL_TYPES
+appearance_gallery_entries() {   # the colors and the index go by file: a thousand themes pass what one argument holds. A row says a theme by its title (Mars Conquest); _label keeps the name the curation lists it by
     theme_chips theme > "$TMP/theme.chips"
+    if [ "${1:-}" = plain ]; then : > "$TMP/theme.titles"; else theme_titles > "$TMP/theme.titles"; fi   # plain: the rows by their names, for a count of them
     {
         for gallery in "$CONFIG_DIR"/galleries/*.list; do
             [ -f "$gallery" ] || continue
@@ -25,13 +26,14 @@ appearance_gallery_entries() {   # the colors and the index go by file: a thousa
         done < "$CORE_DIR/themes.tsv"
         theme_saved_names | while IFS= read -r name; do printf 'saved\tsaved themes\t%s\t%s\n' "$name" "$name"; done
         palette_names | while IFS= read -r name; do printf 'palette\tpalettes\t%s\t%s\n' "$name" "$name"; done
-    } | jq -Rn --arg current "${THEME:-none}" --slurpfile c "$TMP/theme.chips" '
+    } | jq -Rn --arg current "${THEME:-none}" --slurpfile c "$TMP/theme.chips" --rawfile t "$TMP/theme.titles" '
         $c[0] as $chips | [inputs | split("\t") | select(length == 4 and $chips[.[2]] != null)] as $entries
+        | ($t | split("\n") | map(select(. != "") | split("\t") | {(.[0]): .[1]}) | add // {}) as $titles
         | (any($entries[]; .[0] == "local")) as $multiple
         | reduce $entries[] as [$kind,$group,$id,$label] ({seen:{}, labels:{}, rows:[]};
               if .seen[$id] or ($kind == "palette" and .labels[$label]) then . else
                   .seen[$id] = true | .labels[$label] = true |
-                  .rows += [{id: ("theme:entry:" + $id), text: $label, _kind: $kind, _room: $group,
+                  .rows += [{id: ("theme:entry:" + $id), text: ($titles[$id] // $label), _label: $label, _kind: $kind, _room: $group,
                       group: (if $kind == "core" and ($multiple | not) then null elif $kind == "local" then ($group | gsub("-";" ")) else $group end),
                       children: ("spark-shell://theme/rows/gallery/" + $id), page: ("spark-shell://theme/preview/" + $id), chip: $chips[$id],
                       sign: (if $id == $current then "check" else "opens" end)}]
@@ -45,20 +47,20 @@ appearance_gallery_entries() {   # the colors and the index go by file: a thousa
 APPEARANCE_CURATION='
 .rows as $all |
 def onview($name): (($c[0].dispositions // {})[$name].status // "exhibited") == "exhibited";
-def works($names): [$names[] as $name | $all[] | select(.text == $name)];
-def lead($lead; $works): ([$works[] | select(.text == ($lead // ""))] + [$works[] | select(onview(.text))] + $works)[0];
+def works($names): [$names[] as $name | $all[] | select(._label == $name)];
+def lead($lead; $works): ([$works[] | select(._label == ($lead // ""))] + [$works[] | select(onview(._label))] + $works)[0];
 def count($works): ($works | length | tostring) + (if ($works | length) == 1 then " work" else " works" end);
 def words($k): ($idx[0][$k] // null) as $a
     | if $a == null then null
       else ({vector: "vector", illustration: "illustrated scene", cinematic: "cinematic illustration", pixel: "pixel scene", picture: "picture", color: "plain ground"}[$a.media] // "plain ground")
            + " " + $sep + " " + $a.variant + ([$a.variants | keys[] | select(. != $a.variant) | " " + $sep + " has a " + . + " variant"] | join(""))
       end;
-def shown: del(._kind, ._room) | .group = null | words(.id | ltrimstr("theme:entry:")) as $w | if $w == null then del(.line) else .line = $w end;
+def shown: del(._kind, ._room, ._label) | .group = null | words(.id | ltrimstr("theme:entry:")) as $w | if $w == null then del(.line) else .line = $w end;
 def collection($title; $state; $works):
-    ([$works[] | select(onview(.text))] | length) as $nv
+    ([$works[] | select(onview(._label))] | length) as $nv
     | ($nv > 0 and $nv < ($works | length)) as $split
     | {title: $title, state: $state, short: [],
-       rows: [$works[] | (onview(.text)) as $on | shown | .group = (if $split then (if $on then "on view" else "supporting" end) else null end)]
+       rows: [$works[] | (onview(._label)) as $on | shown | .group = (if $split then (if $on then "on view" else "supporting" end) else null end)]
              | sort_by(if .group == "supporting" then 1 else 0 end)};
 '
 appearance_gallery() {
@@ -108,51 +110,99 @@ appearance_gallery_collection() {
 # Your themes: the ways to make one, then every theme of yours, each with its page and its rename, duplicate and
 # delete; the theme in use is checked.
 # Colors: the 20 of the theme in use, each changed by its value, its swatch beside it; above them, another theme's
-appearance_colors() {
+appearance_colors() {   # the 20 colors of the theme in use, each with the color it is read against (the ground; the text for the ground; none for the two blacks, which no text is written in); above them, another theme's colors and the theme's other variant
     _acp=$(palette_file "${THEME:-none}") || return 1
+    _acv=none
+    if command -v jq >/dev/null 2>&1; then
+        _aco=$(art_of "$THEME" | jq -r '. as $a | [$a.variants | to_entries[] | select(.key != $a.variant) | .value] | first // ""' 2>/dev/null) || _aco=''
+        [ -z "$_aco" ] || _acv=$(theme_title "$(appearance_theme_of "$_aco")")
+    fi
     for _e in $THEME_COLOR_WORDS; do printf '%s\t%s\t%s\n' "${_e%%:*}" "${_e#*:}" "$(palette_get "$_acp" "THEME_${_e#*:}")"; done \
-        | jq -Rn --arg label "$(theme_label "$THEME")" '[inputs | split("\t")] as $c
+        | jq -Rn --arg label "$(theme_title "$THEME")" --arg pair "$_acv" '[inputs | split("\t")] as $c
             | ["black","red","green","yellow","blue","magenta","cyan","white"] as $names
+            | ([$c[] | select(.[1] == "BG") | .[2]] | first // "") as $ground | ([$c[] | select(.[1] == "FG") | .[2]] | first // "") as $ink
             | {title: "Colors", state: $label, short: [],
-               rows: ([{id: "theme:colors:from", text: "another theme'"'"'s colors", sign: "opens", children: "spark-shell://theme/rows/colors/from"}]
+               rows: ([{id: "theme:colors:from", text: "another theme'"'"'s colors", sign: "opens", children: "spark-shell://theme/rows/colors/from"},
+                       {id: "theme:colors:pair", text: "other variant", sign: "opens", choice: true, columns: [$pair], children: "spark-shell://theme/rows/colors/pair"}]
                       + [$c[] | .[0] as $w | .[1] as $k | .[2] as $hex | ($k | ltrimstr("ANSI_") | tonumber? // null) as $i
+                         | (if $k == "BG" then $ink elif $k == "ANSI_0" or $k == "ANSI_8" then "" else $ground end) as $on
                          | {id: ("theme:color:" + $k), group: (if $i == null then "theme colors" elif $i < 8 then "ANSI regular" else "ANSI bright" end),   # as the terminal palette has them
                             text: (if $i == null then ($w | (.[0:1] | ascii_upcase) + .[1:]) else "\($i)  \($names[$i % 8])" end),
-                            swatch: $hex, columns: [$hex], tool: {name: "theme_color", arguments: {word: $w}, ask: ["color"]}}])}'
+                            swatch: $hex, columns: [$hex], tool: {name: "theme_color", arguments: {word: $w}, ask: ["color"]}}
+                           + (if ($on | test("^#[0-9A-Fa-f]{6}$")) then {against: $on} else {} end)])}'
+}
+appearance_theme_of() {   # appearance_theme_of NAME -> the theme a family names: the name, or the curated work it is the label of (dracula is core-dracula)
+    if [ -n "$(theme_kind "$1")" ]; then printf '%s' "$1"; elif [ -n "$(theme_kind "core-$1")" ]; then printf 'core-%s' "$1"; else printf '%s' "$1"; fi
 }
 appearance_colors_from() {   # every theme, its swatch: Enter takes its colors
     appearance_gallery_entries | jq -c '{title: "Another theme'"'"'s colors", state: "", short: [],
         rows: [.rows[] | (.id | ltrimstr("theme:entry:")) as $n | {id: ("theme:colors:" + $n), text, group, chip, page, quiet: true,
                tool: {name: "theme_colors", arguments: {name: $n}}}]}'
 }
-# Screens and art: the pictures each screen shows, the clock over the art, the other variant, a loop per picture, the
-# dialog's own reels; a picture or a file is picked from your files, and more takes one away
-appearance_screens() {
+# Wallpaper and screens: the wallpaper and whether it moves; then each connected screen that shows something of its
+# own (a turned screen, a second or a third one), by the name display gives it, with what it shows now and the way to
+# give it a picture; a loop for each of the theme's own pictures; the clock over the art. The first landscape screen
+# is the wallpaper's: it has no row while it shows it. A screen says what is on it, never "none".
+appearance_screens() {   # -> the rows of the screens, the loops and the clock, one JSON array
     _asd=$(theme_dir "${THEME:-none}"); _asn=${_asd##*/}; _asa=$(art_of "${THEME:-none}")
-    { for _r in landscape-2 landscape-3 portrait dialog-open dialog-close; do
-          _f=''; for _e in jpg png webp; do [ -z "$_asd" ] || [ ! -f "$_asd/$_asn-$_r.$_e" ] || _f=$_asn-$_r.$_e; done; printf 'file\t%s\t%s\n' "$_r" "$_f"
-      done
-      art_stills | while IFS= read -r _f; do _l=$_f; [ -f "${_f%.*}.mp4" ] && _m=loop || _m=still; printf 'loop\t%s\t%s\t%s\n' "$(art_role "$_f")" "$(art_label "$_f")" "$_m"; done
-      _p=$(printf '%s' "$_asa" | jq -r '.portrait_file // empty'); [ -z "$_p" ] || { [ -f "$_asd/${_p%.*}.mp4" ] && _m=loop || _m=still; printf 'loop\tportrait\tPortrait\t%s\n' "$_m"; }
-    } | jq -Rn --argjson art "$_asa" --arg label "$(theme_label "${THEME:-none}")" '
-        [inputs | split("\t")] as $in | ($in | map(select(.[0] == "file")) | map({(.[1]): .[2]}) | add // {}) as $f
-        | def file($n; $r; $what; $tool; $args; $types): {id: ("theme:screens:" + $r), group: $what, text: $n, sign: "opens",
-              columns: [if $f[$r] == "" then "none" elif ($r | startswith("dialog-")) then "its own" else ($r | gsub("-"; " ") | (.[0:1] | ascii_upcase) + .[1:]) end],   # by its role, as the wallpaper list says it
-              children: "spark-shell://files/rows",
-              pick: {tool: $tool, types: $types, arguments: $args},
-              more: (if $f[$r] == "" then [] else [{name: $tool, arguments: ($args + {path: "none"}), said: "take it away"}] end)};
-        {title: "Screens and art", state: $label, short: [],
-         rows: ([file("second screen"; "landscape-2"; "pictures"; "theme_panel"; {n: "2"}; ["jpg", "jpeg", "png"]),
-                 file("third screen"; "landscape-3"; "pictures"; "theme_panel"; {n: "3"}; ["jpg", "jpeg", "png"]),
-                 (file("turned screen"; "portrait"; "pictures"; "theme_portrait"; {}; ["jpg", "jpeg", "png"]) | .pick.arguments = {})]
-                + [{id: "theme:screens:clock", group: "idle and lock", text: "clock over the art", columns: [],
-                    switch: {on: $art.clock, turn_on: {name: "theme_clock", arguments: {to: "on"}}, turn_off: {name: "theme_clock", arguments: {to: "off"}}}},
-                   {id: "theme:screens:pair", group: "variants", text: "other variant", sign: "opens", children: "spark-shell://theme/rows/screens/pair",
-                    columns: [([$art.variants | to_entries[] | select(.key != $art.variant) | .value] | first) // "none"]}]
-                + [$in[] | select(.[0] == "loop") | {id: ("theme:screens:loop:" + .[1]), group: "loops", text: .[2], sign: "opens", columns: [.[3]],
-                    children: "spark-shell://files/rows", pick: {tool: "theme_loop", types: ["mp4"], arguments: {role: .[1]}},
-                    more: (if .[3] == "loop" then [{name: "theme_loop", arguments: {role: .[1], path: "none"}, said: "take it away"}] else [] end)}]
-                + [file("opening"; "dialog-open"; "dialog"; "theme_reel"; {which: "open"}; ["webp"]), file("closing"; "dialog-close"; "dialog"; "theme_reel"; {which: "close"}; ["webp"])])}'
+    _asw=$(wall_now); _ask=picture   # what the wallpaper is called, and its kind: ground, color, drawing, scene or picture
+    case ${WALLPAPER:-default} in
+        default|none) _asw='the ground'; _ask=ground ;;
+        '#'*) _ask=color ;;
+        *) if wall_scene "$WALLPAPER"; then _ask=scene; elif wall_shipped "$WALLPAPER"; then _ask=drawing; fi ;;
+    esac
+    _ast=''; ! art_wall_theirs || _ast=1   # a picture or a color of yours stands on every screen as you set it
+    _asp=''; [ "$_ask" != picture ] || case $(printf '%s' "${WALLPAPER##*.}" | tr 'A-Z' 'a-z') in jpg|jpeg|png) _asp=1 ;; esac   # a second screen's picture goes beside a JPEG or a PNG
+    _asc=''; case ${WALLPAPER:-} in "$_asd"/?*) [ -z "$_asd" ] || _asc=${WALLPAPER#"$_asd"/} ;; esac   # the theme's own picture chosen as the wallpaper
+    : > "$TMP/theme.outputs"; ! wm_session || wm_outputs > "$TMP/theme.outputs" 2>/dev/null || :
+    jq -e 'type == "array"' "$TMP/theme.outputs" >/dev/null 2>&1 || echo '[]' > "$TMP/theme.outputs"
+    {
+        art_screens "$TMP/theme.outputs" | while IFS="$TAB" read -r _sn _si _sa _st _ss _sr _sf _sm; do
+            _sl=''; case $_sf in ''|-) ;; *) _sl=$(art_named "$_asd/$_sf" "$_asn") ;; esac
+            printf 'screen\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$_sn" "$_sa" "$_st" "$_sr" "${_sf:--}" "$_sm" "${_sl:--}"
+        done
+        art_stills | while IFS= read -r _f; do [ -f "${_f%.*}.mp4" ] && _m=loop || _m=still; printf 'loop\t%s\t%s\t%s\n' "$(art_role "$_f")" "$(art_label "$_f")" "$_m"; done
+        _p=$(printf '%s' "$_asa" | jq -r '.portrait_file // empty'); [ -z "$_p" ] || { [ -f "$_asd/${_p%.*}.mp4" ] && _m=loop || _m=still; printf 'loop\tportrait\tPortrait\t%s\n' "$_m"; }
+    } | jq -Rnc --argjson art "$_asa" --slurpfile screens "$TMP/theme.outputs" --arg wall "$_asw" --arg kind "$_ask" --arg theirs "$_ast" --arg lead "$_asp" --arg chosen "$_asc" '
+        def outs: ($screens[0] // []) | if type == "array" then . else [] end
+            | map(select(type == "object" and (.name | type) == "string" and (.name | test("^[A-Za-z0-9_.:-]{1,80}$"))));
+        '"$SCREEN_CALLED_JQ"'
+        def named($n): ([outs[] | select(.name == $n)] | first) as $o | if $o == null then $n else ($o | called) end;
+        [inputs | split("\t")] as $in
+        | [$in[] | select(.[0] == "screen") | {name: .[1], at: (.[2] | tonumber? // 0), tall: (.[3] == "portrait"), role: .[4],
+              file: (if .[5] == "-" then "" else .[5] end), mode: .[6], label: (if .[7] == "-" then "" else .[7] end)}] as $scr
+        | ([$scr[] | select(.tall | not)] | first) as $first
+        | ($kind == "ground" or $kind == "color") as $plain   # a color or the ground: one thing on every screen, and none takes a picture beside it
+        | ($plain or $theirs != "") as $same   # as it stands, one thing on every screen: a picture of yours too, until a screen is given its own
+        | def shows: if $same then $wall
+              elif .mode == "scene" then $wall + ", drawn for a turned screen"
+              elif .mode == "fit" then $wall + ", fitted"
+              elif .role == "landscape" or .role == "chosen" or .file == "" or .file == $chosen then $wall
+              else .label end;
+          def its: ($same | not) and .mode == "fill" and .file != "" and .file != $chosen and (.role == "portrait" or (.role | startswith("panel")));   # a picture of the screen alone
+          def away($tool; $args): if its then [{name: $tool, arguments: ($args + {path: "none"}), said: "take it away"}] else [] end;
+          ([$scr[] | . as $s
+              | select(($first != null and $s.name == $first.name and ($s | shows) == $wall) | not)
+              | {id: ("theme:screen:" + $s.name), group: "screens", text: (named($s.name) + (if $s.tall then " (turned)" else "" end)), sign: "opens", columns: [$s | shows]}
+                + (if $s.tall and ($plain | not) then
+                       {children: "spark-shell://files/rows", pick: {tool: "theme_portrait", types: ["jpg", "jpeg", "png"], arguments: {}}, more: ($s | away("theme_portrait"; {}))}
+                   elif ($s.tall | not) and ($plain | not) and $first != null and $s.name != $first.name and $lead != "" and ($s.at == 2 or $s.at == 3) then
+                       {children: "spark-shell://files/rows", pick: {tool: "theme_panel", types: ["jpg", "jpeg", "png"], arguments: {n: ($s.at | tostring)}}, more: ($s | away("theme_panel"; {n: ($s.at | tostring)}))}
+                   else {children: "spark-shell://theme/rows/wallpapers", more: []} end)]
+           + [$in[] | select(.[0] == "loop") | {id: ("theme:screens:loop:" + .[1]), group: "loops", text: .[2], sign: "opens", columns: [.[3]],
+                 children: "spark-shell://files/rows", pick: {tool: "theme_loop", types: ["mp4"], arguments: {role: .[1]}},
+                 more: (if .[3] == "loop" then [{name: "theme_loop", arguments: {role: .[1], path: "none"}, said: "take it away"}] else [] end)}]
+           + [{id: "theme:screens:clock", group: "idle and lock", text: "clock over the art", columns: [],
+               switch: {on: $art.clock, turn_on: {name: "theme_clock", arguments: {to: "on"}}, turn_off: {name: "theme_clock", arguments: {to: "off"}}}}])'
+}
+appearance_wallpaper() {   # stdin: the theme section's rows -> the Wallpaper and screens page: the section's own two rows, then the screens, the loops and the clock; false where the section has no wallpaper (a Mac)
+    cat > "$TMP/theme.root"
+    appearance_screens > "$TMP/theme.screens" 2>/dev/null || echo '[]' > "$TMP/theme.screens"
+    [ -s "$TMP/theme.screens" ] || echo '[]' > "$TMP/theme.screens"
+    jq -ec --slurpfile more "$TMP/theme.screens" --arg label "$(theme_title "${THEME:-none}")" '
+        [.rows[] | select(.id == "theme:wallpaper" or .id == "theme:show:Moving wallpaper") | .group = "wallpaper"] as $w
+        | select(($w | length) > 0)
+        | {title: "Wallpaper and screens", state: $label, short: [], rows: ($w + ($more[0] // []))}' "$TMP/theme.root"
 }
 appearance_pairs() {   # the themes in the other light, and none: Enter pairs it
     _apv=$(art_of "${THEME:-none}" | jq -r .variant)
@@ -172,33 +222,44 @@ appearance_pointers() {   # default, then each cursor theme here at the size in 
                + [inputs | {id: ("theme:pointer:" + .), text: ., columns: [$size + " px"], sign: (if ($cur | split(" ")[0]) == . then "check" else "blank" end),
                             tool: {name: "theme_pointer", arguments: {name: (. + " " + $size)}}}])}'
 }
-appearance_yours() {
-    appearance_gallery_entries | jq -c --arg cur "${THEME:-none}" --arg label "$(theme_label "${THEME:-none}")" --arg types "$WALL_TYPES" '
+appearance_yours() {   # the look in use where it is not saved (save it, or put the theme it came from back), the ways to make a theme, then each theme of yours with its rename, duplicate and delete
+    _ayk=$(theme_kind "${THEME:-none}"); _ayo=''; _ayt=''
+    if [ "$_ayk" = look ] && _ayo=$(theme_origin "$THEME"); then _ayt=$(theme_title "$_ayo"); else _ayo=''; fi
+    appearance_gallery_entries | jq -c --arg cur "${THEME:-none}" --arg label "$(theme_title "${THEME:-none}")" --arg types "$WALL_TYPES" --arg kind "$_ayk" --arg origin "$_ayo" --arg otitle "$_ayt" '
         [.rows[] | select(._kind == "saved")] as $mine
         | {title: "Your themes", short: [],
            state: (($mine | length | tostring) + (if ($mine | length) == 1 then " theme" else " themes" end)),
-           rows: ([{id: "theme:new:look", group: "new theme", text: "from the look in use", tool: {name: "theme_save", arguments: {}, ask: ["name"]}},
-                   {id: "theme:new:picture", group: "new theme", text: "from a picture", sign: "opens", children: "spark-shell://files/rows",
-                    pick: {tool: "theme_picture", types: ($types | split(" "))}},
-                   {id: "theme:new:file", group: "new theme", text: "from a theme file", sign: "opens", children: "spark-shell://files/rows",
-                    pick: {tool: "theme_install", types: ["spark-theme"]}}]
+           rows: ((if $kind == "look" then
+                     [{id: "theme:look:save", group: "this look", text: "save it as a theme", tool: {name: "theme_save", arguments: {}, ask: ["name"]}}]
+                     + (if $origin != "" then [{id: "theme:look:back", group: "this look", text: ("put " + $otitle + " back"), tool: {name: "theme_palette", arguments: {name: $origin}}}] else [] end)
+                   else [{id: "theme:new:look", group: "new theme", text: "from the look in use", tool: {name: "theme_save", arguments: {}, ask: ["name"]}}] end)
+                  + [{id: "theme:new:picture", group: "new theme", text: "from a picture", sign: "opens", children: "spark-shell://files/rows",
+                      pick: {tool: "theme_picture", types: ($types | split(" "))}},
+                     {id: "theme:new:file", group: "new theme", text: "from a theme file", sign: "opens", children: "spark-shell://files/rows",
+                      pick: {tool: "theme_install", types: ["spark-theme"]}}]
                   + (if $cur == "none" then [] else [{id: "theme:new:copy", group: "new theme", text: ("a copy of " + $label),
                       tool: {name: "theme_duplicate", arguments: {name: $cur}, ask: ["to"]}}] end)
-                  + [$mine[] | del(._kind, ._room) | .group = "yours"
+                  + [$mine[] | del(._kind, ._room, ._label) | .group = "yours"
                      | .more = [{name: "theme_rename", arguments: {name: .text}, ask: ["to"], said: "rename"},
                                 {name: "theme_duplicate", arguments: {name: .text}, ask: ["to"], said: "duplicate"},
                                 {name: "theme_delete", arguments: {name: .text}, said: "delete"}]])}'
 }
+# A theme's page says what is shown and nothing else: the dialog draws every row it is given. Apply, its terminal
+# palette, its compositions and its other variant; what it brings, one line each and only where the theme sets it (a
+# theme that leaves the text as it is says nothing of the text); then what can be done with it.
 appearance_detail() {
     _ad_kind=$(theme_kind "$1")
     case $_ad_kind in shipped|bundled|yours|saved|look) ;; *) return 1 ;; esac
     _ad_dir=$(theme_dir "$1")
-    _ad_wall=''; _ad_motion=''; _ad_face=''; _ad_family=''; _ad_alpha=''; _ad_size=''; _ad_picture=''
+    _ad_wall=''; _ad_face=''; _ad_family=''; _ad_alpha=''; _ad_size=''
     if [ -n "$_ad_dir" ]; then
         look_ok "$_ad_dir" >/dev/null || return 1
         _ad_wall=$(look_get "$_ad_dir" WALLPAPER)
-        _ad_picture=$(look_get "$_ad_dir" PICTURE)
-        _ad_motion=$(look_get "$_ad_dir" WALLPAPER_MOTION)
+        case $_ad_wall in
+            picture) _ad_wall=$(art_named "$_ad_dir/$(look_get "$_ad_dir" PICTURE)" "${_ad_dir##*/}") ;;   # by its role: Landscape 1
+            /*) _ad_wall=${_ad_wall##*/} ;;
+            default|none) _ad_wall='the ground' ;;
+        esac
         _ad_face=$(look_get "$_ad_dir" FACE); _ad_size=$(look_get "$_ad_dir" TEXT_SIZE)
         _ad_font=$(look_get "$_ad_dir" FONT)
         if [ -n "$_ad_font" ] && [ -z "$_ad_face$_ad_size" ]; then
@@ -208,55 +269,45 @@ appearance_detail() {
         _ad_family=$(look_get "$_ad_dir" GLYPH_FAMILY)
         _ad_alpha=$(look_get "$_ad_dir" ALPHA)
     elif ! wall_yours; then _ad_wall=$(wall_for_palette "$1" || :); fi
-    case $_ad_wall in picture) _ad_wall=$_ad_picture ;; /*) _ad_wall=${_ad_wall##*/} ;; esac
-    _ad_anim=$(theme_animation_for "$1" "$_ad_dir")
-    [ "${DIALOG_ANIMATION:-}" != none ] || _ad_anim=none
+    _ad_anim=$(theme_animation_for "$1" "$_ad_dir")   # the theme's own piece, whatever plays now
     _ad_chip=$(palette_chip "$1") || return 1
-    _ad_bar=''; _ad_icons=''; _ad_spacing=''
-    [ -z "$_ad_dir" ] || { _ad_bar=$(look_get "$_ad_dir" BAR_GLYPHS); _ad_icons=$(look_get "$_ad_dir" DIALOG_ICONS); _ad_spacing=$(look_get "$_ad_dir" DIALOG_SPACING); }
-    jq -cn --arg name "$1" --arg label "$(theme_label "$1")" --arg ref "$(palette_reference "$1")" --arg current "${THEME:-none}" --arg chip "$_ad_chip" \
-        --arg wall "$_ad_wall" --arg motion "$_ad_motion" --arg anim "$_ad_anim" \
-        --arg face "$_ad_face" --arg family "$_ad_family" --arg alpha "$_ad_alpha" --arg size "$_ad_size" \
-        --arg bar "$_ad_bar" --arg icons "$_ad_icons" --arg spacing "$_ad_spacing" --argjson art "$(art_of "$1")" \
+    theme_titles > "$TMP/theme.titles"
+    jq -cn --arg name "$1" --arg title "$(theme_title "$1")" --arg ref "$(palette_reference "$1")" --arg current "${THEME:-none}" --arg chip "$_ad_chip" \
+        --arg wall "$_ad_wall" --arg anim "$_ad_anim" --arg face "$_ad_face" --arg family "$_ad_family" --arg alpha "$_ad_alpha" --arg size "$_ad_size" \
+        --arg sep "$PANEL_SEP" --rawfile t "$TMP/theme.titles" --argjson art "$(art_of "$1")" \
         --argjson mine "$([ "$_ad_kind" = saved ] && echo true || echo false)" --argjson folder "$([ -n "$_ad_dir" ] && echo true || echo false)" \
         --argjson desktop "$([ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && echo true || echo false)" '
-        def fact($g; $id; $label; $value):
-            {id: ("theme:detail:" + $id), group: $g, text: $label, columns: [if $value == "" then "keep current" else $value end]};
-        {title: $label, short: [], rows: ([
+        ($t | split("\n") | map(select(. != "") | split("\t") | {(.[0]): .[1]}) | add // {}) as $titles
+        | def titled($n): $titles[$n] // $titles["core-" + $n] // ($n | ltrimstr("core-"));
+          def fact($id; $label; $value): {id: ("theme:detail:" + $id), group: "it brings", text: $label, columns: [$value]};
+        ({vector: "vector", illustration: "illustrated scene", cinematic: "cinematic illustration", pixel: "pixel scene", picture: "picture", color: "plain ground"}[$art.media] // "plain ground") as $medium
+        | ([$face, $size] | map(select(. != "")) | join(" ")) as $type
+        | {title: $title, short: [], rows: ([
             {id: ("theme:apply:" + $name), text: (if $name == $current then "in use" else "apply theme" end),
-             sign: (if $name == $current then "check" else "blank" end), chip: ($chip | split(" ")),
-             quiet: true, page: ("spark-shell://theme/preview/" + $name), tool: {name:"theme_palette",arguments:{name:$name}}}]
-            + [{id:"theme:terminal-palette", text:"Terminal palette", sign:"opens", columns:[$ref], children:("spark-shell://theme/rows/palette/"+$name)}]
-            + [fact("art"; "media"; "medium"; ({vector: "vector", illustration: "illustrated scene", cinematic: "cinematic illustration", pixel: "pixel scene", picture: "picture", color: "plain ground"}[$art.media] // "plain ground"))]
-            + (if $art.source == "family" then [fact("art"; "family-of"; "family"; $art.title)] else [] end)
-            + [fact("art"; "variant"; "variant"; $art.variant)]
+             sign: (if $name == $current then "check" else "blank" end), chip: ($chip | split(" ")), line: ($medium + " " + $sep + " " + $art.variant),
+             quiet: true, page: ("spark-shell://theme/preview/" + $name), tool: {name:"theme_palette",arguments:{name:$name}}},
+            {id:"theme:terminal-palette", text:"Terminal palette", sign:"opens", columns:[$ref], children:("spark-shell://theme/rows/palette/"+$name)}]
+            + (if $desktop then [{id: "theme:compositions", text: "compositions", sign: "opens",
+                  columns: [if ($art.screens | length) > 1 then "panels for " + ($art.screens[1:] | map(tostring) | join(" and ")) + " screens too" else "landscape and portrait" end],
+                  children: ("spark-shell://theme/rows/gallery/" + $name + "/art")}] else [] end)
             + [$art.variants | to_entries[] | select(.key != $art.variant)
-               | {id: ("theme:variant:" + .key), group: "art", text: (.key + " variant"), sign: "opens", columns: [.value | ltrimstr("core-")],
-                  children: ("spark-shell://theme/rows/gallery/" + .value)}]
-            + (if $desktop then [fact("wallpaper and motion"; "wall"; "wallpaper"; $wall),
-                                 fact("wallpaper and motion"; "moves"; "art motion"; (if $art.motion == "ambient" then "moves with moving wallpaper on" else "still" end)),
-                                 fact("wallpaper and motion"; "motion"; "wallpaper motion"; $motion),
-                                 {id: "theme:compositions", group: "screens", text: "compositions", sign: "opens",
-                                  columns: [if ($art.screens | length) > 1 then "panels for " + ($art.screens[1:] | map(tostring) | join(" and ")) + " screens too" else "landscape and portrait" end], children: ("spark-shell://theme/rows/gallery/" + $name + "/art")},
-                                 fact("screens"; "turned"; "turned screen"; (if $art.portrait == "authored" then "its own composition" else "the art fitted, never cropped" end)),
-                                 fact("screens"; "panels"; "two and three screens"; (if ($art.screens | length) > 1 then "panels for " + ($art.screens[1:] | map(tostring) | join(" and ")) + " screens" else "the art on each screen" end)),
-                                 fact("idle and lock"; "rest"; "idle and lock"; (if $art.clock then "the art, the clock over it" else "the art alone" end))] else [] end)
-            + [fact("wallpaper and motion"; "animation"; "dialog motion"; $anim),
-               fact("type and glyphs"; "face"; "typeface"; $face), fact("type and glyphs"; "size"; "text size"; $size),
-               fact("type and glyphs"; "family"; "glyph family"; $family), fact("type and glyphs"; "bar"; "the bar"; $bar),
-               fact("windows"; "alpha"; "opacity"; (if $alpha == "" then "" else (($alpha | tonumber) * 100 | round | tostring) + "%" end)),
-               fact("windows"; "icons"; "app icons"; $icons), fact("windows"; "spacing"; "app spacing"; $spacing)]
+               | {id: ("theme:variant:" + .key), text: (.key + " variant"), sign: "opens", columns: [titled(.value)], children: ("spark-shell://theme/rows/gallery/" + .value)}]
+            + [(if $desktop and $wall != "" then fact("wallpaper"; "wallpaper"; $wall + (if $art.motion == "ambient" then ", moving" else "" end)) else empty end),
+               (if $type != "" then fact("type"; "type"; $type) else empty end),
+               (if $family != "" then fact("glyphs"; "glyphs"; $family) else empty end),
+               (if $anim != "" then fact("motion"; "dialog motion"; (if $anim == "own" then "its own" else $anim end)) else empty end),
+               (if $alpha != "" then fact("windows"; "windows"; (($alpha | tonumber? // 1) * 100 | round) as $p | if $p >= 100 then "solid" else "\($p)% solid" end) else empty end)]
             + (if $mine then
                  [{id: "theme:manage:rename", group: "manage", text: "Rename", tool: {name: "theme_rename", arguments: {name: $name}, ask: ["to"]}},
                   {id: "theme:manage:duplicate", group: "manage", text: "Duplicate", tool: {name: "theme_duplicate", arguments: {name: $name}, ask: ["to"]}},
                   {id: "theme:manage:delete", group: "manage", text: "Delete", tool: {name: "theme_delete", arguments: {name: $name}}}]
                else [{id: "theme:manage:duplicate", group: "manage", text: "Duplicate as yours", tool: {name: "theme_duplicate", arguments: {name: $name}, ask: ["to"]}}] end)
-            + (if $folder then [{id: "theme:manage:export", group: "manage", text: "Export", columns: ["a theme file in Downloads, to share"], tool: {name: "theme_export", arguments: {name: $name}}}] else [] end))}'
+            + (if $folder then [{id: "theme:manage:export", group: "manage", text: "Export", columns: ["a theme file in Downloads"], tool: {name: "theme_export", arguments: {name: $name}}}] else [] end))}'
 }
 appearance_art() {   # appearance_art THEME -> its compositions: one screen, a turned screen and the panels its family has; each a preview, none applied
     case $(theme_kind "$1") in shipped|bundled|yours|saved|look) ;; *) return 1 ;; esac
     _aac=$(palette_chip "$1") || return 1
-    art_of "$1" | jq -c --arg name "$1" --arg label "$(theme_label "$1")" --arg chip "$_aac" '
+    art_of "$1" | jq -c --arg name "$1" --arg label "$(theme_title "$1")" --arg chip "$_aac" '
         ("spark-shell://theme/preview/" + $name) as $p | ($chip | split(" ")) as $c
         | {title: "Compositions", state: $label, short: [], rows: ([
             {id: "theme:art:landscape", text: "one screen", columns: ["landscape"], page: $p, chip: $c},
@@ -266,7 +317,7 @@ appearance_art() {   # appearance_art THEME -> its compositions: one screen, a t
 
 appearance_palette() (
     _colors=$(palette_export "$1" env) || return 1
-    printf '%s\n' "$_colors" | jq -Rn --arg name "$1" --arg label "$(theme_label "$1")" --arg ref "$(palette_reference "$1")" '
+    printf '%s\n' "$_colors" | jq -Rn --arg name "$1" --arg label "$(theme_title "$1")" --arg ref "$(palette_reference "$1")" '
         ["black","red","green","yellow","blue","magenta","cyan","white"] as $names
         | {BG:"Background",FG:"Foreground",ACCENT:"Accent",MUTED:"Muted"} as $roles
         | [inputs | select(startswith("THEME_")) | split("=") | (.[0] | ltrimstr("THEME_")) as $k | .[1] as $hex
@@ -281,7 +332,7 @@ appearance_palette() (
 
 appearance_exports() {
     palette_file "$1" >/dev/null || return 1
-    jq -cn --arg name "$1" --arg label "$(theme_label "$1")" --arg native "$TERM_NAME" '
+    jq -cn --arg name "$1" --arg label "$(theme_title "$1")" --arg native "$TERM_NAME" '
         {title:"Export palette",state:$label,rows:([["env","spark-shell",".env"],[$native,$native,".ini"],["kitty","kitty",".conf"],
           ["ghostty","Ghostty","theme file"],["alacritty","Alacritty",".toml"]] | map({
           id:("theme:export:"+.[0]),text:.[1],columns:[.[2]],tool:{name:"theme_export_palette",arguments:{name:$name,format:.[0]}}}))}'
@@ -372,7 +423,7 @@ appearance_preview() (
             [ -z "${_tmp:-}" ] || rm -f "$_tmp"
         fi
     fi
-    jq -cn --arg title "$(theme_label "$_key")" --arg wall "$_label" --arg ref "$(palette_reference "$_key")" --arg picture "$_picture" --argjson full "$([ "$_width" = 1600 ] && echo true || echo false)" \
+    jq -cn --arg title "$(theme_title "$_key")" --arg wall "$_label" --arg ref "$(palette_reference "$_key")" --arg picture "$_picture" --argjson full "$([ "$_width" = 1600 ] && echo true || echo false)" \
         '{title:$title, facts:[$wall,$ref], full:$full} + (if $picture != "" then {picture:$picture} else {say:"Wallpaper preview unavailable"} end)'
 )
 
@@ -415,31 +466,37 @@ appearance_preview_art() (
             [ -z "${_tmp:-}" ] || rm -f "$_tmp"
         fi
     fi
-    jq -cn --arg title "$(theme_label "$_key")" --arg say "$_say" --arg ref "$(palette_reference "$_key")" --arg picture "$_picture" \
+    jq -cn --arg title "$(theme_title "$_key")" --arg say "$_say" --arg ref "$(palette_reference "$_key")" --arg picture "$_picture" \
         --argjson full "$([ "${3:-}" = full ] && echo true || echo false)" \
         '{title: $title, facts: [$say, $ref], full: $full} + (if $picture != "" then {picture: $picture} else {say: "Composition preview unavailable"} end)'
 )
 
-appearance_sections() {
+appearance_sections() {   # stdin: the theme section's rows -> the same with the root's six places: the gallery, the wallpaper and the screens, the type, the interface, the colors, your themes
     # the themes its page lists, counted from the same rows: one of yours under a bundled work's name is that work
     # in the gallery and no row of the page (a count of the folders said 3 themes over a page of two)
-    _asn=$(appearance_gallery_entries < /dev/null | jq '[.rows[] | select(._kind == "saved")] | length' || :)
-    jq -c --arg label "$(theme_label "${THEME:-none}")" --arg yours "$_asn $([ "$_asn" = 1 ] && echo theme || echo themes)" '
+    _asn=$(appearance_gallery_entries plain < /dev/null | jq '[.rows[] | select(._kind == "saved")] | length' || :)
+    _asy="$_asn $([ "$_asn" = 1 ] && echo theme || echo themes)"
+    # a look in use by its own colors: the chips are read for the palettes, the bundled works and the saved themes,
+    # so a look kept to change stood with no poster and under the name of its folder
+    _asc=''; _ask=$(theme_kind "${THEME:-none}")
+    if [ "$_ask" = look ]; then _asc=$(palette_chip "$THEME" 2>/dev/null) || _asc=''; _asy='not saved'; fi
+    jq -c --arg label "$(theme_title "${THEME:-none}")" --arg yours "$_asy" --arg chip "$_asc" '
         .rows as $rows | (.state // "none") as $active
+        | ($chip | split(" ") | map(select(test("^#[0-9A-Fa-f]{6}$")))) as $own
         | def section($id;$text;$ids):
             [$ids[] as $id | $rows[] | select(.id==$id)] as $items
             | select($items|length>0)
             | {id:("theme:settings:"+$id), text:$text, sign:"opens", children:("spark-shell://theme/rows/settings/"+$id),
                members:[$items[].id], columns:[], choice:true};
-        (if any($rows[]; .id=="theme:gallery:open" and (.chip|length)>0) then .state=$label else . end)
+        .rows |= map(if .id=="theme:gallery:open" and ($own | length) > 0 then .chip = $own else . end)
+        | (if any(.rows[]; .id=="theme:gallery:open" and (.chip|length)>0) then .state=$label else . end)
         | .rows |= map(if .id=="theme:gallery:open" and $active!="none" and (.chip|length)>0
                      then .page="spark-shell://theme/current-wallpaper" | .columns=[$label] else . end)
-        | .rows += [section("wallpaper";"Wallpaper and motion";["theme:wallpaper","theme:show:Moving wallpaper","theme:show:Animation"]),
+        | .rows += [section("wallpaper";"Wallpaper and screens";["theme:wallpaper","theme:show:Moving wallpaper"]),   # the screens of a desktop: none on a Mac
                     section("type";"Type and glyphs";["theme:show:Text face","theme:show:Text size","theme:show:Glyph family"]),
-                    section("interface";"Interface";["theme:show:Transparency","theme:show:Pointer","theme:show:Words on the bar","theme:show:App icons","theme:show:App spacing"]),
-                    {id:"theme:settings:colors", text:"Colors", sign:"opens", choice:true, columns:[], children:"spark-shell://theme/rows/colors"}]
-                 + (if any($rows[]; .id=="theme:wallpaper") then [{id:"theme:settings:screens", text:"Screens and art", sign:"opens", choice:true, columns:[], children:"spark-shell://theme/rows/screens"}] else [] end)   # the screens of a desktop: none on a Mac
-                 + [{id:"theme:settings:yours", text:"Your themes", sign:"opens", choice:true, columns:[$yours],
+                    section("interface";"Interface";["theme:show:Transparency","theme:show:Pointer","theme:show:Words on the bar","theme:show:App icons","theme:show:App spacing","theme:show:Animation"]),
+                    {id:"theme:settings:colors", text:"Colors", sign:"opens", choice:true, columns:[], children:"spark-shell://theme/rows/colors"},
+                    {id:"theme:settings:yours", text:"Your themes", sign:"opens", choice:true, columns:[$yours],
                      children:"spark-shell://theme/rows/yours"}]'
 }
 # The type page shows each choice as what it is: a typeface installed here by its family's name, so a specimen never lies,

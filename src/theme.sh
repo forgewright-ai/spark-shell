@@ -401,9 +401,32 @@ theme_editable() {   # -- _ted the folder of the theme in use to change: one of 
         none) refuse_in theme "no theme is in use -- spark-shell theme NAME first" ;;
         '') refuse_in theme "$THEME, the theme in use, is no longer here -- spark-shell theme NAME first" ;;
     esac
+    _teo=$THEME
     look_write "$LOOKS_DIR/$(look_free "$(layout_name_of "$(theme_label "$THEME")" | cut -c1-24)-changed")" || refuse_in theme "could not keep the look to change$(store_said)"
     kept_note theme "$THEME" || :
     _ted=$(theme_dir "$THEME")
+    look_set "$_ted" ORIGIN "$_teo" || :   # the theme it was: home says the look by it (Mars Conquest, changed) and offers it back; a shared theme never carries the line
+}
+theme_wall_adopt() {   # after theme_editable: the wallpaper in use is the theme's own from here, so its other screens' pictures show (a theme's companions follow its own wallpaper alone). A drawing, a color or the ground is said in its look; a picture of yours is copied in, and one a family could not name is given a name it can (NAME-landscape-1, or NAME-wallpaper beside a picture that holds that name). 1 and one line where it cannot be kept
+    _twn=${_ted##*/}; _two=$(look_get "$_ted" WALLPAPER)
+    _twi=''; case ${WALLPAPER:-default} in "$_ted"/?*) _twi=${WALLPAPER#"$_ted"/} ;; esac   # a file of its folder already
+    if [ -z "$_twi" ] && { wall_color || wall_shipped "${WALLPAPER:-}" || [ "${WALLPAPER:-default}" = default ] || [ "${WALLPAPER:-}" = none ]; }; then
+        [ "$_two" = "${WALLPAPER:-default}" ] || env_put "$_ted/look.env" WALLPAPER "${WALLPAPER:-default}" 2>"$TMP/store.why" || { echo "the theme could not keep the wallpaper$(store_said)"; return 1; }
+        return 0
+    fi
+    if [ -n "$_twi" ] && printf '%s\n' "$_twi" | grep -Eqx '[A-Za-z0-9][A-Za-z0-9_-]{0,63}[.](png|jpg|jpeg|webp|gif)'; then
+        [ "$_two" = picture ] || env_put "$_ted/look.env" WALLPAPER picture PICTURE "$_twi" 2>"$TMP/store.why" || { echo "the theme could not keep the wallpaper$(store_said)"; return 1; }
+        return 0
+    fi
+    wall_there || { echo "the wallpaper in use cannot be read"; return 1; }
+    _twe=$(printf '%s' "${WALLPAPER##*.}" | tr 'A-Z' 'a-z'); [ "$_twe" != jpeg ] || _twe=jpg
+    _twf=$_twn-landscape-1.$_twe
+    for _twx in jpg png webp gif; do [ ! -e "$_ted/$_twn-landscape-1.$_twx" ] || _twf=$_twn-wallpaper.$_twe; done
+    { cp "$WALLPAPER" "$_ted/.new-${TMP##*/}" && mv -f "$_ted/.new-${TMP##*/}" "$_ted/$_twf"; } 2>"$TMP/store.why" || { rm -f "$_ted/.new-${TMP##*/}"; echo "the theme could not keep the wallpaper$(store_said)"; return 1; }
+    env_put "$_ted/look.env" WALLPAPER picture PICTURE "$_twf" 2>"$TMP/store.why" || { echo "the theme could not keep the wallpaper$(store_said)"; return 1; }
+    _ltk=''; look_take WALLPAPER "$_ted/$_twf"
+    look_taken 2>"$TMP/store.why" || { echo "the theme could not keep the wallpaper$(store_said)"; return 1; }
+    [ -z "$_twi" ] || [ "$_twi" = "$_twf" ] || rm -f "$_ted/$_twi"   # its copy under the name a family could not say: one picture, one name
 }
 THEME_COLOR_WORDS='background:BG text:FG accent:ACCENT muted:MUTED black:ANSI_0 red:ANSI_1 green:ANSI_2 yellow:ANSI_3 blue:ANSI_4 magenta:ANSI_5 cyan:ANSI_6 white:ANSI_7 bright-black:ANSI_8 bright-red:ANSI_9 bright-green:ANSI_10 bright-yellow:ANSI_11 bright-blue:ANSI_12 bright-magenta:ANSI_13 bright-cyan:ANSI_14 bright-white:ANSI_15'   # the 20 colors by their words, in the palette's order
 theme_color() {   # theme_color WORD COLOR -- one of the 20 colors of the theme in use; its contrast on the ground said when it reads poorly
@@ -431,7 +454,7 @@ theme_colors() {   # theme_colors NAME -- the theme in use in another theme's co
             || { file_unstage "$_ted/palette.env"; refuse_in theme "could not take the colors of $1$(store_said)"; }
     fi
     theme_wear "the colors are those of $1"
-    echo "the colors of $(theme_label "$1")"
+    echo "the colors of $(theme_title "$1")"
 }
 theme_pointer() {   # theme_pointer NAME [SIZE]|default -- the pointer of the look in use: a cursor theme and its size, or spark's own
     case ${1:-} in '') echo "pointer ${POINTER:-default} $PANEL_SEP default, or a cursor theme and its size"; return ;; default) _tpv='' ;; *) _tpv=$1${2:+ $2} ;; esac
@@ -496,30 +519,64 @@ theme_picture_set() {   # theme_picture_set BASE JQ [JQ ARGS...] -- the picture 
     fi
     rm -f "$_tpw"; for _e in jpg png; do [ "$_tps.$_e" = "$_tkf" ] || rm -f "$_ted/$_tps.$_e"; done   # the role's older picture, which the family names no more
 }
-theme_portrait() {   # theme_portrait PICTURE|none -- the picture a turned screen shows, copied into the theme as NAME-portrait
+theme_wall_kind() {   # -> what the wallpaper in use is: ground, color, drawing, scene or picture
+    case ${WALLPAPER:-default} in default|none) echo ground; return 0 ;; esac
+    if wall_color; then echo color; elif wall_scene "$WALLPAPER"; then echo scene; elif wall_shipped "$WALLPAPER"; then echo drawing; else echo picture; fi
+}
+theme_wall_same() { case $(theme_wall_kind) in ground) printf 'the ground' ;; color) printf 'the color %s' "$(wall_name)" ;; *) printf '%s' "$WALLPAPER" ;; esac; }   # -> the ground or the color, as a refusal says the wallpaper that is one thing on every screen
+theme_portrait() {   # theme_portrait PICTURE|none -- the picture a turned screen shows, copied into the theme as NAME-portrait. It stands beside the wallpaper in use, which becomes the theme's own
     [ -n "${1:-}" ] || refuse_in theme "portrait takes a picture, or none"
+    if [ "$1" != none ]; then
+        case $(theme_wall_kind) in ground|color) refuse_in theme "a turned screen takes its own picture beside a drawing or a picture, and the wallpaper is $(theme_wall_same), the same on every screen -- choose a drawing or a picture as the wallpaper first" ;; esac
+    fi
     _tkf=''; [ "$1" = none ] || theme_look_over "$1" picture
-    theme_editable; [ "$1" = none ] || theme_take "${_ted##*/}-portrait"
+    theme_editable
+    if [ "$1" != none ]; then
+        theme_wall_adopt > "$TMP/adopt.why" || refuse_in theme "$(file_named "$1") not taken: $(cat "$TMP/adopt.why")"
+        theme_take "${_ted##*/}-portrait"
+    fi
     theme_picture_set "${_ted##*/}-portrait" 'if $f == "" then del(.variants[$v].portrait) else .variants[$v].portrait = $f end' --arg f "$_tkf"
     if [ -n "$_tkf" ]; then _tpd="a turned screen shows $_tkf"; else _tpd="a turned screen shows the art fitted"; fi
     theme_wear "$_tpd"; echo "$_tpd"
 }
-theme_panel() {   # theme_panel 2|3 PICTURE|none -- the picture the second or third screen from the left shows, copied in as NAME-landscape-N; the theme's picture leads
+theme_panel() {   # theme_panel 2|3 PICTURE|none -- the picture the second or third screen from the left shows, copied in as NAME-landscape-N. The wallpaper in use leads, and becomes the theme's own picture; a screen with none of its own shows it
     case ${1:-} in 2|3) ;; *) refuse_in theme "panel takes 2 or 3, then a picture or none" ;; esac
     [ -n "${2:-}" ] || refuse_in theme "panel $1 takes a picture, or none"
-    _ted=$(theme_dir "${THEME:-none}"); _tpl=$(look_get "$_ted" PICTURE); _tpn=${_ted##*/}
-    [ "$(look_get "$_ted" WALLPAPER)" = picture ] && [ -n "$_tpl" ] || refuse_in theme "panels follow a picture of the theme's own -- spark-shell theme wallpaper PICTURE first"
+    _tpo=second; [ "$1" = 2 ] || _tpo=third
+    _tpd=$(theme_dir "${THEME:-none}"); _tpn=${_tpd##*/}; _tpl=''; [ -z "$_tpd" ] || [ "$(look_get "$_tpd" WALLPAPER)" != picture ] || _tpl=$(look_get "$_tpd" PICTURE)
+    # the picture that leads is no panel beside itself: the one the theme names, or one of its own chosen as the wallpaper (it was gone with the panel)
     case $_tpl in "$_tpn-landscape-$1".*) refuse_in theme "$_tpl is the theme's own picture, which leads: it is no panel $1 beside itself" ;; esac
-    printf '%s\n' "$_tpl" | grep -Eqx '[A-Za-z0-9][A-Za-z0-9_-]{0,63}[.](png|jpg|jpeg)' || refuse_in theme "panels lead with the theme's picture, and $_tpl is no name for one -- letters, digits, - and _, then .jpg or .png"
+    case ${WALLPAPER:-} in "$_tpd/$_tpn-landscape-$1".*) [ -z "$_tpd" ] || refuse_in theme "${WALLPAPER##*/} is the theme's own picture, which leads: it is no panel $1 beside itself" ;; esac
+    if [ "$2" = none ]; then
+        # nothing of its own there, as the theme's family says it: said, and no look kept to change for it
+        _tph=$(art_of "${THEME:-none}" | jq -r --argjson i "$1" '[.panels[]? | select(length >= $i) | select(.[$i - 1].landscape != null and .[$i - 1].landscape != .[0].landscape)] | length' 2>/dev/null) || _tph=0
+        [ "${_tph:-0}" -gt 0 ] || { echo "the $_tpo screen has no picture of its own: it shows the wallpaper"; return 0; }
+    else
+        case $(theme_wall_kind) in
+            picture) ;;
+            ground|color) refuse_in theme "the $_tpo screen takes its own picture beside a picture, and the wallpaper is $(theme_wall_same), the same on every screen -- choose a picture as the wallpaper first" ;;
+            *) refuse_in theme "the $_tpo screen takes its own picture beside a picture, and the wallpaper is $WALLPAPER, a drawing made for every screen -- choose a picture as the wallpaper first" ;;
+        esac
+        case $(printf '%s' "${WALLPAPER##*.}" | tr 'A-Z' 'a-z') in jpg|jpeg|png) ;; *) refuse_in theme "the $_tpo screen takes its own picture beside a JPEG or a PNG, and the wallpaper is $(file_named "$WALLPAPER") -- choose a JPEG or a PNG as the wallpaper first" ;; esac
+    fi
     _tkf=''; [ "$2" = none ] || theme_look_over "$2" picture
-    theme_editable; _tpl=$(look_get "$_ted" PICTURE); _tpn=${_ted##*/}
+    theme_editable
+    if [ "$2" != none ]; then theme_wall_adopt > "$TMP/adopt.why" || refuse_in theme "$(file_named "$2") not taken: $(cat "$TMP/adopt.why")"; fi
+    _tpl=$(look_get "$_ted" PICTURE); _tpn=${_ted##*/}
+    printf '%s\n' "$_tpl" | grep -Eqx '[A-Za-z0-9][A-Za-z0-9_-]{0,63}[.](png|jpg|jpeg)' || refuse_in theme "panels lead with the theme's picture, and $_tpl is no name for one -- letters, digits, - and _, then .jpg or .png"
     _tp2=''; _tp3=''; for _e in jpg png; do [ ! -f "$_ted/$_tpn-landscape-2.$_e" ] || _tp2=$_tpn-landscape-2.$_e; [ ! -f "$_ted/$_tpn-landscape-3.$_e" ] || _tp3=$_tpn-landscape-3.$_e; done
+    [ "$_tp2" != "$_tpl" ] || _tp2=''; [ "$_tp3" != "$_tpl" ] || _tp3=''   # the picture that leads is in no place but the first
     [ "$2" = none ] || theme_take "$_tpn-landscape-$1"
     if [ "$1" = 2 ]; then _tp2=$_tkf; else _tp3=$_tkf; fi
+    # the panels for three screens are written with either: a third screen plugged in beside a second with its own picture keeps
+    # that picture, and a third with its own shows it whatever the second has; a place with none of its own shows the picture that leads
     theme_picture_set "$_tpn-landscape-$1" '.variants[$v].panels = ((if $p2 == "" then {} else {"2": [{landscape: $l}, {landscape: $p2}]} end)
-            + (if $p2 == "" or $p3 == "" then {} else {"3": [{landscape: $l}, {landscape: $p2}, {landscape: $p3}]} end))
+            + (if $p2 == "" and $p3 == "" then {} else {"3": [{landscape: $l}, {landscape: (if $p2 == "" then $l else $p2 end)}, {landscape: (if $p3 == "" then $l else $p3 end)}]} end))
         | if .variants[$v].panels == {} then del(.variants[$v].panels) else . end' --arg l "$_tpl" --arg p2 "$_tp2" --arg p3 "$_tp3"
-    if [ -z "$_tp2" ]; then _tpd="no panels: each screen shows the art"; elif [ -z "$_tp3" ]; then _tpd="panels for 2 screens"; else _tpd="panels for 2 and 3 screens"; fi
+    if [ -z "$_tp2$_tp3" ]; then _tpd="no panels: each screen shows the art"
+    elif [ -z "$_tp3" ]; then _tpd="the second screen has its own picture"
+    elif [ -z "$_tp2" ]; then _tpd="the third screen has its own picture"
+    else _tpd="the second and the third screen have their own pictures"; fi
     theme_wear "$_tpd"; echo "$_tpd"
 }
 theme_picture_of() {   # theme_picture_of FOLDER WORD... -> the picture of the theme in FOLDER that one of the words names, by its file's name or its role (landscape-1); false for none
@@ -686,6 +743,7 @@ anim_step() {   # anim_step NAME|none|next|back -> the receipt; 1 when refused
         *) case " none $ANIMATION_NAMES " in *" $1 "*) _an=$1 ;; *) echo "animation takes none, $(printf '%s' "$ANIMATION_NAMES" | sed 's/ /, /g'), next or back"; return 1 ;; esac ;;
     esac
     config_set DIALOG_ANIMATION "$_an" >/dev/null; DIALOG_ANIMATION=$_an; export DIALOG_ANIMATION
+    dialog_look   # a home that is open, in another window, closes with it
     if [ "$_an" = none ]; then echo "animation none $PANEL_SEP the dialog opens and closes with no motion"; else echo "animation $_an $PANEL_SEP from the dialog's next opening"; fi
 }
 theme_family() {   # theme_family [stone|star|banner]
@@ -698,6 +756,7 @@ family_step() {   # family_step stone|star|banner -> the receipt; 1 when refused
     ! config_is GLYPH_FAMILY "$1" || { echo "the glyph family is $1 already"; return 1; }
     config_set GLYPH_FAMILY "$1" >/dev/null; GLYPH_FAMILY=$1; export GLYPH_FAMILY
     bar_redraw; ! wm_session || bar_ws_names
+    dialog_look   # a home that is open takes the family too
     echo "glyph family $1"
 }
 theme_glyphs() {   # theme_glyphs [signs|words] -- the bar's

@@ -75,7 +75,7 @@ def main(binary):
         return os.path.exists(audit) and open(audit).read().count("\n") >= 1
     read_until(audited, 15)
     read_until(lambda: False, 0.5)
-    ok("nord is on" not in text() and "\u276f theme nord" not in text(), "a pick says nothing: no command above the list, no receipt (#196)", text()[-400:])
+    ok("nord is on" not in text().lower() and "\u276f theme nord" not in text(), "a pick says nothing: no command above the list, no receipt (#196)", text()[-400:])
     rec = open(audit).read() if os.path.exists(audit) else ""
     ok(rec.count("\n") == 1 and "\ttheme\ttheme_palette\t" in rec and "nord" not in rec and (os.stat(audit).st_mode & 0o777) == 0o600,
        "one audit line, 0600, numbers and names: the tool, never the argument", rec)
