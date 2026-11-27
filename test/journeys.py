@@ -307,34 +307,67 @@ def notifications(d):
 
 def arrange(d):
     """The bar's status arranged while the desktop runs (v0.171): a module moved in its group, a gauge taken off, a
-    module hidden and the shipped order back are each kept in the config and leave the desktop as a login would make
-    it, so a reload is nothing; home's bar section, a row for each module, is seen; and an undo puts the four lines of
-    the config back as they were."""
+    module hidden and the shipped order back are each kept in the config, drawn by the bar and leave the desktop as a
+    login would make it, so a reload is nothing; home's bar section, a row for each module, is seen; and an undo puts
+    the four lines of the config back as they were, and the bar with them."""
     config = d.home / ".config" / "spark-shell" / "config"
+    state = d.run / "spark-shell-bar.state"
 
     def kept():
         return sorted(line for line in config.read_text().splitlines() if line.startswith(("BAR_ORDER=", "BAR_HIDE=", "BAR_PINS=", "BAR_GAUGES=")))
 
+    def parts():
+        """The parts of the status's modules as spark's bar has drawn them, left to right: MODULE.PART, from its state file."""
+        at = {}
+        try:
+            lines = state.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return []
+        for f in (line.split("\t") for line in lines):
+            if f[0] == "target" and len(f) == 11 and "." in f[2] and f[3].isdigit():
+                at.setdefault(f[2], int(f[3]))
+        return sorted(at, key=at.get)
+
+    def drawn(test, what):
+        """The bar once it shows `what`: a change is in its next line, so a bar that never shows it reads no arrangement."""
+        end = time.monotonic() + 30
+        while time.monotonic() < end:
+            try:
+                if test(parts()):
+                    return
+            except ValueError:   # a part the test names is not drawn yet
+                pass
+            time.sleep(0.2)
+        raise Broken("the bar did not come to show %s; it shows %s" % (what, " ".join(parts())))
+
     d.whole()
-    for verb in (("bar", "move", "mic", "before", "out"), ("bar", "gauge", "out", "off"), ("bar", "hide", "mic"), ("bar", "move", "default")):
+    drawn(lambda p: p.index("out.name") < p.index("mic.name"), "the volume before the microphone, the shipped order")
+    for verb, test, what in (
+            (("bar", "move", "mic", "before", "out"), lambda p: p.index("mic.name") < p.index("out.name"), "the microphone before the volume"),
+            (("bar", "gauge", "out", "off"), lambda p: "out.name" in p and "out.gauge" not in p, "the volume with no gauge"),
+            (("bar", "hide", "mic"), lambda p: "out.name" in p and "mic.name" not in p, "no microphone"),
+            (("bar", "move", "default"), lambda p: "out.name" in p and "mic.name" not in p, "the shipped order, the microphone still hidden")):
         was = kept()
         d.shell(*verb)
         if kept() == was:
             raise Broken("spark-shell %s was done and the config says what it said before" % " ".join(verb))
+        drawn(test, what)
         d.whole()
         d.reload_is_nothing()
     if "BAR_ORDER=pad due media lan bt wifi out mic light kb bat" not in kept():
         raise Broken("the shipped order was asked for and the config has %s" % kept())
     open_home(d, "5")
-    go(d, "bar")
+    go(d, "bar", "bar")
     d.home_seen()
     was = kept()
     d.shell("bar", "show", "mic")
     if kept() == was:
         raise Broken("the hidden module was shown and the config says what it said before")
+    drawn(lambda p: p.index("out.name") < p.index("mic.name"), "the microphone again, after the volume")
     d.shell("bar", "panel", "undo", "all")
     if kept() != was:
         raise Broken("the undo left the config with %s, and before the step it had %s" % (kept(), was))
+    drawn(lambda p: "out.name" in p and "mic.name" not in p, "no microphone again, after the undo")
     d.home_seen()
     d.whole()
     d.reload_is_nothing()

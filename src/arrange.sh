@@ -2,9 +2,10 @@
 # shellcheck extended-analysis=false
 # --- the bar's arrangement: what its status shows, in what order and how much of each. One table declares every group
 # and every module. The config holds what the person chose (BAR_ORDER, BAR_HIDE, BAR_PINS, BAR_GAUGES): each line of
-# the bar reads it again, and arrange_write alone writes the four keys, together
-# sets: BAR_ENUM_MODULES BAR_ENUM_MOVES BAR_FRAME BAR_GROUPS BAR_GROUP_OF BAR_LEVELS BAR_MODULES BAR_STATUS BAR_TABLE BAR_TABLE_GROUPS
-# reads: PANEL_CACHE PANEL_SEP
+# the bar reads it again, and arrange_write alone writes the four keys, together. A change reads them first, outside the
+# config's lock: of two made in the same instant, a drop on the bar and a step in home, the later one is kept whole
+# sets: BAR_ENUM_MODULES BAR_ENUM_MOVES BAR_FRAME BAR_GROUPS BAR_GROUP_OF BAR_LEVELS BAR_MODULES BAR_SAYS_OF BAR_STATUS BAR_TABLE BAR_TABLE_GROUPS BAR_TOGGLES
+# reads: CONFIG PANEL_CACHE PANEL_SEP
 
 # a group a row: its name | its words. The rows' order is the shipped one. The time's group is the bar's own, at its
 # end: it is in no order a person sets
@@ -25,24 +26,28 @@ media|now|-|toggle|bar_here_media|bar_fact_media|bar_click_media|what plays|what
 lan|network|-|-|bar_here_lan|bar_fact_lan|bar_click_open|wire|the wired network
 bt|network|-|-|bar_here_bt|bar_fact_bt|bar_click_open|bluetooth|bluetooth
 wifi|network|level|-|bar_here_wifi|bar_fact_wifi|bar_click_open|wifi|wifi; pinned, its signal as a number, with a gauge or none
-out|sound|level|toggle|bar_here_sound|bar_fact_out|bar_click_sound|volume|the sound, its sign mutes; pinned, a number sets the level, with a gauge or none
-mic|sound|level|-|bar_here_sound|bar_fact_mic|bar_click_sound|microphone|the microphone, a red dot while something records; pinned, its level
+out|sound|level|toggle|bar_here_always|bar_fact_out|bar_click_sound|volume|the sound, its sign mutes; pinned, a number sets the level, with a gauge or none
+mic|sound|level|-|bar_here_always|bar_fact_mic|bar_click_sound|microphone|the microphone, a red dot while something records; pinned, its level
 light|screen|level|-|bar_here_light|bar_fact_light|bar_click_light|brightness|the brightness of the screen; pinned, a number sets it, with a gauge or none
 kb|screen|-|toggle|bar_here_kb|bar_fact_kb|bar_click_kb|keyboard|the keyboard layout in use
 bat|power|-|-|bar_here_bat|bar_fact_bat|bar_click_open|battery|the battery
 clock|time|-|-|bar_here_always|bar_fact_clock|bar_click_open|time|the time
 notifications|time|-|-|bar_here_notifications|bar_fact_notifications|bar_click_notifications|notifications|the notifications not seen; a moon in do not disturb'
 # what the table says, read once: every name the bar has (the workspaces are its own and stay), the levels, the
-# status's modules and the time's, each module's group, and the status's groups
+# status's modules and the time's, each module's group and the function that says it, the ones a click changes in
+# place, and the status's groups. A line of the bar reads these and walks no table
 BAR_MODULES=workspaces
 BAR_LEVELS=''
 BAR_STATUS=''
 BAR_FRAME=''
 BAR_GROUP_OF=' '
+BAR_SAYS_OF=' '
+BAR_TOGGLES=''
 BAR_GROUPS=''
-while IFS='|' read -r _atn _atg _atl _atr; do
-    BAR_MODULES="$BAR_MODULES $_atn"; BAR_GROUP_OF="$BAR_GROUP_OF$_atn=$_atg "
+while IFS='|' read -r _atn _atg _atl _att _ath _ats _atr; do
+    BAR_MODULES="$BAR_MODULES $_atn"; BAR_GROUP_OF="$BAR_GROUP_OF$_atn=$_atg "; BAR_SAYS_OF="$BAR_SAYS_OF$_atn=$_ats "
     [ "$_atl" != level ] || BAR_LEVELS="${BAR_LEVELS:+$BAR_LEVELS }$_atn"
+    [ "$_att" != toggle ] || BAR_TOGGLES="${BAR_TOGGLES:+$BAR_TOGGLES }$_atn"
     if [ "$_atg" = time ]; then BAR_FRAME="${BAR_FRAME:+$BAR_FRAME }$_atn"; else BAR_STATUS="${BAR_STATUS:+$BAR_STATUS }$_atn"; fi
 done <<EOF
 $BAR_TABLE
@@ -73,10 +78,13 @@ EOF
     _ag=''; _al=''; _at=''; _ah=''; _as=''; _ac=''; _an=''; _aw=''
     return 1
 }
-# arrange_group NAME -> _ag, its group, with no walk of the table; 1 and nothing for a name the table does not have
+# arrange_group NAME -> _ag, its group, with no walk of the table; 1 and nothing for a name the table does not have.
+# A name is one word of small letters: two words in one, or a word with a sign, is no name
 arrange_group() {
+    case $1 in ''|*[!a-z]*) _ag=''; return 1 ;; esac
     case $BAR_GROUP_OF in *" $1="*) _ag=${BAR_GROUP_OF#*" $1="}; _ag=${_ag%% *} ;; *) _ag=''; return 1 ;; esac
 }
+arrange_says() { _as=${BAR_SAYS_OF#*" $1="}; _as=${_as%% *}; }   # arrange_says NAME -> _as, the function that adds its fact to the line; NAME is one of _order's
 arrange_group_words() {   # arrange_group_words GROUP -> its words; 1 for a name that is no group
     while IFS='|' read -r _agn _agw; do
         [ "$_agn" != "$1" ] || { printf '%s\n' "$_agw"; return 0; }
@@ -85,7 +93,7 @@ $BAR_TABLE_GROUPS
 EOF
     return 1
 }
-arrange_is_group() { case " $BAR_GROUPS " in *" $1 "*) ;; *) return 1 ;; esac; }   # arrange_is_group WORD -> 0 for a group of the status
+arrange_is_group() { case $1 in ''|*[!a-z]*) return 1 ;; esac; case " $BAR_GROUPS " in *" $1 "*) ;; *) return 1 ;; esac; }   # arrange_is_group WORD -> 0 for a group of the status
 arrange_of() {   # arrange_of GROUP -> _of: its modules, in _order's order
     _of=''
     for _aom in $_order; do arrange_group "$_aom"; [ "$_ag" != "$1" ] || _of="${_of:+$_of }$_aom"; done
@@ -98,12 +106,12 @@ arrange_groups() {   # -> _groups: the status's groups, in _order's order
     done
 }
 
-# the order as the config has it now. BAR_ORDER is never refused: a name the table does not have, a name said twice and
-# the time's two are passed over. A group stands where its first module is named; a module the line does not name (a
+# the order a line of names makes, the config's BAR_ORDER. It is never refused: a name the table does not have, a name
+# said twice and the time's two are passed over. A group stands where its first module is named; a module the line does not name (a
 # later release's) stands last in its group, and a group it does not name at its shipped place among the others
-arrange_order() {   # -> _order: the status's modules, a group together, then the time's
+arrange_order() {   # arrange_order NAMES -> _order: the status's modules, a group together, then the time's
     _aon=''; _aogn=''
-    for _aom in $(bar_style BAR_ORDER '' | tr -d '"'); do
+    for _aom in $1; do
         case " $_aon " in *" $_aom "*) continue ;; esac
         arrange_group "$_aom" && [ "$_ag" != time ] || continue
         _aon="$_aon $_aom"
@@ -131,22 +139,40 @@ arrange_order() {   # -> _order: the status's modules, a group together, then th
 # beside it (BAR_GAUGES: every pinned level where no line says, as before v0.171, none for no one). A BAR_PINS that
 # names a module with no level is v0.147's, the modules it showed: what it leaves out is hidden, and out is pinned
 arrange_read() {
-    _pinned=$(bar_style BAR_PINS out | tr -d '"'); _hidden=$(bar_style BAR_HIDE '' | tr -d '"')
+    _aro=''; _hidden=''; _pinned=''; _gauged=''   # the four in one read: a key's last line is the one, and an empty value is no line
+    while IFS='=' read -r _ark _arv; do
+        case $_ark in BAR_ORDER) _aro=$_arv ;; BAR_HIDE) _hidden=$_arv ;; BAR_PINS) _pinned=$_arv ;; BAR_GAUGES) _gauged=$_arv ;; esac
+    done <<EOF
+$(sed -n -e '/^BAR_ORDER=/p' -e '/^BAR_HIDE=/p' -e '/^BAR_PINS=/p' -e '/^BAR_GAUGES=/p' "$CONFIG" 2>/dev/null | tr -d '"')
+EOF
+    _pinned=${_pinned:-out}
     [ "$_pinned" != none ] || _pinned=''
     if ! words_in "$_pinned" "$BAR_LEVELS"; then
         for _arm in ${BAR_MODULES#workspaces }; do [ "$_arm" != media ] || continue; case " $_pinned " in *" $_arm "*) ;; *) _hidden="$_hidden $_arm" ;; esac; done   # a line of v0.147 says nothing of media, made after it
         _pinned=out
     fi
-    _gauged=$(bar_style BAR_GAUGES '' | tr -d '"'); _argn=''
+    _argn=''
     case $_gauged in
         '') _argn=$_pinned ;;
         none) ;;
         *) for _arm in $_gauged; do case " $_pinned " in *" $_arm "*) _argn="${_argn:+$_argn }$_arm" ;; esac; done ;;   # a gauge is a pinned level's
     esac
     _gauged=$_argn
-    arrange_order
-    _awo=''; for _arm in $_order; do arrange_group "$_arm" && [ "$_ag" != time ] || continue; _awo="${_awo:+$_awo }$_arm"; done
-    arrange_join "$_awo"; _kept=$_join; arrange_join "$_hidden"; _kept="$_kept/$_join"; arrange_join "$_pinned"; _kept="$_kept/$_join"; arrange_join "$_gauged"; _kept="$_kept/$_join"
+    arrange_order "$_aro"
+    arrange_norm; _kept=$_now
+}
+# the arrangement _order, _hidden, _pinned and _gauged hold, as a write keeps it: _awo, the status's order; _awh, _awp
+# and _awg, each in the table's order, a pin a level's alone and a gauge a pinned one's; and _now, the four in one word
+arrange_norm() {
+    _awo=''; for _awm in $_order; do arrange_group "$_awm" && [ "$_ag" != time ] || continue; _awo="${_awo:+$_awo }$_awm"; done
+    _awh=''; _awp=''; _awg=''
+    for _awm in ${BAR_MODULES#workspaces }; do case " $_hidden " in *" $_awm "*) _awh="${_awh:+$_awh }$_awm" ;; esac; done
+    for _awm in $BAR_LEVELS; do
+        case " $_pinned " in *" $_awm "*) ;; *) continue ;; esac
+        _awp="${_awp:+$_awp }$_awm"
+        case " $_gauged " in *" $_awm "*) _awg="${_awg:+$_awg }$_awm" ;; esac
+    done
+    arrange_join "$_awo"; _now=$_join; arrange_join "$_awh"; _now="$_now/$_join"; arrange_join "$_awp"; _now="$_now/$_join"; arrange_join "$_awg"; _now="$_now/$_join"
 }
 arrange_join() { _join=''; for _ajw in $1; do _join="${_join:+$_join,}$_ajw"; done; [ -n "$_join" ] || _join=-; }   # arrange_join NAMES -> _join: the names, a comma between; - for none
 arrange_kept() ( arrange_read; printf '%s\n' "$_kept" )   # -> the arrangement the config has now, in one word, as arrange_restore takes it: ORDER/HIDDEN/PINNED/GAUGED
@@ -161,18 +187,16 @@ arrange_value() {   # arrange_value NAME -> hidden, shown, pinned or gauge, by w
 }
 # the four keys as _order, _hidden, _pinned and _gauged have them, in one step under the config's lock: no line is
 # drawn between two of them. The order names every module of the status; none says no pin and no gauge, since an empty
-# value reads as no line. No bar starts again: its next line says it
+# value reads as no line. No bar starts again: its next line says it. One that is the arrangement arrange_read read is
+# not written: nothing changes, and the undo before it stays
 arrange_write() {
-    _awo=''; for _awm in $_order; do arrange_group "$_awm" && [ "$_ag" != time ] || continue; _awo="${_awo:+$_awo }$_awm"; done
-    _awh=''; _awp=''; _awg=''   # each list in the bar's own order
-    for _awm in ${BAR_MODULES#workspaces }; do
-        case " $_hidden " in *" $_awm "*) _awh="${_awh:+$_awh }$_awm" ;; esac
-        case " $_pinned " in *" $_awm "*) _awp="${_awp:+$_awp }$_awm" ;; esac
-        case " $_gauged " in *" $_awm "*) _awg="${_awg:+$_awg }$_awm" ;; esac
-    done
-    config_keep BAR_ORDER "$_awo" BAR_HIDE "$_awh" BAR_PINS "${_awp:-none}" BAR_GAUGES "${_awg:-none}" || exit 1
+    arrange_norm
     _hidden=$_awh; _pinned=$_awp; _gauged=$_awg
-    [ -n "${_arrange_back:-}" ] || [ -z "${_kept:-}" ] || arrange_undo "$_kept"   # putting one back leaves no undo of its own
+    [ "$_now" != "${_kept:-}" ] || return 0
+    config_keep BAR_ORDER "$_awo" BAR_HIDE "$_awh" BAR_PINS "${_awp:-none}" BAR_GAUGES "${_awg:-none}" || exit 1
+    # putting one back leaves no undo of its own; and a host that keeps the undo of its own step (home, PANEL_JOURNAL
+    # off) is handed it with the step's answer
+    [ -n "${_arrange_back:-}" ] || [ "${PANEL_JOURNAL:-}" = off ] || [ -z "${_kept:-}" ] || arrange_undo "$_kept"
     bar_redraw
 }
 arrange_list() { printf '%s' "$1" | sed 's/ /, /g'; }   # arrange_list NAMES -> the names, a comma between
@@ -276,7 +300,7 @@ arrange_put() {
     esac
 }
 arrange_here() {   # arrange_here NAME... -> _here: the ones this machine has, in that order
-    _here=''; SND=${SND:-$(snd_tool)}
+    _here=''
     for _ahm in "$@"; do arrange_row "$_ahm" && "$_ah" || continue; _here="${_here:+$_here }$_ahm"; done
 }
 arrange_beside() {   # arrange_beside LIST ITEM left|right -> _beside: the one before or after ITEM in LIST, or nothing
@@ -292,12 +316,15 @@ arrange_named() {   # arrange_named WORD -> _named: a module's plain name or a g
 }
 # where a module or a group stands. A module moves inside its group, and a group among the groups: the modules of a
 # group stand together. left and right are one step, as a key or a row's move asks it: past the modules beside it that
-# this machine has, and, from its group's end, the whole group past the next one. default is the shipped order again
+# this machine has, and, from its group's end, the whole group past the next one. A module this machine lacks steps
+# past each of its group, since none of them is in sight. default is the shipped order again
 arrange_move() {   # arrange_move NAME first|last|left|right | NAME before|after OTHER | default -> the receipt, or exit 1
     _amy=$(sparkbar_no_pins move); [ -z "$_amy" ] || refuse_in bar "$_amy"
     arrange_read
     if [ "${1:-}" = default ] && [ "$#" = 1 ]; then
-        _order="$BAR_STATUS $BAR_FRAME"; arrange_write
+        _order="$BAR_STATUS $BAR_FRAME"; arrange_norm
+        [ "$_now" != "$_kept" ] || refuse_in bar "the bar's order is the shipped one already"
+        arrange_write
         echo "the bar's order is the shipped one again"; return 0
     fi
     _amn=${1:-}; _amw=${2:-}; _amo=${3:-}
@@ -310,7 +337,8 @@ arrange_move() {   # arrange_move NAME first|last|left|right | NAME before|after
         [ "$_ag" != time ] || refuse_in bar "$_amn stays at the bar's end"
         _amgr=$_ag; arrange_of "$_amgr"; _amof=$_of
         case $_amw in
-            left|right) arrange_here $_amof; arrange_beside "$_here" "$_amn" "$_amw"
+            left|right) arrange_here $_amof; case " $_here " in *" $_amn "*) ;; *) _here=$_amof ;; esac
+                arrange_beside "$_here" "$_amn" "$_amw"
                 if [ -n "$_beside" ]; then _amo=$_beside; _amw=before; [ "$2" = left ] || _amw=after; else _amg=$_amgr; fi ;;
             before|after)
                 [ "$_amo" != "$_amn" ] || refuse_in bar "$_amn cannot stand $_amw itself"
@@ -378,12 +406,21 @@ arrange_step() {   # arrange_step "NAME to=WHERE [other=OTHER]" | default -> the
     if _stl=$(arrange_move "$_stn" ${_stw:+"$_stw"} ${_sto:+"$_sto"} 2>&1); then printf '%s\n' "$_stl"; else printf '%s\n' "${_stl#spark-shell bar: }"; return 1; fi
 }
 arrange_words() { _words=''; _awr=$1; while [ -n "$_awr" ]; do _aw1=${_awr%%,*}; [ "$_aw1" = - ] || _words="${_words:+$_words }$_aw1"; case $_awr in *,*) _awr=${_awr#*,} ;; *) _awr='' ;; esac; done; }   # arrange_words A,B|- -> _words
-# an arrangement put back as it was kept (arrange_kept): what an undo runs. A name the table does not have is passed over
+# an arrangement put back as it was kept (arrange_kept): what an undo runs. Each of the four is - or modules' names, a
+# comma between, and a word that is neither is refused with nothing written. The order is read as BAR_ORDER is: a
+# module it leaves out stands at its shipped place
 arrange_restore() {   # arrange_restore ORDER/HIDDEN/PINNED/GAUGED -> the receipt
-    case $1 in */*/*/*/*) echo 'an arrangement is an order, the hidden, the pinned and the gauges'; return 1 ;; */*/*/*) ;; *) echo 'an arrangement is an order, the hidden, the pinned and the gauges'; return 1 ;; esac
+    _resay='an arrangement is an order, the hidden, the pinned and the gauges'
+    case $1 in *[!a-z,/-]*|*/*/*/*/*) echo "$_resay"; return 1 ;; */*/*/*) ;; *) echo "$_resay"; return 1 ;; esac
     _rey=$(sparkbar_no_pins move); [ -z "$_rey" ] || { echo "$_rey"; return 1; }
     _reo=${1%%/*}; _rer=${1#*/}; _reh=${_rer%%/*}; _rer=${_rer#*/}; _rep=${_rer%%/*}; _reg=${_rer#*/}
-    arrange_words "$_reo"; _order="$_words $BAR_FRAME"
+    for _rew in "$_reo" "$_reh" "$_rep" "$_reg"; do
+        [ -n "$_rew" ] || { echo "$_resay"; return 1; }
+        arrange_words "$_rew"
+        for _ren in $_words; do arrange_group "$_ren" || { echo "$_ren is no module of the bar"; return 1; }; done
+    done
+    arrange_read   # what is there now: one that is the same is not written again
+    arrange_words "$_reo"; arrange_order "$_words"
     arrange_words "$_reh"; _hidden=$_words
     arrange_words "$_rep"; _pinned=$_words
     arrange_words "$_reg"; _gauged=$_words
@@ -393,7 +430,7 @@ arrange_restore() {   # arrange_restore ORDER/HIDDEN/PINNED/GAUGED -> the receip
 # the modules this machine has, for home's rows, in the bar's order and the time's two after: its name, its row's
 # words, its group's words, its value, 1 where it has a level, 1 where a person can move it
 arrange_rows() {
-    arrange_read; SND=${SND:-$(snd_tool)}
+    arrange_read
     for _rom in $_order; do
         arrange_row "$_rom" && "$_ah" || continue
         _rov=$(arrange_value "$_rom"); _rol=''; [ -z "$_al" ] || _rol=1; _rox=1; [ "$_ag" != time ] || _rox=''

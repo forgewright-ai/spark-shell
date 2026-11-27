@@ -3746,16 +3746,23 @@ fn the_new_key_does_the_row_that_wears_it_and_help_starts_with_the_page() {
 #[test]
 fn ctrl_up_and_down_move_a_row_that_says_it_can_move() {
     // a module of the bar (v0.171): its row carries the two calls that move it. Ctrl+Down runs the one that moves it
-    // down, in place and with no question, as a value is set; a row with no move is nobody's to move
+    // down, in place and with no question, as a value is set. The rows come back in their new order: the light is on
+    // the row that moved, and the step that takes the move back is home's undo. Each move asked while one is out is
+    // made. A row with no move is nobody's to move
     use spark_dialog::display::screens::Side;
     let (mut app, rx, tx) = app_with(&["bar"]);
-    let row = |name: &str, moves: bool| {
+    fn row(name: &str, moves: bool) -> Value {
         let mut r = json!({"id": format!("bar:module {name}"), "sign": "blank", "text": name, "columns": [], "more": [], "children": null});
         if moves {
             r["place"] = json!({"up": {"name": "bar_move", "arguments": {"name": name, "to": "left"}}, "down": {"name": "bar_move", "arguments": {"name": name, "to": "right"}}});
         }
         r
-    };
+    }
+    // the section's rows after so many moves: each one changes the places of the first two
+    fn rows(moves: usize) -> Value {
+        let two = if moves % 2 == 1 { ["mic", "out"] } else { ["out", "mic"] };
+        json!({"title": "bar", "rows": [row(two[0], true), row(two[1], true), row("text size", false)], "short": []})
+    }
     let tools = json!([{"name": "bar_move", "title": "bar move NAME", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "to": {"type": "string"}}},
         "annotations": {"destructiveHint": false}}]);
     let sent = Arc::new(Mutex::new(vec![]));
@@ -3766,13 +3773,18 @@ fn ctrl_up_and_down_move_a_row_that_says_it_can_move() {
         section_stub(
             "bar",
             tools,
-            json!({"title": "bar", "rows": [row("out", true), row("mic", true), row("text size", false)], "short": []}),
+            rows(0),
             0,
             move |v, send| {
-                seen.lock().unwrap().push(v["params"].clone());
+                let made = {
+                    let mut seen = seen.lock().unwrap();
+                    seen.push(v["params"].clone());
+                    seen.len()
+                };
                 send(result(
                     &v["id"],
-                    json!({"content": [{"type": "text", "text": "{}"}], "structuredContent": {"receipt": "volume moved after microphone"}, "isError": false}),
+                    json!({"content": [{"type": "text", "text": "{}"}], "isError": false, "structuredContent": {"receipt": "volume moved after microphone", "rows": rows(made),
+                        "undo": {"name": "bar_restore", "arguments": {"arrangement": format!("as-it-was-{made}")}}}}),
                 ));
             },
         ),
@@ -3781,20 +3793,50 @@ fn ctrl_up_and_down_move_a_row_that_says_it_can_move() {
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers.iter().all(|p| p.ready && !p.tools.is_empty())));
     assert!(pump(&mut app, &rx, |a| a.providers[0].rows.rows.len() == 3));
-    assert_eq!(app.providers[0].rows.rows.iter().map(|r| r.place.is_some()).collect::<Vec<_>>(), [true, true, false], "a row's moves are read, both or none");
+    assert_eq!(
+        app.providers[0].rows.rows.iter().map(|r| r.place.is_some()).collect::<Vec<_>>(),
+        [true, true, false],
+        "a row's moves are read, both or none"
+    );
     at_row(&mut app, View::Section(0), 0);
     app.hint_key(HintKey::Place(Side::Below));
-    assert!(pump(&mut app, &rx, |_| sent.lock().unwrap().len() == 1), "the move was not asked for: {:?} {:?} {:?}", app.reply, app.mode, app.in_list);
-    assert_eq!(sent.lock().unwrap()[0], json!({"name": "bar_move", "arguments": {"name": "out", "to": "right"}}));
+    assert!(
+        pump(&mut app, &rx, |_| sent.lock().unwrap().len() == 1),
+        "the move was not asked for: {:?} {:?} {:?}",
+        app.reply,
+        app.mode,
+        app.in_list
+    );
+    assert_eq!(
+        sent.lock().unwrap()[0],
+        json!({"name": "bar_move", "arguments": {"name": "out", "to": "right"}})
+    );
     assert!(matches!(app.mode, Mode::Normal), "it asks nothing");
-    at_row(&mut app, View::Section(0), 1);
+    // the rows came back with out second: the light went with it, and the move has its undo
+    assert!(pump(&mut app, &rx, |a| a.sel == 1 && a.undo.is_some()), "{} {:?}", app.sel, app.undo);
+    assert_eq!(app.providers[0].rows.rows[1].id, "bar:module out");
+    let undo = app.undo.as_ref().map(|u| (u.call.name.clone(), u.call.arguments["arrangement"].clone()));
+    assert_eq!(
+        undo,
+        Some(("bar_restore".to_string(), json!("as-it-was-1"))),
+        "the step that takes the move back"
+    );
     app.hint_key(HintKey::Place(Side::Above));
-    assert!(pump(&mut app, &rx, |_| sent.lock().unwrap().len() == 2));
-    assert_eq!(sent.lock().unwrap()[1], json!({"name": "bar_move", "arguments": {"name": "mic", "to": "left"}}));
+    assert!(pump(&mut app, &rx, |a| sent.lock().unwrap().len() == 2 && a.sel == 0));
+    assert_eq!(sent.lock().unwrap()[1], json!({"name": "bar_move", "arguments": {"name": "out", "to": "left"}}));
+    // three asked in a row, the first still out: each is made, none takes another's place
+    for _ in 0..3 {
+        app.hint_key(HintKey::Place(Side::Below));
+    }
+    assert!(
+        pump(&mut app, &rx, |a| sent.lock().unwrap().len() == 5 && a.sel == 1),
+        "{} moves asked",
+        sent.lock().unwrap().len()
+    );
     // a row with no move, and a side that is no way in a list: nothing is asked of the provider
     at_row(&mut app, View::Section(0), 2);
     app.hint_key(HintKey::Place(Side::Below));
-    at_row(&mut app, View::Section(0), 0);
+    at_row(&mut app, View::Section(0), 1);
     app.hint_key(HintKey::Place(Side::Left));
-    assert!(!pump(&mut app, &rx, |_| sent.lock().unwrap().len() > 2));
+    assert!(!pump_for(&mut app, &rx, QUIET, |_| sent.lock().unwrap().len() > 5));
 }

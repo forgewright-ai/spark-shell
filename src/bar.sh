@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # ---------------------------------------------------------------- the bar
 # sets: BAR_BT BAR_BT_OFF BAR_DEV BAR_DND BAR_DND_PLAIN BAR_DUE BAR_DUE_PLAIN BAR_FULL BAR_GAP BAR_GROUP_GAP BAR_KB BAR_KB_PLAIN BAR_LAN BAR_LIGHT BAR_MIC BAR_MIC_OFF BAR_NOTE BAR_OUT BAR_OUT_OFF BAR_PAD BAR_PALETTE BAR_PID BAR_PLAY BAR_PLAY_OFF BAR_PROC BAR_SHADE BAR_STEPS BAR_SYS BAR_WIFI BAR_WS_ORDER
-# reads: BAR_ASOUNDRC BAR_GROUPS BAR_MODULES CONFIG GLYPH_FAMILIES LAYOUT_ON OS PANEL_DOT PANEL_PROMPT PANEL_SEP PANEL_WARN REPO STATE_DIR TAB THEME_KEYS TMP WM_TRAY
+# reads: BAR_ASOUNDRC BAR_GROUPS BAR_MODULES BAR_TOGGLES CONFIG GLYPH_FAMILIES LAYOUT_ON OS PANEL_DOT PANEL_PROMPT PANEL_SEP PANEL_WARN REPO STATE_DIR TAB THEME_KEYS TMP WM_TRAY
 # spark's bar, or sway's own where it cannot run, reads `spark-shell bar status`:
 # i3bar JSON every 15 s and on SIGUSR1 to the pid in STATE_DIR/bar.pid
 BAR_SYS=${SPARK_SHELL_SYS:-/sys}      # tests: a fixture /sys and /proc
@@ -518,12 +518,12 @@ bar_sign() { _bg=$1; _bi=${3:-}; [ -z "$_bw" ] || { _bg=$2; _bi=''; }; }
 bar_fact() {   # bar_fact NAME SIGN TEXT CELLS STATE LABEL [LEVEL [SET]] -- added to the line, unless the module is hidden
     _bfi=${_bi:-}; _bi=''   # the icon is this fact's alone: the next one names its own, or has none
     case " $_hidden " in *" $1 "*) return 0 ;; esac
-    arrange_row "$1" || _ag=pad   # the pad's room is no module of the table
+    arrange_group "$1" || _ag=pad   # the pad's room is no module of the table
     _bfl=''; [ -z "${7:-}" ] || { _bfl=$7; [ "$_bfl" -le 100 ] || _bfl=100; _bfl=",\"level\":$_bfl"; }
     _bfb=false; [ "$1" != clock ] || _bfb=true   # the time alone is bold
     _bfp=false; case " $_pinned " in *" $1 "*) _bfp=true ;; esac
     _bfq=false; case " $_gauged " in *" $1 "*) _bfq=true ;; esac
-    _bfg=false; [ -z "$_at" ] || _bfg=true
+    _bfg=false; case " $BAR_TOGGLES " in *" $1 "*) _bfg=true ;; esac
     bar_str "$2"; _bfs=$_bs; bar_str "$3"; _bft=$_bs; bar_str "$6"
     line="$line,{\"name\":\"$1\",\"group\":\"$_ag\",\"sign\":\"$_bfs\",\"icon\":\"$_bfi\",\"text\":\"$_bft\",\"cells\":$4,\"bold\":$_bfb,\"state\":\"$5\"$_bfl,\"set\":${8:-false},\"pinned\":$_bfp,\"gauge\":$_bfq,\"label\":\"$_bs\",\"toggle\":$_bfg}"
 }
@@ -533,7 +533,6 @@ bar_here_media() { media_here; }
 bar_here_lan() { [ -n "$(bar_wired)" ]; }
 bar_here_bt() { ls -d "$BAR_SYS"/class/bluetooth/hci* >/dev/null 2>&1; }
 bar_here_wifi() { [ -n "$(bar_wireless)" ]; }
-bar_here_sound() { [ -n "${SND:-}" ]; }
 bar_here_light() { case $(light_get) in ''|*[!0-9]*) return 1 ;; esac; }
 bar_here_kb() { [ -n "$(kb_active)" ]; }
 bar_here_bat() { [ -n "$(bar_power)" ]; }
@@ -648,7 +647,7 @@ bar_facts() {   # -> the line for spark's bar: the look, then a fact a module, i
     bar_signs
     arrange_read
     line=$(bar_look)
-    for _bfm in $_order; do arrange_row "$_bfm"; "$_as"; done   # each module says itself, by the function its row names
+    for _bfm in $_order; do arrange_says "$_bfm"; "$_as"; done   # each module says itself, by the function its row names
     printf '[%s],\n' "$line"
 }
 bar_line() {   # -> a refresh's JSON array: the facts for spark's bar, the blocks sway's bar draws otherwise. Run in a subshell: what it sets ends with it
@@ -755,7 +754,7 @@ bar_click_due() { [ "$3" != 1 ] || bar_panel_open reminders; }
 bar_click_media() {   # the sign and the text play or pause; the wheel skips, up to the next track and down to the one before
     case $3 in 1) media_act toggle >/dev/null 2>&1 || : ;; 4) media_act next >/dev/null 2>&1 || : ;; 5) media_act previous >/dev/null 2>&1 || : ;; esac
 }
-bar_click_sound() {   # out and mic: a gauge sets the level, the wheel takes five, the middle and the right button mute
+bar_click_sound() {   # out and mic: a gauge sets the level, the wheel takes five, the middle button mutes; the right one too on sway's bar, where it opens nothing (bar_click)
     case $2:$3 in
         gauge:1) bar_click_level "$4" "$5" || return 0; bar_snd "$1" "$l" ;;
         name:1) if [ "$1" = out ] && [ -n "${SPARK_BAR:-}" ]; then bar_snd out mute; else bar_panel_open "$1"; fi ;;   # on spark's bar out's sign mutes and its number opens the section
@@ -1053,10 +1052,11 @@ bar_gauge_verb() {   # bar_gauge_verb WORD... -> _bgv gauge or ungauge and _bgn 
 }
 bar_move_verb() {   # bar_move_verb WORD... -> 0 where the words are a move's: default, or a module or a group and where it goes; 1 for a sentence
     case $#:${1:-} in 1:default) return 0 ;; esac
-    case " $BAR_MODULES $BAR_GROUPS " in *" ${1:-} "*) ;; *) return 1 ;; esac
+    case ${1:-} in ''|*[!a-z]*) return 1 ;; esac   # a name is one word
+    case " $BAR_MODULES $BAR_GROUPS " in *" $1 "*) ;; *) return 1 ;; esac
     case $#:${2:-} in
         2:first|2:last|2:left|2:right) ;;
-        3:before|3:after) case " $BAR_MODULES $BAR_GROUPS " in *" $3 "*) ;; *) return 1 ;; esac ;;
+        3:before|3:after) case $3 in ''|*[!a-z]*) return 1 ;; esac; case " $BAR_MODULES $BAR_GROUPS " in *" $3 "*) ;; *) return 1 ;; esac ;;
         *) return 1 ;;
     esac
 }

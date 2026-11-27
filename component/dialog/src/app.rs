@@ -1825,13 +1825,19 @@ impl App {
                         if let Some((id, tool)) = set.map(|(_, _, id, call)| (id.clone(), call.name.clone())) {
                             let privacy = result.as_ref().map(|r| gate::result_privacy(None, r)).unwrap_or_default();
                             self.trial_take(idx, &tool, sc, &privacy, Instant::now());
-                            // a screen put at a place is a move, and a move is taken back (a value set in place is not)
-                            if self
+                            // a screen put at a place and a row moved in its list are moves, and a move is taken back
+                            // (a value set in place is not)
+                            let moved = self
                                 .held
                                 .iter()
-                                .any(|(p, h, held, _)| *p == idx && *h == id && matches!(held, Held::Placed(..)))
-                            {
-                                self.offer_undo(idx, "screen position", sc, &privacy);
+                                .find(|(p, h, ..)| *p == idx && *h == id)
+                                .and_then(|(_, _, held, _)| match held {
+                                    Held::Placed(..) => Some("screen position"),
+                                    Held::Moved => Some("the move"),
+                                    _ => None,
+                                });
+                            if let Some(line) = moved {
+                                self.offer_undo(idx, line, sc, &privacy);
                             }
                         }
                         self.wear_theme(idx, sc);
@@ -2201,8 +2207,16 @@ impl App {
             ("notes", "new note", k(HintKey::New)),
             ("calendar", "new reminder", k(HintKey::New)),
             ("calendar", "the month before or after", self.cfg.keys.labels(&[HintKey::Left, HintKey::Right])),
-            ("apps", "move the lit app's category up or down", "Ctrl+\u{2191} Ctrl+\u{2193}".to_string()),
-            ("bar", "move the lit module, and from its group's end the group", "Ctrl+\u{2191} Ctrl+\u{2193}".to_string()),
+            (
+                "apps",
+                "move the lit app's category up or down",
+                self.cfg.keys.labels(&[Side::Above, Side::Below].map(HintKey::Place)),
+            ),
+            (
+                "bar",
+                "move the lit module, and from its group's end the group",
+                self.cfg.keys.labels(&[Side::Above, Side::Below].map(HintKey::Place)),
+            ),
             (
                 "display",
                 "move the lit screen beside another",
@@ -7289,7 +7303,7 @@ impl App {
                     add(&mut v, "Change", "\u{2190} \u{2192}");
                 }
                 if rows.iter().any(|r| r.place.is_some()) {
-                    add(&mut v, "Move", "Ctrl+\u{2191} Ctrl+\u{2193}");
+                    add(&mut v, "Move", &self.cfg.keys.labels(&[Side::Above, Side::Below].map(HintKey::Place)));
                 }
                 if self.pixels && rows.iter().any(|r| r.map.as_ref().is_some_and(|m| m.screens.iter().any(|s| m.moves(&s.name)))) {
                     add(&mut v, "Move", "Ctrl+\u{2190} Ctrl+\u{2192} Ctrl+\u{2191} Ctrl+\u{2193}");
@@ -7616,8 +7630,10 @@ impl App {
     }
 
     /// A value set in place (#183): held to its tool as every step is, shown on its row at once, then
-    /// set; while one is being set, the newest wanted for each row waits, and only it is sent.
+    /// set; while one is being set, the newest wanted for each row waits, and only it is sent. A move is a step
+    /// and no value: each one asked while another is out waits its turn, and all are made.
     pub(crate) fn set_value(&mut self, p: usize, id: &str, held: Held, call: Call) {
+        let moved = held == Held::Moved;
         let step = Step {
             prov: p,
             call: call.clone(),
@@ -7636,7 +7652,9 @@ impl App {
         self.held.push((p, id.to_string(), held, None));
         self.hold_rows(p);
         if self.setting.is_some() {
-            self.set_next.retain(|(np, nid, _)| !(*np == p && nid == id));
+            if !moved {
+                self.set_next.retain(|(np, nid, _)| !(*np == p && nid == id));
+            }
             self.set_next.push((p, id.to_string(), call));
             return;
         }

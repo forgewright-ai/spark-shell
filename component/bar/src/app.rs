@@ -7,6 +7,7 @@
 //! While a bar is dragged, a copy of it follows the pointer and a line at the screen's other edge shows where it
 //! would land.
 
+use crate::arrange::{self, Move};
 use crate::bar::{self, Act, Astray, Draw, Edge, KeyAct, Layout, Levels, Metrics, Module, Off, Prefs, Press, Scene, Shown, Status, Tone, View, Workspace};
 use crate::keys::Keyboard;
 use crate::paint::{Canvas, Font, Lib, Picture, Rgb, Ruler};
@@ -30,7 +31,6 @@ use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
-use crate::arrange::{self, Move};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -520,8 +520,9 @@ impl App {
             o.waiting = false;
             if let Some(p) = self.pointer.as_mut().filter(|p| p.out == Some(oi)) {
                 p.out = None;
-                // a press held on this bar's ground is over with the bar: no guide stays on a screen at rest
-                p.held = None;
+                // a press held on this bar's ground, or on a part of it, is over with the bar: no guide stays on a
+                // screen at rest
+                (p.held, p.part) = (None, None);
             }
         }
         self.apply_catchers();
@@ -874,10 +875,11 @@ impl App {
     fn hold_over(&mut self) {
         let Some(hold) = self.hold.as_ref() else { return };
         if self.now() < hold.until {
-            return;   // a later move's hold: its own timer ends it
+            return; // a later move's hold: its own timer ends it
         }
         self.hold = None;
         if let Some(modules) = self.late.take() {
+            self.rolls.said(&modules, self.now());
             self.modules = modules;
             self.relayout();
         }
@@ -887,17 +889,27 @@ impl App {
     /// it: the module or, past its group's reach, its whole group, as far from its place as the pointer has gone,
     /// and the line where it would land.
     fn drag_to(&mut self, x: f64) {
-        let Some((oi, at, module)) = self.pointer.as_ref().and_then(|p| p.part.as_ref()).and_then(|h| Some((h.out, h.at.0, h.module.clone()?))) else {
+        let Some((oi, at, module)) = self
+            .pointer
+            .as_ref()
+            .and_then(|p| p.part.as_ref())
+            .and_then(|h| Some((h.out, h.at.0, h.module.clone()?)))
+        else {
             return;
         };
         let cell = self.m.cell;
-        let spans = arrange::spans(&self.outs[oi].layout, &self.modules);
+        let Some(out) = self.outs.get(oi) else { return };
+        let spans = arrange::spans(&out.layout, &self.modules);
         // a group's reach is half the room between two groups; the line stands in the middle of the room it lands in
         let to = arrange::landing(&spans, &module, x.round() as i32, 2 * cell);
         let line = to.as_ref().and_then(|mv| arrange::line(&spans, mv, if mv.group { 2 * cell } else { cell }));
         let group = spans.iter().find(|s| s.name == module).map(|s| s.group.clone()).unwrap_or_default();
         let whole = to.as_ref().is_some_and(|mv| mv.group);
-        let names = spans.iter().filter(|s| if whole { s.group == group } else { s.name == module }).map(|s| s.name.clone()).collect();
+        let names = spans
+            .iter()
+            .filter(|s| if whole { s.group == group } else { s.name == module })
+            .map(|s| s.name.clone())
+            .collect();
         let drawn = bar::Dragged {
             names,
             dx: (x - at).round() as i32,
@@ -1126,10 +1138,12 @@ impl App {
         if let Some(wait) = roll.filter(|_| !self.outs[oi].rolling) {
             self.outs[oi].rolling = true;
             let name = self.outs[oi].name.clone();
-            let _ = self.handle.insert_source(Timer::from_duration(Duration::from_millis(wait.max(1))), move |_, _, app: &mut App| {
-                app.roll_due(&name);
-                TimeoutAction::Drop
-            });
+            let _ = self
+                .handle
+                .insert_source(Timer::from_duration(Duration::from_millis(wait.max(1))), move |_, _, app: &mut App| {
+                    app.roll_due(&name);
+                    TimeoutAction::Drop
+                });
         }
         // the next frame, only while a number on this bar is on its way
         let o = &self.outs[oi];
@@ -1154,7 +1168,9 @@ impl App {
         let Some(oi) = self.outs.iter().position(|o| o.name == name) else { return };
         self.outs[oi].rolling = false;
         let o = &self.outs[oi];
-        let Some(layer) = o.layer.as_ref().filter(|_| o.width > 0 && !o.waiting) else { return };
+        let Some(layer) = o.layer.as_ref().filter(|_| o.width > 0 && !o.waiting) else {
+            return;
+        };
         let surface = layer.wl_surface();
         surface.frame(&self.qh, FrameCallbackData(surface.clone()));
         layer.commit();
@@ -1180,7 +1196,12 @@ impl App {
             eprintln!("spark-bar: no shared memory for a frame");
             return None;
         };
-        let drag = self.pointer.as_ref().and_then(|p| p.part.as_ref()).filter(|h| h.drag && h.out == oi).map(|h| &h.drawn);
+        let drag = self
+            .pointer
+            .as_ref()
+            .and_then(|p| p.part.as_ref())
+            .filter(|h| h.drag && h.out == oi)
+            .map(|h| &h.drawn);
         let view = View {
             hover: if drag.is_some() { None } else { o.hover },
             focus,
@@ -1249,7 +1270,7 @@ impl App {
             o.catcher = None;
         }
         if let Some(p) = self.pointer.as_mut() {
-            p.held = None;
+            (p.held, p.part) = (None, None);
         }
         self.drop_marks();
         self.ruler.free(&self.lib);
@@ -1265,6 +1286,13 @@ impl LayerShellHandler for App {
             let copy = |h: &Held| h.copy.as_ref().is_some_and(|(l, _)| l == layer);
             if p.held.as_ref().is_some_and(|h| h.guide.as_ref() == Some(layer) || copy(h) || bar(h)) {
                 p.held = None;
+            }
+            // and a press on a part of the bar that closed
+            if p.part
+                .as_ref()
+                .is_some_and(|h| self.outs.get(h.out).is_some_and(|o| o.layer.as_ref() == Some(layer)))
+            {
+                p.part = None;
             }
         }
         for o in &mut self.outs {
@@ -1389,10 +1417,10 @@ impl OutputHandler for App {
 
     fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, output: WlOutput) {
         self.outs.retain(|o| o.output != output);
-        // the indexes moved: the pointer is on no bar until it moves again, and a press held on a bar's ground is
-        // over, its guide with it
+        // the indexes moved: the pointer is on no bar until it moves again, and a press held on a bar's ground or on
+        // a part is over, its guide with it: neither keeps the index of a bar that may be another's now
         if let Some(p) = self.pointer.as_mut() {
-            (p.out, p.held) = (None, None);
+            (p.out, p.held, p.part) = (None, None, None);
         }
         if self.keys.as_ref().is_some_and(|k| !self.outs.iter().any(|o| o.name == *k)) {
             self.keys_off();
@@ -1519,7 +1547,11 @@ impl PointerHandler for App {
                         _ => continue,
                     };
                     // the bar or a module is being dragged: another button pressed acts on nothing
-                    if self.pointer.as_ref().is_some_and(|p| p.held.as_ref().is_some_and(|h| h.drag) || p.part.as_ref().is_some_and(|h| h.drag)) {
+                    if self
+                        .pointer
+                        .as_ref()
+                        .is_some_and(|p| p.held.as_ref().is_some_and(|h| h.drag) || p.part.as_ref().is_some_and(|h| h.drag))
+                    {
                         continue;
                     }
                     // the left button on a module's sign, number or text waits for its release: let go there it is
@@ -1582,8 +1614,8 @@ impl PointerHandler for App {
                             if let Some(mv) = held.to {
                                 self.moved(&mv);
                             }
-                        } else {
-                            let press = self.outs[held.out].layout.click_on(&held.id, held.inside.0, held.inside.1, &self.levels);
+                        } else if let Some(out) = self.outs.get(held.out) {
+                            let press = out.layout.click_on(&held.id, held.inside.0, held.inside.1, &self.levels);
                             self.act(press);
                         }
                         self.hover(Some((oi, ev.position)));

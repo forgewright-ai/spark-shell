@@ -22,8 +22,9 @@ pub const MORE: &str = "more";
 /// The click that asks spark-shell to move a module or its group: its part is the move's own word.
 pub const MOVE: &str = "move";
 /// How long a bar holds the order it drew at a drop, in milliseconds, while no line says it: a line that says an
-/// older order in that time is not drawn, and after it the line's word stands again.
-pub const HOLD_MS: u64 = 1000;
+/// older order in that time is not drawn, and after it the line's word stands again. Two seconds: spark-shell reads
+/// the click, writes the config and builds a whole line before the order comes back, near a second on a busy machine.
+pub const HOLD_MS: u64 = 2000;
 /// What the cell for the modules left out shows, and the cell before the first line: three dots.
 pub const ELLIPSIS: &str = "\u{2026}";
 /// What stands where the status would be while spark-shell's status is broken: a warning sign, as text.
@@ -1911,7 +1912,10 @@ impl Layout {
     pub fn frame(&self, v: &View) -> Vec<Draw> {
         let mut out = self.fixed.clone();
         let hover = v.hover.filter(|i| self.targets.get(*i).is_some_and(|t| !matches!(t.what, What::Plate(_))));
-        let dragged = |t: &Target| v.drag.is_some_and(|d| d.names.iter().any(|n| t.id.strip_prefix(n.as_str()).is_some_and(|part| part.starts_with('.'))));
+        let dragged = |t: &Target| {
+            v.drag
+                .is_some_and(|d| d.names.iter().any(|n| t.id.strip_prefix(n.as_str()).is_some_and(|part| part.starts_with('.'))))
+        };
         for (i, t) in self.targets.iter().enumerate() {
             if dragged(t) {
                 // what is dragged keeps its place, dim: nothing moves until it is let go
@@ -2775,18 +2779,22 @@ mod tests {
     #[test]
     fn a_pinned_level_draws_its_gauge_only_where_the_line_says_so() {
         // pinned, the gauge off: the sign and the number, four cells after one of room, and no gauge
-        let m = mods(r#"[{"name":"out","group":"sound","sign":"◀","level":55,"set":true,"pinned":true,"gauge":false}]"#);
+        let m = mods(r#"[{"name":"out","group":"sound","sign":"\u25c0","level":55,"set":true,"pinned":true,"gauge":false}]"#);
         let l = lay(1200, &m, &[]);
         assert_eq!(status_ids(&l), ["out.name", "out.pct"]);
-        assert_eq!(target(&l, "out.pct").rect.x - target(&l, "out.name").rect.right(), 2 * M.cell, "one cell of room, one blank digit");
+        assert_eq!(
+            target(&l, "out.pct").rect.x - target(&l, "out.name").rect.right(),
+            2 * M.cell,
+            "one cell of room, one blank digit"
+        );
         // the gauge on: the control as it was
-        let m = mods(r#"[{"name":"out","group":"sound","sign":"◀","level":55,"set":true,"pinned":true,"gauge":true}]"#);
+        let m = mods(r#"[{"name":"out","group":"sound","sign":"\u25c0","level":55,"set":true,"pinned":true,"gauge":true}]"#);
         assert_eq!(status_ids(&lay(1200, &m, &[])), ["out.name", "out.gauge", "out.pct"]);
         // a line from before v0.171 says nothing of the gauge: every pinned level draws it
-        let m = mods(r#"[{"name":"out","group":"sound","sign":"◀","level":55,"set":true,"pinned":true}]"#);
+        let m = mods(r#"[{"name":"out","group":"sound","sign":"\u25c0","level":55,"set":true,"pinned":true}]"#);
         assert_eq!(status_ids(&lay(1200, &m, &[])), ["out.name", "out.gauge", "out.pct"]);
         // a gauge with no pin is nothing: the sign alone
-        let m = mods(r#"[{"name":"out","group":"sound","sign":"◀","level":55,"set":true,"pinned":false,"gauge":true}]"#);
+        let m = mods(r#"[{"name":"out","group":"sound","sign":"\u25c0","level":55,"set":true,"pinned":false,"gauge":true}]"#);
         assert_eq!(status_ids(&lay(1200, &m, &[])), ["out.name"]);
     }
 
@@ -5552,7 +5560,7 @@ mod tests {
     /// What plays alone before the time, its title in a window of 24 cells, playing or paused.
     fn window_of(title: &str, state: &str) -> Vec<Module> {
         mods(&format!(
-            r#"[{{"name":"media","group":"now","sign":"▶","text":"{title}","cells":24,"state":"{state}","toggle":true}},{{"name":"lan","group":"network","sign":"⇅"}},{{"name":"clock","group":"time","text":"13:29","cells":5,"bold":true}}]"#
+            r#"[{{"name":"media","group":"now","sign":"\u25b6","text":"{title}","cells":24,"state":"{state}","toggle":true}},{{"name":"lan","group":"network","sign":"\u21c5"}},{{"name":"clock","group":"time","text":"13:29","cells":5,"bold":true}}]"#
         ))
     }
 
@@ -5586,17 +5594,54 @@ mod tests {
         let levels = Levels::default();
         let mut rolls = crate::roll::Rolls::new();
         rolls.said(&window_of(TRACK, "ok"), 1000);
-        let at = |ms: u64| drawn_in(&long, "media.text", &View { at: ms, rolls: &rolls, ..view(&levels) });
+        let at = |ms: u64| {
+            drawn_in(
+                &long,
+                "media.text",
+                &View {
+                    at: ms,
+                    rolls: &rolls,
+                    ..view(&levels)
+                },
+            )
+        };
         assert_eq!(at(1000), "A Love Supreme, Pt. 1 - ");
         assert_eq!(at(2999), "A Love Supreme, Pt. 1 - ");
         assert_eq!(at(3000), " Love Supreme, Pt. 1 - A");
         assert_eq!(at(3000 + 8 * 250), "preme, Pt. 1 - Acknowled");
         assert_eq!(at(3000 + 17 * 250), ". 1 - Acknowledgement   ", "its end, and the gap before it comes round");
-        assert_eq!(long.next_roll(&View { at: 1000, rolls: &rolls, ..view(&levels) }), Some(2000));
-        assert_eq!(long.next_roll(&View { at: 3100, rolls: &rolls, ..view(&levels) }), Some(150));
-        assert_eq!(short.next_roll(&View { at: 3100, rolls: &rolls, ..view(&levels) }), None, "a title that fits asks for no frame");
+        assert_eq!(
+            long.next_roll(&View {
+                at: 1000,
+                rolls: &rolls,
+                ..view(&levels)
+            }),
+            Some(2000)
+        );
+        assert_eq!(
+            long.next_roll(&View {
+                at: 3100,
+                rolls: &rolls,
+                ..view(&levels)
+            }),
+            Some(150)
+        );
+        assert_eq!(
+            short.next_roll(&View {
+                at: 3100,
+                rolls: &rolls,
+                ..view(&levels)
+            }),
+            None,
+            "a title that fits asks for no frame"
+        );
         // with no motion it never rolls: cut, the last cell an ellipsis; and no frame is asked for
-        let still = View { motion: false, at: 5000, rolls: &rolls, ..view(&levels) };
+        let still = View {
+            motion: false,
+            at: 5000,
+            rolls: &rolls,
+            ..view(&levels)
+        };
         assert_eq!(drawn_in(&long, "media.text", &still), format!("A Love Supreme, Pt. 1 -{ELLIPSIS}"));
         assert_eq!(long.next_roll(&still), None);
         // paused it stands cut too, and a title a cell or two too long is cut, never rolled
@@ -5834,7 +5879,10 @@ mod tests {
         // let go where it went down: the click on that part, by its id, the place in it as it was pressed
         let levels = levels_of(&mods(SHEET));
         let click = send(l.click_on("out.name", 3, 7, &levels).act);
-        assert_eq!((click.name.as_str(), click.instance.as_str(), click.button, click.relative_x, click.relative_y), ("out", "name", 1, 3, 7));
+        assert_eq!(
+            (click.name.as_str(), click.instance.as_str(), click.button, click.relative_x, click.relative_y),
+            ("out", "name", 1, 3, 7)
+        );
         // a part a new line took off the bar: nothing
         assert_eq!(l.click_on("media.text", 1, 1, &levels), Press::default());
     }
@@ -5844,7 +5892,11 @@ mod tests {
         assert_eq!(Key::of_sym(0xff51, false).map(|k| k.with_ctrl(true)), Some(Key::MoveLeft));
         assert_eq!(Key::of_sym(0xff53, false).map(|k| k.with_ctrl(true)), Some(Key::MoveRight));
         assert_eq!(Key::of_sym(0xff53, false).map(|k| k.with_ctrl(false)), Some(Key::Right));
-        assert_eq!(Key::of_sym(0xff52, false).map(|k| k.with_ctrl(true)), Some(Key::Up), "Ctrl changes the two arrows alone");
+        assert_eq!(
+            Key::of_sym(0xff52, false).map(|k| k.with_ctrl(true)),
+            Some(Key::Up),
+            "Ctrl changes the two arrows alone"
+        );
         assert_eq!((Key::of_sym(0xffc6, false), Key::of_evdev(67, false)), (Some(Key::Actions), Some(Key::Actions)));
         let l = sheet(1200);
         let levels = levels_of(&mods(SHEET));
@@ -5885,7 +5937,10 @@ mod tests {
             dx: -30,
             line: Some(500),
         };
-        let frame = l.frame(&View { drag: Some(&drag), ..view(&levels) });
+        let frame = l.frame(&View {
+            drag: Some(&drag),
+            ..view(&levels)
+        });
         let glyphs: Vec<(i32, Tone)> = frame
             .iter()
             .filter_map(|d| match d {
@@ -5893,7 +5948,11 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(glyphs, [(mic.x, Tone::Dim), (mic.x - 30, Tone::Text)], "in its place dim, then the copy as far as the pointer went");
+        assert_eq!(
+            glyphs,
+            [(mic.x, Tone::Dim), (mic.x - 30, Tone::Text)],
+            "in its place dim, then the copy as far as the pointer went"
+        );
         let fills: Vec<(Rect, Tone)> = frame
             .iter()
             .filter_map(|d| match d {
@@ -5902,7 +5961,10 @@ mod tests {
             })
             .collect();
         let chip = l.boxed(Rect::new(mic.x - M.cell / 2 - 30, 0, mic.w + M.cell, M.height));
-        assert!(fills.contains(&(Rect::new(500 - GUIDE / 2, M.inset(), GUIDE, M.height - 2 * M.inset()), Tone::Accent)), "{fills:?}");
+        assert!(
+            fills.contains(&(Rect::new(500 - GUIDE / 2, M.inset(), GUIDE, M.height - 2 * M.inset()), Tone::Accent)),
+            "{fills:?}"
+        );
         assert!(fills.contains(&(chip, Tone::Lit)), "{fills:?}");
         // no line while a drop would move nothing, and the copy never leaves the bar
         let drag = Dragged {
@@ -5910,7 +5972,10 @@ mod tests {
             dx: -100_000,
             line: None,
         };
-        let frame = l.frame(&View { drag: Some(&drag), ..view(&levels) });
+        let frame = l.frame(&View {
+            drag: Some(&drag),
+            ..view(&levels)
+        });
         let lit: Vec<Rect> = frame
             .iter()
             .filter_map(|d| match d {
@@ -5926,7 +5991,10 @@ mod tests {
             dx: 0,
             line: None,
         };
-        let frame = l.frame(&View { drag: Some(&drag), ..view(&levels) });
+        let frame = l.frame(&View {
+            drag: Some(&drag),
+            ..view(&levels)
+        });
         let (first, last) = (rect_of(&l, "out.name").x, mic.right());
         assert!(frame.contains(&Draw::Fill {
             rect: l.boxed(Rect::new(first - M.cell / 2, 0, last - first + M.cell, M.height)),

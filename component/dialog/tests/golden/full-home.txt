@@ -17,7 +17,7 @@
                                                                                                                                                       
                                                  system         check, space, running                                                                 
                                                                                                                                                       
-                                                 help           46 shortcuts                                                                          
+                                                 help           47 shortcuts                                                                          
                                                                                                                                                       
                                                  power          lock, logout, restart, shutdown                                                       
                                                                                                                                                       

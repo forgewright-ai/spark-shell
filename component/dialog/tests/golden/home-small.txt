@@ -10,7 +10,7 @@
                                         
     settings       tokyonight-night     
     system         check, space,…       
-    help           46 shortcuts         
+    help           47 shortcuts         
     power          lock, logout,…       
                                         
                                         

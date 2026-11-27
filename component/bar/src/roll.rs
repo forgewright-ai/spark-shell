@@ -47,7 +47,9 @@ pub fn next(len: usize, elapsed: u64) -> u64 {
 /// again, round and round.
 pub fn window(glyphs: &[String], cells: usize, offset: usize) -> Vec<String> {
     let round = glyphs.len() + GAP;
-    (0..cells).map(|i| glyphs.get((offset + i) % round).cloned().unwrap_or_else(|| " ".into())).collect()
+    (0..cells)
+        .map(|i| glyphs.get((offset + i) % round).cloned().unwrap_or_else(|| " ".into()))
+        .collect()
 }
 
 /// A text cut to a window of `cells`: its first cells, the last one an ellipsis. One that fits is itself.
@@ -82,7 +84,9 @@ impl Rolls {
             .iter()
             .filter(|m| !m.text.is_empty())
             .map(|m| {
-                let kept = was.iter().find(|(name, text, state, _)| *name == m.name && *text == m.text && *state == m.state);
+                let kept = was
+                    .iter()
+                    .find(|(name, text, state, _)| *name == m.name && *text == m.text && *state == m.state);
                 (m.name.clone(), m.text.clone(), m.state, kept.map_or(at, |k| k.3))
             })
             .collect();
@@ -111,15 +115,22 @@ mod tests {
 
     #[test]
     fn it_rests_at_its_start_then_goes_a_cell_a_step_and_comes_round() {
-        let len = 30;   // a round: 2000 ms of rest and 33 steps
+        let len = 30; // a round: 2000 ms of rest and 33 steps
         assert_eq!((offset(len, 0), offset(len, 1999)), (0, 0));
         assert_eq!((offset(len, 2000), offset(len, 2249), offset(len, 2250)), (1, 1, 2));
         assert_eq!(offset(len, 2000 + 31 * 250), 32, "the last cell of the gap at the window's left");
         assert_eq!(offset(len, 2000 + 32 * 250), 0, "its start is back");
         let whole = 2000 + 33 * 250;
-        assert_eq!((offset(len, whole), offset(len, whole + 2000), offset(len, 10 * whole + 2250)), (0, 1, 2), "round and round");
+        assert_eq!(
+            (offset(len, whole), offset(len, whole + 2000), offset(len, 10 * whole + 2250)),
+            (0, 1, 2),
+            "round and round"
+        );
         // the next step: at the rest's end, then every quarter of a second
-        assert_eq!((next(len, 0), next(len, 1500), next(len, 2000), next(len, 2100), next(len, 2249)), (2000, 500, 250, 150, 1));
+        assert_eq!(
+            (next(len, 0), next(len, 1500), next(len, 2000), next(len, 2100), next(len, 2249)),
+            (2000, 500, 250, 150, 1)
+        );
         assert_eq!(next(len, whole - 1), 1);
     }
 

@@ -24,7 +24,8 @@
 - Undo puts the bar back as it was, after a drag or a verb at the
   prompt too.
 - A right click on a module, or F9 with the keys on the bar, opens
-  home's bar section.
+  home's bar section. The middle button mutes the volume and the
+  microphone, as before; the right one no longer does.
 - What plays keeps a window of 24 cells whatever the title's length,
   so nothing beside it moves at a new track. A longer title rolls
   through the window, and stands cut while it is paused or the bar's

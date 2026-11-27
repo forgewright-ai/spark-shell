@@ -175,9 +175,15 @@ pub fn moved(modules: &[Module], mv: &Move) -> Vec<Module> {
     }
 }
 
-/// The names of some modules, in their order.
+/// The names of a line's modules, in their order: what a held order is compared by. The mark and the pad's room are
+/// no modules of the status: the shell says the room where the pad's module stands, with a group of its own, so it
+/// does not travel with a group the bar moved.
 pub fn names(modules: &[Module]) -> Vec<String> {
-    modules.iter().map(|m| m.name.clone()).collect()
+    modules
+        .iter()
+        .filter(|m| m.name != LOGO && m.name != PAD_ROOM)
+        .map(|m| m.name.clone())
+        .collect()
 }
 
 /// Whether a line's modules stand in the order a bar holds: the names both have come in the same order. A module
@@ -209,7 +215,14 @@ mod tests {
         out
     }
 
-    const BAR: [(&str, &str); 6] = [("lan", "network"), ("wifi", "network"), ("out", "sound"), ("mic", "sound"), ("light", "screen"), ("kb", "screen")];
+    const BAR: [(&str, &str); 6] = [
+        ("lan", "network"),
+        ("wifi", "network"),
+        ("out", "sound"),
+        ("mic", "sound"),
+        ("light", "screen"),
+        ("kb", "screen"),
+    ];
 
     fn mv(what: &str, side: Side, other: &str, group: bool) -> Option<Move> {
         Some(Move {
@@ -230,7 +243,11 @@ mod tests {
         // the microphone left of the volume's middle: before it; where it stands, and right of it: nothing moves
         assert_eq!(landing(&s, "mic", at(&s, "out") - 1, 20), mv("mic", Side::Before, "out", false));
         assert_eq!(landing(&s, "mic", at(&s, "mic"), 20), None);
-        assert_eq!(landing(&s, "mic", at(&s, "mic") + 14, 20), None, "inside the reach past its group's end: still its own place");
+        assert_eq!(
+            landing(&s, "mic", at(&s, "mic") + 14, 20),
+            None,
+            "inside the reach past its group's end: still its own place"
+        );
         // the volume right of the microphone's middle: after it
         assert_eq!(landing(&s, "out", at(&s, "mic") + 1, 20), mv("out", Side::After, "mic", false));
         assert_eq!(landing(&s, "out", at(&s, "out"), 20), None);
@@ -245,7 +262,11 @@ mod tests {
         // the wire dragged past everything: network after the last group
         assert_eq!(landing(&s, "lan", 10_000, 20), mv("network", Side::After, "screen", true));
         // sound dragged a little into the room at its side: nothing
-        assert_eq!(landing(&s, "out", at(&s, "wifi") + 16, 20), None, "past its reach, yet not past the next group's middle");
+        assert_eq!(
+            landing(&s, "out", at(&s, "wifi") + 16, 20),
+            None,
+            "past its reach, yet not past the next group's middle"
+        );
         // a module that is not on the bar, and a status of one module
         assert_eq!(landing(&s, "bat", 0, 20), None);
         assert_eq!(landing(&status(&[("out", "sound")]), "out", 0, 20), None);
@@ -256,7 +277,11 @@ mod tests {
         let s = status(&BAR);
         assert_eq!(step(&s, "mic", true), mv("mic", Side::Before, "out", false));
         assert_eq!(step(&s, "out", false), mv("out", Side::After, "mic", false));
-        assert_eq!(step(&s, "out", true), mv("sound", Side::Before, "network", true), "first in its group: the group goes");
+        assert_eq!(
+            step(&s, "out", true),
+            mv("sound", Side::Before, "network", true),
+            "first in its group: the group goes"
+        );
         assert_eq!(step(&s, "mic", false), mv("sound", Side::After, "screen", true));
         assert_eq!(step(&s, "lan", true), None, "the status's left end");
         assert_eq!(step(&s, "kb", false), None, "the status's right end");
@@ -299,7 +324,7 @@ mod tests {
         for case in cases {
             let said = |k: &str| case[k].as_str().unwrap_or_default().to_string();
             let words: Vec<String> = said("move").split_whitespace().map(String::from).collect();
-            let [what, side, other] = words.as_slice() else { continue };   // first, last and a step are the shell's alone
+            let [what, side, other] = words.as_slice() else { continue }; // first, last and a step are the shell's alone
             let side = match side.as_str() {
                 "before" => Side::Before,
                 "after" => Side::After,
@@ -309,13 +334,17 @@ mod tests {
             let m = Move {
                 what: what.clone(),
                 side,
-                other: if is_group(what) && !is_group(other) { groups[other.as_str()].as_str().unwrap_or_default().to_string() } else { other.clone() },
+                other: if is_group(what) && !is_group(other) {
+                    groups[other.as_str()].as_str().unwrap_or_default().to_string()
+                } else {
+                    other.clone()
+                },
                 group: is_group(what),
             };
             let after = names(&moved(&before, &m)).join(" ");
             let want = if case["to"].is_null() { said("order") } else { said("to") };
             if case["to"].is_null() && !is_group(what) && groups[what.as_str()] != groups[other.as_str()] {
-                continue;   // a module asked past its group: refused by the verb, and never asked by the bar (landing)
+                continue; // a module asked past its group: refused by the verb, and never asked by the bar (landing)
             }
             assert_eq!(after, want, "{}: {}", said("order"), said("move"));
         }
@@ -328,7 +357,15 @@ mod tests {
             .map(|(n, g)| module(n, g))
             .collect();
         let m = mv("sound", Side::Before, "network", true).unwrap();
-        assert_eq!(names(&moved(&line, &m)), ["room", "out", "mic", "lan", "clock"]);
+        let after = moved(&line, &m);
+        assert_eq!(
+            after.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(),
+            ["room", "out", "mic", "lan", "clock"]
+        );
+        // the order a bar holds is said without the room: the shell's line has it wherever the pad's module stands
+        assert_eq!(names(&after), ["out", "mic", "lan", "clock"]);
+        let shells: Vec<String> = ["out", "mic", "room", "lan", "clock"].iter().map(|n| n.to_string()).collect();
+        assert!(agrees(&names(&after), &shells));
         // a move that names what the line does not have changes nothing
         let m = mv("bat", Side::Before, "lan", false).unwrap();
         assert_eq!(moved(&line, &m), line);
@@ -340,7 +377,10 @@ mod tests {
     fn a_line_agrees_with_a_held_order_by_the_names_both_have() {
         let n = |s: &str| -> Vec<String> { s.split_whitespace().map(String::from).collect() };
         assert!(agrees(&n("lan out mic"), &n("lan out mic")));
-        assert!(agrees(&n("lan out mic"), &n("media lan out mic clock")), "a module that came says nothing against it");
+        assert!(
+            agrees(&n("lan out mic"), &n("media lan out mic clock")),
+            "a module that came says nothing against it"
+        );
         assert!(agrees(&n("lan out mic"), &n("lan mic")), "nor one that went");
         assert!(!agrees(&n("lan mic out"), &n("lan out mic")), "the order before the drop is another");
         assert!(agrees(&n(""), &n("lan")));

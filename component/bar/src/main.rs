@@ -91,7 +91,7 @@ the group's modules, and past the group's reach the whole group takes one
 among the groups. Let go where a drop moves something, the bar sends move,
 its instance the move in spark-shell's own words with a colon between
 (mic:before:out, screen:after:sound), draws the new order at once and holds
-it until a line says it, a second at most: a line that says another order
+it until a line says it, two seconds at most: a line that says another order
 in that time is not drawn, and after it the last line's order stands. A sign, a number
 or a text takes a click one cell past its sides too; a gauge takes it on
 its own cells. On a level that can be set, the wheel on any of its parts
