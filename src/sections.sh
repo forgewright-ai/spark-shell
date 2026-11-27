@@ -378,6 +378,11 @@ panel_rows_bar() {   # the place, a check; then the text size and the tray. A pl
         if [ "$_bp" = "$_bpn" ]; then printf '%s\t%s\tshow\tplace\n' "$PANEL_TICK" "$_bp"; else printf -- '-\t%s\t%s\tplace\n' "$_bp" "$_bpa"; fi
     done
     printf -- '-\tText size\tshow\tappearance\n-\tApp icons (the tray)\tshow\tappearance\n'
+    # the status's modules this machine has, a group's under its words, in the bar's order (v0.171): left and right
+    # change how much of one the bar shows, Ctrl+Up and Ctrl+Down move it. Where sway's bar draws, it shows every one
+    [ -z "$(sparkbar_no_pins pin)" ] || return 0
+    arrange_rows | while IFS="$TAB" read -r _brn _brt _brg _brr; do printf -- '-\t%s\tshow\t%s\n' "$_brt" "$_brg"; done
+    printf '%s\tThe shipped order\tmove default\torder\n' "$PANEL_GO"
 }
 panel_rows_layout() {   # the saved layouts with a rename each, what spark also suggested last, the recent ones not saved, then save
     if [ -d "$LAYOUTS_DIR" ] && [ -n "$(ls -A "$LAYOUTS_DIR" 2>/dev/null)" ]; then

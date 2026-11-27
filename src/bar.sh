@@ -795,6 +795,9 @@ bar_click() {   # bar_click NAME INSTANCE BUTTON RELX WIDTH X; 4 and 5 are the w
             else ( trap '' HUP; sh "$REPO/spark-shell" bar "$2" </dev/null >/dev/null 2>&1 & ); fi ;;
         bar:*) ;;
         logo:*:1) bar_panel_open '' ;;
+        # the right button on a module of spark's bar, and F9 with the keys on it: home's bar section, where its row
+        # is. Sway's own bar keeps what the button did: it has no arrangement
+        *:*:3) if ! arrange_row "$1"; then :; elif [ -n "${SPARK_BAR:-}" ]; then bar_panel_open bar; else "$_ac" "$1" "$2" "$3" "$4" "$5"; fi ;;
         *) if arrange_row "$1"; then "$_ac" "$1" "$2" "$3" "$4" "$5"; elif [ "$3" = 1 ]; then bar_panel_open "$1"; fi ;;
     esac
 }

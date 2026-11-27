@@ -348,8 +348,11 @@ panel_act_keyboard() {   # the keyboard steps: the repeat and caps settings, the
         *) echo "$_a is not something keyboard does"; return 1 ;;
     esac
 }
-panel_act_bar() {   # the bar steps: off, on, the place, the text size, the tray
+panel_act_bar() {   # the bar steps: off, on, the place, the text size, the tray; a module's value, a move, an arrangement put back
     case $_a in
+        module) arrange_module "$_arg" ;;
+        move) arrange_step "$_arg" ;;
+        restore) arrange_restore "$_arg" ;;
         off) bar_desktop off desktop >/dev/null; echo "bar hidden $PANEL_SEP $(panel_keys "$(layout_keys | awk '$2 == "home.open." {print $1; exit}')") opens the dialog" ;;
         on) bar_desktop on desktop >/dev/null; echo "bar shown" ;;
         top|bottom) bar_where "$_a" >/dev/null; echo "bar $(bar_place_words "$_a")" ;;

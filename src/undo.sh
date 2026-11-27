@@ -43,6 +43,7 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         window:move) _n=$(win_facts | jq -r --argjson i "${_arg%% *}" '.windows[] | select(.id == $i) | .ws'); [ -z "$_n" ] || [ "$_n" -lt 1 ] || printf 'move %s to=%s\tback on workspace %s\n' "${_arg%% *}" "$_n" "$_n" ;;
         window:place) _n=$(win_facts | jq -r --argjson i "${_arg%% *}" '.windows[] | select(.id == $i) | .placed | if . == "full screen" then "full" else . end'); [ -z "$_n" ] || printf 'place %s how=%s\tas it was\n' "${_arg%% *}" "$_n" ;;
         window:*) _n=$(win_now); printf 'restore %s now=%s\twindows %s\n' "${WINDOWS:-split}" "$_n" "$(win_said "$_n")" ;;
+        bar:module|bar:move|bar:restore) printf 'restore %s\tthe bar as it was\n' "$(arrange_kept)" ;;   # the whole arrangement, as it is before the step
         bar:off) printf 'on\tbar shown\n' ;;
         bar:on) printf 'off\tbar hidden\n' ;;
         bar:top|bar:bottom) case $(bar_place) in hidden) printf 'off\tbar hidden\n' ;; *) printf '%s\tbar %s\n' "$BAR_POSITION" "$(bar_place_words "$BAR_POSITION")" ;; esac ;;
@@ -315,6 +316,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         media:play|media:pause|media:toggle|media:next|media:previous|media:stop) echo ''; return 0 ;;   # the player says what it takes
         bar:text) case ${3:-} in auto|bigger|smaller|[6-9]|[1-3][0-9]|40) echo "$3"; return 0 ;; *) echo "bar: text takes auto, a size from 6 to 40, bigger or smaller"; return 1 ;; esac ;;
         bar:tray) case ${3:-} in on|off) echo "$3"; return 0 ;; *) echo "bar: tray takes on or off"; return 1 ;; esac ;;
+        bar:module|bar:move|bar:restore) printf '%s\n' "${3:-}"; return 0 ;;   # the step's own function says what it does not take
         notifications:do-not-disturb) case ${3:-} in on|off) echo "$3"; return 0 ;; *) echo "notifications: do-not-disturb takes on or off"; return 1 ;; esac ;;
         storage:open) storage_list > "$TMP/storage.l"; [ -n "$(storage_find fs "${3:-}")" ] && { echo "$3"; return 0; }; echo "storage: no drive named ${3:-?} is plugged in"; return 1 ;;   # an unmounted drive mounts first
         display:idle|display:lock) case $3 in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) echo "$3"; return 0 ;; *) echo "display: $2 takes minutes, 0 to 999"; return 1 ;; esac ;;

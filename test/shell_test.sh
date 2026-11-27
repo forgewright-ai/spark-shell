@@ -5686,6 +5686,15 @@ EVSWAY_STUB
         && [ "$out6" = 'microphone moved before volume' ] && [ "$out7" = 'sound moved before network' ] && [ "$_o7" = 'pad due media mic out lan bt wifi light kb bat' ] \
         && [ "$st8" = 1 ] && [ "$out8" = "spark-shell bar: power and health is at the status's end already" ] && [ "$st9" != 0 ] \
         && ok "bar move: the receipt says what moved and where in plain names, and spark's bar's next line has the order; left and right are one step, and from its group's end the whole group passes the next one; the group at the status's end is refused" || bad "bar move receipts" "$out [$_n1] | $out2 | $out3 | $out4 [$_n4] | $out5 [$_n5] $_o5 | $out6 | $out7 $_o7 | $st8 $out8 | $st9 $out9"
+    # a change by a verb leaves home an undo, as a row of home's does: the arrangement as it was, put back by one step,
+    # and that step leaves none of its own
+    printf 'DESKTOP=sway\n' > "$cfg"; _uf=$H/.local/state/spark-shell/panel/undo; rm -f "$_uf"; _tb=$(printf '\t')
+    pb move mic before out >/dev/null 2>&1 || :; _u1=$(cat "$_uf" 2>/dev/null || :); pb hide lan >/dev/null 2>&1 || :; _u2=$(cut -f2 "$_uf" 2>/dev/null || :)
+    st=0; out=$(SPARK_SHELL_BAR=$H/pinbar sh "$SH" bar panel undo all 2>&1) || st=$?; _c1=$(grep '^BAR_' "$cfg" | paste -sd' ' -)
+    [ "$_u1" = "bar${_tb}restore pad,due,media,lan,bt,wifi,out,mic,light,kb,bat/-/out/out${_tb}the bar as it was" ] && [ "$_u2" = 'restore pad,due,media,lan,bt,wifi,mic,out,light,kb,bat/-/out/out' ] \
+        && [ "$st" = 0 ] && printf '%s\n' "$out" | grep -q 'the bar is as it was$' && [ "$_c1" = 'BAR_ORDER=pad due media lan bt wifi mic out light kb bat BAR_HIDE= BAR_PINS=out BAR_GAUGES=out' ] && [ ! -e "$_uf" ] \
+        && ok "a verb's change of the arrangement leaves home an undo (v0.171): the order, the hidden, the pins and the gauges as they were, in one step; undone, the config has them again and no undo is left" || bad "bar arrangement undo" "[$_u1] [$_u2] | $st $out | $_c1 | $(ls "$_uf" 2>&1)"
+    printf 'DESKTOP=sway\n' > "$cfg"; rm -f "$_uf"
     # an order the config says badly never stops a verb: a word that is no module, a module said twice and the time's are
     # passed over; a group stands where its first module is said, among the shipped places of the groups that are said;
     # a module that is not said stands last in its group
@@ -6658,8 +6667,8 @@ for _mf in "$REPO"/lib/motion_*.py; do _mn=${_mf##*/motion_}; wall_n=${_mn%.py};
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic media bat clock theme window display keyboard mouse touchpad notifications storage power notes reminders bar layout apps system about undo files; do mcp "$s" "$(pinit spark-dialog)" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 195 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-seven sections hold the 195 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 198 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-seven sections hold the 198 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "mouse_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp touchpad "$(call 1 touchpad_speed '{"value":2}')"
@@ -10016,6 +10025,45 @@ if [ "$(uname -s)" != Darwin ]; then
         && ans 2 | jq -e '.error.message | startswith("bar_text: size is one of auto, bigger, smaller, 6")' >/dev/null \
         && ans 3 | jq -r '.result.contents[0].text' | jq -e --arg auto "$_bauto" '.rows[] | select(.id == "bar:show:Text size") | .step.values[.step.at].sent == "14" and .step.values[0].shown == $auto and (.step.values | length) == 36' >/dev/null \
         && ok "provide bar_text: a size kept in the config, its undo back to auto, the list the same with 14 in use and auto still its own size; a word that is no size refused" || bad "bar_text call" "$(cut -c1-400 "$H/mcp.out")"
+    # the bar's modules in its section (v0.171), where spark-bar draws: each a row under its group, in the bar's order,
+    # after the rows the section had. A row's value is a step, hidden, shown and, for a level, pinned and pinned with
+    # gauge; a module of the status has its two moves, the time none; one more row is the shipped order. bar_module
+    # sets a value and bar_move moves a module or its group, each with an undo that puts the whole arrangement back;
+    # a module with no level is not pinned, and a word that is no place or no module is refused by the tool's own
+    # list. Where sway's bar draws, the section has no module's row
+    printf '#!/bin/sh\nexit 0\n' > "$H/pinbar"; chmod +x "$H/pinbar"; cp "$cfg" "$H/config.arr"
+    grep -v '^BAR_ORDER=\|^BAR_HIDE=\|^BAR_PINS=\|^BAR_GAUGES=' "$H/config.arr" > "$cfg" || :
+    export SPARK_SHELL_BAR="$H/pinbar"
+    mcp bar "$(rq 1 resources/read '{"uri":"spark-shell://bar/rows"}')" "$(call 2 bar_module '{"name":"out","to":"pinned"}')" "$(call 3 bar_move '{"name":"mic","to":"left"}')" "$(call 4 bar_move '{"name":"screen","to":"before","other":"sound"}')" \
+        "$(call 5 bar_module '{"name":"clock","to":"gauge"}')" "$(call 6 bar_move '{"name":"mic","to":"up"}')" "$(call 7 bar_module '{"name":"nosuch","to":"hidden"}')" "$(rq 8 resources/read '{"uri":"spark-shell://bar/rows"}')" "$(rq 9 tools/list)"
+    ans 1 | jq -r '.result.contents[0].text' > "$H/brows.json"; ans 8 | jq -r '.result.contents[0].text' > "$H/brows2.json"; cp "$H/mcp.out" "$H/mcp.arr"
+    _c8=$(grep '^BAR_' "$cfg" | paste -sd' ' -); _ua=$(ans 2 | jq -c '.result.structuredContent.undo.arguments')
+    mcp bar "$(call 1 bar_restore "$_ua")"; _r9=$(ans 1 | jq -r '.result.structuredContent.receipt'); _c9=$(grep '^BAR_' "$cfg" | paste -sd' ' -)
+    unset SPARK_SHELL_BAR
+    mcp bar "$(rq 1 resources/read '{"uri":"spark-shell://bar/rows"}')"; _nb=$(ans 1 | jq -r '.result.contents[0].text' | jq '[.rows[] | select(.step.set.name == "bar_module")] | length')
+    cp "$H/config.arr" "$cfg"; rm -f "$H/config.arr" "$H/pinbar" "$H/.local/state/spark-shell/panel/undo"
+    jq -e '([.rows[] | select(.step.set.name == "bar_module")]) as $m | ($m | map(.step.set.arguments.name)) as $n
+        | ($n | index("lan")) < ($n | index("out")) and ($n | index("out")) + 1 == ($n | index("mic")) and ($n | index("mic")) < ($n | index("clock")) and ($n | length) >= 6
+        and ([.rows[].id] | index("bar:show:App icons (the tray)")) < ([.rows[].id] | index($m[0].id))
+        and ($m | all(.tool == null and .step.key == "to" and .step.words == ["less", "more"]))
+        and ($m[] | select(.step.set.arguments.name == "out") | .text == "Volume" and .group == "sound" and .id == "bar:show:Volume" and ([.step.values[] | .sent] == ["hidden", "shown", "pinned", "gauge"]) and .step.values[3].shown == "pinned with gauge" and .step.at == 3
+            and .place == {up: {name: "bar_move", arguments: {name: "out", to: "left"}}, down: {name: "bar_move", arguments: {name: "out", to: "right"}}})
+        and ($m[] | select(.step.set.arguments.name == "mic") | .step.at == 1 and (.step.values | length) == 4)
+        and ($m[] | select(.step.set.arguments.name == "lan") | .group == "network" and ([.step.values[] | .sent] == ["hidden", "shown"]) and .step.at == 1 and .place != null)
+        and ($m[] | select(.step.set.arguments.name == "clock") | .text == "Time" and .group == "the time" and (.step.values | length) == 2 and (has("place") | not))
+        and (.rows[-1] | .text == "The shipped order" and .tool == {name: "bar_move", arguments: {name: "default"}})' "$H/brows.json" >/dev/null \
+        && ok "provide bar rows, the modules (v0.171): after the section's own rows, each module this machine has under its group, in the bar's order; its value a step left and right change, four values for a level and two for another; its two moves, and none for the time; the last row the shipped order" || bad "bar module rows" "$(jq -c '[.rows[] | select(.step.set.name == "bar_module" or .tool.name == "bar_move")]' "$H/brows.json" 2>&1 | cut -c1-900)"
+    a8() { jq -c --argjson i "$1" 'select(.id == $i)' "$H/mcp.arr"; }
+    [ "$(a8 2 | jq -r '.result.structuredContent.receipt')" = 'volume pinned' ] && [ "$_ua" = '{"arrangement":"pad,due,media,lan,bt,wifi,out,mic,light,kb,bat/-/out/out"}' ] && [ "$(a8 2 | jq -r '.result.structuredContent.undo.name')" = bar_restore ] \
+        && [ "$(a8 3 | jq -r '.result.structuredContent.receipt')" = 'microphone moved before volume' ] && [ "$(a8 4 | jq -r '.result.structuredContent.receipt')" = 'screen and keys moved before sound' ] \
+        && a8 5 | jq -e '.result.isError == true and (.result.content[0].text | startswith("time has no level to pin"))' >/dev/null \
+        && a8 6 | jq -e '.error.message | test("to is one of first, last, left, right, before, after")' >/dev/null && a8 7 | jq -e '.error.message | test("name is one of pad, due, media")' >/dev/null \
+        && [ "$_c8" = 'BAR_ORDER=pad due media lan bt wifi light kb mic out bat BAR_HIDE= BAR_PINS=out BAR_GAUGES=none' ] \
+        && jq -e '([.rows[] | select(.step.set.name == "bar_module")]) as $m | ($m | map(.step.set.arguments.name)) as $n | ($n | index("mic")) + 1 == ($n | index("out")) and ($m[] | select(.step.set.arguments.name == "out") | .step.at == 2)' "$H/brows2.json" >/dev/null \
+        && a8 9 | jq -e '[.result.tools[].name] | index("bar_module") != null and index("bar_move") != null and index("bar_restore") != null' >/dev/null \
+        && [ "$_r9" = 'the bar is as it was' ] && [ "$_c9" = 'BAR_ORDER=pad due media lan bt wifi out mic light kb bat BAR_HIDE= BAR_PINS=out BAR_GAUGES=out' ] && [ "$_nb" = 0 ] \
+        && ok "provide bar_module, bar_move and bar_restore (v0.171): a value and a move are kept in the config and shown by the rows read after, each with an undo that names the whole arrangement as it was; that undo puts the four keys back; a module with no level is not pinned, a place and a name outside the tools' lists are refused; with sway's bar the section has no module's row" || bad "bar arrangement tools" "$(cut -c1-700 "$H/mcp.arr") | $_c8 | $_r9 $_c9 | $_nb"
+    rm -f "$H/mcp.arr" "$H/brows2.json"
     sh "$SH" bar text auto >/dev/null 2>&1 || :
     sh "$SH" theme save barlook >/dev/null 2>&1; sh "$SH" theme glyphs signs >/dev/null 2>&1; sh "$SH" theme family stone >/dev/null 2>&1; sh "$SH" theme barlook >/dev/null 2>&1
     grep -qx 'BAR_GLYPHS=words' "$th_dir/barlook/look.env" && grep -qx 'GLYPH_FAMILY=star' "$th_dir/barlook/look.env" && ! grep -q '^BAR_WORKSPACES=' "$th_dir/barlook/look.env" && grep -qx 'BAR_GLYPHS=words' "$cfg" && grep -qx 'GLYPH_FAMILY=star' "$cfg" \
