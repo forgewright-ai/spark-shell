@@ -504,7 +504,7 @@ jobs:
         run: |
           chmod 755 dialog-build/spark-dialog
           rc=0
-          for j in home live matrix notifications; do
+          for j in home live matrix notifications arrange; do
             go() { su ada -c "SPARK_SHELL_FENCE=ci PATH=/opt/nocap:\$PATH python3 -I '$GITHUB_WORKSPACE/test/journeys.py' $j '$GITHUB_WORKSPACE' \$HOME/journey-$j dialog='$GITHUB_WORKSPACE/dialog-build/spark-dialog' bar='$GITHUB_WORKSPACE/bar-build/spark-bar' winpad='$GITHUB_WORKSPACE/winpad-build/spark-winpad'"; }
             got=0; go || got=$?
             [ "$got" != 3 ] || { got=0; go || got=$?; }   # NOT-RUN: it could not look, so it looks once more

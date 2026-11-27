@@ -1875,32 +1875,32 @@ impl Layout {
         }
     }
 
-    /// What a drag draws over the bar: a line in the accent where a drop now would land, and a copy of what is
-    /// dragged, on a chip, as far from its place as the pointer has gone and never past the bar's ends.
+    /// What a drag draws over the bar: a copy of what is dragged, on a chip, as far from its place as the pointer
+    /// has gone and never past the bar's ends; and over it a line in the accent where a drop now would land.
     fn show_drag(&self, d: &Dragged, dragged: &dyn Fn(&Target) -> bool, v: &View, out: &mut Vec<Draw>) {
+        let parts: Vec<&Target> = self.targets.iter().filter(|t| dragged(t)).collect();
+        if let (Some(first), Some(last)) = (parts.iter().map(|t| t.rect.x).min(), parts.iter().map(|t| t.rect.right()).max()) {
+            let half = self.cell / 2;
+            let dx = d.dx.clamp(half - first, (self.width - half - last).max(half - first));
+            out.push(Draw::Fill {
+                rect: self.boxed(Rect::new(first - half + dx, 0, last - first + 2 * half, self.height)),
+                tone: Tone::Lit,
+            });
+            for t in parts {
+                let mut copy = t.clone();
+                copy.rect.x += dx;
+                if let What::Number { x, .. } = &mut copy.what {
+                    *x += dx;
+                }
+                self.show(&copy, true, v, out);
+            }
+        }
+        // the line last, over the copy: the copy is under the pointer, often on the very room the line stands in
         if let Some(x) = d.line {
             out.push(Draw::Fill {
                 rect: Rect::new(x - GUIDE / 2, self.inset, GUIDE, self.height - 2 * self.inset),
                 tone: Tone::Accent,
             });
-        }
-        let parts: Vec<&Target> = self.targets.iter().filter(|t| dragged(t)).collect();
-        let (Some(first), Some(last)) = (parts.iter().map(|t| t.rect.x).min(), parts.iter().map(|t| t.rect.right()).max()) else {
-            return;
-        };
-        let half = self.cell / 2;
-        let dx = d.dx.clamp(half - first, (self.width - half - last).max(half - first));
-        out.push(Draw::Fill {
-            rect: self.boxed(Rect::new(first - half + dx, 0, last - first + 2 * half, self.height)),
-            tone: Tone::Lit,
-        });
-        for t in parts {
-            let mut copy = t.clone();
-            copy.rect.x += dx;
-            if let What::Number { x, .. } = &mut copy.what {
-                *x += dx;
-            }
-            self.show(&copy, true, v, out);
         }
     }
 

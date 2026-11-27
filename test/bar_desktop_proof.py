@@ -99,13 +99,13 @@ W, H = 1920, 1080
 OUT = "HEADLESS-1"
 BAR, TEXT, MARK, CELL = 36, 16, 24, 10       # the spec's sizes at 12 points: the bar, its text, the logo, a cell
 OVERFLOW = "kb wifi mic out bat"             # the config's order here, not the default one; lan and bt are not named
-MODULES = "pad lan bt wifi media out mic due light kb bat clock notifications".split()   # the line's order
-GROUPS = dict(pad="windows", lan="connections", bt="connections", wifi="connections", media="sound", out="sound", mic="sound", due="tasks",
-              light="seat", kb="seat", bat="seat", clock="time", notifications="time")
+MODULES = "pad due media lan bt wifi out mic light kb bat clock notifications".split()   # the shipped order, a group's modules together (src/arrange.sh)
+GROUPS = dict(pad="now", due="now", media="now", lan="network", bt="network", wifi="network", out="sound", mic="sound",
+              light="screen", kb="screen", bat="power", clock="time", notifications="time")
 LOOK = ("fg", "accent", "muted", "ground", "lit", "attention", "alert", "alpha", "full", "light", "motion", "ink")   # the look's slots, as BAR_FG and the rest
 SLOTS = ("BAR_FG", "BAR_ACCENT", "BAR_MUTED", "BAR_GROUND", "BAR_LIT", "BAR_ATTENTION", "BAR_ALERT", "BAR_ALPHA", "BAR_GAUGE_FULL", "BAR_GAUGE_LIGHT", "BAR_MOTION", "BAR_INK")
 RESTS = "idle"                               # the rest name spark-shell hands the bar (BAR_REST): the idle screen's workspaces
-FACT = {"name", "group", "sign", "icon", "text", "cells", "bold", "state", "set", "pinned", "label", "toggle"}   # a module's fields; level where it has one
+FACT = {"name", "group", "sign", "icon", "text", "cells", "bold", "state", "set", "pinned", "gauge", "label", "toggle"}   # a module's fields; level where it has one
 ICONS = set(re.findall(r'^    "([a-z-]+)",$', (REPO / "component" / "bar" / "src" / "icons.rs").read_text(), re.M))   # the drawings the bar has, by name
 KINDS = ("mark", "workspace", "level", "open", "toggle")
 STATES = ("ok", "muted", "off", "missing", "wrong", "asks", "records")
@@ -544,8 +544,8 @@ def plan(line, levels, width, run_end, overflow, cell):
     """The status as the spec lays it on a bar of that width, from the facts of a line and the levels drawn: from
     the right edge leftward with one cell of room, one cell between a module's parts, two between the modules of
     a group, four between groups; a sign a cell a glyph, or two where it is an icon the bar draws; a pinned level's
-    gauge of five cells and its number in four, the digits at the
-    right; a text as wide as it is drawn in the cells kept for it. Short of width, with four cells kept after the
+    number in four cells, the digits at the right, and before it a gauge of five where the fact says gauge; a text
+    as wide as it is drawn in the cells kept for it. Short of width, with four cells kept after the
     workspaces: every number goes, then every gauge, then whole modules, the ones the overflow order does not
     name first, from the left, then in its order, never the time's group; three dots stand for them at the left
     end. -> (the targets as (id, x, w), what was left out in the order it went, the hairline's x or None)"""
@@ -569,7 +569,8 @@ def plan(line, levels, width, run_end, overflow, cell):
             continue
         level = levels.get(m["name"], m.get("level"))
         p = {"m": m, "sign": 2 if m.get("icon") in ICONS else len(glyphs(m.get("sign", ""))), "level": level or 0}
-        p["gauge"] = p["number"] = bool(m.get("pinned")) and level is not None
+        p["number"] = bool(m.get("pinned")) and level is not None
+        p["gauge"] = p["number"] and bool(m.get("gauge", m.get("pinned")))
         if size(p) > 0:
             pieces.append(p)
     gone, more = [], False
@@ -1829,7 +1830,7 @@ def behavior(d):
     typing.wait(timeout=5)
     d.away()
     # pins and what is hidden: the config's, said by the next line to the same bar
-    shown = "workspaces, pad, lan, bt, wifi, media, out, mic, due, light, kb, bat, clock, notifications"   # what the config does not hide
+    shown = "workspaces, pad, due, media, lan, bt, wifi, out, mic, light, kb, bat, clock, notifications"   # what the config does not hide
     left = ("lan.name", "bt.name", "wifi.name", "out.name", "out.gauge", "out.pct", "mic.name")
     said = d.shell("bar", "pin", "mic")
     both = d.until(lambda s: s.find("mic.gauge") and s.find("mic.pct"), "the mic's gauge and number on the bar")
@@ -1852,12 +1853,95 @@ def behavior(d):
     said = d.shell("bar", "hide", "bat")
     gone = d.until(lambda s: not s.find("bat.text"), "the battery off the bar")
     ok(said.returncode == 0 and said.said.startswith("hidden bat") and shown.replace(" bat,", "") in said.said and d.conf("BAR_HIDE") == "bat" and d.bar_pid() == pid
-       and gone.find("kb.text").x - base["kb.text"][0] == 9 * cell and not stays(base, gone.rects(), [k for k in base if base[k][0] < base["bat.text"][0]]),
-       "spark-shell bar hide bat: the battery is off the bar and what stood left of it closes up to the time, nine cells; the same process", (said.said, d.conf("BAR_HIDE"), gone.brief()))
+       and gone.find("kb.text").x - base["kb.text"][0] == 11 * cell and not stays(base, gone.rects(), [k for k in base if base[k][0] < base["bat.text"][0]]),
+       "spark-shell bar hide bat: the battery, a group of its own, is off the bar and what stood left of it closes up to the time, eleven cells; the same process", (said.said, d.conf("BAR_HIDE"), gone.brief()))
     said = d.shell("bar", "show", "bat")
     again = d.until(lambda s: s.rects() == base, "the battery back, every target where it was")
     ok(said.returncode == 0 and said.said.startswith("shown bat") and shown in said.said and d.conf("BAR_HIDE") == "" and d.bar_pid() == pid and len(d.log()) == changes,
        "spark-shell bar show bat: it is back where it was; through the four verbs the bar was never started again (pid %s) and no sound was changed" % pid, (said.said, again.brief(), pid, d.bar_pid()))
+    # the gauge is a setting of its own (v0.171): off, out keeps its number alone, and its sign and what stands left of
+    # it close up the gauge's five cells and the one beside them; on, every target is where it first was
+    said = d.shell("bar", "gauge", "out", "off")
+    plain = d.until(lambda s: not s.find("out.gauge") and s.find("out.pct") and s.find("out.name").x == base["out.name"][0] + 6 * cell, "out pinned with its number alone")
+    ok(said.returncode == 0 and "a number for out" in said.said and (d.conf("BAR_PINS"), d.conf("BAR_GAUGES")) == ("out", "none") and d.bar_pid() == pid
+       and plain.find("lan.name").x == base["lan.name"][0] + 6 * cell and not stays(base, plain.rects(), ("lan.name", "bt.name", "wifi.name", "out.name")),
+       "spark-shell bar gauge out off: out stays pinned with its number alone, the config says no gauge, its sign and what stands left of it close up six cells and what stands right stays; the same process",
+       (said.said, d.conf("BAR_PINS"), d.conf("BAR_GAUGES"), plain.brief()))
+    said = d.shell("bar", "gauge", "out", "on")
+    again = d.until(lambda s: s.rects() == base, "out's gauge back, every target where it was")
+    ok(said.returncode == 0 and d.conf("BAR_GAUGES") == "out", "spark-shell bar gauge out on: the gauge is back, and every target is where it first was", (said.said, again.brief()))
+
+    # a module dragged by its sign (v0.171). A press that goes six pixels is a drag, and the release where it went
+    # down is the click, as every click above was. Inside its group the module takes the place where it is let go;
+    # while it is held, a line in the accent stands in the room where it would land. Nothing is clicked by a drag
+    def pull(t, to, held=None):
+        """The left button down on a target's middle, the pointer moved 8 px and on to column `to`, let go there.
+        What `held` reads of the screen first, the button still down, is given back."""
+        d.move(t.mid, d.high // 2)
+        time.sleep(0.08)
+        d.button(True)
+        try:
+            d.move(t.mid + (8 if to > t.mid else -8), d.high // 2)
+            d.move(to, d.high // 2)
+            return held and held()
+        finally:
+            d.button(False)
+
+    def lined(x):
+        """Whether the bar comes to show the accent about column `x`, at its middle rows: the line of a landing."""
+        return seen(lambda: (any(near(c, d.tones["accent"]) for c in d.grab(x - 2, d.high // 2 - 2, 5, 4).colors()), None), 3)[0]
+
+    def order(s):
+        """The status's modules as a state has them, left to right."""
+        return [m for i, m in enumerate(t.module for t in s.parts()) if m not in [t.module for t in s.parts()][:i]]
+
+    shipped = "pad due media lan bt wifi out mic light kb bat"
+    n, changes, line_x = len(d.opened()), len(d.log()), base["out.name"][0] - cell
+    was = lined(line_x)
+    showed = pull(again.find("mic.name"), base["out.name"][0] + cell // 2, lambda: lined(line_x))
+    swapped = d.until(lambda s: s.find("mic.name").x < s.find("out.name").x and d.conf("BAR_ORDER") != shipped, "the microphone before the volume, by a drag")
+    ok(showed and not was and d.conf("BAR_ORDER") == "pad due media lan bt wifi mic out light kb bat" and swapped.find("mic.name").x == base["out.name"][0]
+       and swapped.find("out.name").x == base["out.name"][0] + 4 * cell and not stays(base, swapped.rects(), ("mic.name", "out.name", "out.gauge", "out.pct"))
+       and d.bar_pid() == pid and len(d.opened()) == n and len(d.log()) == changes,
+       "pointer: the microphone pressed on its sign, dragged left of the volume and let go there stands before it: a line in the accent showed where it would land, the config keeps the order, "
+       "the two have changed places and nothing else moved; no section opened, no sound changed, the same process",
+       (showed, was, d.conf("BAR_ORDER"), swapped.brief(), d.opened()[n:], d.log()[changes:]))
+    d.shot("behavior-dragged")
+    # past its group's reach the whole group goes: the keyboard, alone of its group here, let go left of the sound
+    pull(swapped.find("kb.name"), swapped.find("mic.name").x - cell)
+    grouped = d.until(lambda s: s.find("kb.name").x < s.find("mic.name").x and d.conf("BAR_ORDER") == "pad due media lan bt wifi light kb mic out bat",
+                      "the keyboard's group before the sound, by a drag, on the bar and in the config")
+    ok(d.conf("BAR_ORDER") == "pad due media lan bt wifi light kb mic out bat" and order(grouped) == ["lan", "bt", "wifi", "kb", "mic", "out", "bat", "clock", "notifications"]
+       and grouped.find("kb.name").x - (grouped.find("wifi.name").x + 2 * cell) == 4 * cell and len(d.opened()) == n,
+       "pointer: the keyboard dragged past its group and let go left of the sound takes its whole group there: the config's order has brightness and the keyboard before the microphone, "
+       "and on the bar the keyboard stands four cells after the network; nothing opened", (d.conf("BAR_ORDER"), grouped.brief(), d.opened()[n:]))
+    # the same move by the keys: Ctrl+Right steps the module the keys are on, and from its group's end the group
+    # passes the next one; the keys stay on it. F9 there is the right button: home's bar section
+    d.keys_on()
+    d.until(lambda s: s.focused() == "mark", "Super+%s to put the keys on the bar" % d.keys_key)
+    d.focus("kb.name")
+    d.chord("ctrl", "Right")
+    stepped = d.until(lambda s: s.find("kb.name").x > s.find("out.name").x and d.conf("BAR_ORDER") == "pad due media lan bt wifi mic out light kb bat",
+                      "Ctrl+Right to step the keyboard's group past the sound, on the bar and in the config")
+    ok(d.conf("BAR_ORDER") == "pad due media lan bt wifi mic out light kb bat" and stepped.focused() == "kb.name" and len(d.opened()) == n,
+       "keys: Ctrl+Right on the keyboard's sign, the last of its group, takes the group past the sound: the config has the order, and the keys are still on the sign", (d.conf("BAR_ORDER"), stepped.focused(), stepped.brief()))
+    d.focus("mic.name")
+    d.chord("ctrl", "Right")
+    back = d.until(lambda s: s.find("out.name").x < s.find("mic.name").x and d.conf("BAR_ORDER") == shipped, "Ctrl+Right to step the microphone past the volume, on the bar and in the config")
+    ok(d.conf("BAR_ORDER") == shipped and back.focused() == "mic.name" and not stays(base, back.rects()),
+       "keys: Ctrl+Right on the microphone steps it past the volume, inside its group: the order is the shipped one again, every target where it first was, the keys on the microphone", (d.conf("BAR_ORDER"), back.brief()))
+    d.key("F9")
+    ok((settle(lambda: d.opened()[n:], 8) or [""])[-1] == dialog + " bar",
+       "keys: F9 on a module is the right button on it: home opens at the bar's section, where its row is, and the keyboard goes back", d.opened()[n:])
+    d.until(lambda s: not s.focused(), "the keyboard given back after F9", 5)
+    said = d.shell("bar", "move", "mic", "first")
+    d.until(lambda s: s.find("mic.name").x < s.find("out.name").x, "the microphone first in its group, by the verb")
+    undone = d.shell("bar", "panel", "undo", "all")
+    restored = d.until(lambda s: s.rects() == base, "the arrangement put back by the undo")
+    ok(said.returncode == 0 and said.said == "microphone moved first in sound" and undone.returncode == 0 and "the bar is as it was" in undone.said and d.conf("BAR_ORDER") == shipped,
+       "spark-shell bar move mic first, and the undo home keeps for it: the microphone stood first in its group, and the undo put every target back where it was", (said.said, undone.said, d.conf("BAR_ORDER"), restored.brief()))
+    d.away()
+
     # the keys
     d.keys_on()
     s = d.until(lambda s: s.focused() == "mark", "Super+%s to put the keys on the bar" % d.keys_key)
@@ -2102,9 +2186,8 @@ def states(d):
        "bluetooth on with nothing connected says missing: its icon is not the one with a device, and dim", (saw, asks.brief()))
     ok(quiet.state == "ok" and quiet.rect == (base["notifications.name"][0], 0, 2 * cell, high) and saw[0][3] == ["text"] and saw[1][2],
        "do not disturb: the notifications' icon is another one, in the text's color, in the flag's cells", (saw, asks.brief()))
-    ok(due.x == asks.find("mic.name").x + 2 * cell + 4 * cell and asks.find("kb.name").x == due.x + 2 * cell + 4 * cell and asks.find("mic.name").x == base["mic.name"][0] - 6 * cell
-       and not stays(base, asks.rects(), [k for k in base if "." in k and base[k][0] <= base["mic.name"][0]]),
-       "the reminder is a group of its own, four cells from the sound and four from the seat: what stands left of it made room, six cells, and what stands right stays", asks.brief())
+    ok(asks.find("lan.name").x == due.x + 2 * cell + 4 * cell and [t.id for t in asks.parts()][0] == "due.name" and not stays(base, asks.rects()),
+       "the reminder stands first in the status, in the group of what happens now (v0.171), four cells before the network: it came, and nothing that stood on the bar moved", asks.brief())
     d.shot("states-asking")
     d.sway("[pid=%d]" % d.windows[1].pid, "urgent", "disable")
     # no sound device
@@ -2475,7 +2558,7 @@ def geometry(d):
             "the time to the flag": at["notifications.name"].x - at["clock.text"].x - 5 * cell, "the flag's cells to the edge": W - at["notifications.name"].x - icon - cell - 2 * cell}
     ok(gaps == {"out's sign to its gauge": cell, "its gauge to its number's cells": cell, "the keyboard's sign to its layout": cell, "the battery's sign to its number": cell,
                 "the wire to bluetooth": 2 * cell, "bluetooth to wifi": 2 * cell,
-                "out to the mic": 2 * cell, "the keyboard to the battery": 2 * cell, "wifi to out": 4 * cell, "the mic to the keyboard": 4 * cell, "the battery to the time": 4 * cell,
+                "out to the mic": 2 * cell, "the keyboard to the battery": 4 * cell, "wifi to out": 4 * cell, "the mic to the keyboard": 4 * cell, "the battery to the time": 4 * cell,
                 "the time to the flag": 2 * cell, "the flag's cells to the edge": cell}
        and at["out.gauge"].w == 5 * cell and at["out.pct"].w == 3 * cell and at["clock.text"].w == 5 * cell and {at[i].w for i in at if i.endswith(".name")} == {icon},
        "the gaps: one cell between a module's parts, two between the modules of a group, four between groups; the time and the flag two cells apart; one cell of room at the edge; a sign's icon two cells, a gauge five, a number its digits and the percent sign",

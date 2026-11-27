@@ -106,6 +106,7 @@ help lists them by subject. The bindings are named actions in
     The media keys play, pause, skip and stop what plays.
     The brightness keys set the screen's brightness.
     Super+equal puts the keyboard on the bar: arrows move and set, Enter acts.
+    Drag a module of the bar to move it, or use Ctrl+Left and Ctrl+Right there.
     Typing exit in the first window also leaves the desktop.
 
 ## Config

@@ -116,19 +116,30 @@ TOUCHPAD_MOUSE_OFF=off
 DO_NOT_DISTURB=no
 
 # The bar on the desktop's screen: yes (shown) or no (hidden). It shows
-# the workspaces, then the windows on the pad, lan, bluetooth, wifi,
-# what plays, sound out and mic, a reminder that is due, brightness, the keyboard's
-# layout, battery, the time and the notifications, each only when this
-# machine has it. spark-shell bar on|off --desktop sets this.
+# the workspaces, then the windows on the pad, a reminder that is due,
+# what plays, lan, bluetooth, wifi, sound out and mic, brightness, the
+# keyboard's layout, battery, the time and the notifications, each only
+# when this machine has it. spark-shell bar on|off --desktop sets this.
 DESKTOP_BAR=yes
 
-# The levels pinned to the bar, each with a gauge and a number beside
-# its sign: names from out mic light wifi, a space between, or none.
+# The levels pinned to the bar, each with its number beside its sign:
+# names from wifi out mic light, a space between, or none.
 # spark-shell bar pin and unpin set this.
 BAR_PINS=out
 
-# What is hidden from the bar: names from pad lan bt wifi media out mic
-# due light kb bat clock notifications, a space between. Hiding takes the
+# The pinned levels that draw a gauge before the number: names from
+# BAR_PINS, or none. With no such line every pinned level draws one.
+# spark-shell bar gauge sets this.
+BAR_GAUGES=out
+
+# The order of the bar's status from left to right, a group's modules
+# together: names from pad due media lan bt wifi out mic light kb bat.
+# Empty is the shipped order. A drag on the bar and spark-shell bar
+# move set this.
+BAR_ORDER=
+
+# What is hidden from the bar: names from pad due media lan bt wifi out
+# mic light kb bat clock notifications, a space between. Hiding takes the
 # shortcut off the bar, not the device. spark-shell bar hide and show
 # set this. Where spark-bar cannot run, sway's bar draws the bar and
 # shows every one.

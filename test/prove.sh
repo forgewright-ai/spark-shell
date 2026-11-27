@@ -107,7 +107,7 @@ proof() {   # proof NAME -- one of the desktop job's proofs, on a headless sway 
             winpad) apart "$d" env SPARK_SHELL_WINPAD="$pad" timeout 420 python3 -I "$REPO/test/winpad_desktop_proof.py" "$d/evidence" ;;
             voice) apart "$d" env SPARK_SHELL_WINPAD="$pad" timeout 420 python3 -I "$REPO/test/voice_desktop_proof.py" "$d/evidence" ;;
             journeys)
-                for j in home live matrix loops notifications; do REPLAY_DIR="$d" apart "$d" timeout 480 python3 -I "$REPO/test/replay.py" "$j" here || exit 1; done ;;
+                for j in home live matrix loops notifications arrange; do REPLAY_DIR="$d" apart "$d" timeout 480 python3 -I "$REPO/test/replay.py" "$j" here || exit 1; done ;;
             bar) apart "$d" env SPARK_SHELL_WINPAD="$pad" SPARK_SHELL_BAR="$bar" timeout 600 python3 -I "$REPO/test/bar_desktop_proof.py" "$d/evidence" ;;
         esac
     )

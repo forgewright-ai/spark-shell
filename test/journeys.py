@@ -305,9 +305,45 @@ def notifications(d):
     d.whole()
 
 
-SCREENS = {"home": ((1280, 720, "normal"),), "loops": ((1080, 1920, "90"), (1280, 720, "normal")), "notifications": ((1280, 720, "normal"),)}
+def arrange(d):
+    """The bar's status arranged while the desktop runs (v0.171): a module moved in its group, a gauge taken off, a
+    module hidden and the shipped order back are each kept in the config and leave the desktop as a login would make
+    it, so a reload is nothing; home's bar section, a row for each module, is seen; and an undo puts the four lines of
+    the config back as they were."""
+    config = d.home / ".config" / "spark-shell" / "config"
+
+    def kept():
+        return sorted(line for line in config.read_text().splitlines() if line.startswith(("BAR_ORDER=", "BAR_HIDE=", "BAR_PINS=", "BAR_GAUGES=")))
+
+    d.whole()
+    for verb in (("bar", "move", "mic", "before", "out"), ("bar", "gauge", "out", "off"), ("bar", "hide", "mic"), ("bar", "move", "default")):
+        was = kept()
+        d.shell(*verb)
+        if kept() == was:
+            raise Broken("spark-shell %s was done and the config says what it said before" % " ".join(verb))
+        d.whole()
+        d.reload_is_nothing()
+    if "BAR_ORDER=pad due media lan bt wifi out mic light kb bat" not in kept():
+        raise Broken("the shipped order was asked for and the config has %s" % kept())
+    open_home(d, "5")
+    go(d, "bar")
+    d.home_seen()
+    was = kept()
+    d.shell("bar", "show", "mic")
+    if kept() == was:
+        raise Broken("the hidden module was shown and the config says what it said before")
+    d.shell("bar", "panel", "undo", "all")
+    if kept() != was:
+        raise Broken("the undo left the config with %s, and before the step it had %s" % (kept(), was))
+    d.home_seen()
+    d.whole()
+    d.reload_is_nothing()
+
+
+SCREENS = {"home": ((1280, 720, "normal"),), "loops": ((1080, 1920, "90"), (1280, 720, "normal")), "notifications": ((1280, 720, "normal"),),
+           "arrange": ((1280, 720, "normal"),)}
 KEYS = {"matrix": {"BAR_TRAY": "yes"}}
-JOURNEYS = {f.__name__: f for f in (home, live, matrix, tabs, loops, notifications)}
+JOURNEYS = {f.__name__: f for f in (home, live, matrix, tabs, loops, notifications, arrange)}
 
 
 MARK = ".spark-shell-journey"

@@ -24,9 +24,13 @@ workspace.
 
 From the right edge leftward: the status, module by module. A module's
 parts are its sign, a cell a glyph, or its icon, drawn the text's size in
-two cells; when it has a level and is pinned, a gauge of five cells and
-its number; then its text in the cells kept for it, so a text that changes
-moves nothing. One cell stands between a module's parts, three
+two cells; when it has a level and is pinned, its number, and before it a
+gauge of five cells where the line says gauge; then its text in the cells
+kept for it, so a text that changes moves nothing. A text longer than its
+cells rolls through them while its module is well, a cell each quarter of a
+second, after two seconds at rest at its start each round; one a cell or
+two too long, a module in another state, and every text with motion no,
+is cut and ends in an ellipsis. One cell stands between a module's parts, three
 between the modules of a group, five between groups, and a hairline before
 the group time. Under the pointer a part stands on a chip of the lit tone
 and keeps its own color, a dim part's raised halfway to the text's; a
@@ -59,8 +63,9 @@ group, sign (its glyph or its word), icon (a drawing's name, lan or
 out-muted: it stands for the sign where the bar has that drawing, in the
 sign's tone), text and cells (the cells kept for the text), bold, state (ok, muted, off, missing, wrong, asks or records), level
 (0 to 100, when it has one), set (the level can be set from the bar),
-pinned (its gauge and number are on the bar), toggle (a click on its sign
-or its text changes something in place and opens nothing) and label (its
+pinned (its number is on the bar), gauge (its gauge too; a line that does
+not say is as pinned says), toggle (a click on its sign or its text
+changes something in place and opens nothing) and label (its
 name and state in words). The bar picks every tone by the state: the text's
 color for what is well; muted dims its sign and its gauge, and its number
 is not drawn; off and missing are dim, and missing draws no gauge and no
@@ -76,7 +81,18 @@ let go in its screen's other half sends bar with the edge, top or bottom,
 as its instance: spark-shell stands the bar there. Through the drag an
 accent line across the screen's other edge says the bar will land there,
 once the pointer is in that half. The pointer is a hand on a target, the
-arrow on the ground, and the holding hand through a drag. A sign, a number
+arrow on the ground, and the holding hand through a drag. The left button
+on a module's sign, number or text waits for its release: let go where it
+went down it is the click, and moved six pixels first it drags the module,
+unless the module is of the group time. What is dragged stays in its place,
+dim, a copy of it follows the pointer along the bar, and an accent line
+stands where it would land: inside its group the module takes a place among
+the group's modules, and past the group's reach the whole group takes one
+among the groups. Let go where a drop moves something, the bar sends move,
+its instance the move in spark-shell's own words with a colon between
+(mic:before:out, screen:after:sound), draws the new order at once and holds
+it until a line says it, a second at most: a line that says another order
+in that time is not drawn, and after it the last line's order stands. A sign, a number
 or a text takes a click one cell past its sides too; a gauge takes it on
 its own cells. On a level that can be set, the wheel on any of its parts
 (5 a step) and a click on its gauge (the place clicked, rounded to 5)
@@ -94,7 +110,10 @@ SIGUSR1 puts the keyboard on the bar of the focused output, unless a
 full-screen window covers it, and a line in the accent stands under the
 part the keys are on (in the ink on the plate): Tab and Shift+Tab go round the targets, and Left and Right too;
 Up and Down are the wheel on any part of a level that can be set, and Home
-and End its ends on its gauge; Enter or Space is a click, and gives the
+and End its ends on its gauge; Ctrl+Left and Ctrl+Right move the module the
+keys are on a place, as a drop does, past the module beside it and from its
+group's end the group past the next one; F9 is the right button on it;
+Enter or Space is a click, and gives the
 keyboard back, except on the sign or the text of a module that says toggle,
 where the keys stay; Escape gives it back, and so does a button pressed off
 the bar, or the pointer moved more than three cells there. SIGTERM or

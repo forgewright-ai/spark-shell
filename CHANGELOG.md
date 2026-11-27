@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.171
+
+- The bar's status is yours to arrange. Drag a module by its sign to
+  another place in its group; drag it past its group and the whole
+  group goes. A copy follows the pointer and a line shows where it
+  would land. With the keys on the bar, Ctrl and Left or Right move
+  it a step.
+- `spark-shell bar move NAME` with `first`, `last`, `left`, `right`,
+  `before NAME` or `after NAME` does it at the prompt, for a module
+  or a group (now, network, sound, screen, power). `spark-shell bar
+  move default` puts the shipped order back.
+- The modules stand in groups: what happens now (the windows that wait
+  on the pad, a reminder that is due, what plays), the network, sound,
+  the screen and the keys, power. What plays moved from beside the
+  volume to the status's left side.
+- A pinned level shows its number, and its gauge is a setting of its
+  own: `spark-shell bar gauge NAME off` leaves the number alone, and
+  `on` draws the gauge again. A config from before changes nothing.
+- Home's bar section lists the modules, a group's together. Left and
+  Right change how much of one the bar shows (hidden, shown, pinned,
+  pinned with gauge), and Ctrl+Up and Ctrl+Down move it.
+- Undo puts the bar back as it was, after a drag or a verb at the
+  prompt too.
+- A right click on a module, or F9 with the keys on the bar, opens
+  home's bar section.
+- What plays keeps a window of 24 cells whatever the title's length,
+  so nothing beside it moves at a new track. A longer title rolls
+  through the window, and stands cut while it is paused or the bar's
+  motion is off.
+- A click on a module's sign, number or text acts when the button is
+  let go. A gauge and the wheel act at once, as before.
+- For voice and the AI: the tools `bar_module` and `bar_move`.
+
 ## v0.170.4
 
 - A theme change could stop halfway with status 2 ("arithmetic
