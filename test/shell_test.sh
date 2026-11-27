@@ -6535,29 +6535,30 @@ SBSWAY_STUB
     [ "$rc" = 0 ] && ! grep -q '^exec_always .* bar tray' "$sway" && ! grep -q '^bar {$' "$sway" && sbe 'BAR_TRAY_WIDTH=0' && [ "$(sb_bar_ids)" = 'bar-0 spark-tray' ] && lives "$_bo" && ! grep -q 'reload\|^bar ' "$HOME/tray.log" 2>/dev/null && [ ! -e "$HOME/sbsway.log" ] \
         && ok "bar tray off: no host beside spark-bar, none in sway's config, no reload; a person's own bar and another session's stay" || bad "tray off" "rc=$rc $out $(grep -n 'bar\|tray' "$sway" | head) | $(sb_bar_ids) $(cat "$HOME/tray.log" 2>&1)"
     kill "$_bo" 2>/dev/null || :; wait "$_bo" 2>/dev/null || :; sb_bars_end
-    # the bar's own loop, under spark-bar: a font the screen asks for that the bar was not started with starts the bar
-    # again, apart from the loop, once for that font; what it starts is no bar's line (no SPARK_BAR in the new bar)
+    # the bar's own loop, under spark-bar: a font the screen asks for that the bar was not started with goes in the next
+    # line's look at once, and spark-bar wears it with no start again (v0.171); sway is sent no font
     printf '%s\n' 'DP-1 1920 36' > "$H/run/spark-shell-bar.tray"; rm -f "$H/run/spark-shell-bar.font"; printf 'FONT="DejaVu Sans Mono:size=13"\n' >> "$HOME/.config/spark-shell/config"
-    for _n in 1 2; do
-        SPARK_BAR=1 BAR_FONT='DejaVu Sans Mono 12' SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/tray.sock SBSWAY_NEXT=$H/traybin/swaymsg PATH="$H/sbsway:$H/traybin:$PATH" sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
-        for _i in $(seq 1 100); do [ "$(grep -c '^\[{' "$H/bar.out")" -ge 1 ] && [ -s "$H/run/spark-shell-bar.font" ] && break; sleep .1; done
-        [ "$_n" = 2 ] || sb_up 8; sleep 0.5; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
-    done
+    _sbn=$(grep -c '' "$HOME/sbar.log")
+    SPARK_BAR=1 BAR_FONT='DejaVu Sans Mono 12' SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/tray.sock SBSWAY_NEXT=$H/traybin/swaymsg PATH="$H/sbsway:$H/traybin:$PATH" sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
+    for _i in $(seq 1 100); do grep -q '"font":"DejaVu Sans Mono 13"' "$H/bar.out" && break; sleep .1; done
+    sleep 0.5; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
     sed -i.bak '/^FONT="DejaVu Sans Mono:size=13"$/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak"
-    [ "$(cat "$H/run/spark-shell-bar.font" 2>/dev/null)" = 'DejaVu Sans Mono 13' ] && [ "$(grep -c '' "$HOME/sbar.log")" = 8 ] && sbe 'BAR_FONT=DejaVu Sans Mono 13' && ! grep -q 'bar [^ ]* font' "$HOME/tray.log" 2>/dev/null \
-        && ! grep -q '^SPARK_BAR=' "$HOME/sbar.env" && grep -q '"name":"look"' "$H/bar.out" \
-        && ok "the loop under spark-bar: another font for the screen starts the bar again once, apart from the loop, through sway; a second loop with the same font asks for none, and sway is sent no font; the loop draws for spark-bar and what it starts does not carry that word" || bad "font follow spark-bar" "$(cat "$H/run/spark-shell-bar.font" "$HOME/sbar.log" "$H/bar.err" 2>&1)"
-    # a fixed size takes a new face too; a bar that has the font is done with it, so the same font asked for again later starts the bar
-    mkdir -p "$H/nosid"; printf '#!/bin/sh\nexit 0\n' > "$H/nosid/setsid"; chmod +x "$H/nosid/setsid"   # the loop asks for the bar again through it: here nothing starts or ends
-    printf 'BAR_TEXT="14"\n' >> "$HOME/.config/spark-shell/config"; _fa=''; rm -f "$H/run/spark-shell-bar.font"
-    for _f in 'Other Mono 14' 'DejaVu Sans Mono 14' 'Other Mono 14'; do
-        _fw='DejaVu Sans Mono 14'; [ "$_f" != "$_fw" ] || _fw=''
-        SPARK_BAR=1 BAR_FONT="$_f" SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/tray.sock SBSWAY_NEXT=$H/traybin/swaymsg PATH="$H/nosid:$H/sbsway:$H/traybin:$PATH" sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
-        for _i in $(seq 1 100); do [ "$(grep -c '^\[{' "$H/bar.out")" -ge 1 ] && [ "$(cat "$H/run/spark-shell-bar.font" 2>/dev/null || :)" = "$_fw" ] && break; sleep .1; done; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
-        _fa="$_fa$(cat "$H/run/spark-shell-bar.font" 2>/dev/null || :)|"
+    _fl=$(grep -o '"font":"[^"]*"' "$H/bar.out" | uniq | tr '\n' ' ')
+    [ "$_fl" = '"font":"DejaVu Sans Mono 12" "font":"DejaVu Sans Mono 13" ' ] && [ "$(grep -c '' "$HOME/sbar.log")" = "$_sbn" ] && [ ! -e "$H/run/spark-shell-bar.font" ] \
+        && ! grep -q 'bar [^ ]* font' "$HOME/tray.log" 2>/dev/null && ! grep -q '^SPARK_BAR=' "$HOME/sbar.env" \
+        && ok "the loop under spark-bar: another font for the screen goes in the next line's look at once, worn by spark-bar with no start again (v0.171); sway is sent no font" \
+        || bad "font follow spark-bar" "$_fl | $_sbn $(grep -c '' "$HOME/sbar.log") | $(tail -2 "$H/bar.err")"
+    sbr bar again; sb_up 8   # a bar started again, as the counts of the steps below have it
+    # a fixed size takes a new face too, in the next line's look; a bar that has it is sent the same
+    printf 'BAR_TEXT="14"\n' >> "$HOME/.config/spark-shell/config"; _fa=''
+    for _f in 'Other Mono 14' 'DejaVu Sans Mono 14'; do
+        SPARK_BAR=1 BAR_FONT="$_f" SPARK_SHELL_BAR=$H/barbin/spark-bar SWAYSOCK=$H/tray.sock SBSWAY_NEXT=$H/traybin/swaymsg PATH="$H/sbsway:$H/traybin:$PATH" sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
+        for _i in $(seq 1 100); do grep -q '"font":"DejaVu Sans Mono 14"' "$H/bar.out" && break; sleep .1; done; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
+        _fa="$_fa$(grep -o '"font":"[^"]*"' "$H/bar.out" | uniq | tr '\n' ' ')|"
     done
     sed -i.bak '/^BAR_TEXT="14"$/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak"
-    [ "$_fa" = 'DejaVu Sans Mono 14||DejaVu Sans Mono 14|' ] && ok "the loop under spark-bar: a fixed size takes a new face, and a font it has is no longer kept as asked for" || bad "font follow fixed" "$_fa | $(cat "$H/bar.err")"
+    [ "$_fa" = '"font":"Other Mono 14" "font":"DejaVu Sans Mono 14" |"font":"DejaVu Sans Mono 14" |' ] \
+        && ok "the loop under spark-bar: a fixed size takes a new face in the next line's look; a bar that has the font is sent the same" || bad "font follow fixed" "$_fa | $(cat "$H/bar.err")"
     # hidden: spark-bar ends and a bar of sway's, unseen, runs the line; shown again, that bar ends and sway starts spark-bar
     : > "$H/.local/state/swaymsg.log"; sbr bar off --desktop
     [ "$rc" = 0 ] && [ ! -s "$block" ] && grep -q '^bar {$' "$sway" && grep -q '^    mode invisible$' "$sway" && grep -q 'status_command' "$sway" && ! grep -q 'bar start' "$sway" && [ "$(sb_bar_ids)" = spark-line ] \

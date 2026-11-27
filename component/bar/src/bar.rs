@@ -356,6 +356,14 @@ pub struct Look {
     pub full: Option<String>,
     pub light: Option<String>,
     pub motion: Option<bool>,
+    /// The font, as pango names it: a theme's typeface or a text size, worn with no start again.
+    pub font: Option<String>,
+}
+
+/// A font's name as a line says it: plain text, some, and not long.
+fn font_name(s: &str) -> Option<String> {
+    let s = s.trim();
+    (!s.is_empty() && s.len() <= 120 && !s.chars().any(char::is_control)).then(|| s.to_string())
 }
 
 impl Look {
@@ -374,6 +382,7 @@ impl Look {
             full: v["full"].as_str().and_then(pair_glyph),
             light: v["light"].as_str().and_then(pair_glyph),
             motion: v["motion"].as_str().and_then(motion),
+            font: v["font"].as_str().and_then(font_name),
         }
     }
 }
@@ -5272,6 +5281,21 @@ mod tests {
     }
 
     #[test]
+    fn a_line_says_the_font_a_theme_brings() {
+        let said = |font: &str| look_of(&format!(r#"[{{"name":"look","font":{font}}},{{"name":"now","full_text":"12:00"}}]"#)).font;
+        assert_eq!(said(r#""Monaspace Krypton 12""#), Some("Monaspace Krypton 12".into()));
+        assert_eq!(
+            said(r#"" Monaspace Xenon 11 ""#),
+            Some("Monaspace Xenon 11".into()),
+            "the blanks around it dropped"
+        );
+        for bad in [r#""""#, r#""  ""#, r#""a\u0007b""#, "12", "null"] {
+            assert_eq!(said(bad), None, "{bad}");
+        }
+        assert_eq!(said(&format!("\"{}\"", "x".repeat(121))), None, "a name past 120 is none");
+    }
+
+    #[test]
     fn a_line_says_the_whole_look_first_and_it_is_no_module() {
         let (modules, look) = parse_refresh(SHEET).unwrap();
         assert_eq!(
@@ -5289,6 +5313,7 @@ mod tests {
                 full: Some("\u{2501}".into()),
                 light: Some("\u{2500}".into()),
                 motion: Some(true),
+                font: None,
             }
         );
         assert!(!modules.iter().any(|m| m.name == LOOK));

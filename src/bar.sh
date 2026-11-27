@@ -504,8 +504,9 @@ bar_audio() {   # bar_audio out|mic -- its blocks on sway's bar: the sign when t
 # own, the dim tone, and the alert its red
 bar_look() {
     _blm=yes; [ "$(bar_style BAR_MOTION yes | tr -d '"')" != no ] || _blm=no
-    printf '{"name":"look","fg":"%s","accent":"%s","muted":"%s","ground":"%s","lit":"%s","attention":"%s","alert":"%s","alpha":"%s","full":"%s","light":"%s","motion":"%s","ink":"%s"}' \
-        "$HEX_FG" "$HEX_ACCENT" "$HEX_MUTED" "$HEX_BG" "$PANEL_HI" "${PANEL_ATTENTION:-$HEX_ANSI_3}" "$HEX_ANSI_1" "$ALPHA" "$FAM_ON" "$FAM_OFF" "$_blm" "${PANEL_INK:-$HEX_BG}"
+    _blo=$(printf '%s' "${_blw:-${BAR_FONT:-}}" | tr -d '"\\'); [ -z "$_blo" ] || _blo=",\"font\":\"$_blo\""   # spark's bar's font too: it wears a new one at once (bar_font_follow)
+    printf '{"name":"look","fg":"%s","accent":"%s","muted":"%s","ground":"%s","lit":"%s","attention":"%s","alert":"%s","alpha":"%s","full":"%s","light":"%s","motion":"%s","ink":"%s"%s}' \
+        "$HEX_FG" "$HEX_ACCENT" "$HEX_MUTED" "$HEX_BG" "$PANEL_HI" "${PANEL_ATTENTION:-$HEX_ANSI_3}" "$HEX_ANSI_1" "$ALPHA" "$FAM_ON" "$FAM_OFF" "$_blm" "${PANEL_INK:-$HEX_BG}" "$_blo"
 }
 # bar_sign GLYPH WORD [ICON] -> _bg, a module's sign: its glyph, or its word where the bar is in words; and _bi, its
 # icon's name, which spark's bar draws in the glyph's place (component/bar/icons.py has the drawings); none in words
@@ -909,9 +910,8 @@ bar_font_follow() {   # BAR_TEXT=auto: the font follows the screen; _bff is the 
     BAR_TEXT=$(bar_style BAR_TEXT auto | tr -d '"'); [ "$BAR_TEXT" = auto ] || [ -n "${SPARK_BAR:-}" ] || { _bff=''; return 0; }   # a fixed size: already rendered; spark's bar takes a new face too
     FONT=$(bar_style FONT "$FONT"); case $FONT in \"*\") FONT=${FONT#\"}; FONT=${FONT%\"} ;; esac   # quoted as load_env takes it
     _bfn=$(bar_line_font "$(font_spec)")
-    if [ -n "${SPARK_BAR:-}" ]; then   # spark's bar reads its font at its start
-        if [ "$_bfn" != "${BAR_FONT:-}" ]; then sparkbar_font_again "$_bfn"; return 0; fi
-        case $(cat "$(sparkbar_file font)" 2>/dev/null) in ''|'screen '*) ;; *) rm -f "$(sparkbar_file font)" ;; esac   # it has it: a font asked for before is asked for again when it comes back
+    if [ -n "${SPARK_BAR:-}" ]; then   # spark's bar wears the font each line's look says: a new one goes in the next line, at once; it was started again for it
+        [ "$_bfn" = "${_blw:-${BAR_FONT:-}}" ] || { _blw=$_bfn; redraw=1; }
         return 0
     fi
     [ "$_bfn" != "${_bff:-}" ] || return 0

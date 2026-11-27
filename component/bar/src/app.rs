@@ -256,6 +256,8 @@ pub struct App {
     handle: LoopHandle<'static, App>,
     lib: Lib,
     font: Font,
+    /// The font's name as pango takes it: BAR_FONT's, then a status line's.
+    font_name: String,
     ruler: Ruler,
     m: Metrics,
     cfg: Config,
@@ -336,6 +338,7 @@ impl App {
             handle,
             lib,
             font,
+            font_name: cfg.font.clone(),
             ruler,
             m,
             look: cfg.look.clone(),
@@ -399,6 +402,9 @@ impl App {
                     self.failures = 0;
                 }
                 self.set_look(self.cfg.look.with(&look));
+                if let Some(font) = look.font.as_deref() {
+                    self.set_font(font);
+                }
                 let moved = self.levels.said(&modules, self.now());
                 // an order drawn at a drop stands until a line says it: a line made before the config was written
                 // says the old one, and is kept aside, not drawn
@@ -432,6 +438,31 @@ impl App {
         }
         self.look = look;
         self.dirty = true;
+    }
+
+    /// A new font from a status line: a theme's typeface or a text size worn at once, where the bar was started again
+    /// for it and blinked out. A new height moves each bar's edge and the room it keeps the windows.
+    fn set_font(&mut self, name: &str) {
+        if name == self.font_name {
+            return;
+        }
+        let font = Font::new(&self.lib, name);
+        let m = Metrics::for_text(font.px, self.ruler.width(&self.lib, &font, "0"));
+        std::mem::replace(&mut self.font, font).free(&self.lib);
+        self.font_name = name.to_string();
+        let taller = m.height != self.m.height;
+        if m.mark != self.m.mark {
+            self.drop_marks(); // the mark is loaded at its side, so another side loads again at the next draw
+        }
+        self.m = m;
+        if taller {
+            for layer in self.outs.iter().filter_map(|o| o.layer.as_ref()) {
+                layer.set_size(0, self.m.height as u32);
+                layer.set_exclusive_zone(self.m.height);
+                layer.commit();
+            }
+        }
+        self.relayout();
     }
 
     fn drop_marks(&mut self) {
