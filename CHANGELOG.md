@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.170.3
+
+- A theme change shows the old loop, the new theme's stills, then its
+  loop, and is settled in about a second and a half. The loop started,
+  hid under the new stills and came back three seconds later, and a
+  turned screen could flash the landscape or a black frame between.
+- Cinematic Worlds has The Late Edition:
+  `spark-shell theme the-late-edition`, a night newsroom in black and
+  white, in Monaspace Xenon, its print laid down as the dialog opens.
+- Atlas Awakening's portrait for a turned screen is the corrected one,
+  with its loop, the second landscape's loop and the closing.
+- After a theme that asks for no dialog motion, the next theme brings
+  its own. Every theme after it opened and closed with none.
+- With the login screen on, `spark-shell theme install` of a gallery
+  wallpaper ends with its receipt. It ended in status 2 and the login
+  screen kept the old picture.
+
 ## v0.170.2
 
 - Cinematic Worlds has two new works. Mars Conquest:

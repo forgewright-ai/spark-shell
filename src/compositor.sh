@@ -44,6 +44,16 @@ wm_background_pid() {   # -> the session's newest background drawer (swaybg, a c
     for _wbk in $(cat "/proc/$_wbs"/task/*/children 2>/dev/null); do [ "$(cat "/proc/$_wbk/comm" 2>/dev/null)" != swaybg ] || printf '%s %s\n' "$(proc_ticks "$_wbk")" "$_wbk"; done \
         | sort -n | tail -1 | cut -d' ' -f2 | grep .   # its children read from /proc: an image may have no pgrep
 }
+wm_background_drawn() {   # wm_background_drawn PID -> once that drawer has drawn: it reads its pictures, draws, then waits, its CPU time still for 0.2 s; 3 s at most; 1 when it is gone
+    _wdn=0; _wdl=''; _wds=0
+    while [ "$_wdn" -lt 30 ]; do
+        [ -r "/proc/$1/stat" ] || return 1
+        _wdc=$(sed 's/.*) //' "/proc/$1/stat" | awk '{ print $12 + $13 }')   # utime and stime, in clock ticks
+        if [ "$_wdc" = "$_wdl" ]; then _wds=$((_wds + 1)); else _wds=0; fi
+        [ "$_wds" -lt 2 ] || [ "$_wdn" -lt 3 ] || return 0
+        _wdl=$_wdc; _wdn=$((_wdn + 1)); sleep 0.1
+    done
+}
 wm_env_name() { printf 'SWAYSOCK'; }             # the session's variable, for a bus or a service manager
 wm_proc_has() {   # wm_proc_has /proc/PID NAME=VALUE... -> 0 when that process was started with each of them; false where its environment cannot be read
     _wph=$(tr '\n\0' ' \n' 2>/dev/null < "$1/environ") || return 1

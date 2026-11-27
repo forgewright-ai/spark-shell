@@ -242,11 +242,13 @@ class Providers(unittest.TestCase):
         self.assertEqual([r["text"] for r in text(replies[1])["rows"] if r.get("group") == "Exhibitions"], opened, "no exhibition before it opens")
         self.assertTrue(all("error" in replies[i] for i in range(2, 2 + len(pending))))
         # Cinematic Worlds, open: each work's portrait drawn for a turned screen and its panels for two; Atlas Awakening has
-        # loops of its own, The Sounding Gate a still and its own opening and closing, Mars Conquest and The Pilgrim's Vow both
+        # loops of its own, The Sounding Gate a still and its own opening and closing, Mars Conquest and The Pilgrim's Vow both,
+        # The Late Edition its opening and closing and a still first
         works = [("atlas-awakening", "Atlas Awakening", "moves with moving wallpaper on", "atlas"),
                  ("the-sounding-gate", "The Sounding Gate", "still", "own"),
                  ("mars-conquest", "Mars Conquest", "moves with moving wallpaper on", "own"),
-                 ("the-pilgrims-vow", "The Pilgrim's Vow", "moves with moving wallpaper on", "own")]
+                 ("the-pilgrims-vow", "The Pilgrim's Vow", "moves with moving wallpaper on", "own"),
+                 ("the-late-edition", "The Late Edition", "still", "own")]   # its loop is the second landscape's alone
         looked = lambda i, name: [rpc(i, "resources/read", uri=base + "/" + name),
                                   rpc(i + 1, "resources/read", uri="spark-shell://theme/preview/" + name + "/portrait"),
                                   rpc(i + 2, "resources/read", uri="spark-shell://theme/preview/" + name + "/panels-2")]

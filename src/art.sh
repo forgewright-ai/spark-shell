@@ -368,23 +368,29 @@ art_screens_follow() {   # each screen output * does not suit gets its own still
     ! art_wall_theirs || return 0   # a picture or a color of yours: on every screen as you set it
     _asl=$(printf '%s\n' "$_asp" | awk -F '\t' '$6 != "landscape"'); [ -n "$_asl" ] || return 0
     _asd=$(theme_dir "${THEME:-}"); _asw=$(wall_path); [ -n "${HEX_BG:-}" ] || theme_load 2>/dev/null || :; _asg=$(wall_ground 2>/dev/null) || _asg='#000000'; _asf=$(palette_file "${THEME:-}" 2>/dev/null) || _asf=''
-    # after a look change's own output * (wall_uncover sends it at 0.25 s), under its cover (gone at 0.85 s): no black frame, nothing overwritten
+    # after a look change's own output * (wall_uncover sends it at 0.25 s), under its cover (gone at 0.85 s): no black frame, nothing
+    # overwritten. Every screen in one command, as soon as that output *'s drawer is up: one a screen started a drawer each, and sway
+    # ended each before it drew, the cover gone by then (a black frame)
+    _asb=$(wm_background_pid || :); _ash=$(getconf CLK_TCK 2>/dev/null) || _ash=100   # a drawer under a second old is that output *'s
+    [ -z "$_asb" ] || [ $(($(awk -v h="$_ash" '{ printf "%d", $1 * h }' /proc/uptime) - $(proc_ticks "$_asb" || echo 0))) -ge "$_ash" ] || _asb=up
     ( TMP=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-art.XXXXXX") || exit 0; trap 'rm -rf "$TMP"' EXIT   # its own scratch: the step's TMP is gone by now, and a helper writing there would leave a folder behind
-      sleep 0.5; printf '%s\n' "$_asl" | while IFS="$TAB" read -r _asn _asi _asa _ast _ass _asr _asx _asm; do   # TMP dies with its step: the list in hand
+      printf '%s\n' "$_asl" | while IFS="$TAB" read -r _asn _asi _asa _ast _ass _asr _asx _asm; do   # TMP dies with its step: the list in hand
           case $_asm in
               fill) [ -f "$_asd/$_asx" ] || continue
-                  wm_send "output \"$_asn\" bg \"$_asd/$_asx\" fill" ;;
+                  printf 'output "%s" bg "%s" fill\n' "$_asn" "$_asd/$_asx" ;;
               scene) [ -n "$_asf" ] && scene_ready || continue
                   _ssf=$WALL_CACHE/$WALLPAPER-$THEME-$_ass.png
-                  [ -f "$_ssf" ] || { mkdir_state "$WALL_CACHE" && scene_still "$WALLPAPER" "$_asf" "$_ass" "$_ssf"; } || continue
-                  wm_send "output \"$_asn\" bg \"$_ssf\" fill" ;;
+                  [ -f "$_ssf" ] || { mkdir_state "$WALL_CACHE" && scene_still "$WALLPAPER" "$_asf" "$_ass" "$_ssf"; } >/dev/null 2>&1 || continue
+                  printf 'output "%s" bg "%s" fill\n' "$_asn" "$_ssf" ;;
               fit) [ -f "$_asw" ] || continue
                   _ssf=$WALL_CACHE/screens/$WALLPAPER-$THEME-$_ass-fit.png
-                  [ -f "$_ssf" ] || { mkdir_state "$WALL_CACHE/screens" && art_fit "$_asw" "$_ass" "$(art_edges "$_asw" "$_asg" "$_ssf.edges.png")" "$_ssf"; } || continue
-                  wm_send "output \"$_asn\" bg \"$_ssf\" fill" ;;
-          esac >/dev/null 2>&1 || :
-      done
-      sleep 0.5; motion_raise
+                  [ -f "$_ssf" ] || { mkdir_state "$WALL_CACHE/screens" && art_fit "$_asw" "$_ass" "$(art_edges "$_asw" "$_asg" "$_ssf.edges.png")" "$_ssf"; } >/dev/null 2>&1 || continue
+                  printf 'output "%s" bg "%s" fill\n' "$_asn" "$_ssf" ;;
+          esac
+      done > "$TMP/screens"
+      _asn=0; while [ "$_asb" != up ] && [ "$_asn" -lt 7 ] && [ "$(wm_background_pid || :)" = "$_asb" ]; do sleep 0.1; _asn=$((_asn + 1)); done   # none comes from a reload or a screen
+      [ ! -s "$TMP/screens" ] || wm_send "$(paste -sd ';' "$TMP/screens")" >/dev/null 2>&1 || :
+      sleep 0.1; motion_raise   # it waits for the drawer these lines started to draw
       login_screens_follow ) </dev/null >/dev/null 2>&1 3>&- 4<&- &   # each still starts the background drawer anew, over a loop already playing
 }
 art_screens_changed() {   # on sway's output events: a screen came, went, moved or turned since the screens were last drawn, so every screen's still and loop again

@@ -1,0 +1,40 @@
+{
+  "format": 1,
+  "id": "the-late-edition",
+  "title": "The Late Edition",
+  "media": "cinematic",
+  "note": "A photographer brings the night editor a print. By dawn it is on the front page.",
+  "variants": {
+    "dark": {
+      "theme": "the-late-edition",
+      "portrait": "the-late-edition-portrait.jpg",
+      "motion": "ambient",
+      "panels": {
+        "2": [
+          {
+            "landscape": "the-late-edition-landscape-1.jpg",
+            "portrait": "the-late-edition-portrait.jpg"
+          },
+          {
+            "landscape": "the-late-edition-landscape-2.jpg",
+            "portrait": "the-late-edition-portrait.jpg"
+          }
+        ],
+        "3": [
+          {
+            "landscape": "the-late-edition-landscape-1.jpg",
+            "portrait": "the-late-edition-portrait.jpg"
+          },
+          {
+            "landscape": "the-late-edition-landscape-2.jpg",
+            "portrait": "the-late-edition-portrait.jpg"
+          },
+          {
+            "landscape": "the-late-edition-landscape-2.jpg",
+            "portrait": "the-late-edition-portrait.jpg"
+          }
+        ]
+      }
+    }
+  }
+}

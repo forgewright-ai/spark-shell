@@ -47,7 +47,7 @@ cmd_theme() {   # cmd_theme [NAME|none|show|list|WORD ARG...|"WORDS"]
         save) shift; theme_save "$@"; return ;;
         delete) shift; theme_delete "$@"; return ;;
         gallery) shift; theme_gallery "$@"; return ;;
-        install) shift; theme_install "$@"; return ;;
+        install) shift; [ -n "${LOGIN_ACCOUNT+set}" ] || pm_detect; theme_install "$@"; return ;;   # a gallery's wallpaper reaches the login screen's step, which reads its account
         screens) shift; theme_screens "$@"; return ;;
         workspaces) refuse_in theme "the glyph family names the workspaces now -- spark-shell theme family stone, star or banner" ;;   # not a theme name
         rename|duplicate|restore|color|colors|pointer|clock|pair|portrait|panel|loop|reel|back|wallpaper|text|transparency|animation|glyphs|icons|spacing|family|face|motion|picture|variant)
@@ -134,7 +134,10 @@ theme_apply() {   # theme_apply NAME|none [back] -- back keeps the history
         done
     elif [ "$name" != none ] && [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && ! wall_yours && _w=$(wall_for_palette "$name") && [ "$_w" != "$WALLPAPER" ]; then look_take WALLPAPER "$_w"   # the palette's drawing, unless a picture of yours
     else _w=''; fi
-    [ "$name" = none ] || [ "$DIALOG_ANIMATION" = none ] || look_take DIALOG_ANIMATION "$(theme_animation_for "$name" "$_td")"
+    # none is yours, and stays, unless the theme in use asked for it: then the next theme brings its own (a theme with no motion
+    # left every theme after it with none)
+    _tan=''; [ "$DIALOG_ANIMATION" != none ] || [ "$(theme_animation_for "${THEME:-}" "$(theme_dir "${THEME:-}")")" = none ] || _tan=yours
+    [ "$name" = none ] || [ -n "$_tan" ] || look_take DIALOG_ANIMATION "$(theme_animation_for "$name" "$_td")"
     look_take THEME "$name"
     look_taken || return 1
     case $_ltk in *' THEME') [ "$MODE" = dry ] || row ok config "THEME=$name ($CONFIG)" ;; esac
@@ -764,11 +767,12 @@ motion_stop() {
     rm -f "$(motion_want)"
     for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done
 }
-motion_play() {   # motion_play ARGS... -- in its own session
+motion_play() {   # motion_play ARGS... -- in its own session; the loops that played go once the new ones draw over them
     _mpc=$(wallpaper_cmd) || return 0
-    for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done
+    _mpo=$(motion_ours)
     if command -v setsid >/dev/null 2>&1; then setsid "$_mpc" "$@" </dev/null >/dev/null 2>&1 &
     else ( trap '' HUP; exec "$_mpc" "$@" ) </dev/null >/dev/null 2>&1 & fi
+    [ -z "$_mpo" ] || ( sleep 0.8; for _mp in $_mpo; do kill "$_mp" 2>/dev/null || :; done ) </dev/null >/dev/null 2>&1 3>&- 4<&- &   # ended first, they left the still between the two loops
 }
 motion_make() {   # motion_make DRAWING SEDFILE OUT -- SEDFILE empty: as drawn
     _md=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || return 1
@@ -810,7 +814,7 @@ motion_follow() {   # the look's loops playing or made; else ours stopped
     art_screens_follow
     if [ "${WALLPAPER_MOTION:-off}" != on ] || ! motion_has "${WALLPAPER:-}" || [ -n "$(motion_missing)" ]; then motion_stop; return 0; fi
     if [ -z "$_asl" ]; then   # no screen of its own still to draw, which raises them: a reload or a look starts the drawer all the same
-        ( TMP=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || exit 0; trap 'rm -rf "$TMP"' EXIT; sleep 1; motion_raise ) </dev/null >/dev/null 2>&1 3>&- 4<&- &   # its own scratch, as art_screens_follow's
+        ( TMP=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || exit 0; trap 'rm -rf "$TMP"' EXIT; sleep 0.5; motion_raise ) </dev/null >/dev/null 2>&1 3>&- 4<&- &   # its own scratch, as art_screens_follow's; after a look's own output * (0.25 s)
     fi
     _mj=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || return 0
     mkdir -p "$MOTION_DIR"
@@ -841,7 +845,11 @@ motion_follow() {   # the look's loops playing or made; else ours stopped
     if cmp -s "$_mj/args" "$(motion_want)" && [ -n "$(motion_ours)" ]; then rm -rf "${_mj:?}"; MOTION_NOW=playing; return 0; fi   # playing already
     mkdir -p "$(dirname "$(motion_want)")" && cp "$_mj/args" "$(motion_want)"
     if awk -F '\t' '{ print $1 }' "$_mj/plan" | while IFS= read -r _mf; do [ -f "$_mf" ] || exit 1; done; then
-        motion_play_want; rm -rf "${_mj:?}"; MOTION_NOW=playing; return 0
+        # a look's wallpaper or a screen's still drawn anew covers a player started now: motion_raise starts it once drawn. The
+        # old loops go now: kept, they showed through each time sway swapped its drawer (it ends the old before the new draws)
+        if [ -z "$_asl" ] && [ "${WALL_BG:-}" = "$(wall_shown)" ]; then motion_play_want
+        else for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done; fi
+        rm -rf "${_mj:?}"; MOTION_NOW=playing; return 0
     fi
     MOTION_NOW=making
     [ ! -f "$MOTION_DIR/making" ] || ! pid_running "$(cat "$MOTION_DIR/making" 2>/dev/null)" || { rm -rf "${_mj:?}"; return 0; }   # the maker plays the newest want
@@ -859,13 +867,23 @@ motion_follow() {   # the look's loops playing or made; else ours stopped
       fi
       rm -f "$MOTION_DIR/making"; rm -rf "${_mj:?}" ) </dev/null >/dev/null 2>&1 3>&- 4<&- &
 }
-motion_raise() {   # our loops back on top: the background drawer started anew (a screen's still, a reload) covers a player, which pauses
-    _mrb=$(wm_background_pid) && _mrt=$(proc_ticks "$_mrb") || return 0
-    _mrh=$(getconf CLK_TCK 2>/dev/null) || _mrh=100; _mrt=$((_mrt + 3 * _mrh))   # it draws once its pictures are read: 3 s on
-    while [ "$(awk -v h="$_mrh" '{ printf "%d", $1 * h }' /proc/uptime)" -lt "$_mrt" ]; do sleep 0.5; done
-    for _mp in $(motion_ours); do
-        [ "$(proc_ticks "$_mp" || echo 0)" -lt "$_mrt" ] || continue   # a player that started before the drawer drew
-        motion_play_want; return 0
+motion_raise() {   # our loops on top once the background drawer started anew (a look's wallpaper, a screen's still, a reload) has drawn: it covers a player started before, which pauses; one put off until then starts
+    _mrh=$(getconf CLK_TCK 2>/dev/null) || _mrh=100
+    if _mrb=$(wm_background_pid) && _mrt=$(proc_ticks "$_mrb"); then
+        if [ $(($(awk -v h="$_mrh" '{ printf "%d", $1 * h }' /proc/uptime) - _mrt)) -lt $((3 * _mrh)) ]; then
+            wm_background_drawn "$_mrb" || :   # as soon as it drew: it waited 3 s, the most it takes, and the loop showed the still that long
+            _mrt=$(awk -v h="$_mrh" '{ printf "%d", $1 * h }' /proc/uptime)
+        else _mrt=$((_mrt + 3 * _mrh)); fi
+    else _mrt=0; fi
+    _mro=$(motion_ours)
+    if [ -z "$_mro" ]; then   # put off by motion_follow; never over a loop still being made, which the maker plays
+        [ -f "$MOTION_DIR/making" ] && pid_running "$(cat "$MOTION_DIR/making" 2>/dev/null)" || motion_play_want
+        return 0
+    fi
+    for _mp in $_mro; do   # a player that started before the drawer drew, or that plays loops no longer wanted
+        if [ "$(proc_ticks "$_mp" || echo 0)" -lt "$_mrt" ] || ! tr '\0' '\n' < "/proc/$_mp/cmdline" 2>/dev/null | sed 1d | cmp -s - "$(motion_want)"; then
+            motion_play_want; return 0
+        fi
     done
 }
 proc_ticks() { [ -r "/proc/$1/stat" ] && sed 's/.*) //' "/proc/$1/stat" | awk '{ print $20 }'; }   # proc_ticks PID -> when it started, in clock ticks since boot

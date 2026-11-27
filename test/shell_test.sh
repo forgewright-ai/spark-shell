@@ -7540,6 +7540,11 @@ sh "$SH" theme nord >/dev/null 2>&1; a1=$(sed -n 's/^DIALOG_ANIMATION=//p' "$HOM
 for e in $(sed -n 's/^ANIM_PAIRED="\(.*\)"$/\1/p' "$SRC"); do [ -d "$REPO/gallery/animation/${e#*:}/${e%%:*}" ] || a3="${a3:-}${e} "; done
 [ "$a1" = tide ] && [ "$a2" = none ] && [ -z "${a3:-}" ] && [ "$(sed -n 's/^ANIM_PAIRED="\(.*\)"$/\1/p' "$SRC" | wc -w | tr -d ' ')" = 16 ] \
     && ok "theme: a palette brings its piece (nord the tide), none stays none, every one of the 16 palettes paired with a piece it has (#122)" || bad "animation pairs" "$a1 $a2 missing: ${a3:-}"
+# a theme that asks for no motion leaves the next its own: that none was the theme's, not yours (v0.170.2 kept it for every theme after)
+_sn=$HOME/.config/spark-shell/themes/still-study; mkdir -p "$_sn"; cp "$REPO/gallery/theme/nord.env" "$_sn/palette.env"; printf 'FORMAT=2\nPALETTE=nord\nANIMATION=none\n' > "$_sn/look.env"
+sh "$SH" theme still-study >/dev/null 2>&1; a4=$(sed -n 's/^DIALOG_ANIMATION=//p' "$HOME/.config/spark-shell/config"); sh "$SH" theme nord >/dev/null 2>&1; a5=$(sed -n 's/^DIALOG_ANIMATION=//p' "$HOME/.config/spark-shell/config")
+[ "$a4" = none ] && [ "$a5" = tide ] && ok "theme: after a theme that asks for no motion, the next theme brings its own piece (nord the tide)" || bad "animation after a still theme" "$a4 $a5"
+rm -rf "$_sn"
 printf 'DIALOG_ANIMATION=fireworks\n' >> "$HOME/.config/spark-shell/config"; st=0; o=$(sh "$SH" status 2>&1) || st=$?
 [ "$st" -ne 0 ] && printf '%s' "$o" | grep -q 'DIALOG_ANIMATION=fireworks' && ok "config: DIALOG_ANIMATION holds to none and the six (#122)" || bad "animation config" "$st $o"
 printf 'DESKTOP=sway\nTHEME=tokyonight-night\n' > "$HOME/.config/spark-shell/config"
@@ -9673,7 +9678,7 @@ sh "$SH" theme amber-drizzle >/dev/null 2>&1; a5=$(sh "$SH" theme show 2>&1 | se
 [ "$a1" = 'tokyonight, light (dark: tokyonight-night), vector, still, portrait fitted' ] && [ "$v1" = "variant light $(printf '\302\267') dark or light" ] && [ "$t1" = tokyonight-night ] \
     && [ "$a2" = 'tokyonight-night is the dark variant already' ] && [ "$rc" = 1 ] && [ "$a3" = 'spark-shell theme: variant takes dark or light' ] \
     && [ "$rc2" = 1 ] && [ "$a4" = 'spark-shell theme: nord has no light variant' ] && [ "$a5" = 'amber-drizzle, dark, pixel, ambient, portrait authored' ] \
-    && [ "$(art_row)" = '10 families, each read' ] \
+    && [ "$(art_row)" = '11 families, each read' ] \
     && ok "theme variant: a family's other variant is its own theme with its own drawing, said by theme show; one variant or a word not dark or light refused in one line; a theme with no family read from itself (a pixel scene moves and draws its own portrait view)" \
     || bad "theme variant" "$a1 | $v1 | $t1 | $a2 | $a3 | $a4 | $a5 | $(art_row)"
 fam=${cfg%/*}/families; mkdir -p "$fam" "$th_dir/study-night" "$th_dir/study-day"
@@ -9686,7 +9691,7 @@ study() {   # study 'DARK-VARIANT-JSON' -- the family file of the TEST-ONLY stud
 study '{"theme": "study-night", "portrait": "test-tall.png", "motion": "still", "panels": {"2": [{"landscape": "test-wide-1.png"}, {"landscape": "test-wide-2.png", "portrait": "test-tall.png"}], "3": [{"landscape": "test-wide-1.png"}, {"landscape": "test-wide-2.png"}, {"landscape": "test-wide-3.png"}]}}'
 sh "$SH" theme study-night >/dev/null 2>&1
 a1=$(sh "$SH" theme show 2>&1 | sed -n 's/^  art *//p'); c1=$(art_row)
-[ "$a1" = 'study, dark (light: study-day), cinematic, still, portrait authored, panels for 2 and 3 screens' ] && [ "$c1" = '11 families, each read' ] \
+[ "$a1" = 'study, dark (light: study-day), cinematic, still, portrait authored, panels for 2 and 3 screens' ] && [ "$c1" = '12 families, each read' ] \
     && ok "a family of yours (families/): its portrait and its panels for two and three screens read from its own folder, the check counts it" || bad "family of yours" "$a1 | $c1"
 why=''
 for case in \
@@ -10408,11 +10413,14 @@ if command -v ssh-keygen >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; 
         && { [ "$(uname -s)" = Darwin ] || { grep -q '^FONT=Monaspace Xenon:' "$cfg" && grep -qx 'DIALOG_ANIMATION=tide' "$cfg"; }; } \
         && ok "theme install NAME: a theme becomes a saved theme from the gallery's release, its face, family and animation worn, the pointer yours (#247)" || bad "theme install" "$out $(cat "$cfg")"
     if [ "$(uname -s)" != Darwin ]; then
-        out=$(GS theme install tidelines 2>&1) || :
-        [ "$(printf '%s\n' "$out" | sed -n 1p)" = "installed the wallpaper tidelines from the gallery's gallery-v1, signed and its sha256 checked ($HOME/.local/share/spark-shell/gallery/tidelines.png)" ] \
+        printf 'LOGIN=yes\n' >> "$cfg"; rcw=0   # with the login screen on: its step read an account no detection had set, status 2 (v0.170.2)
+        out=$(GS theme install tidelines 2>&1) || rcw=$?
+        sed -i.bak '/^LOGIN=yes$/d' "$cfg"; rm -f "$cfg.bak"
+        [ "$rcw" = 0 ] && ! printf '%s\n' "$out" | grep -q 'parameter not set' \
+            && [ "$(printf '%s\n' "$out" | sed -n 1p)" = "installed the wallpaper tidelines from the gallery's gallery-v1, signed and its sha256 checked ($HOME/.local/share/spark-shell/gallery/tidelines.png)" ] \
             && grep -qx "WALLPAPER=$HOME/.local/share/spark-shell/gallery/tidelines.png" "$cfg" && cmp -s "$G/wallpapers/tidelines.png" "$HOME/.local/share/spark-shell/gallery/tidelines.png" \
             && GS theme gallery 2>&1 | grep -qx '  harbor               xenon, banner, tide, fjord, installed' \
-            && ok "theme install NAME: a wallpaper is put in place and shown; the gallery's list says what is installed (#247)" || bad "theme install wallpaper" "$out $(grep WALLPAPER "$cfg")"
+            && ok "theme install NAME: a wallpaper is put in place and shown, the login screen on too; the gallery's list says what is installed (#247)" || bad "theme install wallpaper" "$rcw $out $(grep WALLPAPER "$cfg")"
     fi
     rc=0; out=$(GS theme install nothing 2>&1) || rc=$?
     [ "$rc" = 1 ] && [ "$out" = "spark-shell theme: the gallery's gallery-v1 has no theme or wallpaper named nothing -- spark-shell theme gallery lists them" ] && ok "theme install with a name the gallery has not: refused in one line" || bad "install nothing" "rc=$rc $out"
