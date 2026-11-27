@@ -72,6 +72,64 @@ def live(d):
         d.whole()
         d.reload_is_nothing()
         d.whole()
+    moves(d)
+
+
+def moves(d):
+    """The move keys on two screens: a window moved one way again and again stays in sight, one sent to the other
+    screen is whole on it, its title too, and has the keyboard, so the next key is its own."""
+    screens = sorted((o["rect"] for o in d.msg("-t", "get_outputs")), key=lambda r: r["x"])
+    if len(screens) < 2:
+        raise NotRun("the move keys are judged on two screens")
+
+    def one():
+        return next((w for w in d.windows() if w.get("app_id") == "desk-move"), None)
+
+    def box():
+        r, band = one()["rect"], one().get("deco_rect", {}).get("height", 0)
+        return r["x"], r["y"] - band, r["x"] + r["width"], r["y"] + r["height"]
+
+    def on(screen):
+        x, y, right, bottom = box()
+        return screen["x"] <= x and screen["y"] <= y and right <= screen["x"] + screen["width"] and bottom <= screen["y"] + screen["height"]
+
+    def move(way, what):
+        d.shell("desktop", "window", "move", way)
+        time.sleep(0.4)
+        if not one():
+            raise Broken("%s is gone" % what)
+
+    d.sway("focus output %s" % next(o["name"] for o in d.msg("-t", "get_outputs") if o["rect"] == screens[0]))
+    d.sway("workspace 7")
+    d.sway("exec foot --app-id desk-move")
+    d.until(one, "a window")
+    time.sleep(0.8)
+    d.shell("desktop", "window", "float")   # free, on the screen at the left: no screen is left of it
+    d.until(lambda: one()["type"] == "floating_con" and on(screens[0]), "a free window on the left screen")
+    for _ in range(12):
+        move("left", "a free window moved left")
+    if not on(screens[0]):
+        raise Broken("a free window moved left again and again left its screen: its box is %s" % (box(),))
+    move("right", "a free window sent to the next screen")
+    d.until(lambda: box()[0] >= screens[1]["x"], "the free window on the right screen", 10, Broken)
+    time.sleep(0.6)
+    if not on(screens[1]):
+        raise Broken("a free window sent to a smaller screen is not whole on it: its box is %s" % (box(),))
+    if not one().get("focused"):
+        raise Broken("a free window sent to the next screen left the keyboard behind")
+    d.shell("desktop", "window", "left")    # at a place now: the left half of the right screen
+    time.sleep(0.4)
+    move("left", "a placed window sent to the next screen")
+    d.until(lambda: box()[2] <= screens[0]["x"] + screens[0]["width"], "the placed window on the left screen", 10, Broken)
+    time.sleep(0.6)
+    if not one().get("focused"):
+        raise Broken("a placed window sent to the next screen left the keyboard behind")
+    was = box()
+    d.shell("desktop", "window", "down")    # the next key is its own: it is the window that takes it
+    time.sleep(0.6)
+    if box() == was or not on(screens[0]):
+        raise Broken("the key after a move to the next screen did not reach the window moved")
+    d.sway('[app_id="desk-move"] kill')
 
 
 def matrix(d):
@@ -307,7 +365,7 @@ def notifications(d):
 
 SCREENS = {"home": ((1280, 720, "normal"),), "loops": ((1080, 1920, "90"), (1280, 720, "normal")), "notifications": ((1280, 720, "normal"),)}
 KEYS = {"matrix": {"BAR_TRAY": "yes"}}
-JOURNEYS = {f.__name__: f for f in (home, live, matrix, tabs, loops, notifications)}
+JOURNEYS = {f.__name__: f for f in (home, live, moves, matrix, tabs, loops, notifications)}
 
 
 MARK = ".spark-shell-journey"

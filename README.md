@@ -85,7 +85,7 @@ help lists them by subject. The bindings are named actions in
     Super+Ctrl+Up past the top fills the screen, and past the bottom minimizes.
     Super+m minimizes the window; Super+minus puts the keyboard on the pad.
     Super+Shift+space floats the window, or tiles it again.
-    Super+Shift+arrow moves the window: in the tiling, or to the next screen.
+    Super+Shift+arrow moves the window a place over, then to the next screen.
     Super+Shift+h/j/k/l move the window in the tiling too.
     The buttons at a title's left end close, minimize, and fill the screen.
     The mic on a title's band listens until clicked again.

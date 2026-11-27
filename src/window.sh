@@ -162,15 +162,76 @@ layout_window_new() {   # layout_window_new -- after layout_window read the tree
     echo "the new window $_ns"
 }
 layout_mark_from() { printf '%s\n' "$1" | tr ',' '\n' | sed -n 's/^_spark-shell\.from\.\(.*\)\.[0-9]*$/\1/p' | head -1; }   # layout_mark_from MARKS -> where a window that fills the screen came from: tiled, a place or X.Y.W.H
-layout_output_toward() {   # layout_output_toward DIR X Y W H -> the name of a screen that way from that area, or nothing
+layout_output_toward() {   # layout_output_toward DIR X Y W H -> the name of the nearest screen that way from that area, or nothing
     wm_outputs 2>/dev/null | jq -r --arg d "$1" --argjson x "$2" --argjson y "$3" --argjson w "$4" --argjson h "$5" '[.[] | select(.active) | select(
-        if $d == "left" then .rect.x + .rect.width <= $x elif $d == "right" then .rect.x >= $x + $w elif $d == "up" then .rect.y + .rect.height <= $y else .rect.y >= $y + $h end)][0].name // empty' 2>/dev/null
+        if $d == "left" then .rect.x + .rect.width <= $x elif $d == "right" then .rect.x >= $x + $w elif $d == "up" then .rect.y + .rect.height <= $y else .rect.y >= $y + $h end)]
+        | (if $d == "left" then max_by(.rect.x + .rect.width) elif $d == "right" then min_by(.rect.x) elif $d == "up" then max_by(.rect.y + .rect.height) else min_by(.rect.y) end) | .name // empty' 2>/dev/null
 }
-layout_window_move() {   # layout_window_move DIR -> the command and its words, after layout_window read the window: in the tiling sway moves it; a floating window goes to the screen that way, else a tenth of the area
-    if [ "$_dtype" != floating_con ]; then _dc="move $1"; _ds="moved $1"; return; fi
-    if [ -n "$(layout_output_toward "$1" "$_dax" "$_day" "$_daw" "$_dah")" ]; then _dc="${_dfs}move container to output $1"; _ds="on the next screen"; _drefit=1; return; fi
-    case $1 in left|right) _dst=$((_daw / 10)) ;; *) _dst=$((_dah / 10)) ;; esac
-    _dc="${_dfs}${_dun}move $1 $_dst px"; _ds="moved $1"
+layout_output_area() {   # layout_output_area NAME -> "X Y W H", the area of the workspace in sight on that screen, after layout_window read the tree
+    jq -r --arg n "$1" '[.nodes[]? | select(.type == "output" and .name == $n) | .current_workspace as $cw | .nodes[]? | select(.type == "workspace" and .name == $cw) | .rect][0] // empty
+        | "\(.x) \(.y) \(.width) \(.height)"' "$TMP/tree" 2>/dev/null
+}
+layout_window_beside() {   # layout_window_beside DIR PLACE -> the place beside PLACE that way on the same area: the other column, the other row; nothing past the last one
+    case "$1 $2" in
+        'left R'?) echo "L${2#?}" ;; 'right L'?) echo "R${2#?}" ;;
+        'up '?B) echo "${2%?}T" ;; 'down '?T) echo "${2%?}B" ;;
+    esac
+}
+layout_window_facing() {   # layout_window_facing DIR PLACE -> the place a window at PLACE takes on the screen that way: the side it comes in by, the rest of its place kept
+    case "$1 $2" in
+        'left L'?) echo "R${2#?}" ;; 'right R'?) echo "L${2#?}" ;;
+        'up '?T) echo "${2%?}B" ;; 'down '?B) echo "${2%?}T" ;;
+        *) echo "$2" ;;
+    esac
+}
+# The move keys: a window at a place goes to the place beside it, then to the screen that way, where it
+# comes in by the near side; a free window goes to that screen, in its middle and no larger than it, else
+# a tenth of the area, and stops at the area's edge. The keyboard goes to the other screen with the
+# window. One command a press: a key held runs this over itself, and each run acts whole on what it read
+layout_window_move() {   # layout_window_move DIR -> the command and its words, after layout_window read the window; no command for a window that stays
+    if [ "$_dtype" != floating_con ]; then _dc="move $1"; _ds="moved $1"; return; fi   # in the tiling the compositor moves it, across screens too
+    _dtm=''; [ "$_dp" = free ] || _dtm=$_du   # a place a move key gives ends the tiling's mark, as a place key's second place does
+    _dto=''; [ "$_dp" = free ] || _dto=$(layout_window_beside "$1" "$_dp")
+    if [ -n "$_dto" ]; then
+        # shellcheck disable=SC2046   # four numbers, split on purpose
+        set -- $(layout_window_at "$_dto" "$_dax" "$_day" "$_daw" "$_dah")
+        _dc="${_dtm}${_dun}resize set width $3 px height $4 px, move absolute position $1 $2$(layout_place_marks "$_dto" "$_did" "$_dax" "$_day" "$_daw" "$_dah")"; _ds=$(layout_window_said "$_dto"); return
+    fi
+    _dso=$(layout_output_toward "$1" "$_dax" "$_day" "$_daw" "$_dah")
+    _dsa=''; [ -z "$_dso" ] || _dsa=$(layout_output_area "$_dso")
+    if [ -n "$_dsa" ]; then
+        _dgo=''   # the place and the area it leaves, and a rect it came from: they are the other screen's; a place it came from is kept
+        _difs=$IFS; IFS=,
+        for _dm in $_dmk; do case $_dm in -|_spark-shell.from.[A-Za-z]*) ;; *) _dgo="${_dgo}unmark $_dm, " ;; esac; done
+        IFS=$_difs
+        case $_dso in *[!A-Za-z0-9_-]*) _dso=$1 ;; esac   # a name a command cannot carry bare: the way, which the compositor reads itself
+        _dc="${_dfs}${_dtm}${_dgo}move container to output $_dso, focus"; _ds="on the next screen"
+        [ -z "$_dfs" ] || return 0   # over the whole screen: its own size is not read, the compositor sets it down
+        if [ "$_dp" != free ]; then
+            _dto=$(layout_window_facing "$1" "$_dp")
+            # shellcheck disable=SC2046,SC2086   # four numbers twice, split on purpose
+            set -- $_dsa $(layout_window_at "$_dto" $_dsa)
+            _dc="$_dc, resize set width $7 px height $8 px, move absolute position $5 $6$(layout_place_marks "$_dto" "$_did" "$1" "$2" "$3" "$4")"; return
+        fi
+        # shellcheck disable=SC2086   # the area's four numbers and the box's, split on purpose
+        set -- $_dsa $_dr
+        _dnw=$7; [ "$_dnw" -le "$3" ] || _dnw=$3
+        _dnh=$8; [ "$_dnh" -le "$4" ] || _dnh=$4
+        [ "$_dnw $_dnh" = "$7 $8" ] || _dc="$_dc, resize set width $_dnw px height $_dnh px"
+        _dc="$_dc, move absolute position $(($1 + ($3 - _dnw) / 2)) $(($2 + ($4 - _dnh) / 2))"; return
+    fi
+    _dc=''; _ds="at the edge of the screen"
+    [ "$_dp" = free ] && [ -z "$_dfs" ] || return 0   # at a place, or over the whole screen: nothing is that way
+    # shellcheck disable=SC2086   # the box's four numbers, split on purpose
+    set -- "$1" $_dr
+    # a tenth along the way alone, to the area's edge at most; a box at that edge or past it stays
+    case $1 in
+        left) _dnx=$(($2 - _daw / 10)); [ "$_dnx" -ge "$_dax" ] || _dnx=$_dax; [ "$_dnx" -lt "$2" ] || return 0; _dny=$3 ;;
+        right) _dnx=$(($2 + _daw / 10)); [ $((_dnx + $4)) -le $((_dax + _daw)) ] || _dnx=$((_dax + _daw - $4)); [ "$_dnx" -gt "$2" ] || return 0; _dny=$3 ;;
+        up) _dny=$(($3 - _dah / 10)); [ "$_dny" -ge "$_day" ] || _dny=$_day; [ "$_dny" -lt "$3" ] || return 0; _dnx=$2 ;;
+        *) _dny=$(($3 + _dah / 10)); [ $((_dny + $5)) -le $((_day + _dah)) ] || _dny=$((_day + _dah - $5)); [ "$_dny" -gt "$3" ] || return 0; _dnx=$2 ;;
+    esac
+    _dc="move absolute position $_dnx $_dny"; _ds="moved $1"
 }
 layout_window_from() {   # layout_window_from WHERE -> the command and its words: back from the whole screen to WHERE, after layout_window read the window
     _dc="${_dfs}${_du}${_dun}"
@@ -182,7 +243,8 @@ layout_window_from() {   # layout_window_from WHERE -> the command and its words
             _dc="${_dc}floating enable, border ${BORDER:-normal 1}, resize set width $4 px height $5 px, move absolute position $2 $3$(layout_place_marks "$1" "$_did" "$_dax" "$_day" "$_daw" "$_dah")"; _ds=$(layout_window_said "$1") ;;
         *)  # shellcheck disable=SC2046   # four numbers, split on purpose
             set -- $(printf '%s\n' "$1" | tr '.' ' ')
-            _dc="${_dc}floating enable, border ${BORDER:-normal 1}, resize set width $3 px height $4 px, move absolute position $1 $2"; _ds="back where it was" ;;
+            if [ "$#" = 4 ]; then _dc="${_dc}floating enable, border ${BORDER:-normal 1}, resize set width $3 px height $4 px, move absolute position $1 $2"; _ds="back where it was"
+            else _dc="${_dc}floating enable, border ${BORDER:-normal 1}, resize set width $((_daw * 2 / 3)) px height $((_dah * 2 / 3)) px, move position center"; _ds="floating"; fi ;;   # no rect to go back to: the float key's size
     esac
 }
 layout_window_group() {   # layout_window_group ID -> the other windows of the floating container window ID stands in, an ID a line; nothing for a window by itself; after layout_window read the tree
@@ -220,10 +282,10 @@ layout_window() {   # layout_window float|left|right|up|down|max|min|toggle|rest
     # shellcheck disable=SC2086   # four numbers, split on purpose
     [ "$3" != floating_con ] || [ "$4" != 0 ] || _dp=$(layout_window_place $_dr "$5" "$6" "$7" "$8")
     _du=''; [ "$_dt" = 0 ] || _du="unmark _spark-shell.tiled.$2, "   # the float key, or the pad, ends what the tiling mark says
-    _dpad=''; _drefit=''; _dpre=''
+    _dpad=''; _dpre=''
     _dk=$1
     if [ "$_dk" = toggle ]; then   # the whole screen, or back where it came from
-        _dk=max; _dfrom=$(layout_mark_from "$_dmk"); [ "$_dp" != FF ] || [ -z "$_dfrom" ] || _dk=from
+        _dk=max; _dfrom=$(layout_mark_from "$_dmk"); [ "$_dp" != FF ] || { _dk=from; [ -n "$_dfrom" ] || _dfrom=free; }   # one that fills it and wears no way back floats
     fi
     case $_dk in
         from) layout_window_from "$_dfrom" ;;
@@ -249,15 +311,20 @@ layout_window() {   # layout_window float|left|right|up|down|max|min|toggle|rest
             else
                 _dtm=$_du; [ "$3" = floating_con ] || _dtm="mark --add _spark-shell.tiled.$2, "   # from the tiling: it comes back tiled; a second place a key gives it replaces the mark
                 _dfm=''   # the whole screen keeps where it came from, for the double-click back
-                if [ "$_dn" = FF ]; then _dfm=$_dp; [ "$_dfm" != free ] || { _dfm=$(printf '%s' "$_dr" | tr ' ' '.'); [ "$3" = floating_con ] || _dfm=tiled; }; _dfm=", mark --add _spark-shell.from.$_dfm.$2"; fi
+                if [ "$_dn" = FF ]; then
+                    _dfm=$_dp; [ "$_dfm" != free ] || { _dfm=$(printf '%s' "$_dr" | tr ' ' '.'); [ "$3" = floating_con ] || _dfm=tiled; }
+                    [ "$_dfm" != FF ] || { _dfm=$(layout_mark_from "$_dmk"); [ "$_dfm" != FF ] || _dfm=''; }   # maximized already: where it came from stays what it was
+                    [ -z "$_dfm" ] || _dfm=", mark --add _spark-shell.from.$_dfm.$2"
+                fi
                 # shellcheck disable=SC2046   # four numbers, split on purpose
                 set -- "$@" $(layout_window_at "$_dn" "$5" "$6" "$7" "$8")
                 _dc="${_dfs}${_dtm}${_dun}floating enable, border ${BORDER:-normal 1}, resize set width ${11} px height ${12} px, move absolute position $9 ${10}$(layout_place_marks "$_dn" "$2" "$5" "$6" "$7" "$8")$_dfm"; _ds=$(layout_window_said "$_dn")
             fi ;;
     esac
-    wm_send "${_dpre}[con_id=$2] $_dc" >/dev/null 2>&1 || refuse "$WM_NAME refused: $_dc"
-    winpad_look
-    [ -z "$_drefit" ] || { wm_tree > "$TMP/tree" && layout_window_refit >/dev/null 2>&1 || :; }   # at its place on the new screen
+    if [ -n "$_dc" ]; then   # no command: a move key on a window at the edge
+        wm_send "${_dpre}[con_id=$2] $_dc" >/dev/null 2>&1 || refuse "$WM_NAME refused: $_dc"
+        winpad_look
+    fi
     [ -z "$_dpad" ] || { winpad_wake; bar_redraw; }   # the pad shows it, and the bar's count
     echo "the window is $_ds"
 }

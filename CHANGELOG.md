@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.171
+
+- Super+Shift+arrow takes the keyboard to the next screen with the
+  window. The keyboard stayed behind: the next key moved another
+  window, or none.
+- A window at a half or a quarter moves to the place beside it, then
+  to the next screen, where it takes the near side. It slid a tenth of
+  the screen and lost its place, and a maximized window hung off the
+  edge.
+- A free window stops at the edge of the screen. Nothing stopped it:
+  the key held for a second sent it out of sight.
+- A free window sent to a smaller screen is made to fit it. Its title
+  landed above the top of the screen.
+- The fill button brings back a window maximized twice. It did
+  nothing.
+
 ## v0.170.3
 
 - A theme change shows the old loop, the new theme's stills, then its

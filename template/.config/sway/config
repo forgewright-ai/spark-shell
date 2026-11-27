@@ -224,7 +224,7 @@ bindsym $mod+minus exec @REPO@/spark-shell desktop pad keys
 # place is free. Anywhere else it tiles. spark-shell reads the windows once and decides; the
 # dialog, the idle screen and a window sway floats itself open as before.
 for_window [tiling] mark --add _spark-shell.new, exec @REPO@/spark-shell desktop window new
-# key: Super+Shift+arrow moves the window: in the tiling, or to the next screen.
+# key: Super+Shift+arrow moves the window a place over, then to the next screen.
 # key: Super+Shift+h/j/k/l move the window in the tiling too.
 # action: default.move-left
 bindsym $mod+Shift+h move left
