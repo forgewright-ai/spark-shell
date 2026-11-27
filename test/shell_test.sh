@@ -4290,7 +4290,7 @@ line=$(_pdl); _pf2=$(_pdf)
 sed -i.bak 's/^WINPAD_PLACE=bottom center$/WINPAD_PLACE=bar/' "$HOME/.config/spark-shell/config"; _pf3=$(_pdf); mv "$HOME/.config/spark-shell/config.bak" "$HOME/.config/spark-shell/config"
 [ "$(printf '%s' "$line" | jq -r '.[0].full_text')" = "<span foreground='#ff5555'>$padsign</span> 2" ] && ok "bar: the pad's sign in the accent while the pad is hidden (v0.133)" || bad "bar pad hidden" "$line"
 [ "$_pf3" = "$_pf2" ] && ok "spark's bar, a pad on the bar that is hidden (v0.149): the line has its module again, off, to bring it back" || bad "facts pad hidden on the bar" "$_pf3 | $_pf2"
-[ "$_pf1" = "pad|windows|$padsign|2|2|false|ok|-|false|false|pad, 2 windows|true" ] && [ "$_pf2" = "pad|windows|$padsign|2|2|false|off|-|false|false|pad hidden, 2 windows|true" ] \
+[ "$_pf1" = "pad|now|$padsign|2|2|false|ok|-|false|false|pad, 2 windows|true" ] && [ "$_pf2" = "pad|now|$padsign|2|2|false|off|-|false|false|pad hidden, 2 windows|true" ] \
     && ok "spark's bar, the pad (v0.148): the first module while windows wait on it, its sign and how many in two cells; ok while the pad is in sight, off while it is hidden; a click toggles it in place" || bad "facts pad" "$_pf1 | $_pf2"
 padr toggle; pad_sig usr2 2
 [ "$rc" = 0 ] && [ "$out" = 'the pad is back in sight' ] && pad_hidden_is 0 && ok "desktop pad toggle: a hidden pad comes back in sight (v0.133)" || bad "pad toggle show" "rc=$rc $out"
@@ -4667,13 +4667,13 @@ _ff() { jq -r --arg n "$1" '.[1:][] | select(.name == $n) | [.name, .group, .sig
 line=$(SPARK_BAR=1 SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null)
 cp "$HOME/.config/spark-shell/config" "$H/config.keep"; printf 'BAR_PINS=out light\n' >> "$HOME/.config/spark-shell/config"
 _fl=$(SPARK_BAR=1 SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null | _ff light); mv "$H/config.keep" "$HOME/.config/spark-shell/config"
-[ "$(printf '%s' "$line" | _ff light)" = "light|seat|$(printf '\342\230\274')||0|false|ok|47|true|false|brightness 47%|false" ] && [ "$(printf '%s' "$line" | _ff kb)" = "kb|seat|$(printf '\342\214\250')|us+intl|7|false|ok|-|false|false|keyboard us+intl|true" ] \
-    && [ "$_fl" = "light|seat|$(printf '\342\230\274')||0|false|ok|47|true|true|brightness 47%|false" ] \
+[ "$(printf '%s' "$line" | _ff light)" = "light|screen|$(printf '\342\230\274')||0|false|ok|47|true|false|brightness 47%|false" ] && [ "$(printf '%s' "$line" | _ff kb)" = "kb|screen|$(printf '\342\214\250')|us+intl|7|false|ok|-|false|false|keyboard us+intl|true" ] \
+    && [ "$_fl" = "light|screen|$(printf '\342\230\274')||0|false|ok|47|true|true|brightness 47%|false" ] \
     && ok "spark's bar, the seat (v0.148): light is its sun and a level of 47 the bar can set, pinned once BAR_PINS names it; kb its sign and the layout in use as its text, in the widest layout's cells, a click its toggle" || bad "facts light kb" "$line | $_fl"
 # the signs only a Monaspace face draws (v0.148.1): the suite's FONT is DejaVu Sans Mono, so the lines above carry the ones it has; a Monaspace face in the home gets its own
 _nd=${XDG_DATA_HOME:-$HOME/.local/share}/fonts/monaspace-neon; _nk=1; [ -d "$_nd" ] || { _nk=''; mkdir -p "$_nd"; for _s in Regular Bold Italic BoldItalic; do : > "$_nd/MonaspaceNeon-$_s.otf"; done; }
 _fk=$(FONT='Monaspace Neon:size=12' SPARK_BAR=1 SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null | _ff kb); [ -n "$_nk" ] || rm -rf "$_nd"
-[ "$_fk" = "kb|seat|$(printf '\342\214\227')|us+intl|7|false|ok|-|false|false|keyboard us+intl|true" ] \
+[ "$_fk" = "kb|screen|$(printf '\342\214\227')|us+intl|7|false|ok|-|false|false|keyboard us+intl|true" ] \
     && ok "spark's bar, the signs by its face (v0.148.1): the keyboard, the reminder and do not disturb are Monaspace's own where the face is one, and the ones DejaVu Sans Mono has where it is not" || bad "facts signs by face" "$_fk"
 # the workspaces' names (#248): a workspace named by its number, or a layout's "3 writing", takes its label in the glyph
 # family, stone's number in angle brackets by default; one the user named is left, and so is one past the end of nothing
@@ -4788,7 +4788,7 @@ line=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/nul
 [ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "due") | .full_text')" = "<span foreground='#ff5555'>$(printf '\342\227\267')</span> a long title from another ca" ] && [ "$(grep -c . "$HOME/chime.log" 2>/dev/null)" = 1 ] \
     && ok "bar: the latest reminder due (another tool's, in UTC, its folded title joined), cut at 28 characters, and one chime for the two due, not at every line" || bad "due block" "$(printf '%s' "$line" | jq -c '.[] | select(.name == "due")') chimes=$(cat "$HOME/chime.log" 2>&1)"
 line=$(REM_LOOK=1 SPARK_BAR=1 SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null)
-[ "$(printf '%s' "$line" | _ff due)" = "due|tasks|$(printf '\342\227\267')||0|false|asks|-|false|false|reminder due: a long title from another ca|false" ] && ! printf '%s' "$line" | jq -r '.[1:][] | .sign + .text' | grep -q 'a long title' \
+[ "$(printf '%s' "$line" | _ff due)" = "due|now|$(printf '\342\227\267')||0|false|asks|-|false|false|reminder due: a long title from another ca|false" ] && ! printf '%s' "$line" | jq -r '.[1:][] | .sign + .text' | grep -q 'a long title' \
     && ok "spark's bar, a reminder due (v0.148): its sign alone, in state asks; the title is in the label, never on the bar" || bad "facts due" "$line"
 rows=$(NL reminders --list)
 printf '%s\n' "$rows" | grep -q "a long title from another calendar, folded across two lines; done	reminders show" && ! printf '%s\n' "$rows" | grep -q 'an old meeting\|a weekly one' \
@@ -5250,25 +5250,26 @@ else
     [ -n "$l1" ] && [ -n "$l4" ] && [ -z "$(over "$l1")$(over "$l4")" ] && [ "$(printf '%s' "$l1" | jq -r '[.[] | select(.name == "wifi" or .name == "bat" or .name == "logo" or .name == "lan") | .cells] | join(" ")')" = '3 1 5 9 1' ] \
         && [ "$(printf '%s' "$l1" | jq -r '[.[] | select(.name == "wifi" or .name == "bat" or .name == "lan" or .name == "bt") | .label] | unique | join("; ")')" = 'battery 80%; bluetooth MAJOR V connected; lan connected; wifi 70%' ] \
         && ok "sway's bar: every block keeps its cells and has a label, a control and a state, and none a level; no text is wider than its cells, in signs and in words (v0.147)" || bad "bar cells" "$(over "$l1") | $(over "$l4") | $l1"
-    # the facts' shape, the contract with spark-bar; fbad names what is not it. A module is the thirteen fields in their
+    # the facts' shape, the contract with spark-bar; fbad names what is not it. A module is the fourteen fields in their
     # order, the level left out where it has none; each field of its type; the icon none or a drawing the bar has
-    # (component/bar/src/icons.rs); the group the module's own; the text within
-    # its cells; the time alone bold; a level 0 to 100, on a level's module alone; set and pinned true on those alone;
-    # toggle true on out, kb, pad and media alone, where a click changes the module in place; the modules in the bar's order.
+    # (component/bar/src/icons.rs); the group the module's own, as the table has it (src/arrange.sh); the text within
+    # its cells, but what plays, whose title is whole in a window of 24 (v0.171); the time alone bold; a level 0 to 100, on a level's module alone; set and pinned true on those alone, and
+    # gauge on a pinned one alone; toggle true on out, kb, pad and media alone, where a click changes the module in place;
+    # the modules in the shipped order, a group's together (v0.171).
     # fplain: no markup, no block of sway's bar and no color past the look
     fic=" $(sed -n 's/^    "\([a-z-]*\)",$/\1/p' "$REPO/component/bar/src/icons.rs" | tr '\n' ' ')"   # the drawings' names, a blank around each
     fbad() { printf '%s' "$1" | jq -r --arg icons "$fic" '
-        ["pad", "lan", "bt", "wifi", "media", "out", "mic", "due", "light", "kb", "bat", "clock", "notifications"] as $order
-        | {pad: "windows", lan: "connections", bt: "connections", wifi: "connections", media: "sound", out: "sound", mic: "sound", due: "tasks", light: "seat", kb: "seat", bat: "seat", clock: "time", notifications: "time"} as $group
+        ["pad", "due", "media", "lan", "bt", "wifi", "out", "mic", "light", "kb", "bat", "clock", "notifications"] as $order
+        | {pad: "now", due: "now", media: "now", lan: "network", bt: "network", wifi: "network", out: "sound", mic: "sound", light: "screen", kb: "screen", bat: "power", clock: "time", notifications: "time"} as $group
         | (if .[0].name == "look" then [] else ["look"] end)
         + ([.[1:][] | .name as $n | $order | index($n)] | if . == (sort | unique) then [] else ["order"] end)
         + [.[1:][] | select((
-            ((keys_unsorted == ["name", "group", "sign", "icon", "text", "cells", "bold", "state", "level", "set", "pinned", "label", "toggle"]) or (keys_unsorted == ["name", "group", "sign", "icon", "text", "cells", "bold", "state", "set", "pinned", "label", "toggle"]))
-            and ([.name, .group, .sign, .icon, .text, .state, .label] | all(type == "string")) and (.icon as $i | $i == "" or ($icons | contains(" " + $i + " "))) and ([.bold, .set, .pinned, .toggle] | all(type == "boolean")) and (.cells | type == "number" and . >= 0 and . == floor)
+            ((keys_unsorted == ["name", "group", "sign", "icon", "text", "cells", "bold", "state", "level", "set", "pinned", "gauge", "label", "toggle"]) or (keys_unsorted == ["name", "group", "sign", "icon", "text", "cells", "bold", "state", "set", "pinned", "gauge", "label", "toggle"]))
+            and ([.name, .group, .sign, .icon, .text, .state, .label] | all(type == "string")) and (.icon as $i | $i == "" or ($icons | contains(" " + $i + " "))) and ([.bold, .set, .pinned, .gauge, .toggle] | all(type == "boolean")) and (.cells | type == "number" and . >= 0 and . == floor)
             and .toggle == (.name | IN("out", "kb", "pad", "media"))
-            and $group[.name] == .group and (.state | IN("ok", "muted", "off", "missing", "wrong", "asks", "records")) and (.label | length) > 0 and (.text | length) <= .cells and .bold == (.name == "clock")
+            and $group[.name] == .group and (.state | IN("ok", "muted", "off", "missing", "wrong", "asks", "records")) and (.label | length) > 0 and ((.text | length) <= .cells or (.name == "media" and .cells == 24 and (.text | length) <= 100)) and .bold == (.name == "clock")
             and ((has("level") | not) or ((.level | type == "number" and . >= 0 and . <= 100 and . == floor) and (.name | IN("out", "mic", "light", "wifi"))))
-            and ((.set | not) or (has("level") and (.name | IN("out", "mic", "light")))) and ((.pinned | not) or (.name | IN("out", "mic", "light", "wifi")))
+            and ((.set | not) or (has("level") and (.name | IN("out", "mic", "light")))) and ((.pinned | not) or (.name | IN("out", "mic", "light", "wifi"))) and ((.gauge | not) or .pinned)
         ) | not) | .name] | join(" ")' 2>/dev/null || echo unread; }
     fplain() { ! printf '%s' "$1" | jq -c '.[1:]' | grep -q "<span\|foreground\|full_text\|markup\|separator\|instance\|&amp;\|aaaaaa\|ff5555\|555555\|000000\|1e1e1e\|aa5500\|aa0000\|$pm"; }
     frow() { printf '%s' "$line" | jq -r --arg n "$1" '.[1:][] | select(.name == $n) | [.name, .group, .sign, .text, .cells, .bold, .state, (.level // "-"), .set, .pinned, .label] | map(tostring) | join("|")' || echo unread; }   # frow NAME -> that module's fact: its fields in the contract's order, a bar between, - for no level; a line jq cannot read is no pass
@@ -5277,7 +5278,7 @@ else
     g_lan=$(printf '\342\207\205'); g_bt=$(printf '\342\234\246'); g_bt_off=$(printf '\342\234\247'); g_wifi=$(printf '\342\227\240'); g_out=$(printf '\342\227\200'); g_out_off=$(printf '\342\227\201')
     g_mic=$(printf '\342\227\211'); g_mic_off=$(printf '\342\227\213'); g_rec=$(printf '\342\227\217')
     [ -z "$(fbad "$l2")$(fbad "$l3")" ] && fplain "$l2" && fplain "$l3" && [ "$(fnames "$l2")" = 'look lan bt wifi out mic bat clock' ] && [ "$(fnames "$l3")" = "$(fnames "$l2")" ] \
-        && [ "$(fbad '[{"name":"look"},{"name":"clock","group":"time","sign":"","icon":"","text":"12:00","cells":4,"bold":false,"state":"fine","set":true,"pinned":true,"label":"","toggle":false},{"name":"lan","group":"sound","sign":"","icon":"lan","text":"","cells":0,"bold":false,"state":"ok","set":false,"pinned":false,"label":"lan","toggle":false},{"name":"mic","group":"sound","sign":"","icon":"mic","text":"","cells":0,"bold":false,"state":"ok","level":50,"set":true,"pinned":false,"label":"mic","toggle":true},{"name":"bat","group":"seat","sign":"","icon":"no such drawing","text":"","cells":0,"bold":false,"state":"ok","set":false,"pinned":false,"label":"bat","toggle":false}]')" = 'order clock lan mic bat' ] && [ -n "${fic# }" ] \
+        && [ "$(fbad '[{"name":"look"},{"name":"clock","group":"time","sign":"","icon":"","text":"12:00","cells":4,"bold":false,"state":"fine","set":true,"pinned":true,"gauge":false,"label":"","toggle":false},{"name":"lan","group":"sound","sign":"","icon":"lan","text":"","cells":0,"bold":false,"state":"ok","set":false,"pinned":false,"gauge":false,"label":"lan","toggle":false},{"name":"mic","group":"sound","sign":"","icon":"mic","text":"","cells":0,"bold":false,"state":"ok","level":50,"set":true,"pinned":false,"gauge":false,"label":"mic","toggle":true},{"name":"bat","group":"power","sign":"","icon":"no such drawing","text":"","cells":0,"bold":false,"state":"ok","set":false,"pinned":false,"gauge":false,"label":"bat","toggle":false}]')" = 'order clock lan mic bat' ] && [ -n "${fic# }" ] \
         && [ "$(printf '%s' "$l2" | jq -r '[.[1:][] | select(.toggle) | .name] | join(" ")')" = out ] \
         && ok "spark's bar reads facts (v0.148): the look, then lan, bt, wifi, out, mic, bat and the clock, each the contract's fields in their order and of their types, its icon none or one the bar draws (v0.149), its text within its cells, toggle true on out alone of these; no markup, no block of sway's bar and no color past the look, in signs and in words" || bad "facts shape" "$(fbad "$l2") | $(fbad "$l3") | $l2 | $l3"
     # the look travels in the line: on spark's bar its first object, the twelve values and no other field, each a string;
@@ -5299,8 +5300,8 @@ else
     # the modules at rest: a sign each, the word of none, and an icon each (v0.149); wifi's signal a level the bar
     # cannot set; the battery its number as text and no sign, its icon full from 75
     line=$l2
-    [ "$(frow lan)" = "lan|connections|$g_lan||0|false|ok|-|false|false|lan connected" ] && [ "$(frow bt)" = "bt|connections|$g_bt||0|false|ok|-|false|false|bluetooth MAJOR V connected" ] \
-        && [ "$(frow wifi)" = "wifi|connections|$g_wifi||0|false|ok|70|false|false|wifi 70%" ] && [ "$(frow bat)" = "bat|seat||80%|4|false|ok|-|false|false|battery 80%" ] \
+    [ "$(frow lan)" = "lan|network|$g_lan||0|false|ok|-|false|false|lan connected" ] && [ "$(frow bt)" = "bt|network|$g_bt||0|false|ok|-|false|false|bluetooth MAJOR V connected" ] \
+        && [ "$(frow wifi)" = "wifi|network|$g_wifi||0|false|ok|70|false|false|wifi 70%" ] && [ "$(frow bat)" = "bat|power||80%|4|false|ok|-|false|false|battery 80%" ] \
         && [ "$(fics)" = 'lan=lan bt=bt wifi=wifi out=out mic=mic bat=battery-full clock=' ] \
         && ok "facts at rest: lan and bt their signs, ok; wifi its sign and its signal, a level of 70 the bar reads and cannot set, not pinned; the battery no sign, 80% as its text in four cells; each its icon, the clock none (v0.149)" || bad "facts at rest" "$line | $(fics)"
     # sound: out is pinned by default, so its control, the gauge and the number, is on the bar; the level is a field of
@@ -5314,9 +5315,9 @@ else
         && ok "facts, the clock: the time alone in five cells, bold, the one bold module, no sign and no date; sway's bar keeps the date in its block" || bad "facts clock" "$(frow clock) | $line"
     # the words set: the sign is the word, the same in every state; the state says the rest. Muted, recording, the wire down
     line=$l3
-    [ "$(frow lan)" = 'lan|connections|lan||0|false|wrong|-|false|false|lan not connected' ] && [ "$(frow bt)" = 'bt|connections|bt||0|false|ok|-|false|false|bluetooth MAJOR V connected' ] \
-        && [ "$(frow wifi)" = 'wifi|connections|wifi||0|false|ok|70|false|false|wifi 70%' ] && [ "$(frow out)" = 'out|sound|out||0|false|off|40|true|true|output muted' ] \
-        && [ "$(frow mic)" = 'mic|sound|mic||0|false|records|50|true|false|microphone 50%, recording' ] && [ "$(frow bat)" = 'bat|seat|bat|80%|5|false|ok|-|false|false|battery 80%' ] && [ "$(fics)" = 'lan= bt= wifi= out= mic= bat= clock=' ] \
+    [ "$(frow lan)" = 'lan|network|lan||0|false|wrong|-|false|false|lan not connected' ] && [ "$(frow bt)" = 'bt|network|bt||0|false|ok|-|false|false|bluetooth MAJOR V connected' ] \
+        && [ "$(frow wifi)" = 'wifi|network|wifi||0|false|ok|70|false|false|wifi 70%' ] && [ "$(frow out)" = 'out|sound|out||0|false|off|40|true|true|output muted' ] \
+        && [ "$(frow mic)" = 'mic|sound|mic||0|false|records|50|true|false|microphone 50%, recording' ] && [ "$(frow bat)" = 'bat|power|bat|80%|5|false|ok|-|false|false|battery 80%' ] && [ "$(fics)" = 'lan= bt= wifi= out= mic= bat= clock=' ] \
         && ok "facts in words: lan, bt, wifi, out, mic and bat are their words and none has an icon, in every state; the wire down is wrong; out muted is off, since no word is hollow, and keeps its level; the mic recording is records" || bad "facts words" "$line"
     # the states, in signs. Muted: the hollow sign, the level remembered; in words, where no word is hollow, muted is
     # sent as off, so the tone says it. A wire down: wrong. Recording: the dot, records
@@ -5324,7 +5325,7 @@ else
     cp "$cfg" "$H/config.keep"; printf 'BAR_GLYPHS=words\n' >> "$cfg"; _fw=$(sb | jq -r '[.[1:][] | select(.name == "out" or .name == "mic") | [.name, .sign, .state, .level, .set] | map(tostring) | join("|")] | join(" ")' || echo unread); mv "$H/config.keep" "$cfg"
     rm -f "$H/muted" "$H/cmuted"; echo 1 > "$S/class/net/eth0/carrier"
     [ "$(frow out)" = "out|sound|$g_out_off||0|false|muted|40|true|true|output muted" ] && [ "$(frow mic)" = "mic|sound|$g_mic_off||0|false|muted|50|true|false|microphone muted" ] \
-        && [ "$(frow lan)" = "lan|connections|$g_lan||0|false|wrong|-|false|false|lan not connected" ] && [ -z "$(fbad "$line")" ] && [ "$_fw" = 'out|out|off|40|true mic|mic|off|50|true' ] \
+        && [ "$(frow lan)" = "lan|network|$g_lan||0|false|wrong|-|false|false|lan not connected" ] && [ -z "$(fbad "$line")" ] && [ "$_fw" = 'out|out|off|40|true mic|mic|off|50|true' ] \
         && [ "$(fics)" = 'lan=lan bt=bt wifi=wifi out=out-muted mic=mic-muted bat=battery-full clock=' ] \
         && ok "facts, muted: out and mic wear their hollow signs and their hollow icons in state muted, each with the level it keeps, and can still be set; in words both are off, their words and levels as they were; the wire down is the same sign in state wrong" || bad "facts muted" "$line | $_fw"
     echo 'state: RUNNING' > "$P/asound/card0/pcm0c/sub0/status"; touch "$H/cmuted"; line=$(sb); echo closed > "$P/asound/card0/pcm0c/sub0/status"; rm -f "$H/cmuted"
@@ -5338,8 +5339,8 @@ else
     touch "$H/bt-none"; echo down > "$S/class/net/wlan0/operstate"; echo 10 > "$S/class/power_supply/BAT0/capacity"; line=$(sb); _f1="$(frow bt)/$(frow wifi)/$(frow bat)"; _f3=$(fics)
     echo Charging > "$S/class/power_supply/BAT0/status"; line=$(PATH="$H/btoff:$PATH" SPARK_BAR=1 sh "$SH" bar status --once); _f2="$(frow bt)/$(frow bat)/$(fbad "$line")"; _f4=$(fics)
     rm -rf "$H/bt-none" "$H/btoff"; echo up > "$S/class/net/wlan0/operstate"; echo 80 > "$S/class/power_supply/BAT0/capacity"; echo Discharging > "$S/class/power_supply/BAT0/status"
-    [ "$_f1" = "bt|connections|$g_bt||0|false|missing|-|false|false|bluetooth on/wifi|connections|$g_wifi||0|false|off|-|false|false|wifi not connected/bat|seat||10%|4|false|wrong|-|false|false|battery 10% low" ] \
-        && [ "$_f2" = "bt|connections|$g_bt_off||0|false|off|-|false|false|bluetooth off/bat|seat||10%|4|false|ok|-|false|false|battery 10% charging/" ] \
+    [ "$_f1" = "bt|network|$g_bt||0|false|missing|-|false|false|bluetooth on/wifi|network|$g_wifi||0|false|off|-|false|false|wifi not connected/bat|power||10%|4|false|wrong|-|false|false|battery 10% low" ] \
+        && [ "$_f2" = "bt|network|$g_bt_off||0|false|off|-|false|false|bluetooth off/bat|power||10%|4|false|ok|-|false|false|battery 10% charging/" ] \
         && [ "$_f3" = 'lan=lan bt=bt-idle wifi=wifi-off out=out mic=mic bat=battery-low clock=' ] && [ "$_f4" = 'lan=lan bt=bt-off wifi=wifi-off out=out mic=mic bat=battery-charging clock=' ] \
         && ok "facts: bluetooth on with nothing connected is the solid star in state missing, never the look of a device connected, its icon with no dots; off is the hollow star in state off, the icon thin; wifi not connected is off with no level, its icon's tip hollow; a battery at 10 is wrong, the low icon, and ok with the bolt while it charges" || bad "facts states" "$_f1 | $_f2 | $_f3 | $_f4"
     # no audio system, and a device with no volume control: out and mic stay on the line, missing, the hollow sign, a level
@@ -5412,16 +5413,17 @@ KBSWAY_STUB
     printf 'firefox.instance_1_42\tfirefox\tPaused\t\tA paused page\nvlc\tvlc\tStopped\t\t\n' > "$H/players"
     line=$(sb); _m2=$(frow media); _i2=$(fics | tr ' ' '\n' | grep '^media='); _b2=$(fbad "$line")
     printf 'BAR_GLYPHS=words\n' >> "$cfg"; line=$(sb); _m3=$(frow media); _i3=$(fics | tr ' ' '\n' | grep '^media='); sed -i.bak '/^BAR_GLYPHS=/d' "$cfg"; rm -f "$cfg.bak"
-    [ "$_m1" = "media|sound|$g_play|Nina Simone - Sinnerman|23|false|ok|-|false|false|playing: Nina Simone - Sinnerman" ] && [ "$_i1" = 'media=media' ] && [ -z "$_b1" ] \
-        && [ "$_n1" = "$(printf '%s' "$_n0" | sed 's/ wifi / wifi media /')" ] && [ "$_n1" != "$_n0" ] && ! printf '%s' " $_s1 " | grep -q ' media ' \
-        && [ "$_m2" = "media|sound|$g_play_off|A paused page|13|false|muted|-|false|false|paused: A paused page" ] && [ "$_i2" = 'media=media-paused' ] && [ -z "$_b2" ] \
-        && [ "$_m3" = 'media|sound|media|A paused page|13|false|muted|-|false|false|paused: A paused page' ] && [ "$_i3" = 'media=' ] \
-        && ok "spark's bar, what plays (v0.170): after wifi, the player that plays before a paused one listed first, the artist and the title in the cells they take, a click changing it in place; hollow and muted while paused, a stopped one not shown; in words, the word and no icon; sway's own bar shows none" || bad "media fact" "$_m1 $_i1 [$_b1] | $_n0 > $_n1 | $_s1 | $_m2 $_i2 [$_b2] | $_m3 $_i3"
+    [ "$_m1" = "media|now|$g_play|Nina Simone - Sinnerman|24|false|ok|-|false|false|playing: Nina Simone - Sinnerman" ] && [ "$_i1" = 'media=media' ] && [ -z "$_b1" ] \
+        && [ "$_n1" = "$(printf '%s' "$_n0" | sed 's/^look /look media /')" ] && [ "$_n1" != "$_n0" ] && ! printf '%s' " $_s1 " | grep -q ' media ' \
+        && [ "$_m2" = "media|now|$g_play_off|A paused page|24|false|muted|-|false|false|paused: A paused page" ] && [ "$_i2" = 'media=media-paused' ] && [ -z "$_b2" ] \
+        && [ "$_m3" = 'media|now|media|A paused page|24|false|muted|-|false|false|paused: A paused page' ] && [ "$_i3" = 'media=' ] \
+        && ok "spark's bar, what plays (v0.170): the status's first here, in the group of what happens now (v0.171), the player that plays before a paused one listed first, the artist and the title in a window of 24 cells whatever their length (v0.171), a click changing it in place; hollow and muted while paused, a stopped one not shown; in words, the word and no icon; sway's own bar shows none" || bad "media fact" "$_m1 $_i1 [$_b1] | $_n0 > $_n1 | $_s1 | $_m2 $_i2 [$_b2] | $_m3 $_i3"
     : > "$H/players"; _n2=$(fnames "$(sb)")
-    printf 'mpv\tmpv\tPlaying\tEvil\342\200\256\033[31m\tA title that runs on well past the thirty cells\n' > "$H/players"; line=$(sb); _t1=$(printf '%s' "$line" | jq -r '.[1:][] | select(.name == "media") | .text + "|" + (.cells | tostring)')
+    printf 'mpv\tmpv\tPlaying\tEvil\342\200\256\033[31m\tA title that runs on well past the thirty cells\n' > "$H/players"; line=$(sb); _t1=$(printf '%s' "$line" | jq -r '.[1:][] | select(.name == "media") | .text + "|" + (.cells | tostring)'); _b1=$(fbad "$line")
+    printf 'mpv\tmpv\tPlaying\t\t%s\n' "$(printf '%0130d' 7)" > "$H/players"; _t2=$(sb | jq -r '.[1:][] | select(.name == "media") | [(.text | length), .cells, (.label | length)] | map(tostring) | join(" ")')
     printf 'a b\tx\tPlaying\t\tA bad name\nmpv\tmpv\tLoud\t\tA bad status\n' > "$H/players"; _n3=$(fnames "$(sb)")
-    [ "$_n2" = "$_n0" ] && [ "$_t1" = 'Evil[31m - A title that runs o|30' ] && [ "$_n3" = "$_n0" ] \
-        && ok "what plays: no player, no module; a title's control and bidi characters go and its text is cut at 30 cells; a player whose name is no bus name, or whose status is none of the three, is not shown" || bad "media scrub" "$_n2 | $_t1 | $_n3"
+    [ "$_n2" = "$_n0" ] && [ "$_t1" = 'Evil[31m - A title that runs on well past the thirty cells|24' ] && [ -z "$_b1" ] && [ "$_t2" = '100 24 69' ] && [ "$_n3" = "$_n0" ] \
+        && ok "what plays: no player, no module; a title's control and bidi characters go; a title longer than its window is said whole, for the bar to roll, in the same 24 cells, 100 characters at most and 60 in its label (v0.171); a player whose name is no bus name, or whose status is none of the three, is not shown" || bad "media scrub" "$_n2 | $_t1 [$_b1] | $_t2 | $_n3"
     # the verb: what plays, a line a player; a step reaches the one that plays, else the first paused, and says what it asked
     printf 'firefox.instance_1_42\tfirefox\tPaused\t\tA paused page\nmpv\tmpv\tPlaying\tNina Simone\tSinnerman\n' > "$H/players"; rm -f "$H/players.asked"
     out=$(sh "$SH" desktop media 2>&1); st=0; out2=$(sh "$SH" desktop media toggle 2>&1) || st=$?; st3=0; out3=$(sh "$SH" desktop media next 2>&1) || st3=$?; _a1=$(grep -- '--player' "$H/players.asked" | paste -sd'|' -)
@@ -5563,32 +5565,34 @@ EVSWAY_STUB
     # reads and its last line says so, and each of the four verbs is refused in one line, nothing written
     dot=$(printf '\302\267'); nopin="pins need spark-bar: sway's bar draws the bar here, and it shows every module (spark-shell on desktop)"
     nohide="hide and show need spark-bar: sway's bar draws the bar here, and it shows every module (spark-shell on desktop)"
-    mods='pad lan bt wifi media out mic due light kb bat clock notifications'
-    nshown() { printf '%s\n' "$1" | grep -c "^[a-z]*  *$2 *$dot " || :; }   # nshown LIST shown|pinned|hidden -> how many lines say so
+    mods='pad due media lan bt wifi out mic light kb bat clock notifications'
+    nshown() { printf '%s\n' "$1" | grep -c "^[a-z]*  *$2 *$dot " || :; }   # nshown LIST VALUE -> how many lines say so: shown, pinned, 'pinned with gauge' or hidden
     st=0; out=$(sh "$SH" bar pin 2>&1) || st=$?
     _rf=''; for _v in 'unpin out' 'pin mic' 'hide lan' 'show lan'; do
         _w=$nopin; case $_v in hide*|show*) _w=$nohide ;; esac   # a hide's refusal never speaks of pins
         st2=0; out2=$(sh "$SH" bar $_v 2>&1) || st2=$?; [ "$st2" = 1 ] && [ "$out2" = "spark-shell bar: $_w" ] || _rf="$_rf [$_v: $st2 $out2]"
     done
-    [ "$st" = 0 ] && [ "$(printf '%s\n' "$out" | grep -c '')" = 15 ] && [ "$(nshown "$out" shown)" = 13 ] && [ "$(nshown "$out" pinned)" = 1 ] && [ "$(printf '%s\n' "$out" | tail -1)" = "$nopin" ] \
+    [ "$st" = 0 ] && [ "$(printf '%s\n' "$out" | grep -c '')" = 15 ] && [ "$(nshown "$out" shown)" = 13 ] && [ "$(nshown "$out" 'pinned with gauge')" = 1 ] && [ "$(nshown "$out" pinned)" = 0 ] && [ "$(printf '%s\n' "$out" | tail -1)" = "$nopin" ] \
         && [ -z "$_rf" ] && ! grep -q '^BAR_PINS\|^BAR_HIDE' "$cfg" \
         && ok "bar pin with no spark-bar here: the modules listed, then a line that sway's bar shows every one; pin, unpin, hide and show NAME refused in one line, each in its verb's own words, the config as it was" || bad "bar pin no spark-bar" "st=$st $out | $_rf | $(grep 'BAR_PINS\|BAR_HIDE' "$cfg")"
     printf '#!/bin/sh\nexit 0\n' > "$H/pinbar"; chmod +x "$H/pinbar"   # a spark-bar can run here; with no session none is started
     pb() { SPARK_SHELL_BAR=$H/pinbar sh "$SH" bar "$@"; }
     fpin() { sb | jq -r '[.[1:][] | select(.pinned) | .name] | join(" ")' || echo unread; }   # -> the modules the line says are pinned
+    fgauge() { sb | jq -r '[.[1:][] | select(.gauge) | .name] | join(" ")' || echo unread; }   # -> the ones it says draw a gauge
     st=0; out=$(pb pin 2>&1) || st=$?
-    [ "$st" = 0 ] && [ "$(printf '%s\n' "$out" | grep -c '')" = 14 ] && [ "$(nshown "$out" shown)" = 13 ] && printf '%s\n' "$out" | grep -qx "out           pinned $dot the sound, its sign mutes; pinned, a gauge and a number set the level" \
-        && [ "$(printf '%s\n' "$out" | cut -d' ' -f1 | paste -sd' ' -)" = "workspaces $mods" ] && [ "$(fpin)" = out ] \
-        && ok "bar pin: a line a module, in the bar's order, shown, pinned or hidden, and what it shows; out alone is pinned by default, and the line says so" || bad "bar pin list" "st=$st $out | $(fpin)"
+    [ "$st" = 0 ] && [ "$(printf '%s\n' "$out" | grep -c '')" = 14 ] && [ "$(nshown "$out" shown)" = 13 ] && printf '%s\n' "$out" | grep -qx "out           pinned with gauge $dot the sound, its sign mutes; pinned, a number sets the level, with a gauge or none" \
+        && [ "$(printf '%s\n' "$out" | cut -d' ' -f1 | paste -sd' ' -)" = "workspaces $mods" ] && [ "$(fpin)" = out ] && [ "$(fgauge)" = out ] \
+        && ok "bar pin: a line a module, in the bar's order, a group's together, hidden, shown, pinned or pinned with gauge, and what it shows; out alone is pinned by default, with its gauge, and the line says so" || bad "bar pin list" "st=$st $out | $(fpin)"
     # a pin and an unpin: BAR_PINS in the bar's order, none when no level is pinned; the line says it at once
     st=0; out=$(pb pin mic 2>&1) || st=$?; _f1=$(fpin); st2=0; out2=$(pb unpin out mic 2>&1) || st2=$?
     [ "$st" = 0 ] && [ "$out" = "pinned mic $dot the bar shows a gauge and a number for out, mic" ] && [ "$_f1" = 'out mic' ] \
-        && [ "$st2" = 0 ] && [ "$out2" = "unpinned out mic $dot the bar shows no gauge now" ] && grep -qx 'BAR_PINS=none' "$cfg" && grep -qx 'BAR_HIDE=' "$cfg" && [ -z "$(fpin)" ] && [ "$(nshown "$(pb pin)" pinned)" = 0 ] \
+        && [ "$st2" = 0 ] && [ "$out2" = "unpinned out mic $dot the bar shows no gauge now" ] && grep -qx 'BAR_PINS=none' "$cfg" && grep -qx 'BAR_GAUGES=none' "$cfg" && grep -qx 'BAR_HIDE=' "$cfg" && grep -qx "BAR_ORDER=${mods% clock notifications}" "$cfg" \
+        && [ -z "$(fpin)$(fgauge)" ] && [ "$(nshown "$(pb pin)" pinned)$(nshown "$(pb pin)" 'pinned with gauge')" = 00 ] \
         && [ "$(fnames "$(sb)")" = 'look lan bt wifi out mic bat clock' ] \
-        && ok "bar pin mic, bar unpin out mic: the receipt says which levels have their gauge and number on the bar; BAR_PINS=none when none has, and every module stays on the line, its sign alone" || bad "bar pin unpin" "st=$st $out $_f1 | $st2 $out2 | $(grep 'BAR_PINS\|BAR_HIDE' "$cfg")"
+        && ok "bar pin mic, bar unpin out mic: the receipt says which levels have their gauge and number on the bar; a verb writes the four keys together, none for no pin and no gauge and the order with every module of the status (v0.171); every module stays on the line, its sign alone" || bad "bar pin unpin" "st=$st $out $_f1 | $st2 $out2 | $(grep 'BAR_PINS\|BAR_HIDE' "$cfg")"
     st=0; out=$(pb unpin out 2>&1) || st=$?; st3=0; out3=$(pb unpin 2>&1) || st3=$?; st4=0; out4=$(pb pin clock 2>&1) || st4=$?
     [ "$st" = 1 ] && [ "$out" = 'spark-shell bar: out not pinned' ] \
-        && [ "$st3" = 1 ] && [ "$out3" = "spark-shell bar: unpin takes a module's name: $mods" ] && [ "$st4" = 1 ] && [ "$out4" = 'spark-shell bar: clock has no level to pin: a pin is for out mic light wifi' ] && grep -qx 'BAR_PINS=none' "$cfg" \
+        && [ "$st3" = 1 ] && [ "$out3" = "spark-shell bar: unpin takes a module's name: $mods" ] && [ "$st4" = 1 ] && [ "$out4" = 'spark-shell bar: clock has no level to pin: a pin is for wifi out mic light' ] && grep -qx 'BAR_PINS=none' "$cfg" \
         && ok "bar pin and unpin: a module with no level, a level not pinned and no name at all are refused in one line, nothing written" || bad "bar pin refuse" "$st $out | $st3 $out3 | $st4 $out4"
     # the four are verbs before modules' names alone. A sentence that begins with one is words, as before they were
     # verbs: it goes to the words path whole, spark reads it where the path asks spark, and nothing is pinned or hidden
@@ -5609,8 +5613,8 @@ EVSWAY_STUB
     # line has every one as before; a pinned level that is hidden gives up its place in the receipt
     l5=$(sh "$SH" bar status --once | jq -c '[.[] | .name]') || :
     st=0; out=$(pb hide out lan 2>&1) || st=$?; line=$(sb); _l1=$(pb pin 2>&1) || :
-    [ "$st" = 0 ] && [ "$out" = "hidden out lan $dot the shortcut is off the bar, not the device $dot the bar shows workspaces, pad, bt, wifi, media, mic, due, light, kb, bat, clock, notifications" ] && grep -qx 'BAR_HIDE=lan out' "$cfg" && grep -qx 'BAR_PINS=out' "$cfg" \
-        && [ "$(fnames "$line")" = 'look bt wifi mic bat clock' ] && [ -z "$(fbad "$line")" ] && [ "$(nshown "$_l1" hidden)" = 2 ] && [ "$(nshown "$_l1" pinned)" = 0 ] && printf '%s\n' "$_l1" | grep -qx "lan           hidden $dot the wired network" \
+    [ "$st" = 0 ] && [ "$out" = "hidden out lan $dot the shortcut is off the bar, not the device $dot the bar shows workspaces, pad, due, media, bt, wifi, mic, light, kb, bat, clock, notifications" ] && grep -qx 'BAR_HIDE=lan out' "$cfg" && grep -qx 'BAR_PINS=out' "$cfg" \
+        && [ "$(fnames "$line")" = 'look bt wifi mic bat clock' ] && [ -z "$(fbad "$line")" ] && [ "$(nshown "$_l1" hidden)" = 2 ] && [ "$(nshown "$_l1" pinned)$(nshown "$_l1" 'pinned with gauge')" = 00 ] && printf '%s\n' "$_l1" | grep -qx "lan           hidden            $dot the wired network" \
         && [ "$(sh "$SH" bar status --once | jq -c '[.[] | .name]')" = "$l5" ] && printf '%s' "$l5" | grep -q '"lan".*"out"' \
         && ok "bar hide out lan: the receipt says the device stays and what the bar shows; BAR_HIDE in the bar's order; neither is in spark's bar's line, the list says hidden, and sway's bar's line keeps every module" || bad "bar hide" "st=$st $out | $(grep 'BAR_PINS\|BAR_HIDE' "$cfg") | $line | $_l1"
     st=0; out=$(pb hide lan 2>&1) || st=$?; st2=0; out2=$(pb show bt 2>&1) || st2=$?; st3=0; out3=$(pb hide workspaces 2>&1) || st3=$?; st4=0; out4=$(pb pin out 2>&1) || st4=$?; st5=0; out5=$(pb hide 2>&1) || st5=$?
@@ -5620,7 +5624,7 @@ EVSWAY_STUB
         && [ "$st6" = 0 ] && [ "$out6" = "unpinned out $dot the bar shows no gauge now" ] && [ "$st7" = 1 ] && [ "$out7" = "$out4" ] && grep -qx 'BAR_HIDE=lan out' "$cfg" \
         && ok "bar hide and show: a module hidden already, one not hidden, the workspaces and no name at all are refused in one line; a hidden level takes no pin until it is shown, and gives one up" || bad "bar hide refuse" "$st $out | $st2 $out2 | $st3 $out3 | $st4 $out4 | $st5 $out5 | $st6 $out6 | $st7 $out7"
     st=0; out=$(pb show lan out 2>&1) || st=$?; st2=0; out2=$(pb pin out 2>&1) || st2=$?
-    [ "$st" = 0 ] && [ "$out" = "shown lan out $dot the bar shows workspaces, pad, lan, bt, wifi, media, out, mic, due, light, kb, bat, clock, notifications" ] && grep -qx 'BAR_HIDE=' "$cfg" && [ "$st2" = 0 ] \
+    [ "$st" = 0 ] && [ "$out" = "shown lan out $dot the bar shows workspaces, pad, due, media, lan, bt, wifi, out, mic, light, kb, bat, clock, notifications" ] && grep -qx 'BAR_HIDE=' "$cfg" && [ "$st2" = 0 ] \
         && [ "$(fnames "$(sb)")" = 'look lan bt wifi out mic bat clock' ] && [ "$(fpin)" = out ] \
         && ok "bar show lan out: both are on the line again, the config's line empty; out takes its pin back" || bad "bar show" "st=$st $out | $st2 $out2 | $(grep 'BAR_PINS\|BAR_HIDE' "$cfg")"
     # a BAR_PINS line of v0.147 named the modules shown. One that names a module with no level is read as that: what it
@@ -5628,26 +5632,109 @@ EVSWAY_STUB
     # are now. A line of levels alone is today's: out and mic pinned, nothing hidden. In quotes, read without them
     printf 'DESKTOP=sway\nBAR_PINS=workspaces pad lan bt wifi mic due notifications light kb bat clock\n' > "$cfg"; line=$(sb); _l1=$(pb pin 2>&1) || :
     printf 'DESKTOP=sway\nBAR_PINS="clock out"\n' > "$cfg"; _f1="$(fnames "$(sb)") / $(fpin)"; st=0; out=$(pb show mic 2>&1) || st=$?; _f2="$(fnames "$(sb)") / $(fpin)"
-    [ "$(fnames "$line")" = 'look lan bt wifi mic bat clock' ] && [ -z "$(fbad "$line")" ] && printf '%s\n' "$_l1" | grep -qx "out           hidden $dot the sound, its sign mutes; pinned, a gauge and a number set the level" && [ "$(nshown "$_l1" hidden)" = 1 ] && [ "$(nshown "$_l1" pinned)" = 0 ] \
-        && [ "$_f1" = 'look out clock / out' ] && [ "$st" = 0 ] && [ "$out" = "shown mic $dot the bar shows workspaces, media, out, mic, clock" ] && [ "$_f2" = 'look out mic clock / out' ] && printf '%s\n' "$_l1" | grep -qx "media         shown  $dot what plays: a click plays or pauses it, the wheel skips" \
-        && grep -qx 'BAR_PINS=out' "$cfg" && grep -qx 'BAR_HIDE=pad lan bt wifi due light kb bat notifications' "$cfg" && [ "$(grep -c '^BAR_' "$cfg")" = 2 ] \
-        && ok "a BAR_PINS line of v0.147: the modules it leaves out are hidden and out is pinned, in the line and in the list, with or without quotes; media, made after it, stays shown; the next show writes BAR_PINS and BAR_HIDE as they are now, each once" || bad "bar pins of v0.147" "$line | $_l1 | $_f1 | $st $out | $_f2 | $(grep '^BAR_' "$cfg")"
+    [ "$(fnames "$line")" = 'look lan bt wifi mic bat clock' ] && [ -z "$(fbad "$line")" ] && printf '%s\n' "$_l1" | grep -qx "out           hidden            $dot the sound, its sign mutes; pinned, a number sets the level, with a gauge or none" && [ "$(nshown "$_l1" hidden)" = 1 ] && [ "$(nshown "$_l1" pinned)$(nshown "$_l1" 'pinned with gauge')" = 00 ] \
+        && [ "$_f1" = 'look out clock / out' ] && [ "$st" = 0 ] && [ "$out" = "shown mic $dot the bar shows workspaces, media, out, mic, clock" ] && [ "$_f2" = 'look out mic clock / out' ] && printf '%s\n' "$_l1" | grep -qx "media         shown             $dot what plays: a click plays or pauses it, the wheel skips" \
+        && grep -qx 'BAR_PINS=out' "$cfg" && grep -qx 'BAR_GAUGES=out' "$cfg" && grep -qx 'BAR_HIDE=pad due lan bt wifi light kb bat notifications' "$cfg" && [ "$(grep -c '^BAR_' "$cfg")" = 4 ] \
+        && ok "a BAR_PINS line of v0.147: the modules it leaves out are hidden and out is pinned, in the line and in the list, with or without quotes; media, made after it, stays shown; the next show writes the four keys as they are now, each once, and the line is v0.147's no more" || bad "bar pins of v0.147" "$line | $_l1 | $_f1 | $st $out | $_f2 | $(grep '^BAR_' "$cfg")"
     printf 'DESKTOP=sway\nBAR_PINS="out mic"\n' > "$cfg"; _f1="$(fnames "$(sb)") / $(fpin)"; st=0; out=$(pb unpin mic 2>&1) || st=$?
-    [ "$_f1" = 'look lan bt wifi out mic bat clock / out mic' ] && [ "$st" = 0 ] && [ "$out" = "unpinned mic $dot the bar shows a gauge and a number for out" ] && grep -qx 'BAR_PINS=out' "$cfg" && grep -qx 'BAR_HIDE=' "$cfg" \
-        && ok "BAR_PINS of levels alone, in quotes: out and mic pinned and nothing hidden; an unpin writes the rest" || bad "bar pins quoted" "$_f1 | $st $out | $(grep '^BAR_' "$cfg")"
+    [ "$_f1" = 'look lan bt wifi out mic bat clock / out mic' ] && [ "$st" = 0 ] && [ "$out" = "unpinned mic $dot the bar shows a gauge and a number for out" ] && grep -qx 'BAR_PINS=out' "$cfg" && grep -qx 'BAR_GAUGES=out' "$cfg" && grep -qx 'BAR_HIDE=' "$cfg" \
+        && ok "BAR_PINS of levels alone, in quotes: out and mic pinned and nothing hidden, each with its gauge as before v0.171; an unpin writes the rest" || bad "bar pins quoted" "$_f1 | $st $out | $(grep '^BAR_' "$cfg")"
+    # the gauge is a pinned level's own setting (v0.171). gauge off leaves the level its number alone; gauge on draws the
+    # gauge again and pins a level that was not; a module with no level, a level not pinned and one with no gauge to
+    # take off are refused in one line. A config with no BAR_GAUGES line is one from before: every pinned level draws its
+    # gauge, and the first write says so
+    printf 'DESKTOP=sway\n' > "$cfg"
+    st=0; out=$(pb gauge out off 2>&1) || st=$?; _f1="$(fpin) / $(fgauge)"; _l1=$(pb pin 2>&1) || :
+    st2=0; out2=$(pb gauge mic 2>&1) || st2=$?; _f2="$(fpin) / $(fgauge)"; _c2=$(grep '^BAR_PINS\|^BAR_GAUGES' "$cfg" | paste -sd' ' -)
+    st3=0; out3=$(pb gauge out off 2>&1) || st3=$?; st4=0; out4=$(pb gauge clock 2>&1) || st4=$?; st5=0; out5=$(pb gauge light off 2>&1) || st5=$?
+    st6=0; out6=$(pb gauge mic on 2>&1) || st6=$?; st7=0; out7=$(pb gauge 2>&1) || st7=$?
+    [ "$st" = 0 ] && [ "$out" = "gauge off out $dot the bar shows a number for out" ] && [ "$_f1" = 'out / ' ] && printf '%s\n' "$_l1" | grep -q "^out           pinned            $dot " \
+        && [ "$st2" = 0 ] && [ "$out2" = "gauge on mic $dot the bar shows a gauge and a number for mic, and a number for out" ] && [ "$_f2" = 'out mic / mic' ] && [ "$_c2" = 'BAR_PINS=out mic BAR_GAUGES=mic' ] \
+        && [ "$st3" = 1 ] && [ "$out3" = 'spark-shell bar: out has no gauge already' ] && [ "$st4" = 1 ] && [ "$out4" = 'spark-shell bar: clock has no level to pin: a pin is for wifi out mic light' ] \
+        && [ "$st5" = 1 ] && [ "$out5" = 'spark-shell bar: light is not pinned: it has no gauge to take off' ] && [ "$st6" = 1 ] && [ "$out6" = 'spark-shell bar: mic has its gauge already' ] \
+        && [ "$st7" = 1 ] && [ "$out7" = "spark-shell bar: gauge takes a module's name: $mods" ] && [ -z "$(fbad "$(sb)")" ] \
+        && ok "bar gauge (v0.171): gauge out off leaves out pinned with its number alone, in the line and in the list; gauge mic pins the microphone with its gauge; a level with no gauge, one with it already, one not pinned, a module with no level and no name at all are refused in one line" || bad "bar gauge" "$st $out [$_f1] | $st2 $out2 [$_f2] $_c2 | $st3 $out3 | $st4 $out4 | $st5 $out5 | $st6 $out6 | $st7 $out7"
+    printf 'DESKTOP=sway\nBAR_PINS=out mic\n' > "$cfg"; _f1="$(fpin) / $(fgauge)"; st=0; out=$(pb hide lan 2>&1) || st=$?
+    printf 'DESKTOP=sway\nBAR_PINS=out mic\nBAR_GAUGES=none\n' > "$cfg"; _f2="$(fpin) / $(fgauge)"
+    printf 'DESKTOP=sway\nBAR_PINS=out\nBAR_GAUGES=mic out wifi nosuch\n' > "$cfg"; _f3="$(fpin) / $(fgauge)"; st3=0; sh "$SH" status >/dev/null 2>&1 || st3=$?
+    [ "$_f1" = 'out mic / out mic' ] && [ "$st" = 0 ] && [ "$_f2" = 'out mic / ' ] && [ "$_f3" = 'out / out' ] && [ "$st3" = 0 ] \
+        && ok "BAR_GAUGES: no line is a config from before v0.171, where every pinned level drew its gauge; none is no gauge; a level that is not pinned and a word that is no module have none, and neither stops a verb" || bad "bar gauges config" "$_f1 | $st $out | $_f2 | $_f3 | $st3"
+    # a move (v0.171): a module inside its group, a group among the groups, by the table the bar's program reads too
+    # (test/move_cases.json). For each case the config's order after the verb; for one the verb refuses, one line, 1,
+    # and the config as it was
+    _mv=''; _mn=0; _tb=$(printf '\t')
+    jq -r '.cases[] | [.order, .move, (.to // "-")] | @tsv' "$REPO/test/move_cases.json" > "$H/moves"
+    while IFS="$_tb" read -r _mo _mm _mt; do
+        _mn=$((_mn + 1)); printf 'DESKTOP=sway\nBAR_ORDER=%s\n' "$_mo" > "$cfg"
+        # shellcheck disable=SC2086   # the move's words
+        st=0; out=$(pb move $_mm 2>&1) || st=$?; _mg=$(sed -n 's/^BAR_ORDER=//p' "$cfg")
+        if [ "$_mt" = - ]; then [ "$st" = 1 ] && [ "$_mg" = "$_mo" ] && [ "$(grep -c '^BAR_' "$cfg")" = 1 ] && [ "$(printf '%s\n' "$out" | grep -c '')" = 1 ] || _mv="$_mv [$_mm: $st $out | $_mg]"
+        else [ "$st" = 0 ] && [ "$_mg" = "$_mt" ] && [ "$(grep -c '^BAR_' "$cfg")" = 4 ] || _mv="$_mv [$_mm: $st $out | $_mg]"; fi
+    done < "$H/moves"
+    rm -f "$H/moves"
+    [ -z "$_mv" ] && [ "$_mn" -ge 20 ] \
+        && ok "bar move (v0.171), the $_mn cases of test/move_cases.json: a module moves inside its group and a group among the groups, before or after another, first or last, and default is the shipped order; a module asked past its group, one beside itself, one where it stands, the time's and a word that is no module are refused in one line, the config as it was" || bad "bar move cases" "$_mv ($_mn)"
+    # the receipts, in plain names; the line follows at once; a step is one place, past what this machine has, and from
+    # its group's end the group goes past the next one
+    printf 'DESKTOP=sway\n' > "$cfg"
+    out=$(pb move mic before out 2>&1) || :; _n1=$(fnames "$(sb)"); out2=$(pb move screen before sound 2>&1) || :; out3=$(pb move kb first 2>&1) || :; out4=$(pb move network last 2>&1) || :; _n4=$(fnames "$(sb)")
+    out5=$(pb move default 2>&1) || :; _n5=$(fnames "$(sb)"); _o5=$(sed -n 's/^BAR_ORDER=//p' "$cfg")
+    out6=$(pb move mic left 2>&1) || :; out7=$(pb move mic left 2>&1) || :; _o7=$(sed -n 's/^BAR_ORDER=//p' "$cfg"); st8=0; out8=$(pb move bat right 2>&1) || st8=$?
+    st9=0; out9=$(pb move mic sideways 2>&1) || st9=$?
+    [ "$out" = 'microphone moved before volume' ] && [ "$_n1" = 'look lan bt wifi mic out bat clock' ] && [ "$out2" = 'screen and keys moved before sound' ] && [ "$out3" = 'keyboard moved first in screen and keys' ] \
+        && [ "$out4" = 'network moved last' ] && [ "$_n4" = 'look mic out bat lan bt wifi clock' ] && [ "$out5" = "the bar's order is the shipped one again" ] && [ "$_n5" = 'look lan bt wifi out mic bat clock' ] && [ "$_o5" = "${mods% clock notifications}" ] \
+        && [ "$out6" = 'microphone moved before volume' ] && [ "$out7" = 'sound moved before network' ] && [ "$_o7" = 'pad due media mic out lan bt wifi light kb bat' ] \
+        && [ "$st8" = 1 ] && [ "$out8" = "spark-shell bar: power and health is at the status's end already" ] && [ "$st9" != 0 ] \
+        && ok "bar move: the receipt says what moved and where in plain names, and spark's bar's next line has the order; left and right are one step, and from its group's end the whole group passes the next one; the group at the status's end is refused" || bad "bar move receipts" "$out [$_n1] | $out2 | $out3 | $out4 [$_n4] | $out5 [$_n5] $_o5 | $out6 | $out7 $_o7 | $st8 $out8 | $st9 $out9"
+    # an order the config says badly never stops a verb: a word that is no module, a module said twice and the time's are
+    # passed over; a group stands where its first module is said, among the shipped places of the groups that are said;
+    # a module that is not said stands last in its group
+    printf 'DESKTOP=sway\nBAR_ORDER=mic nosuch mic clock bat lan\n' > "$cfg"; st=0; sh "$SH" status >/dev/null 2>&1 || st=$?; _n1=$(fnames "$(sb)"); _l1=$(pb pin 2>&1 | cut -d' ' -f1 | paste -sd' ' -)
+    printf 'DESKTOP=sway\nBAR_ORDER=\n' > "$cfg"; _n2=$(fnames "$(sb)")
+    printf 'DESKTOP=sway\n' > "$cfg"
+    [ "$st" = 0 ] && [ "$_n1" = 'look mic out bat lan bt wifi clock' ] && [ "$_l1" = 'workspaces pad due media mic out bat light kb lan bt wifi clock notifications' ] && [ "$_n2" = 'look lan bt wifi out mic bat clock' ] \
+        && ok "BAR_ORDER is never refused: a word that is no module, one said twice and the time's are passed over; the groups it names take their places in its order, a module it does not name stands last in its group, and an empty line is the shipped order" || bad "bar order read" "$st [$_n1] [$_l1] [$_n2]"
+    # a later module is one row of the table and its three functions (src/arrange.sh): a made-up one, added to a copy of
+    # the tree by those alone, is in the line, in the list, hidden, shown, pinned and moved by the verbs, and its click
+    # reaches its own function; the config with its name stops no verb after
+    mkdir -p "$H/tree"; cp -R "$REPO/src" "$H/tree/src"; cp "$REPO/spark-shell" "$H/tree/spark-shell"
+    for _tf in "$REPO"/*; do case ${_tf##*/} in src|spark-shell) ;; *) ln -s "$_tf" "$H/tree/${_tf##*/}" ;; esac; done
+    sed -i.bak 's/^bat|power|.*$/&\ngizmo|power|level|-|bar_here_always|bar_fact_gizmo|bar_click_gizmo|gizmo|a made-up module/' "$H/tree/src/arrange.sh"; rm -f "$H/tree/src/arrange.sh.bak"
+    cat >> "$H/tree/src/bar.sh" <<'GIZMO'
+bar_fact_gizmo() { bar_sign G gizmo ''; bar_fact gizmo "$_bg" '' 0 ok 'gizmo 7%' 7 true; }
+bar_click_gizmo() { printf '%s %s %s\n' "$1" "$2" "$3" >> "$HOME/gizmo.clicks"; }
+GIZMO
+    tb() { SPARK_SHELL_BAR=$H/pinbar sh "$H/tree/spark-shell" bar "$@"; }
+    tsb() { SPARK_BAR=1 sh "$H/tree/spark-shell" bar status --once; }
+    line=$(tsb); _g1=$(printf '%s' "$line" | jq -c '.[1:][] | select(.name == "gizmo") | [.group, .level, .set, .pinned, .toggle]'); _n1=$(fnames "$line")
+    _l1=$(tb pin 2>&1 | grep '^gizmo ') || :
+    out=$(tb hide gizmo 2>&1) || :; _n2=$(fnames "$(tsb)"); out2=$(tb show gizmo 2>&1) || :; out3=$(tb pin gizmo 2>&1) || :; _g3=$(tsb | jq -c '.[1:][] | select(.name == "gizmo") | [.pinned, .gauge]')
+    out4=$(tb move gizmo before bat 2>&1) || :; _n4=$(fnames "$(tsb)"); _o4=$(sed -n 's/^BAR_ORDER=//p' "$cfg")
+    rm -f "$HOME/gizmo.clicks"; printf '[\n,{"name":"gizmo","instance":"name","button":1,"relative_x":1,"width":10,"x":1}\n' > "$H/gizmo.in"; mkfifo "$H/gizmo.hold"
+    ( cat "$H/gizmo.in"; cat "$H/gizmo.hold" ) | SPARK_BAR=1 sh "$H/tree/spark-shell" bar status > "$H/gizmo.out" 2> "$H/gizmo.err" & _gp=$!
+    i=0; while [ ! -s "$HOME/gizmo.clicks" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+    _gc=$(cat "$HOME/gizmo.clicks" 2>/dev/null || :); kill "$_gp" 2>/dev/null || :; : > "$H/gizmo.hold" & wait "$_gp" 2>/dev/null || :
+    st5=0; tb pin >/dev/null 2>&1 || st5=$?; st6=0; sh "$H/tree/spark-shell" status >/dev/null 2>&1 || st6=$?
+    rm -rf "$H/tree" "$H/gizmo.in" "$H/gizmo.hold" "$H/gizmo.out" "$H/gizmo.err" "$HOME/gizmo.clicks"; printf 'DESKTOP=sway\n' > "$cfg"
+    [ "$_g1" = '["power",7,true,false,false]' ] && [ "$_n1" = 'look lan bt wifi out mic bat gizmo clock' ] && [ "$_l1" = "gizmo         shown             $dot a made-up module" ] \
+        && [ "$out" = "hidden gizmo $dot the bar shows workspaces, pad, due, media, lan, bt, wifi, out, mic, light, kb, bat, clock, notifications" ] && [ "$_n2" = 'look lan bt wifi out mic bat clock' ] \
+        && [ "${out2%% "$dot"*}" = 'shown gizmo' ] &&[ "$out3" = "pinned gizmo $dot the bar shows a gauge and a number for out, gizmo" ] && [ "$_g3" = '[true,true]' ] \
+        && [ "$out4" = 'gizmo moved before battery' ] && [ "$_n4" = 'look lan bt wifi out mic gizmo bat clock' ] && [ "$_o4" = 'pad due media lan bt wifi out mic light kb gizmo bat' ] \
+        && [ "$_gc" = 'gizmo name 1' ] && [ "$st5" = 0 ] && [ "$st6" = 0 ] \
+        && ok "a later module is one row and its functions (v0.171): a made-up one added to a copy of the tree by its row in the table and two functions is on the line in its group, with its level; in the list; hidden, shown, pinned and moved by the verbs; its click reaches its own function; and no verb is stopped by its name in the config" || bad "bar table plumbing" "$_g1 [$_n1] [$_l1] | $out [$_n2] | $out2 | $out3 $_g3 | $out4 [$_n4] $_o4 | [$_gc] $st5 $st6 $(tail -2 "$H/gizmo.err" 2>/dev/null)"
     # a hidden bar is sway's too, unseen: the same refusal, in its own words and its verb's, and the list says why in its last line
     printf 'DESKTOP=sway\nDESKTOP_BAR=no\nBAR_PINS=out mic\n' > "$cfg"; st=0; out=$(pb unpin mic 2>&1) || st=$?; st2=0; out3=$(pb hide lan 2>&1) || st2=$?; out2=$(pb pin 2>&1)
     [ "$st" = 1 ] && [ "$out" = 'spark-shell bar: pins need the bar shown: it is hidden (spark-shell bar on --desktop shows it)' ] && [ "$st2" = 1 ] && [ "$out3" = 'spark-shell bar: hide and show need the bar shown: it is hidden (spark-shell bar on --desktop shows it)' ] && [ "$(printf '%s\n' "$out2" | grep -c '')" = 15 ] \
-        && [ "$(printf '%s\n' "$out2" | tail -1)" = 'pins need the bar shown: it is hidden (spark-shell bar on --desktop shows it)' ] && [ "$(nshown "$out2" pinned)" = 2 ] && [ "$(nshown "$out2" shown)" = 12 ] && grep -qx 'BAR_PINS=out mic' "$cfg" && ! grep -q '^BAR_HIDE' "$cfg" \
+        && [ "$(printf '%s\n' "$out2" | tail -1)" = 'pins need the bar shown: it is hidden (spark-shell bar on --desktop shows it)' ] && [ "$(nshown "$out2" 'pinned with gauge')" = 2 ] && [ "$(nshown "$out2" shown)" = 12 ] && grep -qx 'BAR_PINS=out mic' "$cfg" && ! grep -q '^BAR_HIDE' "$cfg" \
         && ok "bar pin with the bar hidden: an unpin and a hide are refused, the hide with no word of pins, and the list says why in its last line; the config as it was" || bad "bar pin hidden bar" "st=$st $out | $st2 $out3 | $out2 | $(grep '^BAR_' "$cfg")"
     rm -f "$H/pinbar"; printf 'DESKTOP=sway\n' > "$cfg"
     # the config's keys: BAR_PINS takes levels, none, or a line of v0.147; BAR_HIDE and BAR_OVERFLOW the line's modules
     _br=''; for _bk in 'BAR_PINS=out sound' 'BAR_PINS=none out' 'BAR_HIDE=workspaces' 'BAR_HIDE=clock logo' 'BAR_OVERFLOW=workspaces' 'BAR_OVERFLOW=clock logo'; do printf 'DESKTOP=sway\n%s\n' "$_bk" > "$cfg"; ! sh "$SH" status >/dev/null 2>&1 || _br="$_br $_bk"; done
     for _bk in 'BAR_PINS=wifi out' 'BAR_PINS=none' 'BAR_PINS=clock out workspaces' 'BAR_HIDE=clock due' 'BAR_OVERFLOW=out clock' 'BAR_OVERFLOW=due light bt lan wifi kb mic out notifications bat clock'; do printf 'DESKTOP=sway\n%s\n' "$_bk" > "$cfg"; sh "$SH" status >/dev/null 2>&1 || _br="$_br not:$_bk"; done
     out=$(printf 'DESKTOP=sway\nBAR_PINS=out sound\n' > "$cfg"; sh "$SH" status 2>&1 | head -1); out2=$(printf 'DESKTOP=sway\nBAR_HIDE=clock logo\n' > "$cfg"; sh "$SH" status 2>&1 | head -1); printf 'DESKTOP=sway\n' > "$cfg"
-    [ -z "$_br" ] && [ "$out" = "spark-shell: BAR_PINS=out sound in $cfg: levels of the bar, a space between (out mic light wifi), or none" ] && [ "$out2" = "spark-shell: BAR_HIDE=clock logo in $cfg: modules of the bar, a space between ($mods), or nothing" ] \
+    [ -z "$_br" ] && [ "$out" = "spark-shell: BAR_PINS=out sound in $cfg: levels of the bar, a space between (wifi out mic light), or none" ] && [ "$out2" = "spark-shell: BAR_HIDE=clock logo in $cfg: modules of the bar, a space between ($mods), or nothing" ] \
         && grep -qx 'BAR_PINS=out' "$REPO/config.example" && grep -qx 'BAR_HIDE=' "$REPO/config.example" && grep -qx 'BAR_OVERFLOW=media due pad light bt lan wifi kb bat mic out' "$REPO/config.example" \
-        && grep -q "^CONFIG_UNSET=.* -u BAR_PINS -u BAR_HIDE -u BAR_OVERFLOW -u BAR_MOTION " "$SRC" \
+        && grep -q "^CONFIG_UNSET=.* -u BAR_PINS -u BAR_HIDE -u BAR_ORDER -u BAR_GAUGES -u BAR_OVERFLOW -u BAR_MOTION " "$SRC" \
         && sh "$SH" -h | grep -qx '  spark-shell bar hide NAME...      take a module off the bar' && sh "$SH" -h | grep -qx '  spark-shell bar show NAME...      put a hidden module on the bar again' \
         && ok "config: BAR_PINS takes the levels in any order, none, or a line of v0.147; BAR_HIDE and BAR_OVERFLOW the line's modules, v0.147's overflow with the clock and the notifications too; another name, none beside a level, the workspaces, are refused in one line; config.example shows the keys, the overflow with the pad and without the time's two, and the help the verbs" || bad "bar pins config" "$_br | $out | $out2"
     # the out page switches the card: ALSA's default for new programs, in spark-shell's own marked file, the ! form alsa.conf takes for a name

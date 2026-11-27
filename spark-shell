@@ -228,6 +228,8 @@ REPO=$(cd "$(dirname "$SELF")" && pwd)
 . "$REPO/src/reminders.sh"
 # shellcheck source=src/notifications.sh
 . "$REPO/src/notifications.sh"
+# shellcheck source=src/arrange.sh
+. "$REPO/src/arrange.sh"
 # shellcheck source=src/storage.sh
 . "$REPO/src/storage.sh"
 # shellcheck source=src/power.sh

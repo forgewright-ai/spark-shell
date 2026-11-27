@@ -74,7 +74,7 @@ sparkbar_run() {   # spark-bar started in its own session, under its keeper; fal
         BAR_REST=idle   # the idle screen's workspaces (layout_idle): the bar is off a screen that shows one
         family_set "$GLYPH_FAMILY"; BAR_GAUGE_FULL=$FAM_ON BAR_GAUGE_LIGHT=$FAM_OFF   # never as BAR_FULL or BAR_LIGHT: those are the shell's own signs
         BAR_LOCK=$(sparkbar_file pid) BAR_STATE=$(sparkbar_file state)   # BAR_OVERFLOW as config_load read it
-        unset BAR_PINS BAR_HIDE   # the pins and the hidden are each line's to say (bar_shown): a bar started with them would hand its line's loop the ones of its start
+        unset BAR_PINS BAR_HIDE BAR_ORDER BAR_GAUGES   # the arrangement is each line's to say (arrange_read): a bar started with it would hand its line's loop the one of its start
         export BAR_INK BAR_REST SPARK_SHELL BAR_POSITION BAR_FONT BAR_FG BAR_ACCENT BAR_MUTED BAR_GROUND BAR_LIT BAR_ATTENTION BAR_ALERT BAR_ALPHA BAR_GAUGE_FULL BAR_GAUGE_LIGHT BAR_MOTION BAR_OVERFLOW BAR_TRAY_WIDTH BAR_TRAY_OUTPUT BAR_LOCK BAR_STATE
         if command -v setsid >/dev/null 2>&1; then setsid sh -c "$SPARKBAR_KEEP" "$_sbc" </dev/null >/dev/null 2>"$_sblog" &
         else ( trap '' HUP; exec sh -c "$SPARKBAR_KEEP" "$_sbc" ) </dev/null >/dev/null 2>"$_sblog" & fi
@@ -134,9 +134,9 @@ sparkbar_font_again() {   # sparkbar_font_again FONT -- the status loop's: its b
     if command -v setsid >/dev/null 2>&1; then setsid sh "$REPO/spark-shell" bar again $_sfa </dev/null >/dev/null 2>&1 &
     else ( trap '' HUP; exec sh "$REPO/spark-shell" bar again $_sfa ) </dev/null >/dev/null 2>&1 & fi
 }
-sparkbar_no_pins() {   # sparkbar_no_pins pin|unpin|hide|show -> why it changes nothing here, in the verb's own words; nothing where spark-bar draws the bar and holds to both
+sparkbar_no_pins() {   # sparkbar_no_pins pin|unpin|hide|show|gauge|ungauge|move -> why it changes nothing here, in the verb's own words; nothing where spark-bar draws the bar and holds to them
     ! sparkbar_draws || return 0
-    case $1 in hide|show) _snw='hide and show need' ;; *) _snw='pins need' ;; esac
+    case $1 in hide|show) _snw='hide and show need' ;; move) _snw='a move needs' ;; gauge|ungauge) _snw='gauges need' ;; *) _snw='pins need' ;; esac
     if [ "$DESKTOP_BAR" != yes ]; then echo "$_snw the bar shown: it is hidden (spark-shell bar on --desktop shows it)"
     else echo "$_snw spark-bar: sway's bar draws the bar here, and it shows every module (spark-shell on desktop)"; fi
 }

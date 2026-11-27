@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # ---------------------------------------------------------------- the bar
 # sets: BAR_BT BAR_BT_OFF BAR_DEV BAR_DND BAR_DND_PLAIN BAR_DUE BAR_DUE_PLAIN BAR_FULL BAR_GAP BAR_GROUP_GAP BAR_KB BAR_KB_PLAIN BAR_LAN BAR_LIGHT BAR_MIC BAR_MIC_OFF BAR_NOTE BAR_OUT BAR_OUT_OFF BAR_PAD BAR_PALETTE BAR_PID BAR_PLAY BAR_PLAY_OFF BAR_PROC BAR_SHADE BAR_STEPS BAR_SYS BAR_WIFI BAR_WS_ORDER
-# reads: BAR_ASOUNDRC BAR_LEVELS BAR_MODULES CONFIG GLYPH_FAMILIES LAYOUT_ON OS PANEL_DOT PANEL_PROMPT PANEL_SEP PANEL_WARN REPO STATE_DIR TAB THEME_KEYS TMP WM_TRAY
+# reads: BAR_ASOUNDRC BAR_GROUPS BAR_MODULES CONFIG GLYPH_FAMILIES LAYOUT_ON OS PANEL_DOT PANEL_PROMPT PANEL_SEP PANEL_WARN REPO STATE_DIR TAB THEME_KEYS TMP WM_TRAY
 # spark's bar, or sway's own where it cannot run, reads `spark-shell bar status`:
 # i3bar JSON every 15 s and on SIGUSR1 to the pid in STATE_DIR/bar.pid
 BAR_SYS=${SPARK_SHELL_SYS:-/sys}      # tests: a fixture /sys and /proc
@@ -499,16 +499,6 @@ bar_audio() {   # bar_audio out|mic -- its blocks on sway's bar: the sign when t
 # --- the facts: the line for spark's bar (SPARK_BAR), no markup and no color in it: what each module is, for the bar to
 # draw in its own look. Sway's bar, where spark's cannot run, has bar_line's blocks as before
 
-# what the config says of the modules, now: BAR_PINS, the levels whose control, a gauge and a number, is on the bar (out
-# where no line says, none for no one), and BAR_HIDE, the modules off it. A BAR_PINS that names a module with no level
-# is v0.147's, the modules it showed: what it leaves out is hidden, and out is pinned
-bar_shown() {   # -> _pinned and _hidden, a list of names each
-    _pinned=$(bar_style BAR_PINS out | tr -d '"'); _hidden=$(bar_style BAR_HIDE '' | tr -d '"')
-    [ "$_pinned" != none ] || _pinned=''
-    ! words_in "$_pinned" "$BAR_LEVELS" || return 0
-    for _bsm in ${BAR_MODULES#workspaces }; do [ "$_bsm" != media ] || continue; case " $_pinned " in *" $_bsm "*) ;; *) _hidden="$_hidden $_bsm" ;; esac; done   # a line of v0.147 says nothing of media, made after it
-    _pinned=out
-}
 # the look, the line's first object: the colors as they are now, so a theme change and a preview show with no start, the
 # glyph family's gauge pair and the motion. Each value a string, a color its six hex digits; the muted is the palette's
 # own, the dim tone, and the alert its red
@@ -522,34 +512,47 @@ bar_look() {
 bar_sign() { _bg=$1; _bi=${3:-}; [ -z "$_bw" ] || { _bg=$2; _bi=''; }; }
 # a fact, one module's object: SIGN and the icon bar_sign named last, then TEXT in the CELLS kept for it, its widest;
 # STATE is ok, muted, off, missing, wrong, asks or records; LEVEL, 0 to 100, where the module has one, and SET, true where the bar can set it; LABEL is
-# the module and its state in words. Pinned is the config's word: the level's gauge and number are on the bar. Toggle
-# is true where a click on the sign or the text changes the module in place and opens nothing (bar_click): out's
-# mute, the keyboard's next layout, the pad shown or hidden, what plays paused or played
-bar_fact() {   # bar_fact NAME GROUP SIGN TEXT CELLS STATE LABEL [LEVEL [SET]] -- added to the line, unless the module is hidden
+# the module and its state in words. Its group and its toggle are the table's (src/arrange.sh): a toggle is true where
+# a click on the sign or the text changes the module in place and opens nothing. Pinned and gauge are the config's
+# words: a pinned level's number is on the bar, and its gauge too where gauge says so
+bar_fact() {   # bar_fact NAME SIGN TEXT CELLS STATE LABEL [LEVEL [SET]] -- added to the line, unless the module is hidden
     _bfi=${_bi:-}; _bi=''   # the icon is this fact's alone: the next one names its own, or has none
     case " $_hidden " in *" $1 "*) return 0 ;; esac
-    _bfl=''; [ -z "${8:-}" ] || { _bfl=$8; [ "$_bfl" -le 100 ] || _bfl=100; _bfl=",\"level\":$_bfl"; }
+    arrange_row "$1" || _ag=pad   # the pad's room is no module of the table
+    _bfl=''; [ -z "${7:-}" ] || { _bfl=$7; [ "$_bfl" -le 100 ] || _bfl=100; _bfl=",\"level\":$_bfl"; }
     _bfb=false; [ "$1" != clock ] || _bfb=true   # the time alone is bold
     _bfp=false; case " $_pinned " in *" $1 "*) _bfp=true ;; esac
-    _bfg=false; case $1 in out|kb|pad|media) _bfg=true ;; esac
-    bar_str "$3"; _bfs=$_bs; bar_str "$4"; _bft=$_bs; bar_str "$7"
-    line="$line,{\"name\":\"$1\",\"group\":\"$2\",\"sign\":\"$_bfs\",\"icon\":\"$_bfi\",\"text\":\"$_bft\",\"cells\":$5,\"bold\":$_bfb,\"state\":\"$6\"$_bfl,\"set\":${9:-false},\"pinned\":$_bfp,\"label\":\"$_bs\",\"toggle\":$_bfg}"
+    _bfq=false; case " $_gauged " in *" $1 "*) _bfq=true ;; esac
+    _bfg=false; [ -z "$_at" ] || _bfg=true
+    bar_str "$2"; _bfs=$_bs; bar_str "$3"; _bft=$_bs; bar_str "$6"
+    line="$line,{\"name\":\"$1\",\"group\":\"$_ag\",\"sign\":\"$_bfs\",\"icon\":\"$_bfi\",\"text\":\"$_bft\",\"cells\":$4,\"bold\":$_bfb,\"state\":\"$5\"$_bfl,\"set\":${8:-false},\"pinned\":$_bfp,\"gauge\":$_bfq,\"label\":\"$_bs\",\"toggle\":$_bfg}"
 }
+# here: 0 where this machine has the module, whether or not it has something to say now (the table's third function)
+bar_here_always() { :; }
+bar_here_media() { media_here; }
+bar_here_lan() { [ -n "$(bar_wired)" ]; }
+bar_here_bt() { ls -d "$BAR_SYS"/class/bluetooth/hci* >/dev/null 2>&1; }
+bar_here_wifi() { [ -n "$(bar_wireless)" ]; }
+bar_here_sound() { [ -n "${SND:-}" ]; }
+bar_here_light() { case $(light_get) in ''|*[!0-9]*) return 1 ;; esac; }
+bar_here_kb() { [ -n "$(kb_active)" ]; }
+bar_here_bat() { [ -n "$(bar_power)" ]; }
+bar_here_notifications() { notify_up; }
 bar_fact_pad() {   # the windows that wait on the pad, and how many; off while the pad is hidden. While the pad is on the bar and in sight it says itself there, and spark's bar is told to keep its room (v0.166)
     _pdn=$(winpad_count); [ "${_pdn:-0}" -gt 0 ] 2>/dev/null || return 0
     if [ "$(bar_style WINPAD_PLACE bar)" = bar ] && ! winpad_hidden; then   # the place as the config has it now: a drag changes it while this loop runs
-        [ -z "${SPARK_BAR:-}" ] || bar_fact room pad '' '' "$_pdn" ok "the pad on the bar, $_pdn windows"   # drawn as nothing: its grip and one cell kept before the bar's own modules; its cells say the windows, for the room what plays leaves them
+        [ -z "${SPARK_BAR:-}" ] || bar_fact room '' '' "$_pdn" ok "the pad on the bar, $_pdn windows"   # drawn as nothing: its grip and one cell kept before the bar's own modules; its cells say the windows, for the room what plays leaves them
         return 0
     fi
     bar_sign "$BAR_PAD" pad pad; _pdw=2; [ "${#_pdn}" -le 2 ] || _pdw=${#_pdn}
-    if winpad_hidden; then bar_fact pad windows "$_bg" "$_pdn" "$_pdw" off "pad hidden, $_pdn windows"
-    else bar_fact pad windows "$_bg" "$_pdn" "$_pdw" ok "pad, $_pdn windows"; fi
+    if winpad_hidden; then bar_fact pad "$_bg" "$_pdn" "$_pdw" off "pad hidden, $_pdn windows"
+    else bar_fact pad "$_bg" "$_pdn" "$_pdw" ok "pad, $_pdn windows"; fi
 }
 bar_fact_lan() {   # the wire: wrong when it is down
     bar_sign "$BAR_LAN" lan lan
     case $(bar_lan) in
-        up*) bar_fact lan connections "$_bg" '' 0 ok 'lan connected' ;;
-        down) bar_fact lan connections "$_bg" '' 0 wrong 'lan not connected' ;;
+        up*) bar_fact lan "$_bg" '' 0 ok 'lan connected' ;;
+        down) bar_fact lan "$_bg" '' 0 wrong 'lan not connected' ;;
     esac
 }
 # bluetooth: ok with a device connected, its icon with a dot at each side; on with none, the same sign and the icon with
@@ -557,26 +560,28 @@ bar_fact_lan() {   # the wire: wrong when it is down
 bar_fact_bt() {
     bt=$(bar_bt)
     case $bt in
-        name*) bar_sign "$BAR_BT" bt bt; bar_fact bt connections "$_bg" '' 0 ok "bluetooth ${bt#name } connected" ;;
-        on) bar_sign "$BAR_BT" bt bt-idle; bar_fact bt connections "$_bg" '' 0 missing 'bluetooth on' ;;
-        off) bar_sign "$BAR_BT_OFF" bt bt-off; bar_fact bt connections "$_bg" '' 0 off 'bluetooth off' ;;
+        name*) bar_sign "$BAR_BT" bt bt; bar_fact bt "$_bg" '' 0 ok "bluetooth ${bt#name } connected" ;;
+        on) bar_sign "$BAR_BT" bt bt-idle; bar_fact bt "$_bg" '' 0 missing 'bluetooth on' ;;
+        off) bar_sign "$BAR_BT_OFF" bt bt-off; bar_fact bt "$_bg" '' 0 off 'bluetooth off' ;;
     esac
 }
 bar_fact_wifi() {   # wifi: its signal a level the bar reads and cannot set, and its icon's bands lit by it; off, with no level, while it is not connected
     wifi=$(bar_wifi_pct)
     if [ -n "$wifi" ]; then
         _wfi=wifi; [ "${wifi%% *}" -ge 67 ] 2>/dev/null || _wfi=wifi-fair; [ "${wifi%% *}" -ge 34 ] 2>/dev/null || _wfi=wifi-weak
-        bar_sign "$BAR_WIFI" wifi "$_wfi"; bar_fact wifi connections "$_bg" '' 0 ok "wifi ${wifi%% *}%" "${wifi%% *}"
-    elif [ -n "$(bar_wireless)" ]; then bar_sign "$BAR_WIFI" wifi wifi-off; bar_fact wifi connections "$_bg" '' 0 off 'wifi not connected'; fi
+        bar_sign "$BAR_WIFI" wifi "$_wfi"; bar_fact wifi "$_bg" '' 0 ok "wifi ${wifi%% *}%" "${wifi%% *}"
+    elif [ -n "$(bar_wireless)" ]; then bar_sign "$BAR_WIFI" wifi wifi-off; bar_fact wifi "$_bg" '' 0 off 'wifi not connected'; fi
 }
-# what plays, on spark's bar alone: the sign, hollow while it is paused, then the artist and the title in the cells they
-# take, 30 at most; no module with no player. Its tone is the muted one while paused
+# what plays, on spark's bar alone: the sign, hollow while it is paused, then the artist and the title in a window of
+# 24 cells whatever their length, so the sign and what stands beside it never move with a title. The line says the
+# whole title, 100 characters at most, and the bar rolls a longer one through the window (v0.171). No module with no
+# player. Its tone is the muted one while paused
 bar_fact_media() {
     _mdl=$(media_now); [ -n "$_mdl" ] || return 0
-    _mdt=$(printf '%s' "$_mdl" | cut -f3 | cut_chars 30); bar_cells "$_mdt"
+    _mdt=$(printf '%s' "$_mdl" | cut -f3 | cut_chars 100); _mdw=$(printf '%s' "$_mdt" | cut_chars 60)
     case $_mdl in
-        *"${TAB}Paused${TAB}"*) bar_sign "$BAR_PLAY_OFF" media media-paused; bar_fact media sound "$_bg" "$_mdt" "$_bc" muted "paused: $_mdt" ;;
-        *) bar_sign "$BAR_PLAY" media media; bar_fact media sound "$_bg" "$_mdt" "$_bc" ok "playing: $_mdt" ;;
+        *"${TAB}Paused${TAB}"*) bar_sign "$BAR_PLAY_OFF" media media-paused; bar_fact media "$_bg" "$_mdt" 24 muted "paused: $_mdw" ;;
+        *) bar_sign "$BAR_PLAY" media media; bar_fact media "$_bg" "$_mdt" 24 ok "playing: $_mdw" ;;
     esac
 }
 # sound's two are always on the line, with a level, 0 where none is read, so a pinned control keeps its cells: the hollow
@@ -591,22 +596,24 @@ bar_fact_audio() {   # bar_fact_audio out|mic
     [ "$live" != 1 ] || { _aus=records; _aug=$PANEL_DOT; _aui=$1; }   # the icon stays the microphone, in red
     [ ! -e "$(bar_failed "$1")" ] || { _aus=wrong; _aut="$_aun could not be changed"; }
     bar_sign "$_aug" "$1" "$_aui"
-    bar_fact "$1" sound "$_bg" '' 0 "$_aus" "$_aut" "${_aul:-0}" "$_auc"
+    bar_fact "$1" "$_bg" '' 0 "$_aus" "$_aut" "${_aul:-0}" "$_auc"
 }
+bar_fact_out() { bar_fact_audio out; }
+bar_fact_mic() { bar_fact_audio mic; }
 bar_fact_due() {   # a reminder due: its sign alone, asking
     due=$(rem_due 2>/dev/null || :); [ -n "$due" ] || return 0
     bar_sign "$BAR_DUE" due due
-    bar_fact due tasks "$_bg" '' 0 asks "reminder due: $(printf '%s' "${due#*"$TAB"}" | cut_chars 28)"
+    bar_fact due "$_bg" '' 0 asks "reminder due: $(printf '%s' "${due#*"$TAB"}" | cut_chars 28)"
 }
 bar_fact_light() {   # the screen's brightness, a level the bar sets
     lt=$(light_get); case $lt in ''|*[!0-9]*) return 0 ;; esac
     bar_sign "$BAR_LIGHT" light light
-    bar_fact light seat "$_bg" '' 0 ok "brightness $lt%" "$lt" true
+    bar_fact light "$_bg" '' 0 ok "brightness $lt%" "$lt" true
 }
 bar_fact_kb() {   # the keyboard's layout in use, where there is more than one
     kb=$(kb_active); [ -n "$kb" ] || return 0
     bar_sign "$BAR_KB" kb kb; _kbw=0; for _kbl in $KEYBOARD; do [ "${#_kbl}" -le "$_kbw" ] || _kbw=${#_kbl}; done   # the widest layout's name
-    bar_fact kb seat "$_bg" "$kb" "$_kbw" ok "keyboard $kb"
+    bar_fact kb "$_bg" "$kb" "$_kbw" ok "keyboard $kb"
 }
 # the battery: its icon, full from 75, low under 15, a bolt while it charges, and its number; wrong when low. In words
 # no icon says it charges: a plus after the number does
@@ -618,11 +625,11 @@ bar_fact_bat() {
     [ "$cap" -ge 15 ] || [ "$stt" = Charging ] || { _bts=wrong; _bti=battery-low; _btl="$_btl low"; }
     [ -z "$_bw" ] || { _btc=5; [ "$stt" != Charging ] || _btt="$_btt+"; }
     bar_sign '' bat "$_bti"
-    bar_fact bat seat "$_bg" "$_btt" "$_btc" "$_bts" "$_btl"
+    bar_fact bat "$_bg" "$_btt" "$_btc" "$_bts" "$_btl"
 }
 bar_fact_clock() {   # the time alone: 21:41 in five cells, 12:41 PM in eight
     _ct=$(clock_text); bar_cells "$_ct"; [ "$_bc" -ge 5 ] || _bc=5; [ "$_bc" -le 5 ] || [ "$_bc" -ge 8 ] || _bc=8
-    bar_fact clock time '' "$_ct" "$_bc" ok "time $_ct"
+    bar_fact clock '' "$_ct" "$_bc" ok "time $_ct"
 }
 # always there where the notifications can show, a session bus and what the server takes: the flag, solid while some
 # wait and hollow with none, or the sign of do not disturb, and how many nobody looked at
@@ -631,18 +638,17 @@ bar_fact_notifications() {
     _nu=$(notify_unseen); [ "${_nu:-0}" -le 9 ] || _nu='9+'; [ "${_nu:-0}" != 0 ] || _nu=''
     if notify_dnd; then bar_sign "$BAR_DND" quiet quiet; _nl='do not disturb'
     else _nfi=flag-none; [ -z "$_nu" ] || _nfi=flag; bar_sign "$BAR_NOTE" notes "$_nfi"; _nl=notifications; fi
-    bar_fact notifications time "$_bg" "$_nu" 2 ok "$_nl${_nu:+, $_nu not seen}"
+    bar_fact notifications "$_bg" "$_nu" 2 ok "$_nl${_nu:+, $_nu not seen}"
 }
-bar_facts() {   # -> the line for spark's bar: the look, then a fact a module, in the bar's order
+bar_facts() {   # -> the line for spark's bar: the look, then a fact a module, in the arrangement's order
     SND=$(snd_tool)
-    # read each line: a change in Settings, a pin or a hide shows at the next
+    # read each line: a change in Settings, a move, a pin or a hide shows at the next
     _bw=''; [ "$(bar_style BAR_GLYPHS signs)" != words ] || _bw=1
     family_set "$(bar_style GLYPH_FAMILY stone)"
     bar_signs
-    bar_shown
+    arrange_read
     line=$(bar_look)
-    bar_fact_pad; bar_fact_lan; bar_fact_bt; bar_fact_wifi; bar_fact_media; bar_fact_audio out; bar_fact_audio mic; bar_fact_due
-    bar_fact_light; bar_fact_kb; bar_fact_bat; bar_fact_clock; bar_fact_notifications
+    for _bfm in $_order; do arrange_row "$_bfm"; "$_as"; done   # each module says itself, by the function its row names
     printf '[%s],\n' "$line"
 }
 bar_line() {   # -> a refresh's JSON array: the facts for spark's bar, the blocks sway's bar draws otherwise. Run in a subshell: what it sets ends with it
@@ -737,34 +743,59 @@ bar_line() {   # -> a refresh's JSON array: the facts for spark's bar, the block
     bar_group
     printf '[%s],\n' "$line"
 }
-# a click, from either bar. INSTANCE is the part: on spark's bar name (the sign), gauge, pct (the number) or text
+# a click, from either bar. INSTANCE is the part: on spark's bar name (the sign), gauge, pct (the number) or text. A
+# module's click is its own function, the one its row names (src/arrange.sh): bar_click_X NAME INSTANCE BUTTON RELX WIDTH
+bar_click_level() {   # bar_click_level RELX WIDTH -> l, the level a click there on a gauge asks for, a step of five; 1 on a gauge of no width
+    [ "$2" -gt 0 ] || return 1
+    l=$(( ($1 * 100 / $2 + 2) / 5 * 5 )); [ "$l" -le 100 ] || l=100; [ "$l" -ge 0 ] || l=0
+}
+bar_click_open() { [ "$3" != 1 ] || bar_panel_open "$1"; }   # a module with nothing to set on the bar: its section
+bar_click_pad() { [ "$3" != 1 ] || sh "$REPO/spark-shell" desktop pad toggle >/dev/null 2>&1 || :; }
+bar_click_due() { [ "$3" != 1 ] || bar_panel_open reminders; }
+bar_click_media() {   # the sign and the text play or pause; the wheel skips, up to the next track and down to the one before
+    case $3 in 1) media_act toggle >/dev/null 2>&1 || : ;; 4) media_act next >/dev/null 2>&1 || : ;; 5) media_act previous >/dev/null 2>&1 || : ;; esac
+}
+bar_click_sound() {   # out and mic: a gauge sets the level, the wheel takes five, the middle and the right button mute
+    case $2:$3 in
+        gauge:1) bar_click_level "$4" "$5" || return 0; bar_snd "$1" "$l" ;;
+        name:1) if [ "$1" = out ] && [ -n "${SPARK_BAR:-}" ]; then bar_snd out mute; else bar_panel_open "$1"; fi ;;   # on spark's bar out's sign mutes and its number opens the section
+        *:4) bar_snd "$1" +5 ;;
+        *:5) bar_snd "$1" -5 ;;
+        *:2|*:3) bar_snd "$1" mute ;;
+        *:1) bar_panel_open "$1" ;;
+    esac
+}
+bar_click_light() {   # a gauge sets the brightness, the wheel steps it; its sign and its number open the display section
+    case $2:$3 in
+        gauge:1) bar_click_level "$4" "$5" || return 0; light_set "$l" >/dev/null || : ;;
+        *:4) light_set up >/dev/null || : ;;
+        *:5) light_set down >/dev/null || : ;;
+        *:1) bar_panel_open display ;;
+    esac
+}
+bar_click_kb() { [ "$3" != 1 ] || wm_kb_layout next >/dev/null 2>&1 || :; }
+bar_click_notifications() { [ "$3" != 1 ] || { notify_seen; bar_panel_open notifications; }; }
+# a module or its group let go at another place on spark's bar, or stepped there by a key: the move in the verb's own
+# words, a colon between, made by the verb's own function. The bar drew the new order at the drop; one that cannot be
+# made says why in a notification, and the bar's next line puts the module back
+bar_moved() {   # bar_moved WHAT:before|after:OTHER
+    _bmw=${1%%:*}; _bmr=${1#*:}; _bms=${_bmr%%:*}; _bmo=${_bmr#*:}
+    case $_bms in before|after) ;; *) return 0 ;; esac
+    _bmx=$(arrange_move "$_bmw" "$_bms" "$_bmo" 2>&1) || notify_send bar 'Bar: the move was not made' "${_bmx#spark-shell bar: }"
+}
 bar_click() {   # bar_click NAME INSTANCE BUTTON RELX WIDTH X; 4 and 5 are the wheel
     bar_whole "$4" && bar_whole "$5" || return 0
     case $1:$2:$3 in
         div:*) ;;
-        out:gauge:1|mic:gauge:1) [ "$5" -gt 0 ] || return 0; l=$(( ($4 * 100 / $5 + 2) / 5 * 5 )); [ "$l" -le 100 ] || l=100; [ "$l" -ge 0 ] || l=0; bar_snd "$1" "$l" ;;
-        out:name:1) if [ -n "${SPARK_BAR:-}" ]; then bar_snd out mute; else bar_panel_open out; fi ;;   # on spark's bar the sign mutes and the number opens the section
-        light:gauge:1) [ "$5" -gt 0 ] || return 0; l=$(( ($4 * 100 / $5 + 2) / 5 * 5 )); [ "$l" -le 100 ] || l=100; light_set "$l" >/dev/null || : ;;
-        light:*:4) light_set up >/dev/null || : ;;
-        light:*:5) light_set down >/dev/null || : ;;
-        light:*:1) bar_panel_open display ;;   # its sign and its number
-        due:*:1) bar_panel_open reminders ;;
-        notifications:*:1) notify_seen; bar_panel_open notifications ;;
-        kb:*:1) wm_kb_layout next >/dev/null 2>&1 || : ;;
-        media:*:1) media_act toggle >/dev/null 2>&1 || : ;;   # the wheel skips: up to the next track, down to the one before
-        media:*:4) media_act next >/dev/null 2>&1 || : ;;
-        media:*:5) media_act previous >/dev/null 2>&1 || : ;;
-        out:*:4|mic:*:4) bar_snd "$1" +5 ;;
-        out:*:5|mic:*:5) bar_snd "$1" -5 ;;
-        out:*:2|out:*:3|mic:*:2|mic:*:3) bar_snd "$1" mute ;;
-        pad:*:1) sh "$REPO/spark-shell" desktop pad toggle >/dev/null 2>&1 || : ;;
+        move:*:1) bar_moved "$2" ;;
+        move:*) ;;
         # the bar dragged to its screen's other half and let go: it stands there, kept in the config. Run in a session
         # of its own: the bar it moves is this loop's own, and ends it
         bar:top:1|bar:bottom:1) if command -v setsid >/dev/null 2>&1; then setsid sh "$REPO/spark-shell" bar "$2" </dev/null >/dev/null 2>&1 &
             else ( trap '' HUP; sh "$REPO/spark-shell" bar "$2" </dev/null >/dev/null 2>&1 & ); fi ;;
         bar:*) ;;
         logo:*:1) bar_panel_open '' ;;
-        *:*:1) bar_panel_open "$1" ;;
+        *) if arrange_row "$1"; then "$_ac" "$1" "$2" "$3" "$4" "$5"; elif [ "$3" = 1 ]; then bar_panel_open "$1"; fi ;;
     esac
 }
 bar_clicks() {   # the bar's clicks on stdin, as sway's bar writes them: `[` then one `,{...}` a line
@@ -780,9 +811,9 @@ bar_clicks() {   # the bar's clicks on stdin, as sway's bar writes them: `[` the
 bar_status() {   # bar_status [--once]
     [ "$OS" != Darwin ] || refuse_in bar "not on macOS, which has its own desktop"
     # spark-bar's word stays this loop's, a variable not exported: what the loop starts (home at a click, the pad, bar
-    # again) is no bar's line. Nor does it carry the pins and the hidden as this loop started with them: each line reads
-    # the config's, and so does what it starts
-    _bsb=${SPARK_BAR:-}; unset SPARK_BAR BAR_PINS BAR_HIDE; SPARK_BAR=$_bsb
+    # again) is no bar's line. Nor does it carry the arrangement as this loop started with it: each line reads the
+    # config's, and so does what it starts
+    _bsb=${SPARK_BAR:-}; unset SPARK_BAR BAR_PINS BAR_HIDE BAR_ORDER BAR_GAUGES; SPARK_BAR=$_bsb
     _bar_of=''   # the bar that started this, which its lines go with
     if [ -n "$SPARK_BAR" ]; then _bar_of=$PPID
     else   # sway's own, or the shell it starts its command with
@@ -912,7 +943,7 @@ bar_volume_key() {   # bar_volume_key up|down|mute|mic
     bar_redraw
 }
 bar_names() {   # -> the block names present, without the ones hidden on spark's bar
-    _hidden=''; ! sparkbar_draws || bar_shown
+    _hidden=''; ! sparkbar_draws || arrange_read
     REM_LOOK=1 bar_status --once 2>/dev/null | jq -r --arg h " div logo $_hidden " '[.[].name | select(. as $n | $h | contains(" \($n) ") | not)] | unique | join(", ")' 2>/dev/null || :
 }
 bar_tmux() {   # bar_tmux [on|off] WHICH
@@ -1009,74 +1040,33 @@ bar_tray_step() {   # bar_tray_step on|off -> the receipt
     bar_follow "$_bto" >/dev/null
     if [ "$_btw" = yes ]; then echo "tray on $PANEL_SEP the apps' icons show at the bar's end"; else echo "tray off $PANEL_SEP the apps keep running; their icons stay off the bar"; fi
 }
-bar_module_words() {   # bar_module_words NAME -> what the module shows
-    case $1 in
-        workspaces) echo "the workspaces: ten places, and a plate with the number where you are" ;; pad) echo 'the windows that wait on the pad' ;;
-        lan) echo 'the wired network' ;; bt) echo 'bluetooth' ;; wifi) echo 'wifi; pinned, its signal as a gauge and a number' ;;
-        media) echo 'what plays: a click plays or pauses it, the wheel skips' ;;
-        out) echo 'the sound, its sign mutes; pinned, a gauge and a number set the level' ;; mic) echo 'the microphone, a red dot while something records; pinned, its level' ;;
-        due) echo 'a reminder that is due' ;; light) echo "the screen's brightness; pinned, a gauge and a number set it" ;;
-        kb) echo 'the keyboard layout in use' ;; bat) echo 'the battery' ;; clock) echo 'the time' ;; notifications) echo 'the notifications not seen; a moon in do not disturb' ;;
+bar_gauge_verb() {   # bar_gauge_verb WORD... -> _bgv gauge or ungauge and _bgn the modules, where the words are levels' names and at most a last on or off; 1 for a sentence
+    _bgv=gauge; _bgn=''; _bgl=''
+    for _bga in "$@"; do
+        [ -z "$_bgl" ] || return 1   # a word after on or off
+        case $_bga in on) _bgl=1 ;; off) _bgl=1; _bgv=ungauge ;; *) case " $BAR_MODULES " in *" $_bga "*) _bgn="${_bgn:+$_bgn }$_bga" ;; *) return 1 ;; esac ;; esac
+    done
+    [ -n "$_bgn" ]
+}
+bar_move_verb() {   # bar_move_verb WORD... -> 0 where the words are a move's: default, or a module or a group and where it goes; 1 for a sentence
+    case $#:${1:-} in 1:default) return 0 ;; esac
+    case " $BAR_MODULES $BAR_GROUPS " in *" ${1:-} "*) ;; *) return 1 ;; esac
+    case $#:${2:-} in
+        2:first|2:last|2:left|2:right) ;;
+        3:before|3:after) case " $BAR_MODULES $BAR_GROUPS " in *" $3 "*) ;; *) return 1 ;; esac ;;
+        *) return 1 ;;
     esac
 }
-bar_list() { printf '%s' "$1" | sed 's/ /, /g'; }   # bar_list NAMES -> the names, a comma between
-# the four verbs of what the bar shows. A pin puts a level's control, a gauge and a number, beside its sign, and an unpin
-# takes it off; a hide takes a module off the bar, and a show brings it back. Both of the config's keys are written, in
-# the bar's order, so a BAR_PINS of v0.147 becomes the two; no bar starts again: its next line says it
-bar_pin() {   # bar_pin pin|unpin|hide|show [MODULE...] -- pin alone lists the modules, a line each: shown, pinned or hidden
-    _bpv=$1; shift; _bpy=$(sparkbar_no_pins "$_bpv")   # sway's bar shows every module: nothing to pin or to hide there
-    bar_shown
-    if [ "$#" = 0 ]; then
-        [ "$_bpv" = pin ] || refuse_in bar "$_bpv takes a module's name: ${BAR_MODULES#workspaces }"
-        for _bpm in $BAR_MODULES; do
-            _bps=shown; case " $_pinned " in *" $_bpm "*) _bps=pinned ;; esac; case " $_hidden " in *" $_bpm "*) _bps=hidden ;; esac
-            printf '%-13s %-6s %s %s\n' "$_bpm" "$_bps" "$PANEL_SEP" "$(bar_module_words "$_bpm")"
-        done
-        [ -z "$_bpy" ] || echo "$_bpy"
-        return 0
-    fi
-    [ -z "$_bpy" ] || refuse_in bar "$_bpy"
-    for _bpm in "$@"; do
-        case $_bpv in
-            pin|unpin) case " $BAR_LEVELS " in *" $_bpm "*) ;; *) refuse_in bar "$_bpm has no level to pin: a pin is for $BAR_LEVELS" ;; esac ;;
-            *) [ "$_bpm" != workspaces ] || refuse_in bar "the workspaces stay on the bar (spark-shell bar off --desktop hides the bar)" ;;
-        esac
-        [ "$_bpv" != pin ] || case " $_hidden " in *" $_bpm "*) refuse_in bar "$_bpm is hidden (spark-shell bar show $_bpm)" ;; esac
-    done
-    _bpp=''; _bph=''; _bpc=''; _bpd=''   # the two lists as they become, in the bar's order; what changed; a sound device named
-    for _bpm in ${BAR_MODULES#workspaces }; do
-        case " $_pinned " in *" $_bpm "*) _bp1=1 ;; *) _bp1='' ;; esac
-        case " $_hidden " in *" $_bpm "*) _bh1=1 ;; *) _bh1='' ;; esac
-        case " $* " in *" $_bpm "*)
-            case $_bpm in out|mic) _bpd=1 ;; esac
-            case $_bpv:$_bp1:$_bh1 in pin::*) _bp1=1; _bpc=1 ;; unpin:1:*) _bp1=''; _bpc=1 ;; hide:*:) _bh1=1; _bpc=1 ;; show:*:1) _bh1=''; _bpc=1 ;; esac ;;
-        esac
-        [ -z "$_bp1" ] || _bpp="${_bpp:+$_bpp }$_bpm"
-        [ -z "$_bh1" ] || _bph="${_bph:+$_bph }$_bpm"
-    done
-    [ -n "$_bpc" ] || case $_bpv in
-        pin) refuse_in bar "$* pinned already" ;; unpin) refuse_in bar "$* not pinned" ;;
-        hide) refuse_in bar "$* hidden already" ;; show) refuse_in bar "$* not hidden" ;;
-    esac
-    config_set BAR_PINS "${_bpp:-none}" >/dev/null; config_set BAR_HIDE "$_bph" >/dev/null
-    bar_redraw   # the bar's next line says it
-    _bps=''; _bpg=''   # the modules on the bar, and the levels among them with their gauge
-    for _bpm in $BAR_MODULES; do
-        case " $_bph " in *" $_bpm "*) continue ;; esac
-        _bps="${_bps:+$_bps }$_bpm"; case " $_bpp " in *" $_bpm "*) _bpg="${_bpg:+$_bpg }$_bpm" ;; esac
-    done
-    case $_bpv in
-        pin|unpin) if [ -n "$_bpg" ]; then echo "${_bpv}ned $* $PANEL_SEP the bar shows a gauge and a number for $(bar_list "$_bpg")"; else echo "${_bpv}ned $* $PANEL_SEP the bar shows no gauge now"; fi ;;
-        hide) _bpn=''; [ -z "$_bpd" ] || _bpn="the shortcut is off the bar, not the device $PANEL_SEP "
-            echo "hidden $* $PANEL_SEP ${_bpn}the bar shows $(bar_list "$_bps")" ;;
-        show) echo "shown $* $PANEL_SEP the bar shows $(bar_list "$_bps")" ;;
-    esac
-}
-bar_modules_only() { for _bmo in "$@"; do case " $BAR_MODULES " in *" $_bmo "*) ;; *) return 1 ;; esac; done; }   # bar_modules_only WORD... -> 0 when each is a module's name, and with no word at all
-cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | top|bottom | text [auto|N|bigger|smaller] | tray [on|off] | pin [MODULE...] | unpin|hide|show MODULE... | keys | start | again | status [--once] | due | volume up|down|mute|mic | panel [PAGE] ... | WORDS
+cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | top|bottom | text [auto|N|bigger|smaller] | tray [on|off] | pin [MODULE...] | unpin|hide|show MODULE... | gauge MODULE... [on|off] | move NAME WHERE [OTHER] | keys | start | again | status [--once] | due | volume up|down|mute|mic | panel [PAGE] ... | WORDS
     config_load
-    # pin, unpin, hide and show are verbs before modules' names alone; a sentence that begins with one (show the clock) is words, below
-    case ${1:-} in pin|unpin|hide|show) _cbv=$1; shift; if bar_modules_only "$@"; then bar_desktop_here; bar_pin "$_cbv" "$@"; return; fi; set -- "$_cbv" "$@" ;; esac
+    # pin, unpin, hide, show, gauge and move are verbs before their own words alone: modules' names, a gauge's on or
+    # off, a move's place. A sentence that begins with one (show the clock, move the bar down) is words, below
+    # shellcheck disable=SC2086   # a gauge's names, split on purpose: each one is the table's own word
+    case ${1:-} in
+        pin|unpin|hide|show) _cbv=$1; shift; if arrange_names_only "$@"; then bar_desktop_here; arrange_set "$_cbv" "$@"; return; fi; set -- "$_cbv" "$@" ;;
+        gauge) shift; _bgv=gauge; _bgn=''; if [ "$#" = 0 ] || bar_gauge_verb "$@"; then bar_desktop_here; arrange_set "$_bgv" $_bgn; return; fi; set -- gauge "$@" ;;
+        move) shift; if [ "$#" = 0 ] || bar_move_verb "$@"; then bar_desktop_here; arrange_move "$@"; return; fi; set -- move "$@" ;;
+    esac
     case ${1:-} in
         status) shift; bar_status "$@"; return ;;
         due) rem_due_line; return ;;   # tmux's status line
@@ -1092,7 +1082,7 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | top|bottom | text [aut
         seen) return 0 ;;   # v0.169's mako config says it at each one it shows, until that mako ends: the server counts them now
         again) [ "$OS" = Darwin ] || { [ "${2:-}" = font ] && sparkbar_has_font; } || { sparkbar_again; layout_refit_soon; }; return 0 ;;   # the status loop's, apart from it: a new font, which a verb may have given the bar already
         on|off|'') ;;
-        -*) refuse_in bar "$1 is not a bar command: on, off, top, bottom, text, tray, pin, unpin, hide, show, keys, status, volume, panel, or words for what you want" ;;
+        -*) refuse_in bar "$1 is not a bar command: on, off, top, bottom, text, tray, pin, unpin, hide, show, gauge, move, keys, status, volume, panel, or words for what you want" ;;
         *) [ "$OS" != Darwin ] || refuse_in bar "not on macOS, which has its own desktop"; bar_want "$*"; return ;;
     esac
     which=both; case ${LAYOUT_ON:-} in terminal) which=rooms ;; desktop) which=windows ;; esac

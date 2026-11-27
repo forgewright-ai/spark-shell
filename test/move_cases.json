@@ -1,0 +1,31 @@
+{
+  "about": "One table for the bar's program (component/bar/src/arrange.rs) and the shell's verb (src/arrange.sh): an order of the status, a move in the verb's words, and the order after it. A move the verb refuses has no order after it.",
+  "groups": {"pad": "now", "due": "now", "media": "now", "lan": "network", "bt": "network", "wifi": "network", "out": "sound", "mic": "sound", "light": "screen", "kb": "screen", "bat": "power"},
+  "cases": [
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "mic before out", "to": "pad due media lan bt wifi mic out light kb bat"},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "out after mic", "to": "pad due media lan bt wifi mic out light kb bat"},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "wifi before lan", "to": "pad due media wifi lan bt out mic light kb bat"},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "lan after wifi", "to": "pad due media bt wifi lan out mic light kb bat"},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "lan after bt", "to": "pad due media bt lan wifi out mic light kb bat"},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "media before pad", "to": "media pad due lan bt wifi out mic light kb bat"},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "screen before sound", "to": "pad due media lan bt wifi light kb out mic bat"},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "sound after power", "to": "pad due media lan bt wifi light kb bat out mic"},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "now after network", "to": "lan bt wifi pad due media out mic light kb bat"},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "power before now", "to": "bat pad due media lan bt wifi out mic light kb"},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "network before light", "to": "pad due media out mic lan bt wifi light kb bat"},
+    {"order": "lan bt wifi media pad due light kb out mic bat", "move": "due before media", "to": "lan bt wifi due media pad light kb out mic bat"},
+    {"order": "lan bt wifi media pad due light kb out mic bat", "move": "sound before screen", "to": "lan bt wifi media pad due out mic light kb bat"},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "kb first", "to": "pad due media lan bt wifi out mic kb light bat"},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "pad last", "to": "due media pad lan bt wifi out mic light kb bat"},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "network last", "to": "pad due media out mic light kb bat lan bt wifi"},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "screen first", "to": "light kb pad due media lan bt wifi out mic bat"},
+    {"order": "lan bt wifi media pad due light kb out mic bat", "move": "default", "to": "pad due media lan bt wifi out mic light kb bat"},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "light before out", "to": null},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "mic before mic", "to": null},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "sound before sound", "to": null},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "out before mic", "to": null},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "now first", "to": null},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "clock first", "to": null},
+    {"order": "pad due media lan bt wifi out mic light kb bat", "move": "out before clock", "to": null}
+  ]
+}
