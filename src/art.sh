@@ -194,13 +194,13 @@ theme_screens() {   # theme_screens -- what each screen shows, from the left
     command -v jq >/dev/null 2>&1 && wm_up || refuse_in theme "the screens are the desktop's: run it inside it"
     theme_load
     _tsl=$(art_screens); [ -n "$_tsl" ] || refuse_in theme "sway shows no screen on"
-    _tsn=$(printf '%s\n' "$_tsl" | grep -c '')
+    _tsn=$(printf '%s\n' "$_tsl" | grep -c ''); _tsd=$(theme_dir "${THEME:-none}")
     printf '%s\n' "$_tsl" | while IFS="$TAB" read -r _tsa _tsi _tst _tso _tss _tsr _tsf _tsm; do
         case ${WALLPAPER:-default} in default|none) _tsw="the ground" ;; '#'*) _tsw="the color $WALLPAPER" ;; *) _tsw='' ;; esac
         if [ -z "$_tsw" ] && art_wall_theirs; then _tsw="your wallpaper as you set it"; fi
         if [ -z "$_tsw" ]; then
             case $_tsr:$_tsm in
-                landscape:*) _tsw="the art" ;;
+                landscape:*) _tsw="the art"; [ -z "$_tsd" ] || case ${WALLPAPER:-} in "$_tsd"/?*) _tsw="the wallpaper (${WALLPAPER##*/})" ;; esac ;;   # a theme's own picture by its name
                 panel*) _tsw="$_tsr ($_tsf)" ;;
                 chosen:*) _tsw="the wallpaper ($_tsf)" ;;
                 portrait:fill) _tsw="its portrait ($_tsf)" ;;
@@ -219,6 +219,19 @@ art_fit() {   # art_fit PICTURE WxH "#TOP #BOTTOM" OUT -> the picture whole insi
       printf '<image width="%s" height="%s" preserveAspectRatio="xMidYMid meet" xlink:href="data:%s;base64,' "$_afw" "$_afh" "$(art_mime "$1")"
       base64 < "$1" | tr -d '\n'; printf '"/></svg>\n'; } > "$4.svg" && rsvg-convert -w "$_afw" -h "$_afh" -o "$4.new" "$4.svg" 2>/dev/null && mv "$4.new" "$4"; _afr=$?
     rm -f "$4.svg" "$4.new"; return "$_afr"
+}
+art_fit_drawing() {   # art_fit_drawing DRAWING.svg WxH "#TOP #BOTTOM" OUT -> a drawing on a screen taller than it: its own view widened above and below over its top and bottom colors, so a line that crosses its edge goes on (contours, ripples), a PNG; never cropped. False for a screen no taller than it, or no drawing's root tag
+    command -v rsvg-convert >/dev/null 2>&1 && [ -f "$1" ] || return 1
+    _adw=${2%x*}; _adh=${2#*x}; _adt=${3%% *}; _adb=${3##* }
+    _adv=$(sed -n 's/^<svg [^>]*viewBox="0 0 \([0-9]*\) \([0-9]*\)".*/\1 \2/p' "$1" | sed -n 1p); [ -n "$_adv" ] || return 1
+    _adx=${_adv% *}; _ady=${_adv#* }; _adz=$((_adh * _adx / _adw))   # the view's new height in the drawing's own units
+    [ "$_adz" -gt "$_ady" ] || return 1
+    _ado=$(((_ady - _adz) / 2))
+    sed "/^<svg /{
+s/viewBox=\"0 0 $_adx $_ady\"/viewBox=\"0 $_ado $_adx $_adz\"/; s/ width=\"[0-9]*\"/ width=\"$_adw\"/; s/ height=\"[0-9]*\"/ height=\"$_adh\"/
+s|>\$|><rect x=\"0\" y=\"$_ado\" width=\"$_adx\" height=\"$((_adz / 2))\" fill=\"$_adt\"/><rect x=\"0\" y=\"$((_ado + _adz / 2))\" width=\"$_adx\" height=\"$((_adz - _adz / 2))\" fill=\"$_adb\"/>|
+}" "$1" > "$4.svg" && rsvg-convert -w "$_adw" -h "$_adh" -o "$4.new" "$4.svg" 2>/dev/null && mv "$4.new" "$4"; _adr=$?
+    rm -f "$4.svg" "$4.new"; return "$_adr"
 }
 art_frame() {   # art_frame PICTURE WxH #GROUND #EDGE OUT -> the picture whole, as a screen with a hairline edge, centered on the ground
     command -v base64 >/dev/null 2>&1 && command -v rsvg-convert >/dev/null 2>&1 && [ -f "$1" ] || return 1
@@ -244,27 +257,34 @@ art_strip() {   # art_strip OUT HEIGHT #GROUND PICTURE... -> the pictures side b
     rm -f "$_aso.svg" "$_aso.new"; return "$_asr"
 }
 # The screens: each one's place from the left, its turn and its size, and the
-# picture the theme has for it. A family's panels for that many screens go to
-# the screens in their order from the left, a panel's portrait picture to a
-# turned screen; a turned screen with no panel takes the portrait companion, a
-# scene's own portrait view, or the art fitted with its own edges carried on:
-# never one picture stretched over turned screens, never a forced crop.
+# picture the theme has for it. A family's panels are a row of landscape
+# pictures: they go to the landscape screens in their order from the left, the
+# set for that many landscape screens (or the largest smaller one), so a turned
+# screen beside them never takes one's place; a screen past the set shows the
+# art. A turned screen takes its place's panel portrait, the portrait
+# companion, a scene's own portrait view, or the art fitted with its own edges
+# carried on: never one picture stretched over turned screens, never a forced
+# crop.
 ART_SCREENS='
 def pick($p; $tall): if $p == null then null elif $tall then ($p.portrait // null) else ($p.landscape // null) end;
 [.[] | select(.active)
   | {name, id: ([.make, .model, .serial] | map(if . == null or . == "" then "Unknown" else . end) | join(" ")),
      x: .rect.x, y: .rect.y, tall: (.rect.height > .rect.width),
      size: "\((.rect.width * (.scale // 1)) | floor)x\((.rect.height * (.scale // 1)) | floor)"}]
-| sort_by(.x, .y) | length as $n
+| sort_by(.x, .y) | . as $all | length as $n
+| ([.[] | select(.tall | not)] | length) as $k
 | ($art.panels[$n | tostring] // null) as $set
-| to_entries[] | (.key + 1) as $at | .value
-| (if $set then pick($set[$at - 1]; .tall) else null end) as $panel
-| (if $panel then ["panel \($at) of \($n)", $panel, "fill"]
-   elif .tall and $art.portrait_file then ["portrait", $art.portrait_file, "fill"]
-   elif .tall and $art.portrait == "authored" then ["portrait", "-", "scene"]
-   elif .tall then ["fitted", "-", "fit"]
+| ([$art.panels | to_entries[] | select((.key | tonumber) <= $k)] | max_by(.key | tonumber) | .value) as $wide
+| range(0; $n) as $i | $all[$i] as $o | ($i + 1) as $at
+| ([$all[0:$i][] | select(.tall | not)] | length + 1) as $w
+| (if $o.tall then ((if $set then pick($set[$i]; true) else null end) // $art.portrait_file)
+   elif $wide then pick($wide[$w - 1]; false) else null end) as $file
+| (if $o.tall and $file then ["portrait", $file, "fill"]
+   elif $o.tall and $art.portrait == "authored" then ["portrait", "-", "scene"]
+   elif $o.tall then ["fitted", "-", "fit"]
+   elif $file then ["panel \($w) of \($wide | length)", $file, "fill"]
    else ["landscape", "-", "fill"] end) as $r
-| [.name, .id, ($at | tostring), (if .tall then "portrait" else "landscape" end), .size] + $r | @tsv'
+| [$o.name, $o.id, ($at | tostring), (if $o.tall then "portrait" else "landscape" end), $o.size] + $r | @tsv'
 art_screens() {   # [OUTPUTS-JSON-FILE] -> NAME<tab>ID<tab>AT<tab>TURN<tab>WxH<tab>ROLE<tab>FILE<tab>MODE per screen on, from the left; FILE - for none (a tab is IFS white space: an empty field would vanish)
     _asa=$(art_of "${THEME:-none}")
     _asw=$(printf '%s' "$_asa" | jq -r .wallpaper); _asd=$(theme_dir "${THEME:-none}")
@@ -334,8 +354,17 @@ art_loop_of() {   # art_loop_of PICTURE -> the loop beside a picture of the them
     _alf=${1%.*}.mp4
     [ -f "$_alf" ] && [ ! -L "$_alf" ] && [ "$(od -An -c -j4 -N4 "$_alf" | tr -d ' \n')" = ftyp ] && printf '%s' "$_alf"
 }
+art_moves() {   # art_moves PICTURE -> 0 when PICTURE is the theme's own and it, or another picture of the theme's, has its loop beside it: a panel's or a portrait's loop plays though the picture that leads has none
+    art_loop_of "$1" >/dev/null && return 0
+    _amd=$(theme_dir "${THEME:-none}"); [ -n "$_amd" ] || return 1
+    case $1 in "$_amd"/*) ;; *) return 1 ;; esac
+    for _amf in "$_amd"/*.mp4; do
+        for _ame in jpg jpeg png; do [ ! -f "${_amf%.mp4}.$_ame" ] || ! art_loop_of "${_amf%.mp4}.$_ame" >/dev/null || return 0; done
+    done
+    return 1
+}
 art_loops() {   # -> LOOP<tab>SCREEN for each screen whose still has its loop beside it, as the screens plan them; false for none
-    art_loop_of "${WALLPAPER:-}" >/dev/null || return 1
+    art_moves "${WALLPAPER:-}" || return 1
     _ald=$(theme_dir "${THEME:-none}")
     art_screens | while IFS="$TAB" read -r _aln _ali _ala _alt _als _alr _alx _alm; do
         [ "$_alm" = fill ] || continue
@@ -344,11 +373,15 @@ art_loops() {   # -> LOOP<tab>SCREEN for each screen whose still has its loop be
     done | grep .
 }
 art_plan_file() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-screens.plan"; }   # -> the screens as last drawn
+art_fit_file() {   # art_fit_file WxH -> the art fitted for a screen of that size: a drawing by its name, a picture (a path) by a sum of it, never a path inside a file's name
+    case ${WALLPAPER:-} in */*) _afk=picture-$(printf '%s' "$WALLPAPER" | cksum | cut -d' ' -f1) ;; *) _afk=${WALLPAPER:-none} ;; esac
+    printf '%s' "$WALL_CACHE/screens/$_afk-${THEME:-none}-$1-fitted.png"   # -fitted: a drawing has its view widened since; a -fit.png made before is never read again
+}
 art_screen_file() {   # art_screen_file FILE MODE WxH -> the still a screen of the plan shows, when it is made; the lock takes these, never a loop
     case $2 in
         fill) case $1 in ""|-) return 0 ;; esac; { _asd=$(theme_dir "${THEME:-}"); [ -f "$_asd/$1" ] && printf '%s' "$_asd/$1"; } ;;
         scene) [ ! -f "$WALL_CACHE/$WALLPAPER-$THEME-$3.png" ] || printf '%s' "$WALL_CACHE/$WALLPAPER-$THEME-$3.png" ;;
-        fit) [ ! -f "$WALL_CACHE/screens/$WALLPAPER-$THEME-$3-fit.png" ] || printf '%s' "$WALL_CACHE/screens/$WALLPAPER-$THEME-$3-fit.png" ;;
+        fit) _aqf=$(art_fit_file "$3"); [ ! -f "$_aqf" ] || printf '%s' "$_aqf" ;;
     esac
 }
 art_screen_stills() {   # -> NAME<tab>FILE for each screen with a still of its own made, as art_screens_follow gives them; none for a picture or a color of yours
@@ -384,8 +417,9 @@ art_screens_follow() {   # each screen output * does not suit gets its own still
                   [ -f "$_ssf" ] || { mkdir_state "$WALL_CACHE" && scene_still "$WALLPAPER" "$_asf" "$_ass" "$_ssf"; } >/dev/null 2>&1 || continue
                   printf 'output "%s" bg "%s" fill\n' "$_asn" "$_ssf" ;;
               fit) [ -f "$_asw" ] || continue
-                  _ssf=$WALL_CACHE/screens/$WALLPAPER-$THEME-$_ass-fit.png
-                  [ -f "$_ssf" ] || { mkdir_state "$WALL_CACHE/screens" && art_fit "$_asw" "$_ass" "$(art_edges "$_asw" "$_asg" "$_ssf.edges.png")" "$_ssf"; } >/dev/null 2>&1 || continue
+                  _ssf=$(art_fit_file "$_ass")
+                  [ -f "$_ssf" ] || { mkdir_state "$WALL_CACHE/screens" && _sse=$(art_edges "$_asw" "$_asg" "$_ssf.edges.png") \
+                      && { { wall_shipped "$WALLPAPER" && art_fit_drawing "${_asw%.*}.svg" "$_ass" "$_sse" "$_ssf"; } || art_fit "$_asw" "$_ass" "$_sse" "$_ssf"; }; } >/dev/null 2>&1 || continue
                   printf 'output "%s" bg "%s" fill\n' "$_asn" "$_ssf" ;;
           esac
       done > "$TMP/screens"

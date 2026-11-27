@@ -4671,7 +4671,10 @@ cat > "$H/mo/swaymsg" <<'MO_SWAY'
 case "$*" in
     "-t get_version") echo "{}" ;;
     "-t get_outputs") wide='{"name":"HDMI-A-1","active":true,"scale":1,"rect":{"x":1200,"y":0,"width":1920,"height":1080}}'
-        if [ -e "$HOME/mo.one" ]; then echo "[$wide]"; else echo '[{"name":"DP-3","active":true,"scale":1,"rect":{"x":0,"y":0,"width":1200,"height":1920}},'"$wide]"; fi ;;
+        tall='{"name":"DP-3","active":true,"scale":1,"rect":{"x":0,"y":0,"width":1200,"height":1920}}'
+        if [ -e "$HOME/mo.one" ]; then echo "[$wide]"
+        elif [ -e "$HOME/mo.three" ]; then echo "[$tall,$wide,"'{"name":"HDMI-A-2","active":true,"scale":1,"rect":{"x":3120,"y":0,"width":1920,"height":1080}}]'
+        else echo "[$tall,$wide]"; fi ;;
     *) echo "$*" | awk '{ gsub(/;output /, "\n-- output "); print }' >> "$HOME/mosway.log" ;;   # each screen's still a line, as sway reads one command of them all
 esac
 MO_SWAY
@@ -4732,10 +4735,10 @@ printf 'DESKTOP=sway\nTHEME=atlas-awakening\nWALLPAPER=%s\nWALLPAPER_MOTION=on\n
 mo desktop --motion >/dev/null 2>&1; mo_wait 1
 _ml=$(sed -n 1p "$HOME/player.log" 2>/dev/null || :); _ml1=${_ml#--screen DP-3=}; _ml1=${_ml1%% *}; _ml2=${_ml##*HDMI-A-1=}
 case $_ml in "--screen DP-3=$_mdir/given-"*".mp4 --screen HDMI-A-1=$_mdir/given-"*.mp4) _mok=1 ;; *) _mok='' ;; esac
-_i=0; while [ "$_i" -lt 50 ] && ! grep -q "^-- output \"HDMI-A-1\" bg \"$_mat/atlas-awakening-landscape-1.jpg\" fill$" "$HOME/mosway.log" 2>/dev/null; do sleep 0.2; _i=$((_i + 1)); done
+_i=0; while [ "$_i" -lt 50 ] && ! grep -q "^-- output \"DP-3\" bg \"$_mat/atlas-awakening-portrait.jpg\" fill$" "$HOME/mosway.log" 2>/dev/null; do sleep 0.2; _i=$((_i + 1)); done
 [ -n "$_mok" ] && [ "$(readlink "$_ml1")" = "$_mat/atlas-awakening-portrait.mp4" ] && [ "$(readlink "$_ml2")" = "$_mat/atlas-awakening-landscape-1.mp4" ] && [ ! -s "$HOME/mpv.log" ] \
-    && grep -q "^-- output \"DP-3\" bg \"$_mat/atlas-awakening-portrait.jpg\" fill$" "$HOME/mosway.log" && grep -q "^-- output \"HDMI-A-1\" bg \"$_mat/atlas-awakening-landscape-1.jpg\" fill$" "$HOME/mosway.log" \
-    && ok "desktop --motion, a theme's own loops: the turned screen its portrait's loop, the other the chosen picture's, linked into the cache, none made" || bad "given loops" "$_ml | $(cat "$HOME/mpv.log" "$HOME/mosway.log" 2>&1)"
+    && grep -q "^-- output \"DP-3\" bg \"$_mat/atlas-awakening-portrait.jpg\" fill$" "$HOME/mosway.log" && ! grep -q '"HDMI-A-1" bg' "$HOME/mosway.log" \
+    && ok "desktop --motion, a theme's own loops: the turned screen its portrait's loop, the landscape one the wallpaper's (its still the wallpaper itself), linked into the cache, none made" || bad "given loops" "$_ml | $(cat "$HOME/mpv.log" "$HOME/mosway.log" 2>&1)"
 if [ -r "/proc/$$/stat" ]; then   # where a process's start can be read
     # a reload or a screen's still starts the background drawer (sway's child swaybg) after the loop, over it, and a covered
     # player pauses: the next look (sway's exec_always desktop --motion) starts the player again, on top
@@ -4751,6 +4754,21 @@ if [ -r "/proc/$$/stat" ]; then   # where a process's start can be read
         && ok "desktop --motion, one screen: a loop the drawer started over is played again, on top, as on two (v0.168.1)" || bad "loop raised, one screen" "$(cat "$HOME/player.log")"
     kill "$_mbg" 2>/dev/null || :; rm -f "$HOME/mo.one"
 fi
+mo_stop
+# three screens, a turned one first: the two landscape ones take a work's two pictures, each with its loop, never the
+# first twice; a work whose first picture has no loop plays the loops its other pictures have (The Late Edition)
+: > "$HOME/mo.three"; rm -f "$HOME/player.log" "$H/run/spark-shell-motion.want"; mo desktop --motion >/dev/null 2>&1; mo_wait 1
+_ml=$(sed -n 1p "$HOME/player.log" 2>/dev/null || :); _ml3=${_ml##*HDMI-A-2=}; _ml2=${_ml#*HDMI-A-1=}; _ml2=${_ml2%% *}
+_mle=$REPO/gallery/core/the-late-edition; mo_stop; rm -f "$HOME/player.log" "$H/run/spark-shell-motion.want"
+printf 'DESKTOP=sway\nTHEME=the-late-edition\nWALLPAPER=%s\nWALLPAPER_MOTION=on\n' "$_mle/the-late-edition-landscape-1.jpg" > "$HOME/.config/spark-shell/config"
+mo desktop --motion >/dev/null 2>&1; mo_wait 1; _mlx=$(sed -n 1p "$HOME/player.log" 2>/dev/null || :); _mlx2=${_mlx#--screen HDMI-A-2=}
+[ "$(readlink "$_ml2")" = "$_mat/atlas-awakening-landscape-1.mp4" ] && [ "$(readlink "$_ml3")" = "$_mat/atlas-awakening-landscape-2.mp4" ] \
+    && case $_mlx in "--screen HDMI-A-2=$_mdir/given-"*.mp4) [ "$(readlink "$_mlx2")" = "$_mle/the-late-edition-landscape-2.mp4" ] ;; *) false ;; esac \
+    && ok "desktop --motion, three screens: the landscape ones play the first and the second picture's loops; a work whose first picture has no loop plays its second's on that screen" || bad "given loops, three" "$_ml | $_mlx"
+mo_stop; rm -f "$HOME/mo.three" "$HOME/player.log" "$H/run/spark-shell-motion.want"
+mo theme motion off >/dev/null 2>&1; _mlo=$(mo theme motion on 2>&1); sleep 0.5
+case $_mlo in 'moving wallpaper on '*' no picture on a screen now has a loop') [ ! -s "$HOME/player.log" ] ;; *) false ;; esac \
+    && ok "theme motion on, two screens of a work whose loops are on pictures neither shows: the stills, said so, nothing played or made" || bad "given loops, none shown" "$_mlo | $(cat "$HOME/player.log" 2>&1)"
 mo_stop
 cp "$H/cfg.mo" "$HOME/.config/spark-shell/config"
 # two screens with one name (no serial, the same model): each by its port, never both at once
@@ -9063,7 +9081,7 @@ sh "$SH" theme solarized-light >/dev/null 2>&1; sh "$SH" theme variant dark >/de
     && [ "$rc3" = 1 ] && printf '%s' "$c3" | grep -q '^spark-shell theme: color takes a color.s word (background, text' \
     && [ "$c4" = 'the clock over the art off' ] && [ "$c5" = 'its light variant is solarized-light -- spark-shell theme variant light' ] \
     && [ "$rc6" = 1 ] && [ "$c6" = 'spark-shell theme: nord is dark too: a pair is one dark and one light' ] \
-    && [ "$c7" = 'a turned screen shows atlas-awakening-changed-portrait.jpg' ] && [ "$c8" = 'the second and the third screen have their own pictures' ] \
+    && [ "$c7" = 'a turned screen shows atlas-awakening-changed-portrait.jpg' ] && [ "$c8" = 'the second and the third landscape screen have their own pictures' ] \
     && [ "$rc9" = 1 ] && [ "$c9" = 'spark-shell theme: fake.mp4 not taken: it is no MP4' ] \
     && [ "$a10" = atlas ] && [ "$c11" = 'the theme plays its own opening and closing' ] && [ "$a11" = own ] \
     && [ "$s12" = 'atlas-awakening-changed, dark (light: solarized-light), cinematic, ambient, portrait authored, panels for 2 and 3 screens' ] \
@@ -9521,7 +9539,7 @@ EOF
     a2f=$(jq -c '.variants.dark.panels | [(.["2"] | map(.landscape)), (.["3"] | map(.landscape))]' "$_hd/family.json" 2>&1)
     { head -c 2 "$_hd/reef-portrait.jpg"; printf '\377\341\000\020Exif\000\000GPS 51.5'; tail -c +3 "$_hd/reef-portrait.jpg"; } > "$_hp/phone.JPEG"
     h2f=$(held); heard portrait "$_hp/phone.JPEG"; a3=$hrc$hout; h3=$(held)
-    [ "$a1" = '0a turned screen shows reef-portrait.jpg' ] && [ "$a2" = '0the second screen has its own picture' ] && [ "$a3" = "$a1" ] && [ "$h1" = "$h0" ] && [ "$h2" = "$h0p" ] && [ "$h3" = "$h2f" ] \
+    [ "$a1" = '0a turned screen shows reef-portrait.jpg' ] && [ "$a2" = '0the second landscape screen has its own picture' ] && [ "$a3" = "$a1" ] && [ "$h1" = "$h0" ] && [ "$h2" = "$h0p" ] && [ "$h3" = "$h2f" ] \
         && [ "$a2f" = '[["reef-landscape-1.jpg","reef-landscape-2.jpg"],["reef-landscape-1.jpg","reef-landscape-2.jpg","reef-landscape-1.jpg"]]' ] \
         && ok "theme portrait and panel: the theme's own file given back stays, and a photo loses its metadata, its pixels the same bytes; a second screen's picture is kept for three screens too, the third showing the picture that leads" || bad "theme portrait own" "$a1 | $a2 | $a2f | $a3 | $h0 | $h1 | $h2 | $h3"
     h0=$(held)
@@ -10077,12 +10095,14 @@ echo 1 > "$HOME/screens"; s1=$(scr theme screens 2>&1)
 echo 2 > "$HOME/screens"; s2=$(scr theme screens 2>&1)
 echo 3 > "$HOME/screens"; s3=$(scr theme screens 2>&1)
 echo moved > "$HOME/screens"; s4=$(scr theme screens 2>&1)
+echo www > "$HOME/screens"; s5=$(scr theme screens 2>&1)
 [ "$s1" = 'HDMI-A-1   1 of 1 from the left, landscape 1920x1080: the art' ] \
-    && [ "$s2" = "$(printf 'DP-3       1 of 2 from the left, portrait 1200x1920: its portrait (test-tall.png)\nHDMI-A-1   2 of 2 from the left, landscape 1920x1080: panel 2 of 2 (test-wide-2.png)')" ] \
-    && [ "$s3" = "$(printf 'DP-3       1 of 3 from the left, portrait 1200x1920: its portrait (test-tall.png)\nHDMI-A-1   2 of 3 from the left, landscape 1920x1080: panel 2 of 3 (test-wide-2.png)\nDP-4       3 of 3 from the left, landscape 2560x1440: panel 3 of 3 (test-wide-3.png)')" ] \
-    && [ "$s4" = "$(printf 'HDMI-A-1   1 of 3 from the left, landscape 1920x1080: panel 1 of 3 (test-wide-1.png)\nDP-3       2 of 3 from the left, portrait 1200x1920: its portrait (test-tall.png)\nDP-4       3 of 3 from the left, landscape 2560x1440: panel 3 of 3 (test-wide-3.png)')" ] \
-    && ok "theme screens: a family's panels for one, two and three screens by their place from the left, never by name; a turned screen its portrait; a screen moved to the left takes the first panel" \
-    || bad "theme screens" "$s1 | $s2 | $s3 | $s4"
+    && [ "$s2" = "$(printf 'DP-3       1 of 2 from the left, portrait 1200x1920: its portrait (test-tall.png)\nHDMI-A-1   2 of 2 from the left, landscape 1920x1080: the art')" ] \
+    && [ "$s3" = "$(printf 'DP-3       1 of 3 from the left, portrait 1200x1920: its portrait (test-tall.png)\nHDMI-A-1   2 of 3 from the left, landscape 1920x1080: panel 1 of 2 (test-wide-1.png)\nDP-4       3 of 3 from the left, landscape 2560x1440: panel 2 of 2 (test-wide-2.png)')" ] \
+    && [ "$s4" = "$(printf 'HDMI-A-1   1 of 3 from the left, landscape 1920x1080: panel 1 of 2 (test-wide-1.png)\nDP-3       2 of 3 from the left, portrait 1200x1920: its portrait (test-tall.png)\nDP-4       3 of 3 from the left, landscape 2560x1440: panel 2 of 2 (test-wide-2.png)')" ] \
+    && [ "$s5" = "$(printf 'HDMI-A-1   1 of 3 from the left, landscape 1920x1080: panel 1 of 3 (test-wide-1.png)\nDP-4       2 of 3 from the left, landscape 2560x1440: panel 2 of 3 (test-wide-2.png)\nDP-5       3 of 3 from the left, landscape 1920x1080: panel 3 of 3 (test-wide-3.png)')" ] \
+    && ok "theme screens: a family's panels go to the landscape screens from the left, the set for that many of them, never by name; a turned screen takes its portrait and no panel's place, wherever it stands; one landscape screen shows the art" \
+    || bad "theme screens" "$s1 | $s2 | $s3 | $s4 | $s5"
 sh "$SH" theme nord >/dev/null 2>&1; echo 2 > "$HOME/screens"; s5=$(scr theme screens 2>&1)
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=watch\n' > "$cfg"; s6=$(scr theme screens 2>&1)
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=%s\n' "$th_dir/study-night/test-wide-1.png" > "$cfg"; s7=$(scr theme screens 2>&1)
@@ -10102,10 +10122,10 @@ st=0; o10=$(scr theme wallpaper portrait 2>&1) || st=$?
 # an old name in the config (a picture an update renamed): the theme's picture, kept so
 printf 'DESKTOP=sway\nTHEME=atlas-awakening\nWALLPAPER=%s\n' "$_aw/atlas-awakening.jpg" > "$cfg"; s11=$(scr theme screens 2>&1 | tail -1); w11=$(sed -n 's/^WALLPAPER=//p' "$cfg")
 [ "$s8" = 'HDMI-A-1   2 of 2 from the left, landscape 1920x1080: the wallpaper (atlas-awakening-landscape-1.jpg)' ] \
-    && [ "$s9" = 'HDMI-A-1   2 of 2 from the left, landscape 1920x1080: panel 2 of 2 (atlas-awakening-landscape-2.jpg)' ] && [ "$w9" = "$_aw/atlas-awakening-landscape-2.jpg" ] \
+    && [ "$s9" = 'HDMI-A-1   2 of 2 from the left, landscape 1920x1080: the wallpaper (atlas-awakening-landscape-2.jpg)' ] && [ "$w9" = "$_aw/atlas-awakening-landscape-2.jpg" ] \
     && [ "$r9" = 'blank:Landscape 1:landscape-1|check:Landscape 2:' ] && [ "$st" -ne 0 ] && printf '%s' "$o10" | grep -q 'portrait is not' \
     && [ "$s11" = "$s8" ] && [ "$w11" = "$_aw/atlas-awakening-landscape-1.jpg" ] \
-    && ok "theme wallpaper NAME: a theme's own landscape picture by its role (landscape-2); the one chosen shows, the landscape screen's panel giving way; the list says each role; a portrait is no wallpaper; an old name in the config becomes the theme's picture" \
+    && ok "theme wallpaper NAME: a theme's own landscape picture by its role (landscape-2); the one chosen shows on the landscape screen, by its name; the list says each role; a portrait is no wallpaper; an old name in the config becomes the theme's picture" \
     || bad "theme own pictures" "$s8 | $s9 | $w9 | $r9 | $st $o10 | $s11 $w11"
 sh "$SH" theme nord >/dev/null 2>&1   # the look the tests below read
 # Wallpaper and screens (v0.172): one row for each connected screen that is not simply the first landscape one showing the
@@ -10132,13 +10152,13 @@ echo 3 > "$HOME/screens"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w8=
     && [ "$w4" = 'DP-3/Tall (turned)=#224466::theme/rows/wallpapers:' ] && [ "$w5" = 'DP-3/Tall (turned)=the ground::theme/rows/wallpapers:' ] \
     && [ "$w6" = 'DP-4/Side=fjord::theme/rows/wallpapers:' ] \
     && [ "$w7" = 'DP-4/Side=Landscape 2:theme_panel2:files/rows:take it away {"n":"2","path":"none"}' ] \
-    && [ "$w8" = 'DP-3/Tall (turned)=Portrait:theme_portrait:files/rows:take it away {"path":"none"}|DP-4/Side=Landscape 1:theme_panel3:files/rows:' ] \
-    && ok "provide theme: Wallpaper and screens lists each screen that shows something of its own by its name and what it shows (fitted, drawn for a turned screen, a role), never none: one plain screen has no row; a color or the ground and a drawing on a second screen open the wallpaper list; a turned screen picks its picture, a second or third one beside a picture" \
+    && [ "$w8" = 'DP-3/Tall (turned)=Portrait:theme_portrait:files/rows:take it away {"path":"none"}|DP-4/Side=Landscape 2:theme_panel2:files/rows:take it away {"n":"2","path":"none"}' ] \
+    && ok "provide theme: Wallpaper and screens lists each screen that shows something of its own by its name and what it shows (fitted, drawn for a turned screen, a role), never none: one plain screen has no row; a color or the ground and a drawing on a second screen open the wallpaper list; a turned screen picks its picture, a second or third landscape one beside a picture, counted among the landscape screens alone" \
     || bad "wallpaper and screens rows" "$w1 | $w1g | $w2 | $w3 | $w4 | $w5 | $w6 | $w7 | $w8"
 # the picks leave the picture on that screen: a third screen of a bundled work; a turned screen beside a palette's drawing; a
 # second screen beside a picture of yours, which the look takes under a name a family can say; a turned screen of a saved
 # theme whose wallpaper in use is a picture outside its folder; a third screen with no second of its own
-mcp_scr theme "$(call 1 theme_panel "$(jq -cn --arg p "$_wp/side.png" '{n: "3", path: $p}')")"; p1=$(ans 1 | jq -r '.result.structuredContent.receipt // .result.content[0].text')
+echo www > "$HOME/screens"; mcp_scr theme "$(call 1 theme_panel "$(jq -cn --arg p "$_wp/side.png" '{n: "3", path: $p}')")"; p1=$(ans 1 | jq -r '.result.structuredContent.receipt // .result.content[0].text')
 p1s=$(scr theme screens 2>&1 | tail -2 | sed 's/^[^:]*: //' | paste -sd '|' -); p1o=$(sed -n 's/^ORIGIN=//p' "$_wl/atlas-awakening-changed/look.env" 2>/dev/null)
 sh "$SH" theme nord >/dev/null 2>&1; rm -rf "$_wl/atlas-awakening-changed"; printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\n' > "$cfg"; echo 2 > "$HOME/screens"
 mcp_scr theme "$(call 1 theme_portrait "$(jq -cn --arg p "$_wp/tall.jpg" '{path: $p}')")" "$(rq 2 resources/read "$wp_page")"; p2=$(ans 1 | jq -r '.result.structuredContent.receipt // .result.content[0].text'); p2r=$(wp_rows 2)
@@ -10152,13 +10172,13 @@ sh "$SH" theme nord >/dev/null 2>&1; rm -rf "$_wl/nord-changed"; printf 'DESKTOP
 printf 'DESKTOP=sway\nTHEME=mine-172\nWALLPAPER=%s\n' "$_wp/photo.png" > "$cfg"; echo 2 > "$HOME/screens"
 mcp_scr theme "$(call 1 theme_portrait "$(jq -cn --arg p "$_wp/tall.jpg" '{path: $p}')")"; p5=$(ans 1 | jq -r '.result.structuredContent.receipt // .result.content[0].text')
 p5s=$(scr theme screens 2>&1 | head -1 | sed 's/^[^:]*: //'); p5l=$(grep -E '^(WALLPAPER|PICTURE)=' "$th_dir/mine-172/look.env" | sort | paste -sd ' ' -); p5w=$(sed -n 's/^WALLPAPER=//p' "$cfg")
-[ "$p1" = 'the second and the third screen have their own pictures' ] && [ "$p1s" = 'the wallpaper (atlas-awakening-changed-landscape-1.jpg)|panel 3 of 3 (atlas-awakening-changed-landscape-3.png)' ] && [ "$p1o" = atlas-awakening ] \
+[ "$p1" = 'the second and the third landscape screen have their own pictures' ] && [ "$p1s" = 'panel 2 of 3 (atlas-awakening-changed-landscape-2.jpg)|panel 3 of 3 (atlas-awakening-changed-landscape-3.png)' ] && [ "$p1o" = atlas-awakening ] \
     && [ "$p2" = 'a turned screen shows nord-changed-portrait.jpg' ] && [ "$p2s" = 'its portrait (nord-changed-portrait.jpg)' ] && [ "$p2t" = nord-changed ] \
     && [ "$p2r" = 'DP-3/Tall (turned)=Portrait:theme_portrait:files/rows:take it away {"path":"none"}' ] \
-    && [ "$p3r" = 'DP-4/Side=Wide.JPG:theme_panel2:files/rows:' ] && [ "$p3" = 'the second screen has its own picture' ] \
+    && [ "$p3r" = 'DP-4/Side=Wide.JPG:theme_panel2:files/rows:' ] && [ "$p3" = 'the second landscape screen has its own picture' ] \
     && [ "$p3s" = 'panel 1 of 2 (nord-changed-landscape-1.jpg)|panel 2 of 2 (nord-changed-landscape-2.png)' ] \
     && [ "$p3f" = 'family.json look.env nord-changed-landscape-1.jpg nord-changed-landscape-2.png palette.env' ] && [ "$p3w" = "$_wl/nord-changed/nord-changed-landscape-1.jpg" ] \
-    && [ "$p4" = 'the third screen has its own picture' ] && [ "$p4s" = 'panel 1 of 3 (nord-changed-landscape-1.jpg)|panel 2 of 3 (nord-changed-landscape-1.jpg)|panel 3 of 3 (nord-changed-landscape-3.png)' ] \
+    && [ "$p4" = 'the third landscape screen has its own picture' ] && [ "$p4s" = 'panel 1 of 3 (nord-changed-landscape-1.jpg)|panel 2 of 3 (nord-changed-landscape-1.jpg)|panel 3 of 3 (nord-changed-landscape-3.png)' ] \
     && [ "$p5" = 'a turned screen shows mine-172-portrait.jpg' ] && [ "$p5s" = 'its portrait (mine-172-portrait.jpg)' ] \
     && [ "$p5l" = 'PICTURE=mine-172-landscape-1.png WALLPAPER=picture' ] && [ "$p5w" = "$th_dir/mine-172/mine-172-landscape-1.png" ] \
     && ok "theme panel and portrait from the dialog: the picture picked is on that screen for a bundled work's third screen (the look keeps the theme it came from), a turned screen beside a palette's drawing, a second screen beside a picture of yours (taken in as NAME-landscape-1), a third with no second of its own, and a saved theme whose wallpaper in use was a picture outside its folder" \
@@ -10168,9 +10188,9 @@ sh "$SH" theme nord >/dev/null 2>&1; sh "$SH" theme delete mine-172 >/dev/null 2
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\n' > "$cfg"; rc1=0; r1=$(sh "$SH" theme panel 2 "$_wp/side.png" 2>&1) || rc1=$?
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=#224466\n' > "$cfg"; rc2=0; r2=$(sh "$SH" theme portrait "$_wp/tall.jpg" 2>&1) || rc2=$?
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\n' > "$cfg"; rc3=0; r3=$(sh "$SH" theme panel 2 none 2>&1) || rc3=$?; r3t=$(sed -n 's/^THEME=//p' "$cfg")
-[ "$rc1" = 1 ] && [ "$r1" = 'spark-shell theme: the second screen takes its own picture beside a picture, and the wallpaper is fjord, a drawing made for every screen -- choose a picture as the wallpaper first' ] \
+[ "$rc1" = 1 ] && [ "$r1" = 'spark-shell theme: the second landscape screen takes its own picture beside a picture, and the wallpaper is fjord, a drawing made for every screen -- choose a picture as the wallpaper first' ] \
     && [ "$rc2" = 1 ] && [ "$r2" = 'spark-shell theme: a turned screen takes its own picture beside a drawing or a picture, and the wallpaper is the color #224466, the same on every screen -- choose a drawing or a picture as the wallpaper first' ] \
-    && [ "$rc3" = 0 ] && [ "$r3" = 'the second screen has no picture of its own: it shows the wallpaper' ] && [ "$r3t" = nord ] && [ ! -e "$_wl/nord-changed" ] \
+    && [ "$rc3" = 0 ] && [ "$r3" = 'the second landscape screen has no picture of its own: it shows the wallpaper' ] && [ "$r3t" = nord ] && [ ! -e "$_wl/nord-changed" ] \
     && ok "theme panel and portrait: beside a drawing or a color the refusal says what to choose first, in home's words; taking away a picture a screen never had says so and keeps no changed copy" \
     || bad "screens refusals" "$rc1 $r1 | $rc2 $r2 | $rc3 $r3 $r3t"
 cp "$H/cfg-before-wp" "$cfg"; if [ -f "$H/hist-before-wp" ]; then cp "$H/hist-before-wp" "$st_dir/theme.history"; else rm -f "$st_dir/theme.history"; fi; rm -rf "$_wp"
@@ -10179,32 +10199,76 @@ printf 'DESKTOP=sway\nTHEME=study-night\nWALLPAPER=fjord\nWALLPAPER_MOTION=off\n
 XDG_RUNTIME_DIR=$H/run scr desktop --motion >/dev/null 2>&1; scr_wait 'bg' 3
 p1=$(cat "$HOME/scr.log" 2>/dev/null | grep -c '' || :)
 XDG_RUNTIME_DIR=$H/run scr desktop --screens >/dev/null 2>&1; sleep 0.5; p2=$(cat "$HOME/scr.log" 2>/dev/null | grep -c '' || :)
-echo 2 > "$HOME/screens"; XDG_RUNTIME_DIR=$H/run scr desktop --screens >/dev/null 2>&1; scr_wait 'output "HDMI-A-1" bg .*test-wide-2.png' 2
-grep -q "^-- output \"DP-3\" bg \"$th_dir/study-night/test-tall.png\" fill\$" "$HOME/scr.log" && grep -q "^-- output \"HDMI-A-1\" bg \"$th_dir/study-night/test-wide-2.png\" fill\$" "$HOME/scr.log" \
-    && grep -q "^-- output \"DP-4\" bg \"$th_dir/study-night/test-wide-3.png\" fill\$" "$HOME/scr.log" && [ "$p1" = 3 ] && [ "$p1" = "$p2" ] \
-    && [ "$(grep -c '^-- output \* bg ' "$HOME/scr.log")" = 1 ] && [ "$(grep -c 'test-wide-2.png' "$HOME/scr.log")" = 2 ] \
-    && ok "desktop --motion and --screens: each screen its panel or portrait by its port; the same screens drawn once; a screen gone: output * first, then the panels for the screens left" \
+echo 2 > "$HOME/screens"; XDG_RUNTIME_DIR=$H/run scr desktop --screens >/dev/null 2>&1; scr_wait 'output "DP-3" bg .*test-tall.png' 2
+grep -q "^-- output \"DP-3\" bg \"$th_dir/study-night/test-tall.png\" fill\$" "$HOME/scr.log" && grep -q "^-- output \"HDMI-A-1\" bg \"$th_dir/study-night/test-wide-1.png\" fill\$" "$HOME/scr.log" \
+    && grep -q "^-- output \"DP-4\" bg \"$th_dir/study-night/test-wide-2.png\" fill\$" "$HOME/scr.log" && [ "$p1" = 3 ] && [ "$p1" = "$p2" ] \
+    && [ "$(grep -c '^-- output \* bg ' "$HOME/scr.log")" = 1 ] && [ "$(grep -c 'test-tall.png' "$HOME/scr.log")" = 2 ] && [ "$(grep -c '"HDMI-A-1"' "$HOME/scr.log")" = 1 ] \
+    && ok "desktop --motion and --screens: each screen its panel or portrait by its port, the panels to the landscape screens in order; the same screens drawn once; a screen gone: output * first, then the stills of the screens left, a lone landscape screen showing the art" \
     || bad "screens to sway" "$p1 $p2 | $(cat "$HOME/scr.log" 2>&1)"
+# a turned screen beside a theme's picture with no portrait (Nightswim): the picture whole, fitted under a name of its own, never
+# cropped (its path in the still's name made none); beside a drawing, the drawing's own view widened, its rings going on to
+# its top (Ripples), never a band with flat edges
+if command -v rsvg-convert >/dev/null 2>&1 && command -v base64 >/dev/null 2>&1; then
+    band() {   # band PNG -> how many colors its row a fifth of the way down has: one where a fitted still's band is flat
+        "$fixture_python" -I - "$1" <<'BAND'
+import struct, sys, zlib
+b = open(sys.argv[1], "rb").read()
+w, h, ctype = struct.unpack(">I", b[16:20])[0], struct.unpack(">I", b[20:24])[0], b[25]
+i, idat = 8, b""
+while i < len(b):
+    n, t = struct.unpack(">I4s", b[i:i + 8])
+    idat += b[i + 8:i + 8 + n] if t == b"IDAT" else b""
+    i += 12 + n
+raw, bpp = zlib.decompress(idat), {2: 3, 6: 4}[ctype]
+st, prev = w * bpp + 1, bytearray(w * bpp)
+for y in range(h // 5 + 1):
+    f, row = raw[y * st], bytearray(raw[y * st + 1:(y + 1) * st])
+    for x in range(len(row)):
+        a, up, c = (row[x - bpp] if x >= bpp else 0), prev[x], (prev[x - bpp] if x >= bpp else 0)
+        p = a + up - c
+        row[x] = (row[x] + [0, a, up, (a + up) // 2, a if abs(p - a) <= abs(p - up) and abs(p - a) <= abs(p - c) else up if abs(p - up) <= abs(p - c) else c][f]) & 255
+    prev = row
+print(len({bytes(prev[x:x + bpp]) for x in range(0, len(prev), bpp)}))
+BAND
+    }
+    png_wh() { od -An -tu1 -j16 -N8 < "$1" | awk 'NF == 8 { print $1 * 16777216 + $2 * 65536 + $3 * 256 + $4, $5 * 16777216 + $6 * 65536 + $7 * 256 + $8 }'; }   # png_wh PNG -> "W H"
+    _fns=$REPO/gallery/core/nightswim; rm -f "$HOME/scr.log"; echo 2 > "$HOME/screens"
+    printf 'DESKTOP=sway\nTHEME=nightswim\nWALLPAPER=%s\nWALLPAPER_MOTION=off\n' "$_fns/nightswim.png" > "$cfg"
+    XDG_RUNTIME_DIR=$H/run scr desktop --screens >/dev/null 2>&1; scr_wait 'output "DP-3" bg .*-fitted.png' 1
+    f1=$(sed -n 's/^-- output "DP-3" bg "\(.*\)" fill$/\1/p' "$HOME/scr.log" | head -1)
+    printf 'DESKTOP=sway\nTHEME=rose-pine\nWALLPAPER=ripples\nWALLPAPER_MOTION=off\n' > "$cfg"; rm -f "$HOME/scr.log"
+    XDG_RUNTIME_DIR=$H/run scr desktop --screens >/dev/null 2>&1; scr_wait 'output "DP-3" bg .*-fitted.png' 1
+    f2=$(sed -n 's/^-- output "DP-3" bg "\(.*\)" fill$/\1/p' "$HOME/scr.log" | head -1); f2c=$(band "$f2" 2>&1)
+    case ${f1##*/} in picture-*-nightswim-1200x1920-fitted.png) f1n=1 ;; *) f1n='' ;; esac
+    [ -n "$f1n" ] && [ "$(png_wh "$f1")" = '1200 1920' ] && [ "$(png_wh "$f2")" = '1200 1920' ] && [ "${f2##*/}" = ripples-rose-pine-1200x1920-fitted.png ] && [ "$f2c" -gt 2 ] \
+        && ok "a turned screen beside a theme's picture with no portrait: the picture fitted whole under a name of its own (a path in it made none, and the screen showed it cropped); beside a drawing, its view widened, its rings going on above it" \
+        || bad "turned screen stills" "$f1 $(png_wh "$f1" 2>&1) | $f2 $(png_wh "$f2" 2>&1) $f2c | $(cat "$HOME/scr.log" 2>&1)"
+    printf 'DESKTOP=sway\nTHEME=study-night\nWALLPAPER=fjord\nWALLPAPER_MOTION=off\n' > "$cfg"
+else
+    ok "turned screen stills: no rsvg-convert here to draw them"
+fi
 # the lock: each screen its own still where one is made; never a loop
 mkdir -p "$H/lk2"; printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/swaylock.args"\n' > "$H/lk2/swaylock"; printf '#!/bin/sh\nexit 1\n' > "$H/lk2/pgrep"; chmod +x "$H/lk2/swaylock" "$H/lk2/pgrep"
-WAYLAND_DISPLAY=wayland-9 SWAYSOCK=$H/sock PATH="$H/lk2:$H/scr:$PATH" sh "$SH" desktop lock >/dev/null 2>&1 || :
-grep -qx -- "DP-3:$th_dir/study-night/test-tall.png" "$HOME/swaylock.args" && grep -qx -- "HDMI-A-1:$th_dir/study-night/test-wide-2.png" "$HOME/swaylock.args" \
-    && grep -qx -- '--scaling' "$HOME/swaylock.args" && ! grep -q '\.mp4' "$HOME/swaylock.args" \
-    && ok "desktop lock: each screen shows its own still, as the desktop does; one picture scaled to fill, never a loop" || bad "lock screens" "$(cat "$HOME/swaylock.args" 2>&1 | grep -n 'image\|:' | head)"
+echo 3 > "$HOME/screens"; WAYLAND_DISPLAY=wayland-9 SWAYSOCK=$H/sock PATH="$H/lk2:$H/scr:$PATH" sh "$SH" desktop lock >/dev/null 2>&1 || :; cp "$HOME/swaylock.args" "$H/lock3.args" 2>/dev/null || :
+echo 2 > "$HOME/screens"; WAYLAND_DISPLAY=wayland-9 SWAYSOCK=$H/sock PATH="$H/lk2:$H/scr:$PATH" sh "$SH" desktop lock >/dev/null 2>&1 || :
+grep -qx -- "DP-3:$th_dir/study-night/test-tall.png" "$H/lock3.args" && grep -qx -- "HDMI-A-1:$th_dir/study-night/test-wide-1.png" "$H/lock3.args" && grep -qx -- "DP-4:$th_dir/study-night/test-wide-2.png" "$H/lock3.args" \
+    && grep -qx -- "DP-3:$th_dir/study-night/test-tall.png" "$HOME/swaylock.args" && ! grep -q '^HDMI-A-1:' "$HOME/swaylock.args" \
+    && grep -qx -- '--scaling' "$HOME/swaylock.args" && ! grep -q '\.mp4' "$H/lock3.args" "$HOME/swaylock.args" \
+    && ok "desktop lock: each screen shows its own still, as the desktop does, a lone landscape screen the lock's own picture; one picture scaled to fill, never a loop" || bad "lock screens" "$(cat "$H/lock3.args" "$HOME/swaylock.args" 2>&1 | grep -n 'image\|:' | head)"
 # the login screen: each screen the picture it has on the desktop, copied for its account and named by the screen; they go with
 # the screen, and a line of screens.conf that is none of spark-shell's reaches no config of the login account
 lgn=$H/root/etc/spark-shell/login; sc_f=$HOME/.config/spark-shell/screens.conf; cp "$sc_f" "$H/sc-before" 2>/dev/null || rm -f "$H/sc-before"
 mkdir -p "$lgn"; echo '# a login screen' > "$lgn/sway.conf"; printf 'LOGIN=yes\n' >> "$cfg"
 XDG_RUNTIME_DIR=$H/run scr desktop screen hdmi-a-1 main >/dev/null 2>&1 || :
-l1=$(grep -v '^#' "$lgn/screens.conf" 2>&1); cmp -s "$lgn/wallpaper.1" "$th_dir/study-night/test-tall.png" && cmp -s "$lgn/wallpaper.2" "$th_dir/study-night/test-wide-2.png" && l2=copied || l2=$(ls "$lgn")
+l1=$(grep -v '^#' "$lgn/screens.conf" 2>&1); cmp -s "$lgn/wallpaper.1" "$th_dir/study-night/test-tall.png" && [ ! -e "$lgn/wallpaper.2" ] && l2=copied || l2=$(ls "$lgn")
 { cat "$sc_f"; printf '%s\n' 'output "x" bg $(id) fill' 'output "Test Wide 1" scale 1; exec id' 'workspace 1 output "x; exec id"' 'exec id' 'output "Test Wide 1" position 0 0'; } > "$H/sc-bad"; cat "$H/sc-bad" > "$sc_f"
 XDG_RUNTIME_DIR=$H/run scr desktop screen hdmi-a-1 main >/dev/null 2>&1 || :
 l3=$(grep -v '^#' "$lgn/screens.conf" 2>&1 | grep -c '[$;]\|exec' || :); l4=$(grep -cxF 'output "Test Wide 1" position 0 0' "$lgn/screens.conf" || :)
 echo 1 > "$HOME/screens"; XDG_RUNTIME_DIR=$H/run scr desktop screen hdmi-a-1 main >/dev/null 2>&1 || :
 l5=0; for l6 in "$lgn"/wallpaper.*; do [ ! -e "$l6" ] || l5=$((l5 + 1)); done; l6=$(grep -c ' bg ' "$lgn/screens.conf" || :)
-[ "$l1" = "$(printf 'workspace 1 output "Test Wide 1"\noutput "Test Tall 2" bg /etc/spark-shell/login/wallpaper.1 fill\noutput "Test Wide 1" bg /etc/spark-shell/login/wallpaper.2 fill')" ] && [ "$l2" = copied ] \
+[ "$l1" = "$(printf 'workspace 1 output "Test Wide 1"\noutput "Test Tall 2" bg /etc/spark-shell/login/wallpaper.1 fill')" ] && [ "$l2" = copied ] \
     && [ "$l3" = 0 ] && [ "$l4" = 1 ] && [ "$l5" = 0 ] && [ "$l6" = 0 ] \
-    && ok "login: each screen wears the picture it has on the desktop; a screen gone takes its picture along; screens.conf's own lines alone reach the login account" \
+    && ok "login: each screen wears the picture it has on the desktop, a landscape screen showing the art the login's own; a screen gone takes its picture along; screens.conf's own lines alone reach the login account" \
     || bad "login pictures" "$l1 | $l2 | $l3 $l4 $l5 $l6 $(cat "$lgn/screens.conf" 2>&1)"
 # with the login screen on, a wallpaper and a text size from the command line end well: no detection ran there before the login
 # screen's step, which read an account never set and ended in status 2 after writing the config (v0.170)

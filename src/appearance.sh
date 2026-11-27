@@ -172,6 +172,7 @@ appearance_screens() {   # -> the rows of the screens, the loops and the clock, 
         | [$in[] | select(.[0] == "screen") | {name: .[1], at: (.[2] | tonumber? // 0), tall: (.[3] == "portrait"), role: .[4],
               file: (if .[5] == "-" then "" else .[5] end), mode: .[6], label: (if .[7] == "-" then "" else .[7] end)}] as $scr
         | ([$scr[] | select(.tall | not)] | first) as $first
+        | [$scr[] | select(.tall | not) | .name] as $wides   # panel N goes to the Nth landscape screen: a turned one takes none
         | ($kind == "ground" or $kind == "color") as $plain   # a color or the ground: one thing on every screen, and none takes a picture beside it
         | ($plain or $theirs != "") as $same   # as it stands, one thing on every screen: a picture of yours too, until a screen is given its own
         | def shows: if $same then $wall
@@ -186,8 +187,9 @@ appearance_screens() {   # -> the rows of the screens, the loops and the clock, 
               | {id: ("theme:screen:" + $s.name), group: "screens", text: (named($s.name) + (if $s.tall then " (turned)" else "" end)), sign: "opens", columns: [$s | shows]}
                 + (if $s.tall and ($plain | not) then
                        {children: "spark-shell://files/rows", pick: {tool: "theme_portrait", types: ["jpg", "jpeg", "png"], arguments: {}}, more: ($s | away("theme_portrait"; {}))}
-                   elif ($s.tall | not) and ($plain | not) and $first != null and $s.name != $first.name and $lead != "" and ($s.at == 2 or $s.at == 3) then
-                       {children: "spark-shell://files/rows", pick: {tool: "theme_panel", types: ["jpg", "jpeg", "png"], arguments: {n: ($s.at | tostring)}}, more: ($s | away("theme_panel"; {n: ($s.at | tostring)}))}
+                   elif ($s.tall | not) and ($plain | not) and $first != null and $s.name != $first.name and $lead != "" and (($wides | index($s.name)) as $w | $w == 1 or $w == 2) then
+                       ((($wides | index($s.name)) + 1) | tostring) as $p
+                       | {children: "spark-shell://files/rows", pick: {tool: "theme_panel", types: ["jpg", "jpeg", "png"], arguments: {n: $p}}, more: ($s | away("theme_panel"; {n: $p}))}
                    else {children: "spark-shell://theme/rows/wallpapers", more: []} end)]
            + [$in[] | select(.[0] == "loop") | {id: ("theme:screens:loop:" + .[1]), group: "loops", text: .[2], sign: "opens", columns: [.[3]],
                  children: "spark-shell://files/rows", pick: {tool: "theme_loop", types: ["mp4"], arguments: {role: .[1]}},

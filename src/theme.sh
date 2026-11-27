@@ -539,10 +539,10 @@ theme_portrait() {   # theme_portrait PICTURE|none -- the picture a turned scree
     if [ -n "$_tkf" ]; then _tpd="a turned screen shows $_tkf"; else _tpd="a turned screen shows the art fitted"; fi
     theme_wear "$_tpd"; echo "$_tpd"
 }
-theme_panel() {   # theme_panel 2|3 PICTURE|none -- the picture the second or third screen from the left shows, copied in as NAME-landscape-N. The wallpaper in use leads, and becomes the theme's own picture; a screen with none of its own shows it
+theme_panel() {   # theme_panel 2|3 PICTURE|none -- the picture the second or third landscape screen from the left shows, copied in as NAME-landscape-N. The wallpaper in use leads, and becomes the theme's own picture; a screen with none of its own shows it
     case ${1:-} in 2|3) ;; *) refuse_in theme "panel takes 2 or 3, then a picture or none" ;; esac
     [ -n "${2:-}" ] || refuse_in theme "panel $1 takes a picture, or none"
-    _tpo=second; [ "$1" = 2 ] || _tpo=third
+    _tpo="second landscape"; [ "$1" = 2 ] || _tpo="third landscape"   # panels count the landscape screens: a turned one shows its portrait
     _tpd=$(theme_dir "${THEME:-none}"); _tpn=${_tpd##*/}; _tpl=''; [ -z "$_tpd" ] || [ "$(look_get "$_tpd" WALLPAPER)" != picture ] || _tpl=$(look_get "$_tpd" PICTURE)
     # the picture that leads is no panel beside itself: the one the theme names, or one of its own chosen as the wallpaper (it was gone with the panel)
     case $_tpl in "$_tpn-landscape-$1".*) refuse_in theme "$_tpl is the theme's own picture, which leads: it is no panel $1 beside itself" ;; esac
@@ -574,9 +574,9 @@ theme_panel() {   # theme_panel 2|3 PICTURE|none -- the picture the second or th
             + (if $p2 == "" and $p3 == "" then {} else {"3": [{landscape: $l}, {landscape: (if $p2 == "" then $l else $p2 end)}, {landscape: (if $p3 == "" then $l else $p3 end)}]} end))
         | if .variants[$v].panels == {} then del(.variants[$v].panels) else . end' --arg l "$_tpl" --arg p2 "$_tp2" --arg p3 "$_tp3"
     if [ -z "$_tp2$_tp3" ]; then _tpd="no panels: each screen shows the art"
-    elif [ -z "$_tp3" ]; then _tpd="the second screen has its own picture"
-    elif [ -z "$_tp2" ]; then _tpd="the third screen has its own picture"
-    else _tpd="the second and the third screen have their own pictures"; fi
+    elif [ -z "$_tp3" ]; then _tpd="the second landscape screen has its own picture"
+    elif [ -z "$_tp2" ]; then _tpd="the third landscape screen has its own picture"
+    else _tpd="the second and the third landscape screen have their own pictures"; fi
     theme_wear "$_tpd"; echo "$_tpd"
 }
 theme_picture_of() {   # theme_picture_of FOLDER WORD... -> the picture of the theme in FOLDER that one of the words names, by its file's name or its role (landscape-1); false for none
@@ -795,12 +795,12 @@ glyphs_step() {   # glyphs_step signs|words -> the receipt; 1 when refused
 # the loop cache; a player of yours is never stopped
 MOTION_DIR=${XDG_CACHE_HOME:-$HOME/.cache}/spark-shell/motion
 motion_names() { for _ms in "$REPO"/lib/motion_*.py; do [ -f "$_ms" ] || continue; _ms=${_ms##*/motion_}; printf '%s\n' "${_ms%.py}"; done; printf '%s\n' $WALL_SCENES; }   # -> the moving wallpapers, one a line
-motion_has() { wall_scene "$1" || { wall_shipped "$1" && [ -f "$REPO/lib/motion_$1.py" ]; } || art_loop_of "$1" >/dev/null; }   # motion_has WALLPAPER -> 0 when it moves
+motion_has() { wall_scene "$1" || { wall_shipped "$1" && [ -f "$REPO/lib/motion_$1.py" ]; } || art_moves "$1"; }   # motion_has WALLPAPER -> 0 when it moves
 motion_missing() {   # -> the missing tools, or nothing
     _mm=''
     command -v mpv >/dev/null 2>&1 || _mm="$_mm mpv"
     if wall_scene "${WALLPAPER:-}"; then scene_ready || _mm="$_mm numpy"
-    elif art_loop_of "${WALLPAPER:-}" >/dev/null; then :   # a loop of the theme's own: nothing to make
+    elif art_moves "${WALLPAPER:-}"; then :   # a loop of the theme's own: nothing to make
     else for _mt in python3 rsvg-convert; do command -v "$_mt" >/dev/null 2>&1 || _mm="$_mm $_mt"; done; fi
     wallpaper_cmd >/dev/null || _mm="$_mm spark-wallpaper"
     printf '%s' "${_mm# }"
@@ -888,6 +888,8 @@ motion_follow_now() {
             ln -sf "$_mls" "$_mll" && printf '%s\tgiven\t%s\n' "$_mll" "$_mln"
         done > "$_mj/plan"
         awk -F '\t' '{ print "--screen"; print $3 "=" $1 }' "$_mj/plan" > "$_mj/args"
+    elif art_moves "$WALLPAPER"; then   # a theme whose loops are on pictures no screen shows now (The Late Edition on one or two screens): the stills
+        rm -rf "${_mj:?}"; motion_stop; MOTION_NOW=elsewhere; return 0
     elif wall_scene "$WALLPAPER"; then   # the plan: LOOP<tab>SIZE<tab>SCREEN a line
         _mpf=$(palette_file "${THEME:-}" 2>/dev/null) || { rm -rf "${_mj:?}"; motion_stop; return 0; }   # no palette: the still alone
         cp "$_mpf" "$_mj/palette.env"
@@ -974,7 +976,7 @@ motion_step() {   # motion_step on|off -> the receipt; 1 when refused
     config_set WALLPAPER_MOTION "$1" >/dev/null; WALLPAPER_MOTION=$1; export WALLPAPER_MOTION
     motion_follow
     if [ "$1" = off ]; then echo "moving wallpaper off"
-    elif motion_has "$WALLPAPER"; then case $MOTION_NOW in making) echo "moving wallpaper on $PANEL_SEP $WALLPAPER moves once its loop is made" ;; playing) echo "moving wallpaper on $PANEL_SEP $WALLPAPER moves" ;; *) echo "moving wallpaper on $PANEL_SEP $WALLPAPER moves on the desktop" ;; esac
+    elif motion_has "$WALLPAPER"; then case $MOTION_NOW in making) echo "moving wallpaper on $PANEL_SEP $WALLPAPER moves once its loop is made" ;; playing) echo "moving wallpaper on $PANEL_SEP $WALLPAPER moves" ;; elsewhere) echo "moving wallpaper on $PANEL_SEP no picture on a screen now has a loop" ;; *) echo "moving wallpaper on $PANEL_SEP $WALLPAPER moves on the desktop" ;; esac
     else echo "moving wallpaper on $PANEL_SEP $WALLPAPER is still; $(motion_names | grep -c '') wallpapers move"; fi
 }
 theme_transparency() {   # theme_transparency [N|more|less] -- 0 to 50, steps of 10

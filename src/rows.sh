@@ -138,7 +138,7 @@ tool_spec_theme() {   # the theme tools
         theme_clock)       _ts=theme _ta=clock _tp=to _tk='on|off' _th=f _tt='theme clock ON' _td='The clock over the art on the idle screen and the lock.' ;;
         theme_pair)        _ts=theme _ta=pair _tp=name _tk=string _th=f _tt='theme pair NAME' _td='The theme in use'"'"'s other variant: a theme in the other light, or none.' ;;
         theme_portrait)    _ts=theme _ta=portrait _tp=path _tk=art _th=f _tt='theme portrait PICTURE' _td='The picture a turned screen shows, or none for the art fitted.' ;;
-        theme_panel)       _ts=theme _ta=panel _tp=n _tk='2|3' _te='path:art' _th=f _tt='theme panel N PICTURE' _td='The picture on the second or third screen from the left, or none; the theme'"'"'s picture leads.' ;;
+        theme_panel)       _ts=theme _ta=panel _tp=n _tk='2|3' _te='path:art' _th=f _tt='theme panel N PICTURE' _td='The picture on the second or third landscape screen from the left, or none; the theme'"'"'s picture leads, and a turned screen shows its portrait.' ;;
         theme_loop)        _ts=theme _ta=loop _tp=role _tk=string _te='path:art' _th=f _tt='theme loop ROLE LOOP' _td='An MP4 loop for one of the theme'"'"'s own pictures (landscape-1, portrait), or none.' ;;
         theme_reel)        _ts=theme _ta=reel _tp=which _tk='open|close' _te='path:art' _th=f _tt='theme reel WHICH REEL' _td='The dialog'"'"'s own opening or closing for the theme, an animated WebP, or none; with both it plays its own.' ;;
         theme_restore)     _ts=theme _ta=restore _tp=name _tk=string _th=f _tt='theme restore NAME' _td='A deleted theme of yours, back.' ;;

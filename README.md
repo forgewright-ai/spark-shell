@@ -166,7 +166,7 @@ and its strength, the theme's other colors, and the prompt for a value
 typed (`#rrggbb` or a color's name). **Wallpaper and screens** holds the
 wallpaper, each connected screen with the picture it shows, a loop for
 each picture and the clock on the idle screen; Enter on a turned or a
-second screen gives it a picture of its own. **Interface** holds the
+second landscape screen gives it a picture of its own. **Interface** holds the
 pointer and the dialog's motion, with a theme's own opening and closing.
 A bundled theme changes as a look of its own until you save it.
 
