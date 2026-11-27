@@ -1243,9 +1243,10 @@ else
     padheld "$ppad"; out3=$(padbar --dry-run || :); _b3=$(pstate "$ppad")
     kill "$ppad" 2>/dev/null || :; wait "$ppad" 2>/dev/null || :; padsweep; rm -f "$psd/spark-bar"
     mv "$H/config.padkeep" "$HOME/.config/spark-shell/config"; padon > /dev/null || :; padsweep   # the bar hidden again and the config as it is with no spark-bar here, for what follows
-    printf '%s\n' "$out" | grep -qx 'would  pad          start the pad again: it was started before the bar, and knows nothing of it' && [ "$_bd" = S ] \
+    # alive is R or S: the stand-in forks a sleep ten times a second, and a busy runner caught it running (openSUSE, 54c4315)
+    printf '%s\n' "$out" | grep -qx 'would  pad          start the pad again: it was started before the bar, and knows nothing of it' && case $_bd in R|S) : ;; *) false ;; esac \
         && case $_bk in ''|Z) : ;; *) false ;; esac && { [ "$_be" = "$H/padrun/spark-shell-bar.state" ] || [ "$_bq" = asked ]; } \
-        && ! printf '%s\n' "$out3" | grep -q 'start the pad again' && [ "$_b3" = S ] \
+        && ! printf '%s\n' "$out3" | grep -q 'start the pad again' && case $_b3 in R|S) : ;; *) false ;; esac \
         && ok "on: a pad started with no word of the bar (an update that brought a new spark-bar started it first) is named by a dry run and ended by a run, and the pad that runs after knows the bar's state file; one that knows the bar is named by no row" || bad "pad blind to the bar" "$_bd | $(printf '%s\n' "$out" | grep ' pad ') | $_bk [$_be] $_bq | $(printf '%s\n' "$out3" | grep ' pad ') | $_b3"
     out=$(padon --dry-run || :)
     printf '%s\n' "$out" | grep -qx 'would  pad          start the pad for this session, through sway as at login' && ! padasked \
