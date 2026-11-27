@@ -72,7 +72,8 @@ def live(d):
         d.whole()
         d.reload_is_nothing()
         d.whole()
-    moves(d)
+    if len(d.msg("-t", "get_outputs")) > 1:   # the move keys are judged on two screens: a desk of one ends here
+        moves(d)
 
 
 def moves(d):
