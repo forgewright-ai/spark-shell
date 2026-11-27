@@ -1,5 +1,53 @@
 # Changelog
 
+## v0.172
+
+- A color is picked. Enter on one of a theme's 20 colors, or on the
+  wallpaper's plain color, opens a strip of swatches each for its hue,
+  its shade and its strength, and the theme's other colors under them.
+  The arrows or a click move, a sample shows the color where a terminal
+  uses it, and its contrast with the ground is said. A value typed in the
+  prompt is taken too: `#rrggbb`, `#rgb` or a color's name.
+- A step that asks for a value says what it takes in the prompt, which
+  holds the cursor, and Enter does it. The page behind stays as it is. A
+  theme's name or a color left the prompt blank, and the first letter
+  typed emptied the page as a search does.
+- On a theme's page Enter applies it with no row lit, as the keys' line
+  says. The page draws every row it lists: a click on Export duplicated
+  the theme, since Duplicate took the keys and was not drawn.
+- Settings, theme, has six places. Screens and art is gone. Wallpaper and
+  screens lists each connected screen with what it shows now, and Enter
+  gives a turned or a second screen a picture of its own, under a bundled
+  work, a palette's drawing or a picture of yours. The dialog's motion
+  and a theme's own opening and closing are under Interface, and its
+  other variant under Colors.
+- A picture is picked from your pictures folder, a loop from the videos
+  and a theme file from the downloads, where home has one. The pick
+  opened on the home folder.
+- The wallpaper list shows the wallpaper of the row lit over the list.
+- The display section's map shows the wallpaper in use after a theme
+  change. It kept the pictures of the theme before.
+- Home open during a theme change takes it, wherever it was made (the
+  prompt, a key, another home): its colors, typeface, text size and glyph
+  family, and each place reads its rows again. It took the title band's
+  color alone until it was closed and opened.
+- A work goes by its title (Mars Conquest), and words typed still find it
+  by the name its command takes (mars-conquest).
+- A theme changed and not saved says so, keeps its picture, and Your
+  themes offers to save it or to put the theme back.
+- A theme's page says what it brings in a few lines (wallpaper, type,
+  glyphs, dialog motion, windows), then Duplicate and Export.
+- A row's steps (rename, duplicate) are a page as the theme's lists are.
+- A file being picked, or a value being asked for, is let go when home is
+  sent to another place from the bar or by a key. It went along, and
+  every list after was cut to the files the pick takes.
+- A value typed for a step is never searched for. At home, a password a
+  step asked for went to the files' search and the notes' as it was
+  typed.
+- A value that is refused says why in the reply. A color's name that is
+  none answered that the provider could not report the result.
+- The dialog is 0.172.0.
+
 ## v0.171.1
 
 - Super+Shift+arrow takes the keyboard to the next screen with the

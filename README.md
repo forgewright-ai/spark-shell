@@ -152,12 +152,16 @@ example `studio.list`.
 
 **Your themes** lists the themes you made or installed, each with rename,
 duplicate and delete, and the ways to make one: from the look in use, a
-picture, a theme file, or a copy of the theme in use. **Colors** and
-**Screens and art** change the theme in use: its 20 colors, the pointer,
-the clock on the idle screen, its other variant, the pictures for a
-turned, second and third screen, a loop for each picture, and the
-dialog's own opening and closing. A bundled theme changes as a look of
-its own until you save it.
+picture, a theme file, or a copy of the theme in use. **Colors** changes
+the 20 colors of the theme in use and names its other variant. Enter on
+a color opens a picker: a strip of swatches each for its hue, its shade
+and its strength, the theme's other colors, and the prompt for a value
+typed (`#rrggbb` or a color's name). **Wallpaper and screens** holds the
+wallpaper, each connected screen with the picture it shows, a loop for
+each picture and the clock on the idle screen; Enter on a turned or a
+second screen gives it a picture of its own. **Interface** holds the
+pointer and the dialog's motion, with a theme's own opening and closing.
+A bundled theme changes as a look of its own until you save it.
 
 To share a theme, `spark-shell theme export NAME spark-theme` writes
 `NAME.spark-theme` to the downloads folder: its colors, look, pictures,
