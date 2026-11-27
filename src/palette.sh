@@ -47,6 +47,12 @@ theme_label() { theme_label_of "$1"; printf '%s' "$_tal"; }
 # The name a person reads in home: a work's title (Mars Conquest), a palette's own name (Catppuccin Mocha), a bundled
 # work with no title by its name's words (Amber Drizzle), a theme of yours as you named it. A command still takes the
 # name: mars-conquest. No process: the root's rows say one at every read.
+# title_plain WORDS -> 0 for a title of letters, digits, spaces and , . - ' & : ! ? ( ), 60 at most. The characters by name:
+# a range (' -~') follows the locale's order in macOS's sh, where letters fell outside it and every title was refused
+title_plain() {
+    [ -n "$1" ] && [ "${#1}" -le 60 ] || return 1
+    case $1 in *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789\ ,.\'\&:!?\(\)-]*) return 1 ;; esac
+}
 theme_title_of() {   # theme_title_of NAME -> _tit: its title as the files say it; the name itself for a theme of yours and for one that is not here
     _tit=$1
     theme_at "$1" || return 0
@@ -60,12 +66,12 @@ theme_title_of() {   # theme_title_of NAME -> _tit: its title as the files say i
                 '  "title": "'*'",') _ttt=${_ttl#'  "title": "'}; _ttt=${_ttt%'",'} ;;
             esac
         done < "$CORE_DIR/$1/family.json"
-        case $_ttt in ''|*[!\ -~]*|*[\"\\]*) _ttt='' ;; esac
+        title_plain "$_ttt" || _ttt=''
         if [ "$_tti" = "$1" ] && [ -n "$_ttt" ] && [ "${#_ttt}" -le 40 ]; then _tit=$_ttt; return 0; fi
     fi
     if [ -f "$REPO/gallery/theme/$_tal.env" ]; then   # a palette's own name, the first line of its file: # Catppuccin Mocha -- where it is from
         _ttl=''; IFS= read -r _ttl < "$REPO/gallery/theme/$_tal.env" || :
-        case $_ttl in '# '?*' -- '*) _ttl=${_ttl#'# '}; _ttl=${_ttl%% -- *}; case $_ttl in *[!\ -~]*) ;; *) _tit=$_ttl; return 0 ;; esac ;; esac
+        case $_ttl in '# '?*' -- '*) _ttl=${_ttl#'# '}; _ttl=${_ttl%% -- *}; ! title_plain "$_ttl" || { _tit=$_ttl; return 0; } ;; esac
     fi
     [ "$_tak" = bundled ] || return 0
     _tit=''; _ttl=$_tal   # the name's words, each with a capital
