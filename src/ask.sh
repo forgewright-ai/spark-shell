@@ -50,15 +50,14 @@ want_plan() {   # want_plan WORDS -> $TMP/plan; exit 1 when the words could not 
     command -v jq >/dev/null 2>&1 || { want_put no "jq is not installed (spark-shell on)"; return 1; }
     spark=$(spark_bin); [ -n "$spark" ] || { want_put no "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"; return 1; }
     SND=${SND:-$(snd_tool)}
-    _has_steps=''; if "$spark" help </dev/null 2>/dev/null | grep -q '^ *spark steps '; then _has_steps=1; fi
     if [ -z "$WANT_Q" ] && ! want_says_close "$1" && _app=$(want_names_app "$1"); then   # an app named opens, or is a layout for the task
         if [ "$(printf '%s\n' "$1" | wc -w | tr -d ' ')" -le 2 ] && [ "$(layout_words_full "$1")" = false ] && [ -z "$(layout_words_ws "$1")" ]; then   # a word or two and no layout word: the app itself, at once
             want_step apps open "$(panel_apps_known | awk -v w="$_app" 'tolower($0) == w && !d {print; d = 1}')"
-        elif [ -n "$_has_steps" ]; then want_steps "$1"   # a compound want may include settings as well as the app
+        elif "$spark" help </dev/null 2>/dev/null | grep -q '^ *spark steps '; then want_steps "$1"   # a compound want may include settings as well as the app
         else want_put step layout new "$1" "$1"; fi   # an older spark: the layout's model reads the whole sentence
         return 0
     fi
-    if [ -n "$_has_steps" ]; then want_steps "$1"; return; fi   # a spark with steps plans with the tools themselves; an older spark, the brief below
+    if "$spark" help </dev/null 2>/dev/null | grep -q '^ *spark steps '; then want_steps "$1"; return; fi   # a spark with steps plans with the tools themselves; an older spark, the brief below
     _brief=$(panel_brief)
     [ -n "$_brief" ] || { want_put no "nothing on the panel takes an action on this machine"; return 1; }
     about="The panel of a desktop. What the bar shows now: $(panel_facts). What this machine can do now, by section -- $_brief. $WANT_NAMES_SAID Rules: only steps from that list; N is a number (0 to 100 for level, 0 to 1 for alpha), NAME a name as listed, TASK the want in the user's own words, as {\"page\": \"layout\", \"action\": \"new\", \"arg\": \"write notes\"}, which opens the apps for that task, any program by name included; a layout step for a want that names a program or a task to do, never for a setting alone; as few steps as the want takes; no step when nothing on the list does it; when the words ask something rather than ask for a change, put the answer in \"answer\", one or two sentences, and give no steps. Answer with one JSON object and nothing else: {\"why\": \"one sentence\", \"answer\": \"\", \"steps\": [{\"page\": \"bt\", \"action\": \"connect\", \"arg\": \"NAME\"}]}"
@@ -68,6 +67,7 @@ want_plan() {   # want_plan WORDS -> $TMP/plan; exit 1 when the words could not 
     if [ "$(jq -r '.steps | length' "$TMP/want.json")" -eq 0 ]; then want_nostep "$1"; return 0; fi
     jq -r '.steps[] | [(.page // "" | tostring), (.action // "" | tostring), (.arg // "" | tostring)] | @tsv' "$TMP/want.json" > "$TMP/want.steps"
     while IFS="$TAB" read -r pg ac ar; do want_step "$pg" "$ac" "$ar"; done < "$TMP/want.steps"
+    want_whole
 }
 want_nostep() {   # want_nostep WORDS -- no step came back: the answer to a question, a refusal, or a layout for a task
     _ans=$(jq -r '.answer // "" | gsub("[\\n\\r]+"; " ")' "$TMP/want.json")
@@ -150,11 +150,12 @@ want_steps() {   # want_steps WORDS -> $TMP/plan from spark steps; exit 1 when s
               for (i = 1; i < last; i++) if (n[i] == "theme_save") print n[i] us v[i] us "" }' "$TMP/steps.raw" > "$TMP/steps.ordered"
     while IFS="$US" read -r _sn _sv _again; do
         tool_spec "$_sn" || continue
-        [ "$_again" != again ] || { want_put no "$PANEL_CROSS one look a request: the first words step made it, $_sv was not"; continue; }
+        [ "$_again" != again ] || { want_put no "$PANEL_CROSS one look a request: choose one words step"; continue; }
         case $_sn in theme_palette) want_step theme "$_sv" '' "$1" ;; *) want_step "$_ts" "$_ta" "$_sv" "$1" ;; esac   # a palette's step is its name alone
     done < "$TMP/steps.ordered"
-    # All steps were checked before any can run. A failed target or schema
-    # check leaves the reasons alone, never an executable partial request.
+    want_whole
+}
+want_whole() {   # a rejected step holds the whole plan, from either planner
     if awk -F "$US" '$1 == "no" { bad = 1 } END { exit !bad }' "$TMP/plan"; then
         awk -F "$US" '$1 != "step"' "$TMP/plan" > "$TMP/plan.whole"
         mv "$TMP/plan.whole" "$TMP/plan"
