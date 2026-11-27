@@ -222,8 +222,8 @@ fn an_elicitation_is_asked_in_the_composer_and_a_secret_is_declined() {
 }
 
 #[test]
-fn a_plan_is_gated_step_by_step() {
-    let (mut app, rx, calls, _r) = started();
+fn a_plan_is_checked_step_by_step_and_refused_as_a_whole() {
+    let (mut app, _rx, calls, _r) = started();
     app.plan(
         r#"{"answer": "", "steps": [
         {"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"},
@@ -232,7 +232,7 @@ fn a_plan_is_gated_step_by_step() {
         {"name": "rm_everything", "arguments": {}, "line": "rm everything"}
     ], "refused": ["\u2717 theme: rainbow is not on the panel now"]}"#,
     );
-    assert_eq!(app.input, "window focus terminal", "the one step the gate took waits in the box");
+    assert!(app.staged.is_none(), "a rejected step leaves no executable subset");
     // what spark's plan could not do is one reply row, each refusal parted by a semicolon (#196)
     let r = app.reply.clone().unwrap();
     assert_eq!(r.mark, Mark::Refused);
@@ -240,21 +240,20 @@ fn a_plan_is_gated_step_by_step() {
     assert!(lines.contains(&"Refused theme: rainbow is not on the panel now".to_string()), "{:?}", lines);
     // a refusal says what did not run and why, in plain words, never a tool's name (#53)
     assert!(
-        lines.contains(&"Refused window focus evil twin did not run: evil twin is not in the list now".to_string()),
+        lines
+            .iter()
+            .any(|l| l.starts_with("Refused which window do you mean?") && l.contains("terminal")),
         "{:?}",
         lines
     );
     assert!(lines.contains(&"Refused window focus x did not run: it takes no x".to_string()), "{:?}", lines);
     assert!(lines.contains(&"Refused rm everything is not offered here now".to_string()), "{:?}", lines);
     assert!(!lines.iter().any(|l| l.contains('_')), "no tool's name: {:?}", lines);
-    app.enter();
-    // the step spark planned ran on Enter: its receipt is the reply row's, and no line runs above the list (#196)
-    assert!(pump(&mut app, &rx, |a| a.reply.as_ref().is_some_and(|r| r.text == "terminal in front")));
-    assert!(app
+    assert!(!app
         .exchange
         .iter()
         .any(|l| l.text.contains("Proposed steps") && l.text.contains("window focus terminal")));
-    assert_eq!(calls.lock().unwrap().len(), 1, "only the gated step ran");
+    assert!(calls.lock().unwrap().is_empty(), "none of the incomplete plan ran");
 }
 
 #[test]
@@ -1184,7 +1183,7 @@ fn spark_s_steps_wait_in_the_box_a_question_s_alike_and_run_on_enter() {
     // his photo (#52): "can you change the theme to gruvbox-dark?" read as a question and changed nothing.
     // Now every step spark plans comes back to the box as a command, and Enter runs it (#53)
     let (mut app, rx, calls, _r) = started();
-    app.plan(r#"{"answer": "The terminal is open.", "question": true, "steps": [{"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}], "refused": []}"#);
+    app.plan(r#"{"answer": "", "question": true, "steps": [{"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}], "refused": []}"#);
     std::thread::sleep(Duration::from_millis(200));
     assert!(calls.lock().unwrap().is_empty(), "nothing runs before Enter");
     assert_eq!(
@@ -3537,6 +3536,143 @@ fn a_section_whose_first_rows_came_late_is_asked_again() {
     app.tick(Instant::now() + spark_dialog::mcp::T_READ + Duration::from_secs(1));
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready), "asked again, and its rows came");
     assert_eq!(app.providers[0].rows.rows.len(), 1);
+}
+
+#[test]
+fn an_incomplete_plan_stages_no_valid_subset() {
+    let (mut app, _rx, calls, _reads) = started();
+    app.pending = Some(("focus the terminal and open the missing app".into(), None));
+    app.plan(r#"{"answer":"","steps":[{"name":"window_focus","arguments":{"name":"terminal"}},{"name":"missing","arguments":{}}],"refused":[]}"#);
+    assert!(!app.staged_now(), "the valid first step must not survive a refused second step");
+    assert!(app.queue.is_empty() && calls.lock().unwrap().is_empty());
+    assert!(app.reply.as_ref().is_some_and(|r| r.mark == Mark::Refused));
+}
+
+#[test]
+fn a_planner_refusal_stages_no_steps_and_a_clarification_stays_an_answer() {
+    let (mut app, _rx, calls, _reads) = started();
+    app.plan(r#"{"answer":"","steps":[{"name":"window_focus","arguments":{"name":"terminal"}}],"refused":["the other action is unavailable"]}"#);
+    assert!(!app.staged_now());
+    app.filling = Some((0, "window_focus".into()));
+    app.helper(
+        spark_dialog::app::Helper::Fill(0),
+        Ok(r#"{"answer":"which window do you mean?","steps":[],"refused":[]}"#.into()),
+    );
+    assert!(!app.staged_now() && calls.lock().unwrap().is_empty());
+    assert!(
+        app.reply.as_ref().is_some_and(|r| r.text.contains("which window do you mean?")),
+        "{:?}",
+        app.reply
+    );
+}
+
+#[test]
+fn an_ambiguous_output_asks_for_a_current_target_without_staging() {
+    let (mut app, rx, tx) = app_with(&["out"]);
+    let tools = json!([{"name":"out_use","title":"out use NAME","inputSchema":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}}]);
+    let rows = json!({"title":"out","rows":[
+        {"id":"out:show:USB Headset A","sign":"dot","text":"USB Headset A","tool":null,"more":[],"columns":[],"children":null},
+        {"id":"out:b","sign":"blank","text":"USB Headset B","tool":{"name":"out_use","arguments":{"name":"USB Headset B"}},"more":[],"columns":[],"children":null}
+    ],"short":[]});
+    app.servers.push(stub(
+        0,
+        "out",
+        section_stub("out", tools, rows, 0, |_, _| panic!("a clarification must not call a tool")),
+        tx,
+    ));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    app.pending = Some(("switch to the USB headset".into(), None));
+    app.plan(r#"{"answer":"","steps":[{"name":"out_use","arguments":{"name":"USB Headset"}}],"refused":[]}"#);
+    assert!(!app.staged_now() && app.queue.is_empty());
+    let said = &app.reply.as_ref().expect("clarification").text;
+    assert!(
+        said.contains("which") && said.contains("USB Headset A") && said.contains("USB Headset B"),
+        "{said}"
+    );
+    app.pending = Some(("switch audio output to the USB headset".into(), None));
+    app.plan(r#"{"answer":"","steps":[{"name":"out_use","arguments":{"name":"USB Headset A"}}],"refused":[]}"#);
+    assert!(app.staged.is_none(), "an exact model guess cannot settle an ambiguous request");
+    app.pending = Some(("use USB Headset A".into(), None));
+    app.plan(r#"{"answer":"","steps":[{"name":"out_use","arguments":{"name":"USB Headset A"}}],"refused":[]}"#);
+    assert!(app.staged_now(), "the active device is still an exact current target");
+}
+
+#[test]
+fn a_refused_new_plan_replaces_an_older_staged_proposal() {
+    let (mut app, _rx, calls, _reads) = started();
+    app.plan(r#"{"answer":"","steps":[{"name":"window_focus","arguments":{"name":"terminal"}}]}"#);
+    assert!(app.staged_now());
+    app.pending = Some(("focus the missing window".into(), None));
+    app.plan(r#"{"answer":"","steps":[{"name":"window_focus","arguments":{"name":"missing"}}]}"#);
+    assert!(app.staged.is_none());
+    assert_eq!(app.input, "focus the missing window");
+    assert!(calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_plan_cannot_use_targets_from_a_provider_that_has_stopped() {
+    let (mut app, _rx, calls, _reads) = started();
+    app.providers[0].dead = Some("provider stopped".into());
+    app.plan(r#"{"answer":"","steps":[{"name":"window_focus","arguments":{"name":"terminal"}}]}"#);
+    assert!(app.staged.is_none() && calls.lock().unwrap().is_empty());
+    assert!(app.reply.as_ref().is_some_and(|r| r.text.contains("not offered here now")));
+}
+
+#[test]
+fn target_labels_resolve_only_when_one_current_value_fits() {
+    for (provider, tool, noun) in [
+        ("out", "out_use", "output"),
+        ("mic", "mic_use", "microphone"),
+        ("apps", "apps_open", "app"),
+        ("window", "window_focus", "window"),
+    ] {
+        let (mut app, rx, tx) = app_with(&[provider]);
+        let tools = json!([{"name":tool,"title":format!("{} use NAME", provider),"inputSchema":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false}}]);
+        let rows = json!({"title":provider,"rows":[
+            {"id":"one","sign":"blank","text":"Same label","tool":{"name":tool,"arguments":{"name":"101"}},"more":[],"columns":[],"children":null},
+            {"id":"two","sign":"blank","text":"Same label","tool":{"name":tool,"arguments":{"name":"202"}},"more":[],"columns":[],"children":null},
+            {"id":"three","sign":"blank","text":"Unique label","tool":{"name":tool,"arguments":{"name":"303"}},"more":[],"columns":[],"children":null}
+        ],"short":[]});
+        app.servers.push(stub(
+            0,
+            provider,
+            section_stub(provider, tools, rows, 0, |_, _| panic!("proposals must wait for Enter")),
+            tx,
+        ));
+        app.start();
+        assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+        for name in ["Same label", "missing target", "30", ""] {
+            app.plan(&json!({"answer":"","steps":[{"name":tool,"arguments":{"name":name}}]}).to_string());
+            assert!(app.staged.is_none(), "{tool}: {name}");
+            let said = app.reply.as_ref().unwrap().text.to_lowercase();
+            assert!(
+                said.contains(&format!("which {}", noun)) && said.contains("same label (101)") && said.contains("same label (202)"),
+                "{tool}: {said}"
+            );
+        }
+        for name in ["Unique label", "303"] {
+            app.plan(&json!({"answer":"","steps":[{"name":tool,"arguments":{"name":name}}]}).to_string());
+            assert_eq!(app.staged.as_ref().unwrap().steps[0].call.arguments["name"], "303");
+            assert!(app.queue.is_empty());
+        }
+        app.pending = Some(("use Same label".into(), None));
+        app.plan(&json!({"answer":"","steps":[{"name":tool,"arguments":{"name":"101"}}]}).to_string());
+        assert!(app.staged.is_none(), "{tool}: an exact model guess is still ambiguous");
+        app.pending = Some(("use 101".into(), None));
+        app.plan(&json!({"answer":"","steps":[{"name":tool,"arguments":{"name":"101"}}]}).to_string());
+        assert!(app.staged_now(), "{tool}: an explicit ID settles the choice");
+        if provider == "window" {
+            app.providers[0].rows.rows[0].columns = vec!["Project notes".into()];
+            app.pending = Some(("focus Project notes".into(), None));
+            app.plan(&json!({"answer":"","steps":[{"name":tool,"arguments":{"name":"Project notes"}}]}).to_string());
+            assert_eq!(app.staged.as_ref().unwrap().steps[0].call.arguments["name"], "101");
+        }
+        app.providers[0].rows.rows.clear();
+        app.plan(&json!({"answer":"","steps":[{"name":tool,"arguments":{"name":"303"}}]}).to_string());
+        assert!(app.staged.is_none());
+        assert!(app.reply.as_ref().unwrap().text.contains(&format!("no {} is available", noun)));
+    }
 }
 
 #[test]

@@ -65,6 +65,13 @@ proof. The desktop's own programs are built for x86_64 alone today.
 `spark-shell -h` lists every command. `spark-shell status` says what is
 set up, and `spark-shell check` tests it.
 
+`spark-shell want "WORDS"` asks spark for a plan. An unresolved output,
+microphone, app or window gets a choice from the current list. A model's
+guess does not settle a name shared by several current targets. If any
+proposed step fails a check, the whole plan is held. In home, a proposal
+waits for Enter; `want --json` returns it without running it. A failure
+while running stops the remaining steps; earlier changes are not undone.
+
 ## Keys
 
 `spark-shell desktop keys` lists the desktop's keys as bound, and home's

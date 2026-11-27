@@ -406,7 +406,7 @@ fn a_fill_with_a_value_left_asks_it_then_the_whole_step_waits_and_spark_s_value_
 }
 
 #[test]
-fn a_fill_that_comes_back_empty_for_a_step_whose_values_are_all_optional_waits_for_enter() {
+fn an_empty_fill_never_invents_a_step_even_when_all_values_are_optional() {
     let (mut app, _rx, calls) = started();
     app.providers[0].tools[1].schema = json!({"type": "object", "properties": {"delta": {"type": "integer"}}});
     let (serial, items) = rest(&mut app, "turn it up");
@@ -421,7 +421,8 @@ fn a_fill_that_comes_back_empty_for_a_step_whose_values_are_all_optional_waits_f
         })
         .expect("spark is asked for the step's values");
     app.helper(Helper::Fill(fill), Ok(json!({"answer": "", "steps": [], "refused": []}).to_string()));
-    assert!(app.staged_now(), "the step waits in the box: {:?} {:?}", app.input, app.mode);
+    assert!(app.staged.is_none(), "no model proposal means no staged action");
+    assert!(app.reply.as_ref().is_some_and(|r| r.text.contains("nothing to do")));
     assert!(calls.lock().unwrap().is_empty(), "nothing runs before Enter");
 }
 
@@ -441,7 +442,7 @@ fn a_step_that_takes_nothing_found_by_meaning_waits_in_the_box_and_a_second_ente
 }
 
 #[test]
-fn a_step_whose_fill_comes_back_empty_asks_its_value_and_a_number_typed_goes_as_a_number() {
+fn a_step_whose_fill_lacks_a_value_asks_it_and_a_number_typed_goes_as_a_number() {
     let (mut app, rx, calls) = started();
     let (serial, items) = rest(&mut app, "make it a bit louder");
     only(&mut app, serial, &items, &step("out_adjust"), 0.9);
@@ -454,9 +455,17 @@ fn a_step_whose_fill_comes_back_empty_asks_its_value_and_a_number_typed_goes_as_
             _ => None,
         })
         .expect("spark is asked for the step's values");
-    app.helper(Helper::Fill(fill), Ok(json!({"answer": "", "steps": [], "refused": []}).to_string()));
+    app.helper(
+        Helper::Fill(fill),
+        Ok(json!({"answer": "", "steps": [{"name":"out_adjust", "arguments":{}}], "refused": []}).to_string()),
+    );
     assert!(matches!(&app.mode, Mode::Ask { field, .. } if field == "delta"), "{:?}", app.mode);
     type_words(&mut app, "5");
+    app.enter();
+    assert!(
+        app.staged_now() && calls.lock().unwrap().is_empty(),
+        "the completed model proposal waits for review"
+    );
     app.enter();
     assert!(pump(&mut app, &rx, |_| !calls.lock().unwrap().is_empty()));
     let sent = calls.lock().unwrap()[0].clone();

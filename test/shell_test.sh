@@ -6334,8 +6334,14 @@ printf '{"why": "quiet: no sound out, no mic, no bluetooth", "steps": [{"page": 
 EOF
     chmod +x "$H/.local/bin/spark"; rm -f "$amlog" "$blog"
     st=0; out=$(sh "$SH" bar quiet please 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> quiet please' "  $TICK out muted" "  $TICK mic muted" "  $TICK bluetooth off" "  $CROSS x is not in the list now" "  $CROSS theme: alpha takes 0 to 1" "  $CROSS no desktop here")" ] \
-        && ok "bar WORDS: one line per step with its sign and no why line; a step the panel does not offer, or a section it does not have, is refused in a few words, the rest played" || bad "bar want" "st=$st $out"
+    [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> quiet please' "  $CROSS x is not in the list now" "  $CROSS theme: alpha takes 0 to 1" "  $CROSS no desktop here")" ] && [ ! -e "$amlog" ] && [ ! -e "$blog" ] \
+        && ok "bar WORDS with an older spark: the refused steps are said, and the whole plan stays unplayed" || bad "bar want" "st=$st $out"
+    # A valid plan still reaches all three tools.
+    sed 's/, {"page": "bt", "action": "dance".*}]}\\n/]}\\n/' "$H/.local/bin/spark" > "$H/valid-spark"
+    mv "$H/valid-spark" "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
+    st=0; out=$(sh "$SH" bar quiet please 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> quiet please' "  $TICK out muted" "  $TICK mic muted" "  $TICK bluetooth off")" ] \
+        && ok "bar WORDS with an older spark: a valid compound plan plays every step" || bad "bar valid want" "st=$st $out"
     rm -f "$H/bt-poff"   # the adapter on again, for what follows
     [ "$(cat "$amlog")" = "$(printf '%s\n' '-c 0 sset Master mute' '-c 0 sset Capture nocap')" ] && grep -qx 'power off' "$blog" && ok "bar WORDS: the steps reached amixer and bluetoothctl" || bad "want steps" "$(cat "$amlog" "$blog" 2>&1)"
     grep -q '^do this on the desktop: quiet please$' "$H/spark.argv" && grep -q 'bt: disconnect MAJOR V, remove MAJOR V, pair Buds, scan, power off' "$H/spark.argv" && grep -q 'out: use HDMI, mute, level N' "$H/spark.argv" && grep -q 'layout: new TASK' "$H/spark.argv" && grep -q 'theme: .*dracula, .*text bigger' "$H/spark.argv" && grep -q "What the bar shows now: lan up $SEP 192.0.2.10; wifi .* home $SEP 192.0.2.20; bt $DOT MAJOR V; out Jabra $SEP 40%" "$H/spark.argv" \
@@ -8066,16 +8072,19 @@ cat > "$H/.local/bin/spark" <<'STUB'
 printf '%s\n' "$@" > "$HOME/spark.argv"; cat > "$HOME/spark.stdin"
 case "$*" in
     *--source*) echo 'the notes say to buy bread.' ;;
+    *'level to thirty'*) echo '{"steps": [{"page": "out", "action": "level", "arg": "30"}]}' ;;
+    *'the nord palette') echo '{"steps": [{"page": "theme", "action": "nord"}]}' ;;
     *) printf '{"why": "a palette", "steps": [{"page": "theme", "action": "nord"}, {"page": "theme", "action": "rainbow"}, {"page": "out", "action": "level", "arg": "30"}]}\n' ;;
 esac
 STUB
 chmod +x "$H/.local/bin/spark"
 st=0; out=$(sh "$SH" want --json the nord palette and quieter 2>&1) || st=$?
-[ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg c "$(printf '\342\234\227')" '.answer == "" and .steps[0] == {name: "theme_palette", arguments: {name: "nord"}, line: "theme nord"} and .refused[0] == ($c + " rainbow is not in the list now")' >/dev/null \
+[ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg c "$(printf '\342\234\227')" '.answer == "" and .steps == [] and .refused[0] == ($c + " rainbow is not in the list now")' >/dev/null \
     && ! grep -q '^THEME=nord' "$HOME/.config/spark-shell/config" && grep -q '^do this on the desktop: the nord palette and quieter$' "$HOME/spark.argv" \
-    && ok "want --json: the steps spark picked, each gated and named as a tool with its arguments and its line, the refused ones as lines; nothing run" || bad "want json" "st=$st $out"
+    && ok "want --json with an older spark: a refused step holds the whole plan; nothing run" || bad "want json" "st=$st $out"
 if [ "$(uname -s)" != Darwin ]; then
-    printf '%s' "$out" | jq -e '.steps[1] == {name: "out_level", arguments: {level: 30}, line: "out level 30"}' >/dev/null && ok "want --json: a level is a number in the arguments, as the tool's schema says" || bad "want json level" "$out"
+    out=$(sh "$SH" want --json set the level to thirty)
+    printf '%s' "$out" | jq -e '.steps == [{name: "out_level", arguments: {level: 30}, line: "out level 30"}]' >/dev/null && ok "want --json: a level is a number in the arguments, as the tool's schema says" || bad "want json level" "$out"
 fi
 st=0; out=$(sh "$SH" want the nord palette 2>&1) || st=$?
 [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^$(printf '\342\234\223') Nord is on$" && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
@@ -8090,6 +8099,8 @@ case $1 in
             *'what time'*) printf '{"answer": "It is noon.", "steps": [], "refused": []}\n' ;;
             *zebra*|*sandwich*) printf '{"answer": "", "steps": [], "refused": []}\n' ;;
             *'hush the room'*) printf '{"answer": "", "steps": [{"name": "out_mute", "arguments": {}}], "refused": []}\n' ;;
+            *'level to thirty'*) printf '{"answer": "", "steps": [{"name": "out_level", "arguments": {"level": 30}}], "refused": []}\n' ;;
+            *'dracula on?'*|*'make it dracula'*) printf '{"answer": "", "steps": [{"name": "theme_palette", "arguments": {"name": "dracula"}}], "refused": []}\n' ;;
             *'dim the room'*) printf '{"answer": "", "steps": [{"name": "display_brightness", "arguments": {"level": "down"}}, {"name": "display_brightness", "arguments": {"level": "30"}}], "refused": []}\n' ;;
             *) printf '{"answer": "", "steps": [{"name": "theme_palette", "arguments": {"name": "dracula"}}, {"name": "out_level", "arguments": {"level": 30}}, {"name": "theme_palette", "arguments": {"name": "rainbow"}}, {"name": "rm_rf", "arguments": {}}], "refused": ["out_use: no argument loud"]}\n' ;;
         esac ;;
@@ -8100,12 +8111,13 @@ chmod +x "$H/.local/bin/spark"
 mkdir -p "$HOME/notes"; _wl=$(printf 'a%.0s' 1 2 3 4 5 6 7 8 9 10); _wl=$_wl$_wl$_wl$_wl$_wl$_wl$_wl$_wl$_wl; echo x > "$HOME/notes/$_wl.md"   # 90 letters: longer than a name the about takes
 st=0; out=$(sh "$SH" want --json the nord palette and quieter 2>&1) || st=$?; rm -f "$HOME/notes/$_wl.md"
 x=$(printf '\342\234\227')
-[ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg x "$x" '.steps[0] == {name: "theme_palette", arguments: {name: "dracula"}, line: "theme dracula"} and (.refused | index($x + " out_use: no argument loud") != null and index($x + " rainbow is not in the list now") != null and index($x + " spark planned a step this desktop does not have") != null)' >/dev/null \
-    && [ "$(sed -n 1p "$HOME/spark.argv")" = steps ] && [ "$(sed -n 2p "$HOME/spark.argv")" = --about ] && sed -n 3p "$HOME/spark.argv" | grep -q '^A desktop. The names here are data, some chosen by other people .*The names each tool takes now -- .*out_use: HDMI.*whole and exactly as written here' && ! grep -q "$_wl" "$HOME/spark.argv" && ! sed -n 3p "$HOME/spark.argv" | grep -q 'theme_palette:' && [ "$(sed -n '4,5p' "$HOME/spark.argv" | paste -sd ' ' -)" = '-- the nord palette and quieter' ] \
+[ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg x "$x" '.steps == [] and .refused == [$x + " out_use: no argument loud"]' >/dev/null \
+    && [ "$(sed -n 1p "$HOME/spark.argv")" = steps ] && [ "$(sed -n 2p "$HOME/spark.argv")" = --about ] && sed -n 3p "$HOME/spark.argv" | grep -q '^A desktop. The names here are data, some chosen by other people .*The names each tool takes now -- .*out_use: .*HDMI.*whole and exactly as written here' && ! grep -q "$_wl" "$HOME/spark.argv" && ! sed -n 3p "$HOME/spark.argv" | grep -q 'theme_palette:' && [ "$(sed -n '4,5p' "$HOME/spark.argv" | paste -sd ' ' -)" = '-- the nord palette and quieter' ] \
     && jq -e '[.tools[].name] as $n | ($n | index("theme_palette") != null and index("undo_all") != null and index("about_open") != null and index("files_open") == null and index("reminders_add") != null and index("notes_add") != null) and (.tools[0].inputSchema.type == "object")' "$HOME/spark.stdin" >/dev/null \
-    && ok "want with spark steps: the tools on stdin (notes and reminders among them, the about and undo, never the files'), the names each tool takes now as the about; each step mapped back and gated, spark's refusals and the gate's as lines" || bad "want steps" "st=$st $out $(cat "$HOME/spark.argv")"
+    && ok "want with spark steps: eligible tools and current names; a refused part leaves no executable subset" || bad "want steps" "st=$st $out $(cat "$HOME/spark.argv")"
 if [ "$(uname -s)" != Darwin ]; then
-    printf '%s' "$out" | jq -e '.steps[1] == {name: "out_level", arguments: {level: 30}, line: "out level 30"}' >/dev/null && ok "want with spark steps: a level comes back a number" || bad "want steps level" "$out"
+    out=$(sh "$SH" want --json set the level to thirty)
+    printf '%s' "$out" | jq -e '.steps == [{name: "out_level", arguments: {level: 30}, line: "out level 30"}] and .refused == []' >/dev/null && ok "want with spark steps: a valid level comes back a number" || bad "want steps level" "$out"
     st=0; out=$(sh "$SH" want --json hush the room 2>&1) || st=$?
     sh "$SH" bar panel out use HDMI >/dev/null; st2=0; out2=$(sh "$SH" want --json hush the room 2>&1) || st2=$?
     sh "$SH" bar panel out use Jabra >/dev/null; rm -f "$HOME/.config/alsa/asoundrc"
@@ -9750,20 +9762,26 @@ EOF
     ! grep -q '	none$' "$st_dir/theme.history" && ! sh "$SH" theme list | sed -n '/last looks/,$p' | grep -q '^  none ' && ok "theme none is no look to come back to: not in the history, not in the list (#25)" || bad "none in history" "$(cat "$st_dir/theme.history")"
     sh "$SH" theme none >/dev/null 2>&1; out=$(sh "$SH" theme back 2>&1 | sed -n 1p)
     [ "$out" = 'back to nord' ] && grep -qx 'THEME=nord' "$cfg" && ok "theme back from none: the look before none, not the one before that (#25)" || bad "back from none" "$out $(grep THEME= "$cfg")"
-    # one look a request: of two words steps the second is refused, and a save the model put first runs after the look
+    # one look a request: two words steps hold the whole plan; one words step precedes its save
     cat > "$H/.local/bin/spark" <<'STUB'
 #!/bin/sh
 case $1 in
     help) echo ' spark steps <words> < TOOLS  the tool calls that do what you say (-h)' ;;
-    steps) cat > /dev/null; printf '{"answer": "", "steps": [{"name": "theme_save", "arguments": {"name": "flag"}}, {"name": "theme_words", "arguments": {"hue": "green", "accent": "yellow", "warmth": "neutral", "contrast": "normal", "light": "light", "face": "argon", "family": "banner", "animation": "sun", "drawing": "meadow", "name": "Brazilian flag"}}, {"name": "theme_words", "arguments": {"hue": "blue", "accent": "same", "warmth": "cool", "contrast": "normal", "light": "dark", "face": "neon", "family": "stone", "animation": "tide", "drawing": "fjord"}}, {"name": "theme_palette", "arguments": {"name": "flag"}}], "refused": []}\n' ;;
+    steps) cat > /dev/null; printf '{"answer": "", "steps": [{"name": "theme_save", "arguments": {"name": "flag"}}, {"name": "theme_words", "arguments": {"hue": "green", "accent": "yellow", "warmth": "neutral", "contrast": "normal", "light": "light", "face": "argon", "family": "banner", "animation": "sun", "drawing": "meadow", "name": "Brazilian flag"}}, {"name": "theme_words", "arguments": {"hue": "blue", "accent": "same", "warmth": "cool", "contrast": "normal", "light": "dark", "face": "neon", "family": "stone", "animation": "tide", "drawing": "fjord"}}, {"name": "theme_palette", "arguments": {"name": "flag"}}], "refused": []}\n' | jq 'if env.VALID_LOOK == "1" then .steps |= map(select(.name != "theme_words" or .arguments.hue == "green")) else . end' ;;
     *) cat > /dev/null; echo '{"steps": []}' ;;
 esac
 STUB
     chmod +x "$H/.local/bin/spark"
     st=0; out=$(sh "$SH" want --json a theme like the brazilian flag 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg x "$(printf '\342\234\227')" '.steps[0] == {name: "theme_words", arguments: {hue: "green", accent: "yellow", warmth: "neutral", contrast: "normal", light: "light", face: "argon", family: "banner", animation: "sun", drawing: "meadow", name: "brazilian-flag"}, line: "theme words green accent=yellow warmth=neutral contrast=normal light=light face=argon family=banner animation=sun drawing=meadow name=brazilian-flag"} and .steps[1].name == "theme_save" and .steps[1].arguments == {name: "flag"} and (.steps | length) == 2 and (.refused | length) == 1 and (.refused | index($x + " one look a request: the first words step made it, blue accent=same warmth=cool contrast=normal light=dark face=neon family=stone animation=tide drawing=fjord was not") != null)' >/dev/null \
-        && ok "want: the words step first with its name a slug, the save after it, the second words step refused in one line, the palette step naming the saved theme dropped" || bad "want one look" "st=$st $out"
+    [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg x "$(printf '\342\234\227')" '.steps == [] and .refused == [$x + " one look a request: choose one words step"]' >/dev/null \
+        && ok "want: two looks hold the whole plan" || bad "want two looks" "st=$st $out"
     st=0; out=$(sh "$SH" want a theme like the brazilian flag 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ ! -e "$th_dir/flag" ] && ! grep -qx 'THEME=flag' "$cfg" \
+        && ok "want: a refused look creates no theme and saves nothing" || bad "want refused look ran" "st=$st $out"
+    st=0; out=$(VALID_LOOK=1 sh "$SH" want --json a theme like the brazilian flag 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg x "$(printf '\342\234\227')" '.steps[0] == {name: "theme_words", arguments: {hue: "green", accent: "yellow", warmth: "neutral", contrast: "normal", light: "light", face: "argon", family: "banner", animation: "sun", drawing: "meadow", name: "brazilian-flag"}, line: "theme words green accent=yellow warmth=neutral contrast=normal light=light face=argon family=banner animation=sun drawing=meadow name=brazilian-flag"} and .steps[1].name == "theme_save" and .steps[1].arguments == {name: "flag"} and (.steps | length) == 2 and .refused == []' >/dev/null \
+        && ok "want: the words step first with its name a slug, the save after it, the palette step naming the saved theme dropped" || bad "want one look" "st=$st $out"
+    st=0; out=$(VALID_LOOK=1 sh "$SH" want a theme like the brazilian flag 2>&1) || st=$?
     [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "brazilian flag is on $SEP" && printf '%s\n' "$out" | grep -q 'saved flag' && grep -qx 'THEME=flag' "$cfg" && [ -f "$th_dir/flag/palette.env" ] && grep -qx 'WORDS=brazilian flag' "$th_dir/flag/look.env" \
         && grep -qx 'FACE=argon' "$th_dir/flag/look.env" && grep -qx 'GLYPH_FAMILY=banner' "$th_dir/flag/look.env" && grep -qx 'ANIMATION=sun' "$th_dir/flag/look.env" && grep -qx 'GLYPH_FAMILY=banner' "$cfg" \
         && sh "$SH" panel theme --list | sed -n 1p | grep -q "^theme      flag$" && sh "$SH" theme list | grep -q "^  flag  *brazilian flag $SEP \(default\|meadow\), current$" && [ "$(sh "$SH" theme nord >/dev/null 2>&1; sh "$SH" theme back 2>&1 | sed -n 1p)" = 'back to flag' ] \
@@ -11654,8 +11672,8 @@ esac
 STUB
     notify_state '[[2, "app", "SECRET NOTICE TEXT"]]' '[[1, "app", "SECRET NOTICE TEXT"]]'
     printf '#!/bin/sh\necho %s\n' "'{\"blockdevices\":[{\"name\":\"sdb\",\"path\":\"/dev/sdb\",\"type\":\"disk\",\"rm\":true,\"hotplug\":true,\"size\":16000000000,\"model\":\"Fakestick\",\"vendor\":\"Acme\",\"label\":null,\"fstype\":null,\"mountpoint\":null}]}'" > "$H/.local/bin/lsblk"
-    for t in grim wl-copy notify-send; do printf '#!/bin/sh\n:\n' > "$H/.local/bin/$t"; done
-    chmod +x "$H/.local/bin/swaymsg" "$H/.local/bin/wpctl" "$H/.local/bin/bluetoothctl" "$H/.local/bin/lsblk" "$H/.local/bin/grim" "$H/.local/bin/wl-copy" "$H/.local/bin/notify-send"
+    for t in grim slurp wl-copy wl-paste notify-send; do printf '#!/bin/sh\n:\n' > "$H/.local/bin/$t"; done
+    chmod +x "$H/.local/bin/swaymsg" "$H/.local/bin/wpctl" "$H/.local/bin/bluetoothctl" "$H/.local/bin/lsblk" "$H/.local/bin/grim" "$H/.local/bin/slurp" "$H/.local/bin/wl-copy" "$H/.local/bin/wl-paste" "$H/.local/bin/notify-send"
     mkdir -p "$HOME/notes" "$HOME/calendar" "$HOME/.config/spark-shell/layouts"
     printf '# my hidden words\nmore of them\n' > "$HOME/notes/alpha.md"; printf 'x\n' > "$HOME/notes/beta.md"
     printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:r1\r\nDTSTART:20991231T090000\r\nSUMMARY:call the dentist\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' > "$HOME/calendar/r1.ics"
@@ -11683,7 +11701,7 @@ STUB
         && ok "the facts name the printers the printers section saw last, from its cache, and still ask CUPS nothing (#186)" || bad "printers from cache" "$(grep Printers "$mf"; cat "$HOME/cups.log" 2>&1)"
     rm -f "$HOME/.local/state/spark-shell/panel/printers.status" "$HOME/cups.log"
     PATH="$H/prl:$PATH" MW >/dev/null 2>&1 || :   # the facts as they were, no printer seen: the checks below read them so
-    grep -qx -- '- Session: sway 1.12 on Wayland (X11 apps run through Xwayland), set up by spark-shell\( v[0-9.]*\)\{0,1\}; screenshots grim, clipboard wl-copy, notifications notify-send, swaymsg.' "$mf" \
+    grep -qx -- '- Session: sway 1.12 on Wayland (X11 apps run through Xwayland), set up by spark-shell\( v[0-9.]*\)\{0,1\}; screenshots grim + slurp, clipboard wl-copy and wl-paste, notifications notify-send, swaymsg.' "$mf" \
         && grep -qxF -- '- Screens: DP-3 = Fakemake Portable 16, on the left, turned 270, portrait, 1920x1200; HDMI-A-1 = Othermake Desk 24, on the right, 1920x1080.' "$mf" \
         && grep -qxF -- '- spark-shell is this desktop: the bar at the top; home (Super+space) holds native actions and optional conversation.' "$mf" \
         && grep -q -- '^- Keys: .*terminal.open.*window.close' "$mf" \
