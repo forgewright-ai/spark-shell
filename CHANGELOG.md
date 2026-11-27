@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.173
+
+- A plan waits as a whole: a rejected step leaves no other step ready
+  to run. A new refusal clears an older staged proposal. A clarification
+  from spark stays an answer instead of becoming an action to fill in.
+- Output, microphone, app and window targets come from the current
+  rows. A unique label can resolve to its native value; a missing or
+  ambiguous one offers the current choices, even when the model guessed
+  a valid name for words shared by several targets. Window labels and
+  titles travel with their container IDs in the terminal planner's facts.
+- A longer request naming an app goes through the tools planner when
+  available, so other requested changes are not lost to the layout path.
+
+- The dialog is 0.173.0.
+
 ## v0.172
 
 - A color is picked. Enter on one of a theme's 20 colors, or on the

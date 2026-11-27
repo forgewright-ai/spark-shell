@@ -150,6 +150,7 @@
 #                                     the server of home's search by meaning
 #   spark-shell want "WORDS"          ask for it, "mute everything": steps run;
 #                                     a question's are shown, not run
+#                                     a rejected step holds the whole plan
 #   spark-shell want --json "WORDS"   the steps spark picks, as JSON; none run
 #   spark-shell want --attach FILE "WORDS"
 #                                     ask about a text file (txt md)

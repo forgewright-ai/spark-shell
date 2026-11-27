@@ -6021,14 +6021,16 @@ impl App {
         };
         let mut v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
         let steps = v.get("steps").and_then(Value::as_array).cloned().unwrap_or_default();
+        // A clarification or refusal is a complete reply, not a failed slot
+        // fill that should be turned back into the originally selected action.
+        if steps.is_empty()
+            || v.get("answer").and_then(Value::as_str).is_some_and(|a| !a.trim().is_empty())
+            || v.get("refused").and_then(Value::as_array).is_some_and(|r| !r.is_empty())
+        {
+            return self.plan(&text);
+        }
         let Some(i) = steps.iter().position(|s| s.get("name").and_then(Value::as_str) == Some(name.as_str())) else {
-            if !steps.is_empty() {
-                return self.plan(&text); // spark offers only the one tool; should another come, it is refused in one line
-            }
-            // no step back: what it needs is asked for; one that needs nothing waits in the box, never runs at once
-            self.pending = None;
-            let step = self.found_step(p, &tool, Map::new());
-            return if step.call.ask.is_empty() { self.stage(vec![step]) } else { self.run(step) };
+            return self.plan(&text); // never invent the selected action when spark proposed none
         };
         let read: Map<String, Value> = steps[i]
             .get("arguments")
@@ -6071,7 +6073,12 @@ impl App {
             if names.contains(k) {
                 let now = Self::names_in(self.rows_for_gate(p), &tool.name, k);
                 if !now.is_empty() {
-                    about += &format!(" (one of: {})", now.join(", "));
+                    let choices = if Self::target_noun(&tool.name).is_some() && k == "name" {
+                        Self::target_choices(self.rows_for_gate(p), &tool.name)
+                    } else {
+                        now
+                    };
+                    about += &format!(" (one of: {})", choices.join(", "));
                 }
             }
             about.push('.');
@@ -6084,6 +6091,16 @@ impl App {
     fn names_in(rows: &Rows, tool: &str, k: &str) -> Vec<String> {
         let mut names: Vec<String> = vec![];
         for r in &rows.rows {
+            // The active sound device has no switch action. It still counts
+            // when resolving a name, including a name shared by two devices.
+            if k == "name" && matches!(tool, "out_use" | "mic_use") && r.tool.is_none() && matches!(r.sign.as_str(), "dot" | "ring") {
+                let prefix = format!("{}:show:", tool.trim_end_matches("_use"));
+                if let Some(n) = r.id.strip_prefix(&prefix).filter(|n| !n.is_empty()) {
+                    if !names.iter().any(|v| v == n) {
+                        names.push(n.to_string());
+                    }
+                }
+            }
             for c in r.calls() {
                 if let Some(v) = c.arguments.get(k).and_then(Value::as_str).filter(|_| c.name == tool) {
                     if !names.iter().any(|n| n == v) {
@@ -6127,6 +6144,29 @@ impl App {
             if t.is_empty() {
                 continue;
             }
+            // Human labels can differ from a native target's stable value,
+            // especially a window's container ID. Only a unique label maps.
+            if k == "name" && Self::target_noun(&call.name).is_some() {
+                let mut matches = vec![];
+                for n in &names {
+                    if Self::target_aliases(rows, &call.name, n).iter().any(|a| slug(a) == t) {
+                        matches.push(n.to_string());
+                    }
+                }
+                match matches.as_slice() {
+                    [one] => {
+                        call.arguments.insert(k.clone(), Value::String(one.clone()));
+                        continue;
+                    }
+                    [] => {}
+                    _ => continue, // duplicate labels must be clarified
+                }
+                // A shortened native ID is not a human label. In particular,
+                // window 10 must not become window 101 because it is alone.
+                if Self::target_noun(&call.name) == Some("window") || typed.bytes().all(|b| b.is_ascii_digit()) {
+                    continue;
+                }
+            }
             let same: Vec<&str> = names.iter().copied().filter(|n| slug(n) == t).collect();
             let starts: Vec<&str> = names.iter().copied().filter(|n| slug(n).starts_with(&t)).collect();
             let holds: Vec<&str> = names
@@ -6149,6 +6189,138 @@ impl App {
         }
     }
 
+    fn target_noun(tool: &str) -> Option<&'static str> {
+        match tool {
+            "out_use" => Some("output"),
+            "mic_use" => Some("microphone"),
+            "apps_open" => Some("app"),
+            "window_focus" | "window_close" | "window_move" | "window_place" => Some("window"),
+            _ => None,
+        }
+    }
+
+    fn target_choices(rows: &Rows, tool: &str) -> Vec<String> {
+        Self::names_in(rows, tool, "name")
+            .iter()
+            .map(|name| {
+                let aliases = Self::target_aliases(rows, tool, name);
+                match aliases.last().map(String::as_str) {
+                    Some(label) if !label.is_empty() && label != name => format!("{} ({})", scrub(label), scrub(name)),
+                    _ => scrub(name),
+                }
+            })
+            .collect()
+    }
+
+    fn target_aliases(rows: &Rows, tool: &str, name: &str) -> Vec<String> {
+        let mut aliases = vec![name.to_string()];
+        for row in &rows.rows {
+            if !row
+                .calls()
+                .iter()
+                .any(|c| c.name == tool && c.arguments.get("name").and_then(Value::as_str) == Some(name))
+            {
+                continue;
+            }
+            let labels: Vec<&str> = std::iter::once(row.text.as_str())
+                .chain(row.columns.iter().map(String::as_str))
+                .filter(|s| !s.is_empty())
+                .collect();
+            for label in labels.iter().map(|s| s.to_string()).chain(std::iter::once(labels.join(" / "))) {
+                if !label.is_empty() && !aliases.contains(&label) {
+                    aliases.push(label);
+                }
+            }
+        }
+        aliases
+    }
+
+    /// A model can guess a valid name for ambiguous words. Known names and
+    /// their labels must be checked against the original request too.
+    fn target_collision(rows: &Rows, tool: &str, selected: &str, words: &str) -> bool {
+        let normalize = |s: &str| {
+            s.to_lowercase()
+                .chars()
+                .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+                .collect::<String>()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let words = normalize(words);
+        if words.is_empty() {
+            return false;
+        }
+        let names = Self::names_in(rows, tool, "name");
+        let aliases: Vec<Vec<String>> = names
+            .iter()
+            .map(|n| Self::target_aliases(rows, tool, n).iter().map(|a| normalize(a)).collect())
+            .collect();
+        let Some(at) = names.iter().position(|n| n == selected) else { return false };
+        // An explicit unique name or title identifies its value. Repeated
+        // app labels do not identify one of several windows of that app.
+        if aliases[at].iter().any(|a| {
+            !a.is_empty() && format!(" {} ", words).contains(&format!(" {} ", a)) && !aliases.iter().enumerate().any(|(i, other)| i != at && other.contains(a))
+        }) {
+            return false;
+        }
+        let words: std::collections::BTreeSet<&str> = words.split_whitespace().collect();
+        let scores: Vec<usize> = aliases
+            .iter()
+            .map(|set| {
+                let tokens: std::collections::BTreeSet<&str> = set
+                    .iter()
+                    .flat_map(|a| a.split_whitespace())
+                    .filter(|w| {
+                        !matches!(
+                            *w,
+                            "a" | "an"
+                                | "the"
+                                | "my"
+                                | "to"
+                                | "of"
+                                | "on"
+                                | "in"
+                                | "for"
+                                | "and"
+                                | "or"
+                                | "please"
+                                | "use"
+                                | "open"
+                                | "switch"
+                                | "set"
+                                | "bring"
+                        )
+                    })
+                    .collect();
+                tokens.intersection(&words).count()
+            })
+            .collect();
+        let best = scores.iter().copied().max().unwrap_or(0);
+        best > 0 && (scores[at] < best || scores.iter().filter(|s| **s == best).count() > 1)
+    }
+
+    /// These four domains select existing targets. An unresolved target is
+    /// a question for the person, never permission to pick a different row.
+    fn target_question(&self, p: usize, call: &Call, words: &str) -> Option<String> {
+        let noun = Self::target_noun(&call.name)?;
+        let target = call.arguments.get("name").and_then(Value::as_str).unwrap_or("");
+        let rows = self.rows_for_gate(p);
+        if Self::names_in(rows, &call.name, "name").iter().any(|n| n == target) && !Self::target_collision(rows, &call.name, target, words) {
+            return None;
+        }
+        let choices = Self::target_choices(rows, &call.name);
+        if choices.is_empty() {
+            return Some(format!("no {} is available in the current list", noun));
+        }
+        Some(format!(
+            "which {} do you mean? {}{}",
+            noun,
+            choices.iter().take(6).cloned().collect::<Vec<_>>().join(", "),
+            if choices.len() > 6 { "; more in the list" } else { "" }
+        ))
+    }
+
     /// A request that did not get its answer: the words and the file come back, unless something new
     /// was typed or attached meanwhile.
     fn give_back(&mut self) {
@@ -6166,6 +6338,11 @@ impl App {
     /// matches the original request. Full answers remain in the conversation.
     pub fn plan(&mut self, text: &str) {
         self.wait = None;
+        // A new answer replaces the old proposal, including an invalid one.
+        // Keep a person's newer draft, but never leave old steps executable.
+        if self.staged.take().is_some_and(|s| s.text == self.input) {
+            self.set_input(String::new());
+        }
         let words = self.pending.as_ref().map(|(w, _)| w.clone()).unwrap_or_default();
         let Ok(v) = serde_json::from_str::<Value>(text) else {
             self.give_back();
@@ -6182,10 +6359,20 @@ impl App {
                     .collect()
             })
             .unwrap_or_default();
+        let Some(proposed) = v.get("steps").and_then(Value::as_array) else {
+            self.give_back();
+            return self.refuse("spark answered with no valid plan");
+        };
+        if !answer.is_empty() && !proposed.is_empty() {
+            no.push("spark answered while also proposing actions; nothing is staged".into());
+        }
         let mut steps: Vec<Step> = vec![];
-        for s in v.get("steps").and_then(Value::as_array).cloned().unwrap_or_default() {
-            let Some(name) = s.get("name").and_then(Value::as_str) else { continue };
-            let arguments = s.get("arguments").and_then(Value::as_object).cloned().unwrap_or_default();
+        for s in proposed {
+            let (Some(name), Some(arguments)) = (s.get("name").and_then(Value::as_str), s.get("arguments").and_then(Value::as_object)) else {
+                no.push("spark proposed an invalid step; nothing is staged".into());
+                continue;
+            };
+            let arguments = arguments.clone();
             let said = s.get("line").and_then(Value::as_str).map(scrub);
             let line = said.clone().unwrap_or_else(|| name.to_string());
             // two steps are the dialog's own: undo is the undo at hand, about opens its about
@@ -6227,9 +6414,16 @@ impl App {
                 value: None,
                 children: None,
             };
-            let at = self.providers.iter().position(|p| p.tools.iter().any(|t| t.name == name));
+            let at = self
+                .providers
+                .iter()
+                .position(|p| p.ready && p.dead.is_none() && p.tools.iter().any(|t| t.name == name));
             if let Some(p) = at {
                 self.nearest_name(p, &mut call);
+                if let Some(question) = self.target_question(p, &call, &words) {
+                    no.push(question);
+                    continue;
+                }
             }
             // a person's step (a terminal, or sudo) runs from its row, never from a plan (v0.129.2)
             if at.is_some_and(|p| self.providers[p].tools.iter().any(|t| t.name == name && t.person)) {
@@ -6254,6 +6448,11 @@ impl App {
                     Err(e) => no.push(format!("{} did not run: {}", said.unwrap_or_else(|| self.proposal_line(p, &call)), e)),
                 },
             }
+        }
+        // Review a whole plan. A valid first action cannot hide a rejected
+        // second action or a target that still needs the person's choice.
+        if !no.is_empty() {
+            steps.clear();
         }
         // The answer's summary makes its arrival visible in another view.
         // Conversation shows the complete text, preserving its paragraphs.

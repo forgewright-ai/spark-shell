@@ -840,5 +840,153 @@ esac
         self.assertIn("no window", result[1]["result"]["content"][0]["text"])
 
 
+class PlanHandling(unittest.TestCase):
+    """The terminal caller holds a whole proposal before any execution."""
+
+    def plan(self, reply, known_refused=False, use_entry=False, words="the synthetic request"):
+        with tempfile.TemporaryDirectory(prefix="plan-handling-") as directory:
+            home = Path(directory)
+            (home / "reply.json").write_text(json.dumps(reply))
+            model = home / "model"
+            model.write_text('#!/bin/sh\ncase $1 in help) echo " spark steps <words>" ;; *) cat "$HOME/reply.json" ;; esac\n')
+            model.chmod(0o700)
+            env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(home / "config"),
+                       XDG_STATE_HOME=str(home / "state"), XDG_DATA_HOME=str(home / "data"),
+                       XDG_CACHE_HOME=str(home / "cache"), KNOWN_REFUSED=str(int(known_refused)), USE_ENTRY=str(int(use_entry)), REQUEST_WORDS=words)
+            script = r'''
+set -eu
+. "$1/src/ask.sh"
+TMP=$HOME; spark=$HOME/model; TAB=$(printf '\t'); PANEL_CROSS='!'
+scrub_text() { cat; }
+cut_chars() { cut -c "1-$1"; }
+panel_facts() { echo 'synthetic desktop'; }
+want_tools() { echo '{"tools":[]}'; }
+want_name_rows() { printf 'out_use\tUSB Headset A\nout_use\tUSB Headset B\nmic_use\tUSB Mic A\nmic_use\tUSB Mic B\napps_open\tEditor A\napps_open\tEditor B\nwindow_focus\t101\tEditor\nwindow_focus\t202\tEditor\n'; }
+spark_bin() { echo "$HOME/model"; }
+want_names_app() { echo 'Editor A'; }
+layout_words_full() { echo false; }
+layout_words_ws() { :; }
+SND=fixture
+
+tool_spec() {
+    _te=''; _tp=''
+    case $1 in
+        mic_mute) _ts=mic; _ta=mute ;;
+        out_level) _ts=out; _ta=level; _tp=level ;;
+        out_use) _ts=out; _ta=use; _tp=name ;;
+        mic_use) _ts=mic; _ta=use; _tp=name ;;
+        apps_open) _ts=apps; _ta=open; _tp=name ;;
+        window_focus) _ts=window; _ta=focus; _tp=name ;;
+        *) return 1 ;;
+    esac
+}
+panel_gate() {
+    if [ "$KNOWN_REFUSED" = 1 ] && [ "$1:$2" = out:use ]; then echo 'output is owned by the sound configuration'; return 1; fi
+    case $1:$2 in
+        mic:use) case $3 in 'USB Mic A'|'USB Mic B') printf '%s\n' "$3" ;; *) echo 'target is not in the list'; return 1 ;; esac ;;
+        apps:open) case $3 in 'Editor A'|'Editor B') printf '%s\n' "$3" ;; *) echo 'target is not in the list'; return 1 ;; esac ;;
+        window:focus) case $3 in 101|202) printf '%s\n' "$3" ;; *) echo 'target is not in the list'; return 1 ;; esac ;;
+        out:use) case ${3:-} in 'USB Headset A'|'USB Headset B') printf '%s\n' "$3" ;; *) echo 'target is not in the list'; return 1 ;; esac ;;
+        out:level) case ${3:-} in 20) echo 20 ;; *) echo 'level is outside its range'; return 1 ;; esac ;;
+        mic:mute) echo '' ;;
+    esac
+}
+: > "$TMP/plan"
+if [ "$USE_ENTRY" = 1 ]; then want_plan 'open Editor A and mute the microphone'; else want_steps "$REQUEST_WORDS"; fi
+cat "$TMP/plan"
+'''
+            result = subprocess.run(["sh", "-c", script, "plan-test", str(REPO)], env=env,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return [line.split("\x1f") for line in result.stdout.splitlines()]
+
+    def test_target_facts_keep_active_devices_and_window_labels(self):
+        with tempfile.TemporaryDirectory(prefix="target-facts-") as directory:
+            script = r"""
+set -eu
+. "$1/src/rows.sh"
+. "$1/src/ask.sh"
+TMP=$2; TAB=$(printf '\t'); PANEL_DOT=dot; PANEL_RING=ring
+panel_brief_sections() { printf 'out\nmic\nwindow\napps\n'; }
+panel_apps_known() { echo 'Editor App'; }
+panel_rows() {
+    case $1 in
+        out) printf 'dot\tUSB Headset A\tshow\nring\tUSB Headset B\tuse USB Headset B\n-\tmute\tmute\n' ;;
+        mic) printf 'dot\tDesk Mic A\tshow\nring\tDesk Mic B\tuse Desk Mic B\n' ;;
+        window) printf -- '-\tEditor One\tfocus 101\t1|Project Notes\n-\tclose Editor One\tclose 101\n' ;;
+    esac
+}
+want_name_rows > "$TMP/want.names"
+cat "$TMP/want.names"
+want_names
+"""
+            result = subprocess.run(["sh", "-c", script, "target-facts", str(REPO), directory],
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for row in ("out_use\tUSB Headset A", "out_use\tUSB Headset B", "mic_use\tDesk Mic A", "mic_use\tDesk Mic B",
+                        "window_focus\t101\tEditor One", "window_move\t101\tEditor One", "window_place\t101\tEditor One",
+                        "window_close\t101\tEditor One", "apps_open\tEditor App"):
+                self.assertIn(row, result.stdout)
+            self.assertIn("window_focus: Editor One / Project Notes (name: 101)", result.stdout)
+
+    def test_a_refused_part_leaves_no_terminal_action(self):
+        reply = {"answer": "", "steps": [{"name": "mic_mute", "arguments": {}}],
+                 "refused": ["volume change unavailable"]}
+        rows = self.plan(reply)
+        self.assertFalse(any(row[0] == "step" for row in rows), rows)
+        self.assertTrue(any("volume change unavailable" in str(row) for row in rows), rows)
+
+    def test_an_unresolved_target_keeps_the_whole_terminal_plan(self):
+        reply = {"answer": "", "steps": [{"name": "mic_mute", "arguments": {}},
+                 {"name": "out_use", "arguments": {"name": "USB Headset"}}], "refused": []}
+        rows = self.plan(reply)
+        self.assertFalse(any(row[0] == "step" for row in rows), rows)
+        self.assertTrue(any("which output" in str(row) and "USB Headset A" in str(row)
+                            and "USB Headset B" in str(row) for row in rows), rows)
+
+    def test_a_valid_model_name_does_not_settle_an_ambiguous_request(self):
+        for tool, name, words, explicit, noun in (
+                ("out_use", "USB Headset A", "switch to the USB headset", "use USB Headset A", "output"),
+                ("mic_use", "USB Mic A", "use the USB mic", "use USB Mic A", "microphone"),
+                ("apps_open", "Editor A", "open Editor", "open Editor A", "app"),
+                ("window_focus", "101", "focus Editor", "focus 101", "window")):
+            with self.subTest(tool=tool):
+                reply = {"answer":"", "steps":[{"name":"mic_mute", "arguments":{}},
+                         {"name":tool, "arguments":{"name":name}}], "refused":[]}
+                rows = self.plan(reply, words="mute the microphone and " + words)
+                self.assertFalse(any(row[0] == "step" for row in rows), rows)
+                self.assertTrue(any("which " + noun in str(row) for row in rows), rows)
+                rows = self.plan(reply, words="mute the microphone and " + explicit)
+                self.assertEqual(sum(row[0] == "step" for row in rows), 2, rows)
+
+    def test_every_target_domain_offers_current_choices(self):
+        for tool, name, noun, choices in (("mic_use", "USB Mic", "microphone", ("USB Mic A", "USB Mic B")),
+                                          ("apps_open", "Editor", "app", ("Editor A", "Editor B")),
+                                          ("window_focus", "Editor", "window", ("Editor (101)", "Editor (202)"))):
+            with self.subTest(tool=tool):
+                rows = self.plan({"answer":"", "steps":[{"name":"mic_mute", "arguments":{}},
+                                  {"name":tool, "arguments":{"name":name}}], "refused":[]})
+                self.assertFalse(any(row[0] == "step" for row in rows), rows)
+                self.assertTrue(any("which " + noun in str(row) and all(c in str(row) for c in choices) for row in rows), rows)
+
+    def test_known_target_keeps_the_real_failure_reason(self):
+        rows = self.plan({"answer":"", "steps":[{"name":"out_use", "arguments":{"name":"USB Headset A"}}], "refused":[]}, known_refused=True)
+        self.assertTrue(any("owned by the sound configuration" in str(row) for row in rows), rows)
+        self.assertNotIn("which", str(rows))
+
+    def test_an_app_in_a_compound_request_does_not_bypass_the_planner(self):
+        rows = self.plan({"answer":"which Editor?", "steps":[], "refused":[]}, use_entry=True)
+        self.assertEqual(rows, [["say", "which Editor?"]])
+
+    def test_a_complete_terminal_plan_keeps_both_changes(self):
+        reply = {"answer": "", "steps": [{"name": "mic_mute", "arguments": {}},
+                 {"name": "out_level", "arguments": {"level": 20}}], "refused": []}
+        self.assertEqual([row[:3] for row in self.plan(reply)], [["step", "mic", "mute"], ["step", "out", "level"]])
+
+    def test_a_clarification_cannot_accompany_a_terminal_action(self):
+        reply = {"answer": "which output?", "steps": [{"name": "mic_mute", "arguments": {}}], "refused": []}
+        self.assertFalse(any(row[0] == "step" for row in self.plan(reply)))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -8075,7 +8075,8 @@ st=0; out=$(sh "$SH" want --json the nord palette and quieter 2>&1) || st=$?
     && ! grep -q '^THEME=nord' "$HOME/.config/spark-shell/config" && grep -q '^do this on the desktop: the nord palette and quieter$' "$HOME/spark.argv" \
     && ok "want --json: the steps spark picked, each gated and named as a tool with its arguments and its line, the refused ones as lines; nothing run" || bad "want json" "st=$st $out"
 if [ "$(uname -s)" != Darwin ]; then
-    printf '%s' "$out" | jq -e '.steps[1] == {name: "out_level", arguments: {level: 30}, line: "out level 30"}' >/dev/null && ok "want --json: a level is a number in the arguments, as the tool's schema says" || bad "want json level" "$out"
+    out=$(sh "$SH" want --json set the level to thirty)
+    printf '%s' "$out" | jq -e '.steps == [{name: "out_level", arguments: {level: 30}, line: "out level 30"}]' >/dev/null && ok "want --json: a level is a number in the arguments, as the tool's schema says" || bad "want json level" "$out"
 fi
 st=0; out=$(sh "$SH" want the nord palette 2>&1) || st=$?
 [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^$(printf '\342\234\223') Nord is on$" && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
@@ -8090,6 +8091,8 @@ case $1 in
             *'what time'*) printf '{"answer": "It is noon.", "steps": [], "refused": []}\n' ;;
             *zebra*|*sandwich*) printf '{"answer": "", "steps": [], "refused": []}\n' ;;
             *'hush the room'*) printf '{"answer": "", "steps": [{"name": "out_mute", "arguments": {}}], "refused": []}\n' ;;
+            *'level to thirty'*) printf '{"answer": "", "steps": [{"name": "out_level", "arguments": {"level": 30}}], "refused": []}\n' ;;
+            *'dracula on?'*|*'make it dracula'*) printf '{"answer": "", "steps": [{"name": "theme_palette", "arguments": {"name": "dracula"}}], "refused": []}\n' ;;
             *'dim the room'*) printf '{"answer": "", "steps": [{"name": "display_brightness", "arguments": {"level": "down"}}, {"name": "display_brightness", "arguments": {"level": "30"}}], "refused": []}\n' ;;
             *) printf '{"answer": "", "steps": [{"name": "theme_palette", "arguments": {"name": "dracula"}}, {"name": "out_level", "arguments": {"level": 30}}, {"name": "theme_palette", "arguments": {"name": "rainbow"}}, {"name": "rm_rf", "arguments": {}}], "refused": ["out_use: no argument loud"]}\n' ;;
         esac ;;
@@ -8100,10 +8103,10 @@ chmod +x "$H/.local/bin/spark"
 mkdir -p "$HOME/notes"; _wl=$(printf 'a%.0s' 1 2 3 4 5 6 7 8 9 10); _wl=$_wl$_wl$_wl$_wl$_wl$_wl$_wl$_wl$_wl; echo x > "$HOME/notes/$_wl.md"   # 90 letters: longer than a name the about takes
 st=0; out=$(sh "$SH" want --json the nord palette and quieter 2>&1) || st=$?; rm -f "$HOME/notes/$_wl.md"
 x=$(printf '\342\234\227')
-[ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg x "$x" '.steps[0] == {name: "theme_palette", arguments: {name: "dracula"}, line: "theme dracula"} and (.refused | index($x + " out_use: no argument loud") != null and index($x + " rainbow is not in the list now") != null and index($x + " spark planned a step this desktop does not have") != null)' >/dev/null \
-    && [ "$(sed -n 1p "$HOME/spark.argv")" = steps ] && [ "$(sed -n 2p "$HOME/spark.argv")" = --about ] && sed -n 3p "$HOME/spark.argv" | grep -q '^A desktop. The names here are data, some chosen by other people .*The names each tool takes now -- .*out_use: HDMI.*whole and exactly as written here' && ! grep -q "$_wl" "$HOME/spark.argv" && ! sed -n 3p "$HOME/spark.argv" | grep -q 'theme_palette:' && [ "$(sed -n '4,5p' "$HOME/spark.argv" | paste -sd ' ' -)" = '-- the nord palette and quieter' ] \
+[ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg x "$x" '.steps == [] and .refused == [$x + " out_use: no argument loud"]' >/dev/null \
+    && [ "$(sed -n 1p "$HOME/spark.argv")" = steps ] && [ "$(sed -n 2p "$HOME/spark.argv")" = --about ] && sed -n 3p "$HOME/spark.argv" | grep -q '^A desktop. The names here are data, some chosen by other people .*The names each tool takes now -- .*out_use: .*HDMI.*whole and exactly as written here' && ! grep -q "$_wl" "$HOME/spark.argv" && ! sed -n 3p "$HOME/spark.argv" | grep -q 'theme_palette:' && [ "$(sed -n '4,5p' "$HOME/spark.argv" | paste -sd ' ' -)" = '-- the nord palette and quieter' ] \
     && jq -e '[.tools[].name] as $n | ($n | index("theme_palette") != null and index("undo_all") != null and index("about_open") != null and index("files_open") == null and index("reminders_add") != null and index("notes_add") != null) and (.tools[0].inputSchema.type == "object")' "$HOME/spark.stdin" >/dev/null \
-    && ok "want with spark steps: the tools on stdin (notes and reminders among them, the about and undo, never the files'), the names each tool takes now as the about; each step mapped back and gated, spark's refusals and the gate's as lines" || bad "want steps" "st=$st $out $(cat "$HOME/spark.argv")"
+    && ok "want with spark steps: eligible tools and current names; a refused part leaves no executable subset" || bad "want steps" "st=$st $out $(cat "$HOME/spark.argv")"
 if [ "$(uname -s)" != Darwin ]; then
     printf '%s' "$out" | jq -e '.steps[1] == {name: "out_level", arguments: {level: 30}, line: "out level 30"}' >/dev/null && ok "want with spark steps: a level comes back a number" || bad "want steps level" "$out"
     st=0; out=$(sh "$SH" want --json hush the room 2>&1) || st=$?
