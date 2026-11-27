@@ -4567,7 +4567,7 @@ case "$*" in
     "-t get_version") echo "{}" ;;
     "-t get_outputs") wide='{"name":"HDMI-A-1","active":true,"scale":1,"rect":{"x":1200,"y":0,"width":1920,"height":1080}}'
         if [ -e "$HOME/mo.one" ]; then echo "[$wide]"; else echo '[{"name":"DP-3","active":true,"scale":1,"rect":{"x":0,"y":0,"width":1200,"height":1920}},'"$wide]"; fi ;;
-    *) echo "$*" >> "$HOME/mosway.log" ;;
+    *) echo "$*" | awk '{ gsub(/;output /, "\n-- output "); print }' >> "$HOME/mosway.log" ;;   # each screen's still a line, as sway reads one command of them all
 esac
 MO_SWAY
 cat > "$H/mo/python3" <<'MO_PY'
@@ -9731,7 +9731,7 @@ case "$*" in
     "-t get_version") echo '{"human_readable":"1.12"}' ;;
     *get_outputs*) case $(cat "$HOME/screens" 2>/dev/null) in
         3) echo "[$side,$wide,$tall]" ;; 2) echo "[$wide,$tall]" ;; moved) echo "[$side,$moved,$tall]" ;; *) echo "[$wide]" ;; esac ;;
-    *) echo "$*" >> "$HOME/scr.log"; echo '[{"success":true}]' ;;
+    *) echo "$*" | awk '{ gsub(/;output /, "\n-- output "); print }' >> "$HOME/scr.log"; echo '[{"success":true}]' ;;   # each screen's still a line
 esac
 SCR
 chmod +x "$H/scr/swaymsg"

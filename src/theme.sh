@@ -808,7 +808,12 @@ motion_screens() {   # -> NAME<tab>WxH per screen on, in pixels
     wm_outputs | jq -r '.[] | select(.active) | [.name, (((.rect.width * (.scale // 1)) | floor | tostring) + "x" + ((.rect.height * (.scale // 1)) | floor | tostring))] | @tsv' 2>/dev/null || :
 }
 MOTION_NOW=''   # from motion_follow: playing, making or nothing
-motion_follow() {   # the look's loops playing or made; else ours stopped
+motion_follow() {   # the look's loops playing or made; else ours stopped. While it decides, a raise it started waits for the loops it wants
+    _mfd=$(motion_want).deciding; mkdir -p "${_mfd%/*}" 2>/dev/null && : > "$_mfd" 2>/dev/null || :
+    _mfr=0; motion_follow_now || _mfr=$?
+    rm -f "$_mfd"; return "$_mfr"
+}
+motion_follow_now() {
     MOTION_NOW=''
     [ "$OS" != Darwin ] && wm_up || return 0
     art_screens_follow
@@ -869,6 +874,7 @@ motion_follow() {   # the look's loops playing or made; else ours stopped
 }
 motion_raise() {   # our loops on top once the background drawer started anew (a look's wallpaper, a screen's still, a reload) has drawn: it covers a player started before, which pauses; one put off until then starts
     _mrh=$(getconf CLK_TCK 2>/dev/null) || _mrh=100
+    _mrd=0; while [ -e "$(motion_want).deciding" ] && [ "$_mrd" -lt 20 ]; do sleep 0.1; _mrd=$((_mrd + 1)); done   # the loops wanted, once motion_follow has said them
     if _mrb=$(wm_background_pid) && _mrt=$(proc_ticks "$_mrb"); then
         if [ $(($(awk -v h="$_mrh" '{ printf "%d", $1 * h }' /proc/uptime) - _mrt)) -lt $((3 * _mrh)) ]; then
             wm_background_drawn "$_mrb" || :   # as soon as it drew: it waited 3 s, the most it takes, and the loop showed the still that long
@@ -881,7 +887,7 @@ motion_raise() {   # our loops on top once the background drawer started anew (a
         return 0
     fi
     for _mp in $_mro; do   # a player that started before the drawer drew, or that plays loops no longer wanted
-        if [ "$(proc_ticks "$_mp" || echo 0)" -lt "$_mrt" ] || ! tr '\0' '\n' < "/proc/$_mp/cmdline" 2>/dev/null | sed 1d | cmp -s - "$(motion_want)"; then
+        if [ "$(proc_ticks "$_mp" || echo 0)" -lt "$_mrt" ] || ! tr '\0' '\n' < "/proc/$_mp/cmdline" 2>/dev/null | tail -n "$(grep -c '' "$(motion_want)" 2>/dev/null || echo 1)" | cmp -s - "$(motion_want)"; then   # its words last: a player run by an interpreter has it first
             motion_play_want; return 0
         fi
     done
