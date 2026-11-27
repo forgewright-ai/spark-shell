@@ -406,6 +406,41 @@ fn a_jump_from_outside_lets_a_file_pick_go() {
     assert_eq!(app.came_from.last(), Some(&back), "back goes to the page the pick was asked on");
 }
 
+/// Back from a pick of a file, the page it began on stands as it was while its rows are read again. It stood blank
+/// the second its provider took to read a slow page (the wallpaper's screens).
+#[test]
+fn back_from_a_pick_the_page_stands_while_it_is_read_again() {
+    let (mut app, _rx, _calls) = theme();
+    let mut files = spark_dialog::app::Provider::new("files");
+    files.ready = true;
+    files.rows = spark_dialog::model::rows(
+        &json!({"title": "files", "rows": [{"id": "files:root", "text": "~", "children": "spark-shell://files/rows/aG9tZQ"}]}).to_string(),
+    )
+    .unwrap();
+    app.providers.push(files);
+    let mut rows = page(YOURS);
+    rows["rows"].as_array_mut().unwrap().push(
+        json!({"id": "theme:new:picture", "group": "new theme", "text": "from a picture", "sign": "opens",
+        "children": "spark-shell://files/rows", "pick": {"tool": "theme_picture", "types": ["png"]}}),
+    );
+    app.came_from.push(app.view.clone());
+    app.view = View::Folder(0, YOURS.into());
+    app.folder = Some((0, YOURS.into(), spark_dialog::model::rows(&rows.to_string()).unwrap()));
+    light(&mut app, "theme:new:picture");
+    app.enter();
+    assert!(app.picking.is_some(), "the pick opened");
+    assert!(matches!(&app.view, View::Folder(1, _)), "{:?}", app.view);
+    app.escape();
+    assert_eq!(app.view, View::Folder(0, YOURS.into()));
+    assert!(
+        app.folder
+            .as_ref()
+            .is_some_and(|(_, u, r)| u == YOURS && r.rows.iter().any(|x| x.id == "theme:new:picture")),
+        "the page's rows stand at once"
+    );
+    assert!(!words(&frame(&mut app, 600.0, 800.0)).iter().all(|w| w.0 != "from a picture"), "and are drawn");
+}
+
 /// A value being asked for is let go too when home is sent elsewhere: the question stood unseen over the place home
 /// went to, and the next Enter there answered it.
 #[test]

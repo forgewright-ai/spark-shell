@@ -980,6 +980,9 @@ pub struct App {
     pub attachment: Option<String>,
     /// A row's pick is choosing a file for a tool of its own provider (the wallpaper's picture).
     pub picking: Option<Picking>,
+    /// The rows of a page left for a pick of a file, shown again on the way back while they are read again: the
+    /// page stood blank the second its provider took (v0.172).
+    pub left_rows: Option<(usize, String, Rows)>,
     /// Today, (year, month, day), the machine's own clock: the calendar's today.
     pub today: Option<(i32, u32, u32)>,
     /// The clock's words as the header has them (the day, a middle dot, then 19:21): the Calendar's time in the layout in pixels.
@@ -1215,6 +1218,7 @@ impl App {
             cursor: 0,
             name_lit: None,
             picker: None,
+            left_rows: None,
             prompt_history: VecDeque::new(),
             history_at: None,
             history_draft: None,
@@ -4769,6 +4773,7 @@ impl App {
             field: String::new(),
             what: String::new(),
         });
+        self.left_rows = self.folder.clone();
         // a picture is picked from the pictures folder, a loop from the videos, a file someone sent from the
         // downloads, where the home folder has one: the pick opened on the home folder's list of folders, with no
         // file of the kind in sight (v0.172)
@@ -4821,7 +4826,11 @@ impl App {
         if !matches!(self.view, View::Folder(..)) {
             self.folder = None;
         } else if let View::Folder(p, uri) = self.view.clone() {
-            // the same folder's rows stay on screen while fresh ones come (back from a row's steps); another folder's go first
+            // the same folder's rows stay on screen while fresh ones come (back from a row's steps, or from a pick of a
+            // file begun there); another folder's go first
+            if let Some(kept) = self.left_rows.take().filter(|(fp, fu, _)| *fp == p && *fu == uri) {
+                self.folder = Some(kept);
+            }
             if self.folder.as_ref().is_some_and(|(fp, fu, _)| *fp == p && *fu == uri) {
                 self.refresh_folder(p, &uri);
             } else {
@@ -4899,7 +4908,7 @@ impl App {
         self.prompt_arrive();
         self.files_on_view();
         if let View::Folder(p, uri) = self.view.clone() {
-            self.read_folder(p, &uri);
+            self.folder_again(p, &uri);
         } else {
             self.folder = None;
         }
@@ -5459,7 +5468,7 @@ impl App {
                     self.folder = None;
                     self.sel = 0;
                     if let View::Folder(fp, uri) = self.view.clone() {
-                        self.read_folder(fp, &uri); // a pick begun on a list's page comes back to that page's rows
+                        self.folder_again(fp, &uri); // a pick begun on a list's page comes back to that page's rows
                     }
                     let call = Call {
                         name: pk.tool,
@@ -5516,6 +5525,17 @@ impl App {
             self.go(v);
         } else if tail.starts_with("rows/") {
             self.go(View::Folder(q, uri.to_string()));
+        }
+    }
+
+    /// A page come back to after a pick of a file: its rows as they were, while they are read again.
+    fn folder_again(&mut self, p: usize, uri: &str) {
+        match self.left_rows.take().filter(|(fp, fu, _)| *fp == p && fu == uri) {
+            Some(kept) => {
+                self.folder = Some(kept);
+                self.refresh_folder(p, uri);
+            }
+            None => self.read_folder(p, uri),
         }
     }
 
