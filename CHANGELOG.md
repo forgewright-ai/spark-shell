@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.170.4
+
+- A theme change could stop halfway with status 2 ("arithmetic
+  expression") when sway replaced its wallpaper drawer at that moment.
+
 ## v0.170.3
 
 - A theme change shows the old loop, the new theme's stills, then its

@@ -893,7 +893,7 @@ motion_raise() {   # our loops on top once the background drawer started anew (a
         motion_play_want; return 0
     done
 }
-proc_ticks() { [ -r "/proc/$1/stat" ] && sed 's/.*) //' "/proc/$1/stat" | awk '{ print $20 }'; }   # proc_ticks PID -> when it started, in clock ticks since boot
+proc_ticks() { _ptk=$(sed 's/.*) //' "/proc/${1:-none}/stat" 2>/dev/null | awk '{ print $20 }') && [ -n "$_ptk" ] && printf '%s' "$_ptk"; }   # proc_ticks PID -> when it started, in clock ticks since boot; false for one gone (an empty answer broke a sum: theme ended in status 2)
 motion_play_want() {
     [ -f "$(motion_want)" ] || return 0
     set --; while IFS= read -r _ma; do set -- "$@" "$_ma"; done < "$(motion_want)"

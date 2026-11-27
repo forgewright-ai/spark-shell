@@ -372,7 +372,8 @@ art_screens_follow() {   # each screen output * does not suit gets its own still
     # overwritten. Every screen in one command, as soon as that output *'s drawer is up: one a screen started a drawer each, and sway
     # ended each before it drew, the cover gone by then (a black frame)
     _asb=$(wm_background_pid || :); _ash=$(getconf CLK_TCK 2>/dev/null) || _ash=100   # a drawer under a second old is that output *'s
-    [ -n "$_asb" ] && [ $(($(awk -v h="$_ash" '{ printf "%d", $1 * h }' /proc/uptime) - $(proc_ticks "$_asb" || echo 0))) -ge "$_ash" ] || _asb=up   # no drawer: none to wait for
+    _ast=$(proc_ticks "$_asb") || _ast=''   # gone since it was found (sway ends its drawer as it starts the next): none
+    [ -n "$_asb" ] && [ -n "$_ast" ] && [ $(($(awk -v h="$_ash" '{ printf "%d", $1 * h }' /proc/uptime) - _ast)) -ge "$_ash" ] || _asb=up   # no drawer: none to wait for
     ( TMP=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-art.XXXXXX") || exit 0; trap 'rm -rf "$TMP"' EXIT   # its own scratch: the step's TMP is gone by now, and a helper writing there would leave a folder behind
       printf '%s\n' "$_asl" | while IFS="$TAB" read -r _asn _asi _asa _ast _ass _asr _asx _asm; do   # TMP dies with its step: the list in hand
           case $_asm in
