@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # --- winpad
-# sets: WINPAD_BIN WINPAD_KEEP
+# sets: WINPAD_BIN WINPAD_KEEP WINPAD_LOOK_KEYS
 # reads: BAR_PID DIALOG_URL OS PANEL_SEP REPO STATE_DIR TERM_APP_PREFIX TERM_NAME TMP WM_NAME
 WINPAD_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-winpad
 winpad_lock() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-winpad.pid"; }   # the pad's lock, its pid inside
