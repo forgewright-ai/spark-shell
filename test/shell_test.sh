@@ -4443,6 +4443,17 @@ if [ "$(uname -s)" != Darwin ]; then
         && grep -qx 'WINPAD_FG=f8f8f2' "$H/run/spark-shell-winpad.look" && grep -qx "WINPAD_LOOK_FILE=$H/run/spark-shell-winpad.look" "$HOME/winpad.env" \
         && ok "theme: a running pad wears the new look in place, its look file written and SIGHUP sent, none started again (v0.171)" \
         || bad "pad relook" "$(tr '\n' ' ' < "$HOME/pad.sig" 2>&1) | $_lp $(cat "$H/run/spark-shell-winpad.pid" 2>&1) | $_ll $(grep -c '' "$HOME/pad.log") | $(head -2 "$H/run/spark-shell-winpad.look" 2>&1 | tr '\n' ' ')"
+    # a pad that would die of SIGHUP, a build before v0.171 or one not yet past its start, is started again instead:
+    # ended by TERM (status 0), never by HUP (129)
+    sed '/ HUP$/d' "$H/padbin/spark-winpad" > "$H/padbin/spark-winpad-old"; chmod +x "$H/padbin/spark-winpad-old"
+    pad_down; WINPAD_LOOK_FILE=$H/run/spark-shell-winpad.look WINPAD_LOCK=$H/run/spark-shell-winpad.pid WINPAD_STATE=$H/run/spark-shell-winpad.state "$H/padbin/spark-winpad-old" & _op=$!
+    pad_up
+    XDG_RUNTIME_DIR=$H/run SPARK_SHELL_WINPAD=$H/padbin/spark-winpad-old SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" theme nord >/dev/null 2>&1 || :
+    pad_up; _np=$(cat "$H/run/spark-shell-winpad.pid" 2>/dev/null); _os=alive
+    if kill -0 "$_op" 2>/dev/null; then kill "$_op" 2>/dev/null || :; wait "$_op" 2>/dev/null || :; else _os=0; wait "$_op" 2>/dev/null || _os=$?; fi
+    [ "$_os" = 0 ] && [ -n "$_np" ] && [ "$_np" != "$_op" ] && kill -0 "$_np" 2>/dev/null && [ "$(grep -c '' "$HOME/pad.log")" = 2 ] \
+        && ok "theme: a pad that would die of SIGHUP is not sent it: it is ended and started again, as before v0.171" \
+        || bad "pad relook old" "$_os | $_op $_np | $(grep -c '' "$HOME/pad.log" 2>&1)"
     cp "$H/cfg.relook" "$cfg"; cp "$H/theme.relook" "$HOME/.config/spark/theme.env"
 fi
 pad_down

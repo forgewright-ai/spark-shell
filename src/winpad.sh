@@ -112,14 +112,17 @@ winpad_look_vars() {   # the pad's look from the theme loaded: winpad_run's envi
 WINPAD_LOOK_KEYS='WINPAD_FG WINPAD_ACCENT WINPAD_MUTED WINPAD_GROUND WINPAD_CLOSE WINPAD_MIN WINPAD_FILL WINPAD_SURFACE WINPAD_LIT WINPAD_BAND_HEX WINPAD_BAND_LIT WINPAD_URGENT_LIT WINPAD_CLOSE_INK WINPAD_ALPHA WINPAD_FONT WINPAD_DIM'
 winpad_look_file() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-winpad.look"; }   # KEY=VALUE a line: the pad reads it at its start and on SIGHUP
 winpad_look_lines() { for _wlk in $WINPAD_LOOK_KEYS; do eval "printf '%s=%s\n' \"\$_wlk\" \"\${$_wlk:-}\""; done; }
-winpad_relook() {   # a new look worn by the running pad in place: its file written, then SIGHUP. A pad ended for the bar's move, or one an older spark-shell started (it knows no look file: SIGHUP would end it), starts again, as winpad_again has it
+winpad_relook() {   # a new look worn by the running pad in place: its file written, then SIGHUP. A pad ended for the bar's move, or one that would die of SIGHUP or has no look file, starts again, as winpad_again has it
     [ -z "${_winpad_paused:-}" ] || { winpad_again; return 0; }
     _wrp=$(winpad_pid) || return 0
-    if tr '\0' '\n' < "/proc/$_wrp/environ" 2>/dev/null | grep -qx "WINPAD_LOOK_FILE=$(winpad_look_file)" \
+    if tr '\0' '\n' < "/proc/$_wrp/environ" 2>/dev/null | grep -qx "WINPAD_LOOK_FILE=$(winpad_look_file)" && winpad_hears_hup "$_wrp" \
         && ( theme_load 2>/dev/null || :; winpad_look_vars; write_whole "$(winpad_look_file)" winpad_look_lines ) 2>/dev/null; then
         kill -HUP "$_wrp" 2>/dev/null || :
     else winpad_again; fi
 }
+# winpad_hears_hup PID -- the pad blocks, catches or ignores SIGHUP (bit 0 of a mask in its status), so one sent is read,
+# not its end: a build before v0.171, or one not yet past its start, has none set and dies of it
+winpad_hears_hup() { awk '/^Sig(Blk|Cgt|Ign):/ && index("13579bdf", tolower(substr($2, length($2)))) { f = 1 } END { exit !f }' "/proc/$1/status" 2>/dev/null; }
 winpad_wake() { winpad_pid >/dev/null || winpad_run 2>/dev/null || :; }   # the pad up when it is not; never waited for
 winpad_look() { winpad_pid >/dev/null 2>&1 || return 0; wm_tick spark-winpad.look >/dev/null 2>&1 || :; }   # the pad reads the tree now: a window a command moved, which sway tells no one
 winpad_end() {   # winpad_end PID -- that pad ended, waited for two seconds at most; the between file says another is on its way
