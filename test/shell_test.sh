@@ -4199,6 +4199,85 @@ printf '{"type":"root","nodes":[{"type":"output","name":"__i3","nodes":[{"type":
 win_run restore
 [ "$(cat "$HOME/win.log")" = "-- [con_id=9] unmark _spark-shell.min.RB.9, scratchpad show, floating disable, floating enable, border normal 1, resize set width 914 px height 511 px, move absolute position 2190 553, mark --add _spark-shell.place.RB.9, mark --add _spark-shell.area.$_A2.9" ] \
     && ok "desktop window restore: back at its place on the area as it is now, wearing it again (#264)" || bad "restore place" "$(cat "$HOME/win.log" 2>&1)"
+# the move keys (v0.171): in the tiling the compositor moves the window; a window at a place goes to the place beside
+# it, then to the screen that way, where it comes in by the near side and the keyboard goes with it; a free window goes
+# to the middle of that screen, no larger than it, else a tenth of the area and never past its edge; a window at the
+# edge stays. One command a press
+mkdir -p "$H/win2"
+cat > "$H/win2/swaymsg" <<'WIN2_STUB'
+#!/bin/sh
+case "$*" in
+    '-t get_version') echo '{}' ;;
+    '-t get_outputs') cat "$HOME/win-outputs.json" ;;
+    '-t get_tree') cat "$HOME/win-tree.json" ;;
+    *) echo "$*" >> "$HOME/win.log" ;;
+esac
+WIN2_STUB
+chmod +x "$H/win2/swaymsg"
+mv_run() { rm -f "$HOME/win.log"; rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/win2:$H/lx:$PATH" sh "$SH" desktop window move "$@" 2>&1) || rc=$?; }
+mv_sent() { [ -e "$HOME/win.log" ] && echo sent || echo nothing; }
+mv_at() { printf '{"type":"root","nodes":[{"type":"output","name":"DP-3","current_workspace":"2","nodes":[{"type":"workspace","id":4,"num":2,"name":"2","rect":{"x":16,"y":42,"width":1168,"height":1862},"nodes":[],"floating_nodes":[]}]},{"type":"output","name":"HDMI-A-1","current_workspace":"1","nodes":[{"type":"workspace","id":3,"num":1,"name":"1","rect":{"x":1216,"y":42,"width":1888,"height":1022},"nodes":[],"floating_nodes":[{"type":"floating_con","id":7,"focused":true,"fullscreen_mode":%s,"marks":[%s],"rect":{"x":%s,"y":%s,"width":%s,"height":%s},"nodes":[]}]}]}]}\n' "${6:-0}" "${5:-}" "$1" "$2" "$3" "$4" > "$HOME/win-tree.json"; }   # mv_at X Y W H [MARKS [FULL]] -> the window on the wide screen, a tall screen at its left
+_mo1='{"name":"HDMI-A-1","active":true,"rect":{"x":1200,"y":0,"width":1920,"height":1080}}'; _mo2='{"name":"DP-3","active":true,"rect":{"x":0,"y":0,"width":1200,"height":1920}}'
+printf '[%s]\n' "$_mo1" > "$HOME/win-outputs.json"   # one screen
+win_tree con true 0; mv_run right
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=7] move right' ] && [ "$out" = 'the window is moved right' ] && ok "desktop window move: in the tiling the compositor moves the window (v0.140)" || bad "move tiled" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
+win_atm 1216 42 944 1022 "$(pa LF 7 "$_A"),\"_spark-shell.tiled.7\""; mv_run right
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = "-- [con_id=7] unmark _spark-shell.tiled.7, unmark _spark-shell.place.LF.7, unmark _spark-shell.area.$_A.7, resize set width 944 px height 1022 px, move absolute position 2160 42, mark --add _spark-shell.place.RF.7, mark --add _spark-shell.area.$_A.7" ] && [ "$out" = 'the window is on the right half' ] \
+    && ok "desktop window move: a window on the left half goes to the right half, wearing it; it slid a tenth and lost its place (v0.171)" || bad "move beside" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
+win_at 1216 42 944 511; mv_run down
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = "-- [con_id=7] resize set width 944 px height 511 px, move absolute position 1216 553, mark --add _spark-shell.place.LB.7, mark --add _spark-shell.area.$_A.7" ] && [ "$out" = 'the window is in the bottom left quarter' ] \
+    && ok "desktop window move: a top quarter goes down to the bottom quarter of its column (v0.171)" || bad "move quarter" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
+win_at 1216 42 1888 1022; mv_run left; _m1="$rc $out, $(mv_sent)"
+win_at 2160 42 944 1022; mv_run right; _m2="$rc $out, $(mv_sent)"
+win_at 1216 553 1888 511; mv_run down; _m3="$rc $out, $(mv_sent)"
+_mn='0 the window is at the edge of the screen, nothing'
+[ "$_m1" = "$_mn" ] && [ "$_m2" = "$_mn" ] && [ "$_m3" = "$_mn" ] \
+    && ok "desktop window move: with no screen that way a maximized window, a half at its side and a bottom half going down stay, and nothing is sent; a maximized window hung a tenth off the screen (v0.171)" || bad "move edge" "$_m1 | $_m2 | $_m3"
+win_at 1300 200 800 600; mv_run left; _m1="$rc $out $(cat "$HOME/win.log" 2>&1)"
+win_at 1500 200 800 600; mv_run right; _m2="$rc $out $(cat "$HOME/win.log" 2>&1)"
+win_at 1500 400 800 600; mv_run down; _m3="$rc $out $(cat "$HOME/win.log" 2>&1)"
+win_at 1500 60 800 600; mv_run up; _m4="$rc $out $(cat "$HOME/win.log" 2>&1)"
+[ "$_m1" = '0 the window is moved left -- [con_id=7] move absolute position 1216 200' ] && [ "$_m2" = '0 the window is moved right -- [con_id=7] move absolute position 1688 200' ] \
+    && [ "$_m3" = '0 the window is moved down -- [con_id=7] move absolute position 1500 464' ] && [ "$_m4" = '0 the window is moved up -- [con_id=7] move absolute position 1500 42' ] \
+    && ok "desktop window move: a free window goes a tenth of the area and stops at the area's edge; nothing stopped it, and a held key lost it (v0.171)" || bad "move free" "$_m1 | $_m2 | $_m3 | $_m4"
+win_at 1216 200 800 600; mv_run left; _m1="$rc $out, $(mv_sent)"
+win_at 916 200 800 600; mv_run left; _m2="$rc $out, $(mv_sent)"
+win_at 916 200 800 600; mv_run up; _m3="$rc $out $(cat "$HOME/win.log" 2>&1)"
+[ "$_m1" = "$_mn" ] && [ "$_m2" = "$_mn" ] && [ "$_m3" = '0 the window is moved up -- [con_id=7] move absolute position 916 98' ] \
+    && ok "desktop window move: a free window at the edge stays, one past the edge is not pulled back against the way, and a move up leaves its column (v0.171)" || bad "move free edge" "$_m1 | $_m2 | $_m3"
+mv_at 1200 0 1920 1080 '' 1; mv_run left
+[ "$rc" = 0 ] && [ "$(mv_sent)" = nothing ] && [ "$out" = 'the window is at the edge of the screen' ] && ok "desktop window move: a floating window over the whole screen stays, with no screen that way (v0.171)" || bad "move full" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
+printf '[%s,%s]\n' "$_mo1" "$_mo2" > "$HOME/win-outputs.json"   # a tall screen at the left, named second
+mv_at 1216 42 944 1022 "$(pa LF 7 "$_A"),\"_spark-shell.tiled.7\""; mv_run left
+[ "$rc" = 0 ] && [ "$out" = 'the window is on the next screen' ] && [ "$(cat "$HOME/win.log")" = "-- [con_id=7] unmark _spark-shell.tiled.7, unmark _spark-shell.place.LF.7, unmark _spark-shell.area.$_A.7, move container to output DP-3, focus, resize set width 584 px height 1862 px, move absolute position 600 42, mark --add _spark-shell.place.RF.7, mark --add _spark-shell.area.16.42.1168.1862.7" ] \
+    && ok "desktop window move: the left half goes to the screen at the left in one command: the keyboard with it, the right half there, the near side; the keyboard stayed behind (v0.171)" || bad "move screen" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
+mv_at 2160 42 944 1022 "$(pa RF 7 "$_A")"; mv_run left
+[ "$rc" = 0 ] && [ "$out" = 'the window is on the left half' ] && [ "$(cat "$HOME/win.log")" = "-- [con_id=7] unmark _spark-shell.place.RF.7, unmark _spark-shell.area.$_A.7, resize set width 944 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.LF.7, mark --add _spark-shell.area.$_A.7" ] \
+    && ok "desktop window move: the right half goes to the left half first, with a screen that way too (v0.171)" || bad "move beside before screen" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
+mv_at 1216 42 1888 1022 "$(pa FF 7 "$_A"),\"_spark-shell.from.LF.7\""; mv_run left; _m1=$(cat "$HOME/win.log" 2>&1)
+mv_at 1216 42 1888 1022 "$(pa FF 7 "$_A"),\"_spark-shell.from.1400.200.800.600.7\""; mv_run left; _m2=$(cat "$HOME/win.log" 2>&1)
+_mf='move container to output DP-3, focus, resize set width 1168 px height 1862 px, move absolute position 16 42, mark --add _spark-shell.place.FF.7, mark --add _spark-shell.area.16.42.1168.1862.7'
+[ "$_m1" = "-- [con_id=7] unmark _spark-shell.place.FF.7, unmark _spark-shell.area.$_A.7, $_mf" ] && [ "$_m2" = "-- [con_id=7] unmark _spark-shell.place.FF.7, unmark _spark-shell.area.$_A.7, unmark _spark-shell.from.1400.200.800.600.7, $_mf" ] \
+    && ok "desktop window move: a maximized window fills the other screen; a place it came from goes with it, a rect of the screen it left does not (v0.171)" || bad "move maximized" "$_m1 | $_m2"
+mv_at 1400 100 1500 900; mv_run left; _m1="$out $(cat "$HOME/win.log" 2>&1)"
+mv_at 1400 100 700 500; mv_run left; _m2="$out $(cat "$HOME/win.log" 2>&1)"
+[ "$_m1" = 'the window is on the next screen -- [con_id=7] move container to output DP-3, focus, resize set width 1168 px height 900 px, move absolute position 16 523' ] \
+    && [ "$_m2" = 'the window is on the next screen -- [con_id=7] move container to output DP-3, focus, move absolute position 250 723' ] \
+    && ok "desktop window move: a free window goes to the middle of the screen it comes to, and one wider than that screen is made as wide; its title stood above the top (v0.171)" || bad "move fit" "$_m1 | $_m2"
+mv_at 1200 0 1920 1080 '' 1; mv_run left
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=7] fullscreen disable, move container to output DP-3, focus' ] && ok "desktop window move: a floating window over the whole screen leaves it and goes to the screen that way, set down by the compositor (v0.171)" || bad "move full screen" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
+mv_run sideways
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: window move takes left, right, up or down' ] && ok "desktop window move: a wrong way refused in one line" || bad "move word" "rc=$rc $out"
+# the way back from the whole screen: a window maximized again keeps where it came from, and one that wears no way
+# back, or the FF an older release wrote, floats at the float key's size; toggle died on that FF (v0.171)
+win_atm 1216 42 1888 1022 "$(pa FF 7 "$_A"),\"_spark-shell.from.LF.7\""; win_run up
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = "-- [con_id=7] unmark _spark-shell.place.FF.7, unmark _spark-shell.area.$_A.7, unmark _spark-shell.from.LF.7, floating enable, border normal 1, resize set width 1888 px height 1022 px, move absolute position 1216 42, mark --add _spark-shell.place.FF.7, mark --add _spark-shell.area.$_A.7, mark --add _spark-shell.from.LF.7" ] \
+    && ok "desktop window: Super+Ctrl+Up on a maximized window keeps where it came from; it wrote the whole screen as the way back (v0.171)" || bad "window max again" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
+win_at 1216 42 1888 1022; win_run toggle; _m1="$rc $out $(cat "$HOME/win.log" 2>&1)"
+win_atm 1216 42 1888 1022 "$(pa FF 7 "$_A"),\"_spark-shell.from.FF.7\""; win_run toggle; _m2="$rc $out $(cat "$HOME/win.log" 2>&1)"
+_mt='floating enable, border normal 1, resize set width 1258 px height 681 px, move position center'
+[ "$_m1" = "0 the window is floating -- [con_id=7] $_mt" ] && [ "$_m2" = "0 the window is floating -- [con_id=7] unmark _spark-shell.place.FF.7, unmark _spark-shell.area.$_A.7, unmark _spark-shell.from.FF.7, $_mt" ] \
+    && ok "desktop window toggle: a window that fills the area and wears no way back, or an older release's, floats at two thirds, centered (v0.171)" || bad "window toggle no way back" "$_m1 | $_m2"
 # a new window (#262): the sway rule's mark, then one decision from one read of the tree
 nw='{"type":"con","id":9,"pid":9,"app_id":"foot","fullscreen_mode":0,"marks":["_spark-shell.new"],"rect":{"x":1216,"y":42,"width":1888,"height":1022},"nodes":[]}'
 nw_tree() { printf '{"type":"root","nodes":[{"type":"output","name":"HDMI-A-1","current_workspace":"1","nodes":[{"type":"workspace","id":3,"name":"1","rect":{"x":1216,"y":42,"width":1888,"height":1022},"nodes":[%s],"floating_nodes":[%s]}]}]}\n' "$1" "$2" > "$HOME/win-tree.json"; }   # nw_tree TILED FLOATING
