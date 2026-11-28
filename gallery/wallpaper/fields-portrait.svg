@@ -1,0 +1,26 @@
+<!-- spark-shell wallpaper: fields-portrait (MIT, the repository's license) -->
+<!-- roles: #f2e5bc bg+muted:11; #d79921 ansi_3; #e1d1ac ansi_11+white:65; #daccaa bg+muted:34; #dbcba6 bg+muted:35; #d2c4a3 muted+bg:60; #b57614 ansi_11 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920">
+<rect x="0" y="0" width="1080" height="1920" fill="#f2e5bc"></rect>
+<circle cx="330" cy="1140" r="230" fill="#d79921" opacity="0.12"></circle>
+<circle cx="330" cy="1140" r="150" fill="#d79921" opacity="0.30"></circle>
+<path fill="#e1d1ac" d="M0 1122.4 C45 1124 180 1131.3 270 1131.8 C360 1132.4 450 1129.2 540 1125.9 C630 1122.7 720 1115.2 810 1112.3 C900 1109.4 1035 1109.3 1080 1108.7 V1920 H0 Z"></path>
+<path fill="#daccaa" d="M0 1301.8 C45 1300.9 180 1299.3 270 1296.1 C360 1292.8 450 1285.3 540 1282.4 C630 1279.5 720 1277.4 810 1278.6 C900 1279.8 1035 1287.7 1080 1289.6 V1920 H0 Z"></path>
+<path fill="#dbcba6" d="M0 1494 C45 1491.8 180 1483.2 270 1480.8 C360 1478.4 450 1477.7 540 1479.5 C630 1481.4 720 1488.1 810 1491.8 C900 1495.5 1035 1500.1 1080 1501.7 V1920 H0 Z"></path>
+<path fill="#d2c4a3" d="M0 1700.9 C45 1700.7 180 1697.7 270 1699.5 C360 1701.3 450 1708 540 1711.7 C630 1715.4 720 1720.9 810 1721.7 C900 1722.5 1035 1717.4 1080 1716.6 V1920 H0 Z"></path>
+<g fill="none" stroke="#b57614" opacity="0.10" style="stroke-width: 2">
+<path d="M-300 1920 Q-150 1760 20 1720"></path>
+<path d="M-180 1920 Q-30 1760 140 1720"></path>
+<path d="M-60 1920 Q90 1760 260 1720"></path>
+<path d="M60 1920 Q210 1760 380 1720"></path>
+<path d="M180 1920 Q330 1760 500 1720"></path>
+<path d="M300 1920 Q450 1760 620 1720"></path>
+<path d="M420 1920 Q570 1760 740 1720"></path>
+<path d="M540 1920 Q690 1760 860 1720"></path>
+<path d="M660 1920 Q810 1760 980 1720"></path>
+<path d="M780 1920 Q930 1760 1100 1720"></path>
+<path d="M900 1920 Q1050 1760 1220 1720"></path>
+<path d="M1020 1920 Q1170 1760 1340 1720"></path>
+<path d="M1140 1920 Q1290 1760 1460 1720"></path>
+</g>
+</svg>

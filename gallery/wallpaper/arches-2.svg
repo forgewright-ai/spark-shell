@@ -1,0 +1,16 @@
+<!-- spark-shell wallpaper: arches-2 (MIT, the repository's license) -->
+<!-- roles: #faf4ed bg; #f1d8d1 bg+ansi_6:26; #dcd2da bg+accent:28; #c9d7d6 bg+ansi_4:30; #bfcdcf ansi_2+bg:72; #f4d1a3 bg+ansi_3:40; #f2e9e1 ansi_0; #f4d6ac ansi_3+bg:65 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+<rect x="0" y="0" width="1920" height="1080" fill="#faf4ed"></rect>
+<circle cx="1560" cy="330" r="70" fill="#f4d6ac"></circle>
+<path fill="#f1d8d1" d="M240 1000 V660 A160 160 0 0 1 560 660 V1000 Z"></path>
+<path fill="#dcd2da" d="M278 1000 V698 A122 122 0 0 1 522 698 V1000 Z"></path>
+<path fill="#c9d7d6" d="M316 1000 V736 A84 84 0 0 1 484 736 V1000 Z"></path>
+<path fill="#f1d8d1" d="M560 1000 V660 A160 160 0 0 1 880 660 V1000 Z"></path>
+<path fill="#dcd2da" d="M598 1000 V698 A122 122 0 0 1 842 698 V1000 Z"></path>
+<path fill="#bfcdcf" d="M636 1000 V736 A84 84 0 0 1 804 736 V1000 Z"></path>
+<path fill="#f1d8d1" d="M880 1000 V660 A160 160 0 0 1 1200 660 V1000 Z"></path>
+<path fill="#dcd2da" d="M918 1000 V698 A122 122 0 0 1 1162 698 V1000 Z"></path>
+<path fill="#f4d1a3" d="M956 1000 V736 A84 84 0 0 1 1124 736 V1000 Z"></path>
+<rect x="0" y="1000" width="1920" height="80" fill="#f2e9e1"></rect>
+</svg>

@@ -1,0 +1,22 @@
+<!-- spark-shell wallpaper: flight-portrait (MIT, the repository's license) -->
+<!-- roles: #fafafa ansi_15; #a0a1a7 ansi_7; #4078f2 accent; #a626a4 ansi_13; #e45649 ansi_1 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920">
+<rect x="0" y="0" width="1080" height="1920" fill="#fafafa"></rect>
+<g fill="none" stroke="#a0a1a7" opacity="0.6" style="stroke-width: 2.5; stroke-dasharray: 10 14">
+<path d="M150 1920 C163.3 1873.3 191.7 1733.3 230 1640 C268.3 1546.7 331.7 1453.3 380 1360 C428.3 1266.7 487.9 1154.2 520 1080 C552.1 1005.8 563.8 942.5 572.5 915"></path>
+<path d="M820 1920 C816.7 1883.3 800 1776.7 800 1700 C800 1623.3 808.3 1533.3 820 1460 C831.7 1386.7 857.9 1309.6 870 1260 C882.1 1210.4 888.8 1178.8 892.5 1162.5"></path>
+<path d="M0 1380 C25 1333.3 101.7 1193.3 150 1100 C198.3 1006.7 251.7 900 290 820 C328.3 740 358.8 668.3 380 620 C401.2 571.7 411.2 545 417.5 530"></path>
+</g>
+<g transform="translate(590 860) rotate(-72.3) scale(1.60)">
+<path fill="#4078f2" opacity="0.85" d="M60 0 L-50 -34 L-22 0 Z"></path>
+<path fill="#4078f2" opacity="0.55" d="M60 0 L-22 0 L-50 30 Z"></path>
+</g>
+<g transform="translate(900 1130) rotate(-77) scale(1.25)">
+<path fill="#a626a4" opacity="0.85" d="M60 0 L-50 -34 L-22 0 Z"></path>
+<path fill="#a626a4" opacity="0.55" d="M60 0 L-22 0 L-50 30 Z"></path>
+</g>
+<g transform="translate(430 500) rotate(-67.4) scale(1.00)">
+<path fill="#e45649" opacity="0.85" d="M60 0 L-50 -34 L-22 0 Z"></path>
+<path fill="#e45649" opacity="0.55" d="M60 0 L-22 0 L-50 30 Z"></path>
+</g>
+</svg>

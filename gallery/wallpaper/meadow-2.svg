@@ -1,0 +1,49 @@
+<!-- spark-shell wallpaper: meadow-2 (MIT, the repository's license) -->
+<!-- roles: #eff1f5 bg; #ea76cb ansi_13; #ccd0da bg+ansi_15:68; #bcc0cc ansi_15; #df8e1d ansi_11; #8839ef accent; #fe640b ansi_3+ansi_1:28 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+<rect x="0" y="0" width="1920" height="1080" fill="#eff1f5"></rect>
+<circle cx="400" cy="300" r="170" fill="#ea76cb" opacity="0.10"></circle>
+<circle cx="400" cy="300" r="105" fill="#ea76cb" opacity="0.26"></circle>
+<path fill="#ccd0da" d="M0 764.7 C13.3 765.3 53.3 767.3 80 768.4 C106.7 769.5 133.3 770.6 160 771.5 C186.7 772.4 213.3 773.3 240 773.9 C266.7 774.6 293.3 775.1 320 775.4 C346.7 775.8 373.3 776 400 776 C426.7 776 453.3 775.9 480 775.6 C506.7 775.2 533.3 774.8 560 774.1 C586.7 773.5 613.3 772.7 640 771.8 C666.7 770.9 693.3 769.9 720 768.8 C746.7 767.7 773.3 766.4 800 765.2 C826.7 763.9 853.3 762.6 880 761.2 C906.7 759.9 933.3 758.5 960 757.2 C986.7 755.9 1013.3 754.6 1040 753.4 C1066.7 752.2 1093.3 751 1120 750 C1146.7 748.9 1173.3 748 1200 747.2 C1226.7 746.4 1253.3 745.7 1280 745.2 C1306.7 744.7 1333.3 744.3 1360 744.2 C1386.7 744 1413.3 744 1440 744.1 C1466.7 744.2 1493.3 744.6 1520 745 C1546.7 745.5 1573.3 746.2 1600 746.9 C1626.7 747.7 1653.3 748.6 1680 749.6 C1706.7 750.6 1733.3 751.8 1760 753 C1786.7 754.2 1813.3 755.5 1840 756.8 C1866.7 758.1 1906.7 760.1 1920 760.8 V1080 H0 Z"></path>
+<path fill="#bcc0cc" opacity="0.7" d="M0 1000 C66.7 990 266.7 966.7 400 940 C533.3 913.3 666.7 876.7 800 840 C933.3 803.3 1073.3 753.3 1200 720 C1326.7 686.7 1440 660 1560 640 C1680 620 1860 606.7 1920 600 V1080 H0 Z"></path>
+<circle cx="589.9" cy="1025.1" r="6.9" fill="#fe640b" opacity="0.55"></circle>
+<circle cx="953" cy="944.1" r="6.1" fill="#fe640b" opacity="0.55"></circle>
+<circle cx="1605" cy="855.3" r="5.3" fill="#df8e1d" opacity="0.55"></circle>
+<circle cx="1796" cy="1016.8" r="6.8" fill="#ea76cb" opacity="0.55"></circle>
+<circle cx="1604.5" cy="996.5" r="6.6" fill="#fe640b" opacity="0.55"></circle>
+<circle cx="1812.5" cy="710.8" r="4" fill="#8839ef" opacity="0.55"></circle>
+<circle cx="1858.2" cy="670.4" r="3.6" fill="#ea76cb" opacity="0.55"></circle>
+<circle cx="334.9" cy="986.5" r="6.5" fill="#ea76cb" opacity="0.55"></circle>
+<circle cx="1408.1" cy="875.8" r="5.5" fill="#8839ef" opacity="0.55"></circle>
+<circle cx="1102.3" cy="966.6" r="6.3" fill="#df8e1d" opacity="0.55"></circle>
+<circle cx="773.2" cy="1064.3" r="7.2" fill="#fe640b" opacity="0.55"></circle>
+<circle cx="916.3" cy="985.7" r="6.5" fill="#ea76cb" opacity="0.55"></circle>
+<circle cx="857.6" cy="936" r="6.1" fill="#df8e1d" opacity="0.55"></circle>
+<circle cx="32.7" cy="1048.2" r="7.1" fill="#8839ef" opacity="0.55"></circle>
+<circle cx="1314.8" cy="1048.3" r="7.1" fill="#fe640b" opacity="0.55"></circle>
+<circle cx="944.4" cy="1049.5" r="7.1" fill="#8839ef" opacity="0.55"></circle>
+<circle cx="1641.6" cy="898.1" r="5.7" fill="#ea76cb" opacity="0.55"></circle>
+<circle cx="1007.3" cy="848.9" r="5.3" fill="#ea76cb" opacity="0.55"></circle>
+<circle cx="1379.1" cy="707.9" r="4" fill="#fe640b" opacity="0.55"></circle>
+<circle cx="1155.8" cy="989.8" r="6.5" fill="#8839ef" opacity="0.55"></circle>
+<circle cx="71.5" cy="1048.2" r="7.1" fill="#df8e1d" opacity="0.55"></circle>
+<circle cx="1134.8" cy="1056" r="7.1" fill="#df8e1d" opacity="0.55"></circle>
+<circle cx="1487.5" cy="762.1" r="4.5" fill="#8839ef" opacity="0.55"></circle>
+<circle cx="1838.3" cy="1035.2" r="7" fill="#fe640b" opacity="0.55"></circle>
+<circle cx="1360.9" cy="1060.8" r="7.2" fill="#ea76cb" opacity="0.55"></circle>
+<circle cx="416.2" cy="971" r="6.4" fill="#8839ef" opacity="0.55"></circle>
+<circle cx="1118.7" cy="837.2" r="5.2" fill="#8839ef" opacity="0.55"></circle>
+<circle cx="1725.7" cy="789.8" r="4.7" fill="#8839ef" opacity="0.55"></circle>
+<circle cx="27" cy="1016.6" r="6.8" fill="#ea76cb" opacity="0.55"></circle>
+<circle cx="1376.3" cy="923.7" r="5.9" fill="#df8e1d" opacity="0.55"></circle>
+<circle cx="1460" cy="789.8" r="4.7" fill="#fe640b" opacity="0.55"></circle>
+<circle cx="1812.9" cy="1061.7" r="7.2" fill="#ea76cb" opacity="0.55"></circle>
+<circle cx="867.1" cy="1026.9" r="6.9" fill="#ea76cb" opacity="0.55"></circle>
+<circle cx="1680.2" cy="846.3" r="5.2" fill="#df8e1d" opacity="0.55"></circle>
+<circle cx="367.3" cy="1064.6" r="7.2" fill="#ea76cb" opacity="0.55"></circle>
+<circle cx="1856.5" cy="731.2" r="4.2" fill="#fe640b" opacity="0.55"></circle>
+<circle cx="618.7" cy="941.7" r="6.1" fill="#ea76cb" opacity="0.55"></circle>
+<circle cx="1870.8" cy="899.3" r="5.7" fill="#df8e1d" opacity="0.55"></circle>
+<circle cx="979.5" cy="958.4" r="6.3" fill="#df8e1d" opacity="0.55"></circle>
+<circle cx="1381.3" cy="1034.2" r="6.9" fill="#df8e1d" opacity="0.55"></circle>
+</svg>

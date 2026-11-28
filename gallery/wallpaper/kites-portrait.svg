@@ -1,0 +1,17 @@
+<!-- spark-shell wallpaper: kites-portrait (MIT, the repository's license) -->
+<!-- roles: #e1e2e7 bg; #6172b0 ansi_7; #2e7de9 accent; #9854f1 ansi_5; #007197 ansi_6; #d0d5e3 bg+fg:10 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920">
+<rect x="0" y="0" width="1080" height="1920" fill="#e1e2e7"></rect>
+<g fill="none" stroke="#6172b0" opacity="0.35" style="stroke-width: 2">
+<path d="M400 528 C430 1028 480 1500 520 1920"></path>
+<path d="M740 726 C770 1226 570 1500 610 1920"></path>
+<path d="M560 1004.2 C590 1504.2 530 1500 570 1920"></path>
+</g>
+<path fill="#2e7de9" opacity="0.8" d="M400 360 L452 430 L400 528 L348 430 Z"></path>
+<path fill="#e1e2e7" opacity="0.5" d="M400 360 L452 430 L400 528 Z"></path>
+<path fill="#9854f1" opacity="0.8" d="M740 600 L779 652.5 L740 726 L701 652.5 Z"></path>
+<path fill="#e1e2e7" opacity="0.5" d="M740 600 L779 652.5 L740 726 Z"></path>
+<path fill="#007197" opacity="0.8" d="M560 900 L592.2 943.4 L560 1004.2 L527.8 943.4 Z"></path>
+<path fill="#e1e2e7" opacity="0.5" d="M560 900 L592.2 943.4 L560 1004.2 Z"></path>
+<path fill="#d0d5e3" d="M0 1788.4 C20 1788.6 80 1789.4 120 1789.7 C160 1789.9 200 1790 240 1790 C280 1789.9 320 1789.7 360 1789.3 C400 1788.9 440 1788.4 480 1787.7 C520 1787.1 560 1786.3 600 1785.4 C640 1784.5 680 1783.5 720 1782.5 C760 1781.5 800 1780.5 840 1779.4 C880 1778.4 920 1777.3 960 1776.4 C1000 1775.4 1060 1774.1 1080 1773.7 V1920 H0 Z"></path>
+</svg>

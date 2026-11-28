@@ -1,0 +1,12 @@
+<!-- spark-shell wallpaper: arches-portrait (MIT, the repository's license) -->
+<!-- roles: #faf4ed bg; #f1d8d1 bg+ansi_6:26; #dcd2da bg+accent:28; #c9d7d6 bg+ansi_4:30; #bfcdcf ansi_2+bg:72; #f4d1a3 bg+ansi_3:40; #f2e9e1 ansi_0; #f4d6ac ansi_3+bg:65 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920">
+<rect x="0" y="0" width="1080" height="1920" fill="#faf4ed"></rect>
+<path fill="#f1d8d1" d="M340 1780 V900 A260 260 0 0 1 860 900 V1780 Z"></path>
+<path fill="#dcd2da" d="M382 1780 V942 A218 218 0 0 1 818 942 V1780 Z"></path>
+<path fill="#c9d7d6" d="M424 1780 V984 A176 176 0 0 1 776 984 V1780 Z"></path>
+<path fill="#bfcdcf" d="M466 1780 V1026 A134 134 0 0 1 734 1026 V1780 Z"></path>
+<path fill="#f4d1a3" d="M508 1780 V1068 A92 92 0 0 1 692 1068 V1780 Z"></path>
+<rect x="0" y="1780" width="1080" height="140" fill="#f2e9e1"></rect>
+<circle cx="250" cy="420" r="70" fill="#f4d6ac"></circle>
+</svg>
