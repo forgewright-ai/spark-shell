@@ -56,7 +56,9 @@ them; the references and not the story, no one in them, a dry joke
               over the Pinheiros: the Marginal's way out runs free, the way in
               moves a car's length a loop
     horizon   a black hole over the edge of an ice planet, its disc turning;
-              a probe falls in and, as seen from here, never quite does
+              a probe falls in and, as seen from here, never quite does.
+              Beside it the hole from the ice, the clouds frozen too: a star
+              too faint to see goes behind it and for a moment is a ring
     watch     the sea at night, the moon's road on it, a lighthouse sweeping
               the water; once a loop it stops and looks up at the moon
     problem   a training board, a grid of holds in every color, a light by
@@ -2585,18 +2587,27 @@ class Garoa(Pixel):
 
 class Horizon(Pixel):
     """A black hole over the edge of an ice planet: its disc turns, its light
-    bends over the top. A probe falls in, and as seen from here never quite does."""
+    bends over the top. A probe falls in, and as seen from here never quite does.
+    The second view is from the planet's ice: the hole low over a frozen plain,
+    and a faint star going behind it, lensed into arcs and for a moment a ring."""
 
     name = "horizon"
     poster = 12.0
     portrait = True
+    second = True  # from the ice: the hole low over a frozen plain, and a star behind it
 
     def layout(self, portrait):
         """The hole, its scale K and the planet: landscape, or a portrait's tall dark with the hole
-        smaller, a little over the middle, and the planet's edge across the foot."""
+        smaller, a little over the middle, and the planet's edge across the foot; or the second
+        view's, the hole to the left over the plain, its disc tilted the other way."""
+        self.TILT, self.HZ = -0.08, None
         if portrait:
             self.CX, self.CY, self.K, self.PLANET = 140.0, 170.0, 0.74, (60.0, 700.0, 330.0)
             self.NEB = ((60, 90, 150, 0.55), (220, 330, 120, 0.5))
+        elif self.view2:
+            self.CX, self.CY, self.K, self.PLANET = 168.0, 92.0, 0.85, None
+            self.NEB = ((390, 60, 150, 0.5), (60, 170, 110, 0.4))
+            self.TILT, self.HZ = 0.11, 196
         else:
             self.CX, self.CY, self.K, self.PLANET = 302.0, 105.0, 1.0, (65.0, 455.0, 265.0)
             self.NEB = ((130, 75, 170, 0.55), (375, 205, 140, 0.5))
@@ -2630,17 +2641,21 @@ class Horizon(Pixel):
             out += ramp(mid, c[col], 5)[1:-1]
         out += ramp(c["warm"], c["hot"], 3)[1:2] + ramp(c["cool"], c["warm"], 3)[1:2] + ramp(c["planet"], c["planetlit"], 3)[1:2]
         out += [mix(c["shadow"], c["warm"], 0.3), mix(c["shadow"], c["hot"], 0.5)]
+        if self.view2:  # the ice's own steps, so its light dithers within it
+            out += ramp(c["planet"], c["planetlit"], 5)[1:-1] + ramp(c["planet2"], c["planet"], 3)[1:2] + ramp(c["planet"], c["warm"], 5)[1:3]
         return out
 
     def back(self, a, p, c):
         dk = p.dark
-        pgrad(a, 0, self.gh, [(0, c["top"]), (self.gh, c["low"])])
+        sky = self.HZ or self.gh
+        pgrad(a, 0, self.gh, [(0, c["top"]), (sky, c["low"])])
         for (nx, ny, nr, nk), col in zip(self.NEB, (c["neb1"], c["neb2"])):
             pglow(a, nx, ny, nr, col, nk, add=False)
         rnd = random.Random(12)
-        self.twinkle = []
+        twinkle = self.__dict__.setdefault("_twinkle", {}).setdefault((self.gw, self.view2), [])
+        del twinkle[:]
         for i in range(260):
-            x, y = rnd.randrange(self.gw), rnd.randrange(self.gh)
+            x, y = rnd.randrange(self.gw), rnd.randrange(sky)
             if math.hypot(x - self.CX, y - self.CY) < 70 * self.K:
                 continue
             m = rnd.random() ** 3
@@ -2651,9 +2666,11 @@ class Horizon(Pixel):
             elif m > 0.4:
                 put(a, x, y, c["star"])
                 if i % 4 == 0:
-                    self.twinkle.append((x, y, rnd.choice((3, 4, 6, 8)), rnd.random()))
+                    twinkle.append((x, y, rnd.choice((3, 4, 6, 8)), rnd.random()))
             else:
                 put(a, x, y, c["stardim"], 0.8 if dk else 0.6)
+        if self.view2:
+            return self.ice(a, p, c)
         # the planet's edge, lit from the disc, its ice in bands
         px_, py_, pr = self.PLANET
         ys, xs = np.mgrid[0 : self.gh, 0 : self.gw].astype(np.float32)
@@ -2678,7 +2695,7 @@ class Horizon(Pixel):
         y0, y1 = max(0, int(cy - 60 * k)), min(self.gh, int(cy + 60 * k) + 1)
         X = np.arange(x0, x1, dtype=np.float32)[None, :] + 0.5 - cx
         Y = np.arange(y0, y1, dtype=np.float32)[:, None] + 0.5 - cy
-        tilt = -0.08
+        tilt = self.TILT
         xr = X * math.cos(tilt) + Y * math.sin(tilt)
         yr = -X * math.sin(tilt) + Y * math.cos(tilt)
         q, rin, rout = 0.085, 33.0 * k, 140.0 * k
@@ -2704,13 +2721,95 @@ class Horizon(Pixel):
         k = np.clip(total, 0, 1)[..., None]
         sub += (mixed - sub) * k
 
+    def ice(self, a, p, c):
+        """The second view's ground: frozen clouds hung in the sky, a far line of pressure
+        ridges, the plain lit by the disc, its light again on the ice under it."""
+        dk, gw, gh, HZ = p.dark, self.gw, self.gh, self.HZ
+        rnd = random.Random(5)
+        for cx_, cy_, w, h in ((352, 118, 92, 13), (430, 150, 70, 9), (262, 162, 54, 7)):
+            pts = [(cx_ + w * math.cos(f) * (0.75 + 0.25 * rnd.random()), cy_ + h * math.sin(f) * (0.6 + 0.4 * rnd.random()) * (1.6 if math.sin(f) > 0 else 1.0))
+                   for f in (2 * math.pi * k / 14 for k in range(14))]
+            m = Mask().poly(pts).m()
+            fill(a, m, c["planet"])
+            near = np.clip(1.2 - np.abs(np.arange(gw, dtype=np.float32) - self.CX) / 260, 0, 1)[None, :] * np.ones((gh, 1), np.float32)
+            a[m] += (C(c["planetlit"]) - a[m]) * (0.8 * near[m])[:, None]
+            up = np.zeros_like(m)
+            up[1:] = m[:-1]
+            left = np.zeros_like(m)
+            left[:, 1:] = m[:, :-1]
+            fill(a, m & ~up, c["planetlit"])
+            fill(a, m & ~left, c["limb"], 0.6)
+            under = np.zeros_like(m)
+            under[:-2] = m[2:]
+            fill(a, m & ~under, c["planet2"])
+        ys, xs = np.mgrid[0:gh, 0:gw].astype(np.float32)
+        ridge = HZ - 3 - 5 * np.abs(np.sin(xs[0] / 23.0 + 1.3)) - 3 * np.abs(np.sin(xs[0] / 9.0)) - 6 * np.clip(np.sin(xs[0] / 61.0 + 2.0), 0, 1)
+        far = ys >= ridge[None, :]
+        a[far] = C(c["planet2"])
+        edge = far & ~np.vstack([np.zeros((1, gw), bool), far[:-1]])
+        a[edge] += (C(c["limb"]) - a[edge]) * 0.5
+        plain = ys >= HZ
+        a[plain] = C(c["planet"])
+        lit = np.clip(1 - ((xs - self.CX) / 200) ** 2 - ((ys - HZ) / 52) ** 2, 0, 1)  # its light lies flat on the plain
+        a[plain] += (C(c["planetlit"]) - a[plain]) * (0.6 * lit[plain])[:, None]
+        hline(a, 0, gw, HZ, c["limb"], 0.4)
+        for k in range(16):  # the disc again in the ice: a smear of its light under it
+            y = HZ + 2 + k * 3 + k * k // 6
+            half = 70 * self.K * (1 - k / 22)
+            hline(a, self.CX - half, self.CX + half, y, c["warm"], 0.18 * (1 - k / 16))
+            hline(a, self.CX - half * 0.3, self.CX + half * 0.3, y, c["hot"], 0.22 * (1 - k / 16))
+        for k in range(170):  # the wind's ridges in the snow: short strokes, longer as they come near
+            y = HZ + 2 + int((gh - HZ - 2) * rnd.random() ** 1.4)
+            ln = 2 + int((y - HZ) / 9)
+            x = rnd.randrange(gw)
+            hline(a, x, x + ln, y, c["planet2"] if rnd.random() < 0.6 else c["planetlit"], 0.8)
+        for k in range(9):  # cracks and slabs in the near ice
+            x0, y0 = rnd.randrange(gw), rnd.randint(HZ + 12, gh - 6)
+            pts = [(x0, y0)]
+            for j in range(rnd.randint(3, 6)):
+                pts.append((pts[-1][0] + rnd.randint(6, 18) * (1 if k % 2 else -1), pts[-1][1] + rnd.randint(-2, 3)))
+            fill(a, Mask().line(pts), c["planet2"])
+            fill(a, Mask().line([(x, y - 1) for x, y in pts]), c["limb"], 0.25)
+        fill(a, Mask().poly([(0, gh), (0, 244), (40, 236), (96, 247), (150, 256), (210, 262), (260, gh)]), c["planet2"])
+        fill(a, Mask().line([(0, 244), (40, 236), (96, 247), (150, 256), (210, 262), (260, gh)]), c["limb"], 0.5)
+        fill(a, Mask().ell(self.CX, self.CY, self.RS, self.RS), c["shadow"])
+
+    def lensed_star(self, a, c, t, dk):
+        """A star too faint to see goes behind the hole: as it nears, the hole makes two images
+        of it, brighter, drawn out round the shadow, a ring at the closest; then it fades again."""
+        re_ = 1.55 * self.RS
+        u0, ux = 0.16, ((t / self.seconds) - 0.5) * 4.0  # across, in Einstein radii, behind and a little under
+        u = math.hypot(ux, u0)
+        amp = (u * u + 2) / (u * math.sqrt(u * u + 4))
+        vis = clamp((amp - 1.35) / 1.6)
+        if vis <= 0:
+            return
+        phi = math.atan2(u0, ux)
+        for sign in (1, -1):
+            r = re_ * (u + sign * math.sqrt(u * u + 4)) / 2
+            ang = phi if r > 0 else phi + math.pi
+            r = abs(r)
+            if r < self.RS * 1.08:
+                continue
+            gain = vis * (amp + sign) / (2 * amp)
+            half = min(2.0, 0.3 / max(u, 0.02))
+            n = max(1, int(2 * half * r))
+            for i in range(n + 1):
+                f = ang - half + 2 * half * i / n
+                k = gain * (1 - abs(f - ang) / (half + 1e-6))
+                put(a, self.CX + r * math.cos(f), self.CY + r * math.sin(f), c["star"], min(1.0, 1.6 * k))
+            if gain > 0.3:
+                pglow(a, self.CX + r * math.cos(ang), self.CY + r * math.sin(ang), 5, c["star"], 0.25 * gain, add=dk)
+
     def draw(self, a, p, c, t):
         dk = p.dark
-        for x, y, per, ph in self.twinkle:
+        for x, y, per, ph in self._twinkle[(self.gw, self.view2)]:
             if wave(t, 24 / per, ph) < -0.2:
                 put(a, x, y, c["stardim"])
-        pglow(a, self.CX, self.CY, 80 * self.K, c["warm"], 0.08 if dk else 0.05, add=dk)
+        pglow(a[: self.HZ or self.gh], self.CX, self.CY, 80 * self.K, c["warm"], 0.08 if dk else 0.05, add=dk)
         self.light(a, c, t, dk)
+        if self.view2:
+            return self.lensed_star(a, c, t, dk)
         u = window(t, 3.0, 21.0)
         if 0 < u < 1:
             s_ = 1 - (1 - u) ** 3
