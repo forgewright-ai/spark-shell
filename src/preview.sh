@@ -47,6 +47,7 @@ provide_page() {   # provide_page SECTION ROW-ID -> the row's page
         wifi:wifi:*) wifi_page "$2" ;;
         bt:'bt:'*' '?*) bt_page "${2#bt:* }" ;;
         storage:'storage:'*' '?*) storage_page "${2#storage:* }" ;;
+        system:system:check|system:system:updates|system:system:space|system:system:running|system:system:software|system:system:about) system_glance "${2#system:}" ;;
         system:system:package:?*) system_package_page "${2#system:package:}" ;;
         system:system:program:?*) system_program_page "${2#system:program:}" ;;
         system:system:space:caches) system_space_view caches ;;
@@ -55,6 +56,20 @@ provide_page() {   # provide_page SECTION ROW-ID -> the row's page
         about:about:credits) scrub_text < "$REPO/CREDITS.md" | jq -Rn '[inputs] as $l | {title: "credits", lines: ($l | map(sub("^#+ *"; ""))), bold: [range($l | length) | select($l[.] | startswith("#"))]}' ;;
         *) return 1 ;;
     esac
+}
+page_blocks() {   # page_blocks TITLE WHAT -- stdin "fact|pair<tab>LABEL<tab>VALUE", "head<tab>TEXT", "text<tab>TEXT", "gap" -> a page: page_of's shape, its facts first, then groups each a bold line over its pairs
+    scrub_text | awk -F '\t' '
+        $1 == "fact" || $1 == "pair" { if ($3 == "") next; if (length($2) > w) w = length($2) }
+        { k[NR] = $1; a[NR] = $2; b[NR] = $3; n = NR }
+        END { for (i = 1; i <= n; i++) {
+                if (k[i] == "fact" || k[i] == "pair") { if (b[i] != "") printf "p\t%-" (w + 3) "s%s\n", a[i], b[i] }
+                else if (k[i] == "head") printf "h\t%s\n", a[i]
+                else if (k[i] == "text") printf "p\t%s\n", a[i]
+                else if (k[i] == "gap") print "p\t" } }' > "$TMP/page.blocks"
+    jq -Rn --arg t "$(printf '%s' "$1" | scrub_text)" --arg w "$(printf '%s' "$2" | scrub_text)" '
+        [inputs | split("\t") | {head: (.[0] == "h"), line: (.[1] // "")}] as $b
+        | ([$t] + (if $w == "" or $w == $t then [] else [$w] end) + [""]) as $lead
+        | {title: $t, lines: ($lead + ($b | map(.line))), bold: ([0] + [range($b | length) as $i | select($b[$i].head) | $i + ($lead | length)])}' < "$TMP/page.blocks"
 }
 page_of() {   # page_of TITLE WHAT -- stdin LABEL<tab>VALUE -> a page
     scrub_text | awk -F '\t' '$2 != "" { n++; l[n] = $1; v[n] = $2; if (length($1) > w) w = length($1) } END { for (i = 1; i <= n; i++) printf "%-" (w + 3) "s%s\n", l[i], v[i] }' > "$TMP/page.pairs"

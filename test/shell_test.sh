@@ -7010,13 +7010,19 @@ if [ "$(uname -s)" != Darwin ]; then
         "$(call 6 system_end '{"name":"sway"}')" "$(call 7 system_end '{"name":"spark-dialog"}')" "$(call 8 system_end '{"name":"udevd"}')" "$(call 9 system_end '{"name":"nosuch"}')" \
         "$(call 10 system_front '{"name":"firefox"}')" "$(call 11 system_fix '{"command":"rm -rf /"}')" "$(call 12 system_fix '{"command":"spark-shell on"}')" \
         "$(call 13 system_clean_packages)" "$(rq 14 resources/read '{"uri":"spark-shell://system/rows/details"}')" "$(rq 15 resources/read '{"uri":"spark-shell://system/rows/updates"}')" \
-        "$(call 16 system_end '{"name":"swaybar"}')" "$(call 17 system_end '{"name":"spark-bar"}')" "$(call 18 system_end '{"name":"spark-winpad"}')" "$(call 19 system_end '{"name":"spark-wallpaper"}')")   # a subshell: sh keeps a variable set before a function after it
+        "$(call 16 system_end '{"name":"swaybar"}')" "$(call 17 system_end '{"name":"spark-bar"}')" "$(call 18 system_end '{"name":"spark-winpad"}')" "$(call 19 system_end '{"name":"spark-wallpaper"}')" \
+        "$(rq 20 resources/read "$(jq -cn --arg u "spark-shell://system/page/$(b64u system:check)" '{uri: $u}')")")   # a subshell: sh keeps a variable set before a function after it
     rows() { ans "$1" | jq -c '.result.contents[0].text | fromjson'; }
     said() { ans "$1" | jq -r '.result.content[0].text'; }
     [ "$(rows 1 | jq -c '[.rows[] | [.id, .text, .children]]')" = '[["system:check","check","spark-shell://system/rows/check"],["system:updates","updates","spark-shell://system/rows/updates"],["system:space","space","spark-shell://system/rows/space"],["system:running","running","spark-shell://system/rows/running"],["system:software","software","spark-shell://system/rows/software"],["system:about","about","spark-shell://system/rows/details"]]' ] \
         && [ "$(rows 1 | jq -r '.rows[0].columns[0], .rows[3].columns[0], .rows[0].line')" = "$(printf '3 problems\n8 processes\ncheck %s test the setup and fix problems' "$SEP")" ] \
         && rows 1 | jq -e 'all(.rows[]; (.columns[0] | length) > 0)' >/dev/null \
         && ok "provide system: what needs you first (check, updates, space), then running, software and about, each its state and its page as children; about holds the details of the machine (v0.169)" || bad "system rows" "$(rows 1)"
+    rows 1 | jq -e --arg p "spark-shell://system/page/$(b64u system:check)" '.rows[0].page == $p and all(.rows[]; .page | startswith("spark-shell://system/page/"))' >/dev/null \
+        && ans 20 | jq -r '.result.contents[0].text' | jq -e '.title == "check" and .lines[1] == "3 problems" and (.lines[3] | test("^checked +'"$(date -d "@$(sed -n 1p "$_ts/check.last")" +%H:%M)"'$"))
+            and (.lines[4] | test("^problems +3$")) and (.lines[5] | test("^passed +1$")) and (. as $p | $p.bold | index($p.lines | index("problems"))) != null
+            and any(.lines[]; test("^programs +missing: fzf zoxide$")) and any(.lines[]; . == "the fix: spark-shell desktop, spark-shell on")' >/dev/null \
+        && ok "provide system: each row a glance of what it holds, the check's from the last one kept: its time, its problems each with what it says, the fix (v0.174)" || bad "system glance" "$(ans 20)"
     [ "$(rows 2 | jq -c '[.rows[] | select(.text != "") | [.text, .group, (.columns[0] // ""), (.tool.arguments.command // "")]]')" = '[["programs","problems","missing: fzf zoxide",""],["config files","problems","out of date: .tmux.conf",""],["screen saver","problems","no screen saver",""],["fix",null,"spark-shell on","spark-shell on"],["fix",null,"spark-shell desktop","spark-shell desktop"],["1 passed",null,"",""],["1 not applicable",null,"",""],["check again",null,"checked at '"$(date -d "@$(sed -n 1p "$_ts/check.last")" +%H:%M)"'",""]]' ] \
         && [ "$(rows 2 | jq -r .state)" = '3 problems' ] && [ "$(rows 3 | jq -c '[.rows[] | [.text, .columns[0]]]')" = '[["shell startup","sourced from .zshrc"]]' ] \
         && ok "system check: the problems by plain name, one fix for the two that share it, the passed and the not applicable counted apart, check again with its time" || bad "system check" "$(rows 2)"

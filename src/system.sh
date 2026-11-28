@@ -76,11 +76,87 @@ system_package_count() {   # -> how many packages the package manager has instal
     esac
 }
 system_software_state() { _tpc=$(panel_cache system.packages 3600 system_package_count); case $_tpc in ''|0|*[!0-9]*) echo 'no package list' ;; *) echo "$_tpc packages" ;; esac; }
-provide_system_rows() {   # -> the system section's rows resource: the five, each with its page as children, then about: the machine, whose page holds its details and the license
+provide_system_rows() {   # -> the system section's rows resource: the five, each with its page as children, then about: the machine, whose page holds its details and the license; each with a glance of what it holds (v0.174)
     { system_menu; printf 'about\t%s\tthe machine, the project, the license, the credits\n' "$(system_details_state)"; } | jq -Rn --arg sep "$PANEL_SEP" '
+        def b64: @base64 | gsub("="; "") | gsub("[+]"; "-") | gsub("/"; "_");
         [inputs | split("\t") | {id: ("system:" + .[0]), sign: "blank", text: .[0], tool: null, more: [], columns: [.[1]],
-            children: (if .[0] == "about" then "spark-shell://system/rows/details" else "spark-shell://system/rows/" + .[0] end), group: null, line: (.[0] + " " + $sep + " " + .[2])}]
+            children: (if .[0] == "about" then "spark-shell://system/rows/details" else "spark-shell://system/rows/" + .[0] end), group: null, line: (.[0] + " " + $sep + " " + .[2])}
+            | .page = ("spark-shell://system/page/" + (.id | b64))]
         | {title: "system", state: "", rows: ., short: [.[].id]}'
+}
+system_glance() {   # system_glance check|updates|space|running|software|about -> a page of what the row holds now, from what is kept: no check run, no measure made, no license read
+    case $1 in
+        check) system_glance_check | page_blocks check "$(system_check_state)" ;;
+        updates) system_glance_updates | page_blocks updates "$(system_updates_state)" ;;
+        space) system_glance_space | page_blocks space "$(system_space_state)" ;;
+        running) system_glance_running | page_blocks running "$(system_running_state)" ;;
+        software) system_glance_software | page_blocks software "$(system_software_state)" ;;
+        about) system_details_facts | scrub_text | awk -F '\t' '$3 != "" { if ($1 != g) { print "head\t" $1; g = $1 } printf "pair\t%s\t%s\n", $2, $3 }' | page_blocks about "$(system_details_state)" ;;
+        *) return 1 ;;
+    esac
+}
+system_glance_check() {   # -> the last check's blocks: when, its problems each with what it says, its fix, what passed
+    [ -s "$SYSTEM_CHECK" ] || { printf 'text\tEnter runs every test of the setup: the shell, the config files, the desktop, the login, and says what to fix.\n'; return 0; }
+    system_check_rows > "$TMP/glance.check"
+    _tga=$(sed -n 1p "$SYSTEM_CHECK"); _tgw=''
+    case $_tga in ''|*[!0-9]*) ;; *) _tgw=$(date -d "@$_tga" '+%H:%M' 2>/dev/null || date -r "$_tga" '+%H:%M' 2>/dev/null || :) ;; esac
+    printf 'fact\tchecked\t%s\n' "$_tgw"
+    printf 'fact\tproblems\t%s\n' "$(grep -cv '^ok	' "$TMP/glance.check" || :)"
+    printf 'fact\tpassed\t%s\n' "$(awk -F '\t' '$1 == "ok" && $4 !~ /^na( |$)/' "$TMP/glance.check" | grep -c . || :)"
+    if grep -qv '^ok	' "$TMP/glance.check"; then
+        printf 'head\tproblems\n'
+        awk -F '\t' '$1 != "ok" { printf "pair\t%s\t%s\n", $3, $4 }' "$TMP/glance.check"
+        _tgf=$(awk -F '\t' '$1 != "ok" && $5 != "" { print $5 }' "$TMP/glance.check" | while IFS= read -r _x; do system_fix_command "$_x" || :; done | sort -u | paste -sd, - | sed 's/,/, /g')
+        [ -z "$_tgf" ] || printf 'gap\ntext\tthe fix: %s\n' "$_tgf"
+    fi
+    printf 'head\tpassed\n'
+    awk -F '\t' '$1 == "ok" && $4 !~ /^na( |$)/ { printf "pair\t%s\t%s\n", $3, $4 }' "$TMP/glance.check" | head -n 12
+}
+system_glance_updates() {   # -> the releases in use, then what the one in use brought, as its CHANGELOG entry says it
+    _tgv=$(panel_version)
+    printf 'fact\tspark-shell\tv%s\n' "$_tgv"
+    printf 'fact\tdialog\t%s\n' "$(system_dialog_version)"
+    printf 'fact\tsystem\t%s\n' "$(system_os PRETTY_NAME | scrub_text)"
+    [ -n "$_tgv" ] || return 0
+    awk -v v="## v$_tgv" '$0 == v { on = 1; next } on && /^## / { exit } on { print }' "$REPO/CHANGELOG.md" 2>/dev/null         | awk 'BEGIN { p = "" } /^- / { if (p != "") print p; p = substr($0, 3); next } /^  / { sub(/^ +/, ""); p = p " " $0; next } END { if (p != "") print p }'         | head -n 6 > "$TMP/glance.notes"
+    [ -s "$TMP/glance.notes" ] || return 0
+    printf 'head\twhat v%s brought\n' "$_tgv"
+    _tgn=0
+    while IFS= read -r _l; do
+        [ "$_tgn" = 0 ] || printf 'gap\n'
+        printf '%s\n' "$_l" | sed 's/`//g' | fold -s -w 64 | sed 's/ *$//; s/^/text\t/'
+        _tgn=$((_tgn + 1))
+    done < "$TMP/glance.notes"
+}
+system_glance_space() {   # -> the disk, and the last measure of home's folders and what can be cleaned; never a measure made here
+    printf 'fact\tsystem disk\t%s\n' "$(storage_here | sed 's/,.*//')"
+    printf 'fact\tfree\t%s\n' "$(system_space_state | sed 's/ free$//')"
+    if [ ! -s "$SYSTEM_SPACE/at" ]; then printf 'text\tNot measured yet: Enter measures what uses the disk, your home folder by folder, and what can be cleaned.\n'; return 0; fi
+    printf 'fact\tmeasured\t%s\n' "$(_t=$(cut -d' ' -f1 "$SYSTEM_SPACE/at"); date -d "@$_t" +%H:%M 2>/dev/null || date -r "$_t" +%H:%M 2>/dev/null || :)"
+    printf 'head\tyour home\n'
+    system_space_folders | head -n 8 | while IFS="$TAB" read -r _k _n _p; do printf 'pair\t%s\t%s\n' "$_n" "$(files_size $((_k * 1024)))"; done
+    printf 'head\tcleanup\n'
+    _k=$(cat "$SYSTEM_SPACE/trash" 2>/dev/null); printf 'pair\ttrash\t%s\n' "$([ -z "$_k" ] || files_size $((_k * 1024)))"
+    _k=$(cat "$SYSTEM_SPACE/packages" 2>/dev/null); printf 'pair\tpackage cache\t%s\n' "$([ -z "$_k" ] || files_size $((_k * 1024)))"
+}
+system_glance_running() {   # -> the memory in use, then the programs that hold the most of it
+    system_running_read
+    _trt=$(system_mem_kb MemTotal); _tra=$(system_mem_kb MemAvailable)
+    [ -z "$_trt" ] || [ -z "$_tra" ] || printf 'fact\tin use\t%s\nfact\tof\t%s\n' "$(storage_kb $((_trt - _tra)))" "$(storage_kb "$_trt")"
+    printf 'fact\tprograms\t%s\n' "$(grep -c . "$TMP/running.tsv" || :)"
+    printf 'head\tby memory\n'
+    sort -t "$TAB" -k3,3nr "$TMP/running.tsv" | head -n 12 | while IFS="$TAB" read -r _n _c _p _; do printf 'pair\t%s\t%s, %s%% cpu\n' "$_n" "$(files_size "$_p")" "$_c"; done
+}
+system_glance_software() {   # -> the packages' count and manager; the apps, tools and parts where the list is kept fresh, else what Enter reads
+    printf 'fact\tpackages\t%s\n' "$(system_software_state | sed 's/ packages$//')"
+    printf 'fact\tmanager\t%s\n' "${PM:-none}"
+    if system_sbom_fresh; then
+        for _k in app tool part; do printf 'fact\t%ss\t%s\n' "$_k" "$(grep -c "^$_k	" "$SYSTEM_SBOM" || :)"; done
+        printf 'head\tapps\n'
+        awk -F '\t' '$1 == "app" { printf "pair\t%s\t%s\n", $2, $3 }' "$SYSTEM_SBOM" | head -n 12
+    else
+        printf 'text\tEnter reads every package and its license: apps, tools and parts, each a list, and an export as CycloneDX.\n'
+    fi
 }
 provide_system_page() {   # provide_system_page PATH -> a row's page, a rows resource: check, check/passed
     case $1 in
