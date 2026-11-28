@@ -279,7 +279,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         out:adjust|mic:adjust) case $3 in [0-9]|[1-9][0-9]|100|-[0-9]|-[1-9][0-9]|-100) snd_settable "$1" || return 1; echo "$3"; return 0 ;; *) echo "$1: adjust takes a whole number of percentage points, -100 to 100"; return 1 ;; esac ;;
         out:mute|out:unmute|mic:mute|mic:unmute) snd_settable "$1" || return 1; echo ''; return 0 ;;   # the step sets, never toggles: mute when muted is a receipt
         theme:picture) _lpy=$(look_picks "${3:-}") || { echo "theme: $_lpy"; return 1; }; look_picks "${3:-}"   # the picture's path, then the picks the words asked for
-            _pp=$(wall_picture_ok "$_lpr" picture) || { echo "$_pp"; return 1; }
+            _pp=$(wall_picture_ok "$_lpr") || { echo "$_pp"; return 1; }
             echo "$_pp${_lp_face:+ face=$_lp_face}${_lp_family:+ family=$_lp_family}${_lp_animation:+ animation=$_lp_animation}"; return 0 ;;
         theme:wallpaper-picture) _pp=$(wall_picture_ok "${3:-}") && { echo "$_pp"; return 0; }; echo "$_pp"; return 1 ;;
         theme:wallpaper) case ${3:-} in default) echo default; return 0 ;; esac; ! wall_shipped "${3:-}" || { echo "$3"; return 0; } ;;   # else the wallpaper list below
