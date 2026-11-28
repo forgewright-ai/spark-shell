@@ -73,7 +73,9 @@ them; the references and not the story, no one in them, a dry joke
               Beside it the prize counter, its bear at 9999 tickets, and an
               air hockey table whose puck drifts to a puck short of the goal
     crossing  a level crossing at dusk, far off: the bells, the arm, a small
-              train; after it the crows on the wire are in another order
+              train; after it the crows on the wire are in another order.
+              Beside it the station down the line, a platform in the paddies:
+              the train stops, opens its doors to no one, and goes on
 
 Each scene is a loop of 24 seconds at 24 frames a second, 1920 by 1080 by
 default (a pixel scene's 480 by 270 four times over), H.264 in an MP4 that
@@ -3990,11 +3992,13 @@ CROW = (
 class Crossing(Pixel):
     """A level crossing at dusk, far off, a lit vending machine by its road. The bells
     ring, the arm comes down, a small train goes by; after it the crows on the
-    wire are in another order."""
+    wire are in another order. The second view is the station down the line,
+    seen from the field: the train stops, opens its doors to no one, and goes."""
 
     name = "crossing"
     poster = 12.0
     portrait = True
+    second = True  # the station down the line: the train stops for no one
 
     def layout(self, portrait):
         """Where things are: landscape, or a portrait's tall dusk over a low horizon, one span of
@@ -4009,6 +4013,9 @@ class Crossing(Pixel):
             self.POLES, self.WIRES, self.ARM = (36, 444), ((33, 22), (33, 31), (43, 26)), 32
             self.VEND, self.CLOUDS, self.TOWER, self.DUST = (281, 206), (30, 140), (150, 166), (200, 470, 95, 200)
             self.SKY = ((0, "top"), (105, "mid"), (200, "low"))
+        if self.view2:
+            self.RAIL, self.SUN, self.CLOUDS, self.DUST = 206, (78, 168), (24, 120), (150, 470, 120, 186)
+            self.SKY = ((0, "top"), (100, "mid"), (176, "low"))
 
     def colors(self, p):
         st = self.__dict__.setdefault("_c", {})
@@ -4028,12 +4035,18 @@ class Crossing(Pixel):
                      ink=p("bg+fg:72"), ink2=p("bg+fg:52"), ground=p("bg+fg:30"), field=p("bg+ansi_2:30"), road=p("bg+fg:22"),
                      red=p("ansi_1"), vend=p("white"), vend2=p("accent"), vend3=p("ansi_1"),
                      train=p("bg+fg:50"), trainroof=p("bg+fg:36"), window=p("ansi_3+white:30"), haze=p("ansi_3"), lamp=p("white"))
+        if self.view2:  # the station's own: the platform's concrete, its yellow line, the paddies, the hills
+            c.update(plat=mix(c["ground"], c["low"], 0.28), platedge=mix(c["ground"], c["low"], 0.5), tactile=mix(p("ansi_3"), c["ground"], 0.35),
+                     paddy=mix(c["field"], c["mid"], 0.45), paddylit=mix(c["low"], c["field"], 0.3), hill=mix(c["ink2"], c["mid"], 0.45), hill2=mix(c["ink2"], c["mid"], 0.2))
         st[k] = c
         return c
 
     def extra(self, p, c):
-        return (ramp(c["top"], c["mid"], 4) + ramp(c["mid"], c["low"], 4) + ramp(c["low"], c["sun"], 4)[1:-1] + ramp(c["ground"], c["red"], 4)[1:-1]
-                + ramp(c["ground"], c["vend"], 4)[1:-1] + [mix(c["mid"], c["red"], 0.5), mix(c["low"], c["red"], 0.5), mix(c["train"], c["window"], 0.5)])
+        out = (ramp(c["top"], c["mid"], 4) + ramp(c["mid"], c["low"], 4) + ramp(c["low"], c["sun"], 4)[1:-1] + ramp(c["ground"], c["red"], 4)[1:-1]
+               + ramp(c["ground"], c["vend"], 4)[1:-1] + [mix(c["mid"], c["red"], 0.5), mix(c["low"], c["red"], 0.5), mix(c["train"], c["window"], 0.5)])
+        if self.view2:
+            out += ramp(c["plat"], c["lamp"], 4)[1:-1] + ramp(c["paddy"], c["paddylit"], 3)[1:2] + ramp(c["plat"], c["window"], 3)[1:2]
+        return out
 
     def wire(self, x, k):
         """A wire from pole to pole: it hangs, lowest halfway between them (WIRES: where
@@ -4049,7 +4062,9 @@ class Crossing(Pixel):
         sx, sy = self.SUN
         pglow(a, sx, sy, 60, c["sun"], 0.35 if dk else 0.45, add=False)
         fill(a, Mask().ell(sx, sy, 11, 11), c["sun"])
-        clouds(a, 21, 6, self.CLOUDS, c["cloud"], c["cloudlit"], 0.95, lit_below=True, wmin=60, wmax=180)
+        clouds(a, 27 if self.view2 else 21, 6, self.CLOUDS, c["cloud"], c["cloudlit"], 0.95, lit_below=True, wmin=60, wmax=180)
+        if self.view2:
+            return self.station(a, p, c)
         rnd = random.Random(33)  # the roofs of the town beyond the line
         x = -6
         m, lit = Mask(), []
@@ -4126,7 +4141,151 @@ class Crossing(Pixel):
             py_ = ay + d * math.sin(ang)
             put(a, px_, py_, c["red"] if (d // 3) % 2 and d > 3 else c["lamp"] if dk else c["ink"])
 
+    # the second landscape: the station down the line, a platform in the paddies, seen from the field
+
+    PL, PX, TR = 194, (36, 452), 191  # the platform's top and its ends; the line behind it
+    STOP = 120  # where the train's nose stops
+
+    def station(self, a, p, c):
+        dk, gw, gh, PL = p.dark, self.gw, self.gh, self.PL
+        x0, x1 = self.PX
+        hz = self.SKY[-1][0]
+        rnd = random.Random(44)  # the hills, two rows, the sun going down behind the far one
+        for base, amp, col in ((hz, 22, "hill"), (hz + 4, 12, "hill2")):
+            xs = np.arange(gw, dtype=np.float32)
+            ph = rnd.uniform(0, 6)
+            top = base - amp * (0.55 + 0.25 * np.sin(xs / 47 + ph) + 0.2 * np.sin(xs / 19 + 2 * ph))
+            a[np.arange(gh)[:, None] >= top[None, :]] = C(c[col])
+        box(a, 0, hz + 4, gw, gh - hz - 4, c["paddy"])  # the paddies beyond the line, the sky in their water
+        for y in range(hz + 6, self.TR, 3):
+            hline(a, 0, gw, y, c["paddylit"], 0.35)
+        for x in range(-40, gw + 40, 46):
+            fill(a, Mask().line([(x, hz + 5), (x - 10, self.TR)]), c["field"])
+        rx, ry = self.SUN
+        for d in range(6, 14, 2):
+            hline(a, rx - 9 + d // 3, rx + 10 - d // 3, hz + d, c["sun"], 0.5 * (1 - d / 14))
+        box(a, 0, self.TR - 2, gw, 3, c["ground"])
+        front = Mask()  # what stands between us and the train
+        front.rect(x0 - 6, PL - 4, x1 - x0 + 12, gh)
+        box(a, x0 - 6, PL - 4, x1 - x0 + 12, 4, c["plat"])
+        hline(a, x0 - 6, x1 + 6, PL - 4, c["platedge"])
+        box(a, x0 - 6, PL, x1 - x0 + 12, 12, c["platedge"])
+        box(a, x0 - 4, PL + 3, x1 - x0 + 8, 9, c["ink2"])
+        for x in range(x0 - 4, x1 + 4, 2):
+            put(a, x, PL - 3, c["tactile"])
+        for x in range(x0, x1, 40):
+            vline(a, x, PL + 3, PL + 12, c["ink"])
+        box(a, 0, PL + 12, gw, gh - PL - 12, c["field"])  # our side: the field, and the grass, longer near
+        for x in range(0, gw, 3):
+            put(a, x, PL + 12, c["ground"])
+        rnd = random.Random(6)
+        for i in range(260):
+            x, y = rnd.randrange(gw), rnd.randint(PL + 14, gh - 1)
+            ln = 1 + (y - PL) // 18
+            vline(a, x, y - ln, y + 1, c["ground"] if rnd.random() < 0.6 else c["ink2"])
+        nx = 76  # the station's sign: its name over a line, on two legs
+        m = Mask().rect(nx - 20, 162, 41, 15).rect(nx - 16, 177, 2, PL - 4 - 177).rect(nx + 15, 177, 2, PL - 4 - 177)
+        fill(a, m, c["ink"])
+        front.mm |= m.m()
+        box(a, nx - 19, 163, 39, 13, c["lamp"] if dk else c["vend"])
+        text(a, nx - 7, 165, "HARA", c["ink"])
+        hline(a, nx - 18, nx + 19, 172, c["vend3"])
+        sx0 = 334  # the shelter: a roof on two posts, its back to us, a bench under it; a vending machine beside
+        m = Mask().rect(sx0 - 2, 160, 66, 3).rect(sx0 + 3, 163, 2, PL - 4 - 163).rect(sx0 + 57, 163, 2, PL - 4 - 163)
+        fill(a, m, c["ink"])
+        front.mm |= m.m()
+        back_ = Mask().rect(sx0 + 5, 164, 52, 22).m()
+        fill(a, back_, c["ink2"])
+        front.mm |= back_
+        box(a, sx0 + 5, 163, 52, 1, c["ink"])
+        box(a, sx0 + 12, 169, 12, 9, c["lamp"] if dk else c["vend"], 0.35)  # the timetable on its back, and a poster
+        for y in range(171, 177, 2):
+            hline(a, sx0 + 14, sx0 + 22, y, c["ink2"])
+        box(a, sx0 + 34, 168, 14, 11, c["vend2"], 0.4)
+        vx, vy = sx0 + 66, 178
+        m = Mask().rect(vx, vy, 8, 12)
+        fill(a, m, c["ink"])
+        front.mm |= m.m()
+        box(a, vx + 1, vy + 1, 6, 6, c["vend"], 0.95)
+        for i in range(3):
+            put(a, vx + 2 + i * 2, vy + 2, (c["vend2"], c["vend3"], c["vend2"])[i])
+        put(a, vx + 6, vy + 8, c["red"])
+        pglow(a, vx + 4, vy + 4, 14, c["vend"], 0.2 if dk else 0.05, add=dk)
+        self.LAMPS = [(x, 150) for x in (112, 202, 292, 432)]
+        for lx, ly in self.LAMPS:  # the platform's lamps, lit for the evening
+            m = Mask().rect(lx, ly, 1, PL - 4 - ly).rect(lx - 3, ly, 7, 1)
+            fill(a, m, c["ink"])
+            front.mm |= m.m()
+            put(a, lx - 3, ly + 1, c["lamp"])
+            put(a, lx + 3, ly + 1, c["lamp"])
+            pglow(a, lx, ly + 2, 12, c["lamp"], 0.35 if dk else 0.1, add=dk)
+            fill(a, Mask().ell(lx, PL - 3, 12, 1), c["lamp"], 0.15 if dk else 0.05)
+        m = Mask().rect(22, 150, 8, 12).rect(25, 162, 2, PL + 12 - 162)  # the departure signal, near us at the end
+        fill(a, m, c["ink"])
+        front.mm |= m.m()
+        self.FRONT = self.__dict__.setdefault("_front", {})
+        self.FRONT[self.key(p)] = front.m()
+
+    def train2(self, a, c, t, dk):
+        """The local: two cars come in from the right, behind the platform, stop, open their doors
+        to no one, close them and go on to the left. Their light falls out on the platform."""
+        L, gap = 84, 2
+        if t < 4.0 or t >= 21.0:
+            return 0.0, None
+        if t < 9.0:
+            u = 1 - (1 - window(t, 4.0, 9.0)) ** 2
+            x = self.gw + 10 + (self.STOP - self.gw - 10) * u
+        elif t < 15.5:
+            x = self.STOP
+        else:
+            u = window(t, 15.5, 21.0) ** 2
+            x = self.STOP - (self.STOP + 2 * L + 40) * u
+        doors = ease_io(window(t, 9.6, 10.4)) * (1 - ease_io(window(t, 14.2, 15.0)))
+        top, spill = self.TR - 21, []
+        for car in range(2):
+            cx = int(round(x + car * (L + gap)))
+            box(a, cx, top, L, 21, c["train"])
+            hline(a, cx + 1, cx + L - 1, top - 1, c["trainroof"])
+            hline(a, cx, cx + L, top + 14, c["red"])
+            for k in range(8):
+                if k not in (2, 5):
+                    box(a, cx + 6 + k * 10, top + 4, 7, 6, c["window"], 0.9 if dk else 0.6)
+            for k in (2, 5):  # the doors: two halves that slide apart
+                dx = cx + 6 + k * 10
+                o = round(3 * doors)
+                box(a, dx - o, top + 3, 4, 16, c["trainroof"])
+                box(a, dx + 4 + o, top + 3, 4, 16, c["trainroof"])
+                if o > 0:
+                    box(a, dx + 4 - o, top + 3, 2 * o, 16, c["window"])
+                    spill.append((dx + 4, o))
+        put(a, x + 1, top + 15, c["lamp"])
+        pglow(a, x + 1, top + 15, 10, c["lamp"], 0.4, add=dk)
+        put(a, x + 2 * L + gap - 2, top + 15, c["red"])
+        return doors, spill
+
+    def draw2(self, a, p, c, t):
+        dk = p.dark
+        doors, spill = self.train2(a, c, t, dk)
+        if spill is not None:  # the platform and what stands on it stay in front of the train
+            front = self.FRONT[self.key(p)]
+            a[front] = self.base(p)[front]
+            for dx, o in spill:  # the light out of the open doors, across the platform toward us
+                fill(a, Mask().poly([(dx - o, self.PL - 4), (dx + o, self.PL - 4), (dx + 2 * o + 3, self.PL - 1), (dx - 2 * o - 3, self.PL - 1)]), c["window"], 0.55)
+        go = 15.0 <= t < 20.0
+        sig = (26, 154) if go else (26, 158)
+        put(a, *sig, c["haze"] if go else c["red"])
+        pglow(a, *sig, 5, c["haze"] if go else c["red"], 0.3, add=dk)
+        rnd = random.Random(73)
+        for i in range(30):  # dust in the low sun
+            x0, y0 = rnd.uniform(*self.DUST[:2]), rnd.uniform(*self.DUST[2:])
+            x = x0 + 10 * wave(t, 24 / rnd.choice((1, 2, 3)), rnd.random())
+            y = y0 + 5 * wave(t, 24 / rnd.choice((2, 3, 4)), rnd.random())
+            if wave(t, 24 / rnd.choice((4, 6)), rnd.random()) > 0:
+                put(a, x, y, c["haze"], 0.6)
+
     def draw(self, a, p, c, t):
+        if self.view2:
+            return self.draw2(a, p, c, t)
         dk = p.dark
         active = 8.0 <= t < 16.0
         u = window(t, 10.6, 14.6)
