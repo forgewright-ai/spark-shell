@@ -43,7 +43,9 @@ cozy: warm and playful, a picture book for grown-ups
               round a lily pad, each after the one ahead: a loop, and one
               of them asks who leads
     reef      under the sea the fish are prompts: a school of > fish, a ~
-              eel, a * starfish, and one < swimming the wrong way
+              eel, a * starfish, and one < swimming the wrong way. Deeper
+              in, by an anchor and a clam, a > comes up to a pufferfish, an
+              o that swells into an O, and goes back a <
     campfire  a raccoon toasts a marshmallow; it catches fire, the raccoon
               blows it out, and eats it anyway
     ufo       over the dunes a saucer beams up a cow, has a look, and puts
@@ -1402,6 +1404,8 @@ class Duck(Scene, Cached):
 class Reef(Scene, Cached):
     name = "reef"
     portrait = (1080.0, 1920.0, 0.0, 840.0)  # a tall water column: the eel's rock, and the starfish's brought near
+    second = (1920.0, 1080.0, -1920.0, 0.0)  # deeper in: an arch, an anchor, a clam, a jellyfish and a pufferfish
+    PUFF = (W + 1160.0, 440.0)  # the pufferfish's spot
 
     def right(self, cv):
         """How far the starfish's rock and what lives on it move for a portrait."""
@@ -1420,10 +1424,15 @@ class Reef(Scene, Cached):
                 coral=p.pick("bg+ansi_5:44", "bg+ansi_5:52"), coral2=p.pick("bg+ansi_1:40", "bg+ansi_1:48"),
                 fish=p("accent"), lost=max((p(k) for k in ("ansi_3", "ansi_5", "ansi_6", "ansi_2")), key=lambda q: sum((a - b) ** 2 for a, b in zip(q, p("accent")))), eel=mix(p("ansi_2"), p("ansi_4"), 0.5), star=mix(p("ansi_3"), p("ansi_1"), 0.45),
                 shell=p("ansi_5"), snail=p.pick("bg+fg:40", "bg+fg:30"), ink=ink, bub=p.pick("fg", "white"), bubble=p.pick("bg+fg:88", "white"),
+                abyss=p.pick("bg+ansi_6:3", "bg+ansi_6:46"), puffer=mix(p("ansi_3"), p("white"), 0.08), puffer2=mix(p("ansi_3"), ink, 0.35), belly=mix(p("ansi_3"), p("white"), 0.55),
+                jelly=mix(p("ansi_5"), p("white"), 0.3), anchor=mix(p.pick("bg+ansi_8:46", "bg+ansi_8:40"), p("ansi_3+ansi_1:40"), 0.35), anchor2=mix(mix(p.pick("bg+ansi_8:46", "bg+ansi_8:40"), p("ansi_3+ansi_1:40"), 0.35), ink, 0.35),
+                clam=p.pick("bg+fg:38", "bg+fg:22"), clam2=p.pick("bg+fg:24", "bg+fg:40"), mantle=mix(p("ansi_4"), p("ansi_5"), 0.4), sponge=p.pick("bg+ansi_3:40", "bg+ansi_3:50"),
             ))
         return self._c[1]
 
     def back(self, cv, p):
+        if cv.second:
+            return self.back2(cv, p)
         c = self.colors(p)
         top = -900.0 if cv.portrait else 0.0
         out = [L(cv, Shape().poly([(0, top), (W, top)] + [(x, 360 + 18 * math.sin(x / 140)) for x in range(W, -1, -40)]), c["top"], ss=1)]
@@ -1479,18 +1488,21 @@ class Reef(Scene, Cached):
                 x += self.right(cv)
             base, h = rnd.uniform(860, 960), rnd.uniform(280, 470)
             ph, per = rnd.random(), rnd.choice((4, 6))
-            pts = []
-            for k in range(13):
-                f = k / 12
-                pts.append((x + 34 * f**1.4 * wave(t, per, ph - f * 0.6), base - h * f))
-            col = c["kelp"] if i % 2 else c["kelp2"]
-            sh = Shape().poly(ribbon(pts, 16, 4))
-            for k in range(2, 12, 2):
-                px, py = pts[k]
-                side = 1 if k % 4 else -1
-                sh.ellipse(px + side * 14, py - 6, 16, 6, side * 0.6)
-            out.append(L(cv, sh, col, ss=2))
+            out.append(self.frond(cv, t, x, base, h, ph, per, c["kelp"] if i % 2 else c["kelp2"]))
         return out
+
+    def frond(self, cv, t, x, base, h, ph, per, col):
+        """One kelp frond from (x, base), h tall, swaying with a period of per seconds."""
+        pts = []
+        for k in range(13):
+            f = k / 12
+            pts.append((x + 34 * f**1.4 * wave(t, per, ph - f * 0.6), base - h * f))
+        sh = Shape().poly(ribbon(pts, 16, 4))
+        for k in range(2, 12, 2):
+            px, py = pts[k]
+            side = 1 if k % 4 else -1
+            sh.ellipse(px + side * 14, py - 6, 16, 6, side * 0.6)
+        return L(cv, sh, col, ss=2)
 
     def eel(self, t):
         e = ease_out(window(t, 14.0, 15.0)) * (1 - ease_in(window(t, 18.4, 19.3)))
@@ -1532,6 +1544,8 @@ class Reef(Scene, Cached):
         return 900 + (tail[0] - 900) * u, 620 + (tail[1] - 620) * u, 1
 
     def under(self, cv, p, t):
+        if cv.second:
+            return self.under2(cv, p, t)
         c = self.colors(p)
         out = []
         for i, got in enumerate(self.rays(cv)):
@@ -1599,7 +1613,179 @@ class Reef(Scene, Cached):
 
     def over(self, cv, p, t):
         c = self.colors(p)
+        if cv.second:  # the little > startled by the O
+            x, y, kx = self.dart(t)
+            return bubble(cv, x + 10, y - 62, 0.8 * pop(t, 10.7, 11.9), "!", c["bubble"], c["ink"], tail=-1)
         return bubble(cv, 930, 548, pop(t, 10.2, 11.6), "!", c["bubble"], c["ink"], tail=-1)
+
+    # -- deeper in: the second landscape, a screen to the right
+
+    def back2(self, cv, p):
+        c = self.colors(p)
+        X = W
+        xs = range(X, X + W + 1, 40)
+        out = [L(cv, Shape().poly([(X, 0), (X + W, 0)] + [(x, 360 + 18 * math.sin(x / 140)) for x in reversed(xs)]), c["top"], ss=1)]
+        out.append(L(cv, Shape().poly([(x, 360 + 18 * math.sin(x / 140)) for x in xs] + [(X + W, 700), (X, 700)]), c["mid"], ss=1))
+        out.append(L(cv, Shape().poly([(x, 690 + 14 * math.sin(x / 170 + 1)) for x in xs] + [(X + W, H), (X, H)]), c["low"], ss=1))
+        out.append(L(cv, Shape().ellipse(X + 1460, 600, 760, 420), c["abyss"], 0.55, ss=1, soft=140))  # deeper, darker
+        out.append(L(cv, Shape().poly([(X, H)] + spline([(X, 806), (X + 380, 836), (X + 800, 802), (X + 1200, 846), (X + 1600, 818), (X + 1920, 840)], closed=False, per=16) + [(X + W, H)]), c["sand"], ss=2))
+        rip = Shape()
+        rnd = random.Random(29)
+        for _ in range(16):
+            x, y = X + rnd.uniform(0, W), rnd.uniform(890, 1060)
+            rip.line(bezier((x - 50, y), (x - 20, y - 8), (x + 20, y - 8), (x + 50, y), n=10), 3)
+        out.append(L(cv, rip, c["sand2"], 0.8, ss=2))
+        # the arch on the left, a brain coral on it
+        out.append(L(cv, Shape().poly(spline([(X + 50, 880), (X + 80, 700), (X + 190, 560), (X + 360, 516), (X + 530, 580), (X + 610, 720), (X + 650, 880), (X + 360, 900)], per=10)), c["rock"], ss=2))
+        out.append(L(cv, Shape().poly(spline([(X + 110, 860), (X + 150, 700), (X + 250, 600), (X + 380, 580), (X + 300, 640), (X + 200, 760)], per=8)), c["rock2"], 0.5, ss=2))
+        out.append(L(cv, Shape().poly([(X + 250, 832)] + spline([(X + 250, 832), (X + 262, 750), (X + 330, 692), (X + 412, 714), (X + 462, 792), (X + 472, 832)], closed=False, per=10)), c["low"], ss=2))
+        out.append(L(cv, Shape().poly(spline([(X + 236, 834), (X + 330, 818), (X + 486, 834), (X + 470, 850), (X + 250, 850)], per=6)), c["sand"], ss=2))
+        bx, by = X + 400.0, 528.0
+        out.append(L(cv, Shape().poly(ellipse_pts(bx, by, 84, 50, n=60, a0=math.pi, a1=2 * math.pi)), c["coral"], ss=2))
+        brain = Shape()
+        for k in range(4):
+            r = 70 - 16 * k
+            brain.line([(bx + r * math.cos(a), by + (r * 0.58) * math.sin(a) + 4 * math.sin(a * 9 + k)) for a in [math.pi + i * math.pi / 30 for i in range(31)]], 3)
+        out.append(L(cv, brain, mix(c["coral"], c["ink"], 0.3), 0.6, ss=2))
+        # tube sponges, a fan
+        for x, h, w in ((X + 700, 120, 30), (X + 740, 160, 34), (X + 782, 96, 26)):
+            out.append(L(cv, Shape().line([(x, 830), (x + 4, 830 - h)], w), c["sponge"], ss=2))
+            out.append(L(cv, Shape().ellipse(x + 4, 830 - h, w * 0.36, w * 0.14), c["hole"], ss=2))
+        fan = Shape()
+        fx, fy = X + 1330.0, 846.0
+        for k in range(11):
+            a = -math.pi / 2 + (k - 5) * 0.17
+            fan.line(bezier((fx, fy), (fx + 50 * math.cos(a), fy - 60), (fx + 140 * math.cos(a), fy + 140 * math.sin(a) + 20), (fx + 180 * math.cos(a), fy + 180 * math.sin(a)), n=12), 5)
+        out.append(L(cv, fan, c["coral2"], ss=2))
+        # the anchor, half in the sand, and its chain
+        ax, ay, rot = X + 1000.0, 776.0, 0.26
+        tf = lambda sh: sh.moved(ax, ay, 1.0, rot)
+        anc = Shape().line([(0, -190), (0, 40)], 18).line([(-62, -150), (62, -150)], 14)
+        anc.line(spline([(-90, 0), (-60, 50), (0, 70), (60, 50), (90, 0)], closed=False, per=8), 18)
+        anc.poly([(-104, -18), (-72, 4), (-96, 22)]).poly([(104, -18), (72, 4), (96, 22)])
+        ring = ellipse_pts(0, -212, 18, 18, n=30)
+        anc.line(ring + [ring[0]], 8)
+        out.append(L(cv, tf(anc), c["anchor"], ss=2, above=850))
+        top = tf(Shape().poly([(0, -230)])).cmds[0][1][0]
+        chain = Shape()
+        pts = bezier(top, (top[0] + 120, top[1] + 30), (top[0] + 160, 880), (X + 1250, 884), n=40)
+        for i in range(0, len(pts) - 1, 2):
+            (x0, y0), (x1, y1) = pts[i], pts[i + 1]
+            chain.ellipse((x0 + x1) / 2, (y0 + y1) / 2, 9, 5 if i % 4 else 3, math.atan2(y1 - y0, x1 - x0))
+        out.append(L(cv, chain, c["anchor2"], ss=2))
+        out.append(L(cv, Shape().ellipse(ax - 40, 850, 120, 12), c["sand2"], 0.6, ss=2))
+        # the giant clam
+        cx, cy = X + 1640.0, 862.0
+        out.append(L(cv, Shape().ellipse(cx, cy + 10, 120, 50), c["clam"], ss=2))
+        out.append(L(cv, Shape().ellipse(cx, cy - 10, 104, 20), c["mantle"], ss=2))
+        lip = [(cx - 110 + k * 11, cy - 6 + (6 if k % 2 else -6)) for k in range(21)]
+        out.append(L(cv, Shape().line(lip, 6), c["clam2"], ss=2))
+        ridges = Shape()
+        for k in range(-3, 4):
+            ridges.line(bezier((cx + k * 28, cy + 4), (cx + k * 30, cy + 24), (cx + k * 32, cy + 44), (cx + k * 26, cy + 56), n=8), 3)
+        out.append(L(cv, ridges, c["clam2"], 0.7, ss=2))
+        rnd = random.Random(30)
+        for _ in range(9):
+            out.append(D(cv, cx + rnd.uniform(-80, 80), cy - 10 + rnd.uniform(-8, 8), rnd.uniform(2.5, 4.5), c["bub"], 0.5))
+        return out
+
+    def dart(self, t):
+        """The little > fish: it comes up to the pufferfish, sees it swell, turns and goes back a <."""
+        px, py = self.PUFF
+        stop = (px - 150, py - 10)
+        if t < 5.0 or t >= 13.2:  # off the screen's left edge
+            return W - 80.0, stop[1], 1
+        if t < 10.6:
+            u = ease_out(window(t, 5.0, 10.6))
+            return W - 80 + (stop[0] - W + 80) * u, stop[1] + 14 * wave(t, 2.8) * (1 - u), 1
+        if t < 11.4:
+            return stop[0] - 6 * ease_out(window(t, 10.6, 10.8)), stop[1], 1
+        kx = 1 - 2 * ease_io(window(t, 11.4, 11.6))
+        u = ease_in(window(t, 11.6, 13.2))
+        return stop[0] - 6 + (W - 80 - stop[0] + 6) * u, stop[1] - 30 * u, kx
+
+    def puffer(self, cv, c, t):
+        """The pufferfish, an o, that swells to an O: its spines out, its fins going."""
+        x, y = self.PUFF[0] + 40 * wave(t, 24), self.PUFF[1] + 14 * wave(t, 6)
+        puff = ease_out(window(t, 10.6, 11.0)) * (1 - ease_io(window(t, 15.0, 17.6)))
+        r = 36 + 28 * puff
+        out = []
+        tail = 1 - 0.25 * wave(t, 0.8)
+        out.append(L(cv, Shape().poly([(x + r - 6, y), (x + r + 28.3, y - 18.3 * tail), (x + r + 21.7, y), (x + r + 28.3, y + 18.3 * tail)]), c["puffer2"]))
+        if puff > 0.02:
+            sp = Shape()
+            for k in range(16):
+                a = 2 * math.pi * k / 16 + 0.1
+                sp.poly([(x + (r - 4) * math.cos(a - 0.12), y + (r - 4) * math.sin(a - 0.12)), (x + (r + 15 * puff) * math.cos(a), y + (r + 15 * puff) * math.sin(a)), (x + (r - 4) * math.cos(a + 0.12), y + (r - 4) * math.sin(a + 0.12))])
+            out.append(L(cv, sp, c["puffer2"]))
+        out.append(L(cv, Shape().circle(x, y, r), c["puffer"]))
+        out.append(L(cv, Shape().ellipse(x - r * 0.08, y + r * 0.42, r * 0.78, r * 0.5), c["belly"]))
+        rnd = random.Random(41)
+        for _ in range(7):
+            a, d = rnd.uniform(3.6, 5.9), rnd.uniform(0.35, 0.75)
+            out.append(D(cv, x + r * d * math.cos(a), y + r * d * math.sin(a), 3.2 + 2.2 * puff, c["puffer2"], 0.7))
+        fl = wave(t, 0.5)
+        out.append(L(cv, Shape().ellipse(x + r * 0.1, y + r * 0.08, 12, 6 + 3 * fl, 0.9 + 0.3 * fl), c["puffer2"]))
+        ex, ey = x - r * 0.48, y - r * 0.3
+        out += [D(cv, ex, ey, 8 + 3 * puff, c["bubble"]), D(cv, ex - 2, ey, 4 + 2 * puff, c["ink"])]
+        mo = ellipse_pts(x - r + 2, y + r * 0.12, 5 + 2 * puff, 5 + 2 * puff, n=20)
+        out.append(L(cv, Shape().line(mo + [mo[0]], 2.6), c["puffer2"]))  # its mouth, an o of its own
+        return out
+
+    def jelly(self, cv, c, t):
+        x, y = W + 760 + 24 * wave(t, 12, 0.2), 300 + 40 * wave(t, 24, 0.1)
+        b = wave(t, 3)
+        rx, ry = 52 * (1 + 0.08 * b), 40 * (1 - 0.08 * b)
+        out = []
+        tent = Shape()
+        for k in range(5):
+            x0 = x - rx * 0.6 + k * rx * 0.3
+            tent.line([(x0 + 8 * wave(t, 3, k * 0.17 + j / 10) * j / 8, y + 4 + j * 15) for j in range(9)], 3)
+        out.append(L(cv, tent, c["jelly"], 0.55, ss=2))
+        rim = [(x + rx * math.cos(a), y + 6 * math.sin(6 * a) ** 2) for a in [math.pi * i / 40 for i in range(41)]]
+        out.append(L(cv, Shape().poly(ellipse_pts(x, y, rx, ry, n=48, a0=math.pi, a1=2 * math.pi) + rim[::-1]), c["jelly"], 0.7))
+        out.append(L(cv, Shape().ellipse(x - rx * 0.3, y - ry * 0.55, rx * 0.25, ry * 0.18, -0.3), c["bub"], 0.35))
+        return out
+
+    def under2(self, cv, p, t):
+        c = self.colors(p)
+        X = W
+        out = []
+        rays = self.cached(cv, "rays2", lambda: [cover(cv, Shape().poly([(x - 40, -10), (x + 50, -10), (x + 260, 900), (x + 90, 900)]), 1, soft=40) for x in (X + 240, X + 760, X + 1240)])
+        for i, got in enumerate(rays):
+            out.append(Layer(got, c["ray"], (0.045 if c["dark"] else 0.16) * (0.6 + 0.4 * wave(t, 8, i * 0.31))))
+        for i in range(8):  # the light on the surface
+            x = X + (i * 260 + 130 + 80 * wave(t, 12, i * 0.17)) % (W + 200) - 100
+            out.append(L(cv, Shape().line([(x - 50, 40 + 12 * (i % 3)), (x + 50, 40 + 12 * (i % 3))], 4), c["ray"], 0.18 if c["dark"] else 0.5, ss=2))
+        rnd = random.Random(16)
+        for i, (x, base, h) in enumerate(((X + 860, 900, 300), (X + 900, 920, 380), (X + 1800, 900, 420), (X + 1870, 930, 340), (X + 1530, 940, 260), (X + 30, 930, 360))):
+            out.append(self.frond(cv, t, x, base, h, rnd.random(), rnd.choice((4, 6)), c["kelp"] if i % 2 else c["kelp2"]))
+        out += self.jelly(cv, c, t)
+        rnd = random.Random(18)
+        for i in range(6):  # bubbles from the clam
+            t0 = i * 4 + rnd.uniform(0, 1.5)
+            u = ((t - t0) % 24) / 4.5
+            if u < 1:
+                out += self.bub(cv, c, X + 1640 + rnd.uniform(-60, 60) + 10 * wave(t, 1.6, i * 0.2), 846 - 700 * u, 5 + 2 * (i % 3))
+        # the lost < from the first screen, on its way there
+        tt = t if t < 12 else t - 24
+        if tt < 4:
+            lx, ly = W + 40 + 171 * (4 - tt), 620 + 10 * wave(t, 24 / 18)
+            out.append(self.chevron(cv, lx, ly, c["lost"], -1, wave(t, 0.4)))
+            out.append(D(cv, lx + 9, ly - 4, 2.6, c["ink"]))
+        out += self.puffer(cv, c, t)
+        if 5.0 <= t < 13.2:
+            x, y, kx = self.dart(t)
+            out.append(self.chevron(cv, x, y, c["fish"], kx if abs(kx) > 0.08 else 0.08, wave(t, 0.3 if t > 11.5 else 0.6), 22, 7.0))
+            out.append(D(cv, x - kx * 8, y - 4, 2.4, c["ink"]))
+        u = window(t, 15.0, 17.6)
+        if 0 < u < 1:  # the air let out
+            px, py = self.PUFF[0] + 40 * wave(t, 24), self.PUFF[1] + 14 * wave(t, 6)
+            for k in range(3):
+                v = (u * 3 - k * 0.4)
+                if 0 < v < 1:
+                    out += self.bub(cv, c, px - 40 - 10 * v, py - 10 - 120 * v, 4 + 2 * k)
+        return out
 
 
 class Campfire(Scene, Cached):
