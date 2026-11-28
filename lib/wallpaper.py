@@ -1212,12 +1212,12 @@ class Reef(Scene, Cached):
         for k in range(5):
             a = a0 + k * 2 * math.pi / 5 - math.pi / 2
             out.append(D(cv, sx + 16 * math.cos(a), sy + 16 * math.sin(a), 2.2, c["bub"], 0.45))
-        # the @ snail goes along its rock and back
+        # the @ snail goes along the foot of its rock and back, under the starfish and never over it
         u = (1 - math.cos(2 * math.pi * t / 24)) / 2
-        nx = 1500 + 220 * u + self.right(cv)
+        nx = 1490 + 220 * u + self.right(cv)
         kx = 1 if math.sin(2 * math.pi * t / 24) >= 0 else -1
         kx *= clamp(abs(math.sin(2 * math.pi * t / 24)) * 6)
-        ny = 812 - 26 * math.sin(math.pi * u)
+        ny = 960 - 5 * math.sin(math.pi * u)
         body = Shape().poly(spline([(-34, 0), (-10, -8), (30, -10), (44, -2), (30, 4), (-30, 4)], per=6)).line([(30, -8), (36, -30)], 3).line([(38, -6), (48, -26)], 3)
         out.append(L(cv, body.moved(nx, ny, 1.4, 0, 0, 0, kx if abs(kx) > 0.05 else 0.05), c["snail"]))
         sh = Shape()
