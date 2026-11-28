@@ -710,6 +710,7 @@ fn act(app: &mut App, target: scene::Target) {
         scene::Target::ListRow(n) => app.files_list_row(n, Instant::now()),
         scene::Target::Sort => app.files_sort_next(),
         scene::Target::Swatch(strip, i) => app.picker_click(strip, i),
+        scene::Target::Act(k) => app.act_step(k),
     }
 }
 

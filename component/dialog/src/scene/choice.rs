@@ -252,6 +252,27 @@ fn parts(app: &App, item: &Item) -> Option<Parts> {
     })
 }
 
+/// A setting's options as words, in the order its row draws them (v0.174, the actions beside a page): each one's
+/// words, the option App::option_at takes, and whether it is the one in use. A size's A and a typeface's letters are
+/// said by their captions.
+pub(super) fn opts(app: &App, item: &Item) -> Vec<(String, usize, bool)> {
+    let Some(p) = parts(app, item) else { return vec![] };
+    p.opts
+        .into_iter()
+        .filter(|o| !(p.tail && o.on))
+        .map(|o| {
+            let words = if (o.face.is_some() || o.word == "A") && !o.caption.is_empty() {
+                o.caption.clone()
+            } else if o.unit.is_empty() {
+                o.word.clone()
+            } else {
+                format!("{} {}", o.word, o.unit)
+            };
+            (words, o.k, o.on && !o.verb)
+        })
+        .collect()
+}
+
 impl Opt {
     /// The width drawn: a specimen's in its own face, as the window measured it.
     fn drawn(&self, m: &Metrics) -> f64 {

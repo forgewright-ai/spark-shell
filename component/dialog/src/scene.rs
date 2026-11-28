@@ -17,6 +17,7 @@ use crate::scrub::{cells, cut, cut_middle};
 
 pub(crate) mod card;
 mod choice;
+mod frame;
 mod screens;
 
 /// The text's measures: the cell of the text's own face and where its baseline stands under its line's top,
@@ -126,6 +127,8 @@ pub enum Target {
     Sort,
     /// A swatch of the color picker (v0.172): its strip, and its place on it.
     Swatch(crate::picker::Strip, usize),
+    /// One of the lit row's own steps, in the actions beside its page (v0.174): its place among its tool and its more.
+    Act(usize),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -393,6 +396,7 @@ pub fn size(app: &App, m: &Metrics, w: f64, h: f64) -> (u16, u16) {
         Kind::Apps => ((g.bottom - g.top) / app_row(m, app.apps.spacing)) as u16,
         Kind::Settings => ((g.bottom - g.top) / m.px(52.0)) as u16,
         Kind::Page | Kind::Place => ((g.bottom - g.top) / m.px(44.0)) as u16,
+        Kind::Calendar if wide(m, w) => ((g.bottom - g.top) / m.px(44.0)) as u16,
         Kind::Calendar => ((g.bottom - calendar_top(app, m, &g)) / m.px(44.0)) as u16,
     };
     (g.grid_cols(m), rows.max(1) + crate::ui::head(app).content + crate::ui::BOTTOM)
@@ -474,6 +478,8 @@ struct Tones {
     lit: Rgb,
     band: Rgb,
     alarm: Rgb,
+    /// The ground of the list and of the actions beside a page (v0.174): half a step from the window's to the lit row's.
+    panel: Rgb,
 }
 
 fn rgb(c: Color, or: Rgb) -> Rgb {
@@ -585,6 +591,7 @@ pub fn build(app: &App, pal: &Palette, m: &Metrics, w: f64, h: f64, was: &[Scrol
             lit: rgb(pal.lit, [0x44; 3]),
             band: rgb(pal.band, [0x44; 3]),
             alarm: rgb(pal.alarm, ink),
+            panel: frame::blend(rgb(pal.surface, [0x1f; 3]), rgb(pal.lit, [0x44; 3]), 0.5),
         },
         steps: vec![],
         hits: vec![],
@@ -1184,6 +1191,8 @@ enum K {
     Words(String, Size, bool, bool),
     /// A fact: its label and its value on one line.
     Fact(String, String),
+    /// A fact of a page (v0.174): its label in the smaller text, its value at a column beside it.
+    Pair(String, String),
     /// The app a page is about: its picture, its name, what it is.
     Identity(Option<Icon>, String, Vec<String>),
     /// What a page in a wide window is about, in large type: its name as large as its length allows, and one line
@@ -1199,6 +1208,10 @@ enum K {
     Choice(choice::Choice),
     /// The screens to scale (v0.167).
     Map(Box<crate::display::screens::Map>),
+    /// A month in a page (v0.174): a week a line, each day's reminders in it.
+    Month(Box<frame::Month>),
+    /// The screens with their workspaces and windows, in the workspaces place's page (v0.174).
+    Desk(Box<frame::Desk>),
     /// A file or a folder in a list of files, one line as every list's row (v0.169): its name leads, then its size
     /// (a folder's count) and, where the row carries one, its own folder in the list's column, and its day at the end.
     File {
@@ -1702,6 +1715,18 @@ fn about_app(app: &App, pen: &Pen, id: &str, rows: Vec<Row>, room: f64, wide: bo
     out
 }
 
+/// An app's page split for the frame (v0.174): its name, its facts and its words stand in the page; what you do with
+/// it and its preferences at the right, in the order its picks count them.
+fn split_about(rows: Vec<Row>) -> (Vec<Row>, Vec<Row>) {
+    let (head, mut acts): (Vec<Row>, Vec<Row>) = rows
+        .into_iter()
+        .partition(|r| matches!(r.k, K::Name { .. } | K::Facts(_) | K::Words(..) | K::Identity(..)));
+    while matches!(acts.first(), Some(Row { k: K::Gap(_), .. })) {
+        acts.remove(0);
+    }
+    (head, acts)
+}
+
 /// A box of a list: the edges its words keep to, its top and bottom, and the ends of the lit row's bar. The
 /// bar fills the line from the window's edge to its other edge, or to the line between two lists: wider than the
 /// words' own edges, which stand inside the frame.
@@ -2022,6 +2047,14 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                 let text = pen.fit(text, *size, end - x);
                 pen.text(x, base, &text, *size, if *muted { t.muted } else { t.ink }, *bold);
             }
+            K::Pair(label, value) => {
+                let base = mid + m.px(6.0);
+                let label = pen.fit(label, Size::Small, m.px(150.0));
+                pen.text(x, base, &label, Size::Small, t.muted, false);
+                let vx = x + m.px(168.0);
+                let value = pen.fit(value, Size::Main, (end - vx).max(4.0 * m.cw));
+                pen.text(vx, base, &value, Size::Main, t.ink, false);
+            }
             K::Fact(label, value) => {
                 let base = mid + m.px(5.0);
                 let w = pen.text(x, base, label, Size::Small, t.muted, false);
@@ -2053,6 +2086,8 @@ fn list(app: &App, pen: &mut Pen, rows: &[Row], area: Area, lit: Option<usize>, 
                     on,
                 },
             ),
+            K::Month(mo) => frame::draw_month(pen, mo, x, top, right - x, area.bottom),
+            K::Desk(d) => frame::draw_desk(pen, d, x, top, right - x, area.bottom),
             K::Name { icon, name, what } => {
                 let mut nx = x;
                 if let Some(icon) = icon {
@@ -2228,18 +2263,27 @@ fn home(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         bare: false,
         c3: false,
     };
+    let key = format!("home\u{1f}{}", app.input);
+    // a wide window (v0.174): the places at the left, the lit one's page beside them, a glimpse of what it holds
+    if wide(pen.m, g.w) {
+        let m = *pen.m;
+        let f = frame::Frame::new(pen, g);
+        let rows = rows_of(app, pen, items, shape, f.list.right - f.list.left - m.px(48.0));
+        list(app, pen, &rows, f.list, lit(app), list_focus(app), shape, app.scroll, key.clone());
+        let room = f.page.right - f.page.left;
+        let look = match frame::shown(app, items) {
+            Some((_, Item::Dest(d))) => frame::dest(app, pen, d, room),
+            Some((_, it)) => match (app.prov_of(&it), app.row_ref(&it)) {
+                (Some(p), Some(r)) => frame::row(app, pen, p, r, room),
+                _ => frame::Look::default(),
+            },
+            None => frame::Look::default(),
+        };
+        frame::draw(app, pen, &f, look, &key);
+        return;
+    }
     let rows = rows_of(app, pen, items, shape, area.right - area.left - pen.m.px(48.0));
-    list(
-        app,
-        pen,
-        &rows,
-        area,
-        lit(app),
-        list_focus(app),
-        shape,
-        app.scroll,
-        format!("home\u{1f}{}", app.input),
-    );
+    list(app, pen, &rows, area, lit(app), list_focus(app), shape, app.scroll, key);
 }
 
 /// Apps: the list, a page of its own, or an app's details beside the list where the window holds both.
@@ -2316,6 +2360,71 @@ fn apps(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     // details has the name it had alone, so it keeps its place when the keys go to the details and back
     let named = |page: &Page, query: &str| format!("apps\u{1f}{:?}\u{1f}{}\u{1f}{:?}", page, query, app.apps.filter);
     let own = named(&app.apps.page, &app.input);
+    // a wide window (v0.174): the frame, the app's name and facts in the page, what you do with it at the right
+    if wide && beside {
+        let f = frame::Frame::new(pen, g);
+        let left = f.list;
+        let room = |a: Area| a.right - a.left - m.px(36.0);
+        match (listing, subject) {
+            (true, _) => {
+                let rows = rows_of(app, pen, items, narrow, room(left));
+                list(app, pen, &rows, left, lit(app), list_focus(app), narrow, app.scroll, own);
+                let Some(id) = lit_app() else { return };
+                let about = Page::Details(id.clone());
+                let lines: Vec<Item> = app.apps.lines_of(&about, 60, "", 0).into_iter().map(Item::Apps).collect();
+                let still = Shape { still: true, ..page };
+                let rows = about_app(app, pen, &id, rows_of(app, pen, &lines, still, room(f.page)), room(f.page), true);
+                let (head, acts) = split_about(rows);
+                list(app, pen, &head, f.page, None, false, still, 0, named(&about, "") + "\u{1f}head");
+                let at = Area {
+                    top: f.acts.top + m.px(4.0),
+                    ..f.acts
+                };
+                let off = list(app, pen, &acts, at, None, false, still, 0, named(&about, ""));
+                pane_targets(pen, &acts, at, off);
+            }
+            (false, Some(id)) if app.apps.root_lists() => {
+                let (root, query) = app
+                    .apps
+                    .root()
+                    .map(|(p, n)| (p.clone(), n.query.clone()))
+                    .unwrap_or((Page::List, String::new()));
+                let lines: Vec<Item> = app.apps.lines_of(&root, 60, &query, 0).into_iter().map(Item::Apps).collect();
+                let still = Shape { still: true, ..narrow };
+                let mut rows = rows_of(app, pen, &lines, still, room(left));
+                for r in rows.iter_mut() {
+                    if matches!(&r.k, K::App(_, _, _, a) if *a == id) {
+                        r.pick = Some(usize::MAX);
+                    }
+                }
+                list(app, pen, &rows, left, Some(usize::MAX), false, still, 0, named(&root, &query));
+                pen.hits.retain(|h| h.target != Target::Pick(usize::MAX));
+                let rows = about_app(app, pen, &id, rows_of(app, pen, items, page, room(f.page)), room(f.page), true);
+                let (head, acts) = split_about(rows);
+                list(
+                    app,
+                    pen,
+                    &head,
+                    f.page,
+                    None,
+                    false,
+                    Shape { still: true, ..page },
+                    0,
+                    own.clone() + "\u{1f}head",
+                );
+                let at = Area {
+                    top: f.acts.top + m.px(4.0),
+                    ..f.acts
+                };
+                list(app, pen, &acts, at, lit(app), list_focus(app), page, app.scroll, own);
+            }
+            _ => {
+                let rows = rows_of(app, pen, items, narrow, room(left));
+                list(app, pen, &rows, left, lit(app), list_focus(app), narrow, app.scroll, own);
+            }
+        }
+        return;
+    }
     match (beside, listing, subject) {
         // the list holds the keys, the lit app's details stand beside it
         (true, true, _) if lit_app().is_some() => {
@@ -2558,6 +2667,9 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         return terminal_colors(app, pen, whole, shape);
     }
     let candidate = crate::appearance::candidate(app).map(|(_, row)| row);
+    if wide(&m, g.w) {
+        return page_framed(app, pen, g, items, shape, candidate);
+    }
     let area = match (candidate, crate::appearance::wallpaper(app)) {
         (Some(r), _) => theme_poster(app, pen, whole, r),
         (None, Some(r)) => wall_poster(pen, whole, r),
@@ -2592,6 +2704,90 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     }
     let key = format!("page\u{1f}{:?}\u{1f}{}", app.view, app.input);
     list(app, pen, &rows, area, lit(app), list_focus(app), shape, app.scroll, key);
+}
+
+/// A section's page in a wide window (v0.174): its rows at the left; in the middle the poster of the theme or the
+/// wallpaper lit, the screens to scale, or the lit row's own page; at the right what the row does: its options, its
+/// steps, the keys the bar names for it.
+fn page_framed(app: &App, pen: &mut Pen, g: &Geo, items: &[Item], shape: Shape, candidate: Option<&crate::model::Row>) {
+    let m = *pen.m;
+    let f = frame::Frame::new(pen, g);
+    let room = f.list.right - f.list.left - m.px(36.0);
+    let mut rows = rows_of(app, pen, items, shape, room);
+    if crate::appearance::display(app) {
+        let column = choice::rhythm(app, &m, items, room).column;
+        pen.column = (column <= room / 2.0).then_some(m.px(24.0) + column);
+    }
+    if candidate.is_none() && crate::appearance::gallery(&app.view) && app.input.is_empty() {
+        if let Some((_, _, folder)) = &app.folder {
+            if let Some(r) = folder.rows.first().filter(|r| r.id.starts_with("theme:apply:") && r.chip.len() >= 3) {
+                rows.insert(
+                    0,
+                    Row {
+                        h: m.px(84.0),
+                        pick: None,
+                        k: K::Palette(folder.title.clone(), r.chip.clone()),
+                    },
+                );
+            }
+        }
+    }
+    // the screens to scale stand in the page, as large as it holds them: the list keeps the rest
+    let map_at = rows.iter().position(|r| matches!(r.k, K::Map(_)));
+    let map = map_at.map(|k| rows.remove(k));
+    let key = format!("page\u{1f}{:?}\u{1f}{}", app.view, app.input);
+    let column = pen.column;
+    list(app, pen, &rows, f.list, lit(app), list_focus(app), shape, app.scroll, key.clone());
+    let page_w = f.page.right - f.page.left;
+    let lit_item = frame::shown(app, items);
+    let lit_row = lit_item.as_ref().and_then(|(_, it)| Some((app.prov_of(it)?, app.row_ref(it)?)));
+    let mut look = match lit_row {
+        Some((p, r)) => frame::row(app, pen, p, r, page_w),
+        None => frame::Look::default(),
+    };
+    if let Some((n, it)) = lit_item.as_ref() {
+        let opts = frame::options(app, it, *n);
+        if !opts.is_empty() {
+            look.acts = opts;
+        }
+    }
+    let below = Area {
+        top: f.page.top + m.px(20.0),
+        ..f.page
+    };
+    if let Some(r) = candidate {
+        theme_poster(app, pen, below, r);
+        frame::acts(app, pen, &f, frame::bar_acts(app), &key);
+        return;
+    }
+    if let Some(r) = crate::appearance::wallpaper(app) {
+        wall_poster(pen, below, r);
+        frame::acts(app, pen, &f, frame::bar_acts(app), &key);
+        return;
+    }
+    let mut f = f;
+    if let Some(mut map) = map {
+        let h = (page_w * 0.56).min(m.px(440.0)).round();
+        map.h = h;
+        let at = Area {
+            bottom: f.page.top + h + m.px(24.0),
+            top: f.page.top + m.px(24.0),
+            ..f.page
+        };
+        pen.column = column;
+        list(app, pen, &[map], at, lit(app), list_focus(app), shape, 0, format!("{key}\u{1f}map"));
+        f.page.top = at.bottom + m.px(8.0);
+        // under the map the row lit says itself smaller: the map leads
+        if !look.name.is_empty() {
+            look.body.insert(0, frame::head(&m, &look.name));
+            look.name.clear();
+            if !look.what.is_empty() {
+                look.body.insert(1, frame::pair(&m, "now", &look.what));
+                look.what.clear();
+            }
+        }
+    }
+    frame::draw(app, pen, &f, look, &key);
 }
 
 /// A color being picked (v0.172), in place of the page that asked: a sample of it, what it was beside what it is
@@ -2856,43 +3052,13 @@ fn place(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         to: g.w,
     };
     let key = format!("place\u{1f}{:?}\u{1f}{}", app.view, app.input);
-    // help in a wide window is a sheet of its keys: its groups in columns, a column a group or more, as even as they go
-    let cols = ((whole.right - whole.left) / m.px(600.0)).floor() as usize;
-    if app.view == View::Help && wide(&m, g.w) && cols >= 2 {
-        let col_w = ((whole.right - whole.left) / cols as f64).floor();
-        let rows = place_rows(app, pen, items, col_w - m.px(48.0));
-        let mut groups: Vec<Vec<Row>> = vec![];
-        for r in rows {
-            if matches!(r.k, K::Head(..)) || groups.is_empty() {
-                groups.push(vec![]);
-            }
-            if let Some(gr) = groups.last_mut() {
-                gr.push(r);
-            }
-        }
-        let total: f64 = groups.iter().flatten().map(|r| r.h).sum();
-        let per = total / cols as f64;
-        let mut columns: Vec<Vec<Row>> = vec![vec![]];
-        for gr in groups {
-            let h: f64 = columns.last().map(|c| c.iter().map(|r| r.h).sum()).unwrap_or(0.0);
-            if h > 0.0 && h + gr.iter().map(|r| r.h).sum::<f64>() / 2.0 > per && columns.len() < cols {
-                columns.push(vec![]);
-            }
-            if let Some(c) = columns.last_mut() {
-                c.extend(gr);
-            }
-        }
-        for (k, c) in columns.iter().enumerate() {
-            let from = whole.left + k as f64 * col_w;
-            let area = Area {
-                left: from,
-                right: from + col_w - m.px(24.0),
-                from: if k == 0 { 0.0 } else { from },
-                to: if k + 1 == columns.len() { g.w } else { from + col_w },
-                ..whole
-            };
-            list(app, pen, c, area, lit(app), list_focus(app), PLACE_SHAPE, 0, format!("{key}\u{1f}{k}"));
-        }
+    // a wide window (v0.174): the frame every place has, the list at the left, the lit row's page, its actions
+    if wide(&m, g.w) {
+        let f = frame::Frame::new(pen, g);
+        let rows = place_rows(app, pen, items, f.list.right - f.list.left - m.px(36.0));
+        list(app, pen, &rows, f.list, lit(app), list_focus(app), PLACE_SHAPE, app.scroll, key.clone());
+        let look = frame::place(app, pen, &f, items);
+        frame::draw(app, pen, &f, look, &key);
         return;
     }
     let rows = place_rows(app, pen, items, whole.right - whole.left - m.px(36.0));
@@ -2954,6 +3120,16 @@ fn calendar(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     const WEEKDAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     let m = *pen.m;
     let t = pen.t;
+    // a wide window (v0.174): the frame, the month large in the page with each day's reminders, the rows at the left
+    if wide(&m, g.w) {
+        let f = frame::Frame::new(pen, g);
+        let rows = place_rows(app, pen, items, f.list.right - f.list.left - m.px(36.0));
+        let key = format!("calendar\u{1f}{}", app.input);
+        list(app, pen, &rows, f.list, lit(app), list_focus(app), PLACE_SHAPE, app.scroll, key.clone());
+        let look = frame::calendar(app, pen, &f, items);
+        frame::draw(app, pen, &f, look, &key);
+        return;
+    }
     let x0 = g.inset + m.px(24.0);
     let mut y = g.top;
     if let Some((ty, tm, td)) = app.today {
@@ -3041,33 +3217,28 @@ fn settings(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     };
     // a wide window (v0.161): the list keeps its column, the lit setting's page stands beside it in large type, as an
     // app's and a file's do; a click on it opens the setting
-    let lit_setting = match app.picks().get(app.sel).filter(|_| app.in_list && app.input.is_empty()) {
-        Some(Item::Setting(i)) => Some(*i),
+    // the setting lit, else (v0.174) the first: a wide window's page is never empty while the list has rows
+    let shown = app.shown_pick().filter(|_| app.input.is_empty());
+    let lit_setting = match shown.and_then(|n| app.picks().get(n).cloned()) {
+        Some(Item::Setting(i)) => Some(i),
         _ => None,
     };
     let key = format!("settings\u{1f}{}", app.input);
-    let Some(i) = lit_setting.filter(|_| wide(&m, g.w)) else {
+    if !wide(&m, g.w) {
         let rows = rows_of(app, pen, items, shape, whole.right - whole.left - m.px(36.0));
         list(app, pen, &rows, whole, lit(app), list_focus(app), shape, app.scroll, key);
         return;
-    };
-    let divide = m.px(WIDE_LIST);
-    let left = Area {
-        right: divide - m.px(24.0),
-        to: divide,
-        ..whole
-    };
-    let rows = rows_of(app, pen, items, shape, left.right - left.left - m.px(36.0));
-    list(app, pen, &rows, left, lit(app), list_focus(app), shape, app.scroll, key);
-    let page = Area {
-        left: m.px(WIDE_PAGE),
-        from: m.px(WIDE_PAGE) - m.px(12.0),
-        right: (m.px(WIDE_PAGE) + m.px(640.0)).min(whole.right),
-        ..whole
-    };
+    }
+    // a wide window (v0.161, the frame since v0.174): the list keeps its column, the lit setting's page stands beside
+    // it in large type, its rows as its page has them; a click on the page opens the setting
+    let f = frame::Frame::new(pen, g);
+    let rows = rows_of(app, pen, items, shape, f.list.right - f.list.left - m.px(36.0));
+    list(app, pen, &rows, f.list, lit(app), list_focus(app), shape, app.scroll, key);
+    let Some(i) = lit_setting else { return };
+    let page = f.page;
     let (label, name, purpose) = SETTINGS[i];
     let mut out = vec![Row {
-        h: m.px(220.0),
+        h: m.px(193.0),
         pick: None,
         k: K::Name {
             icon: None,
@@ -3084,6 +3255,11 @@ fn settings(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         bare: true,
         c3: true,
     };
+    out.push(Row {
+        h: m.px(8.0),
+        pick: None,
+        k: K::Gap(m.px(8.0)),
+    });
     if let Some(p) = app.providers.iter().position(|p| p.label == label && p.dead.is_none()) {
         out.extend(rows_of(app, pen, &app.section_items(p), still, page.right - page.left));
     }
@@ -3091,9 +3267,13 @@ fn settings(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     list(app, pen, &out, page, None, false, still, 0, format!("settings\u{1f}page\u{1f}{label}"));
     // the page is no list of its own: its options take no click here, the whole of it opens the setting
     pen.hits.truncate(mark);
-    if let Some(n) = lit(app) {
-        pen.hit(page.from, page.top, g.w - page.from, page.bottom - page.top, Target::Pick(n));
+    if let Some(n) = shown {
+        pen.hit(page.from, page.top, page.to - page.from, page.bottom - page.top, Target::Pick(n));
     }
+    let mut acts = vec![frame::Act::key("open", app.cfg.keys.label(HintKey::Enter), Target::Key(HintKey::Enter))];
+    acts.push(frame::Act::Gap);
+    acts.push(frame::Act::Note(purpose.to_string()));
+    frame::acts(app, pen, &f, acts, &format!("settings\u{1f}acts\u{1f}{label}"));
 }
 
 /// The other pane's rows: its own folder under its own words, the picks counted as its bar walks them.
@@ -3315,7 +3495,7 @@ fn retarget(pen: &mut Pen, mark: usize, to: fn(usize) -> Target) {
 /// first lines, a picture, a sound's waveform, or the words that say there is nothing to show) with what you do
 /// with it beside that, always in one place; under each other where the page is too narrow for the two. No line
 /// and no box. `area` is the page; the details hold the keys while their own page is open.
-fn file_page(app: &App, pen: &mut Pen, g: &Geo, area: Area, items: &[Item]) {
+fn file_page(app: &App, pen: &mut Pen, g: &Geo, area: Area, items: &[Item], acts_at: Option<Area>) {
     let m = *pen.m;
     let Some(about) = app.files_about() else { return };
     let details = matches!(app.files.page, files::Page::Actions(_));
@@ -3390,7 +3570,7 @@ fn file_page(app: &App, pen: &mut Pen, g: &Geo, area: Area, items: &[Item]) {
         193.0,
         K::Name {
             icon: None,
-            name,
+            name: name.clone(),
             what: what.join(crate::ui::SEP),
         },
     )];
@@ -3400,6 +3580,67 @@ fn file_page(app: &App, pen: &mut Pen, g: &Geo, area: Area, items: &[Item]) {
     rows.push(fixed(30.0, K::Gap(m.px(30.0))));
     let head: f64 = rows.iter().map(|r| r.h).sum();
     let key = format!("files\u{1f}about\u{1f}{}", about.title);
+    // the frame (v0.174): what it holds under its name in the page, what you do with it in the actions' column
+    if let Some(acts) = acts_at {
+        let still = Shape { still: true, ..shape };
+        // the folder itself, nothing lit: its own page says what it holds (v0.174), never a lone name
+        let own = about
+            .row
+            .is_none()
+            .then(|| app.files.peek.as_ref().filter(|pk| pk.uri.starts_with("spark-shell://files/preview/")))
+            .flatten()
+            .and_then(|pk| pk.page.as_ref())
+            .filter(|_| about.checked.is_empty());
+        if own.is_some() {
+            if let Some(Row { k: K::Name { what, .. }, .. }) = rows.first_mut() {
+                *what = if about.title == "~" { "your home folder" } else { "folder" }.to_string();
+            }
+        }
+        let over = Area {
+            bottom: area.top + head,
+            ..area
+        };
+        list(app, pen, &rows, over, None, false, still, 0, format!("{key}\u{1f}head"));
+        let under = Area { top: area.top + head, ..area };
+        // a text's lines as rows, its headings small in the accent, as a page of the frame has them
+        let text = page.or(own).filter(|pg| pg.picture.is_none() && pg.sound.is_none() && !pg.lines.is_empty());
+        // a page of facts (a folder's: its kinds, its newest, its largest): its groups and its facts, its line said above
+        let facts = text.and_then(frame::facts_of).filter(|_| about.checked.is_empty());
+        let holds: Vec<Row> = match (content, text) {
+            (_, Some(_)) if facts.is_some() => {
+                let (_, blocks) = facts.unwrap_or_default();
+                frame::rows_of_blocks(&m, blocks, area.right - area.left, true)
+            }
+            (Some(K::Shown { lines, .. }), Some(pg)) if !lines.is_empty() && about.checked.is_empty() => {
+                let skip = usize::from(pg.lines.first().is_some_and(|l| l.trim() == name.trim()));
+                frame::lines(&m, pg, skip, 400)
+            }
+            (None, Some(pg)) => {
+                let skip = usize::from(pg.lines.first().is_some_and(|l| l.trim() == about.title.trim() || l.trim() == pg.title.trim()));
+                frame::lines(&m, pg, skip, 400)
+            }
+            (Some(k), _) => vec![Row {
+                h: (area.bottom - area.top - head).max(m.px(160.0)),
+                pick: None,
+                k,
+            }],
+            (None, None) => vec![],
+        };
+        if !holds.is_empty() {
+            list(app, pen, &holds, under, None, false, still, 0, format!("{key}\u{1f}holds"));
+        }
+        let right = Area {
+            top: acts.top + m.px(4.0),
+            ..acts
+        };
+        if details {
+            list(app, pen, &steps, right, lit(app), list_focus(app), shape, app.scroll, key);
+        } else {
+            let off = list(app, pen, &steps, right, None, false, shape, 0, key);
+            pane_targets(pen, &steps, right, off);
+        }
+        return;
+    }
     // what it holds and what you do with it side by side, where the page has the room for the two
     let beside = area.right - area.left >= m.px(1000.0);
     if beside {
@@ -3547,7 +3788,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
                 from: end,
                 ..whole
             };
-            file_page(app, pen, g, page, items);
+            file_page(app, pen, g, page, items, None);
         }
         let over = over && !paged;
         let (act, oth) = if active_left { (left, right) } else { (right, left) };
@@ -3604,13 +3845,10 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         return;
     }
     if app.files_details_beside() && wide(&m, g.w) {
-        // a wide window (v0.160): the list keeps its column, the lit file has the rest, in large type
-        let divide = m.px(WIDE_LIST);
-        let left = Area {
-            right: divide - m.px(24.0),
-            to: divide,
-            ..whole
-        };
+        // a wide window (v0.160, the frame since v0.174): the list keeps its column, the lit file has the page in
+        // large type, what you do with it the actions' column
+        let f = frame::Frame::new(pen, g);
+        let left = f.list;
         let narrow = Shape { narrow: true, ..rows_shape };
         let details = matches!(app.files.page, files::Page::Actions(_));
         let rows = rows_of(app, pen, &list_items, narrow, room(left, narrow));
@@ -3619,12 +3857,7 @@ fn files_body(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
         if details {
             retarget(pen, mark, Target::ListRow);
         }
-        let page = Area {
-            left: m.px(WIDE_PAGE),
-            from: m.px(WIDE_PAGE) - m.px(12.0),
-            ..whole
-        };
-        file_page(app, pen, g, page, items);
+        file_page(app, pen, g, f.page, items, Some(f.acts));
         return;
     }
     if app.files_details_beside() {

@@ -245,9 +245,21 @@ impl App {
             }
         }
         let want = if self.files_details_beside() {
-            self.files_about().and_then(|a| a.row).and_then(|r| r.page).zip(self.files())
+            match self.files_about() {
+                Some(a) if a.row.is_some() => a.row.and_then(|r| r.page).zip(self.files()),
+                // the folder itself, nothing lit (v0.174): its own page, what it holds, in a wide window
+                Some(a) if a.checked.is_empty() && self.wide => self
+                    .folder
+                    .as_ref()
+                    .and_then(|(_, _, rows)| rows.here.clone())
+                    .map(|here| format!("spark-shell://files/preview/{}", crate::search::b64(&here)))
+                    .zip(self.files()),
+                _ => None,
+            }
         } else if self.pixels {
-            crate::appearance::candidate(self).and_then(|(p, r)| r.page.clone().map(|uri| (uri, p)))
+            crate::appearance::candidate(self)
+                .and_then(|(p, r)| r.page.clone().map(|uri| (uri, p)))
+                .or_else(|| self.wide_page())
         } else {
             None
         };

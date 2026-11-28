@@ -7935,6 +7935,42 @@ impl App {
         }
     }
 
+    /// The pick a wide window shows the page of beside its list (v0.174): the one lit, else the first with a page, else
+    /// the first a page can say something of; never an empty middle while the list has rows.
+    pub fn shown_pick(&self) -> Option<usize> {
+        let picks = self.picks();
+        if self.in_list {
+            return (self.sel < picks.len()).then_some(self.sel);
+        }
+        picks.iter().position(|it| self.row_ref(it).is_some_and(|r| r.page.is_some())).or_else(|| {
+            picks
+                .iter()
+                .position(|it| self.row_ref(it).is_some() || matches!(it, Item::Key(..) | Item::Dest(_) | Item::Setting(_)))
+        })
+    }
+
+    /// The page a wide window asks for beside its list (v0.174): the shown row's, and its provider.
+    pub fn wide_page(&self) -> Option<(String, usize)> {
+        if !self.wide || self.view == View::Preview {
+            return None;
+        }
+        let it = self.picks().get(self.shown_pick()?)?.clone();
+        if let Item::Dest(d) = it {
+            return self.home_page(d);
+        }
+        Some((self.row_ref(&it)?.page.clone()?, self.prov_of(&it)?))
+    }
+
+    /// Home's page of a place that has one of its own (v0.174): files, your home folder's.
+    pub fn home_page(&self, d: usize) -> Option<(String, usize)> {
+        if DESTS.get(d)?.name != "files" {
+            return None;
+        }
+        let home = std::env::var("HOME").ok().filter(|h| h.starts_with('/'))?;
+        let p = self.providers.iter().position(|p| p.label == "files" && p.dead.is_none())?;
+        Some((format!("spark-shell://files/preview/{}", crate::search::b64(&home)), p))
+    }
+
     /// The lit row and its provider, where the lit pick is a row.
     pub(crate) fn lit_row(&self) -> Option<(usize, model::Row)> {
         let it = self.picks().get(self.sel).cloned()?;
@@ -8397,6 +8433,20 @@ impl App {
         }
         self.steps_of(prov, row);
         true
+    }
+
+    /// One of the lit row's steps, clicked in the actions beside its page (v0.174): as F9 then the step, its tool first.
+    pub fn act_step(&mut self, k: usize) {
+        if !self.in_list || self.mode != Mode::Normal || self.picking.is_some() || self.attaching.is_some() {
+            return;
+        }
+        let Some((prov, row)) = self.lit_row() else { return };
+        if k >= row.tool.iter().count() + row.more.len() {
+            return;
+        }
+        self.steps_of(prov, row);
+        self.sel = k;
+        self.enter();
     }
 
     /// A row's steps as a list of their own (#112): Enter runs one, Esc comes back.

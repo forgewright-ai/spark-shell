@@ -1048,10 +1048,19 @@ fn help_is_its_keys_by_group_and_a_sheet_in_a_wide_window() {
     let enter = words(&s).into_iter().find(|w| w.0 == "Enter").expect("the key of the first row");
     assert_eq!(enter.3, Size::Small);
     assert!(!fills(&s, LIT).iter().any(|f| f.3 == 21.0 && f.1 < 700.0), "no box around a key in the list");
-    // full screen: the groups in columns, the second column right of the first
+    // full screen (v0.174): the frame; the lit key large in the page, what it does under it, its group's keys; the
+    // groups beside it, a click away
     let wide = scene(&mut a, 1920.0, 1080.0);
-    let heads: Vec<_> = words(&wide).into_iter().filter(|w| w.3 == Size::Small && w.4).collect();
-    assert!(heads.iter().any(|w| w.1 > 600.0), "a group in a second column: {heads:?}");
+    let key = M.big[2];
+    assert_eq!(word(&wide, "Enter").2, Size::Small, "the key in the list");
+    let big: Vec<_> = words(&wide).into_iter().filter(|w| w.3 == Size::Title).collect();
+    assert_eq!((big.len(), big[0].0.as_str(), big[0].1, big[0].2), (1, "Enter", 792.0, 97.0 + 115.0 - key.1));
+    assert_eq!(word(&wide, "open the selected row").2, Size::Main);
+    let group = words(&wide)
+        .into_iter()
+        .find(|w| w.0 == "files" && w.1 == 1548.0)
+        .expect("files among the groups");
+    assert!(matches!(wide.hit(1600.0, group.2 + 4.0), Some(Target::Pick(_))), "a group is a click away");
 }
 
 /// v0.169: the Calendar starts with today, its weekday small in the accent over its date in large type (the bar
@@ -1073,11 +1082,18 @@ fn the_calendar_is_today_large_and_the_months_side_by_side() {
     let today = words(&s).into_iter().find(|w| w.0 == "21" && w.4).expect("today, bold");
     assert!(fills(&s, ACCENT).iter().any(|f| f.1 > today.2 && f.3 == 2.0), "today underlined");
     assert!(!words(&s).iter().any(|w| w.0 == "December 2026"), "one month at the start size");
+    // full screen (v0.174): the frame, the month large in the page, a week a line, today underlined; beside it a new
+    // reminder and the months before and after
     let wide = scene(&mut a, 1920.0, 1080.0);
-    assert!(
-        word(&wide, "March 2027").0 > word(&wide, "November 2026").0,
-        "five months across at full screen"
-    );
+    assert_eq!(word(&wide, "November 2026"), (792.0, 97.0 + 115.0 - M.big[2].1, Size::Title, false));
+    assert_eq!(word(&wide, "today, Saturday 21 November").2, Size::Lead);
+    assert!(!words(&wide).iter().any(|w| w.0 == "December 2026"), "one month, large");
+    let today = words(&wide).into_iter().find(|w| w.0 == "21" && w.4).expect("today, bold");
+    assert!(today.1 > 792.0 && today.1 < 1432.0, "in the page: {today:?}");
+    assert!(fills(&wide, ACCENT).iter().any(|f| f.1 > today.2 && f.3 == 2.0), "today underlined");
+    for act in ["new reminder", "month before", "month after"] {
+        assert_eq!(word(&wide, act).0, 1528.0, "{act} in the actions' column");
+    }
 }
 
 /// v0.169: a place's row is one line, as home's: its name, and what it holds now in a column beside it; no arrow.
@@ -1181,8 +1197,9 @@ fn a_wide_window_shows_the_lit_app_in_large_type_beside_the_list() {
     let lead: Vec<_> = words(&s).into_iter().filter(|w| w.3 == Size::Lead).collect();
     assert_eq!((lead.len(), lead[0].1, lead[0].2), (1, 792.0 + 84.0, 97.0 + 165.0 - M.big[1].1), "{lead:?}");
     // what you do with it, then its facts side by side: the word small, its value under it
-    let open = words(&s).into_iter().find(|w| w.0 == "open" && w.1 == 792.0).expect("open, a row of the page");
-    assert_eq!(open.2, 97.0 + 220.0 + 24.0 - M.up);
+    // what you do with it in the actions' column from its top (v0.174), its facts in the page under its name
+    let open = words(&s).into_iter().find(|w| w.0 == "open" && w.1 == 1528.0).expect("open, the first action");
+    assert_eq!(open.2, 97.0 + 4.0 + 24.0 - M.up);
     let (vx, vy, vs, _) = word(&s, "version");
     let (wx, wy, ws, _) = word(&s, "1.28.0_1");
     assert_eq!((vx, vs, wx, ws), (792.0, Size::Small, 792.0, Size::Main));
@@ -1614,8 +1631,8 @@ fn a_wide_window_shows_the_lit_file_in_large_type_beside_the_list() {
     let s = scene(&mut a, 1920.0, 1080.0);
     let long = words(&s).into_iter().find(|w| w.3 == Size::Title3).expect("the long name at 32 pixels");
     assert!(
-        long.0.starts_with("a-very-long") && long.0.ends_with("2026.txt") && long.0.chars().count() > 50,
-        "{}",
+        long.0.starts_with("a-very-long") && long.0.ends_with("2026.txt") && long.0.contains('\u{2026}'),
+        "cut in its middle in the page, its type kept: {}",
         long.0
     );
     // two panes: the page is a third column, 640 pixels, where the window holds the three
@@ -2224,4 +2241,199 @@ fn no_words_and_no_hit_leave_the_window_at_any_size() {
         }
     }
     assert!(left.is_empty(), "{} outside the window:\n{}", left.len(), left[..left.len().min(12)].join("\n"));
+}
+
+/// v0.174: the ground of the list and of the actions in a wide window, half a step from the window's to the lit row's.
+const PANEL: [u8; 3] = [0x45, 0x4b, 0x57];
+
+/// Notes: a place's row and its own page.
+fn notes() -> App {
+    let mut a = home();
+    let mut p = Provider::new("notes");
+    p.ready = true;
+    p.rows = spark_dialog::model::rows(
+        &json!({"title": "notes", "rows": [
+            {"id": "notes:new", "sign": "blank", "text": "new note", "tool": {"name": "notes_new", "arguments": {}}},
+            {"id": "notes:open trip.md", "sign": "blank", "text": "Trip to Lisbon", "columns": ["yesterday"], "end": true,
+             "tool": {"name": "notes_open", "arguments": {"name": "trip.md"}, "said": "open"},
+             "more": [{"name": "notes_rename", "arguments": {"name": "trip.md"}, "said": "rename"}, {"name": "notes_trash", "arguments": {"name": "trip.md"}, "said": "trash"}],
+             "page": "spark-shell://notes/page/trip"}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    a.providers = vec![p];
+    a.view = View::Section(0);
+    a.came_from = vec![View::Home];
+    a.wide = true;
+    a.files.peek = Some(Peek {
+        uri: "spark-shell://notes/page/trip".into(),
+        page: Some(spark_dialog::preview::Page {
+            title: "trip.md".into(),
+            facts: vec!["97 B".into(), "yesterday".into()],
+            lines: vec![
+                "Trip to Lisbon".into(),
+                "".into(),
+                "Flights on 12 March.".into(),
+                "To see".into(),
+                "the tram 28".into(),
+            ],
+            bold: vec![0, 3],
+            ..Default::default()
+        }),
+    });
+    a
+}
+
+/// v0.174: every place in a wide window has the frame of files: the list at the left on the panel's ground, the lit
+/// row's page in the middle (its name in large type, its facts, what it holds), its actions at the right on the same
+/// ground, each a click away. A place shows its first row's page before a row is lit, never an empty middle.
+#[test]
+fn a_place_in_full_screen_is_its_list_its_page_and_its_actions() {
+    let mut a = notes();
+    (a.in_list, a.sel) = (false, 0);
+    assert_eq!(kind(&a), Kind::Place);
+    let s = scene(&mut a, 1920.0, 1080.0);
+    let grounds = fills(&s, PANEL);
+    assert!(
+        grounds.iter().any(|f| f.0 == 0.0 && f.1 == 97.0 && f.2 == 696.0),
+        "the list's ground: {grounds:?}"
+    );
+    assert!(
+        grounds.iter().any(|f| f.0 == 1480.0 && f.1 == 97.0 && f.2 == 440.0),
+        "the actions' ground: {grounds:?}"
+    );
+    // nothing lit: the page of the first row that has one
+    assert!(!word(&s, "Trip to Lisbon").3, "nothing lit: the list row is not bold");
+    let big: Vec<_> = words(&s).into_iter().filter(|w| w.3 == Size::Title).collect();
+    assert_eq!((big.len(), big[0].0.as_str(), big[0].1), (1, "Trip to Lisbon", 792.0), "{big:?}");
+    assert_eq!(word(&s, "a note \u{b7} yesterday").2, Size::Lead);
+    let size = words(&s).into_iter().find(|w| w.0 == "size").expect("its size");
+    assert!(words(&s).iter().any(|w| w.0 == "changed" && w.2 == size.2), "its facts side by side");
+    // what it holds: its own lines, its first said once (the name), a heading small in the accent
+    let flights = words(&s).into_iter().find(|w| w.0 == "Flights on 12 March.").expect("the note's text");
+    assert_eq!((flights.1, flights.3), (792.0, Size::Main));
+    assert_eq!(heading(&s, "To see").0, 792.0);
+    assert_eq!(words(&s).iter().filter(|w| w.0 == "Trip to Lisbon").count(), 2, "in the list, and its name");
+    // its actions: its tool on Enter, its page on F3, its steps
+    for (act, key) in [("open", "Enter"), ("view", "F3"), ("rename", "F2")] {
+        let w = words(&s).into_iter().find(|w| w.0 == act && w.1 == 1528.0).unwrap_or_else(|| panic!("{act}"));
+        assert!(
+            words(&s)
+                .iter()
+                .any(|k| k.0 == key && k.3 == Size::Small && k.2 > w.2 - 4.0 && k.2 < w.2 + 8.0 && k.1 > 1700.0),
+            "{key}"
+        );
+    }
+    let trash = word(&s, "trash");
+    assert_eq!(s.hit(1600.0, trash.1 + 8.0), Some(&Target::Act(2)), "the step after the tool and rename");
+    assert_eq!(s.hit(1600.0, word(&s, "view").1 + 8.0), Some(&Target::Key(HintKey::View)));
+    // the window made narrow: the list alone, as it was
+    let narrow = scene(&mut a, 600.0, 800.0);
+    assert!(fills(&narrow, PANEL).is_empty() && !words(&narrow).iter().any(|w| w.3 == Size::Title));
+}
+
+/// v0.174: a step of the actions beside a page runs as the row's own steps do: the second is the row's first more.
+#[test]
+fn an_action_beside_the_page_runs_the_lit_rows_step() {
+    let mut a = notes();
+    a.down();
+    a.down();
+    assert!(a.in_list && a.sel == 1);
+    a.act_step(1);
+    assert_eq!(a.view, View::Section(0), "back at the list once the step is asked for");
+    assert!(
+        a.reply.is_some() || a.under_way() || !matches!(a.mode, spark_dialog::app::Mode::Normal),
+        "the step is asked for: {:?} {:?}",
+        a.mode,
+        a.reply.as_ref().map(|r| &r.text)
+    );
+    assert!(a.in_list && a.sel == 1, "on the row it is for");
+}
+
+/// v0.174: power's page of a step says what it does in its provider's words, and names each window it closes.
+#[test]
+fn powers_page_names_the_windows_a_step_closes() {
+    let mut a = home();
+    let mut power = Provider::new("power");
+    power.ready = true;
+    power.title = "up 2 days".into();
+    power.tools = spark_dialog::model::tools(&json!({"tools": [
+        {"name": "power_lock", "description": "Lock the screen."},
+        {"name": "power_shutdown", "description": "Shut the machine down. Everything open closes and the machine turns off."}
+    ]}));
+    power.rows = spark_dialog::model::rows(
+        &json!({"title": "power", "rows": [
+            {"id": "power:lock", "sign": "blank", "text": "lock", "group": "keeps your windows", "key": "Super+Escape", "tool": {"name": "power_lock", "arguments": {}}},
+            {"id": "power:shutdown", "sign": "blank", "text": "shutdown", "group": "closes 2 windows: firefox, foot", "tool": {"name": "power_shutdown", "arguments": {}}}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let mut window = Provider::new("window");
+    window.ready = true;
+    window.rows = spark_dialog::model::rows(
+        &json!({"title": "window", "rows": [
+            {"id": "window:focus 1", "sign": "opens", "text": "firefox", "group": "workspace 1 \u{b7} this one \u{b7} DP-1", "columns": ["the news"], "tool": {"name": "window_focus", "arguments": {"name": "1"}}},
+            {"id": "window:focus 2", "sign": "opens", "text": "foot", "group": "workspace 2 \u{b7} DP-1", "columns": ["~/src"], "tool": {"name": "window_focus", "arguments": {"name": "2"}}}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    a.providers = vec![power, window];
+    a.view = View::Section(0);
+    a.came_from = vec![View::Home];
+    (a.in_list, a.sel) = (true, 1);
+    let s = scene(&mut a, 1920.0, 1080.0);
+    assert_eq!(word(&s, "shut the machine down").2, Size::Lead);
+    word(&s, "Everything open closes and the machine turns off.");
+    assert_eq!(heading(&s, "closes").0, 792.0);
+    for (name, title) in [("firefox", "the news"), ("foot", "~/src")] {
+        assert!(words(&s).iter().any(|w| w.0 == name && w.1 == 792.0 && w.3 == Size::Main), "{name}");
+        word(&s, title);
+    }
+    word(&s, "2 closed");
+    word(&s, "up 2 days");
+}
+
+/// v0.174: the workspaces place's page is a map of the screens with their windows, the lit one in the accent, the
+/// workspace in use named so.
+#[test]
+fn the_workspaces_page_is_a_map_of_the_screens_and_their_windows() {
+    let mut a = home();
+    let mut window = Provider::new("window");
+    window.ready = true;
+    window.rows = spark_dialog::model::rows(
+        &json!({"title": "window", "rows": [
+            {"id": "window:focus 1", "sign": "opens", "text": "firefox", "group": "workspace 1 \u{b7} this one \u{b7} DP-1", "columns": ["the news"], "tool": {"name": "window_focus", "arguments": {"name": "1"}}, "page": "spark-shell://window/page/1"},
+            {"id": "window:focus 2", "sign": "opens", "text": "foot", "group": "workspace 1 \u{b7} this one \u{b7} DP-1", "columns": ["~/src"], "tool": {"name": "window_focus", "arguments": {"name": "2"}}},
+            {"id": "window:focus 3", "sign": "opens", "text": "mpv", "group": "workspace 4 \u{b7} HDMI-A-1", "columns": ["film"], "tool": {"name": "window_focus", "arguments": {"name": "3"}}}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    a.providers = vec![window];
+    assert!(a.go_to("window"));
+    a.wide = true;
+    (a.in_list, a.sel) = (true, 1);
+    let s = scene(&mut a, 1920.0, 1080.0);
+    assert_eq!(heading(&s, "your screens").0, 792.0);
+    for screen in ["DP-1", "HDMI-A-1"] {
+        assert!(
+            words(&s).iter().any(|w| w.0 == screen && w.1 == 792.0 && w.4),
+            "{screen} named over its workspaces"
+        );
+    }
+    word(&s, "workspace 1 \u{b7} this one");
+    word(&s, "workspace 4");
+    // the window lit, framed in the accent in the map
+    let lit = words(&s)
+        .into_iter()
+        .find(|w| w.0 == "foot" && w.1 > 792.0 && w.3 == Size::Small)
+        .expect("foot in the map");
+    assert!(lit.4, "the lit window's name bold");
+    assert!(
+        fills(&s, ACCENT).iter().any(|f| f.0 < lit.1 && f.0 + f.2 > lit.1 && f.3 == 2.0),
+        "framed in the accent"
+    );
 }
