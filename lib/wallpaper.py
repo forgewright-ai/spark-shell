@@ -3198,7 +3198,8 @@ class Continue(Pixel):
             self.claw(a, c, t, dk)
 
     def claw(self, a, c, t, dk):
-        """The claw, idling."""
+        """The claw, idling, and its light on the floor as every machine's."""
+        fill(a, Mask().ell(45, self.FLOOR + 10, 30, 6), c["neon"], 0.12 if dk else 0.06)
         cx = 30 + 30 * (0.5 + 0.5 * math.sin(2 * math.pi * t / 12))
         vline(a, cx, 82, 92, c["textdim"])
         for dx, dy in ((-2, 0), (-1, 0), (0, 0), (1, 0), (2, 0), (-2, 1), (2, 1), (-2, 2), (2, 2)):
