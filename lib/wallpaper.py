@@ -47,7 +47,9 @@ cozy: warm and playful, a picture book for grown-ups
               in, by an anchor and a clam, a > comes up to a pufferfish, an
               o that swells into an O, and goes back a <
     campfire  a raccoon toasts a marshmallow; it catches fire, the raccoon
-              blows it out, and eats it anyway
+              blows it out, and eats it anyway. On the other side of the
+              camp, by the lake, the cooler's lid lifts: another raccoon
+              comes up with a hot dog, looks round, and goes back down
     ufo       over the dunes a saucer beams up a cow, has a look, and puts
               it back
     pigeons   IP over avian carriers (RFC 1149): pigeons carry envelopes
@@ -1793,7 +1795,10 @@ class Campfire(Scene, Cached):
     poster = 3.0
     FX, FY = 840.0, 880.0  # the fire
     portrait = (1080.0, 1920.0, -240.0, 840.0)  # the tent, the fire and the raccoon, the trees and the moon high
+    second = (1920.0, 1080.0, -1920.0, 0.0)  # the other side of the camp: the lake, the table, the cooler
     RX, RY = 1130.0, 884.0  # the raccoon's seat
+    BOX = (W + 860.0, 920.0)  # the cooler: the middle of its foot
+    LAMP = (W + 560.0, 806.0)  # the lantern on the table
 
     def colors(self, p):
         if not hasattr(self, "_c") or self._c[0] is not p:
@@ -1810,10 +1815,14 @@ class Campfire(Scene, Cached):
                 fur=fur, fur2=mix(fur, ink, 0.45), fur3=mix(fur, p("white"), 0.55), mask=mix(ink, fur, 0.12), ink=ink, eye=p.pick("bg+fg:92", "white"),
                 mallow=p.pick("fg+white:50", "white"), toast=mix(p("ansi_3"), ink, 0.25), char=mix(ink, p("ansi_1"), 0.1), smoke=p.pick("fg", "fg"),
                 bubble=p.pick("bg+fg:88", "white"),
+                lake=p.pick("bg+ansi_4:20", "bg+ansi_4:30"), lake2=p.pick("bg+ansi_4:40", "ansi_4+white:60"), canoe=p.pick("bg+ansi_1:46", "bg+ansi_1:56"),
+                cooler=p.pick("bg+ansi_4:44", "bg+ansi_4:60"), lid=p.pick("bg+fg:50", "bg+fg:22"), dog=mix(p("ansi_1"), p("ansi_3"), 0.35),
             ))
         return self._c[1]
 
     def back(self, cv, p):
+        if cv.second:
+            return self.back2(cv, p)
         c = self.colors(p)
         mx, my = (1120.0, -420.0) if cv.portrait else (1540.0, 200.0)
         out = [D(cv, mx, my, 110, c["halo"]), D(cv, mx, my, 50, c["moon"])]
@@ -1865,6 +1874,8 @@ class Campfire(Scene, Cached):
         return out
 
     def front(self, cv, p):
+        if cv.second:
+            return []
         return self.stones(cv, self.colors(p), 0, math.pi)
 
     def flame(self, cv, c, x, y, s, t, ph):
@@ -1963,6 +1974,8 @@ class Campfire(Scene, Cached):
         return out
 
     def under(self, cv, p, t):
+        if cv.second:
+            return self.under2(cv, p, t)
         c = self.colors(p)
         out = [L(cv, Shape().ellipse(self.FX, self.FY + 10, 300, 70), c["glow"], (0.16 if c["dark"] else 0.08) * (0.85 + 0.15 * wave(t, 0.8)), ss=1, soft=40)]
         out += self.flame(cv, c, self.FX, self.FY, 1.0, t, 0.0)
@@ -1983,11 +1996,156 @@ class Campfire(Scene, Cached):
 
     def over(self, cv, p, t):
         c = self.colors(p)
+        if cv.second:
+            return []
         hx, hy = self.RX - 22, self.RY - 150
         out = bubble(cv, hx + 40, hy - 70, pop(t, 8.0, 9.6), "!", c["bubble"], c["ink"], tail=-1)
         u = window(t, 16.0, 18.4)
         if 0 < u < 1:
             out.append(L(cv, glyph(Shape(), "n", hx + 40 + 20 * u, hy - 50 - 70 * u, 30, 3.4), c["bubble"], bump(u)))
+        return out
+
+    # -- the other side of the camp: the second landscape, a screen to the right
+
+    def back2(self, cv, p):
+        c = self.colors(p)
+        X = W
+        out = []
+        if c["dark"]:
+            out += stars(cv, c["star"], 18, 90, 20, 560, alpha=0.45)
+        rnd = random.Random(11)
+        far = Shape()
+        for i in range(60):
+            x, h = X + i * 34 + rnd.uniform(-10, 10), rnd.uniform(70, 150)
+            far.poly([(x - 30, 760), (x, 760 - h), (x + 30, 760)])
+        far.rect(X, 740, W, 40)
+        out.append(L(cv, far, c["far"], ss=2))
+        # the lake behind the camp, its far shore under the trees
+        shore = spline([(X + 520, 776), (X + 760, 818), (X + 1100, 846), (X + 1500, 858), (X + 1920, 850)], closed=False, per=16)
+        out.append(L(cv, Shape().poly([(X + 400, 768), (X + W, 756), (X + W, 870)] + shore[::-1]), c["lake"], ss=2))
+        out.append(L(cv, Shape().poly([(X, 772)] + spline([(X, 772), (X + 300, 766), (X + 560, 776)], closed=False, per=8) + shore + [(X + W, H), (X, H)]), c["ground"], ss=2))
+        # the canoe, upside down on the shore
+        cx, cy = X + 1560.0, 884.0
+        out.append(L(cv, Shape().ellipse(cx, cy + 4, 170, 10), c["ground2"], ss=2))
+        hull = Shape().poly([(cx - 170, cy - 6)] + spline([(cx - 170, cy - 6), (cx - 110, cy - 38), (cx, cy - 48), (cx + 110, cy - 38), (cx + 170, cy - 6)], closed=False, per=10) + [(cx + 150, cy), (cx - 150, cy)])
+        out.append(L(cv, hull, c["canoe"], ss=2))
+        out.append(L(cv, Shape().line(spline([(cx - 160, cy - 10), (cx, cy - 22), (cx + 160, cy - 10)], closed=False, per=10), 4), c["tent2"], 0.8, ss=2))
+        out.append(L(cv, Shape().line([(cx - 60, cy - 2), (cx + 120, cy + 8)], 6).ellipse(cx + 138, cy + 9, 22, 7, 0.06), c["wood"], ss=2))  # a paddle
+        # the big trees framing it: the first screen's on the left edge, its own on the right
+        for x, side in ((1960.0, -1), (X + W + 40.0, -1)):
+            sh = Shape()
+            for k in range(6):
+                y = 300 + k * 90
+                hw = 90 + k * 26
+                sh.poly([(x + side * 40 - hw, y + 120), (x + side * 40, y - 40), (x + side * 40 + hw, y + 120)])
+            out.append(L(cv, sh, c["near"], ss=2))
+        # the picnic table, and the lantern's light on the ground
+        tx, ty = self.LAMP[0], 900.0
+        out.append(L(cv, Shape().ellipse(tx, ty + 14, 250, 18), c["ground2"], ss=2))
+        if c["dark"]:
+            out.append(L(cv, Shape().ellipse(tx + 60, ty + 10, 360, 70), c["glow"], 0.14, ss=1, soft=50))
+        legs = Shape().line([(tx - 150, ty + 10), (tx - 100, ty - 70)], 12).line([(tx - 60, ty + 10), (tx - 110, ty - 70)], 12)
+        legs.line([(tx + 150, ty + 10), (tx + 100, ty - 70)], 12).line([(tx + 60, ty + 10), (tx + 110, ty - 70)], 12)
+        out.append(L(cv, legs, c["wood"], ss=2))
+        out.append(L(cv, Shape().rect(tx - 230, ty - 36, 460, 14).rect(tx - 200, ty - 86, 400, 16), c["wood2"], ss=2))  # the bench, the top
+        out.append(L(cv, Shape().rect(tx - 200, ty - 70, 400, 6).rect(tx - 230, ty - 22, 460, 5), c["wood"], ss=2))
+        bx, by = self.BOX
+        out.append(L(cv, Shape().ellipse(bx, by + 4, 110, 10), c["ground2"], ss=2))
+        return out
+
+    def lamp(self, cv, c, t):
+        """The lantern on the table, and two moths going round it."""
+        x, y = self.LAMP
+        k = 0.88 + 0.12 * wave(t, 0.8) * wave(t, 1.2, 0.3)
+        out = [L(cv, Shape().circle(x, y - 34, 70), c["glow"], (0.3 if c["dark"] else 0.12) * k, ss=1, soft=40, mode="add")]
+        out.append(L(cv, Shape().rect(x - 22, y - 10, 44, 12).rect(x - 18, y - 66, 36, 8), c["wood2"], ss=2))
+        out.append(L(cv, Shape().rect(x - 16, y - 58, 32, 48), c["flame3"], 0.9 * k, ss=2))
+        out.append(L(cv, Shape().line(spline([(x - 16, y - 66), (x - 14, y - 86), (x, y - 92), (x + 14, y - 86), (x + 16, y - 66)], closed=False, per=6), 3), c["wood2"], ss=2))
+        out.append(L(cv, Shape().line([(x - 18, y - 58), (x - 18, y - 10)], 3).line([(x + 18, y - 58), (x + 18, y - 10)], 3), c["wood2"], ss=2))
+        for i, (per, rx, ry, ph) in enumerate(((3.0, 60, 34, 0.07), (4.0, 44, 52, 0.53))):
+            a = 2 * math.pi * (t / per + ph)
+            mx, my = x + rx * math.cos(a), y - 40 + ry * math.sin(a) * 0.6 + 6 * wave(t, 0.6, ph)
+            f = abs(math.sin(2 * math.pi * t / 0.1 + i + 0.3))
+            wings = Shape().poly([(mx, my), (mx - 9, my - 3 - 6 * f), (mx - 7, my + 3)]).poly([(mx, my), (mx + 9, my - 3 - 6 * f), (mx + 7, my + 3)])
+            out += [L(cv, wings, c["fur3"], 0.6), D(cv, mx, my, 2.2, c["fur2"])]
+        return out
+
+    def lid(self, t):
+        """How far the cooler's lid is up (radians) and how high the raccoon in it has come (0 in, 1 out)."""
+        shut = 1 - ease_in(window(t, 11.6, 12.3))
+        crack = 0.14 * (ease_out(window(t, 5.4, 6.0)) * shut + ease_out(window(t, 18.6, 19.2)) * (1 - ease_in(window(t, 20.6, 21.0))))
+        up = 0.62 * ease_io(window(t, 7.4, 8.2)) * shut
+        bounce = 0.05 * bump(window(t, 12.3, 12.6))
+        head = ease_out(window(t, 7.6, 8.4)) * (1 - ease_in(window(t, 11.3, 12.0)))
+        return crack + up + bounce, head
+
+    def cooler(self, cv, c, t):
+        bx, by = self.BOX
+        a, head = self.lid(t)
+        w, h = 150.0, 96.0
+        top = by - h
+        out = []
+        hinge = (bx + w / 2, top)
+        lid = lambda sh: sh.moved(0, 0, 1.0, a, hinge[0], hinge[1])  # up about its hinge at the back right
+        if a > 0.01:  # the dark inside, under the lid
+            out.append(L(cv, Shape().poly([(bx - w / 2, top + 2), hinge, (hinge[0] - w * math.cos(a), top - w * math.sin(a))]), c["door"]))
+        if a > 0.04 and head < 0.05:  # eyes in the dark
+            look = 3 * wave(t, 2.0)
+            blink = 6.8 <= t < 6.95 or 19.8 <= t < 19.95
+            ey = top - math.sin(a) * w * 0.42
+            for ex in (bx - 50, bx - 30):
+                if blink:
+                    out.append(L(cv, Shape().line([(ex - 5 + look, ey), (ex + 5 + look, ey)], 2.4), c["eye"]))
+                else:
+                    out += [D(cv, ex + look, ey, 5.0, c["flame3"] if c["dark"] else c["eye"]), D(cv, ex + look + 1, ey + 0.5, 2.2, c["ink"])]
+        if head > 0.01:  # the raccoon: up from the cooler with a hot dog, a look round, back down
+            hx, hy = bx - 34, top + 30 - 66 * head
+            look = 0.0 if t < 8.6 else -8 * ease_io(window(t, 8.6, 9.0)) + 16 * ease_io(window(t, 9.8, 10.2)) - 8 * ease_io(window(t, 10.8, 11.1))
+            fur = Shape().poly(spline([(hx - 40, hy + 14), (hx - 34, hy - 12), (hx - 8, hy - 30), (hx + 24, hy - 28), (hx + 44, hy - 8), (hx + 40, hy + 40), (hx - 36, hy + 40)], per=8))
+            ears = Shape().poly([(hx - 18, hy - 24), (hx - 8, hy - 52), (hx + 6, hy - 26)]).poly([(hx + 12, hy - 26), (hx + 26, hy - 50), (hx + 34, hy - 18)])
+            clip = top + 2
+            out += [L(cv, ears, c["fur2"], above=clip), L(cv, fur, c["fur"], above=clip)]
+            out.append(L(cv, Shape().poly(spline([(hx - 38, hy + 2), (hx - 22, hy - 14), (hx + 8, hy - 16), (hx + 34, hy - 6), (hx + 16, hy + 8), (hx - 10, hy + 4), (hx - 30, hy + 10)], per=6)).moved(look * 0.4), c["mask"], above=clip))
+            out.append(L(cv, Shape().ellipse(hx - 4 + look * 0.4, hy - 20, 26, 5), c["fur3"], above=clip))
+            for ex, ey in ((hx - 20, hy - 4), (hx + 8, hy - 6)):
+                out += [D(cv, ex + look * 0.5, ey, 5.5, c["eye"]), D(cv, ex + look * 0.8, ey + 0.5, 3.0, c["ink"])]
+            out.append(L(cv, Shape().ellipse(hx - 30 + look * 0.6, hy + 16, 14, 10), c["fur3"], above=clip))
+            out.append(L(cv, Shape().ellipse(hx - 42 + look * 0.6, hy + 12, 6, 5), c["ink"], above=clip))
+            dog = Shape().line([(hx - 64 + look * 0.6, hy + 27), (hx + 4 + look * 0.6, hy + 23)], 15)
+            out.append(L(cv, dog, c["dog"], above=clip))
+            out.append(L(cv, Shape().line([(hx - 57 + look * 0.6, hy + 23), (hx - 4 + look * 0.6, hy + 20)], 2.6), c["mallow"], 0.5, above=clip))
+        out.append(L(cv, Shape().rect(bx - w / 2, top, w, h), c["cooler"], ss=2))
+        out.append(L(cv, Shape().rect(bx - w / 2, by - 18, w, 8), c["lid"], 0.9, ss=2))
+        out.append(L(cv, Shape().line([(bx - 30, top + 30), (bx + 30, top + 30)], 8), mix(c["cooler"], c["ink"], 0.3), ss=2))
+        out.append(L(cv, lid(Shape().rect(bx - w / 2 - 4, top - 18, w + 8, 20)), c["lid"], ss=2))
+        return out
+
+    def under2(self, cv, p, t):
+        c = self.colors(p)
+        X = W
+        out = []
+        for i, (x, y, w) in enumerate(((X + 700, 786, 80), (X + 1000, 796, 120), (X + 1300, 790, 90), (X + 1720, 792, 70), (X + 1520, 776, 60))):
+            dx = 14 * wave(t, 6, i * 0.23)
+            out.append(L(cv, Shape().line([(x + dx - w / 2, y), (x + dx + w / 2, y)], 2.6), c["lake2"], 0.3 + 0.15 * wave(t, 4, i * 0.3), ss=2))
+        for t0, life, big in ((15.0, 2.4, 1.0), (15.5, 2.4, 0.6)):  # a fish, once
+            u = (t - t0) / life
+            if 0 <= u < 1:
+                rx = (14 + 60 * ease_out(u)) * big
+                pts = ellipse_pts(X + 1180, 812, rx, rx * 0.2, n=60)
+                out.append(L(cv, Shape().line(pts + [pts[0]], 2.4 * (1 - u) + 0.6), c["lake2"], 0.8 * (1 - u), ss=2))
+        u = window(t, 14.6, 15.1)
+        if 0 < u < 1:
+            fx, fy = X + 1150 + 60 * u, 812 - 46 * bump(u)
+            out.append(L(cv, Shape().ellipse(fx, fy, 16, 6, -1.4 + 2.8 * u), c["lake2"]))
+        if c["dark"]:
+            rnd = random.Random(12)
+            for i in range(9):
+                fx = X + rnd.uniform(500, 1800) + 50 * wave(t, 24 / rnd.choice((1, 2, 3)), rnd.random())
+                fy = rnd.uniform(700, 790) + 24 * wave(t, 24 / rnd.choice((2, 3, 4)), rnd.random())
+                a = 0.5 + 0.5 * wave(t, 24 / rnd.choice((4, 6, 8)), rnd.random())
+                out += [D(cv, fx, fy, 8, c["glow"], 0.14 * a), D(cv, fx, fy, 2.2, c["glow"], 0.9 * a)]
+        out += self.lamp(cv, c, t)
+        out += self.cooler(cv, c, t)
         return out
 
 
