@@ -454,10 +454,10 @@ art_screens_follow() {   # each screen output * does not suit gets its own still
       sleep 0.1; motion_raise   # it waits for the drawer these lines started to draw
       login_screens_follow ) </dev/null >/dev/null 2>&1 3>&- 4<&- &   # each still starts the background drawer anew, over a loop already playing
 }
+art_plan_same() { [ "$(art_screens; printf '%s %s\n' "${THEME:-}" "${WALLPAPER:-}")" = "$(cat "$(art_plan_file)" 2>/dev/null)" ]; }   # -> 0 when the screens, the theme and the wallpaper are as last drawn
 art_screens_changed() {   # on sway's output events: a screen came, went, moved or turned since the screens were last drawn, so every screen's still and loop again
     command -v jq >/dev/null 2>&1 && wm_up || return 0
-    _asc=$(art_screens; printf '%s %s\n' "${THEME:-}" "${WALLPAPER:-}")
-    [ "$_asc" != "$(cat "$(art_plan_file)" 2>/dev/null)" ] || return 0
+    ! art_plan_same || return 0
     wm_send "output * bg $WALL_BG" >/dev/null 2>&1 || :   # a screen turned back to landscape: output * merges into each screen's own line
     motion_follow
     winpad_pid >/dev/null || layout_refit_soon screen   # the placed windows on the new area; a pad sends them there itself

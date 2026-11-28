@@ -96,6 +96,10 @@ The bundled harbor, meadowlark and nightswim themes and nightswim's
 picture come from spark-shell-gallery, gallery-v3 (MIT). Its portrait and
 second landscape are drawn here, in its style (MIT).
 
+The Cinematic Worlds works (Atlas Awakening, The Sounding Gate, Mars
+Conquest, The Pilgrim's Vow and The Late Edition), their pictures, loops
+and reels, are authored work made for spark-shell, under its license.
+
 ## The wallpaper drawings
 
 - NumPy -- https://github.com/numpy/numpy -- BSD-3-Clause.

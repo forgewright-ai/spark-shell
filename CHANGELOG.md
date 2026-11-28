@@ -14,6 +14,12 @@
   about to be picked in the page, and pick (or open, for a folder) at the
   right. It was a lone list. A row that picks a file says what it does and
   shows the picture in use.
+- Moving or still is yours: a theme no longer turns the moving wallpaper
+  on or off (The Pilgrim's Vow turned it on), and a saved theme no longer
+  keeps it.
+- Switching between moving and still no longer blinks: each screen keeps
+  the still it shows. Drawn again, a turned or second screen showed a black
+  frame.
 - The dialog is 0.174.1.
 
 ## v0.174

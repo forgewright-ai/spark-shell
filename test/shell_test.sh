@@ -4720,12 +4720,15 @@ case $_ml in "--screen HDMI-A-1=$_mdir/orbit-"*.mp4) _mok=1 ;; *) _mok='' ;; esa
     && ok "desktop --motion: a drawing's frames made into a loop by mpv in the background, kept in the cache, played by spark-wallpaper on the screen that shows the drawing itself (the turned one keeps its own portrait), the frames gone (#180, #187)" || bad "motion start" "$_ml | $(cat "$HOME/mpv.log" 2>&1) | $(ls "$H/motmp")"
 mo desktop --motion >/dev/null 2>&1; sleep 0.5
 [ "$(grep -c '' "$HOME/player.log")" = 1 ] && ok "desktop --motion: a loop already playing is left as it is (#180)" || bad "motion twice" "$(cat "$HOME/player.log")"
+sleep 1; _mbg0=$(grep -c 'output "DP-3" bg' "$HOME/mosway.log" 2>/dev/null || :)   # the turned screen's still, drawn by now
 rc=0; out=$(mo theme motion off 2>&1) || rc=$?; sleep 0.5
 [ "$rc" = 0 ] && [ "$out" = 'moving wallpaper off' ] && grep -qx 'WALLPAPER_MOTION=off' "$HOME/.config/spark-shell/config" && [ -z "$(pgrep -u "$(id -u)" -f "spark-wallpaper .*$_mdir/" || :)" ] && [ ! -e "$H/run/spark-shell-motion.want" ] \
     && ok "theme motion off: the loop's player stopped, the still shows (#180)" || bad "motion off" "rc=$rc $out $(pgrep -u "$(id -u)" -f "spark-wallpaper .*$_mdir/" || :)"
-rc=0; out=$(mo theme motion on 2>&1) || rc=$?; mo_wait 2
+rc=0; out=$(mo theme motion on 2>&1) || rc=$?; mo_wait 2; sleep 1
 [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^moving wallpaper on .* orbit moves$' && [ "$(grep -c '' "$HOME/player.log")" = 2 ] && [ "$(grep -c '' "$HOME/mpv.log")" = 1 ] \
     && ok "theme motion on: the loop in the cache plays again, never made twice (#180)" || bad "motion cache" "rc=$rc $out $(cat "$HOME/player.log" "$HOME/mpv.log" 2>&1)"
+[ -n "$_mbg0" ] && [ "$_mbg0" -gt 0 ] && [ "$(grep -c 'output "DP-3" bg' "$HOME/mosway.log")" = "$_mbg0" ] \
+    && ok "theme motion off and on: each screen keeps the still it shows, never drawn again, which blinked a black frame on the turned screen (v0.174.1)" || bad "motion keeps stills" "$_mbg0 | $(grep -c 'output "DP-3" bg' "$HOME/mosway.log")"
 mo_stop
 # a scene (#188): a loop a screen, each at its shape (a pixel scene at its own grid, the player scaling it with square pixels),
 # made from make.py's raw frames by mpv; the portrait screen's still drawn in its own shape and given to that screen alone
@@ -10573,7 +10576,7 @@ if [ "$(uname -s)" != Darwin ]; then
     [ "$st" -eq 1 ] && printf '%s' "$out" | grep -q 'DIALOG_SPACING=lots in .*: none, groups or rows' && ok "config: DIALOG_SPACING other than none, groups or rows is refused in one line (#232)" || bad "spacing refuse" "st=$st $out"
     sed -i.bak '/^DIALOG_SPACING=lots$/d' "$cfg"; rm -f "$cfg.bak"
     # the moving wallpaper (#180): a value in Settings > theme that left and right change; a step with its undo, the same value
-    # again a refusal; kept with a saved theme; refused in one line where the tools are not here; a wrong word in the config refused
+    # again a refusal; yours whatever the theme (a saved theme neither keeps nor brings it, v0.174.1); refused in one line where the tools are not here; a wrong word in the config refused
     jq -e '.rows[] | select(.id == "theme:show:Moving wallpaper") | .switch == {on: false, turn_on: {name: "theme_motion", arguments: {to: "on"}}, turn_off: {name: "theme_motion", arguments: {to: "off"}}} and .tool == null and .group == "screen"' "$H/trows.json" >/dev/null \
         && ok "provide theme rows (#180, #183): the moving wallpaper, a switch" || bad "motion row" "$(jq -c '[.rows[] | select(.id | test("Moving"))]' "$H/trows.json")"
     mkdir -p "$H/mot"; for t in python3 rsvg-convert mpv spark-wallpaper; do printf '#!/bin/sh\nexit 0\n' > "$H/mot/$t"; chmod +x "$H/mot/$t"; done
@@ -10582,8 +10585,9 @@ if [ "$(uname -s)" != Darwin ]; then
         && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'the moving wallpaper is on already' ] && grep -qx 'WALLPAPER_MOTION=on' "$cfg" \
         && ok "provide theme_motion (#180): a step with its receipt (the drawing in use still, the ones that move named) and undo, kept in the config; the same value again refused" || bad "motion step" "$(cut -c1-300 "$H/mcp.out")"
     sh "$SH" theme save motionlook >/dev/null 2>&1; sh "$SH" theme motion off >/dev/null 2>&1; sh "$SH" theme motionlook >/dev/null 2>&1
-    grep -qx 'WALLPAPER_MOTION=on' "$th_dir/motionlook/look.env" && grep -qx 'WALLPAPER_MOTION=on' "$cfg" && ok "theme save keeps the moving wallpaper, and the theme brings it back (#180)" || bad "motion look kept" "$(cat "$th_dir/motionlook/look.env" 2>&1; grep MOTION "$cfg")"
-    sh "$SH" theme dracula >/dev/null 2>&1; sh "$SH" theme delete motionlook </dev/null >/dev/null 2>&1; sh "$SH" theme motion off >/dev/null 2>&1
+    ! grep -q 'WALLPAPER_MOTION' "$th_dir/motionlook/look.env" && grep -qx 'WALLPAPER_MOTION=off' "$cfg" && ! grep -l 'WALLPAPER_MOTION' "$REPO"/gallery/core/*/look.env >/dev/null 2>&1 \
+        && ok "the moving wallpaper is yours: a saved theme neither keeps it nor brings it back, and a bundled one never turns it on (The Pilgrim's Vow did, v0.174.1)" || bad "motion yours" "$(cat "$th_dir/motionlook/look.env" 2>&1; grep MOTION "$cfg")"
+    sh "$SH" theme dracula >/dev/null 2>&1; sh "$SH" theme delete motionlook </dev/null >/dev/null 2>&1; sh "$SH" theme motion off >/dev/null 2>&1 || :   # off already: no theme turned it on
     rc=0; out=$(env -u SPARK_SHELL_WALLPAPER sh "$SH" theme motion on 2>&1) || rc=$?   # no player of the release's in this clone
     [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'the moving wallpaper needs .*spark-wallpaper' && grep -qx 'WALLPAPER_MOTION=off' "$cfg" \
         && ok "theme motion on: refused in one line where the wallpaper loop is not here, the setting left off (#180, #187)" || bad "motion skip" "rc=$rc $out"

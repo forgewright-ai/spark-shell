@@ -129,7 +129,7 @@ theme_apply() {   # theme_apply NAME|none [back] -- back keeps the history
             [ "$_k" != POINTER ] || grep -q '^POINTER=' "$_td/look.env" 2>/dev/null || continue   # no POINTER line: yours stays
             look_take "$_k" "$_v"
         done
-        for _k in BAR_GLYPHS GLYPH_FAMILY DIALOG_ICONS DIALOG_SPACING WALLPAPER_MOTION; do
+        for _k in BAR_GLYPHS GLYPH_FAMILY DIALOG_ICONS DIALOG_SPACING; do   # never WALLPAPER_MOTION: moving or still is yours, whatever the theme (v0.174.1)
             _v=$(look_get "$_td" "$_k"); [ -z "$_v" ] || look_take "$_k" "$_v"
         done
     elif [ "$name" != none ] && [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && ! wall_yours && _w=$(wall_for_palette "$name") && [ "$_w" != "$WALLPAPER" ]; then look_take WALLPAPER "$_w"   # the palette's drawing, unless a picture of yours
@@ -247,7 +247,7 @@ look_write() {   # look_write DIR -- the look in use as the theme DIR, its pictu
     else _lwl="$_lwl${NL}WALLPAPER=$WALLPAPER"; fi
     _lwo=$(face_word "${FONT%%:*}") || _lwo=''; _lwl="$_lwl${_lwo:+${NL}FACE=$_lwo}"   # your own face stays out
     _lwo=$(look_font_size); case $_lwo in [6-9]|[1-3][0-9]|40) _lwl="$_lwl${NL}TEXT_SIZE=$_lwo" ;; esac   # only a size theme text sets
-    _lwl="$_lwl${NL}ALPHA=$ALPHA${NL}POINTER=${POINTER:-}${NL}ANIMATION=$(anim_now)${NL}BAR_GLYPHS=$BAR_GLYPHS${NL}GLYPH_FAMILY=$GLYPH_FAMILY${NL}WALLPAPER_MOTION=$WALLPAPER_MOTION${NL}DIALOG_ICONS=$DIALOG_ICONS${NL}DIALOG_SPACING=$DIALOG_SPACING"
+    _lwl="$_lwl${NL}ALPHA=$ALPHA${NL}POINTER=${POINTER:-}${NL}ANIMATION=$(anim_now)${NL}BAR_GLYPHS=$BAR_GLYPHS${NL}GLYPH_FAMILY=$GLYPH_FAMILY${NL}DIALOG_ICONS=$DIALOG_ICONS${NL}DIALOG_SPACING=$DIALOG_SPACING"
     if look_write_files "$_lws" "$_lwp" "$_lwn" "$_dsn" && write_whole "$_dsn/look.env" printf '%s\n' "$_lwl" && dir_swap "$1"; then
         look_take THEME "$_lwn"; [ -z "$_lww" ] || look_take WALLPAPER "$1/$_lww"   # the folder's copy from now on
         if look_taken 2>"$TMP/store.why"; then
@@ -886,7 +886,9 @@ motion_follow() {   # the look's loops playing or made; else ours stopped. While
 motion_follow_now() {
     MOTION_NOW=''
     [ "$OS" != Darwin ] && wm_up || return 0
-    art_screens_follow
+    # moving or still alone (MOTION_STILLS_KEPT): each screen keeps the still it shows. Drawn again, each started the background
+    # drawer anew with no cover over it, a black frame on a turned or a second screen at each switch (v0.174.1)
+    if [ -n "${MOTION_STILLS_KEPT:-}" ] && art_plan_same; then _asl=''; else art_screens_follow; fi
     if [ "${WALLPAPER_MOTION:-off}" != on ] || ! motion_has "${WALLPAPER:-}" || [ -n "$(motion_missing)" ]; then motion_stop; return 0; fi
     if [ -z "$_asl" ]; then   # no screen of its own still to draw, which raises them: a reload or a look starts the drawer all the same
         ( TMP=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || exit 0; trap 'rm -rf "$TMP"' EXIT; sleep 0.5; motion_raise ) </dev/null >/dev/null 2>&1 3>&- 4<&- &   # its own scratch, as art_screens_follow's; after a look's own output * (0.25 s)
@@ -992,7 +994,7 @@ motion_step() {   # motion_step on|off -> the receipt; 1 when refused
     ! config_is WALLPAPER_MOTION "$1" || { echo "the moving wallpaper is $1 already"; return 1; }
     if [ "$1" = on ]; then [ -n "${PM:-}" ] || pm_detect; _mw=$(motion_why); [ -z "$_mw" ] || { echo "$_mw"; return 1; }; fi
     config_set WALLPAPER_MOTION "$1" >/dev/null; WALLPAPER_MOTION=$1; export WALLPAPER_MOTION
-    motion_follow
+    MOTION_STILLS_KEPT=1 motion_follow
     if [ "$1" = off ]; then echo "moving wallpaper off"
     elif motion_has "$WALLPAPER"; then case $MOTION_NOW in making) echo "moving wallpaper on $PANEL_SEP $WALLPAPER moves once its loop is made" ;; playing) echo "moving wallpaper on $PANEL_SEP $WALLPAPER moves" ;; elsewhere) echo "moving wallpaper on $PANEL_SEP no picture on a screen now has a loop" ;; *) echo "moving wallpaper on $PANEL_SEP $WALLPAPER moves on the desktop" ;; esac
     else echo "moving wallpaper on $PANEL_SEP $WALLPAPER is still; $(motion_names | grep -c '') wallpapers move"; fi
