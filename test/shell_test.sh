@@ -10111,6 +10111,10 @@ printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=%s\n' "$th_dir/study-night/test-wide
     && [ "$s7" = "$(printf 'DP-3       1 of 2 from the left, portrait 1200x1920: your wallpaper as you set it\nHDMI-A-1   2 of 2 from the left, landscape 1920x1080: your wallpaper as you set it')" ] \
     && ok "theme screens: with no family, a turned screen shows the drawing fitted, never cropped, or the scene drawn for it; a picture of yours stays as you set it" \
     || bad "theme screens fallback" "$s5 | $s6 | $s7"
+# the owner's rule (2026-11-27): every bundled theme is three pictures, all different, a portrait and two landscapes
+_tc=$("$fixture_python" -I "$REPO/test/triptych_check.py" "$REPO" 2>&1) \
+    && ok "every bundled theme is three pictures, all different: a portrait and two landscapes (a family's, a scene's views, a drawing's own; $(printf '%s' "$_tc" | tail -1 | sed 's/^triptych_check: //'))" \
+    || bad "triptych" "$(printf '%s' "$_tc" | tail -12 | tr '\n' '|')"
 # a theme's own landscape pictures, chosen by name: the one chosen is on a screen, where the panels would leave it out the
 # landscape screen's panel gives way to it; the wallpaper list names them, the one in use checked
 _aw=$REPO/gallery/core/atlas-awakening
