@@ -4108,8 +4108,19 @@ class Crossing(Pixel):
             for x in range(p0, p1 + 1):
                 put(a, x, self.wire(x, k), c["ink"])
 
+    def road(self, y):
+        """The road's two edges at height y, on our side of the line: it widens toward us."""
+        u = (y - self.RAIL - 7) / (self.gh - self.RAIL - 7)
+        return self.SX - 10 - 82 * u, self.SX + 6 + 64 * u
+
     def sign(self, a, c, t, active, dk):
-        x, y = self.SX, self.RAIL + 6
+        """The crossing's signal at the road's right edge, its lights and cross; and its arm,
+        pivoting at that edge, down across the road from edge to edge."""
+        yg = self.RAIL + 9  # where the barrier stands, just short of the rails
+        xl, xr = self.road(yg)
+        ax, ay = round(xr) + 1, yg - 3  # the arm's pivot, at the edge of the road
+        L = round(2 * (ax - (xl + xr) / 2))  # down, its middle over the middle of the road
+        x, y = ax + 2, yg
         vline(a, x, y - 30, y, c["ink"])
         for k in range(-3, 4):
             put(a, x + k, y - 31 + k, c["ink"])
@@ -4121,14 +4132,13 @@ class Crossing(Pixel):
             box(a, lx, y - 22, 2, 2, c["red"] if lit else c["ink2"])
             if lit:
                 pglow(a, lx + 1, y - 21, 10, c["red"], 0.45, add=dk)
+        box(a, ax - 1, ay - 1, 4, yg - ay + 1, c["ink"])  # the barrier's box at the post's foot
         down = ease_io(window(t, 8.6, 9.8)) * (1 - ease_io(window(t, 15.0, 16.2)))
         ang = -1.45 * (1 - down)
-        ax, ay = x - 3, y - 10
-        L = 44
-        for d in range(L):
+        for d in range(L + 1):
             px_ = ax - d * math.cos(ang)
             py_ = ay + d * math.sin(ang)
-            put(a, px_, py_, c["red"] if (d // 3) % 2 and d > 3 else c["lamp"] if dk else c["ink"])
+            put(a, px_, py_, c["red"] if (d // 3) % 2 and d > 2 else c["lamp"] if dk else c["ink"])
 
     # the second landscape: the station down the line, a platform in the paddies, seen from the field
 
