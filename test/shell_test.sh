@@ -4702,9 +4702,9 @@ mo_clean() { _i=0; while [ "$_i" -lt 50 ] && [ -n "$(ls "$H/motmp" 2>/dev/null)"
 mo_stop() { for _mp in $(pgrep -u "$(id -u)" -f "$H/mo/spark-wallpaper" 2>/dev/null || :); do kill "$_mp" 2>/dev/null || :; done; }
 mo desktop --motion >/dev/null 2>&1; mo_wait 1; mo_clean
 _ml=$(sed -n 1p "$HOME/player.log" 2>/dev/null || :)
-case $_ml in "--all $_mdir/orbit-"*.mp4) _mok=1 ;; *) _mok='' ;; esac
+case $_ml in "--screen HDMI-A-1=$_mdir/orbit-"*.mp4) _mok=1 ;; *) _mok='' ;; esac
 [ -n "$_mok" ] && [ -f "${_ml##* }" ] && [ "$(grep -c '' "$HOME/mpv.log")" = 1 ] && grep -q 'mf://.* --mf-fps=30 .*--ovc=libx264' "$HOME/mpv.log" && [ -z "$(ls "$H/motmp")" ] \
-    && ok "desktop --motion: a drawing's frames made into a loop by mpv in the background, kept in the cache, played by spark-wallpaper on every screen, the frames gone (#180, #187)" || bad "motion start" "$_ml | $(cat "$HOME/mpv.log" 2>&1) | $(ls "$H/motmp")"
+    && ok "desktop --motion: a drawing's frames made into a loop by mpv in the background, kept in the cache, played by spark-wallpaper on the screen that shows the drawing itself (the turned one keeps its own portrait), the frames gone (#180, #187)" || bad "motion start" "$_ml | $(cat "$HOME/mpv.log" 2>&1) | $(ls "$H/motmp")"
 mo desktop --motion >/dev/null 2>&1; sleep 0.5
 [ "$(grep -c '' "$HOME/player.log")" = 1 ] && ok "desktop --motion: a loop already playing is left as it is (#180)" || bad "motion twice" "$(cat "$HOME/player.log")"
 rc=0; out=$(mo theme motion off 2>&1) || rc=$?; sleep 0.5
@@ -10154,7 +10154,7 @@ echo 3 > "$HOME/screens"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w8=
 [ "$w1" = '' ] && [ "$w1g" = 'Wallpaper and screens: wallpaper/theme:wallpaper wallpaper/theme:show:Moving wallpaper idle and lock/theme:screens:clock' ] \
     && [ "$w2" = 'DP-3/Tall (turned)=fjord, drawn for a turned screen:theme_portrait:files/rows:' ] && [ "$w3" = 'DP-3/Tall (turned)=watch, drawn for a turned screen:theme_portrait:files/rows:' ] \
     && [ "$w4" = 'DP-3/Tall (turned)=#224466::theme/rows/wallpapers:' ] && [ "$w5" = 'DP-3/Tall (turned)=the ground::theme/rows/wallpapers:' ] \
-    && [ "$w6" = 'DP-4/Side=fjord::theme/rows/wallpapers:' ] \
+    && [ "$w6" = 'DP-4/Side=fjord, its second view::theme/rows/wallpapers:' ] \
     && [ "$w7" = 'DP-4/Side=Landscape 2:theme_panel2:files/rows:take it away {"n":"2","path":"none"}' ] \
     && [ "$w8" = 'DP-3/Tall (turned)=Portrait:theme_portrait:files/rows:take it away {"path":"none"}|DP-4/Side=Landscape 2:theme_panel2:files/rows:take it away {"n":"2","path":"none"}' ] \
     && ok "provide theme: Wallpaper and screens lists each screen that shows something of its own by its name and what it shows (fitted, drawn for a turned screen, a role), never none: one plain screen has no row; a color or the ground and a drawing on a second screen open the wallpaper list; a turned screen picks its picture, a second or third landscape one beside a picture, counted among the landscape screens alone" \
