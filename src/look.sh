@@ -241,8 +241,8 @@ wall_name() {   # -> default, a name or hex; nothing for a path
     for w in $WALL_NAMES; do [ "$(wall_hex "$w")" != "$(panel_lower "$WALLPAPER")" ] || { echo "$w"; return; }; done
     echo "$WALLPAPER"
 }
-wall_picture_ok() {   # wall_picture_ok PATH [mp4] -> its real path (no link, under home, nothing hidden; a picture, or with mp4 a picture or an MP4 video) or one line and exit 1
-    _rk='a picture'; _rt=$WALL_TYPES; [ "${2:-}" != mp4 ] || { _rk='a picture or a video'; _rt=$WALL_MEDIA_TYPES; }
+wall_picture_ok() {   # wall_picture_ok PATH [picture] -> its real path (no link, under home, nothing hidden; a picture or an MP4 video, with picture a picture alone) or one line and exit 1
+    _rk='a picture or a video'; _rt=$WALL_MEDIA_TYPES; [ "${2:-}" != picture ] || { _rk='a picture'; _rt=$WALL_TYPES; }
     _rp=$(realpath "$1" 2>/dev/null) && [ ! -L "$1" ] || { echo "wallpaper: $1 is not a file of yours"; return 1; }
     _hr=$(realpath "$HOME" 2>/dev/null) || _hr=$HOME
     case $_rp in "$_hr"/*) ;; *) echo "wallpaper: $_rk comes from under your home"; return 1 ;; esac

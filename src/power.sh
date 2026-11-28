@@ -234,7 +234,7 @@ panel_act_theme() {   # the theme steps: the text, the wallpaper, save, delete, 
         wallpaper) _r=$(cmd_theme wallpaper "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "the wallpaper is $_arg" ;;
         wallpaper-color) _h=$(wall_hex "$_arg") || { echo "a color is a name ($(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')) or #rrggbb"; return 1; }
             _r=$(cmd_theme wallpaper "$_h" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "the wallpaper is $_arg" ;;
-        wallpaper-picture) _pp=$(wall_picture_ok "$_arg" mp4) || { echo "$_pp"; return 1; }
+        wallpaper-picture) _pp=$(wall_picture_ok "$_arg") || { echo "$_pp"; return 1; }
             _r=$(cmd_theme wallpaper "$_pp" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "the wallpaper is ${_pp##*/}" ;;
         save) _r=$(cmd_theme save "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "saved $(layout_name_of "$_arg") $PANEL_SEP spark-shell theme $(layout_name_of "$_arg") brings it back" ;;
         delete) _r=$(THEME_UNDO=1; cmd_theme delete "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | tail -1 ;;

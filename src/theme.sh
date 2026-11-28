@@ -1073,7 +1073,7 @@ theme_picture() {   # theme_picture PATH [face=F] [family=G] [animation=N]
     [ -n "${1:-}" ] || refuse_in theme "picture takes a picture's path"
     _lpy=$(look_picks "$*") || refuse_in theme "$_lpy"
     look_picks "$*"; set -- "$_lpr"
-    _pp=$(wall_picture_ok "$1") || refuse_in theme "${_pp#wallpaper: }"
+    _pp=$(wall_picture_ok "$1" picture) || refuse_in theme "${_pp#wallpaper: }"
     command -v python3 >/dev/null 2>&1 || refuse_in theme "python3 is not installed, and it reads the picture's colors"
     _small=$(look_small "$_pp") || refuse_in theme "$_small"
     name=$(look_free "$(basename "${_pp%.*}")"); _d=$LOOKS_DIR/$name

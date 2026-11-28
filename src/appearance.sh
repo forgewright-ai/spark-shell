@@ -405,7 +405,7 @@ appearance_preview() (
     _label=$_wall; _picture=''; _source=''; _kind=flat
     case $_wall in
         picture) _source=$_dir/$(look_get "$_dir" PICTURE); _label=$(art_named "$_source" "${_dir##*/}"); _kind=picture ;;   # by its role: Landscape 1
-        /*) _source=$(wall_picture_ok "$_wall") || _source=''; _label=${_wall##*/}; _kind=picture
+        /*) _source=$(wall_picture_ok "$_wall" picture) || _source=''; _label=${_wall##*/}; _kind=picture
             ! wall_video "$_wall" || _source=$(wall_video_still "$_wall")   # a video by its first frame
             if wall_of_theme "$_wall"; then _source=$_wall; _lpd=${_wall%/*}; _label=$(art_named "$_wall" "${_lpd##*/}"); fi ;;   # a theme's own, not under your home
         none|default|'#'*) ;;
