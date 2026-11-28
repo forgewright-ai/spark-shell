@@ -5002,9 +5002,8 @@ CROW = (
 
 
 class Crossing(Pixel):
-    """A level crossing at dusk, far off, a lit vending machine by its road. The bells
-    ring, the arm comes down, a small train goes by; after it the crows on the
-    wire are in another order. The second view is the station down the line,
+    """A level crossing at dusk, far off. The bells ring, the arm comes down, a
+    small train goes by; after it the crows on the wire are in another order. The second view is the station down the line,
     seen from the field: the train stops, opens its doors to no one, and goes."""
 
     name = "crossing"
@@ -5014,16 +5013,16 @@ class Crossing(Pixel):
 
     def layout(self, portrait):
         """Where things are: landscape, or a portrait's tall dusk over a low horizon, one span of
-        wire high up between two poles, the crossing below and the vending machine by its road."""
+        wire high up between two poles, the crossing below."""
         if portrait:
             self.RAIL, self.CROWS, self.SX, self.SUN = 340, (70, 110, 150, 190), 196, (178, 302)
             self.POLES, self.WIRES, self.ARM = (24, 246), ((63, 18), (63, 26), (73, 22)), 62
-            self.VEND, self.CLOUDS, self.TOWER, self.DUST = (158, 346), (40, 250), (62, 306), (110, 262, 230, 340)
+            self.CLOUDS, self.TOWER, self.DUST = (40, 250), (62, 306), (110, 262, 230, 340)
             self.SKY = ((0, "top"), (190, "mid"), (340, "low"))
         else:
             self.RAIL, self.CROWS, self.SX, self.SUN = 200, (130, 190, 250, 310), 334, (345, 168)
             self.POLES, self.WIRES, self.ARM = (36, 444), ((33, 22), (33, 31), (43, 26)), 32
-            self.VEND, self.CLOUDS, self.TOWER, self.DUST = (281, 206), (30, 140), (150, 166), (200, 470, 95, 200)
+            self.CLOUDS, self.TOWER, self.DUST = (30, 140), (150, 166), (200, 470, 95, 200)
             self.SKY = ((0, "top"), (105, "mid"), (200, "low"))
         if self.view2:
             self.RAIL, self.SUN, self.CLOUDS, self.DUST = 206, (78, 168), (24, 120), (150, 470, 120, 186)
@@ -5117,22 +5116,19 @@ class Crossing(Pixel):
             for x in range(p0, p1 + 1):
                 put(a, x, self.wire(x, k), c["ink"])
 
-    def front(self, a, c, dk):
-        """The vending machine, lit, at the side of the road on our side of the crossing."""
-        x, y = self.VEND
-        box(a, x, y, 12, 22, c["ink"])
-        box(a, x + 1, y + 1, 10, 11, c["vend"], 0.95)
-        for i in range(3):
-            for j in range(2):
-                box(a, x + 2 + i * 3, y + 2 + j * 5, 2, 3, (c["vend2"], c["vend3"], c["vend2"])[(i + j) % 3])
-        box(a, x + 2, y + 14, 8, 1, c["ink2"])
-        put(a, x + 9, y + 13, c["red"])
-        box(a, x + 2, y + 17, 8, 2, c["ink2"])
-        pglow(a, x + 6, y + 7, 22, c["vend"], 0.22 if dk else 0.05, add=dk)
-        fill(a, Mask().ell(x + 6, y + 23, 13, 3), c["vend"], 0.15 if dk else 0.05)
+    def road(self, y):
+        """The road's two edges at height y, on our side of the line: it widens toward us."""
+        u = (y - self.RAIL - 7) / (self.gh - self.RAIL - 7)
+        return self.SX - 10 - 82 * u, self.SX + 6 + 64 * u
 
     def sign(self, a, c, t, active, dk):
-        x, y = self.SX, self.RAIL + 6
+        """The crossing's signal at the road's right edge, its lights and cross; and its arm,
+        pivoting at that edge, down across the road from edge to edge."""
+        yg = self.RAIL + 9  # where the barrier stands, just short of the rails
+        xl, xr = self.road(yg)
+        ax, ay = round(xr) + 1, yg - 3  # the arm's pivot, at the edge of the road
+        L = round(2 * (ax - (xl + xr) / 2))  # down, its middle over the middle of the road
+        x, y = ax + 2, yg
         vline(a, x, y - 30, y, c["ink"])
         for k in range(-3, 4):
             put(a, x + k, y - 31 + k, c["ink"])
@@ -5144,14 +5140,13 @@ class Crossing(Pixel):
             box(a, lx, y - 22, 2, 2, c["red"] if lit else c["ink2"])
             if lit:
                 pglow(a, lx + 1, y - 21, 10, c["red"], 0.45, add=dk)
+        box(a, ax - 1, ay - 1, 4, yg - ay + 1, c["ink"])  # the barrier's box at the post's foot
         down = ease_io(window(t, 8.6, 9.8)) * (1 - ease_io(window(t, 15.0, 16.2)))
         ang = -1.45 * (1 - down)
-        ax, ay = x - 3, y - 10
-        L = 44
-        for d in range(L):
+        for d in range(L + 1):
             px_ = ax - d * math.cos(ang)
             py_ = ay + d * math.sin(ang)
-            put(a, px_, py_, c["red"] if (d // 3) % 2 and d > 3 else c["lamp"] if dk else c["ink"])
+            put(a, px_, py_, c["red"] if (d // 3) % 2 and d > 2 else c["lamp"] if dk else c["ink"])
 
     # the second landscape: the station down the line, a platform in the paddies, seen from the field
 
@@ -5202,7 +5197,7 @@ class Crossing(Pixel):
         box(a, nx - 19, 163, 39, 13, c["lamp"] if dk else c["vend"])
         text(a, nx - 7, 165, "HARA", c["ink"])
         hline(a, nx - 18, nx + 19, 172, c["vend3"])
-        sx0 = 334  # the shelter: a roof on two posts, its back to us, a bench under it; a vending machine beside
+        sx0 = 334  # the shelter: a roof on two posts, its back to us, a bench under it
         m = Mask().rect(sx0 - 2, 160, 66, 3).rect(sx0 + 3, 163, 2, PL - 4 - 163).rect(sx0 + 57, 163, 2, PL - 4 - 163)
         fill(a, m, c["ink"])
         front.mm |= m.m()
@@ -5214,15 +5209,6 @@ class Crossing(Pixel):
         for y in range(171, 177, 2):
             hline(a, sx0 + 14, sx0 + 22, y, c["ink2"])
         box(a, sx0 + 34, 168, 14, 11, c["vend2"], 0.4)
-        vx, vy = sx0 + 66, 178
-        m = Mask().rect(vx, vy, 8, 12)
-        fill(a, m, c["ink"])
-        front.mm |= m.m()
-        box(a, vx + 1, vy + 1, 6, 6, c["vend"], 0.95)
-        for i in range(3):
-            put(a, vx + 2 + i * 2, vy + 2, (c["vend2"], c["vend3"], c["vend2"])[i])
-        put(a, vx + 6, vy + 8, c["red"])
-        pglow(a, vx + 4, vy + 4, 14, c["vend"], 0.2 if dk else 0.05, add=dk)
         self.LAMPS = [(x, 150) for x in (112, 202, 292, 432)]
         for lx, ly in self.LAMPS:  # the platform's lamps, lit for the evening
             m = Mask().rect(lx, ly, 1, PL - 4 - ly).rect(lx - 3, ly, 7, 1)
@@ -5313,7 +5299,6 @@ class Crossing(Pixel):
             put(a, x0 + 1, self.RAIL - 4, c["lamp"])
             pglow(a, x0 + 1, self.RAIL - 4, 8, c["lamp"], 0.4, add=dk)
         self.sign(a, c, t, active, dk)
-        self.front(a, c, dk)
         after = 12.6 <= t < 23.0
         order = (2, 0, 3, 1) if after else (0, 1, 2, 3)
         settle = ease_io(window(t, 22.0, 23.0))
