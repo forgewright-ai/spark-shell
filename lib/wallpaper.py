@@ -55,7 +55,9 @@ cozy: warm and playful, a picture book for grown-ups
               road whose sign warns of saucers; one goes over on its way, and
               a coyote howls after it
     pigeons   IP over avian carriers (RFC 1149): pigeons carry envelopes
-              over the roofs; one drops its packet and another sends it again
+              over the roofs; one drops its packet and another sends it again.
+              Further along the wire, at the loft, a courier lands and takes
+              its letter in, the loft ticks it, and the answer comes out
 
 night: the night shift, by another hand: pixel art, 480 by 270 shown as
 squares, twelve frames a second, the palette's colors and a dither between
@@ -2454,6 +2456,10 @@ class Pigeons(Scene, Cached):
     WIRE = (140.0, 1780.0, 410.0, 56.0)  # its ends, its height, its sag
     PERCH = (560.0, 720.0, 1060.0, 1220.0, 1360.0)
     portrait = (1080.0, 1920.0, -420.0, 840.0)  # the wire with its birds across, a tall sky for the couriers
+    second = (1920.0, 1080.0, -1920.0, 0.0)  # more of the wire and the roofs: the loft the couriers fly to and from
+    WIRE2 = (1780.0, W + 1700.0, 410.0, 70.0)  # the wire's next span, from the first screen's pole to its own
+    HOLES = (W + 700.0, W + 820.0, W + 940.0)  # the loft's doors
+    BOARD = 730.0  # the loft's landing board
 
     def colors(self, p):
         if not hasattr(self, "_c") or self._c[0] is not p:
@@ -2467,6 +2473,8 @@ class Pigeons(Scene, Cached):
                 bird=bird, bird2=mix(bird, ink, 0.3), head=mix(bird, ink, 0.34), wing=mix(bird, p("white"), 0.34), wing2=mix(bird, p("white"), 0.18), bar=mix(bird, ink, 0.62),
                 green=mix(mix(p("ansi_6"), p("ansi_2"), 0.4), bird, 0.2), purple=mix(mix(p("ansi_5"), p("ansi_4"), 0.25), bird, 0.2), cere=mix(p("white"), bird, 0.4),
                 foot=mix(p("ansi_1"), p("white"), 0.3), eye=mix(p("ansi_3"), p("ansi_1"), 0.45), ink=ink, letter=p.pick("fg+white:40", "white"), seal=p("ansi_1"), smoke=p.pick("fg", "fg"), bubble=p.pick("bg+fg:88", "white"),
+                loft=p.pick("bg+ansi_1:30", "bg+ansi_1:42"), loft2=mix(p.pick("bg+ansi_1:30", "bg+ansi_1:42"), ink, 0.35), plank=p.pick("bg+ansi_3:34", "bg+ansi_3:46"),
+                hole=mix(ink, p("bg"), 0.15), brick=p.pick("bg+ansi_1:20", "bg+ansi_1:28"),
             ))
         return self._c[1]
 
@@ -2475,7 +2483,14 @@ class Pigeons(Scene, Cached):
         m, half = (x0 + x1) / 2, (x1 - x0) / 2
         return y + low + sag * (1 - ((x - m) / half) ** 2)
 
+    def wire2_y(self, x, low=0.0):
+        x0, x1, y, sag = self.WIRE2
+        m, half = (x0 + x1) / 2, (x1 - x0) / 2
+        return y + low + sag * (1 - ((x - m) / half) ** 2)
+
     def back(self, cv, p):
+        if cv.second:
+            return self.back2(cv, p)
         c = self.colors(p)
         sx, sy = (1300.0, -430.0) if cv.portrait else (1560.0, 190.0)
         out = [D(cv, sx, sy, 110, c["halo"]), D(cv, sx, sy, 50, c["sun"])]
@@ -2529,8 +2544,9 @@ class Pigeons(Scene, Cached):
             out.append(L(cv, Shape().line(pts, 2.4), c["wire"], ss=2))
         return out
 
-    def perched(self, cv, c, x, t, ph, kx=1.0, nod=0.0, letter=False):
-        y = self.wire_y(x) - 2
+    def perched(self, cv, c, x, t, ph, kx=1.0, nod=0.0, letter=False, y=None):
+        """A pigeon standing on the wire at x, or at y on something else; with a letter in its beak, letter."""
+        y = (self.wire_y(x) if y is None else y) - 2
         bob = 5 * max(0.0, wave(t, 1.6, ph)) + 8 * nod
         sh = lambda s: s.moved(x, y, 1.3, 0, 0, 0, kx)
         out = [L(cv, sh(Shape().line([(-6, 0), (-8, -12)], 3).line([(6, 0), (4, -12)], 3)), c["foot"])]
@@ -2547,6 +2563,9 @@ class Pigeons(Scene, Cached):
         out.append(L(cv, sh(Shape().ellipse(hx - 13, hy - 1, 2.6, 1.8)), c["cere"]))
         ex, ey = sh(Shape().poly([(hx - 4, hy - 3)])).cmds[0][1][0]
         out += [D(cv, ex, ey, 3.6, c["eye"]), D(cv, ex, ey, 1.6, c["ink"])]
+        if letter:
+            lx, ly = sh(Shape().poly([(hx - 30, hy + 8)])).cmds[0][1][0]
+            out += self.envelope(cv, c, lx, ly, 0.25 * kx, 0.8)
         return out
 
     def flying(self, cv, c, x, y, kx, t, letter):
@@ -2578,8 +2597,8 @@ class Pigeons(Scene, Cached):
         out.append(L(cv, sh(bars), c["bar"]))
         return out
 
-    def envelope(self, cv, c, x, y, rot):
-        tf = lambda s: s.moved(x, y, 1.25, rot)
+    def envelope(self, cv, c, x, y, rot, k=1.0):
+        tf = lambda s: s.moved(x, y, 1.25 * k, rot)
         return [L(cv, tf(Shape().rect(-18, -12, 36, 24)), c["letter"]), L(cv, tf(Shape().line([(-18, -12), (0, 2), (18, -12)], 2)), c["bird2"]), L(cv, tf(Shape().circle(0, 2, 4)), c["seal"])]
 
     def drop(self, t):
@@ -2591,6 +2610,8 @@ class Pigeons(Scene, Cached):
 
     def under(self, cv, p, t):
         c = self.colors(p)
+        if cv.second:
+            return self.under2(cv, c, t)
         out = []
         clouds_ = ((760, -520, 1.0), (1240, -220, 0.7), (700, 120, 0.6)) if cv.portrait else ((560, 160, 1.0), (1060, 250, 0.7), (300, 320, 0.6))
         for i, (x, y, w) in enumerate(clouds_):
@@ -2632,8 +2653,127 @@ class Pigeons(Scene, Cached):
 
     def over(self, cv, p, t):
         c = self.colors(p)
+        if cv.second:  # the loft acknowledges the letter
+            return bubble(cv, self.HOLES[1] + 56, 614, 0.85 * pop(t, 12.4, 14.0), "v", c["bubble"], c["ink"], tail=-1)
         px = self.PERCH[2]
         return bubble(cv, px + 50, self.wire_y(px) - 140, pop(t, 11.3, 12.3), "!", c["bubble"], c["ink"], tail=-1)
+
+    # -- more of the wire and the roofs: the second landscape, a screen to the right
+
+    def back2(self, cv, p):
+        c = self.colors(p)
+        X = W
+        out = []
+        if c["dark"]:
+            out += stars(cv, c["star"], 28, 70, 20, 520, alpha=0.4)
+        rnd = random.Random(16)
+        far = Shape()
+        x = X - 20
+        while x < X + W:
+            w, h = rnd.uniform(70, 150), rnd.uniform(120, 260)
+            far.rect(x, 720 - h, w, h + 10)
+            x += w + rnd.uniform(-10, 20)
+        out.append(L(cv, far, c["far"], ss=1))
+        near, roofs = Shape(), []
+        for x, w, h in ((X - 40, 260, 300), (X + 236, 250, 250), (X + 500, 820, 280), (X + 1340, 230, 330), (X + 1590, 360, 260)):
+            near.rect(x, H - h, w, h)
+            roofs.append((x, H - h, w))
+        out.append(L(cv, near, c["near"], ss=1))
+        rf = Shape()
+        for x, y, w in roofs:
+            rf.rect(x - 6, y - 10, w + 12, 12)
+        out.append(L(cv, rf, c["roof"], ss=1))
+        win, lit = Shape(), Shape()
+        for x, y, w in roofs:
+            for wx in range(int(x + 22), int(x + w - 30), 46):
+                for wy in range(int(y + 34), H - 20, 62):
+                    if rnd.random() < 0.3:
+                        (lit if rnd.random() < 0.5 else win).rect(wx, wy, 22, 30)
+        out.append(L(cv, win, c["roof"], ss=1))
+        out.append(L(cv, lit, c["window"], 0.55 if c["dark"] else 1.0, ss=1))
+        # the chimney and an aerial on the loft's roof
+        out.append(L(cv, Shape().rect(X + 1190, 704, 46, 98).rect(X + 1184, 696, 58, 12), c["brick"], ss=2))
+        out.append(L(cv, Shape().line([(X + 560, 792), (X + 560, 650)], 5).line([(X + 524, 676), (X + 596, 676)], 4).line([(X + 536, 700), (X + 584, 700)], 4), c["roof"], ss=2))
+        # the poles and the wires' next span
+        x0, x1, wy, sag = self.WIRE2
+        out.append(L(cv, Shape().line([(x1, wy - 30), (x1, H)], 16).line([(x1 - 50, wy), (x1 + 50, wy)], 10), c["pole"], ss=2))
+        for low in (0.0, 30.0):
+            pts = [(x, self.wire2_y(x, low)) for x in range(int(x0), int(x1) + 1, 20)]
+            out.append(L(cv, Shape().line(pts, 2.4), c["wire"], ss=2))
+        # the loft: its legs, its wall with three doors, its roof, the board in front
+        lx0, lx1 = X + 620.0, X + 1020.0
+        out.append(L(cv, Shape().rect(lx0 + 20, 770, 12, 32).rect(lx1 - 32, 770, 12, 32).rect((lx0 + lx1) / 2 - 6, 770, 12, 32), c["loft2"], ss=2))
+        out.append(L(cv, Shape().rect(lx0, 640, lx1 - lx0, 132), c["loft"], ss=2))
+        boards = Shape()
+        for k in range(1, 8):
+            boards.line([(lx0 + k * 50, 644), (lx0 + k * 50, 768)], 2)
+        out.append(L(cv, boards, c["loft2"], 0.4, ss=2))
+        doors = Shape()
+        for hx in self.HOLES:
+            doors.poly([(hx - 26, self.BOARD), (hx - 26, 690)] + ellipse_pts(hx, 690, 26, 22, n=20, a0=math.pi, a1=2 * math.pi) + [(hx + 26, self.BOARD)])
+        out.append(L(cv, doors, c["hole"], ss=2))
+        out.append(L(cv, Shape().poly([(lx0 - 26, 646), ((lx0 + lx1) / 2, 568), (lx1 + 26, 646), (lx1 + 26, 656), ((lx0 + lx1) / 2, 580), (lx0 - 26, 656)]), c["loft2"], ss=2))
+        out.append(L(cv, Shape().poly([(lx0 - 4, 642), ((lx0 + lx1) / 2, 582), (lx1 + 4, 642)]), c["loft"], ss=2))
+        out.append(L(cv, Shape().rect(lx0 + 20, self.BOARD, lx1 - lx0 - 40, 10), c["plank"], ss=2))
+        out.append(L(cv, Shape().line([(lx0 + 40, self.BOARD + 10), (lx0 + 70, self.BOARD + 34)], 5).line([(lx1 - 40, self.BOARD + 10), (lx1 - 70, self.BOARD + 34)], 5), c["loft2"], ss=2))
+        return out
+
+    def courier_a(self, t):
+        """The first screen's courier A, landing on the loft's board with its letter."""
+        if 7.5 <= t < 10.4:
+            u = ease_out(window(t, 7.5, 10.4)) * 0.7 + window(t, 7.5, 10.4) * 0.3
+            x, y = bezier((2040, 250), (2380, 250), (2540, 560), (self.HOLES[0] - 50, self.BOARD - 34), n=60)[int(u * 60)]
+            return "fly", x, y
+        if 10.4 <= t < 12.3:
+            return "walk", self.HOLES[0] - 50 + 50 * ease_io(window(t, 10.9, 11.6)), 1 - ease_in(window(t, 11.7, 12.3))
+        return None
+
+    def courier_b(self, t):
+        """Courier B: out of the loft with the answer, a wait, and off to the first screen."""
+        if t >= 19.6 or t < 4.0:
+            return "sit", self.HOLES[2], ease_out(window(t, 19.6, 20.4)) if t >= 19.6 else 1.0
+        if t < 8.0:
+            u = ease_io(window(t, 4.0, 8.0))
+            x, y = bezier((self.HOLES[2], self.BOARD - 40), (self.HOLES[2] - 60, 560), (2400, 300), (2040, 300), n=60)[int(u * 60)]
+            return "fly", x, y
+        if t < 8.6:  # the first screen's own path for it, as it leaves this one
+            return "fly", 2040 - 2200 * window(t, 8.0, 16.5), 300 + 6 * wave(t, 0.7)
+        return None
+
+    def under2(self, cv, c, t):
+        X = W
+        out = []
+        for i, (x, y, w) in enumerate(((X + 420, 190, 0.9), (X + 1120, 120, 0.6), (X + 1600, 280, 0.8))):
+            dx = 40 * wave(t, 24, i * 0.3 + 0.1)
+            cl = Shape().rect(x + dx - 110 * w, y, 220 * w, 30 * w).circle(x + dx - 50 * w, y + 4, 38 * w).circle(x + dx + 24 * w, y - 8 * w, 50 * w).circle(x + dx + 86 * w, y + 8, 30 * w)
+            out.append(L(cv, cl, c["cloud"], ss=2, above=y + 30 * w))
+        rnd = random.Random(21)
+        for i in range(5):  # the chimney's smoke
+            ph = i / 5 + rnd.uniform(0, 0.04)
+            u = ((t / 8.0) + ph) % 1.0
+            x, y = X + 1213 + 70 * u + 10 * wave(t, 8, ph), 690 - 200 * u
+            out.append(L(cv, Shape().ellipse(x, y, 12 + 22 * u, 16 + 26 * u), c["smoke"], (0.12 if c["dark"] else 0.16) * bump(u) ** 1.5, ss=1, soft=8 + 8 * u))
+        # two on the wire, one on the loft's ridge
+        for i, (x, kx) in enumerate(((X + 260, 1), (X + 470, -1))):
+            out += self.perched(cv, c, x, t, 0.2 + i * 0.41, kx, 0.0, False, self.wire2_y(x))
+        out += self.perched(cv, c, X + 740, t, 0.66, 1, bump(window(t, 13.0, 13.6)), False, 604)
+        a = self.courier_a(t)
+        if a and a[0] == "fly":
+            out += self.flying(cv, c, a[1], a[2], -1, t, True)
+        elif a:
+            birds = self.perched(cv, c, a[1], t, 0.5, -1, 0.0, True, self.BOARD)
+            for ly in birds:
+                ly.alpha *= a[2]
+            out += birds
+        b = self.courier_b(t)
+        if b and b[0] == "fly":
+            out += self.flying(cv, c, b[1], b[2], 1, t, True)
+        elif b:
+            birds = self.perched(cv, c, b[1], t, 0.9, 1, 0.0, True, self.BOARD)
+            for ly in birds:
+                ly.alpha *= b[2]
+            out += birds
+        return out
 
 
 BLACK3 = (0.0, 0.0, 0.0)
