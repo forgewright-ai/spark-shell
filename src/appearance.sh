@@ -314,8 +314,9 @@ appearance_art() {   # appearance_art THEME -> its compositions: one screen, a t
         ("spark-shell://theme/preview/" + $name) as $p | ($chip | split(" ")) as $c
         | {title: "Compositions", state: $label, short: [], rows: ([
             {id: "theme:art:landscape", text: "one screen", columns: ["landscape"], page: $p, chip: $c},
-            {id: "theme:art:portrait", text: "turned screen", columns: [if .portrait == "authored" then "its own composition" else "the art fitted" end], page: ($p + "/portrait"), chip: $c}]
-          + [.screens[1:][] | tostring as $n | {id: ("theme:art:panels-" + $n), text: ({"2": "two screens", "3": "three screens"}[$n]), columns: ["panels"], page: ($p + "/panels-" + $n), chip: $c}])}'
+            {id: "theme:art:portrait", text: "turned screen", columns: [if .portrait == "authored" or .portrait == "drawn" then "its own composition" else "the art fitted" end], page: ($p + "/portrait"), chip: $c}]
+          + [.second as $sv | .screens[1:][] | tostring as $n | {id: ("theme:art:panels-" + $n), text: ({"2": "two screens", "3": "three screens"}[$n]),
+              columns: [if $sv then "its second landscape" else "panels" end], page: ($p + "/panels-" + $n), chip: $c}])}'
 }
 
 appearance_palette() (
@@ -442,9 +443,12 @@ appearance_preview_art() (
         portrait) _file=$(printf '%s' "$_art" | jq -r '.portrait_file // empty')
             if [ -n "$_file" ]; then _say='its own portrait'; _how=file
             elif wall_scene "$_wall"; then _say='the scene drawn for a turned screen'; _how=scene
+            elif [ "$(printf '%s' "$_art" | jq -r .portrait)" = drawn ]; then _say='the drawing drawn for a turned screen'; _how=drawn
             else _say='the art fitted, never cropped'; _how=fit; fi ;;
         panels-2|panels-3) _files=$(printf '%s' "$_art" | jq -r --arg n "${_role#panels-}" '.panels[$n] // [] | .[] | (.landscape // .portrait)')
-            [ -n "$_files" ] || return 1; _say="${_role#panels-} panels, left to right"; _how=strip ;;
+            if [ -n "$_files" ]; then _say="${_role#panels-} panels, left to right"; _how=strip
+            elif [ "$_role" = panels-2 ] && [ "$(printf '%s' "$_art" | jq -r '.second // empty')" != "" ]; then _say='its first and second landscape, left to right'; _how=second
+            else return 1; fi ;;
         *) return 1 ;;
     esac
     _stamp=$({ printf '%s\n' "$_role" "$_art"; cat "$_pal"; } | cksum | cut -d' ' -f1)
@@ -455,6 +459,11 @@ appearance_preview_art() (
         case $_how in
             file) pic_png "$_dir/$_file" "$_made" "$_h" || : ;;
             scene) scene_still "$_wall" "$_pal" "$((_h * 9 / 32 * 2))x$_h" "$_made" || : ;;
+            drawn) WALLPAPER=$_wall; art_view_draw drawn "$((_h * 9 / 32 * 2))x$_h" "$_pal" "$_made" || : ;;
+            second) _land=$(appearance_preview "$_key" | jq -r '.picture // empty'); _two=$TMP/theme-art-2.png; rm -f "$_two"
+                if wall_scene "$_wall"; then scene_still "$_wall" "$_pal" "$((_h * 16 / 9))x$_h" "$_two" 2 || :
+                else WALLPAPER=$_wall; art_view_draw drawing2 "$((_h * 16 / 9))x$_h" "$_pal" "$_two" || :; fi
+                [ -z "$_land" ] || [ ! -s "$_two" ] || art_strip "$_made" "$((_h / 2))" "$_ground" "$_land" "$_two" || : ;;
             fit) _land=$(appearance_preview "$_key" | jq -r '.picture // empty')
                 [ -z "$_land" ] || art_fit "$_land" "$((_h * 9 / 32 * 2))x$_h" "$(art_edges "$_land" "$_ground" "$TMP/edges.png")" "$_made" || : ;;
             strip) set --; for _f in $_files; do set -- "$@" "$_dir/$_f"; done; art_strip "$_made" "$((_h / 2))" "$_ground" "$@" || : ;;

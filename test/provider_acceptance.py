@@ -316,11 +316,13 @@ class Providers(unittest.TestCase):
             self.assertEqual(compositions, [])
         else:
             self.assertEqual(compositions[0]["children"], base + "/core-tokyonight-day/art")
-        self.assertEqual([r["id"] for r in art["rows"]], ["theme:art:landscape", "theme:art:portrait"])
+        # every theme is three pictures (the owner's rule): the drawing's own portrait and its second landscape
+        self.assertEqual([r["id"] for r in art["rows"]], ["theme:art:landscape", "theme:art:portrait", "theme:art:panels-2"])
+        self.assertEqual([r["columns"] for r in art["rows"]], [["landscape"], ["its own composition"], ["its second landscape"]])
         self.assertTrue(all(not r.get("tool") and not r.get("look") and r["page"].startswith("spark-shell://theme/preview/core-tokyonight-day")
                             for r in art["rows"]))
-        self.assertEqual(portrait["facts"][0], "the art fitted, never cropped")
-        self.assertIn("error", replies[4], "no panels are claimed for a work that has none")
+        self.assertEqual(portrait["facts"][0], "the drawing drawn for a turned screen")
+        self.assertIn("error", replies[4], "no panels for three screens are claimed for a work that has two landscapes")
         self.assertIn("error", replies[5])
         self.assertEqual(config.read_text(), before)
         self.assertFalse((cfgdir / "themes").exists())
