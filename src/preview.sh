@@ -153,8 +153,8 @@ files_folder_page() {   # files_folder_page PATH -> a folder's page: what it hol
     # the files in it and a level down, as many as a moment finds: each one's kind, size, day and place
     rm -f "$TMP/walk.stopped"
     files_timed 2 find "$1" -mindepth 1 -maxdepth 2 ! -path '*/.*' -type f -print0 2>/dev/null | files_nul | tr '\000' '\n' | head -n 4000 | tr '\n' '\000' | files_stats \
-        | awk -F "$US" -v root="$1" -v us="$US" -v kinds="$FILES_KINDS" '
-            BEGIN { n = split(kinds, l, "\n"); for (i = 1; i <= n; i++) { m = split(l[i], w, " "); for (k = 2; k <= m; k++) kind[w[k]] = w[1] } }
+        | KINDS=$FILES_KINDS awk -F "$US" -v root="$1" -v us="$US" '
+            BEGIN { n = split(ENVIRON["KINDS"], l, "\n"); for (i = 1; i <= n; i++) { m = split(l[i], w, " "); for (k = 2; k <= m; k++) kind[w[k]] = w[1] } }
             { p = substr($0, length($1 $2 $3 $4 $5) + 6); name = p; sub(/.*\//, "", name); e = tolower(name); if (e ~ /\./) sub(/.*\./, "", e); else e = ""
               k = (e in kind) ? kind[e] : "other"
               if (k == "markdown" || k == "text" || k == "pdf" || k == "office") k = "documents"; else if (k == "code" || k == "json") k = "code"
