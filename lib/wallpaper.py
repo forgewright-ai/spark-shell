@@ -1608,13 +1608,14 @@ class Pigeons(Scene, Cached):
         if not hasattr(self, "_c") or self._c[0] is not p:
             dk = p.dark
             ink = p.pick("ansi_0", "fg")
-            bird = mix(p("muted"), p("ansi_4"), 0.18)
+            bird = mix(p("muted"), p("ansi_4"), 0.3)  # a rock dove: blue-grey, the head darker, the wings lighter and barred, the neck green and purple
             self._c = (p, dict(
                 dark=dk, sky=p("bg"), sun=p.pick("fg+ansi_3:15", "ansi_3+bg:30"), halo=p.pick("bg+accent:6", "bg+ansi_3:10"), star=p.pick("fg", "white"),
                 cloud=p.pick("bg+fg:5", "bg+white:70"), far=p.pick("bg+fg:6", "bg+fg:7"), near=p.pick("bg+fg:11", "bg+fg:13"), roof=p.pick("bg+fg:15", "bg+fg:18"),
                 window=p.pick("ansi_3", "bg+fg:4"), pole=p.pick("bg+fg:18", "bg+fg:45"), wire=p.pick("bg+fg:30", "bg+fg:50"),
-                bird=bird, bird2=mix(bird, ink, 0.3), bird3=mix(bird, p("white"), 0.35), neck=mix(p("ansi_2"), p("ansi_5"), 0.5), foot=mix(p("ansi_1"), p("white"), 0.3),
-                eye=p("ansi_3"), ink=ink, letter=p.pick("fg+white:40", "white"), seal=p("ansi_1"), smoke=p.pick("fg", "fg"), bubble=p.pick("bg+fg:88", "white"),
+                bird=bird, bird2=mix(bird, ink, 0.3), head=mix(bird, ink, 0.34), wing=mix(bird, p("white"), 0.34), wing2=mix(bird, p("white"), 0.18), bar=mix(bird, ink, 0.62),
+                green=mix(mix(p("ansi_6"), p("ansi_2"), 0.4), bird, 0.2), purple=mix(mix(p("ansi_5"), p("ansi_4"), 0.25), bird, 0.2), cere=mix(p("white"), bird, 0.4),
+                foot=mix(p("ansi_1"), p("white"), 0.3), eye=mix(p("ansi_3"), p("ansi_1"), 0.45), ink=ink, letter=p.pick("fg+white:40", "white"), seal=p("ansi_1"), smoke=p.pick("fg", "fg"), bubble=p.pick("bg+fg:88", "white"),
             ))
         return self._c[1]
 
@@ -1683,12 +1684,16 @@ class Pigeons(Scene, Cached):
         sh = lambda s: s.moved(x, y, 1.3, 0, 0, 0, kx)
         out = [L(cv, sh(Shape().line([(-6, 0), (-8, -12)], 3).line([(6, 0), (4, -12)], 3)), c["foot"])]
         out.append(L(cv, sh(Shape().poly([(26, -26), (54, -14), (50, -6), (24, -16)])), c["bird2"]))
+        out.append(L(cv, sh(Shape().poly([(45, -18), (54, -14), (50, -6), (42, -10)])), c["bar"]))  # the tail's dark band
         out.append(L(cv, sh(Shape().poly(spline([(-30, -40), (-8, -58), (20, -50), (34, -28), (14, -12), (-18, -14)], per=8))), c["bird"]))
-        out.append(L(cv, sh(Shape().poly(spline([(-4, -50), (22, -44), (32, -28), (12, -24)], per=5))), c["bird2"], 0.7))
+        out.append(L(cv, sh(Shape().poly(spline([(-8, -50), (18, -48), (34, -30), (26, -22), (4, -24)], per=5))), c["wing"]))
+        out.append(L(cv, sh(Shape().line([(10, -40), (16, -27)], 3.2).line([(19, -40), (25, -27)], 3.2)), c["bar"]))  # its two bars
         hx, hy = -26 - bob * 0.6, -60 + bob * 0.5
-        out.append(L(cv, sh(Shape().ellipse(hx + 6, hy + 14, 15, 13)), c["neck"]))
-        out.append(L(cv, sh(Shape().circle(hx, hy, 14)), c["bird"]))
+        out.append(L(cv, sh(Shape().ellipse(hx + 8, hy + 18, 16, 13)), c["purple"]))  # the neck's sheen
+        out.append(L(cv, sh(Shape().ellipse(hx + 5, hy + 11, 13, 10, -0.3)), c["green"]))
+        out.append(L(cv, sh(Shape().circle(hx, hy, 14)), c["head"]))
         out.append(L(cv, sh(Shape().poly([(hx - 12, hy - 2), (hx - 24, hy + 3), (hx - 12, hy + 5)])), c["ink"]))
+        out.append(L(cv, sh(Shape().ellipse(hx - 13, hy - 1, 2.6, 1.8)), c["cere"]))
         ex, ey = sh(Shape().poly([(hx - 4, hy - 3)])).cmds[0][1][0]
         out += [D(cv, ex, ey, 3.6, c["eye"]), D(cv, ex, ey, 1.6, c["ink"])]
         return out
@@ -1700,16 +1705,26 @@ class Pigeons(Scene, Cached):
         if letter:
             out += self.envelope(cv, c, x + kx * 4, y + 32, 0.0)
         out.append(L(cv, sh(Shape().poly([(30, -2), (60, -12), (62, 6), (30, 8)])), c["bird2"]))
+        out.append(L(cv, sh(Shape().poly([(53, -9), (60, -12), (62, 6), (54, 7)])), c["bar"]))  # the tail's dark band
         far_wing = Shape().poly([(-4, -6), (22, -8), (10 - 4 * f, -34 - 26 * f)])
-        out.append(L(cv, sh(far_wing), c["bird2"]))
+        out.append(L(cv, sh(far_wing), c["wing2"]))
         out.append(L(cv, sh(Shape().ellipse(4, 0, 36, 14)), c["bird"]))
-        out.append(L(cv, sh(Shape().circle(-34, -8, 13)), c["bird"]))
-        out.append(L(cv, sh(Shape().ellipse(-26, -2, 10, 9)), c["neck"]))
+        out.append(L(cv, sh(Shape().ellipse(-24, 0, 11, 10)), c["purple"]))  # the neck's sheen
+        out.append(L(cv, sh(Shape().ellipse(-28, -4, 9, 8)), c["green"]))
+        out.append(L(cv, sh(Shape().circle(-34, -8, 13)), c["head"]))
         out.append(L(cv, sh(Shape().poly([(-46, -10), (-58, -5), (-46, -3)])), c["ink"]))
+        out.append(L(cv, sh(Shape().ellipse(-47, -8, 2.4, 1.7)), c["cere"]))
         ex, ey = sh(Shape().poly([(-38, -12)])).cmds[0][1][0]
         out += [D(cv, ex, ey, 3.2, c["eye"]), D(cv, ex, ey, 1.4, c["ink"])]
-        near_wing = Shape().poly([(-10, -4), (24, -4), (14 + 6 * f, -40 * f - 4)])
-        out.append(L(cv, sh(near_wing), c["bird3"]))
+        tip = (14 + 6 * f, -40 * f - 4)
+        along = lambda a, b, k: (a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k)
+        root0, root1 = (-10, -4), (24, -4)
+        out.append(L(cv, sh(Shape().poly([root0, root1, tip])), c["wing"]))
+        bars = Shape()
+        for k in (0.26, 0.42):  # its two bars, and the dark tip
+            bars.line([along(root0, tip, k), along(root1, tip, k)], 3.4)
+        bars.poly([along(root0, tip, 0.78), along(root1, tip, 0.78), tip])
+        out.append(L(cv, sh(bars), c["bar"]))
         return out
 
     def envelope(self, cv, c, x, y, rot):
