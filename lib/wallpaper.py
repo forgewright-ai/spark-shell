@@ -1925,7 +1925,7 @@ class Campfire(Scene, Cached):
             out.append(L(cv, Shape().line([tail[k], tail[k + 1]], 30 - k * 0.7), c["fur2"] if (k // 4) % 2 else c["fur"]))
         breathe = 1 + 0.02 * wave(t, 3)
         out.append(L(cv, Shape().poly(spline(at([(-38, -8), (-46, -60), (-30, -106 * breathe), (8, -114 * breathe), (38, -96), (48, -50), (36, -6)]), per=8)), c["fur"]))
-        out.append(L(cv, Shape().poly(spline(at([(-32, -96), (-40, -126 * breathe), (-30, -150 * breathe), (0, -152 * breathe), (16, -130 * breathe), (22, -100)]), per=6)), c["fur"]))  # the neck: the head sits on the body
+        out.append(L(cv, Shape().poly(spline(at([(-32, -96), (-45, -121 * breathe), (-36, -146 * breathe), (0, -152 * breathe), (16, -130 * breathe), (22, -100)]), per=6)), c["fur"]))  # the neck: the head sits on the body
         out.append(L(cv, Shape().ellipse(x0 - 12, y0 - 52, 22, 34), c["fur3"], 0.8))
         out.append(L(cv, Shape().ellipse(x0 - 30, y0 - 4, 16, 8).ellipse(x0 + 4, y0 - 2, 16, 8), c["fur2"]))
         paws, tip = self.pose(t)
