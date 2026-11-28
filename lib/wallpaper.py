@@ -2556,13 +2556,16 @@ class Garoa(Pixel):
 
     def creep(self, t, start, n=3, every=8.0, burst=1.6):
         """How far a jammed lane has gone at t, in car lengths: n short goes a loop, a car's
-        length in all, so the loop ends where it began; and whether it is going now."""
-        done, moving = 0.0, False
+        length in all, so the loop ends where it began; and how long since this go began,
+        or None while the lane stands."""
+        done, since = 0.0, None
         for j in range(n):
-            u = window(t, start + j * every, start + j * every + burst)
-            moving = moving or 0 < u < 1
+            t0 = start + j * every
+            u = window(t, t0, t0 + burst)
+            if 0 < u < 1:
+                since = t - t0
             done += ease_io(u)
-        return done / n, moving
+        return done / n, since
 
     def draw2(self, a, p, c, t):
         dk = p.dark
@@ -2583,10 +2586,11 @@ class Garoa(Pixel):
             self.car(a, c, self.gw + 10 - (self.gw + 40) * u, 229, "small", -1, 0.0)
         for lane, (y, kind, gap, start) in enumerate(((247, "small", 3, 1.0), (263, "big", 4, 5.0))):
             pitch = len(self.CARS[kind][0]) + gap
-            done, moving = self.creep(t, start)
+            done, since = self.creep(t, start)
             for k in range(-1, self.gw // pitch + 2):
-                hold = 0.0 if moving else 0.6 if (k + lane) % 5 == 0 else 1.0
-                self.car(a, c, (k - 1 + done) * pitch, y, kind, 1, hold)
+                x = (k - 1 + done) * pitch
+                hold = 1.0 if since is None or since < 0.5 * (1 - x / self.gw) else 0.0  # the brakes let go from the front back
+                self.car(a, c, x, y, kind, 1, hold)
         self.drizzle(a, c, t, self.BANK + 4)
 
 
