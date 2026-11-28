@@ -710,6 +710,7 @@ fn act(app: &mut App, target: scene::Target) {
         scene::Target::ListRow(n) => app.files_list_row(n, Instant::now()),
         scene::Target::Sort => app.files_sort_next(),
         scene::Target::Swatch(strip, i) => app.picker_click(strip, i),
+        scene::Target::Act(k) => app.act_step(k),
     }
 }
 
@@ -1614,7 +1615,7 @@ fn main() {
                 // a frame for the march while it shows, and when the work starts or ends; none for work nothing shows (#196).
                 // The view's wait shows it on the message's row from the moment the wait is felt
                 let march = app.cfg.progress && (app.thinking() || app.view == View::Apps && app.apps.pending.is_some() || app.files.batch.is_some());
-                dirty |= frame_for_tick(was, app.busy(), march || app.view_wait().is_some());
+                dirty |= frame_for_tick(was, app.busy(), march || app.view_wait().is_some() || app.page_coming());
                 // a window still unseen after a moment is shown whatever is drawn: never a dialog that cannot be seen
                 if unseen && started.elapsed() >= Duration::from_millis(1500) {
                     reveal();

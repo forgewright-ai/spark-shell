@@ -7010,13 +7010,19 @@ if [ "$(uname -s)" != Darwin ]; then
         "$(call 6 system_end '{"name":"sway"}')" "$(call 7 system_end '{"name":"spark-dialog"}')" "$(call 8 system_end '{"name":"udevd"}')" "$(call 9 system_end '{"name":"nosuch"}')" \
         "$(call 10 system_front '{"name":"firefox"}')" "$(call 11 system_fix '{"command":"rm -rf /"}')" "$(call 12 system_fix '{"command":"spark-shell on"}')" \
         "$(call 13 system_clean_packages)" "$(rq 14 resources/read '{"uri":"spark-shell://system/rows/details"}')" "$(rq 15 resources/read '{"uri":"spark-shell://system/rows/updates"}')" \
-        "$(call 16 system_end '{"name":"swaybar"}')" "$(call 17 system_end '{"name":"spark-bar"}')" "$(call 18 system_end '{"name":"spark-winpad"}')" "$(call 19 system_end '{"name":"spark-wallpaper"}')")   # a subshell: sh keeps a variable set before a function after it
+        "$(call 16 system_end '{"name":"swaybar"}')" "$(call 17 system_end '{"name":"spark-bar"}')" "$(call 18 system_end '{"name":"spark-winpad"}')" "$(call 19 system_end '{"name":"spark-wallpaper"}')" \
+        "$(rq 20 resources/read "$(jq -cn --arg u "spark-shell://system/page/$(b64u system:check)" '{uri: $u}')")")   # a subshell: sh keeps a variable set before a function after it
     rows() { ans "$1" | jq -c '.result.contents[0].text | fromjson'; }
     said() { ans "$1" | jq -r '.result.content[0].text'; }
     [ "$(rows 1 | jq -c '[.rows[] | [.id, .text, .children]]')" = '[["system:check","check","spark-shell://system/rows/check"],["system:updates","updates","spark-shell://system/rows/updates"],["system:space","space","spark-shell://system/rows/space"],["system:running","running","spark-shell://system/rows/running"],["system:software","software","spark-shell://system/rows/software"],["system:about","about","spark-shell://system/rows/details"]]' ] \
         && [ "$(rows 1 | jq -r '.rows[0].columns[0], .rows[3].columns[0], .rows[0].line')" = "$(printf '3 problems\n8 processes\ncheck %s test the setup and fix problems' "$SEP")" ] \
         && rows 1 | jq -e 'all(.rows[]; (.columns[0] | length) > 0)' >/dev/null \
         && ok "provide system: what needs you first (check, updates, space), then running, software and about, each its state and its page as children; about holds the details of the machine (v0.169)" || bad "system rows" "$(rows 1)"
+    rows 1 | jq -e --arg p "spark-shell://system/page/$(b64u system:check)" '.rows[0].page == $p and all(.rows[]; .page | startswith("spark-shell://system/page/"))' >/dev/null \
+        && ans 20 | jq -r '.result.contents[0].text' | jq -e '.title == "check" and .lines[1] == "3 problems" and (.lines[3] | test("^checked +'"$(date -d "@$(sed -n 1p "$_ts/check.last")" +%H:%M)"'$"))
+            and (.lines[4] | test("^problems +3$")) and (.lines[5] | test("^passed +1$")) and (. as $p | $p.bold | index($p.lines | index("problems"))) != null
+            and any(.lines[]; test("^programs +missing: fzf zoxide$")) and any(.lines[]; . == "the fix: spark-shell desktop, spark-shell on")' >/dev/null \
+        && ok "provide system: each row a glance of what it holds, the check's from the last one kept: its time, its problems each with what it says, the fix (v0.174)" || bad "system glance" "$(ans 20)"
     [ "$(rows 2 | jq -c '[.rows[] | select(.text != "") | [.text, .group, (.columns[0] // ""), (.tool.arguments.command // "")]]')" = '[["programs","problems","missing: fzf zoxide",""],["config files","problems","out of date: .tmux.conf",""],["screen saver","problems","no screen saver",""],["fix",null,"spark-shell on","spark-shell on"],["fix",null,"spark-shell desktop","spark-shell desktop"],["1 passed",null,"",""],["1 not applicable",null,"",""],["check again",null,"checked at '"$(date -d "@$(sed -n 1p "$_ts/check.last")" +%H:%M)"'",""]]' ] \
         && [ "$(rows 2 | jq -r .state)" = '3 problems' ] && [ "$(rows 3 | jq -c '[.rows[] | [.text, .columns[0]]]')" = '[["shell startup","sourced from .zshrc"]]' ] \
         && ok "system check: the problems by plain name, one fix for the two that share it, the passed and the not applicable counted apart, check again with its time" || bad "system check" "$(rows 2)"
@@ -7681,9 +7687,11 @@ mcp2 "$(rq 21 resources/read "{\"uri\":\"spark-shell://files/rows/match/$(b64u f
 ans 21 | jq -r '.result.contents[0].text' | jq -e '[.rows[] | select(.kind != null) | .text] == ["firmware.bin"] and (.rows[0].page | startswith("spark-shell://files/preview/"))' >/dev/null \
     && ans 22 | jq -r '.result.contents[0].text' | jq -e '[.rows[] | select(.kind != null) | .text] == ["field-notes.md"]' >/dev/null \
     && ans 23 | jq -r '.result.contents[0].text' | jq -e '[.rows[] | select(.kind != null) | .text] | .[0] == "reports" and index("final-report.pdf") != null' >/dev/null \
-    && ans 24 | jq -r '.result.contents[0].text' | jq -e '.lines[0:2] == ["docs-169", "1 folder, 2 files"] and .lines[3] == "newest" and .facts == ["~/docs-169"]' >/dev/null \
+    && ans 24 | jq -r '.result.contents[0].text' | jq -e '.lines[0:2] == ["docs-169", "1 folder, 2 files"] and .lines[3] == "by kind" and .facts == ["~/docs-169"]
+        and (. as $p | $p.bold | index($p.lines | index("newest"))) != null
+        and any(.lines[]; test("^documents +2 files, 0 B$")) and any(.lines[]; test(" +firmware.bin in reports$"))' >/dev/null \
     && [ "$(ls -l "$F2/.cache/spark-shell/files.names" | cut -c1-10)" = '-rw-------' ] && [ "$(ls -ld "$F2/.cache/spark-shell" | cut -c1-10)" = drwx------ ] \
-    && ok "provide files: a search from Home finds the names under your home that hold the words, a letter missing or two swapped too, from a list in your cache yours alone; a folder has a page, what it holds and its newest (#169)" || bad "files match" "$(jq -c 'select(.id > 20) | .result.contents[0].text | fromjson? | [.rows[]? | .text, .lines?]' "$H/mcp.out")"
+    && ok "provide files: a search from Home finds the names under your home that hold the words, a letter missing or two swapped too, from a list in your cache yours alone; a folder has a page, what it holds, its files by kind a level down and its newest (#169, v0.174)" || bad "files match" "$(jq -c 'select(.id > 20) | .result.contents[0].text | fromjson? | [.rows[]? | .text, .lines?]' "$H/mcp.out")"
 rm -f "$F2/mpv.log"
 mcpv "$(call 2 files_play "$(jq -cn --arg p "$PVR/song.flac" '{path: $p, at: 12.5}')")" "$(call 3 files_stop)" "$(fc2 4 files_play "$PVR/plan.md")" "$(call 5 files_play "$(jq -cn --arg p "$PVR/song.flac" '{path: $p, at: -1}')")"
 [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'playing song.flac' ] && grep -q -- '--no-video --no-terminal --really-quiet --start=+12.5 -- ' "$F2/mpv.log" && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = stopped ] \
