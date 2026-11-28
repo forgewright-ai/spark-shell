@@ -905,9 +905,10 @@ class Duck(Scene, Cached):
         sh = lambda s: s.moved(x, y, 1.22, tilt, 0, 0, kx)
         body = Shape().poly(spline([(-74, -6), (-66, -36), (-36, -50), (14, -50), (50, -50), (80, -76), (84, -40), (66, -8), (10, 6), (-50, 4)], per=8))
         head = Shape().circle(-40, -86, 31)
+        neck = Shape().poly(spline([(-69, -24), (-69, -46), (-60, -70), (-44, -84), (-24, -80), (-17, -64), (-6, -54), (8, -50), (16, -40), (-30, -20)], per=6))  # the head sits on the body
         beak = Shape().poly(spline([(-62, -93), (-94, -88), (-102, -79), (-93, -70), (-62, -72)], per=6))
         wing = Shape().poly(spline([(-14, -36), (20, -44), (46, -30), (30, -16), (-6, -18)], per=6))
-        out = [L(cv, sh(body), c["duck"], above=self.WL), L(cv, sh(head), c["duck"]), L(cv, sh(wing), c["duck2"], above=self.WL),
+        out = [L(cv, sh(body), c["duck"], above=self.WL), L(cv, sh(neck), c["duck"], above=self.WL), L(cv, sh(head), c["duck"]), L(cv, sh(wing), c["duck2"], above=self.WL),
                L(cv, sh(beak), c["beak"]), L(cv, sh(Shape().line([(-66, -81), (-96, -79)], 2.2)), mix(c["beak"], c["ink"], 0.35))]
         ex, ey = sh(Shape().poly([(-48, -94)])).cmds[0][1][0]
         out += [D(cv, ex, ey, 5.2, c["ink"]), D(cv, ex - 1.6 * kx, ey - 2, 1.7, c["shine2"])]
