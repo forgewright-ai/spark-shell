@@ -153,8 +153,10 @@ class Providers(unittest.TestCase):
         self.assertFalse((cfgdir / "themes").exists())
         result = self.provider("theme", call(1, "theme_palette", name="ring-shadow"))[1]["result"]
         self.assertFalse(result["isError"])
-        for setting in ("THEME=ring-shadow", "WALLPAPER=orbit", "WALLPAPER_MOTION=on", "GLYPH_FAMILY=banner"):
+        for setting in ("THEME=ring-shadow", "WALLPAPER=orbit", "GLYPH_FAMILY=banner"):
             self.assertIn(setting, config.read_text().splitlines())
+        # moving or still stays the person's: a theme never turns it on (v0.174.1)
+        self.assertNotIn("WALLPAPER_MOTION=on", config.read_text().splitlines())
 
     def test_theme_wallpapers_are_read_only_and_settings_keep_their_controls(self):
         cfg = self.home / "config/spark-shell/config"
