@@ -4703,7 +4703,7 @@ mo_stop() { for _mp in $(pgrep -u "$(id -u)" -f "$H/mo/spark-wallpaper" 2>/dev/n
 mo desktop --motion >/dev/null 2>&1; mo_wait 1; mo_clean
 _ml=$(sed -n 1p "$HOME/player.log" 2>/dev/null || :)
 case $_ml in "--screen HDMI-A-1=$_mdir/orbit-"*.mp4) _mok=1 ;; *) _mok='' ;; esac
-[ -n "$_mok" ] && [ -f "${_ml##* }" ] && [ "$(grep -c '' "$HOME/mpv.log")" = 1 ] && grep -q 'mf://.* --mf-fps=30 .*--ovc=libx264' "$HOME/mpv.log" && [ -z "$(ls "$H/motmp")" ] \
+[ -n "$_mok" ] && [ -f "${_ml##*=}" ] && [ "$(grep -c '' "$HOME/mpv.log")" = 1 ] && grep -q 'mf://.* --mf-fps=30 .*--ovc=libx264' "$HOME/mpv.log" && [ -z "$(ls "$H/motmp")" ] \
     && ok "desktop --motion: a drawing's frames made into a loop by mpv in the background, kept in the cache, played by spark-wallpaper on the screen that shows the drawing itself (the turned one keeps its own portrait), the frames gone (#180, #187)" || bad "motion start" "$_ml | $(cat "$HOME/mpv.log" 2>&1) | $(ls "$H/motmp")"
 mo desktop --motion >/dev/null 2>&1; sleep 0.5
 [ "$(grep -c '' "$HOME/player.log")" = 1 ] && ok "desktop --motion: a loop already playing is left as it is (#180)" || bad "motion twice" "$(cat "$HOME/player.log")"
@@ -10028,9 +10028,10 @@ sh "$SH" theme variant dark >/dev/null 2>&1; t1=$(sed -n 's/^THEME=//p' "$cfg")
 a2=$(sh "$SH" theme variant dark 2>&1); rc=0; a3=$(sh "$SH" theme variant dusk 2>&1) || rc=$?
 sh "$SH" theme nord >/dev/null 2>&1; rc2=0; a4=$(sh "$SH" theme variant light 2>&1) || rc2=$?
 sh "$SH" theme amber-drizzle >/dev/null 2>&1; a5=$(sh "$SH" theme show 2>&1 | sed -n 's/^  art *//p')
+a5s=''; ! "$fixture_python" -I -c 'import numpy' >/dev/null 2>&1 || a5s=', a second landscape'   # the engine says a scene's views, and it needs numpy
 [ "$a1" = 'tokyonight, light (dark: tokyonight-night), vector, still, portrait drawn, a second landscape' ] && [ "$v1" = "variant light $(printf '\302\267') dark or light" ] && [ "$t1" = tokyonight-night ] \
     && [ "$a2" = 'tokyonight-night is the dark variant already' ] && [ "$rc" = 1 ] && [ "$a3" = 'spark-shell theme: variant takes dark or light' ] \
-    && [ "$rc2" = 1 ] && [ "$a4" = 'spark-shell theme: nord has no light variant' ] && [ "$a5" = 'amber-drizzle, dark, pixel, ambient, portrait authored, a second landscape' ] \
+    && [ "$rc2" = 1 ] && [ "$a4" = 'spark-shell theme: nord has no light variant' ] && [ "$a5" = "amber-drizzle, dark, pixel, ambient, portrait authored$a5s" ] \
     && [ "$(art_row)" = '12 families, each read' ] \
     && ok "theme variant: a family's other variant is its own theme with its own drawing and its views, said by theme show; one variant or a word not dark or light refused in one line; a theme with no family read from itself (a pixel scene moves and draws its own portrait view and second landscape)" \
     || bad "theme variant" "$a1 | $v1 | $t1 | $a2 | $a3 | $a4 | $a5 | $(art_row)"
