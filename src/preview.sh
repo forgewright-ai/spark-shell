@@ -144,17 +144,32 @@ storage_page() {   # storage_page NAME -> a drive's page
     _spo='not mounted'; [ -z "$_spm" ] || _spo=$(files_home "$_spm")
     printf 'drive\t%s\nsize\t%s\nfree\t%s\nmounted at\t%s\nformat\t%s\n' "$(printf '%s' "$_spl" | cut -d "$US" -f6)" "$(files_size "$(printf '%s' "$_spl" | cut -d "$US" -f4)")" "$_spf" "$_spo" "$(printf '%s' "$_spl" | cut -d "$US" -f7)" | page_of "$1" 'a drive'
 }
-files_folder_page() {   # files_folder_page PATH -> a folder's page
+files_folder_page() {   # files_folder_page PATH -> a folder's page: what it holds, then (v0.174) its files by kind with their sizes, the newest and the largest, from it and its folders a level down
     find "$1" -mindepth 1 -maxdepth 1 ! -name '.*' -type d 2>/dev/null | wc -l | tr -d ' ' > "$TMP/fold.d"
     find "$1" -mindepth 1 -maxdepth 1 ! -name '.*' ! -type d 2>/dev/null | wc -l | tr -d ' ' > "$TMP/fold.f"
     read -r _fpd < "$TMP/fold.d"; read -r _fpf < "$TMP/fold.f"
     _fph=''; [ "$_fpd" -eq 0 ] || { _fph="$(files_num "$_fpd") folder"; [ "$_fpd" = 1 ] || _fph="${_fph}s"; }
     [ "$_fpf" -eq 0 ] || { _fpx="$(files_num "$_fpf") file"; [ "$_fpf" = 1 ] || _fpx="${_fpx}s"; _fph="${_fph:+$_fph, }$_fpx"; }
-    find "$1" -mindepth 1 -maxdepth 1 ! -name '.*' -print0 2>/dev/null | files_nul | files_stats | sort -t "$US" -k3,3nr | head -n 8 \
-        | awk -F "$US" '{ p = substr($0, length($1 $2 $3 $4 $5) + 6); sub(/.*\//, "", p); print p }' | scrub_text > "$TMP/fold.new"
-    jq -n --arg t "$(printf '%s' "${1##*/}" | scrub_text)" --arg h "${_fph:-empty}" --arg w "$(files_home "$1" | scrub_text)" --rawfile n "$TMP/fold.new" '
-        ($n | split("\n") | map(select(. != ""))) as $new
-        | {title: $t, lines: ([$t, $h] + (if ($new | length) > 0 then ["", "newest"] + ($new | map("   " + .)) else [] end)), bold: [0, 3], facts: [$w]}'
+    # the files in it and a level down, as many as a moment finds: each one's kind, size, day and place
+    rm -f "$TMP/walk.stopped"
+    files_timed 2 find "$1" -mindepth 1 -maxdepth 2 ! -path '*/.*' -type f -print0 2>/dev/null | files_nul | tr '\000' '\n' | head -n 4000 | tr '\n' '\000' | files_stats \
+        | awk -F "$US" -v root="$1" -v us="$US" -v kinds="$FILES_KINDS" '
+            BEGIN { n = split(kinds, l, "\n"); for (i = 1; i <= n; i++) { m = split(l[i], w, " "); for (k = 2; k <= m; k++) kind[w[k]] = w[1] } }
+            { p = substr($0, length($1 $2 $3 $4 $5) + 6); name = p; sub(/.*\//, "", name); e = tolower(name); if (e ~ /\./) sub(/.*\./, "", e); else e = ""
+              k = (e in kind) ? kind[e] : "other"
+              if (k == "markdown" || k == "text" || k == "pdf" || k == "office") k = "documents"; else if (k == "code" || k == "json") k = "code"
+              else if (k == "picture") k = "pictures"; else if (k == "sound") k = "sounds"; else if (k == "video") k = "videos"
+              d = p; sub(/\/[^\/]*$/, "", d); if (d == root) d = ""; else sub(/.*\//, "", d)
+              print k us $2 us $3 us name us d }' > "$TMP/fold.all"
+    awk -F "$US" -v us="$US" '{ n[$1]++; b[$1] += $2 } END { for (k in n) print n[k] us b[k] us k }' "$TMP/fold.all" | sort -t "$US" -k1,1nr > "$TMP/fold.kinds"
+    {   [ ! -s "$TMP/fold.kinds" ] || printf 'head\tby kind\n'
+        while IFS="$US" read -r _n _b _k; do _fpw=files; [ "$_n" != 1 ] || _fpw=file; printf 'pair\t%s\t%s %s, %s\n' "$_k" "$(files_num "$_n")" "$_fpw" "$(files_size "$_b")"; done < "$TMP/fold.kinds"
+        [ ! -s "$TMP/fold.all" ] || printf 'head\tnewest\n'
+        sort -t "$US" -k3,3nr "$TMP/fold.all" | head -n 6 | while IFS="$US" read -r _k _b _t _n _d; do printf 'pair\t%s\t%s%s\n' "$(files_when "${_t%.*}")" "$_n" "${_d:+ in $_d}"; done
+        [ "$(grep -c . "$TMP/fold.all" || :)" -lt 4 ] || { printf 'head\tlargest\n'
+            sort -t "$US" -k2,2nr "$TMP/fold.all" | head -n 4 | while IFS="$US" read -r _k _b _t _n _d; do printf 'pair\t%s\t%s%s\n' "$(files_size "$_b")" "$_n" "${_d:+ in $_d}"; done; }
+        [ ! -e "$TMP/walk.stopped" ] || printf 'gap\ntext\ta large folder: these are the files a moment found\n'
+    } | page_blocks "${1##*/}" "${_fph:-empty}" | jq -c --arg w "$(files_home "$1" | scrub_text)" '. + {facts: [$w]}'
 }
 files_page() {   # files_page PATH PAGE [full] -> its page
     if _fp=$(files_ok "$1" dir); then files_folder_page "$_fp"; return; fi

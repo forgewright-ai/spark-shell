@@ -7687,9 +7687,11 @@ mcp2 "$(rq 21 resources/read "{\"uri\":\"spark-shell://files/rows/match/$(b64u f
 ans 21 | jq -r '.result.contents[0].text' | jq -e '[.rows[] | select(.kind != null) | .text] == ["firmware.bin"] and (.rows[0].page | startswith("spark-shell://files/preview/"))' >/dev/null \
     && ans 22 | jq -r '.result.contents[0].text' | jq -e '[.rows[] | select(.kind != null) | .text] == ["field-notes.md"]' >/dev/null \
     && ans 23 | jq -r '.result.contents[0].text' | jq -e '[.rows[] | select(.kind != null) | .text] | .[0] == "reports" and index("final-report.pdf") != null' >/dev/null \
-    && ans 24 | jq -r '.result.contents[0].text' | jq -e '.lines[0:2] == ["docs-169", "1 folder, 2 files"] and .lines[3] == "newest" and .facts == ["~/docs-169"]' >/dev/null \
+    && ans 24 | jq -r '.result.contents[0].text' | jq -e '.lines[0:2] == ["docs-169", "1 folder, 2 files"] and .lines[3] == "by kind" and .facts == ["~/docs-169"]
+        and (. as $p | $p.bold | index($p.lines | index("newest"))) != null
+        and any(.lines[]; test("^documents +2 files, 0 B$")) and any(.lines[]; test(" +firmware.bin in reports$"))' >/dev/null \
     && [ "$(ls -l "$F2/.cache/spark-shell/files.names" | cut -c1-10)" = '-rw-------' ] && [ "$(ls -ld "$F2/.cache/spark-shell" | cut -c1-10)" = drwx------ ] \
-    && ok "provide files: a search from Home finds the names under your home that hold the words, a letter missing or two swapped too, from a list in your cache yours alone; a folder has a page, what it holds and its newest (#169)" || bad "files match" "$(jq -c 'select(.id > 20) | .result.contents[0].text | fromjson? | [.rows[]? | .text, .lines?]' "$H/mcp.out")"
+    && ok "provide files: a search from Home finds the names under your home that hold the words, a letter missing or two swapped too, from a list in your cache yours alone; a folder has a page, what it holds, its files by kind a level down and its newest (#169, v0.174)" || bad "files match" "$(jq -c 'select(.id > 20) | .result.contents[0].text | fromjson? | [.rows[]? | .text, .lines?]' "$H/mcp.out")"
 rm -f "$F2/mpv.log"
 mcpv "$(call 2 files_play "$(jq -cn --arg p "$PVR/song.flac" '{path: $p, at: 12.5}')")" "$(call 3 files_stop)" "$(fc2 4 files_play "$PVR/plan.md")" "$(call 5 files_play "$(jq -cn --arg p "$PVR/song.flac" '{path: $p, at: -1}')")"
 [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'playing song.flac' ] && grep -q -- '--no-video --no-terminal --really-quiet --start=+12.5 -- ' "$F2/mpv.log" && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = stopped ] \
