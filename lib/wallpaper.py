@@ -3,9 +3,9 @@
 drawn in a palette's own colors, in collections: a look and feel for each
 persona.
 
-    python3 lib/wallpaper.py --raw --scene NAME --size WxH [--fps N] [--jobs N] PALETTE.env
-    python3 lib/wallpaper.py --info [--scene NAME [--size WxH] [--fps N]]
-    python3 lib/wallpaper.py --scene NAME --still T|poster --size WxH --png FILE.png PALETTE.env
+    python3 lib/wallpaper.py --raw --scene NAME --size WxH [--view 2] [--fps N] [--jobs N] PALETTE.env
+    python3 lib/wallpaper.py --info [--scene NAME [--size WxH] [--view 2] [--fps N]]
+    python3 lib/wallpaper.py --scene NAME --still T|poster --size WxH [--view 2] --png FILE.png PALETTE.env
     python3 lib/wallpaper.py --scene NAME --still T[,T...] --png DIR [PALETTE.env ...]
     python3 lib/wallpaper.py [--collection NAME] [--scene NAME ...] [PALETTE.env ...]
                                        [--size WxH] [--out DIR] [--preset NAME]
@@ -25,7 +25,10 @@ its loop is made. Only numpy is needed for these; the MP4s of the last form,
 for a gallery, are encoded by ffmpeg. A landscape size that is not 16 by 9
 gets the scene's picture covering it, centered; a portrait one gets the
 scene's own portrait composition, never a crop (a pixel scene's on a 270 by
-480 grid).
+480 grid). --view 2 is the scene's second landscape: another part of its
+world with its own moment, for the screen beside the first (a theme is three
+pictures, a portrait and two landscapes, all different); --info lists a
+scene's views.
 
 cozy: warm and playful, a picture book for grown-ups
 
@@ -162,11 +165,12 @@ class Canvas:
     the drawing moved by (ox, oy) units. A landscape canvas is the drawing as it
     is; a portrait one is the scene's own view of it, with things placed for it."""
 
-    def __init__(self, s, uw=W, uh=H, ox=0.0, oy=0.0):
+    def __init__(self, s, uw=W, uh=H, ox=0.0, oy=0.0, second=False):
         self.s, self.uw, self.uh, self.ox, self.oy = s, uw, uh, ox, oy
         self.w, self.h = round(uw * s), round(uh * s)
         self.portrait = uh > uw
-        self.key = (self.w, self.h, ox, oy)
+        self.second = second  # the scene's second landscape: things placed for it, as for a portrait
+        self.key = (self.w, self.h, ox, oy, second)
 
     def box(self, x0, y0, x1, y1):
         """A box in units as pixel rows and columns on the canvas, or None off it."""
@@ -489,10 +493,11 @@ def wave(t, period, phase=0.0):
 class Scene:
     name, seconds, poster = "", 24, 6.0
     portrait = None  # its view for a portrait screen: (width, height, x, y) in units, or None for none yet
+    second = None  # its second landscape: (width, height, x, y) in units, 16 by 9, another part of its world; None for none yet
 
-    def view(self, portrait):
-        """The units a canvas shows: the drawing as it is, or the portrait view."""
-        return self.portrait if portrait else (W, H, 0.0, 0.0)
+    def view(self, portrait, second=False):
+        """The units a canvas shows: the drawing as it is, the portrait view or the second landscape."""
+        return self.portrait if portrait else self.second if second else (W, H, 0.0, 0.0)
 
     def back(self, cv, p):  # drawn once: what is behind everything that moves
         return []
@@ -1984,11 +1989,14 @@ def ramp(a, b, n):
 class Pixel:
     name, seconds, pixel, poster = "", 24, True, 6.0
     portrait = False  # True once it has a portrait composition on a 270 by 480 grid
+    second = False  # True once it has a second landscape composition: self.view2 is set while layout, back and draw run for it
+    view2 = False
     gw, gh = PW, PH
 
-    def orient(self, portrait):
-        """Draw on the landscape grid or the portrait one; a scene places its things in layout."""
+    def orient(self, portrait, second=False):
+        """Draw on the landscape grid or the portrait one, the first landscape or the second; a scene places its things in layout."""
         self.gw, self.gh = (PH, PW) if portrait else (PW, PH)
+        self.view2 = bool(second) and not portrait
         GRID[:] = [self.gw, self.gh]
         self.layout(portrait)
 
@@ -1996,7 +2004,7 @@ class Pixel:
         pass
 
     def key(self, p):
-        return (self.gw > self.gh,) + tuple(sorted(p.hex.items()))
+        return (self.gw > self.gh, self.view2) + tuple(sorted(p.hex.items()))
 
     def colors(self, p):
         raise NotImplementedError
@@ -2034,10 +2042,10 @@ class Pixel:
     def draw(self, a, p, c, t):
         pass
 
-    def render(self, p, t, portrait=False):
+    def render(self, p, t, portrait=False, second=False):
         """A frame: the still part's dither is worked out once, and each frame's
         only where it differs from it; the same pixels as dithering it all."""
-        self.orient(portrait)
+        self.orient(portrait, second)
         t = t % self.seconds
         base = self.base(p)
         a = base.copy()
@@ -3401,27 +3409,31 @@ def upscale(q, w, h):
     return img[rows][:, cols]
 
 
-def drawable(scene, w, h):
-    """Why a scene cannot be drawn at w by h, or None when it can."""
+def drawable(scene, w, h, second=False):
+    """Why a scene cannot be drawn at w by h (its second landscape, with second), or None when it can."""
     if not (16 <= w <= 8192 and 16 <= h <= 8192):
         return "%dx%d is not a size to draw at (16 to 8192 a side)" % (w, h)
     if h > w and not scene.portrait:
         return "%s has no portrait composition yet" % scene.name
+    if second and h > w:
+        return "the second view is a landscape one: %dx%d is taller than wide" % (w, h)
+    if second and not scene.second:
+        return "%s has no second landscape yet" % scene.name
     return None
 
 
-def canvas_for(scene, w, h):
-    """A flat scene's canvas for a screen w by h, its view for that shape covering
-    it; and where the screen's corner falls on it."""
-    uw, uh, ox, oy = scene.view(h > w)
+def canvas_for(scene, w, h, second=False):
+    """A flat scene's canvas for a screen w by h, its view for that shape (or its
+    second landscape) covering it; and where the screen's corner falls on it."""
+    uw, uh, ox, oy = scene.view(h > w, second)
     s = max(w / uw, h / uh)
     while round(uw * s) < w or round(uh * s) < h:
         s += 0.5 / uw
-    cv = Canvas(s, uw, uh, ox, oy)
+    cv = Canvas(s, uw, uh, ox, oy, bool(second) and h <= w)
     return cv, (cv.w - w) // 2, (cv.h - h) // 2
 
 
-def frames_at(scene, p, w, h, fps):
+def frames_at(scene, p, w, h, fps, second=False):
     """The loop once, w by h, fps frames a second: a pixel scene steps on its own
     grid's beat and is scaled up with square pixels; a flat one is drawn at the
     size, its 16 by 9 picture covering a wider or taller landscape, centered."""
@@ -3431,20 +3443,20 @@ def frames_at(scene, p, w, h, fps):
         for f in range(n):
             k = f * PFPS // fps
             if last[0] != k:
-                last = (k, upscale(scene.render(p, k / PFPS, h > w), w, h))
+                last = (k, upscale(scene.render(p, k / PFPS, h > w, second), w, h))
             yield last[1]
         return
-    cv, x0, y0 = canvas_for(scene, w, h)
+    cv, x0, y0 = canvas_for(scene, w, h, second)
     back, front = stills(cv, scene, p)
     for f in range(n):
         yield frame(cv, scene, p, back, front, f / fps)[y0 : y0 + h, x0 : x0 + w]
 
 
-def still_at(scene, p, w, h, t):
-    """One frame of a scene at a time of its loop, w by h."""
+def still_at(scene, p, w, h, t, second=False):
+    """One frame of a scene at a time of its loop, w by h (its second landscape, with second)."""
     if getattr(scene, "pixel", False):
-        return upscale(scene.render(p, t, h > w), w, h)
-    cv, x0, y0 = canvas_for(scene, w, h)
+        return upscale(scene.render(p, t, h > w, second), w, h)
+    cv, x0, y0 = canvas_for(scene, w, h, second)
     back, front = stills(cv, scene, p)
     return frame(cv, scene, p, back, front, t)[y0 : y0 + h, x0 : x0 + w]
 
@@ -3452,15 +3464,15 @@ def still_at(scene, p, w, h, t):
 _JOB = {}
 
 
-def _job_init(name, path, w, h, fps):
+def _job_init(name, path, w, h, fps, second=False):
     """A worker of --jobs: the scene, its palette and its still part, once."""
     warnings.simplefilter("ignore")
     np.seterr(all="ignore")
     sc = SCENES[name]
     p = Palette(read_env(path))
-    _JOB.update(sc=sc, p=p, w=w, h=h, fps=fps)
+    _JOB.update(sc=sc, p=p, w=w, h=h, fps=fps, second=second)
     if not getattr(sc, "pixel", False):
-        cv, x0, y0 = canvas_for(sc, w, h)
+        cv, x0, y0 = canvas_for(sc, w, h, second)
         back, front = stills(cv, sc, p)
         _JOB.update(cv=cv, back=back, front=front, x0=x0, y0=y0)
 
@@ -3469,20 +3481,20 @@ def _job_frame(i):
     """Frame i of the loop as bytes (for a pixel scene, step i of its grid)."""
     j = _JOB
     if getattr(j["sc"], "pixel", False):
-        return upscale(j["sc"].render(j["p"], i / PFPS, j["h"] > j["w"]), j["w"], j["h"]).tobytes()
+        return upscale(j["sc"].render(j["p"], i / PFPS, j["h"] > j["w"], j["second"]), j["w"], j["h"]).tobytes()
     img = frame(j["cv"], j["sc"], j["p"], j["back"], j["front"], i / j["fps"])
     return img[j["y0"] : j["y0"] + j["h"], j["x0"] : j["x0"] + j["w"]].tobytes()
 
 
-def frame_bytes(name, path, p, w, h, fps, jobs):
+def frame_bytes(name, path, p, w, h, fps, jobs, second=False):
     """The loop's frames as bytes, in order, drawn by jobs processes."""
     sc = SCENES[name]
     n = sc.seconds * fps
     if jobs <= 1:
-        for img in frames_at(sc, p, w, h, fps):
+        for img in frames_at(sc, p, w, h, fps, second):
             yield img.tobytes()
         return
-    with Pool(jobs, initializer=_job_init, initargs=(name, path, w, h, fps)) as pool:
+    with Pool(jobs, initializer=_job_init, initargs=(name, path, w, h, fps, second)) as pool:
         if getattr(sc, "pixel", False):
             steps = [f * PFPS // fps for f in range(n)]
             uniq = sorted(set(steps))
@@ -3513,7 +3525,8 @@ def write_png(path, img):
 def info(scene, portrait=False):
     out = {"scene": scene.name, "collection": next(c for c, ns in COLLECTIONS.items() if scene.name in ns),
            "fps": native_fps(scene), "seconds": scene.seconds, "frames": scene.seconds * native_fps(scene), "still": scene.poster,
-           "kind": "pixel" if getattr(scene, "pixel", False) else "flat", "orientations": ["landscape"] + (["portrait"] if scene.portrait else [])}
+           "kind": "pixel" if getattr(scene, "pixel", False) else "flat", "orientations": ["landscape"] + (["portrait"] if scene.portrait else []),
+           "views": [1, 2] if scene.second else [1]}
     if getattr(scene, "pixel", False):
         out["grid"] = "%dx%d" % ((PH, PW) if portrait else (PW, PH))
         if scene.portrait and not portrait:
@@ -3568,7 +3581,7 @@ def palette_of(path):
 
 def main(argv):
     out_dir, paths, scenes, size, at, png, preset = HERE, [], [], None, None, None, "slow"
-    raw, want_info, fps, jobs = False, False, None, 1
+    raw, want_info, fps, jobs, second = False, False, None, 1, False
     it = iter(argv)
     try:
         for a in it:
@@ -3589,6 +3602,11 @@ def main(argv):
                 preset = next(it)
             elif a == "--raw":
                 raw = True
+            elif a == "--view":
+                v = next(it)
+                if v not in ("1", "2"):
+                    refuse("the view is 1, the scene's first landscape, or 2, its second", 2)
+                second = v == "2"
             elif a == "--info":
                 want_info = True
             elif a == "--jobs":
@@ -3626,11 +3644,12 @@ def main(argv):
             refuse("--info takes one --scene, or none for all of them", 2)
         sc = SCENES[scenes[0]]
         out = info(sc, bool(size and size[1] > size[0]))
-        if size:
-            why = drawable(sc, *size)
+        if size or second:
+            why = drawable(sc, *(size or (W, H)), second)
             if why:
                 refuse(why)
-            out["size"] = "%dx%d" % size
+            if size:
+                out["size"] = "%dx%d" % size
         if fps:
             if (sc.seconds * fps) != int(sc.seconds * fps):
                 refuse("%d frames a second do not make a whole loop of %s" % (fps, sc.name))
@@ -3641,7 +3660,7 @@ def main(argv):
         if len(scenes) != 1 or len(paths) != 1 or not size:
             refuse("--raw takes one --scene, one --size WxH and one palette file", 2)
         sc = SCENES[scenes[0]]
-        why = drawable(sc, *size)
+        why = drawable(sc, *size, second)
         if why:
             refuse(why)
         p = palette_of(paths[0])
@@ -3649,7 +3668,7 @@ def main(argv):
         n, out = sc.seconds * fps, sys.stdout.buffer
         done = 0
         try:
-            for data in frame_bytes(sc.name, paths[0], p, size[0], size[1], fps, jobs):
+            for data in frame_bytes(sc.name, paths[0], p, size[0], size[1], fps, jobs, second):
                 out.write(data)
                 done += 1
             out.flush()
@@ -3670,7 +3689,7 @@ def main(argv):
             refuse("--still takes --png DIR, or --png FILE.png for one scene, one palette and one time", 2)
         for name in names:
             sc = SCENES[name]
-            why = drawable(sc, *size)
+            why = drawable(sc, *size, second)
             if why:
                 refuse(why)
             for path in paths:
@@ -3685,7 +3704,7 @@ def main(argv):
                     else:
                         os.makedirs(png, exist_ok=True)
                         out = os.path.join(png, "%s-%s-%05.2f.png" % (name, os.path.basename(path)[:-4], t))
-                    write_png(out, still_at(sc, p, size[0], size[1], t))
+                    write_png(out, still_at(sc, p, size[0], size[1], t, second))
                     if not one:
                         print(out)
         return 0
