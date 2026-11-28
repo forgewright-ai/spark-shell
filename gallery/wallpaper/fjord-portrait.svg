@@ -1,0 +1,21 @@
+<!-- spark-shell wallpaper: fjord-portrait (MIT, the repository's license) -->
+<!-- roles: #2e3440 bg; #88c0d0 accent; #a3be8c ansi_10; #434c5e bg+muted:72; #d8dee9 fg; #3b4252 ansi_0; #272c36 bg+black:16 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920">
+<rect x="0" y="0" width="1080" height="1920" fill="#2e3440"></rect>
+<path fill="#88c0d0" opacity="0.12" d="M0 330 C260 180 520 380 760 260 S1000 160 1080 190 L1080 290 C940 260 760 420 520 400 S200 380 0 450 Z"></path>
+<path fill="#a3be8c" opacity="0.10" d="M0 470 C300 360 560 520 800 420 S1000 340 1080 350 L1080 410 C920 410 780 520 560 500 S240 480 0 540 Z"></path>
+<path fill="#434c5e" d="M0 1920 V1200 L150 1090 L300 1180 L540 880 L720 1060 L840 990 L1080 1160 V1920 Z"></path>
+<g fill="#d8dee9" opacity="0.85">
+<path d="M540 880 L596 922 L568 914.4 L540 932.5 L514.2 914.4 L484 922 Z"></path>
+<path d="M840 990 L880 1020 L860 1014.6 L840 1027.5 L821.6 1014.6 L800 1020 Z"></path>
+<path d="M150 1090 L188 1118.5 L169 1113.4 L150 1125.6 L132.5 1113.4 L112 1118.5 Z"></path>
+</g>
+<path fill="#3b4252" d="M0 1920 V1080 L130 1190 L230 1330 L330 1420 L420 1560 L470 1640 V1920 Z"></path>
+<path fill="#3b4252" d="M1080 1920 V1140 L960 1260 L860 1390 L740 1500 L640 1640 V1920 Z"></path>
+<rect x="0" y="1640" width="1080" height="280" fill="#272c36"></rect>
+<g fill="#88c0d0" opacity="0.16">
+<rect x="420" y="1670" width="160" height="2"></rect><rect x="560" y="1700" width="120" height="2"></rect>
+<rect x="300" y="1740" width="240" height="2"></rect><rect x="640" y="1780" width="200" height="2"></rect>
+<rect x="120" y="1830" width="220" height="2"></rect><rect x="520" y="1870" width="260" height="2"></rect>
+</g>
+</svg>

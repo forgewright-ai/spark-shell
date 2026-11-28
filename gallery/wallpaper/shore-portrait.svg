@@ -1,0 +1,69 @@
+<!-- spark-shell wallpaper: shore-portrait (MIT, the repository's license) -->
+<!-- roles: #fbf3db bg; #c9e0dc bg+accent:19; #9fd0c8 bg+ansi_6:36; #ad8900 ansi_3 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920">
+<rect x="0" y="0" width="1080" height="1920" fill="#fbf3db"></rect>
+<path fill="#c9e0dc" d="M0 640 C40 648.3 153.3 693.3 240 690 C326.7 686.7 426.7 641.7 520 620 C613.3 598.3 706.7 563.3 800 560 C893.3 556.7 1033.3 593.3 1080 600 V0 H0 Z"></path>
+<path fill="#9fd0c8" opacity="0.6" d="M0 380 C43.3 386.7 166.7 423.3 260 420 C353.3 416.7 466.7 376.7 560 360 C653.3 343.3 733.3 321.7 820 320 C906.7 318.3 1036.7 345 1080 350 V0 H0 Z"></path>
+<g fill="none" stroke="#fbf3db" opacity="0.9" style="stroke-width: 4">
+<path d="M0 640 C40 648.3 153.3 693.3 240 690 C326.7 686.7 426.7 641.7 520 620 C613.3 598.3 706.7 563.3 800 560 C893.3 556.7 1033.3 593.3 1080 600"></path>
+<path d="M0 600 C40 608.3 153.3 653.3 240 650 C326.7 646.7 426.7 601.7 520 580 C613.3 558.3 706.7 523.3 800 520 C893.3 516.7 1033.3 553.3 1080 560"></path>
+<path d="M0 560 C40 568.3 153.3 613.3 240 610 C326.7 606.7 426.7 561.7 520 540 C613.3 518.3 706.7 483.3 800 480 C893.3 476.7 1033.3 513.3 1080 520"></path>
+</g>
+<g fill="#ad8900" opacity="0.18">
+<circle cx="268.1" cy="1337.5" r="3"></circle>
+<circle cx="181.7" cy="1704.4" r="3"></circle>
+<circle cx="991.9" cy="1217" r="3"></circle>
+<circle cx="1035.9" cy="1601.2" r="3"></circle>
+<circle cx="591" cy="1483.3" r="3"></circle>
+<circle cx="631.2" cy="1174.3" r="3"></circle>
+<circle cx="1066.5" cy="1224.5" r="3"></circle>
+<circle cx="1052.9" cy="1740.5" r="3"></circle>
+<circle cx="40" cy="1056.9" r="3"></circle>
+<circle cx="516.4" cy="1696.8" r="3"></circle>
+<circle cx="198.3" cy="1468.2" r="3"></circle>
+<circle cx="399.2" cy="1663.5" r="3"></circle>
+<circle cx="214.9" cy="1634.3" r="3"></circle>
+<circle cx="508.3" cy="1802.6" r="3"></circle>
+<circle cx="885.6" cy="1701.9" r="3"></circle>
+<circle cx="637.7" cy="961.1" r="3"></circle>
+<circle cx="1055.4" cy="1293.8" r="3"></circle>
+<circle cx="27.2" cy="1259.6" r="3"></circle>
+<circle cx="449.9" cy="991" r="3"></circle>
+<circle cx="1028" cy="888.8" r="3"></circle>
+<circle cx="968.4" cy="1392.2" r="3"></circle>
+<circle cx="199.3" cy="1172" r="3"></circle>
+<circle cx="487.3" cy="895.3" r="3"></circle>
+<circle cx="818.8" cy="1509.3" r="3"></circle>
+<circle cx="843.1" cy="1906.4" r="3"></circle>
+<circle cx="997.8" cy="1500.6" r="3"></circle>
+<circle cx="581.6" cy="1362.3" r="3"></circle>
+<circle cx="872.7" cy="1824.1" r="3"></circle>
+<circle cx="102.5" cy="1433" r="3"></circle>
+<circle cx="624.9" cy="1404.8" r="3"></circle>
+<circle cx="919.5" cy="1018.6" r="3"></circle>
+<circle cx="782.6" cy="1434.4" r="3"></circle>
+<circle cx="235.9" cy="1885.2" r="3"></circle>
+<circle cx="1051" cy="1394.2" r="3"></circle>
+<circle cx="949.8" cy="1098.6" r="3"></circle>
+<circle cx="688.1" cy="1245.6" r="3"></circle>
+<circle cx="841.9" cy="889.3" r="3"></circle>
+<circle cx="502.2" cy="1862.5" r="3"></circle>
+<circle cx="21.9" cy="1519.4" r="3"></circle>
+<circle cx="728.1" cy="1594.8" r="3"></circle>
+<circle cx="1027" cy="1085.7" r="3"></circle>
+<circle cx="755.9" cy="1528.7" r="3"></circle>
+<circle cx="782" cy="1309.6" r="3"></circle>
+<circle cx="27.8" cy="1651.8" r="3"></circle>
+<circle cx="306" cy="1659.7" r="3"></circle>
+<circle cx="437.1" cy="1745.7" r="3"></circle>
+<circle cx="419.1" cy="1128" r="3"></circle>
+<circle cx="443.3" cy="1614" r="3"></circle>
+<circle cx="353.9" cy="1457.4" r="3"></circle>
+<circle cx="15.8" cy="910.6" r="3"></circle>
+<circle cx="447.5" cy="821.3" r="3"></circle>
+<circle cx="821" cy="1137.7" r="3"></circle>
+<circle cx="13.2" cy="1856.6" r="3"></circle>
+<circle cx="86.7" cy="1316.8" r="3"></circle>
+<circle cx="576.5" cy="1660.8" r="3"></circle>
+</g>
+</svg>

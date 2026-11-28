@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "id": "nightswim",
+  "title": "Nightswim",
+  "media": "picture",
+  "variants": {
+    "dark": {
+      "theme": "nightswim",
+      "portrait": "nightswim-portrait.png",
+      "panels": {
+        "2": [{"landscape": "nightswim.png"}, {"landscape": "nightswim-landscape-2.png"}]
+      }
+    }
+  }
+}

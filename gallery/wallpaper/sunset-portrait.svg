@@ -1,0 +1,37 @@
+<!-- spark-shell wallpaper: sunset-portrait (MIT, the repository's license) -->
+<!-- roles: #282828 ansi_0; #fabd2f ansi_11; #fe8019 accent; #fb4934 ansi_9; #d3869b ansi_13; #b16286 ansi_5; #1d2021 bg+black:23; #3c3836 bg+muted:19 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920">
+<defs>
+<clipPath id="sun"><circle cx="540" cy="1260" r="380"></circle></clipPath>
+</defs>
+<rect x="0" y="0" width="1080" height="1920" fill="#282828"></rect>
+<g style="clip-path: url(#sun)">
+<rect x="130" y="880" width="820" height="126.7" fill="#fabd2f"></rect>
+<rect x="130" y="1018.2" width="820" height="80.6" fill="#fe8019"></rect>
+<rect x="130" y="1114.9" width="820" height="59.9" fill="#fb4934"></rect>
+<rect x="130" y="1195.5" width="820" height="39.2" fill="#d3869b"></rect>
+<rect x="130" y="1246.2" width="820" height="13.8" fill="#b16286"></rect>
+</g>
+<rect x="0" y="1260" width="1080" height="660" fill="#1d2021"></rect>
+<g stroke="#3c3836" style="stroke-width: 2">
+<line x1="540" y1="1260" x2="-1500" y2="1920"></line>
+<line x1="540" y1="1260" x2="-900" y2="1920"></line>
+<line x1="540" y1="1260" x2="-420" y2="1920"></line>
+<line x1="540" y1="1260" x2="0" y2="1920"></line>
+<line x1="540" y1="1260" x2="300" y2="1920"></line>
+<line x1="540" y1="1260" x2="780" y2="1920"></line>
+<line x1="540" y1="1260" x2="1080" y2="1920"></line>
+<line x1="540" y1="1260" x2="1500" y2="1920"></line>
+<line x1="540" y1="1260" x2="1980" y2="1920"></line>
+<line x1="540" y1="1260" x2="2580" y2="1920"></line>
+<line x1="0" y1="1282" x2="1080" y2="1282"></line>
+<line x1="0" y1="1312" x2="1080" y2="1312"></line>
+<line x1="0" y1="1354" x2="1080" y2="1354"></line>
+<line x1="0" y1="1412" x2="1080" y2="1412"></line>
+<line x1="0" y1="1490" x2="1080" y2="1490"></line>
+<line x1="0" y1="1596" x2="1080" y2="1596"></line>
+<line x1="0" y1="1736" x2="1080" y2="1736"></line>
+<line x1="0" y1="1900" x2="1080" y2="1900"></line>
+</g>
+<rect x="0" y="1258" width="1080" height="3" fill="#fe8019" opacity="0.6"></rect>
+</svg>

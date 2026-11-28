@@ -1,0 +1,28 @@
+<!-- spark-shell wallpaper: embers-2 (MIT, the repository's license) -->
+<!-- roles: #141418 bg; #d24a2a ansi_1; #e0b400 ansi_3; #ffe066 ansi_11 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+<rect x="0" y="0" width="1920" height="1080" fill="#141418"></rect>
+<rect x="0" y="1064" width="1920" height="16" fill="#d24a2a" opacity="0.4"></rect>
+<g fill="#d24a2a" opacity="0.9">
+<rect x="144.3" y="941.1" width="12" height="12"></rect><rect x="245.7" y="972.6" width="12" height="12"></rect><rect x="394.5" y="961.9" width="12" height="12"></rect>
+<rect x="570.1" y="976.1" width="12" height="12"></rect><rect x="741.2" y="977.4" width="12" height="12"></rect><rect x="981.4" y="968.8" width="12" height="12"></rect>
+<rect x="96.5" y="1014.6" width="12" height="12"></rect><rect x="320.5" y="1017.5" width="12" height="12"></rect><rect x="823.7" y="998.9" width="12" height="12"></rect>
+<rect x="170.7" y="1047.3" width="12" height="12"></rect><rect x="424.3" y="1050.7" width="12" height="12"></rect><rect x="639.9" y="1021.4" width="12" height="12"></rect>
+</g>
+<g fill="#e0b400" opacity="0.8">
+<rect x="719.2" y="666.3" width="9" height="9"></rect><rect x="1172.7" y="722.9" width="9" height="9"></rect><rect x="437.4" y="768.2" width="9" height="9"></rect>
+<rect x="945" y="746.5" width="9" height="9"></rect><rect x="239.9" y="810.3" width="9" height="9"></rect><rect x="1059.2" y="836.8" width="9" height="9"></rect>
+<rect x="435.6" y="889.7" width="9" height="9"></rect><rect x="575.2" y="891.4" width="9" height="9"></rect><rect x="696.7" y="872.4" width="9" height="9"></rect>
+<rect x="199.1" y="935.3" width="9" height="9"></rect><rect x="903.9" y="904.5" width="9" height="9"></rect>
+</g>
+<g fill="#ffe066" opacity="0.65">
+<rect x="824.2" y="391.5" width="6" height="6"></rect><rect x="1170" y="403.6" width="6" height="6"></rect><rect x="1355.8" y="428.5" width="6" height="6"></rect>
+<rect x="692.1" y="518.5" width="6" height="6"></rect><rect x="849" y="563.2" width="6" height="6"></rect><rect x="1207.8" y="578.5" width="6" height="6"></rect>
+<rect x="1037.5" y="582.4" width="6" height="6"></rect><rect x="486.1" y="632.6" width="6" height="6"></rect><rect x="732.3" y="663.2" width="6" height="6"></rect>
+</g>
+<g fill="#ffe066" opacity="0.35">
+<rect x="1315.6" y="193.7" width="4" height="4"></rect><rect x="1006.1" y="258.4" width="4" height="4"></rect><rect x="1500.2" y="254.6" width="4" height="4"></rect>
+<rect x="1722.3" y="287.9" width="4" height="4"></rect><rect x="800.2" y="306.3" width="4" height="4"></rect><rect x="1193.3" y="314.5" width="4" height="4"></rect>
+<rect x="1357.5" y="368.6" width="4" height="4"></rect>
+</g>
+</svg>
