@@ -60,7 +60,9 @@ them; the references and not the story, no one in them, a dry joke
               Beside it the hole from the ice, the clouds frozen too: a star
               too faint to see goes behind it and for a moment is a ring
     watch     the sea at night, the moon's road on it, a lighthouse sweeping
-              the water; once a loop it stops and looks up at the moon
+              the water; once a loop it stops and looks up at the moon.
+              Beside it the harbor under the headland, the boats at their
+              moorings: a gull on a post ducks each time the light goes over
     problem   a training board, a grid of holds in every color, a light by
               each; it shows a problem, then another, then runs Life, and a
               glider walks down it
@@ -2830,22 +2832,28 @@ class Horizon(Pixel):
 
 class Watch(Pixel):
     """The sea at night, the moon low and its road on the water, a lighthouse
-    sweeping. Once a loop the lighthouse stops and looks up at the moon."""
+    sweeping. Once a loop the lighthouse stops and looks up at the moon. The
+    second view is the harbor under its headland: the same light going round,
+    boats at their moorings, and a gull that ducks when it faces us."""
 
     name = "watch"
     poster = 0.5
     portrait = True
+    second = True  # the harbor under the headland: the lighthouse close, the boats, a gull
     F, EYE = 236.0, 1.0  # the eye: one unit over the water, the horizon at HZ
     REACH = 50.0  # how far out its beam comes down on the water
 
     def layout(self, portrait):
-        """Where things are: landscape, or a portrait's tall sky and long road of moonlight."""
+        """Where things are: landscape, or a portrait's tall sky and long road of moonlight; or the
+        second view's, the harbor, the headland and its lighthouse near on the left, the moon high."""
         if portrait:
             self.HZ, self.MOON, self.LX, self.BUOY, self.CLOUDS, self.SHIFT = 274, (168.0, 150.0), 40, (204, 283), (96, 236), -12
+        elif self.view2:
+            self.HZ, self.MOON, self.LX, self.BUOY, self.CLOUDS, self.SHIFT = 150, (396.0, 46.0), 58, (338, 172), (64, 118), 0
         else:
             self.HZ, self.MOON, self.LX, self.BUOY, self.CLOUDS, self.SHIFT = 152, (140.0, 110.0), 52, (330, 161), (78, 135), 0
-        z = 60.0  # the lamp in the world: across, up, away; on screen at LX, 29 over the horizon
-        self.LAMP = ((self.LX - self.gw / 2) * z / self.F, self.EYE + 29 * z / self.F, z)
+        z = 40.0 if self.view2 else 60.0  # the lamp in the world: across, up, away; on screen at LX, 29 over the horizon (104 here)
+        self.LAMP = ((self.LX - self.gw / 2) * z / self.F, self.EYE + (104 if self.view2 else 29) * z / self.F, z)
 
     def scr(self, x, y, z):
         """A point of the world on the screen, in perspective."""
@@ -2889,7 +2897,9 @@ class Watch(Pixel):
         fill(a, Mask().ell(mx, my, 9, 9), c["moon"])
         for dx, dy in ((-3, -2), (-2, -2), (-3, -1), (2, 1), (3, 1), (2, 2), (0, 4), (-1, 3)):
             put(a, mx + dx, my + dy, c["mare"])
-        clouds(a, 5, 5, self.CLOUDS, c["cloud"], c["cloudlit"], 0.9, lit_below=False, wmin=60, wmax=170)
+        clouds(a, 8 if self.view2 else 5, 5, self.CLOUDS, c["cloud"], c["cloudlit"], 0.9, lit_below=False, wmin=60, wmax=170)
+        if self.view2:
+            return self.harbor(a, p, c)
         pgrad(a, self.HZ, self.gh, [(self.HZ, c["sea"]), (self.gh, c["deep"])])
         hline(a, 0, self.gw, self.HZ, c["seahi"])
         rnd = random.Random(9)
@@ -2914,7 +2924,154 @@ class Watch(Pixel):
         put(a, lx, self.HZ - 32, c["land"])
         self.lamp = (lx, self.HZ - 29)
 
+    BOATS = ((206, 212, 6.0, 0.0, 1), (286, 230, 8.0, 0.4, -1), (372, 204, 12.0, 0.7, 1))  # x, waterline, rocking period, phase, facing
+    POST = (438, 222)  # the mooring post near us, the gull's
+
+    def harbor(self, a, p, c):
+        """The second view's still part: the sea, the headland on the left with the lighthouse
+        near, the breakwater and its light, the water of the harbor, the post near us."""
+        dk, gw, gh, HZ = p.dark, self.gw, self.gh, self.HZ
+        pgrad(a, HZ, gh, [(HZ, c["sea"]), (gh, c["deep"])])
+        hline(a, 0, gw, HZ, c["seahi"])
+        rnd = random.Random(19)
+        for i in range(300):  # the water's texture: short strokes, longer as they come near
+            y = HZ + 2 + int((gh - HZ) * rnd.random() ** 1.5)
+            ln = 1 + int((y - HZ) / 10)
+            x = rnd.randrange(gw)
+            hline(a, x, x + ln, y, c["seahi"] if rnd.random() < 0.5 else c["deep"], 0.7)
+        land = [(0, 186), (0, 88), (22, 86), (44, 90), (74, 91), (96, 98), (112, 110), (124, 128), (136, 150), (150, 166), (164, 178), (168, 186)]
+        self.landm = Mask().poly(land).m()
+        fill(a, self.landm, c["land"])
+        for (x0, y0), (x1_, y1_) in zip(land[1:-2], land[2:-1]):
+            fill(a, Mask().line([(x0, y0), (x1_, y1_)]), c["landedge"])
+        for k in range(18):  # the cliff's ledges, in the moon
+            x0, y0 = rnd.randint(60, 160), rnd.randint(104, 182)
+            if a[y0, x0].sum() <= C(c["land"]).sum() + 1:
+                fill(a, Mask().line([(x0, y0), (x0 + rnd.randint(4, 12), y0 + rnd.randint(-2, 2))]), c["landedge"], 0.5)
+        for x in range(0, 168, 3):  # the rocks at its foot, wet
+            put(a, x, 185 - (x * 5) % 3, c["landedge"], 0.5)
+        lx, ty = self.LX, 90  # the lighthouse: banded, its gallery, the lantern room and its cap
+        for y in range(ty - 36, ty):
+            w = 7 if y > ty - 18 else 6 if y > ty - 30 else 5
+            band = ((y - (ty - 36)) // 6) % 2
+            box(a, lx - w // 2, y, w, 1, c["towerred"] if band else c["tower"])
+            put(a, lx + (w - 1) // 2, y, mix(c["towerred"] if band else c["tower"], c["land"], 0.45))
+        box(a, lx - 5, ty - 37, 11, 2, c["land"])
+        for x in range(lx - 5, lx + 6, 2):
+            put(a, x, ty - 38, c["land"])
+        box(a, lx - 3, ty - 44, 7, 6, c["land"])
+        box(a, lx - 2, ty - 43, 5, 4, c["beam"], 0.5)
+        fill(a, Mask().poly([(lx - 4, ty - 44), (lx, ty - 48), (lx + 4, ty - 44)]), c["land"])
+        put(a, lx, ty - 49, c["land"])
+        box(a, lx + 9, ty - 7, 14, 7, c["land"])  # the keeper's house, dark
+        fill(a, Mask().poly([(lx + 8, ty - 7), (lx + 16, ty - 12), (lx + 24, ty - 7)]), c["land"])
+        hline(a, lx + 8, lx + 25, ty - 7, c["landedge"], 0.6)
+        self.LAMPXY = (lx, ty - 41)
+        jet = [(150, 170), (340, 174), (342, 181), (150, 182)]  # the breakwater, its blocks, its light at the end
+        fill(a, Mask().poly(jet), c["land"])
+        hline(a, 150, 341, 170, c["landedge"])
+        for x in range(156, 340, 9):
+            put(a, x, 171 + (x * 7) % 3, c["landedge"], 0.5)
+        box(a, 334, 160, 5, 12, c["tower"])
+        box(a, 333, 158, 7, 2, c["land"])
+        box(a, 335, 155, 3, 3, c["land"])
+        for d in range(2, 30, 2):  # the headland and the breakwater again in the still water inside
+            hline(a, 0, 168 - d, 186 + d, c["land"], 0.35 * (1 - d / 30))
+            hline(a, 160, 340, 182 + d, c["land"], 0.3 * (1 - d / 18)) if d < 18 else None
+        for d in range(3, 24, 2):
+            put(a, 336, 182 + d, c["tower"], 0.35 * (1 - d / 24))
+        px_, py_ = self.POST
+        box(a, px_ - 4, py_, 9, gh - py_, c["land"])
+        vline(a, px_ - 4, py_, gh, c["landedge"])
+        hline(a, px_ - 4, px_ + 5, py_, c["landedge"])
+        for y in range(py_ + 8, gh, 9):
+            hline(a, px_ - 4, px_ + 5, y, mix(c["land"], c["landedge"], 0.4))
+
+    GULL = {  # sitting, head right; and ducked
+        "up": (".......www...", "......wwwkbb.", "......wwww...", "......www....", "..gggwwwww...",
+               "gggggggwwww..", ".ggggggwwwww.", "....wwwwww...", ".....y...y..."),
+        "down": (".............", ".............", ".............", ".......wwkbb.", "..gggwwwww...",
+                 "gggggggwwww..", ".ggggggwwwww.", "....wwwwww...", ".....y...y..."),
+    }
+
+    def boat(self, a, c, x, y, t, period, phase, kx):
+        """A small boat at its mooring: hull, wheelhouse, a mast, rocking on the swell."""
+        dy = round(1.2 * math.sin(2 * math.pi * (t / period + phase)))
+        tilt = round(1.6 * math.sin(2 * math.pi * (t / period + phase) - 0.6))
+        hull = Mask().poly([(x - 16, y - 4 + dy), (x + 16, y - 5 + dy), (x + 13, y + 1 + dy), (x - 13, y + 1 + dy)])
+        fill(a, hull, c["land"])
+        hline(a, x - 15, x + 16, y - 4 + dy, c["landedge"])
+        wx = x - 8 * kx
+        box(a, wx - 4, y - 10 + dy, 9, 6, c["land"])
+        hline(a, wx - 4, wx + 5, y - 10 + dy, c["landedge"])
+        box(a, wx - 2 + kx, y - 8 + dy, 2, 2, c["seahi"])
+        mx_ = x + 5 * kx
+        fill(a, Mask().line([(mx_, y - 5 + dy), (mx_ + tilt, y - 24 + dy)]), c["landedge"])
+        fill(a, Mask().line([(mx_ + tilt, y - 24 + dy), (x - 14 * kx, y - 5 + dy)]), c["land"], 0.5)
+        for d in range(2, 12, 2):  # and in the water, broken
+            hline(a, x - 13 + (d % 4), x + 12 - (d % 3), y + 1 + d, c["deep"], 0.5 * (1 - d / 12))
+
+    def beam2(self, a, c, t, dk):
+        """The beam seen from the harbor: a long ray going round, short when it points to or from
+        us, a flash when it faces us; once a loop it looks up at the moon, as from the sea."""
+        lx, ly = self.LAMPXY
+        X0, Y0, Z0 = self.LAMP
+        ang = 2 * math.pi * t / 8.0
+        dx, dz = math.cos(ang), -math.sin(ang)
+        n_ = math.sqrt(X0 * X0 + (Y0 - self.EYE) ** 2 + Z0 * Z0)
+        facing = max(0.0, (-X0 * dx - Z0 * dz) / n_) ** 6
+        S = 140.0
+        if dz < 0:  # toward us it is cut short: we see it end on
+            S = min(S, (Z0 - 24) / -dz)
+        ex, ez = X0 + S * dx, Z0 + S * dz
+        end = self.scr(ex, Y0 - 0.06 * S, ez)
+        side = 2 + 0.05 * S
+        e1 = self.scr(ex - side * dz, Y0 - 0.06 * S, ez + side * dx)
+        e2 = self.scr(ex + side * dz, Y0 - 0.06 * S, ez - side * dx)
+        w = ease_io(window(t, 12.3, 13.3)) * (1 - ease_io(window(t, 14.9, 15.9)))
+        mx, my = self.MOON
+        if w > 0:
+            pts = [(x + (mx + (x - end[0]) * 0.25 - x) * w, y + (my + (y - end[1]) * 0.25 - y) * w) for x, y in (end, e1, e2)]
+        else:
+            pts = [end, e1, e2]
+        pts = [(x, min(max(y, ly - 4), ly + 40)) if w == 0 else (x, y) for x, y in pts]  # over us it is end on, not up
+        k = (1 - 0.5 * max(0.0, dz)) * (1 - w) + w
+        m = Mask().poly(hull(pts[1:] + [(lx, ly - 1), (lx, ly + 1)])).m()
+        m[self.HZ :] = False
+        m &= ~self.landm
+        fill(a, m, c["beam"], (0.16 if dk else 0.24) * k)
+        put(a, lx, ly, c["beam"])
+        pglow(a, lx, ly, 3 + 16 * facing * (1 - w), c["beam"], 0.5 + 0.45 * facing * (1 - w), add=dk)
+        return facing * (1 - w)
+
+    def draw2(self, a, p, c, t):
+        dk = p.dark
+        mx, my = self.MOON
+        rnd = random.Random(7)
+        for i in range(40):  # the moon's road, out beyond the breakwater
+            y = self.HZ + 2 + int(26 * rnd.random() ** 1.3)
+            spread = 4 + (y - self.HZ) * 0.5
+            x = mx + rnd.uniform(-1, 1) * spread
+            if wave(t, 24 / rnd.choice((6, 8, 12)), rnd.random()) > 0.1:
+                hline(a, x - 1, x + 2 + (y - self.HZ) // 10, y, c["glint"] if rnd.random() < 0.5 else c["glintdim"])
+        if (t % 3.0) < 0.35:  # the breakwater's light, green, every three seconds
+            put(a, 336, 156, c["buoy"])
+            pglow(a, 336, 156, 6, c["buoy"], 0.4, add=dk)
+            for d in range(26, 40, 3):
+                put(a, 336, 156 + d, c["buoy"], 0.3 * (1 - (d - 26) / 14))
+        for x, y, per, ph, kx in self.BOATS:
+            self.boat(a, c, x, y, t, per, ph, kx)
+        flash = self.beam2(a, c, t, dk)
+        lx, ly = self.LAMPXY
+        for d in range(2, 40, 3):  # the lamp in the harbor's water, under the headland
+            put(a, lx + (d % 3) - 1, 188 + d, c["glint"], (0.12 + 0.6 * flash) * (1 - d / 40))
+        px_, py_ = self.POST
+        rows = self.GULL["down" if flash > 0.12 else "up"]  # the gull ducks as the light goes over
+        sprite(a, px_ - 7, py_ - 9, rows, {"w": c["tower"], "g": mix(c["tower"], c["land"], 0.45), "k": c["land"], "b": c["towerred"], "y": c["towerred"]}, -1)
+
     def draw(self, a, p, c, t):
+        if self.view2:
+            return self.draw2(a, p, c, t)
         dk = p.dark
         mx, my = self.MOON
         rnd = random.Random(5)
