@@ -127,8 +127,27 @@ pub(super) fn head_h(m: &Metrics, look: &Look) -> f64 {
 
 /// The page and its actions drawn: the name and the facts over what it holds, the actions from their column's top.
 /// `key` names the lists, so each keeps its place from frame to frame.
-pub(super) fn draw(app: &App, pen: &mut Pen, f: &Frame, look: Look, key: &str) {
+pub(super) fn draw(app: &App, pen: &mut Pen, f: &Frame, mut look: Look, key: &str) {
     let m = *pen.m;
+    // what the key bar names that the row's own actions do not say: change, move, month (v0.174)
+    let said: Vec<(String, Option<Target>)> = look
+        .acts
+        .iter()
+        .filter_map(|a| match a {
+            Act::Do { key, target, .. } => Some((key.clone(), target.clone())),
+            _ => None,
+        })
+        .collect();
+    let more: Vec<Act> = bar_acts(app)
+        .into_iter()
+        .filter(|a| matches!(a, Act::Do { key, target, .. } if !said.iter().any(|(k, t)| (!k.is_empty() && k == key) || (t.is_some() && t == target))))
+        .collect();
+    if !more.is_empty() {
+        if !look.acts.is_empty() {
+            look.acts.push(Act::Gap);
+        }
+        look.acts.extend(more);
+    }
     let fixed = |h: f64, k: K| Row { h: m.px(h), pick: None, k };
     let mut head = vec![];
     let hh = head_h(&m, &look);
@@ -578,7 +597,7 @@ pub(super) fn bar_acts(app: &App) -> Vec<Act> {
         let Some(action) = group.iter().find_map(|(_, _, a)| a.first().copied()) else {
             continue;
         };
-        if words.is_empty() || matches!(action, HintKey::Escape | HintKey::Help | HintKey::Up | HintKey::Down) {
+        if words.is_empty() || matches!(action, HintKey::Escape | HintKey::Help | HintKey::Up | HintKey::Down | HintKey::Actions) {
             continue;
         }
         out.push(Act::key(&words.to_lowercase(), &key.join(" "), Target::Key(action)));
@@ -1029,7 +1048,10 @@ pub(super) fn calendar(app: &App, pen: &Pen, f: &Frame, items: &[Item]) -> Look 
         })
         .collect();
     let mine: Vec<&(i32, u32, u32, String, String)> = reminders.iter().filter(|r| (r.0, r.1) == (year, month)).collect();
-    let day = lit_day.filter(|d| (d.0, d.1) == (year, month)).map(|d| d.2);
+    let day = lit_day
+        .or(((year, month) == (ty, tm)).then_some((ty, tm, td)))
+        .filter(|d| (d.0, d.1) == (year, month))
+        .map(|d| d.2);
     let mo = Month {
         year,
         month,
@@ -1150,11 +1172,31 @@ pub(super) fn dest(app: &App, pen: &Pen, d: usize, room: f64) -> Look {
             .and_then(facts_of)
             .map(|(_, blocks)| rows_of_blocks(&m, blocks, room, false))
             .unwrap_or_default(),
+        "workspaces" => {
+            let desk = Desk::of(app, None);
+            if desk.screens.is_empty() {
+                vec![]
+            } else {
+                vec![
+                    head(&m, "your screens"),
+                    Row {
+                        h: desk.height(&m, room - m.px(24.0)),
+                        pick: None,
+                        k: K::Desk(Box::new(desk)),
+                    },
+                ]
+            }
+        }
         _ => {
             let mut rows = vec![];
             for s in dest.sections {
                 if let Some(p) = app.providers.iter().position(|p| p.label == *s && p.dead.is_none()) {
-                    rows.extend(super::place_rows(app, pen, &app.section_items(p), room));
+                    let items: Vec<Item> = app
+                        .section_items(p)
+                        .into_iter()
+                        .filter(|it| app.row_ref(it).is_none_or(|r| r.when_model.is_none_or(|w| w == app.answers())))
+                        .collect();
+                    rows.extend(super::place_rows(app, pen, &items, room));
                 }
             }
             rows

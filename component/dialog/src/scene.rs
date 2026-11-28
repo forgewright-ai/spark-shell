@@ -2791,15 +2791,40 @@ fn page_framed(app: &App, pen: &mut Pen, g: &Geo, items: &[Item], shape: Shape, 
         pen.column = column;
         list(app, pen, &[map], at, lit(app), list_focus(app), shape, 0, format!("{key}\u{1f}map"));
         f.page.top = at.bottom + m.px(8.0);
-        // under the map the row lit says itself smaller: the map leads
-        if !look.name.is_empty() {
-            look.body.insert(0, frame::head(&m, &look.name));
-            look.name.clear();
-            if !look.what.is_empty() {
-                look.body.insert(1, frame::pair(&m, "now", &look.what));
-                look.what.clear();
+        // under the map its screens, each what it shows now, the one lit marked; then a row lit that is no screen says
+        // itself smaller: the map leads
+        let screens: Vec<&crate::model::Row> = items
+            .iter()
+            .filter_map(|it| app.row_ref(it))
+            .filter(|r| r.children.as_deref().is_some_and(|c| c.starts_with("spark-shell://display/rows/screen/")))
+            .collect();
+        let lit_id = lit_row.map(|(_, r)| r.id.clone());
+        let on_screen = screens.iter().any(|r| Some(&r.id) == lit_id.as_ref()) || lit_row.is_some_and(|(_, r)| r.map.is_some());
+        let mut body = vec![];
+        if !screens.is_empty() {
+            body.push(frame::head(&m, "screens"));
+            for r in &screens {
+                let mut row = frame::named(&m, &r.text, &r.columns.join(crate::ui::SEP));
+                if let K::One { sign, muted, .. } = &mut row.k {
+                    let lit = Some(&r.id) == lit_id.as_ref();
+                    *sign = if lit { "dot" } else { "blank" };
+                    *muted = !lit && lit_id.is_some() && on_screen;
+                }
+                body.push(row);
             }
         }
+        if !on_screen && !look.name.is_empty() {
+            body.push(frame::air(&m, 12.0));
+            body.push(frame::head(&m, &look.name));
+            if !look.what.is_empty() {
+                body.push(frame::pair(&m, "now", &look.what));
+            }
+            body.append(&mut look.body);
+        }
+        look.body = body;
+        look.name.clear();
+        look.what.clear();
+        look.facts.clear();
     }
     frame::draw(app, pen, &f, look, &key);
 }
