@@ -209,12 +209,12 @@ appearance_wallpaper() {   # stdin: the theme section's rows -> the Wallpaper an
     jq -ec --slurpfile more "$TMP/theme.screens" --arg label "$(theme_title "${THEME:-none}")" --arg color "$_awc" --arg ground "$_awg" --arg file "$_awf" --arg shows "$_awp" --arg types "$WALL_MEDIA_TYPES" '
         [.rows[] | select(.id == "theme:wallpaper" or .id == "theme:show:Moving wallpaper") | .group = "wallpaper"] as $w
         | select(($w | length) > 0)
-        | {id: "theme:wallpaper-color", group: "wallpaper", text: "Plain color", columns: (if $color != "" then [$color] else ["a name or #rrggbb"] end),
+        | ({id: "theme:wallpaper-color", group: "wallpaper", text: "Plain color", columns: (if $color != "" then [$color] else ["a name or #rrggbb"] end),
            tool: {name: "theme_wallpaper_color", arguments: {}, ask: ["color"]}, swatch: (if $color != "" then $color else $ground end)}
-          + (if $color != "" then {chip: [$color]} else {} end) as $plain
-        | {id: "theme:wallpaper-picture", group: "wallpaper", text: "Picture or video", sign: "opens", columns: [if $file != "" then $file else ($types | split(" ") | join(", ")) end],
+          + (if $color != "" then {chip: [$color]} else {} end)) as $plain   # whole in parentheses: jq 1.6 binds as to the last term alone
+        | ({id: "theme:wallpaper-picture", group: "wallpaper", text: "Picture or video", sign: "opens", columns: [if $file != "" then $file else ($types | split(" ") | join(", ")) end],
            children: "spark-shell://files/rows", pick: {tool: "theme_wallpaper_picture", types: ($types | split(" "))}}
-          + (if $shows != "" then {preview: $shows} else {} end) as $media
+          + (if $shows != "" then {preview: $shows} else {} end)) as $media
         | {title: "Wallpaper and screens", state: $label, short: [], rows: ($w[0:1] + [$plain, $media] + $w[1:] + ($more[0] // []))}' "$TMP/theme.root"
 }
 appearance_pairs() {   # the themes in the other light, and none: Enter pairs it
