@@ -20,6 +20,9 @@
 - Switching between moving and still no longer blinks: each screen keeps
   the still it shows. Drawn again, a turned or second screen showed a black
   frame.
+- A loop is made at the lowest priority on half the cores: made with all
+  of them, a theme's page and its picture did not come in time while a
+  scene's loops were made.
 - The dialog is 0.174.1.
 
 ## v0.174

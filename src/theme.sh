@@ -844,11 +844,13 @@ motion_play() {   # motion_play ARGS... -- in its own session; the loops that pl
     else ( trap '' HUP; exec "$_mpc" "$@" ) </dev/null >/dev/null 2>&1 & fi
     [ -z "$_mpo" ] || ( sleep 0.8; for _mp in $_mpo; do kill "$_mp" 2>/dev/null || :; done ) </dev/null >/dev/null 2>&1 3>&- 4<&- &   # ended first, they left the still between the two loops
 }
+motion_jobs() { _mjn=$(getconf _NPROCESSORS_ONLN 2>/dev/null) || _mjn=2; case $_mjn in ''|*[!0-9]*) _mjn=2 ;; esac; [ "$_mjn" -gt 1 ] && echo $((_mjn / 2)) || echo 1; }   # -> half the cores: a loop made with all of them starved the dialog (a page that did not come in time, v0.174.1)
+motion_low() { if command -v ionice >/dev/null 2>&1; then nice -n 19 ionice -c 3 "$@"; else nice -n 19 "$@"; fi; }   # motion_low CMD... -- CMD at the lowest priority: the desktop first
 motion_make() {   # motion_make DRAWING SEDFILE OUT -- SEDFILE empty: as drawn
     _md=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || return 1
     if python3 -I "$REPO/lib/motion_$1.py" "$_md" >/dev/null 2>&1 && [ -f "$_md/f0000.svg" ] \
-        && printf '%s\n' "$_md"/f*.svg | xargs -P "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" -n 32 sh -c 's=$1; shift; for f; do if [ -s "$s" ]; then sed -f "$s" "$f"; else cat "$f"; fi | rsvg-convert -o "${f%.svg}.png" || exit 1; done' _ "$2" \
-        && mpv --no-config --really-quiet "mf://$_md/f*.png" --mf-fps=30 --vf=format=yuv420p --ovc=libx264 --ovcopts=crf=20,preset=medium --of=mp4 --o="$3.part" </dev/null >/dev/null 2>&1 \
+        && printf '%s\n' "$_md"/f*.svg | motion_low xargs -P "$(motion_jobs)" -n 32 sh -c 's=$1; shift; for f; do if [ -s "$s" ]; then sed -f "$s" "$f"; else cat "$f"; fi | rsvg-convert -o "${f%.svg}.png" || exit 1; done' _ "$2" \
+        && motion_low mpv --no-config --really-quiet "mf://$_md/f*.png" --mf-fps=30 --vf=format=yuv420p --ovc=libx264 --ovcopts=crf=20,preset=medium --of=mp4 --o="$3.part" </dev/null >/dev/null 2>&1 \
         && [ -s "$3.part" ] && mv "$3.part" "$3"; then _mk=0; else _mk=1; rm -f "$3.part"; fi
     rm -rf "${_md:?}"
     return "$_mk"
@@ -868,8 +870,8 @@ motion_make_scene() {   # motion_make_scene SCENE PALETTE_FILE WxH OUT [VIEW] --
     if [ "$(scene_info "$1" "$3" | jq -r '.kind // empty' 2>/dev/null)" = pixel ]; then _msv='--vf=format=yuv444p --ovcopts=crf=0,preset=medium'; else _msv='--vf=format=yuv420p --ovcopts=crf=18,preset=medium'; fi
     _msd=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || return 1
     # shellcheck disable=SC2086   # the encoder's words, split on purpose
-    { python3 -I "$SCENE_MAKE" --raw --scene "$1" --size "$3" --view "${5:-1}" --jobs "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" "$2" 2>/dev/null || : > "$_msd/failed"; } \
-        | mpv --no-config --really-quiet --demuxer=rawvideo --demuxer-rawvideo-w="${3%x*}" --demuxer-rawvideo-h="${3#*x}" --demuxer-rawvideo-mp-format=rgb24 --demuxer-rawvideo-fps="$_msf" - $_msv --ovc=libx264 --of=mp4 --o="$4.part" >/dev/null 2>&1 || : > "$_msd/failed"
+    { motion_low python3 -I "$SCENE_MAKE" --raw --scene "$1" --size "$3" --view "${5:-1}" --jobs "$(motion_jobs)" "$2" 2>/dev/null || : > "$_msd/failed"; } \
+        | motion_low mpv --no-config --really-quiet --demuxer=rawvideo --demuxer-rawvideo-w="${3%x*}" --demuxer-rawvideo-h="${3#*x}" --demuxer-rawvideo-mp-format=rgb24 --demuxer-rawvideo-fps="$_msf" - $_msv --ovc=libx264 --of=mp4 --o="$4.part" >/dev/null 2>&1 || : > "$_msd/failed"
     if [ ! -e "$_msd/failed" ] && [ -s "$4.part" ]; then mv "$4.part" "$4"; _mk=0; else rm -f "$4.part"; _mk=1; fi
     rm -rf "${_msd:?}"
     return "$_mk"
