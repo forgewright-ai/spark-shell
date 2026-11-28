@@ -1557,8 +1557,8 @@ if [ "$(uname -s)" != Darwin ]; then
     [ $rc = 0 ] && grep -qxF "WALLPAPER=$vid" "$HOME/.config/spark-shell/config" && case $vst in */spark-shell/wallpapers/videos/video-[0-9]*.jpg) cmp -s "$vst" "$vfr" ;; *) false ;; esac \
         && [ "$(printf '%s\n' "$out" | tail -1)" = "a running sway shows its first frame now, and the windows keep their transparency, 5%; spark-shell theme motion on plays it" ] \
         && [ "$(grep -c '' "$HOME/vmpv.log")" = 1 ] && grep -q -- '--no-audio .*--frames=1 -- ' "$HOME/vmpv.log" \
-        && [ "$(sh "$SH" theme wallpaper)" = "wallpaper $vid -- a video: it plays where the moving wallpaper is on, else its first frame stands" ] && sh "$SH" status | grep -qxF "  wall  video            $vid" \
-        && ok "theme wallpaper VIDEO: an MP4 of yours in the config, its first frame drawn once by mpv and kept, sway fills it, the receipt says how it plays; the bare verb and status name the video" || bad "wallpaper video" "rc=$rc $out | $vst | $(cat "$HOME/vmpv.log" 2>&1)"
+        && [ "$(sh "$SH" theme wallpaper)" = "wallpaper $vid -- a video: it plays where the moving wallpaper is on, else its first frame stands" ] && sh "$SH" status | grep -qxF "  wall  picture          $vid" \
+        && ok "theme wallpaper VIDEO: an MP4 of yours in the config, its first frame drawn once by mpv and kept, sway fills it, the receipt says how it plays; the bare verb names the video, status its path" || bad "wallpaper video" "rc=$rc $out | $vst | $(cat "$HOME/vmpv.log" 2>&1)"
     printf 'no video' > "$HOME/videos/fake.mp4"; rc=0; out=$(sh "$SH" theme wallpaper "$HOME/videos/fake.mp4" 2>&1) || rc=$?
     [ $rc = 1 ] && [ "$out" = 'spark-shell theme: fake.mp4: it is no MP4' ] && grep -qxF "WALLPAPER=$vid" "$HOME/.config/spark-shell/config" && ok "theme wallpaper: an MP4 that is no video is refused, the wallpaper kept" || bad "wallpaper fake video" "rc=$rc $out"
     rm -rf "$HOME/videos"
