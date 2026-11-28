@@ -176,7 +176,8 @@ appearance_screens() {   # -> the rows of the screens, the loops and the clock, 
         | ($kind == "ground" or $kind == "color") as $plain   # a color or the ground: one thing on every screen, and none takes a picture beside it
         | ($plain or $theirs != "") as $same   # as it stands, one thing on every screen: a picture of yours too, until a screen is given its own
         | def shows: if $same then $wall
-              elif .mode == "scene" then $wall + ", drawn for a turned screen"
+              elif .mode == "scene" or .mode == "drawn" then $wall + ", drawn for a turned screen"
+              elif .mode == "scene2" or .mode == "drawing2" then $wall + ", its second view"
               elif .mode == "fit" then $wall + ", fitted"
               elif .role == "landscape" or .role == "chosen" or .file == "" or .file == $chosen then $wall
               else .label end;

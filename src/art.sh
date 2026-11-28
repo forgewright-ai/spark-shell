@@ -122,30 +122,43 @@ art_variant() {   # art_variant THEME -> dark or light, by its background
         function hx(s, i) { return (index("0123456789abcdef", substr(s, i, 1)) - 1) * 16 + index("0123456789abcdef", substr(s, i + 1, 1)) - 1 }
         END { print ((hx(b, 1) * 299 + hx(b, 3) * 587 + hx(b, 5) * 114) / 1000 < 128 ? "dark" : "light") }' "$_avp"
 }
+art_drawn() {   # art_drawn WALLPAPER VIEW -> 0 when a shipped drawing has its own view beside it: NAME-portrait.svg for a turned screen, NAME-2.svg for a second landscape
+    case $1 in ''|*/*) return 1 ;; esac
+    wall_shipped "$1" && ! wall_scene "$1" && [ -f "$REPO/gallery/wallpaper/$1-$2.svg" ]
+}
+scene_second() { scene_info "$1" 1920x1080 2>/dev/null | jq -e '(.views // [1]) | index(2) != null' >/dev/null 2>&1; }   # scene_second SCENE -> 0 when the scene draws a second landscape
+art_views() {   # art_views WALLPAPER -> "PORTRAIT SECOND": authored (a scene's own), drawn (a drawing's own) or fitted; scene, drawing or none. A theme is three pictures: a portrait and two landscapes
+    if wall_scene "$1"; then if scene_second "$1"; then echo 'authored scene'; else echo 'authored none'; fi; return 0; fi
+    _avp=fitted; ! art_drawn "$1" portrait || _avp=drawn
+    _avs=none; ! art_drawn "$1" 2 || _avs=drawing
+    echo "$_avp $_avs"
+}
 art_of() {   # art_of THEME -> one line of JSON: its family, from the family file or, with none, from the theme itself
     _aw=$(art_wall "$1")
     _amv=still; ! motion_has "$_aw" || _amv=ambient
-    _apt=fitted; ! wall_scene "$_aw" || _apt=authored   # every scene draws its own portrait view
+    _apt=$(art_views "$_aw"); _aov=${_apt#* }; _apt=${_apt% *}   # every scene draws its own portrait view, and a drawing may
     _awp=$(theme_dir "$1")/$(look_get "$(theme_dir "$1")" PICTURE); [ "$_aw" != picture ] || [ ! -f "${_awp%.*}.mp4" ] || _amv=ambient
     if _af=$(family_for "$1"); then
-        jq -c --arg t "$1" --arg l "$(theme_label "$1")" --arg wall "$_aw" --arg mv "$_amv" --arg pt "$_apt" '
+        jq -c --arg t "$1" --arg l "$(theme_label "$1")" --arg wall "$_aw" --arg mv "$_amv" --arg pt "$_apt" --arg sv "$_aov" '
             ([.variants | to_entries[] | select(.value.theme == $t or .value.theme == $l or (.value.theme | ltrimstr("core-")) == $l)] | first) as $me
             | {format, id, title, media, note: (.note // null), clock: (if has("clock") then .clock else true end), source: "family",
                variants: (.variants | map_values(.theme)), variant: $me.key, theme: $me.value.theme, wallpaper: $wall,
                motion: (if $me.value.motion == "still" then "still" else $mv end),
                portrait: (if $me.value.portrait then "authored" else $pt end), portrait_file: ($me.value.portrait // null),
-               panels: ($me.value.panels // {}), screens: ([1] + ($me.value.panels // {} | keys | map(tonumber)))}' "$_af"
+               panels: ($me.value.panels // {}), second: (if ($me.value.panels // {}) == {} and $sv != "none" then $sv else null end),
+               screens: ([1] + ($me.value.panels // {} | keys | map(tonumber)) + (if ($me.value.panels // {}) == {} and $sv != "none" then [2] else [] end))}' "$_af"
         return
     fi
     _av=$(art_variant "$1")
-    jq -nc --arg t "$1" --arg l "$(theme_label "$1")" --arg wall "$_aw" --arg mv "$_amv" --arg pt "$_apt" --arg v "$_av" --arg m "$(art_media "$_aw")" '
+    jq -nc --arg t "$1" --arg l "$(theme_label "$1")" --arg wall "$_aw" --arg mv "$_amv" --arg pt "$_apt" --arg sv "$_aov" --arg v "$_av" --arg m "$(art_media "$_aw")" '
         {format: 1, id: $l, title: $l, media: $m, note: null, clock: true, source: "theme",
          variants: {($v): $t}, variant: $v, theme: $t, wallpaper: $wall, motion: $mv,
-         portrait: $pt, portrait_file: null, panels: {}, screens: [1]}'
+         portrait: $pt, portrait_file: null, panels: {}, second: (if $sv != "none" then $sv else null end),
+         screens: ([1] + (if $sv != "none" then [2] else [] end))}'
 }
 art_words() {   # art_words THEME -> "everforest, dark (light: everforest-light), vector, still, portrait fitted"
     art_of "$1" | jq -r '.variant as $v | [.id, ($v + (.variants | to_entries | map(select(.key != $v) | " (" + .key + ": " + .value + ")") | join(""))), .media, .motion,
-        ("portrait " + .portrait), (if (.screens | length) > 1 then "panels for " + (.screens[1:] | map(tostring) | join(" and ")) + " screens" else empty end)] | join(", ")'
+        ("portrait " + .portrait), (if .second then "a second landscape" elif (.screens | length) > 1 then "panels for " + (.screens[1:] | map(tostring) | join(" and ")) + " screens" else empty end)] | join(", ")'
 }
 theme_variant() {   # theme_variant [dark|light] -- the theme in use in its other variant
     [ -n "${THEME:-}" ] && [ "$THEME" != none ] || refuse_in theme "no theme is in use -- spark-shell theme NAME first"
@@ -201,6 +214,9 @@ theme_screens() {   # theme_screens -- what each screen shows, from the left
         if [ -z "$_tsw" ]; then
             case $_tsr:$_tsm in
                 landscape:*) _tsw="the art"; [ -z "$_tsd" ] || case ${WALLPAPER:-} in "$_tsd"/?*) _tsw="the wallpaper (${WALLPAPER##*/})" ;; esac ;;   # a theme's own picture by its name
+                panel*:scene2) _tsw="the scene's second view" ;;
+                panel*:drawing2) _tsw="the drawing's second view" ;;
+                portrait:drawn) _tsw="the drawing drawn for a turned screen" ;;
                 panel*) _tsw="$_tsr ($_tsf)" ;;
                 chosen:*) _tsw="the wallpaper ($_tsf)" ;;
                 portrait:fill) _tsw="its portrait ($_tsf)" ;;
@@ -281,8 +297,11 @@ def pick($p; $tall): if $p == null then null elif $tall then ($p.portrait // nul
    elif $wide then pick($wide[$w - 1]; false) else null end) as $file
 | (if $o.tall and $file then ["portrait", $file, "fill"]
    elif $o.tall and $art.portrait == "authored" then ["portrait", "-", "scene"]
+   elif $o.tall and $art.portrait == "drawn" then ["portrait", "-", "drawn"]
    elif $o.tall then ["fitted", "-", "fit"]
    elif $file then ["panel \($w) of \($wide | length)", $file, "fill"]
+   elif $w == 2 and $wide == null and $art.second == "scene" then ["panel 2 of 2", "-", "scene2"]
+   elif $w == 2 and $wide == null and $art.second == "drawing" then ["panel 2 of 2", "-", "drawing2"]
    else ["landscape", "-", "fill"] end) as $r
 | [$o.name, $o.id, ($at | tostring), (if $o.tall then "portrait" else "landscape" end), $o.size] + $r | @tsv'
 art_screens() {   # [OUTPUTS-JSON-FILE] -> NAME<tab>ID<tab>AT<tab>TURN<tab>WxH<tab>ROLE<tab>FILE<tab>MODE per screen on, from the left; FILE - for none (a tab is IFS white space: an empty field would vanish)
@@ -293,8 +312,8 @@ art_screens() {   # [OUTPUTS-JSON-FILE] -> NAME<tab>ID<tab>AT<tab>TURN<tab>WxH<t
         "$_asd"/*) [ "$_asw" = picture ] || _asa='' ;;
         *) _asa='' ;;
     esac
-    # another wallpaper than the theme's own: read from itself, no companion of the theme's
-    [ -n "$_asa" ] || { _asa='{"panels": {}, "portrait_file": null, "portrait": "fitted"}'; ! wall_scene "${WALLPAPER:-}" || _asa='{"panels": {}, "portrait_file": null, "portrait": "authored"}'; }
+    # another wallpaper than the theme's own: read from itself, no companion of the theme's; a scene or a drawing brings its own views
+    [ -n "$_asa" ] || { _asq=$(art_views "${WALLPAPER:-}"); _asa=$(printf '{"panels": {}, "portrait_file": null, "portrait": "%s", "second": "%s"}' "${_asq% *}" "${_asq#* }"); }
     _asc=''; case ${WALLPAPER:-} in "$_asd"/?*) [ -z "$_asd" ] || _asc=${WALLPAPER#"$_asd"/} ;; esac   # a picture of the theme's own, chosen
     # the chosen picture is on a screen: where the panels leave it out, the first landscape screen's panel gives way to it
     if [ -n "${1:-}" ]; then cat "$1"; else wm_outputs; fi 2>/dev/null | jq -r --argjson art "$_asa" "$ART_SCREENS" 2>/dev/null \
@@ -373,6 +392,18 @@ art_loops() {   # -> LOOP<tab>SCREEN for each screen whose still has its loop be
     done | grep .
 }
 art_plan_file() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-screens.plan"; }   # -> the screens as last drawn
+art_view_file() {   # art_view_file drawn|drawing2 WxH -> a drawing's own view for a screen of that size: its portrait, or its second landscape
+    case $1 in drawn) _avk=portrait ;; *) _avk=2 ;; esac
+    printf '%s' "$WALL_CACHE/screens/${WALLPAPER:-none}-${THEME:-none}-$2-$_avk.png"
+}
+art_view_draw() {   # art_view_draw drawn|drawing2 WxH PALETTE_FILE OUT -> the drawing's view (NAME-portrait.svg, NAME-2.svg) in the palette, covering WxH, a PNG
+    case $1 in drawn) _avk=portrait ;; *) _avk=2 ;; esac
+    _avs=$REPO/gallery/wallpaper/$WALLPAPER-$_avk.svg; [ -f "$_avs" ] && command -v rsvg-convert >/dev/null 2>&1 || return 1
+    { if [ -n "$3" ]; then wall_recolor "$_avs" "$3"; else cat "$_avs"; fi; } \
+        | sed "/^<svg /{ s/ width=\"[0-9]*\"/ width=\"${2%x*}\"/; s/ height=\"[0-9]*\"/ height=\"${2#*x}\" preserveAspectRatio=\"xMidYMid slice\"/; }" > "$4.svg" \
+        && rsvg-convert -w "${2%x*}" -h "${2#*x}" -o "$4.new" "$4.svg" 2>/dev/null && mv "$4.new" "$4"; _avr=$?
+    rm -f "$4.svg" "$4.new"; return "$_avr"
+}
 art_fit_file() {   # art_fit_file WxH -> the art fitted for a screen of that size: a drawing by its name, a picture (a path) by a sum of it, never a path inside a file's name
     case ${WALLPAPER:-} in */*) _afk=picture-$(printf '%s' "$WALLPAPER" | cksum | cut -d' ' -f1) ;; *) _afk=${WALLPAPER:-none} ;; esac
     printf '%s' "$WALL_CACHE/screens/$_afk-${THEME:-none}-$1-fitted.png"   # -fitted: a drawing has its view widened since; a -fit.png made before is never read again
@@ -381,6 +412,8 @@ art_screen_file() {   # art_screen_file FILE MODE WxH -> the still a screen of t
     case $2 in
         fill) case $1 in ""|-) return 0 ;; esac; { _asd=$(theme_dir "${THEME:-}"); [ -f "$_asd/$1" ] && printf '%s' "$_asd/$1"; } ;;
         scene) [ ! -f "$WALL_CACHE/$WALLPAPER-$THEME-$3.png" ] || printf '%s' "$WALL_CACHE/$WALLPAPER-$THEME-$3.png" ;;
+        scene2) [ ! -f "$WALL_CACHE/$WALLPAPER-$THEME-$3-2.png" ] || printf '%s' "$WALL_CACHE/$WALLPAPER-$THEME-$3-2.png" ;;
+        drawn|drawing2) _aqf=$(art_view_file "$2" "$3"); [ ! -f "$_aqf" ] || printf '%s' "$_aqf" ;;
         fit) _aqf=$(art_fit_file "$3"); [ ! -f "$_aqf" ] || printf '%s' "$_aqf" ;;
     esac
 }
@@ -415,6 +448,13 @@ art_screens_follow() {   # each screen output * does not suit gets its own still
               scene) [ -n "$_asf" ] && scene_ready || continue
                   _ssf=$WALL_CACHE/$WALLPAPER-$THEME-$_ass.png
                   [ -f "$_ssf" ] || { mkdir_state "$WALL_CACHE" && scene_still "$WALLPAPER" "$_asf" "$_ass" "$_ssf"; } >/dev/null 2>&1 || continue
+                  printf 'output "%s" bg "%s" fill\n' "$_asn" "$_ssf" ;;
+              scene2) [ -n "$_asf" ] && scene_ready || continue
+                  _ssf=$WALL_CACHE/$WALLPAPER-$THEME-$_ass-2.png
+                  [ -f "$_ssf" ] || { mkdir_state "$WALL_CACHE" && scene_still "$WALLPAPER" "$_asf" "$_ass" "$_ssf" 2; } >/dev/null 2>&1 || continue
+                  printf 'output "%s" bg "%s" fill\n' "$_asn" "$_ssf" ;;
+              drawn|drawing2) _ssf=$(art_view_file "$_asm" "$_ass")
+                  [ -f "$_ssf" ] || { mkdir_state "$WALL_CACHE/screens" && art_view_draw "$_asm" "$_ass" "$_asf" "$_ssf"; } >/dev/null 2>&1 || continue
                   printf 'output "%s" bg "%s" fill\n' "$_asn" "$_ssf" ;;
               fit) [ -f "$_asw" ] || continue
                   _ssf=$(art_fit_file "$_ass")

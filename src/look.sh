@@ -106,10 +106,10 @@ scene_ready() {   # python3 with numpy is here, asked once
     [ -n "$SCENE_READY" ] || { if command -v python3 >/dev/null 2>&1 && python3 -I -c 'import numpy' >/dev/null 2>&1; then SCENE_READY=yes; else SCENE_READY=no; fi; }
     [ "$SCENE_READY" = yes ]
 }
-scene_still() {   # scene_still SCENE PALETTE_FILE WxH OUT.png -> the still, or false
+scene_still() {   # scene_still SCENE PALETTE_FILE WxH OUT.png [VIEW] -> the still (of its second landscape, with VIEW 2), or false
     scene_ready || return 1
     _stn=${4%/*}/.${4##*/}.new.png   # hidden beside it: no file of a theme's while it is made. Not _ssn: scene_screens's
-    if python3 -I "$SCENE_MAKE" --scene "$1" --still poster --size "$3" --png "$_stn" "$2" >/dev/null 2>&1 && [ -s "$_stn" ]; then mv "$_stn" "$4"; else rm -f "$_stn"; return 1; fi
+    if python3 -I "$SCENE_MAKE" --scene "$1" --still poster --size "$3" --view "${5:-1}" --png "$_stn" "$2" >/dev/null 2>&1 && [ -s "$_stn" ]; then mv "$_stn" "$4"; else rm -f "$_stn"; return 1; fi
 }
 wall_for_palette() { for _e in $WALL_SHIPPED; do _r=${_e#*:}; [ "${_r%%:*}" != "$1" ] || { printf '%s' "${_e%%:*}"; return 0; }; done; return 1; }   # wall_for_palette PALETTE -> its drawing, or false
 wall_palette_of() { for _e in $WALL_SHIPPED; do [ "${_e%%:*}" != "$1" ] || { _r=${_e#*:}; printf '%s' "${_r%%:*}"; return 0; }; done; ! wall_scene "$1" || { printf 'every'; return 0; }; return 1; }   # wall_palette_of DRAWING -> its palette (every for a scene)

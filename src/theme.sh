@@ -852,12 +852,12 @@ scene_loop_size() {   # scene_loop_size SCENE WxH -> a pixel scene's grid, else 
     [ -n "$_sls" ] || { _slw=${2%x*}; _slh=${2#*x}; _sls="$((_slw - _slw % 2))x$((_slh - _slh % 2))"; }
     printf '%s' "$_sls"
 }
-motion_make_scene() {   # motion_make_scene SCENE PALETTE_FILE WxH OUT -- a pixel scene lossless 4:4:4
+motion_make_scene() {   # motion_make_scene SCENE PALETTE_FILE WxH OUT [VIEW] -- a pixel scene lossless 4:4:4; VIEW 2 its second landscape
     _msf=$(scene_info "$1" "$3" | jq -r '.fps // empty' 2>/dev/null); [ -n "$_msf" ] || return 1
     if [ "$(scene_info "$1" "$3" | jq -r '.kind // empty' 2>/dev/null)" = pixel ]; then _msv='--vf=format=yuv444p --ovcopts=crf=0,preset=medium'; else _msv='--vf=format=yuv420p --ovcopts=crf=18,preset=medium'; fi
     _msd=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || return 1
     # shellcheck disable=SC2086   # the encoder's words, split on purpose
-    { python3 -I "$SCENE_MAKE" --raw --scene "$1" --size "$3" --jobs "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" "$2" 2>/dev/null || : > "$_msd/failed"; } \
+    { python3 -I "$SCENE_MAKE" --raw --scene "$1" --size "$3" --view "${5:-1}" --jobs "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" "$2" 2>/dev/null || : > "$_msd/failed"; } \
         | mpv --no-config --really-quiet --demuxer=rawvideo --demuxer-rawvideo-w="${3%x*}" --demuxer-rawvideo-h="${3#*x}" --demuxer-rawvideo-mp-format=rgb24 --demuxer-rawvideo-fps="$_msf" - $_msv --ovc=libx264 --of=mp4 --o="$4.part" >/dev/null 2>&1 || : > "$_msd/failed"
     if [ ! -e "$_msd/failed" ] && [ -s "$4.part" ]; then mv "$4.part" "$4"; _mk=0; else rm -f "$4.part"; _mk=1; fi
     rm -rf "${_msd:?}"
@@ -894,9 +894,10 @@ motion_follow_now() {
         _mpf=$(palette_file "${THEME:-}" 2>/dev/null) || { rm -rf "${_mj:?}"; motion_stop; return 0; }   # no palette: the still alone
         cp "$_mpf" "$_mj/palette.env"
         _msum=$(cat "$SCENE_MAKE" "$_mpf" | cksum | cut -d' ' -f1)
-        motion_screens | while IFS="$TAB" read -r _mn _ms; do
+        art_screens | while IFS="$TAB" read -r _mn _ _ _ _ms _ _ _msm; do   # a loop a screen at its size, the second landscape its own view
             _msz=$(scene_loop_size "$WALLPAPER" "$_ms") || continue
-            printf '%s\t%s\t%s\n' "$MOTION_DIR/$WALLPAPER-$_msum-$_msz.mp4" "$_msz" "$_mn"
+            _mv=''; [ "$_msm" != scene2 ] || _mv=-2
+            printf '%s\t%s\t%s\n' "$MOTION_DIR/$WALLPAPER-$_msum-$_msz$_mv.mp4" "$_msz$_mv" "$_mn"
         done > "$_mj/plan"
         [ -s "$_mj/plan" ] || { rm -rf "${_mj:?}"; motion_stop; return 0; }
         _mscale=smooth; [ "$(scene_info "$WALLPAPER" "$(motion_screens | awk -F '\t' 'NR == 1 { print $2 }')" | jq -r '.kind // empty' 2>/dev/null)" != pixel ] || _mscale=nearest
@@ -906,7 +907,10 @@ motion_follow_now() {
         if [ -n "${THEME:-}" ] && [ "$THEME" != none ] && ! wall_own "$WALLPAPER" && _mpf=$(palette_file "$THEME"); then wall_recolor_sed "$REPO/gallery/wallpaper/$WALLPAPER.svg" "$_mpf" > "$_mj/palette.sed"; fi
         _msum=$(cat "$REPO/lib/motion_$WALLPAPER.py" "$_mj/palette.sed" | cksum | cut -d' ' -f1)
         printf '%s\tdrawing\t*\n' "$MOTION_DIR/$WALLPAPER-$_msum.mp4" > "$_mj/plan"
-        printf -- '--all\n%s\n' "$MOTION_DIR/$WALLPAPER-$_msum.mp4" > "$_mj/args"
+        # the loop is the drawing's first landscape: a screen with a view of its own (a portrait, a second landscape) keeps that still
+        art_screens | awk -F '\t' '$8 == "drawn" || $8 == "drawing2" { own = 1; next } { keep[++n] = $1 } END { if (!own) exit 1; for (i = 1; i <= n; i++) print keep[i] }' > "$_mj/screens" \
+            && { while IFS= read -r _mn; do printf -- '--screen\n%s=%s\n' "$_mn" "$MOTION_DIR/$WALLPAPER-$_msum.mp4"; done < "$_mj/screens"; } > "$_mj/args" \
+            || printf -- '--all\n%s\n' "$MOTION_DIR/$WALLPAPER-$_msum.mp4" > "$_mj/args"
     fi
     if cmp -s "$_mj/args" "$(motion_want)" && [ -n "$(motion_ours)" ]; then rm -rf "${_mj:?}"; MOTION_NOW=playing; return 0; fi   # playing already
     mkdir -p "$(dirname "$(motion_want)")" && cp "$_mj/args" "$(motion_want)"
@@ -925,7 +929,7 @@ motion_follow_now() {
       while IFS="$TAB" read -r _mf _msz _mn; do
           [ ! -f "$_mf" ] || continue
           if [ "$_msz" = drawing ]; then motion_make "$WALLPAPER" "$_mj/palette.sed" "$_mf" || _mok=0
-          else motion_make_scene "$WALLPAPER" "$_mj/palette.env" "$_msz" "$_mf" || _mok=0; fi
+          else motion_make_scene "$WALLPAPER" "$_mj/palette.env" "${_msz%-2}" "$_mf" "$(case $_msz in *-2) echo 2 ;; *) echo 1 ;; esac)" || _mok=0; fi
       done < "$_mj/plan"
       if [ "$_mok" = 1 ] && cmp -s "$_mj/args" "$(motion_want)"; then
           motion_play_want
