@@ -38,7 +38,10 @@ cozy: warm and playful, a picture book for grown-ups
               the spring: a snow monkey under a towel soaks among the yuzu,
               and opens one eye when the bamboo tube knocks
     duck      a rubber duck on a pond, being told about a bug: a question,
-              then an idea; a frog fixes a bug of its own by eating it
+              then an idea; a frog fixes a bug of its own by eating it.
+              Further along, by a jetty and a willow, four ducklings go
+              round a lily pad, each after the one ahead: a loop, and one
+              of them asks who leads
     reef      under the sea the fish are prompts: a school of > fish, a ~
               eel, a * starfish, and one < swimming the wrong way
     campfire  a raccoon toasts a marshmallow; it catches fire, the raccoon
@@ -1052,7 +1055,10 @@ class Duck(Scene, Cached):
     poster = 9.0
     PX, PY, PRX, PRY = 960.0, 868.0, 900.0, 205.0  # the pond
     portrait = (1080.0, 1920.0, -400.0, 840.0)  # the frog's pad and the duck, a tall sky over them
+    second = (1920.0, 1080.0, -1920.0, 0.0)  # further along the pond: a jetty, a willow, ducklings going round a lily pad
     WL = 820.0  # the duck's waterline
+    QX, QY, QRX, QRY = W + 700.0, 890.0, 900.0, 190.0  # the pond, further along
+    LOOP = (W + 760.0, 924.0, 230.0, 52.0)  # the ducklings' round: its middle (the lily pad) and its radii
 
     def colors(self, p):
         if not hasattr(self, "_c") or self._c[0] is not p:
@@ -1070,13 +1076,19 @@ class Duck(Scene, Cached):
                 duck=yellow, duck2=mix(yellow, p("ansi_1"), 0.22), beak=mix(p("ansi_3"), p("ansi_1"), 0.55), ink=ink, shine2=p.pick("white", "white"),
                 frog=frog, frog2=mix(frog, ink, 0.3), belly=mix(frog, p("white"), 0.45), tongue=mix(p("ansi_1"), p("ansi_5"), 0.4),
                 bug=mix(ink, p("ansi_1"), 0.2), wing=p.pick("fg", "white"), bubble=p.pick("bg+fg:88", "white"), glow=p("ansi_3"), fly=p("accent"),
+                wood=mix(p("ansi_3+ansi_1:30"), ink, 0.4), wood2=mix(p("ansi_3+ansi_1:30"), ink, 0.62), wood3=mix(p("ansi_3+ansi_1:30"), p.pick("fg", "white"), 0.15),
+                willow=p.pick("bg+ansi_2:30", "bg+ansi_2:48"), willow2=p.pick("bg+ansi_2:44", "bg+ansi_2:64"), float1=p("ansi_1"), float2=p.pick("fg", "white"), tin=p("bg+fg:30"),
             ))
         return self._c[1]
 
     def pond(self, cv):
+        if cv.second:
+            return self.cached(cv, "pond", lambda: full(cv, Shape().ellipse(self.QX, self.QY, self.QRX, self.QRY)))
         return self.cached(cv, "pond", lambda: full(cv, Shape().ellipse(self.PX, self.PY, self.PRX, self.PRY)))
 
     def back(self, cv, p):
+        if cv.second:
+            return self.back2(cv, p)
         c = self.colors(p)
         sx, sy = (1240.0, -420.0) if cv.portrait else (400.0, 210.0)
         out = [D(cv, sx, sy, 120, c["halo"]), D(cv, sx, sy, 58, c["sun"])]
@@ -1122,24 +1134,27 @@ class Duck(Scene, Cached):
                 out.append(L(cv, Shape().line([u, pts[8]], 9), c["cattail"], ss=2))
         return out
 
-    def duck(self, cv, c, x, y, t, kx, tilt):
-        sh = lambda s: s.moved(x, y, 1.22, tilt, 0, 0, kx)
+    def duck(self, cv, c, x, y, t, kx, tilt, wl=None, k=1.22):
+        """The rubber duck at (x, y), kx its way (1 to the left, -1 to the right), k its size; wl its waterline."""
+        wl = self.WL if wl is None else wl
+        e = k / 1.22
+        sh = lambda s: s.moved(x, y, k, tilt, 0, 0, kx)
         body = Shape().poly(spline([(-74, -6), (-66, -36), (-36, -50), (14, -50), (50, -50), (80, -76), (84, -40), (66, -8), (10, 6), (-50, 4)], per=8))
         head = Shape().circle(-40, -86, 31)
         neck = Shape().poly(spline([(-69, -24), (-69, -46), (-60, -70), (-44, -84), (-24, -80), (-17, -64), (-6, -54), (8, -50), (16, -40), (-30, -20)], per=6))  # the head sits on the body
         beak = Shape().poly(spline([(-62, -93), (-94, -88), (-102, -79), (-93, -70), (-62, -72)], per=6))
         wing = Shape().poly(spline([(-14, -36), (20, -44), (46, -30), (30, -16), (-6, -18)], per=6))
-        out = [L(cv, sh(body), c["duck"], above=self.WL), L(cv, sh(neck), c["duck"], above=self.WL), L(cv, sh(head), c["duck"]), L(cv, sh(wing), c["duck2"], above=self.WL),
+        out = [L(cv, sh(body), c["duck"], above=wl), L(cv, sh(neck), c["duck"], above=wl), L(cv, sh(head), c["duck"]), L(cv, sh(wing), c["duck2"], above=wl),
                L(cv, sh(beak), c["beak"]), L(cv, sh(Shape().line([(-66, -81), (-96, -79)], 2.2)), mix(c["beak"], c["ink"], 0.35))]
         ex, ey = sh(Shape().poly([(-48, -94)])).cmds[0][1][0]
-        out += [D(cv, ex, ey, 5.2, c["ink"]), D(cv, ex - 1.6 * kx, ey - 2, 1.7, c["shine2"])]
+        out += [D(cv, ex, ey, 5.2 * e, c["ink"]), D(cv, ex - 1.6 * e * kx, ey - 2 * e, 1.7 * e, c["shine2"])]
         out.append(L(cv, sh(Shape().ellipse(-54, -78, 8, 5)), c["beak"], 0.25))
         # its reflection: upside down under the waterline, faint
-        flip = lambda s: s.moved(x, y, 1.22, tilt, 0, 0, kx).moved(0, 0, 1, 0, 0, 0, 1)
+        flip = lambda s: s.moved(x, y, k, tilt, 0, 0, kx).moved(0, 0, 1, 0, 0, 0, 1)
         refl = Shape()
         for cmd in flip(body).cmds:
-            refl.cmds.append(("poly", [(px, 2 * self.WL - py + 4) for px, py in cmd[1]]))
-        out.insert(0, L(cv, refl, c["duck"], 0.14, ss=1, soft=4, below=self.WL + 2, clip=self.pond(cv)))
+            refl.cmds.append(("poly", [(px, 2 * wl - py + 4 * e) for px, py in cmd[1]]))
+        out.insert(0, L(cv, refl, c["duck"], 0.14, ss=1, soft=4 * e, below=wl + 2 * e, clip=self.pond(cv)))
         return out
 
     def ring(self, cv, c, x, y, age, life=1.8, big=1.0):
@@ -1181,6 +1196,8 @@ class Duck(Scene, Cached):
         return 660 + 70 * wave(t - 13.4, 1.9) + 10 * wave(t, 0.5), 760 + 28 * wave(t - 13.4, 1.1)
 
     def under(self, cv, p, t):
+        if cv.second:
+            return self.under2(cv, p, t)
         c = self.colors(p)
         out = []
         clouds_ = ((720, -560, 1.0), (1180, -260, 0.8), (880, 60, 0.7)) if cv.portrait else ((760, 250, 1.0), (1180, 170, 0.8), (1580, 300, 0.7))
@@ -1222,6 +1239,8 @@ class Duck(Scene, Cached):
 
     def over(self, cv, p, t):
         c = self.colors(p)
+        if cv.second:
+            return self.over2(cv, c, t)
         x = 1200 + 60 * wave(t, 24)
         y = self.WL + 3 * wave(t, 2.4) - 30 * bump(window(t, 8.7, 9.25))
         kx = 1 - 2 * ease_io(window(t, 19.6, 19.95)) + 2 * ease_io(window(t, 22.6, 22.95))
@@ -1235,15 +1254,20 @@ class Duck(Scene, Cached):
                 r0, r1 = 46 + 26 * u, 58 + 34 * u
                 out.append(L(cv, Shape().line([(hx + r0 * math.cos(a), hy + r0 * math.sin(a)), (hx + r1 * math.cos(a), hy + r1 * math.sin(a))], 3.2), c["glow"], 1 - u))
         out += bubble(cv, 560, 760, pop(t, 16.8, 19.0), "v", c["bubble"], c["ink"], tail=-1)
+        return out + self.air(cv, c, t, 0.0, 8)
+
+    def air(self, cv, c, t, x0, seed):
+        """Fireflies by night, a dragonfly by day, over the screen from x0."""
+        out = []
         if c["dark"]:  # fireflies by night
-            rnd = random.Random(8)
+            rnd = random.Random(seed)
             for i in range(14):
-                fx = rnd.uniform(100, 1820) + 60 * wave(t, 24 / rnd.choice((1, 2, 3)), rnd.random())
+                fx = x0 + rnd.uniform(100, 1820) + 60 * wave(t, 24 / rnd.choice((1, 2, 3)), rnd.random())
                 fy = rnd.uniform(560, 760) + 30 * wave(t, 24 / rnd.choice((2, 3, 4)), rnd.random())
                 a = 0.5 + 0.5 * wave(t, 24 / rnd.choice((4, 6, 8)), rnd.random())
                 out += [D(cv, fx, fy, 9, c["glow"], 0.16 * a), D(cv, fx, fy, 2.4, c["glow"], 0.9 * a)]
         else:  # a dragonfly by day
-            fx = 960 + 640 * math.sin(2 * math.pi * t / 24)
+            fx = x0 + 960 + 640 * math.sin(2 * math.pi * t / 24)
             fy = 560 + 90 * math.sin(4 * math.pi * t / 24) + 20 * wave(t, 1.5)
             ang = math.atan2(90 * 4 * math.pi / 24 * math.cos(4 * math.pi * t / 24), 640 * 2 * math.pi / 24 * math.cos(2 * math.pi * t / 24))
             f = abs(math.sin(2 * math.pi * t / 0.08))  # 300 beats a loop
@@ -1256,6 +1280,123 @@ class Duck(Scene, Cached):
                     wings.ellipse(wx + 16 * math.cos(a), wy + 16 * math.sin(a), 17, 4 + 2 * f, a)
             out += [L(cv, wings, c["wing"], 0.5), L(cv, body, c["fly"])]
         return out
+
+    # -- further along the pond: the second landscape, a screen to the right
+
+    def back2(self, cv, p):
+        c = self.colors(p)
+        X = W
+        out = []
+        if c["dark"]:
+            out += stars(cv, c["wing"], 22, 70, 30, 520, alpha=0.4)
+        out.append(L(cv, Shape().poly([(X, 640)] + spline([(X, 590), (X + 300, 545), (X + 700, 600), (X + 1100, 528), (X + 1500, 588), (X + 1920, 546)], closed=False, per=16) + [(X + W, 640)]), c["hill"], ss=2))
+        out.append(L(cv, Shape().poly([(X, 700)] + spline([(X, 620), (X + 400, 652), (X + 800, 608), (X + 1200, 656), (X + 1600, 614), (X + 1920, 640)], closed=False, per=16) + [(X + W, 700)]), c["hill2"], ss=2))
+        out.append(L(cv, Shape().rect(X, 650, W, H - 650), c["grass"], ss=1))
+        out.append(L(cv, Shape().ellipse(self.QX, self.QY, self.QRX, self.QRY), c["water"], ss=2))
+        out.append(L(cv, Shape().ellipse(self.QX - 40, self.QY + 40, self.QRX * 0.7, self.QRY * 0.55), c["deep"], 0.7, ss=1, soft=40, clip=self.pond(cv)))
+        # the willow's trunk on the far bank, its crown
+        tx = X + 1720.0
+        out.append(L(cv, Shape().ellipse(tx, 772, 120, 14), c["hill2"], 0.8, ss=2))
+        out.append(L(cv, Shape().poly(ribbon(bezier((tx, 776), (tx + 6, 680), (tx - 30, 600), (tx - 10, 500), n=12), 46, 22)), c["wood2"], ss=2))
+        out.append(L(cv, Shape().line(bezier((tx - 14, 560), (tx - 60, 520), (tx - 120, 500), (tx - 170, 470), n=10), 12).line(bezier((tx - 8, 540), (tx + 40, 500), (tx + 90, 480), (tx + 130, 470), n=10), 12), c["wood2"], ss=2))
+        crown = Shape()
+        for cx, cy, rx, ry in ((tx - 20, 440, 190, 70), (tx - 150, 470, 110, 50), (tx + 110, 462, 120, 52), (tx - 40, 400, 120, 50)):
+            crown.ellipse(cx, cy, rx, ry)
+        out.append(L(cv, crown, c["willow"], ss=2))
+        # the lily pads; the one in the middle of the ducklings' round has a flower
+        for x, y, r, rot, fl in ((X + 260, 1000, 44, 1.4, False), (X + 1160, 1020, 50, 4.2, False), (X + 1480, 960, 40, 2.6, True), (X + 120, 900, 36, 5.6, False)):
+            out += self.pad(cv, c, x, y, r, rot, fl)
+        lx, ly = self.LOOP[:2]
+        out += self.pad(cv, c, lx, ly, 62, 3.0, True)
+        out += self.jetty(cv, c, X)
+        return out
+
+    def jetty(self, cv, c, X):
+        """A wooden jetty from the far bank into the water, a rod left on it."""
+        out = []
+        posts = Shape()
+        for x in (1290, 1390, 1490, 1590):
+            posts.rect(X + x - 7, 812, 14, 46)
+        out.append(L(cv, posts, c["wood2"], ss=2))
+        refl = Shape()
+        for x in (1290, 1390, 1490, 1590):
+            refl.rect(X + x - 7, 858, 14, 40)
+        out.append(L(cv, refl, c["wood2"], 0.18, ss=1, soft=4, clip=self.pond(cv)))
+        out.append(L(cv, Shape().poly([(X + 1250, 796), (X + 1660, 796), (X + 1680, 812), (X + 1270, 812)]), c["wood3"], ss=2))
+        out.append(L(cv, Shape().rect(X + 1270, 812, 410, 12), c["wood"], ss=2))
+        gaps = Shape()
+        for k in range(1, 14):
+            x = X + 1270 + k * 29.5
+            gaps.line([(x - 15, 797), (x - 2, 811)], 1.6)
+        out.append(L(cv, gaps, c["wood"], 0.6, ss=2))
+        out.append(L(cv, Shape().line([(X + 1330, 798), (X + 1130, 636)], 5).circle(X + 1316, 788, 9), c["wood2"], ss=2))  # the rod, its reel
+        out.append(L(cv, Shape().rect(X + 1580, 766, 38, 32).ellipse(X + 1599, 766, 19, 5), c["tin"], ss=2))  # a bucket
+        return out
+
+    def ducklings(self, t):
+        """The four ducklings on their round: (x, y, way, which), each a quarter of the way behind the one ahead."""
+        cx, cy, rx, ry = self.LOOP
+        out = []
+        for i in range(4):
+            a = 2 * math.pi * (t / 24 - i / 4 + 1 / 8)  # on screen: along the front to the left, along the back to the right
+            kx = clamp(20 * math.sin(a), -1, 1)  # a quick turn at each end
+            out.append((cx + rx * math.cos(a), cy + ry * math.sin(a), kx if abs(kx) > 0.3 else math.copysign(0.3, math.cos(a)), i))
+        return out
+
+    def under2(self, cv, p, t):
+        c = self.colors(p)
+        X = W
+        out = []
+        for i, (x, y, w) in enumerate(((X + 300, 190, 0.9), (X + 980, 120, 0.7), (X + 1420, 270, 0.8))):  # clouds, drifting and back
+            dx = 46 * wave(t, 24, i * 0.3 + 0.15)
+            cl = Shape().rect(x + dx - 120 * w, y, 240 * w, 34 * w).circle(x + dx - 60 * w, y + 4, 42 * w).circle(x + dx + 20 * w, y - 10 * w, 56 * w).circle(x + dx + 90 * w, y + 8, 34 * w)
+            out.append(L(cv, cl, c["cloud"], 1.0, ss=2, above=y + 34 * w))
+        # the willow's hanging strands, swaying
+        rnd = random.Random(17)
+        tx = X + 1720.0
+        strands = Shape()
+        for i in range(34):
+            x0 = tx + rnd.uniform(-330, 250)
+            y0 = 430 + 40 * (abs(x0 - tx + 40) / 290) ** 2 + rnd.uniform(-10, 20)
+            h = rnd.uniform(220, 330) - 0.25 * abs(x0 - tx)
+            sw = 10 * wave(t, 6 if i % 2 else 8, rnd.random())
+            pts = bezier((x0, y0), (x0 + 6, y0 + h * 0.4), (x0 + sw * 0.6, y0 + h * 0.75), (x0 + sw, y0 + h), n=8)
+            strands.poly(ribbon(pts, 9, 2))
+        out.append(L(cv, strands, c["willow2"], ss=2))
+        # reeds by the bank and in the shallows
+        rnd = random.Random(33)
+        for i in range(16):
+            x = rnd.choice((rnd.uniform(X + 1560, X + 1640), rnd.uniform(X + 1840, X + 1910), rnd.uniform(X + 40, X + 200)))
+            base, h = rnd.uniform(700, 770), rnd.uniform(110, 210)
+            sway = 9 * (h / 200) * wave(t, 6 if i % 2 else 4, rnd.random())
+            top = (x + sway + rnd.uniform(-12, 12), base - h)
+            pts = bezier((x, base), (x, base - h * 0.4), (top[0] - sway * 0.3, base - h * 0.75), top, n=10)
+            out.append(L(cv, Shape().poly(ribbon(pts, 6, 1.5)), c["reed"], ss=2))
+            if i % 3 == 0:
+                out.append(L(cv, Shape().line([pts[7], pts[8]], 9), c["cattail"], ss=2))
+        for i, (x, y, w) in enumerate(((X + 420, 830, 90), (X + 1000, 1010, 110), (X + 1350, 900, 70), (X + 200, 950, 60), (X + 760, 840, 80))):
+            dx = 18 * wave(t, 6, i * 0.23)
+            out.append(L(cv, Shape().line([(x + dx - w / 2, y), (x + dx + w / 2, y)], 3), c["shine"], 0.3 + 0.12 * wave(t, 4, i * 0.3), ss=2))
+        # the float on the rod's line: it bobs, and once it dips
+        bx, by = X + 1112.0, 872.0
+        dip = bump(window(t, 20.0, 20.7))
+        fy = by + 2.5 * wave(t, 3) + 12 * dip
+        out.append(L(cv, Shape().line([(X + 1130, 636), (bx + 2, fy - 12)], 1.2), c["ink"], 0.45, ss=2))
+        out += self.ring(cv, c, bx, by + 4, (t - 0.5) % 6, 2.4, 0.45)
+        out += self.ring(cv, c, bx, by + 4, t - 20.5, 1.8, 0.8)
+        out.append(L(cv, Shape().circle(bx, fy, 8), c["float1"], above=by + 3))
+        out.append(L(cv, Shape().poly(ellipse_pts(bx, fy, 8, 8, n=24, a0=math.pi, a1=2 * math.pi)), c["float2"], above=by + 3))
+        out.append(L(cv, Shape().line([(bx, fy - 8), (bx, fy - 15)], 2), c["float1"]))
+        # the ducklings going round, the far ones first
+        for x, y, kx, i in sorted(self.ducklings(t), key=lambda d: d[1]):
+            out += self.ring(cv, c, x, y + 3, (t - i * 1.3) % 4, 2.6, 0.5)
+            out += self.duck(cv, c, x, y + 1.5 * wave(t, 2.4, i * 0.25), t, kx, 0.05 * wave(t, 2.4, i * 0.25 + 0.25), y, (0.64, 0.58, 0.53, 0.48)[i])  # biggest to smallest, and the biggest behind the smallest
+        return out
+
+    def over2(self, cv, c, t):
+        x, y, kx, i = self.ducklings(t)[2]  # one of them wonders who leads
+        out = bubble(cv, x - 22 * kx, y - 112, 0.62 * pop(t, 12.6, 15.0), "?", c["bubble"], c["ink"], tail=1 if kx > 0 else -1)
+        return out + self.air(cv, c, t, W, 9)
 
 
 class Reef(Scene, Cached):
