@@ -51,7 +51,9 @@ cozy: warm and playful, a picture book for grown-ups
               camp, by the lake, the cooler's lid lifts: another raccoon
               comes up with a hot dog, looks round, and goes back down
     ufo       over the dunes a saucer beams up a cow, has a look, and puts
-              it back
+              it back. Another stretch of the dunes: a windmill turns by a
+              road whose sign warns of saucers; one goes over on its way, and
+              a coyote howls after it
     pigeons   IP over avian carriers (RFC 1149): pigeons carry envelopes
               over the roofs; one drops its packet and another sends it again
 
@@ -2152,6 +2154,9 @@ class Campfire(Scene, Cached):
 class Ufo(Scene, Cached):
     name = "ufo"
     portrait = (1080.0, 1920.0, -640.0, 840.0)  # the saucer and the cow in the middle, a tall sky with its planet
+    second = (1920.0, 1080.0, -1920.0, 0.0)  # another stretch of the dunes: a road, its sign, a windmill, a coyote
+    MILL = (W + 420.0, 548.0)  # the windmill's wheel
+    DOG = (W + 1740.0, 884.0)  # the coyote, on its rock
     poster = 8.0
     HZ = 720.0
     COW = (1180.0, 862.0)
@@ -2169,11 +2174,16 @@ class Ufo(Scene, Cached):
                 beam=p("ansi_2"), lights=[p("ansi_1"), p("ansi_3"), p("ansi_2"), p("ansi_6"), p("ansi_5")],
                 cow=p.pick("fg+white:40", "white"), spot=mix(ink, p("bg"), 0.1), nose=p.pick("ansi_5+white:45", "ansi_5+white:50"), horn=p.pick("bg+ansi_3:40", "bg+ansi_3:50"),
                 ink=ink, bubble=p.pick("bg+fg:88", "white"),
+                road=mix(p.pick("bg+ansi_3:24", "bg+ansi_3:38"), ink, 0.3), paint=p.pick("bg+ansi_3:60", "white"), sign=p("ansi_3"), metal=p.pick("bg+fg:36", "bg+fg:46"),
+                water=p.pick("bg+ansi_4:40", "bg+ansi_4:50"), coyote=mix(p("ansi_3"), p("muted"), 0.55), coyote2=mix(mix(p("ansi_3"), p("muted"), 0.55), ink, 0.3),
+                weed=mix(p.pick("bg+ansi_3:40", "bg+ansi_3:52"), ink, 0.2), rock=p.pick("bg+ansi_1:22", "bg+ansi_1:30"),
             ))
         return self._c[1]
 
     def back(self, cv, p):
         c = self.colors(p)
+        if cv.second:
+            return self.back2(cv, c)
         out = stars(cv, c["star"], 23, 240 if cv.portrait else 120, -800 if cv.portrait else 20, self.HZ - 40, alpha=0.5 if c["dark"] else 0.0)
         px, py = (900.0, -440.0) if cv.portrait else (380.0, 230.0)
         out += [D(cv, px, py, 44, c["planet"])]
@@ -2267,6 +2277,8 @@ class Ufo(Scene, Cached):
 
     def under(self, cv, p, t):
         c = self.colors(p)
+        if cv.second:
+            return self.under2(cv, c, t)
         out = []
         u = self.ufopos(t)
         cx, cy, rot, lift = self.cowpos(t)
@@ -2295,11 +2307,144 @@ class Ufo(Scene, Cached):
 
     def over(self, cv, p, t):
         c = self.colors(p)
+        if cv.second:  # the coyote's howl
+            x, y = self.DOG
+            return bubble(cv, x - 110, y - 250, 0.8 * pop(t, 3.4, 5.8), "ooo", c["bubble"], c["ink"], tail=1)
         cx, cy, rot, lift = self.cowpos(t)
         out = bubble(cv, cx - 140, cy - 150, pop(t, 8.0, 10.4), "moo", c["bubble"], c["ink"], tail=1)
         hx, hy = self.HOVER
         out += bubble(cv, hx + 110, hy - 90, pop(t, 11.2, 12.8), "?", c["bubble"], c["ink"], tail=-1)
         out += bubble(cv, cx - 150, cy - 190, pop(t, 19.8, 21.6), "?", c["bubble"], c["ink"], tail=1)
+        return out
+
+    # -- another stretch of the dunes: the second landscape, a screen to the right
+
+    def back2(self, cv, c):
+        X = W
+        HZ = self.HZ
+        out = stars(cv, c["star"], 24, 120, 20, HZ - 40, alpha=0.5 if c["dark"] else 0.0)
+        out.append(L(cv, Shape().poly([(X, HZ), (X + 110, HZ), (X + 140, 590), (X + 360, 584), (X + 392, HZ), (X + 1290, HZ), (X + 1320, 652), (X + 1520, 646), (X + 1560, 680), (X + 1780, 676), (X + 1800, HZ), (X + W, HZ), (X + W, HZ + 40), (X, HZ + 40)]), c["mesa"], ss=2))
+        for col, pts in ((c["dune"], [(X, 735), (X + 420, 704), (X + 900, 738), (X + 1400, 708), (X + 1920, 730)]), (c["dune2"], [(X, 800), (X + 480, 772), (X + 1000, 806), (X + 1560, 776), (X + 1920, 796)]), (c["dune3"], [(X, 900), (X + 640, 880), (X + 1260, 918), (X + 1920, 894)])):
+            out.append(L(cv, Shape().poly([(X, H)] + spline(pts, closed=False, per=16) + [(X + W, H)]), col, ss=2))
+        # the road to the horizon, its middle line
+        vx = X + 1040.0
+        out.append(L(cv, Shape().poly([(vx - 8, HZ + 1), (vx + 8, HZ + 1), (X + 1470, H), (X + 570, H)]), c["road"], ss=2))
+        dash = Shape()
+        for k in range(9):
+            u0, u1 = (k / 9) ** 2, ((k + 0.5) / 9) ** 2
+            y0, y1 = HZ + (H - HZ) * u0, HZ + (H - HZ) * u1
+            x0, x1 = vx + (X + 1020 - vx) * u0, vx + (X + 1020 - vx) * u1
+            dash.poly([(x0 - 1 - 6 * u0, y0), (x0 + 1 + 6 * u0, y0), (x1 + 1 + 6 * u1, y1), (x1 - 1 - 6 * u1, y1)])
+        out.append(L(cv, dash, c["paint"], 0.8, ss=2))
+        for x, y, s in ((X + 1260, 780, 0.55), (X + 170, 950, 1.05), (X + 1930, 760, 0.5)):
+            out.append(L(cv, self.cactus(x, y, s), c["cactus"], ss=2))
+        # the windmill over its trough
+        mx, my = self.MILL
+        tower = Shape()
+        for side in (-1, 1):
+            tower.line([(mx + side * 50, 846), (mx + side * 9, my + 18)], 7)
+        for k, y in enumerate((800, 740, 680, 620)):
+            f = (846 - y) / (846 - my - 18)
+            hw = 50 - 41 * f
+            tower.line([(mx - hw, y), (mx + hw, y)], 4)
+            g = (846 - y - 60) / (846 - my - 18)
+            hw2 = 50 - 41 * g
+            tower.line([(mx - hw, y), (mx + hw2, y - 60)], 3)
+        out.append(L(cv, Shape().ellipse(mx + 60, 852, 140, 10), c["shadow"], 0.3, ss=2))
+        out.append(L(cv, tower, c["metal"], ss=2))
+        out.append(L(cv, Shape().rect(mx + 50, 812, 140, 36), c["metal"], ss=2))
+        out.append(L(cv, Shape().rect(mx + 56, 812, 128, 8), c["water"], ss=2))
+        out.append(L(cv, Shape().line([(mx + 24, 760), (mx + 24, 700)], 4).line([(mx + 24, 760), (mx + 60, 760), (mx + 60, 812)], 4), c["metal"], ss=2))  # the pipe
+        out.append(L(cv, Shape().line([(mx, my), (mx + 110, my - 4)], 6).poly([(mx + 92, my - 34), (mx + 150, my - 26), (mx + 150, my + 18), (mx + 92, my + 22)]), c["metal"], ss=2))  # the tail vane
+        # the sign: watch for saucers
+        sx, sy = X + 1420.0, 724.0
+        out.append(L(cv, Shape().line([(sx, sy + 40), (sx, 906)], 9), c["metal"], ss=2))
+        out.append(L(cv, Shape().poly([(sx, sy - 74), (sx + 74, sy), (sx, sy + 74), (sx - 74, sy)]), c["ink"], ss=2))
+        out.append(L(cv, Shape().poly([(sx, sy - 66), (sx + 66, sy), (sx, sy + 66), (sx - 66, sy)]), c["sign"], ss=2))
+        pic = Shape().ellipse(sx, sy - 28, 26, 7).ellipse(sx, sy - 33, 10, 7)  # a saucer
+        pic.poly([(sx - 6, sy - 22), (sx + 6, sy - 22), (sx + 18, sy + 2), (sx - 18, sy + 2)])  # its beam
+        pic.ellipse(sx, sy + 14, 20, 10).line([(sx - 14, sy + 18), (sx - 14, sy + 32)], 4).line([(sx + 12, sy + 18), (sx + 12, sy + 32)], 4)
+        pic.ellipse(sx - 22, sy + 8, 8, 6).line([(sx + 18, sy + 10), (sx + 26, sy + 20)], 2.4)  # a cow, going up
+        out.append(L(cv, pic, c["ink"], ss=4))
+        # the coyote's rock
+        x, y = self.DOG
+        out.append(L(cv, Shape().ellipse(x + 10, y + 26, 110, 10), c["shadow"], 0.3, ss=2))
+        out.append(L(cv, Shape().poly(spline([(x - 90, y + 26), (x - 70, y - 4), (x - 10, y - 14), (x + 60, y - 8), (x + 100, y + 26)], per=8)), c["rock"], ss=2))
+        return out
+
+    def wheel(self, cv, c, t):
+        mx, my = self.MILL
+        a0 = 2 * math.pi * t / 12  # twice round a loop
+        bl = Shape()
+        for k in range(16):
+            a = a0 + 2 * math.pi * k / 16
+            ca, sa = math.cos(a), math.sin(a)
+            bl.poly([(mx + 22 * ca, my + 22 * sa), (mx + 74 * math.cos(a - 0.12), my + 74 * math.sin(a - 0.12)), (mx + 74 * math.cos(a + 0.08), my + 74 * math.sin(a + 0.08))])
+        ring = ellipse_pts(mx, my, 56, 56, n=48)
+        return [L(cv, bl, c["metal"], ss=2), L(cv, Shape().line(ring + [ring[0]], 3), c["shadow"], 0.4, ss=2), D(cv, mx, my, 12, c["shadow"]), D(cv, mx, my, 6, c["metal"])]
+
+    def coyote(self, cv, c, t):
+        """The coyote on its rock: it looks up after the saucer, howls, and settles."""
+        x, y = self.DOG[0], self.DOG[1] - 10
+        up = ease_io(window(t, 2.4, 3.2)) * (1 - ease_io(window(t, 6.2, 7.2)))
+        sh = lambda s: s.moved(x, y, 1.35)
+        tail = Shape().poly(ribbon(bezier((26, -12), (52, -4), (70, 2), (92, -4 + 3 * wave(t, 4)), n=12), 22, 8))
+        out = [L(cv, sh(tail), c["coyote2"])]
+        body = Shape().ellipse(18, -26, 30, 26).poly(spline([(-20, -4), (-26, -40), (-18, -70), (0, -80), (18, -62), (36, -30), (30, -4)], per=8))
+        body.line([(-16, -40), (-18, -2)], 9).line([(-4, -40), (-6, -2)], 9).ellipse(-21, -2, 7, 4).ellipse(-9, -2, 7, 4)
+        out.append(L(cv, sh(body), c["coyote"]))
+        nk = (-6, -76)
+        tilt = 0.85 * up
+        turn = lambda s: s.moved(0, 0, 1, tilt, nk[0], nk[1])
+        head = Shape().poly([(-22, -62), (-12, -92), (6, -86), (8, -60)]).ellipse(-16, -96, 18, 14)
+        head.poly([(-26, -104), (-58, -97), (-58, -90), (-26, -86)])
+        head.poly([(-14, -106), (-7, -134), (1, -105)]).poly([(-3, -104), (6, -130), (10, -99)])
+        out.append(L(cv, sh(turn(head)), c["coyote"]))
+        out.append(L(cv, sh(turn(Shape().ellipse(-36, -88, 14, 4, 0.1))), c["coyote2"], 0.6))  # its jaw's shade
+        ex, ey = sh(turn(Shape().poly([(-22, -100)]))).cmds[0][1][0]
+        if 4.0 <= t < 5.4:  # eyes shut while it howls
+            out.append(L(cv, Shape().line([(ex - 5, ey), (ex + 5, ey)], 2.4), c["ink"]))
+        else:
+            out.append(D(cv, ex, ey, 3.6, c["ink"]))
+        nx, ny = sh(turn(Shape().poly([(-58, -94)]))).cmds[0][1][0]
+        out.append(D(cv, nx, ny, 4.6, c["ink"]))
+        return out
+
+    def streak(self, t):
+        """The saucer on its way to the first screen: in from the sky, out at the left edge at 2 s, as it comes in there."""
+        if not 1.0 <= t < 2.6:
+            return None
+        k = 2.0 - t
+        return 2160 + 700 * k, 100 - 214 * k, -0.25 if t < 2.0 else -0.25 * (1 - ease_out(window(t, 2.0, 4.8)))
+
+    def under2(self, cv, c, t):
+        X = W
+        out = []
+        st = self.streak(t)
+        if st:
+            bx, by, br = st
+            if t >= 2.0:
+                u = ease_out(window(t, 2.0, 4.8))
+                bx, by = 2160 + (self.HOVER[0] - 2160) * u, 100 + (self.HOVER[1] - 100) * u
+            for k in range(3):
+                out.append(L(cv, Shape().line([(bx + 150 + k * 30, by - 30 - k * 14), (bx + 300 + k * 50, by - 70 - k * 26)], 3), c["saucer"], 0.5))
+            out += self.saucer(cv, c, bx, by, br, t)
+        out += self.wheel(cv, c, t)
+        out += self.coyote(cv, c, t)
+        # a tumbleweed, once a loop, right to left down the road's side
+        u = window(t, 9.0, 17.0)
+        if 0 < u < 1:
+            x = X + W + 80 - (W + 160) * u
+            hop = abs(math.sin(math.pi * 5 * u))
+            y = 892 - 44 * hop - 6 * (1 - u)
+            ang = -u * 14 * math.pi
+            weed = Shape()
+            for k in range(7):
+                a = ang + k * math.pi / 7
+                pts = ellipse_pts(x, y, 40, 16, a, n=28)
+                weed.line(pts + [pts[0]], 3)
+            out.append(L(cv, Shape().ellipse(x, 912, 40 * (1 - 0.4 * hop), 6), c["shadow"], 0.25, ss=1, soft=3))
+            out.append(L(cv, weed, c["weed"], ss=2))
         return out
 
 
