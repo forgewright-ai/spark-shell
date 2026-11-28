@@ -1367,6 +1367,12 @@ impl App {
             || self.view_wait().is_some()
     }
 
+    /// A page shown beside a list is on its way (a theme's picture, a file's): its box shows the bar until it comes
+    /// (v0.174), and the frames go on for it.
+    pub fn page_coming(&self) -> bool {
+        self.pixels && self.files.peek_asked.is_some() && self.files.peek.as_ref().is_some_and(|pk| pk.page.is_none())
+    }
+
     /// The header's march: spark works on words (#139), or the home's first rows are still coming after the open.
     /// A step, a page, a place's rows show it on their own row: a page slow to come (#122), a step (#196).
     pub fn thinking(&self) -> bool {
@@ -1952,7 +1958,7 @@ impl App {
         if matches!(self.view, View::Apps | View::Home | View::Found(..)) && !self.apps.loaded && !self.apps.failed && self.apps.pending.is_none() {
             self.apps_request(json!({"op":"catalog"}));
         }
-        if self.busy() {
+        if self.busy() || self.page_coming() {
             self.frame += 1;
         }
         // a sound that has played to its end: the key row says Play again

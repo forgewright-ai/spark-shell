@@ -2437,3 +2437,30 @@ fn the_workspaces_page_is_a_map_of_the_screens_and_their_windows() {
         "framed in the accent"
     );
 }
+
+/// v0.174 (his note): a theme's picture on its way shows the dialog's own bar in its box, never words.
+#[test]
+fn a_picture_on_its_way_shows_the_bar_never_words() {
+    let parse = |value: serde_json::Value| spark_dialog::model::rows(&value.to_string()).unwrap();
+    let mut a = home();
+    let mut theme = Provider::new("theme");
+    theme.ready = true;
+    theme.rows = parse(json!({"title":"theme","rows":[
+        {"id":"theme:gallery:open","text":"The Gallery","children":"spark-shell://theme/rows/gallery","page":"spark-shell://theme/preview/nord","columns":["nord"],"chip":["#2e3440","#d8dee9","#88c0d0"]}
+    ]}));
+    a.providers = vec![theme];
+    a.view = View::Section(0);
+    a.came_from = vec![View::Home];
+    a.files.peek = Some(Peek {
+        uri: "spark-shell://theme/preview/nord".into(),
+        page: None,
+    });
+    for (w, h) in [(600.0, 830.0), (1920.0, 1080.0)] {
+        let s = scene(&mut a, w, h);
+        assert!(!words(&s).iter().any(|t| t.0.contains("Loading")), "{w}: no words while it comes");
+        let bar = spark_dialog::progress::bar(spark_dialog::progress::Work::Read, &a.glyphs, a.frame);
+        assert!(words(&s).iter().any(|t| t.0 == bar), "{w}: the bar in its box");
+    }
+    a.files.peek_asked = Some((0, 7, "spark-shell://theme/preview/nord".into()));
+    assert!(a.page_coming(), "the frames go on while it comes");
+}

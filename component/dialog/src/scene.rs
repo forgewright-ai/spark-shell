@@ -2529,15 +2529,17 @@ fn theme_poster(app: &App, pen: &mut Pen, whole: Area, row: &crate::model::Row) 
             wave: None,
             corner: false,
         });
-    } else {
-        let word = page.and_then(|p| p.say.as_deref()).unwrap_or(if page.is_some() {
-            "Wallpaper preview unavailable"
-        } else {
-            "Loading wallpaper"
-        });
+    } else if page.is_some() {
+        let word = page.and_then(|p| p.say.as_deref()).unwrap_or("Wallpaper preview unavailable");
         let label = pen.fit(word, Size::Small, w - m.px(24.0));
         let ink = row.chip.get(1).copied().unwrap_or(pen.t.ink);
         pen.text(left + m.px(12.0), top + h / 2.0 + m.sup / 2.0, &label, Size::Small, ink, false);
+    } else {
+        // the picture on its way: the dialog's own bar in the middle of its box, as every wait shows (v0.174)
+        let bar = crate::progress::bar(crate::progress::Work::Read, &app.glyphs, app.frame);
+        let ink = row.chip.get(1).copied().unwrap_or(pen.t.ink);
+        let bw = pen.width(&bar, Size::Main);
+        pen.text((left + (w - bw) / 2.0).round(), top + (h + m.up) / 2.0, &bar, Size::Main, ink, false);
     }
     // A collection has a featured poster, not an applied palette of its own.
     if !row.id.starts_with("theme:room:") {
@@ -2603,7 +2605,7 @@ fn theme_poster(app: &App, pen: &mut Pen, whole: Area, row: &crate::model::Row) 
 /// The wallpaper list's picture (v0.172): the wallpaper of the row lit, or the one in use, over the list, its name
 /// under it. The list named its wallpapers and showed none of them. The box keeps its place and size as the row
 /// lit changes; the list has what is under it.
-fn wall_poster(pen: &mut Pen, whole: Area, row: &crate::model::Row) -> Area {
+fn wall_poster(app: &App, pen: &mut Pen, whole: Area, row: &crate::model::Row) -> Area {
     let m = *pen.m;
     let (w, height) = (whole.right - whole.left, whole.bottom - whole.top);
     if height < m.px(360.0) {
@@ -2623,6 +2625,18 @@ fn wall_poster(pen: &mut Pen, whole: Area, row: &crate::model::Row) -> Area {
             wave: None,
             corner: false,
         });
+    } else if row.preview.is_some() {
+        // its picture still being drawn: the dialog's bar in its box (v0.174)
+        let bar = crate::progress::bar(crate::progress::Work::Read, &app.glyphs, app.frame);
+        let bw = pen.width(&bar, Size::Main);
+        pen.text(
+            (whole.left + (w - bw) / 2.0).round(),
+            top + (h + m.up) / 2.0,
+            &bar,
+            Size::Main,
+            pen.t.ink,
+            false,
+        );
     }
     let base = top + h + m.px(32.0);
     let label = pen.fit(&row.text, Size::Lead, w * 0.62);
@@ -2672,7 +2686,7 @@ fn page(app: &App, pen: &mut Pen, g: &Geo, items: &[Item]) {
     }
     let area = match (candidate, crate::appearance::wallpaper(app)) {
         (Some(r), _) => theme_poster(app, pen, whole, r),
-        (None, Some(r)) => wall_poster(pen, whole, r),
+        (None, Some(r)) => wall_poster(app, pen, whole, r),
         (None, None) => whole,
     };
     // a work's page shows the rows its provider gives, each one (v0.172). It once left out what a theme keeps as
@@ -2761,7 +2775,7 @@ fn page_framed(app: &App, pen: &mut Pen, g: &Geo, items: &[Item], shape: Shape, 
         return;
     }
     if let Some(r) = crate::appearance::wallpaper(app) {
-        wall_poster(pen, below, r);
+        wall_poster(app, pen, below, r);
         frame::acts(app, pen, &f, frame::bar_acts(app), &key);
         return;
     }
