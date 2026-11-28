@@ -10020,11 +10020,11 @@ sh "$SH" theme variant dark >/dev/null 2>&1; t1=$(sed -n 's/^THEME=//p' "$cfg")
 a2=$(sh "$SH" theme variant dark 2>&1); rc=0; a3=$(sh "$SH" theme variant dusk 2>&1) || rc=$?
 sh "$SH" theme nord >/dev/null 2>&1; rc2=0; a4=$(sh "$SH" theme variant light 2>&1) || rc2=$?
 sh "$SH" theme amber-drizzle >/dev/null 2>&1; a5=$(sh "$SH" theme show 2>&1 | sed -n 's/^  art *//p')
-[ "$a1" = 'tokyonight, light (dark: tokyonight-night), vector, still, portrait fitted' ] && [ "$v1" = "variant light $(printf '\302\267') dark or light" ] && [ "$t1" = tokyonight-night ] \
+[ "$a1" = 'tokyonight, light (dark: tokyonight-night), vector, still, portrait drawn, a second landscape' ] && [ "$v1" = "variant light $(printf '\302\267') dark or light" ] && [ "$t1" = tokyonight-night ] \
     && [ "$a2" = 'tokyonight-night is the dark variant already' ] && [ "$rc" = 1 ] && [ "$a3" = 'spark-shell theme: variant takes dark or light' ] \
-    && [ "$rc2" = 1 ] && [ "$a4" = 'spark-shell theme: nord has no light variant' ] && [ "$a5" = 'amber-drizzle, dark, pixel, ambient, portrait authored' ] \
-    && [ "$(art_row)" = '11 families, each read' ] \
-    && ok "theme variant: a family's other variant is its own theme with its own drawing, said by theme show; one variant or a word not dark or light refused in one line; a theme with no family read from itself (a pixel scene moves and draws its own portrait view)" \
+    && [ "$rc2" = 1 ] && [ "$a4" = 'spark-shell theme: nord has no light variant' ] && [ "$a5" = 'amber-drizzle, dark, pixel, ambient, portrait authored, a second landscape' ] \
+    && [ "$(art_row)" = '12 families, each read' ] \
+    && ok "theme variant: a family's other variant is its own theme with its own drawing and its views, said by theme show; one variant or a word not dark or light refused in one line; a theme with no family read from itself (a pixel scene moves and draws its own portrait view and second landscape)" \
     || bad "theme variant" "$a1 | $v1 | $t1 | $a2 | $a3 | $a4 | $a5 | $(art_row)"
 fam=${cfg%/*}/families; mkdir -p "$fam" "$th_dir/study-night" "$th_dir/study-day"
 cp "$REPO/gallery/theme/nord.env" "$th_dir/study-night/palette.env"; cp "$REPO/gallery/theme/one-light.env" "$th_dir/study-day/palette.env"
@@ -10036,7 +10036,7 @@ study() {   # study 'DARK-VARIANT-JSON' -- the family file of the TEST-ONLY stud
 study '{"theme": "study-night", "portrait": "test-tall.png", "motion": "still", "panels": {"2": [{"landscape": "test-wide-1.png"}, {"landscape": "test-wide-2.png", "portrait": "test-tall.png"}], "3": [{"landscape": "test-wide-1.png"}, {"landscape": "test-wide-2.png"}, {"landscape": "test-wide-3.png"}]}}'
 sh "$SH" theme study-night >/dev/null 2>&1
 a1=$(sh "$SH" theme show 2>&1 | sed -n 's/^  art *//p'); c1=$(art_row)
-[ "$a1" = 'study, dark (light: study-day), cinematic, still, portrait authored, panels for 2 and 3 screens' ] && [ "$c1" = '12 families, each read' ] \
+[ "$a1" = 'study, dark (light: study-day), cinematic, still, portrait authored, panels for 2 and 3 screens' ] && [ "$c1" = '13 families, each read' ] \
     && ok "a family of yours (families/): its portrait and its panels for two and three screens read from its own folder, the check counts it" || bad "family of yours" "$a1 | $c1"
 why=''
 for case in \
@@ -10056,7 +10056,7 @@ for case in \
     case $got in "$want"*) ;; *) why="$why [$want] got [$got]" ;; esac
 done
 study '{"theme": "study-night", "portrait": "../x.png"}'; a2=$(sh "$SH" theme show 2>&1 | sed -n 's/^  art *//p')
-[ -z "$why" ] && [ "$a2" = 'study-night, dark, vector, still, portrait fitted' ] \
+[ -z "$why" ] && [ "$a2" = 'study-night, dark, vector, still, portrait drawn, a second landscape' ] \
     && ok "a family file is refused whole, the first reason in one line: a newer format, a key the format has not, an id not its name, a theme not here, a path, a link, a picture that is not one, the wrong count of panels, not JSON; its themes read from themselves meanwhile" \
     || bad "family refused" "$why | $a2"
 rm -rf "$fam" "$th_dir/study-night" "$th_dir/study-day"; cp "$H/cfg-before-art" "$cfg"; sh "$SH" theme dracula >/dev/null 2>&1
@@ -10106,10 +10106,10 @@ echo www > "$HOME/screens"; s5=$(scr theme screens 2>&1)
 sh "$SH" theme nord >/dev/null 2>&1; echo 2 > "$HOME/screens"; s5=$(scr theme screens 2>&1)
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=watch\n' > "$cfg"; s6=$(scr theme screens 2>&1)
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=%s\n' "$th_dir/study-night/test-wide-1.png" > "$cfg"; s7=$(scr theme screens 2>&1)
-[ "$s5" = "$(printf 'DP-3       1 of 2 from the left, portrait 1200x1920: the art fitted, never cropped\nHDMI-A-1   2 of 2 from the left, landscape 1920x1080: the art')" ] \
+[ "$s5" = "$(printf 'DP-3       1 of 2 from the left, portrait 1200x1920: the drawing drawn for a turned screen\nHDMI-A-1   2 of 2 from the left, landscape 1920x1080: the art')" ] \
     && [ "$s6" = "$(printf 'DP-3       1 of 2 from the left, portrait 1200x1920: the scene drawn for a turned screen\nHDMI-A-1   2 of 2 from the left, landscape 1920x1080: the art')" ] \
     && [ "$s7" = "$(printf 'DP-3       1 of 2 from the left, portrait 1200x1920: your wallpaper as you set it\nHDMI-A-1   2 of 2 from the left, landscape 1920x1080: your wallpaper as you set it')" ] \
-    && ok "theme screens: with no family, a turned screen shows the drawing fitted, never cropped, or the scene drawn for it; a picture of yours stays as you set it" \
+    && ok "theme screens: with no family, a turned screen shows the drawing's own portrait or the scene drawn for it; a picture of yours stays as you set it" \
     || bad "theme screens fallback" "$s5 | $s6 | $s7"
 # the owner's rule (2026-11-27): every bundled theme is three pictures, all different, a portrait and two landscapes
 _tc=$("$fixture_python" -I "$REPO/test/triptych_check.py" "$REPO" 2>&1) \
@@ -10152,7 +10152,7 @@ printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\n' > "$cfg"; echo ww > "$HOME/
 sh "$SH" theme atlas-awakening >/dev/null 2>&1; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w7=$(wp_rows 1)
 echo 3 > "$HOME/screens"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w8=$(wp_rows 1)
 [ "$w1" = '' ] && [ "$w1g" = 'Wallpaper and screens: wallpaper/theme:wallpaper wallpaper/theme:show:Moving wallpaper idle and lock/theme:screens:clock' ] \
-    && [ "$w2" = 'DP-3/Tall (turned)=fjord, fitted:theme_portrait:files/rows:' ] && [ "$w3" = 'DP-3/Tall (turned)=watch, drawn for a turned screen:theme_portrait:files/rows:' ] \
+    && [ "$w2" = 'DP-3/Tall (turned)=fjord, drawn for a turned screen:theme_portrait:files/rows:' ] && [ "$w3" = 'DP-3/Tall (turned)=watch, drawn for a turned screen:theme_portrait:files/rows:' ] \
     && [ "$w4" = 'DP-3/Tall (turned)=#224466::theme/rows/wallpapers:' ] && [ "$w5" = 'DP-3/Tall (turned)=the ground::theme/rows/wallpapers:' ] \
     && [ "$w6" = 'DP-4/Side=fjord::theme/rows/wallpapers:' ] \
     && [ "$w7" = 'DP-4/Side=Landscape 2:theme_panel2:files/rows:take it away {"n":"2","path":"none"}' ] \
