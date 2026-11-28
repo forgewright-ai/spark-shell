@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.174
+
+- Every theme is three pictures, all different: one for a turned screen
+  and two landscapes. A turned screen beside two others shows all three.
+  Each of the 18 drawings has its own portrait and second landscape, each
+  scene a second view of its world with its own moment, and Nightswim two
+  new pictures in its style. `theme screens`, Wallpaper and screens and a
+  theme's compositions say which one a screen shows.
+- Amber Drizzle's helicopter flies nose first and climbs into the cloud.
+  Signal Crossing has no vending machine, and its arm crosses the middle
+  of the road. Every machine of Last Credit has its glow on the floor.
+- Duckpond's duck and Last Ember's raccoon have their heads on their
+  bodies. Coral Current's snail keeps off the starfish. Pigeon Post's
+  pigeons are rock doves: a grey-blue body, a green and purple neck, barred
+  wings.
+- The gallery opens with its exhibitions. Phosphor Trace joins Chromatic
+  Nocturnes and Yuzu Snow Surreal Imaginings; Landscape & Atmosphere is
+  Far Horizons.
+- In full screen every place shows its list, the lit row's page and its
+  actions, as files does, the list and the actions each on a ground of
+  their own. Notes shows the note, the calendar a month with its
+  reminders, system a page for each row, power what a step closes,
+  workspaces a map of the screens and their windows, help the key and its
+  group, and a folder what it holds by kind, its newest and its largest
+  files.
+- A picture beside a list shows the dialog's bar while it comes, not the
+  words Loading wallpaper.
+- The dialog is 0.174.0.
+
 ## v0.173.1
 
 - With a turned screen beside two landscape ones, the landscape screens
