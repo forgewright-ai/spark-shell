@@ -1,0 +1,36 @@
+<!-- spark-shell wallpaper: sunset-2 (MIT, the repository's license) -->
+<!-- roles: #282828 ansi_0; #fabd2f ansi_11; #fe8019 accent; #fb4934 ansi_9; #d3869b ansi_13; #b16286 ansi_5; #1d2021 bg+black:23; #3c3836 bg+muted:19 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+<defs>
+<clipPath id="sun"><circle cx="1360" cy="860" r="290"></circle></clipPath>
+</defs>
+<rect x="0" y="0" width="1920" height="1080" fill="#282828"></rect>
+<g style="clip-path: url(#sun)">
+<rect x="1040" y="570" width="640" height="96.7" fill="#fabd2f"></rect>
+<rect x="1040" y="675.5" width="640" height="61.5" fill="#fe8019"></rect>
+<rect x="1040" y="749.3" width="640" height="45.7" fill="#fb4934"></rect>
+<rect x="1040" y="810.8" width="640" height="29.9" fill="#d3869b"></rect>
+<rect x="1040" y="849.5" width="640" height="10.5" fill="#b16286"></rect>
+</g>
+<path fill="#3c3836" d="M0 862 V700 L150 646 L300 730 L470 610 L700 790 L820 750 L1010 862 Z"></path>
+<path fill="#3c3836" d="M1440 862 L1600 740 L1700 790 L1820 700 L1920 760 V862 Z"></path>
+<rect x="0" y="860" width="1920" height="220" fill="#1d2021"></rect>
+<g stroke="#3c3836" style="stroke-width: 2">
+<line x1="1360" y1="860" x2="-1400" y2="1080"></line>
+<line x1="1360" y1="860" x2="-760" y2="1080"></line>
+<line x1="1360" y1="860" x2="-200" y2="1080"></line>
+<line x1="1360" y1="860" x2="340" y2="1080"></line>
+<line x1="1360" y1="860" x2="880" y2="1080"></line>
+<line x1="1360" y1="860" x2="1360" y2="1080"></line>
+<line x1="1360" y1="860" x2="1840" y2="1080"></line>
+<line x1="1360" y1="860" x2="2380" y2="1080"></line>
+<line x1="1360" y1="860" x2="2920" y2="1080"></line>
+<line x1="1360" y1="860" x2="3560" y2="1080"></line>
+<line x1="0" y1="878" x2="1920" y2="878"></line>
+<line x1="0" y1="902" x2="1920" y2="902"></line>
+<line x1="0" y1="936" x2="1920" y2="936"></line>
+<line x1="0" y1="984" x2="1920" y2="984"></line>
+<line x1="0" y1="1052" x2="1920" y2="1052"></line>
+</g>
+<rect x="0" y="858" width="1920" height="3" fill="#fe8019" opacity="0.6"></rect>
+</svg>

@@ -1,0 +1,23 @@
+<!-- spark-shell wallpaper: ripples-2 (MIT, the repository's license) -->
+<!-- roles: #191724 bg; #26233a ansi_0; #c4a7e7 accent; #ebbcba ansi_14; #9ccfd8 ansi_12; #eb6f92 ansi_1 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+<rect x="0" y="0" width="1920" height="1080" fill="#191724"></rect>
+<g fill="none" stroke="#26233a" style="stroke-width: 3">
+<circle cx="1460" cy="1080" r="200"></circle><circle cx="1460" cy="1080" r="320"></circle><circle cx="1460" cy="1080" r="560"></circle>
+<circle cx="1460" cy="1080" r="680"></circle><circle cx="1460" cy="1080" r="800"></circle><circle cx="1460" cy="1080" r="1040"></circle>
+<circle cx="1460" cy="1080" r="1160"></circle><circle cx="1460" cy="1080" r="1280"></circle><circle cx="1460" cy="1080" r="1520"></circle>
+<circle cx="1460" cy="1080" r="1640"></circle>
+</g>
+<g fill="none" style="stroke-width: 3">
+<circle cx="1460" cy="1080" r="440" stroke="#9ccfd8" opacity="0.22"></circle>
+<circle cx="1460" cy="1080" r="920" stroke="#c4a7e7" opacity="0.3"></circle>
+<circle cx="1460" cy="1080" r="1400" stroke="#ebbcba" opacity="0.24"></circle>
+</g>
+<circle cx="1460" cy="1080" r="100" fill="#26233a"></circle>
+<g fill="none" stroke="#26233a" opacity="0.8" style="stroke-width: 2">
+<circle cx="300" cy="220" r="60"></circle><circle cx="300" cy="220" r="150"></circle><circle cx="300" cy="220" r="330"></circle>
+</g>
+<circle cx="300" cy="220" r="240" fill="none" stroke="#eb6f92" opacity="0.24" style="stroke-width: 2"></circle>
+<circle cx="300" cy="220" r="26" fill="#26233a"></circle>
+<circle cx="300" cy="220" r="11" fill="#ebbcba" opacity="0.5"></circle>
+</svg>

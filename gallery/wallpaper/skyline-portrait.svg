@@ -1,0 +1,29 @@
+<!-- spark-shell wallpaper: skyline-portrait (MIT, the repository's license) -->
+<!-- roles: #1a1b26 bg; #a9b1d6 ansi_7; #c0caf5 ansi_15; #1f2335 bg+accent:7; #15161e ansi_0; #e0af68 ansi_3; #7aa2f7 accent; #bb9af7 ansi_5 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920">
+<rect x="0" y="0" width="1080" height="1920" fill="#1a1b26"></rect>
+<g fill="#a9b1d6" opacity="0.5">
+<circle cx="534.4" cy="407.4" r="1.8"></circle><circle cx="855.9" cy="251.6" r="1.4"></circle><circle cx="357.4" cy="497.5" r="1.4"></circle>
+<circle cx="525.9" cy="277.2" r="1"></circle><circle cx="200.9" cy="457" r="1"></circle><circle cx="941.7" cy="494.6" r="1.8"></circle>
+<circle cx="677.5" cy="262.8" r="1"></circle><circle cx="472.2" cy="135.2" r="1"></circle><circle cx="327.6" cy="687.3" r="1"></circle>
+<circle cx="660.3" cy="542.4" r="1.8"></circle><circle cx="89.6" cy="282.6" r="1"></circle><circle cx="897.1" cy="699" r="1.8"></circle>
+<circle cx="659.2" cy="60.7" r="1.4"></circle><circle cx="1005.9" cy="283.4" r="1"></circle><circle cx="237.9" cy="286.4" r="1.8"></circle>
+<circle cx="961" cy="144.2" r="1"></circle>
+</g>
+<circle cx="760" cy="360" r="72" fill="#c0caf5" opacity="0.9"></circle>
+<circle cx="792" cy="336" r="66" fill="#1a1b26"></circle>
+<path fill="#1f2335" d="M0 1920 V1100 H70 V980 H130 V1060 H220 V880 H270 V1000 H350 V1120 H420 V760 H480 V960 H570 V1050 H650 V900 H710 V1010 H780 V1080 H860 V940 H920 V1040 H990 V1000 H1080 V1920 Z"></path>
+<path fill="#15161e" d="M0 1920 V1380 H90 V1300 H160 V1420 H260 V1250 H320 V1340 H410 V1400 H490 V1220 H560 V1360 H660 V1300 H740 V1390 H830 V1330 H910 V1290 H1080 V1920 Z"></path>
+<g fill="#e0af68" opacity="0.75">
+<rect x="120" y="1440" width="6" height="8"></rect><rect x="148" y="1480" width="6" height="8"></rect><rect x="330" y="1300" width="6" height="8"></rect>
+<rect x="356" y="1350" width="6" height="8"></rect><rect x="690" y="1260" width="6" height="8"></rect><rect x="720" y="1310" width="6" height="8"></rect>
+<rect x="940" y="1360" width="6" height="8"></rect><rect x="560" y="1420" width="6" height="8"></rect>
+</g>
+<g fill="#7aa2f7" opacity="0.7">
+<rect x="220" y="1460" width="6" height="8"></rect><rect x="470" y="1340" width="6" height="8"></rect><rect x="800" y="1400" width="6" height="8"></rect>
+<rect x="1000" y="1420" width="6" height="8"></rect>
+</g>
+<g fill="#bb9af7" opacity="0.5">
+<rect x="434" y="800" width="5" height="7"></rect><rect x="242" y="920" width="5" height="7"></rect><rect x="768" y="940" width="5" height="7"></rect>
+</g>
+</svg>

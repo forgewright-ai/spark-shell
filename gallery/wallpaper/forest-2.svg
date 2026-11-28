@@ -1,0 +1,48 @@
+<!-- spark-shell wallpaper: forest-2 (MIT, the repository's license) -->
+<!-- roles: #3d484d bg+ansi_0:63; #343f44 bg+ansi_4:8; #232a2e bg+black:23; #2d353b bg; #dbbc7f ansi_11; #a7c080 accent -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+<defs>
+<pattern id="far1" x="0" y="460" width="58" height="120" patternUnits="userSpaceOnUse">
+<polygon points="29,10 52.2,120 5.8,120" fill="#3d484d"></polygon>
+</pattern>
+<pattern id="far2" x="17" y="460" width="41" height="120" patternUnits="userSpaceOnUse">
+<polygon points="20.5,44 36.9,120 4.1,120" fill="#3d484d"></polygon>
+</pattern>
+<pattern id="mid1" x="30" y="520" width="86" height="130" patternUnits="userSpaceOnUse">
+<polygon points="43,0 77.4,130 8.6,130" fill="#343f44"></polygon>
+</pattern>
+<pattern id="mid2" x="0" y="520" width="61" height="130" patternUnits="userSpaceOnUse">
+<polygon points="30.5,50 54.9,130 6.1,130" fill="#343f44"></polygon>
+</pattern>
+<pattern id="low1" x="30" y="660" width="86" height="130" patternUnits="userSpaceOnUse">
+<polygon points="43,130 77.4,0 8.6,0" fill="#343f44"></polygon>
+</pattern>
+<pattern id="low2" x="0" y="660" width="61" height="130" patternUnits="userSpaceOnUse">
+<polygon points="30.5,80 54.9,0 6.1,0" fill="#343f44"></polygon>
+</pattern>
+</defs>
+<rect x="0" y="0" width="1920" height="1080" fill="#2d353b"></rect>
+<circle cx="560" cy="250" r="80" fill="#dbbc7f" opacity="0.85"></circle>
+<rect x="0" y="460" width="1920" height="120" fill="url(#far1)"></rect>
+<rect x="0" y="460" width="1920" height="120" fill="url(#far2)"></rect>
+<rect x="0" y="580" width="1920" height="80" fill="#3d484d"></rect>
+<rect x="0" y="520" width="1920" height="130" fill="url(#mid1)"></rect>
+<rect x="0" y="520" width="1920" height="130" fill="url(#mid2)"></rect>
+<rect x="0" y="646" width="1920" height="14" fill="#343f44"></rect>
+<rect x="0" y="660" width="1920" height="420" fill="#232a2e"></rect>
+<g opacity="0.45"><rect x="0" y="660" width="1920" height="130" fill="url(#low1)"></rect>
+<rect x="0" y="660" width="1920" height="130" fill="url(#low2)"></rect></g>
+<g fill="#dbbc7f" opacity="0.3">
+<rect x="513" y="806" width="70" height="5"></rect>
+<rect x="521" y="832" width="110" height="5"></rect>
+<rect x="503" y="862" width="90" height="5"></rect>
+<rect x="501" y="896" width="150" height="5"></rect>
+<rect x="493" y="934" width="110" height="5"></rect>
+<rect x="491" y="976" width="170" height="5"></rect>
+<rect x="483" y="1022" width="130" height="5"></rect>
+</g>
+<g fill="#a7c080" opacity="0.4">
+<rect x="300" y="700" width="4" height="4"></rect><rect x="1180" y="640" width="4" height="4"></rect>
+<rect x="1500" y="720" width="4" height="4"></rect><rect x="980" y="760" width="4" height="4"></rect>
+</g>
+</svg>
