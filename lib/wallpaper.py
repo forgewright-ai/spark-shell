@@ -2112,6 +2112,15 @@ HELI = (
     "........s....s...",
     ".......sssssssss.",
 )
+HELI_FRONT = (  # nose on, halfway through a turn
+    "........k........",
+    "......kkkkk......",
+    ".....kggggkk.....",
+    ".....kgggkkk.....",
+    "......kkkkk......",
+    ".....s.....s.....",
+    "....ss.....ss....",
+)
 
 
 class Garoa(Pixel):
@@ -2128,11 +2137,13 @@ class Garoa(Pixel):
         the skyline's heights down to the portrait's street."""
         if portrait:
             self.HZ, self.DY, self.MIDX, self.CLOUDS, self.NCLOUDS, self.HELIY = 410, 185, 128, (10, 230), 10, 150
+            self.EXIT = (150, 178)
             self.PADS, self.MASTS = ((150, 339), (238, 331)), ((176, 252), (206, 242), (234, 260))
             self.COPAN = [(12, 303), (35, 299), (62, 303), (88, 298), (118, 302), (126, 303)]
             self.NEAR = [(254, 302, 24), (100, 375, 26)]
         else:
             self.HZ, self.DY, self.MIDX, self.CLOUDS, self.NCLOUDS, self.HELIY = 225, 0, 215, (4, 80), 7, 75
+            self.EXIT = (330, 34)
             self.PADS, self.MASTS = ((274, 154), (425, 146)), ((332, 67), (367, 57), (397, 75))
             self.COPAN = [(75, 118), (105, 114), (140, 118), (175, 113), (215, 117), (225, 118)]
             self.NEAR = [(-10, 130, 58), (452, 117, 50), (47, 190, 30)]
@@ -2278,25 +2289,58 @@ class Garoa(Pixel):
             for x in range(0, gw, 16):
                 hline(a, x, x + 6, y + 8, c["wet"]) if y == self.HZ + 15 else None
 
-    def heli(self, a, c, x, y, t, kx=1, parked=False):
+    def heli(self, a, c, x, y, t, kx=1, spin=1.0, alpha=1.0):
+        """A helicopter, nose right (kx 1), left (-1) or toward us (0), its rotor at spin
+        (0 still, 1 flying), faded by alpha as it goes into the cloud."""
         cmap = {"k": c["heli"], "s": c["heli"], "g": c["heliglass"]}
         x, y = int(round(x)), int(round(y))
-        sprite(a, x - 8, y - 3, HELI, cmap, kx)
-        cx = x - 8 + (10 if kx > 0 else 6)
-        if parked:
-            hline(a, cx - 7, cx + 8, y - 4, c["heli"])
+        sprite(a, x - 8, y - 3, HELI_FRONT if kx == 0 else HELI, cmap, kx or 1, alpha)
+        cx = x if kx == 0 else x - 8 + (10 if kx > 0 else 6)
+        if spin <= 0:
+            hline(a, cx - 7, cx + 8, y - 4, c["heli"], alpha)
         else:
-            n = int(t * PFPS) % 3
-            half = (9, 3, 6)[n]
-            hline(a, cx - half, cx + half + 1, y - 4, c["heli"])
+            half = (9, 3, 6)[int(t * PFPS * spin) % 3]
+            hline(a, cx - half, cx + half + 1, y - 4, c["heli"], alpha)
         on = int(t * 1.5) % 2 == 0
-        tx = x - 8 + (0 if kx > 0 else 16)
-        put(a, tx, y - 2, c["red"], 1.0 if on else 0.3)
+        tx = x if kx == 0 else x - 8 + (0 if kx > 0 else 16)
+        ty = y - 3 if kx == 0 else y - 2
+        put(a, tx, ty, c["red"], (1.0 if on else 0.3) * alpha)
         if on:
-            pglow(a, tx, y - 2, 5, c["red"], 0.35)
-        if not parked and (t * 1.25) % 1.0 < 0.1:
-            put(a, x, y + 2, c["white"])
-            pglow(a, x, y + 2, 7, c["white"], 0.4)
+            pglow(a, tx, ty, 5, c["red"], 0.35 * alpha)
+        if spin >= 1 and (t * 1.25) % 1.0 < 0.1:
+            put(a, x, y + 2, c["white"], alpha)
+            pglow(a, x, y + 2, 7, c["white"], 0.4 * alpha)
+
+    def late(self, t):
+        """The late helicopter at t: where it is, its heading, its rotor and how much of it the
+        cloud leaves; None while it is up in the cloud. It comes in nose first, finds its roof
+        taken, goes on to the next, sets down a while, turns on the spot and climbs away into
+        the cloud the way it came."""
+        x, y = self.PADS[0]
+        px2, py2 = self.PADS[1]
+        hover = (x + 8, y - 30)
+        if t < 2.0:
+            return None
+        if t < 6.5:
+            u = ease_io(window(t, 2.0, 6.5))
+            return -20 + (hover[0] + 20) * u, self.HELIY + (hover[1] - self.HELIY) * u, 1, 1.0, 1.0
+        if t < 9.5:
+            return hover[0] + 4 * math.sin((t - 6.5) * 2.2), hover[1] + 2 * math.sin((t - 6.5) * 3), 1, 1.0, 1.0
+        if t < 15.5:
+            u = ease_io(window(t, 9.5, 15.5))
+            return hover[0] + (px2 - hover[0]) * u, hover[1] + ((py2 - 5) - hover[1]) * u - 30 * math.sin(math.pi * u), 1, 1.0, 1.0
+        if t < 19.0:  # set down: the rotor winds down, stands, and winds up again
+            spin = 0.0 if 16.6 <= t < 18.0 else 0.5 if t < 18.6 else 1.0
+            return px2, py2 - 5, 1, spin, 1.0
+        lift = py2 - 5 - 10 * ease_io(window(t, 19.0, 20.0))
+        if t < 20.0:  # up off the pad, and round: side on, nose on, the other side
+            return px2, lift, 1 if t < 19.45 else 0 if t < 19.75 else -1, 1.0, 1.0
+        u = ease_in(window(t, 20.0, 23.4))
+        ex, ey = self.EXIT
+        fade = 1 - clamp((t - 22.0) / 1.4)
+        if fade <= 0:
+            return None
+        return px2 + (ex - px2) * u, lift + (ey - lift) * (u ** 0.8), -1, 1.0, fade
 
     def draw(self, a, p, c, t):
         dk = p.dark
@@ -2310,27 +2354,11 @@ class Garoa(Pixel):
                         put(a, mx + dx, yy + dy, c["red"], 0.5)
                     pglow(a, mx, yy, 7, c["red"], 0.3)
         x, y = self.PADS[0]
-        self.heli(a, c, x - 1, y - 5, t, 1, parked=True)
-        if 2.0 <= t < 17.5:  # the late one: its roof is taken, it goes round and takes the next
-            if t < 6.5:
-                u = ease_io(window(t, 2.0, 6.5))
-                hx, hy = -20 + (x + 8 + 20) * u, self.HELIY + (y - 30 - self.HELIY) * u
-            elif t < 9.5:
-                hx, hy = x + 8 + 4 * math.sin((t - 6.5) * 2.2), y - 30 + 2 * math.sin((t - 6.5) * 3)
-            else:
-                px2, py2 = self.PADS[1]
-                u = ease_io(window(t, 9.5, 17.0))
-                hx = x + 8 + (px2 - x - 8) * u
-                hy = (y - 30) + ((py2 - 5) - (y - 30)) * u - 30 * math.sin(math.pi * u)
-            if t < 17.0:
-                self.heli(a, c, hx, hy, t, -1 if t >= 9.5 else 1)
-        px2, py2 = self.PADS[1]
-        if 17.0 <= t < 20.0:
-            self.heli(a, c, px2, py2 - 5, t, -1, parked=18.5 <= t < 19.5)
-        elif t >= 20.0:
-            u = ease_in(window(t, 20.0, 23.6))
-            if u < 1:
-                self.heli(a, c, px2 + 100 * u, py2 - 5 - 75 * u, t, -1)
+        self.heli(a, c, x - 1, y - 5, t, 1, spin=0.0)
+        late = self.late(t)
+        if late:
+            hx, hy, kx, spin, fade = late
+            self.heli(a, c, hx, hy, t, kx, spin, fade)
         # cars: lights going by, and their light in the wet street
         for k in range(4):
             u = ((t / 6.0) + k / 4) % 1.0
