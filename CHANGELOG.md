@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.174.1
+
+- Wallpaper and screens has a Plain color row under the wallpaper: Enter
+  opens the color picker on the color in use, else the theme's ground. It
+  was only at the foot of the wallpaper list.
+
 ## v0.174
 
 - Every theme is three pictures, all different: one for a turned screen

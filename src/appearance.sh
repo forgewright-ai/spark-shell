@@ -198,14 +198,19 @@ appearance_screens() {   # -> the rows of the screens, the loops and the clock, 
            + [{id: "theme:screens:clock", group: "idle and lock", text: "clock over the art", columns: [],
                switch: {on: $art.clock, turn_on: {name: "theme_clock", arguments: {to: "on"}}, turn_off: {name: "theme_clock", arguments: {to: "off"}}}}])'
 }
-appearance_wallpaper() {   # stdin: the theme section's rows -> the Wallpaper and screens page: the section's own two rows, then the screens, the loops and the clock; false where the section has no wallpaper (a Mac)
+appearance_wallpaper() {   # stdin: the theme section's rows -> the Wallpaper and screens page: the section's wallpaper row, a plain color, its moving wallpaper row, then the screens, the loops and the clock; false where the section has no wallpaper (a Mac)
     cat > "$TMP/theme.root"
     appearance_screens > "$TMP/theme.screens" 2>/dev/null || echo '[]' > "$TMP/theme.screens"
     [ -s "$TMP/theme.screens" ] || echo '[]' > "$TMP/theme.screens"
-    jq -ec --slurpfile more "$TMP/theme.screens" --arg label "$(theme_title "${THEME:-none}")" '
+    _awg=$(wall_ground 2>/dev/null) || _awg=''; _awc=''; ! wall_color || _awc=$(wall_hex "$WALLPAPER")
+    # a plain color in the open, not only at the foot of the wallpaper list: the picker opens on the one in use, else the ground
+    jq -ec --slurpfile more "$TMP/theme.screens" --arg label "$(theme_title "${THEME:-none}")" --arg color "$_awc" --arg ground "$_awg" '
         [.rows[] | select(.id == "theme:wallpaper" or .id == "theme:show:Moving wallpaper") | .group = "wallpaper"] as $w
         | select(($w | length) > 0)
-        | {title: "Wallpaper and screens", state: $label, short: [], rows: ($w + ($more[0] // []))}' "$TMP/theme.root"
+        | {id: "theme:wallpaper-color", group: "wallpaper", text: "Plain color", columns: (if $color != "" then [$color] else ["a name or #rrggbb"] end),
+           tool: {name: "theme_wallpaper_color", arguments: {}, ask: ["color"]}, swatch: (if $color != "" then $color else $ground end)}
+          + (if $color != "" then {chip: [$color]} else {} end) as $plain
+        | {title: "Wallpaper and screens", state: $label, short: [], rows: ($w[0:1] + [$plain] + $w[1:] + ($more[0] // []))}' "$TMP/theme.root"
 }
 appearance_pairs() {   # the themes in the other light, and none: Enter pairs it
     _apv=$(art_of "${THEME:-none}" | jq -r .variant)

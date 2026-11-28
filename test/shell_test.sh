@@ -9103,7 +9103,7 @@ _fbg=$(sed -n 's/^THEME_BG=//p' "$_fl/palette.env"); _ffg=$(sed -n 's/^THEME_FG=
 f1=$(page 1 | jq -r '[(.rows | length), .rows[0].children, (.rows[1] | .id + "=" + .columns[0] + ">" + .children), (.rows[4] | .id + " " + .text + "=" + .swatch + ":" + .tool.name + ":" + .tool.arguments.word), (.rows[14] | .id + " " + .text)] | map(tostring) | join(" ")')
 f1a=$(page 1 | jq -r '[.rows[] | select(.id | startswith("theme:color:")) | (.id | ltrimstr("theme:color:")) + "=" + (.against // "-")] | (.[0:5] + .[12:13]) | join(" ")')
 f2=$(page 2 | jq -r '(.title // "") + "|" + ([.rows[] | .group + "/" + .id + ":" + (.pick.tool // "")] | join(" "))')
-f2w='Wallpaper and screens|wallpaper/theme:wallpaper: wallpaper/theme:show:Moving wallpaper: loops/theme:screens:loop:landscape-1:theme_loop loops/theme:screens:loop:landscape-2:theme_loop loops/theme:screens:loop:landscape-3:theme_loop loops/theme:screens:loop:portrait:theme_loop idle and lock/theme:screens:clock:'
+f2w='Wallpaper and screens|wallpaper/theme:wallpaper: wallpaper/theme:wallpaper-color: wallpaper/theme:show:Moving wallpaper: loops/theme:screens:loop:landscape-1:theme_loop loops/theme:screens:loop:landscape-2:theme_loop loops/theme:screens:loop:landscape-3:theme_loop loops/theme:screens:loop:portrait:theme_loop idle and lock/theme:screens:clock:'
 [ "$(uname -s)" != Darwin ] || f2w='|'   # a Mac has no wallpaper of spark-shell's: no such page
 f3=$(page 3 | jq -r '[.rows[] | select(.id | startswith("theme:settings:")) | .text] | join("|")')
 f3a=$(page 3 | jq -r '.state + "|" + ([.rows[] | select(.id == "theme:gallery:open") | .columns[0] + "/" + (.chip | length | tostring) + "/" + (.page // "")] | first) + "|" + ([.rows[] | select(.id == "theme:settings:yours") | .columns[0]] | first)')
@@ -10153,21 +10153,24 @@ cp "$_wa/atlas-awakening-landscape-2.jpg" "$_wp/Wide.JPG"; cp "$_wa/atlas-awaken
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\n' > "$cfg"
 echo 1 > "$HOME/screens"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w1=$(wp_rows 1)
 w1g=$(ans 1 | jq -r '.result.contents[0].text | fromjson | .title + ": " + ([.rows[] | .group + "/" + .id] | join(" "))')
+plainc() { ans "$1" | jq -r '.result.contents[0].text | fromjson | .rows[] | select(.id == "theme:wallpaper-color") | [.text, .columns[0], .tool.name, (.tool.ask | join(",")), .swatch] + (.chip // []) | join("|")'; }
+w1c=$(plainc 1)
 echo 2 > "$HOME/screens"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w2=$(wp_rows 1)
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=watch\n' > "$cfg"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w3=$(wp_rows 1)
-printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=#224466\n' > "$cfg"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w4=$(wp_rows 1)
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=#224466\n' > "$cfg"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w4=$(wp_rows 1); w4c=$(plainc 1)
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=default\n' > "$cfg"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w5=$(wp_rows 1)
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\n' > "$cfg"; echo ww > "$HOME/screens"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w6=$(wp_rows 1)
 sh "$SH" theme atlas-awakening >/dev/null 2>&1; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w7=$(wp_rows 1)
 echo 3 > "$HOME/screens"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w8=$(wp_rows 1)
-[ "$w1" = '' ] && [ "$w1g" = 'Wallpaper and screens: wallpaper/theme:wallpaper wallpaper/theme:show:Moving wallpaper idle and lock/theme:screens:clock' ] \
+[ "$w1" = '' ] && [ "$w1g" = 'Wallpaper and screens: wallpaper/theme:wallpaper wallpaper/theme:wallpaper-color wallpaper/theme:show:Moving wallpaper idle and lock/theme:screens:clock' ] \
+    && [ "$w1c" = 'Plain color|a name or #rrggbb|theme_wallpaper_color|color|#21252d' ] && [ "$w4c" = 'Plain color|#224466|theme_wallpaper_color|color|#224466|#224466' ] \
     && [ "$w2" = 'DP-3/Tall (turned)=fjord, drawn for a turned screen:theme_portrait:files/rows:' ] && [ "$w3" = 'DP-3/Tall (turned)=watch, drawn for a turned screen:theme_portrait:files/rows:' ] \
     && [ "$w4" = 'DP-3/Tall (turned)=#224466::theme/rows/wallpapers:' ] && [ "$w5" = 'DP-3/Tall (turned)=the ground::theme/rows/wallpapers:' ] \
     && [ "$w6" = 'DP-4/Side=fjord, its second view::theme/rows/wallpapers:' ] \
     && [ "$w7" = 'DP-4/Side=Landscape 2:theme_panel2:files/rows:take it away {"n":"2","path":"none"}' ] \
     && [ "$w8" = 'DP-3/Tall (turned)=Portrait:theme_portrait:files/rows:take it away {"path":"none"}|DP-4/Side=Landscape 2:theme_panel2:files/rows:take it away {"n":"2","path":"none"}' ] \
-    && ok "provide theme: Wallpaper and screens lists each screen that shows something of its own by its name and what it shows (fitted, drawn for a turned screen, a role), never none: one plain screen has no row; a color or the ground and a drawing on a second screen open the wallpaper list; a turned screen picks its picture, a second or third landscape one beside a picture, counted among the landscape screens alone" \
-    || bad "wallpaper and screens rows" "$w1 | $w1g | $w2 | $w3 | $w4 | $w5 | $w6 | $w7 | $w8"
+    && ok "provide theme: Wallpaper and screens holds a plain color under the wallpaper, its picker on the color in use or the ground; it lists each screen that shows something of its own by its name and what it shows (fitted, drawn for a turned screen, a role), never none: one plain screen has no row; a color or the ground and a drawing on a second screen open the wallpaper list; a turned screen picks its picture, a second or third landscape one beside a picture, counted among the landscape screens alone" \
+    || bad "wallpaper and screens rows" "$w1 | $w1g | $w1c | $w4c | $w2 | $w3 | $w4 | $w5 | $w6 | $w7 | $w8"
 # the picks leave the picture on that screen: a third screen of a bundled work; a turned screen beside a palette's drawing; a
 # second screen beside a picture of yours, which the look takes under a name a family can say; a turned screen of a saved
 # theme whose wallpaper in use is a picture outside its folder; a third screen with no second of its own
