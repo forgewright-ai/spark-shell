@@ -186,6 +186,8 @@ fn a_value_asked_for_keeps_the_page_and_the_prompt_holds_the_keys() {
     app.enter();
     assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().len() == 1));
     assert_eq!(calls.lock().unwrap()[0]["arguments"], json!({"name": "zz top"}));
+    // the save's answer comes back on its own thread: taken before the next question, never in the middle of it
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()));
     // Esc lets the question go: the page as it was, the row lit, the prompt its own again
     light(&mut app, "theme:new:look");
     app.enter();
