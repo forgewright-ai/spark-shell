@@ -8,7 +8,6 @@
       "works": [
         "amber-drizzle",
         "chalk-circuit",
-        "phosphor-trace",
         "signal-crossing",
         "last-credit"
       ],
@@ -23,13 +22,14 @@
         "duckpond",
         "pigeon-post",
         "last-ember",
-        "coral-current"
+        "coral-current",
+        "yuzu-snow"
       ],
       "lead": "cattle-call"
     },
     {
-      "id": "landscape-atmosphere",
-      "title": "Landscape & Atmosphere",
+      "id": "far-horizons",
+      "title": "Far Horizons",
       "description": "Water, weather, horizons, celestial forms, and changing light.",
       "works": [
         "harbor",
@@ -37,8 +37,7 @@
         "lantern-watch",
         "meadowlark",
         "nightswim",
-        "ring-shadow",
-        "yuzu-snow"
+        "ring-shadow"
       ],
       "lead": "ice-horizon"
     },
@@ -66,7 +65,8 @@
         "nord",
         "rose-pine",
         "selenized-dark",
-        "tokyonight-night"
+        "tokyonight-night",
+        "phosphor-trace"
       ],
       "lead": "gruvbox-dark"
     },

@@ -41,8 +41,8 @@ appearance_gallery_entries() {   # the colors and the index go by file: a thousa
         | {title: "Theme gallery", state: ("\(.rows | length) themes"), rows: .rows, short: []}'
 }
 
-# The gallery: the sections of the permanent collection, the exhibitions that
-# are open, and your own. Each shows a lead work's picture, a note and its count;
+# The gallery: the exhibitions that are open first, then the sections of the
+# permanent collection, and your own. Each shows a lead work's picture, a note and its count;
 # looking changes nothing.
 APPEARANCE_CURATION='
 .rows as $all |
@@ -84,7 +84,7 @@ appearance_gallery() {
         | {title: "The Gallery",
            state: (([$sections[]._n] | add // 0 | tostring) + " works in " + ($sections | length | tostring) + " sections"
                    + (if ($shows | length) > 0 then ", " + ($shows | length | tostring) + (if ($shows | length) == 1 then " exhibition" else " exhibitions" end) else "" end)),
-           rows: ([$sections[] | del(._n)] + $shows + $personal + $custom), short: []}'
+           rows: ($shows + [$sections[] | del(._n)] + $personal + $custom), short: []}'
 }
 
 # One section, exhibition or collection of yours. A work keeps its id, preview,
