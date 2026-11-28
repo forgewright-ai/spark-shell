@@ -34,17 +34,30 @@ cozy: warm and playful, a picture book for grown-ups
 
     onsen     a capybara soaks in a hot spring in the snow, a yuzu on its
               head; the yuzu rolls off, the capybara goes under, and comes
-              up with the yuzu back on its head
+              up with the yuzu back on its head. Beside it, the far side of
+              the spring: a snow monkey under a towel soaks among the yuzu,
+              and opens one eye when the bamboo tube knocks
     duck      a rubber duck on a pond, being told about a bug: a question,
-              then an idea; a frog fixes a bug of its own by eating it
+              then an idea; a frog fixes a bug of its own by eating it.
+              Further along, by a jetty and a willow, four ducklings go
+              round a lily pad, each after the one ahead: a loop, and one
+              of them asks who leads
     reef      under the sea the fish are prompts: a school of > fish, a ~
-              eel, a * starfish, and one < swimming the wrong way
+              eel, a * starfish, and one < swimming the wrong way. Deeper
+              in, by an anchor and a clam, a > comes up to a pufferfish, an
+              o that swells into an O, and goes back a <
     campfire  a raccoon toasts a marshmallow; it catches fire, the raccoon
-              blows it out, and eats it anyway
+              blows it out, and eats it anyway. On the other side of the
+              camp, by the lake, the cooler's lid lifts: another raccoon
+              comes up with a hot dog, looks round, and goes back down
     ufo       over the dunes a saucer beams up a cow, has a look, and puts
-              it back
+              it back. Another stretch of the dunes: a windmill turns by a
+              road whose sign warns of saucers; one goes over on its way, and
+              a coyote howls after it
     pigeons   IP over avian carriers (RFC 1149): pigeons carry envelopes
-              over the roofs; one drops its packet and another sends it again
+              over the roofs; one drops its packet and another sends it again.
+              Further along the wire, at the loft, a courier lands and takes
+              its letter in, the loft ticks it, and the answer comes out
 
 night: the night shift, by another hand: pixel art, 480 by 270 shown as
 squares, twelve frames a second, the palette's colors and a dither between
@@ -535,7 +548,11 @@ class Onsen(Scene):
     name = "onsen"
     poster = 4.0  # the still: the list's picture, and what shows before the loop is made
     portrait = (1080.0, 1920.0, -580.0, 840.0)  # the pool at the foot, a tall sky over it
+    second = (1920.0, 1080.0, -1920.0, 0.0)  # the far side of the spring: the bathhouse, a bamboo spout, a small pool and its monkey
     PX, PY, PRX, PRY = 1120.0, 846.0, 430.0, 118.0  # the pool
+    QX, QY, QRX, QRY = W + 1080.0, 880.0, 360.0, 92.0  # the small pool, on the far side
+    MX, MY = W + 960.0, 872.0  # the monkey: its waterline under the chin
+    PIVOT = (W + 1490.0, 790.0)  # the shishi-odoshi's pin
     CX, CY = 1030.0, 836.0  # the capybara: its waterline under the neck
 
     def colors(self, p):
@@ -543,6 +560,7 @@ class Onsen(Scene):
             dk = p.dark
             ink = p.pick("ansi_0", "fg")  # what darkens: the black slot on dark, the text on light
             capy = mix(p("ansi_3+ansi_1:26"), ink, 0.3 if dk else 0.26)
+            bamboo = mix(mix(p("ansi_2"), p("ansi_3"), 0.3), p("bg"), 0.35 if dk else 0.0)
             self._c = (p, dict(
                 sky=p("bg"), band=p.pick("bg+fg:4", "bg+fg:3"),
                 moon=p.pick("fg+ansi_3:18", "ansi_3+bg:30"), halo1=p.pick("bg+accent:9", "bg+ansi_3:14"), halo2=p.pick("bg+accent:5", "bg+ansi_3:7"),
@@ -555,6 +573,11 @@ class Onsen(Scene):
                 capy=capy, capy2=mix(capy, ink, 0.35), capy3=mix(capy, p.pick("fg", "white"), 0.18), blush=p("ansi_1"), ink=mix(ink, capy, 0.15),
                 yuzu=mix(p("ansi_3"), p("white"), 0.12 if dk else 0.0), yuzu2=mix(p("ansi_3"), p("ansi_1"), 0.25), leaf=p("ansi_2"),
                 glow=p("ansi_3"), dark=dk,
+                wood=mix(p("ansi_3+ansi_1:30"), ink, 0.45 if dk else 0.35), wood2=mix(p("ansi_3+ansi_1:30"), ink, 0.7), roof=mix(p.pick("bg+ansi_8:60", "bg+ansi_8:42"), ink, 0.4),
+                bamboo=bamboo, bamboo2=mix(bamboo, ink, 0.4), bamboo3=mix(bamboo, p("white"), 0.3),
+                noren=mix(p("ansi_4"), p("bg"), 0.3 if dk else 0.0), monk=mix(p("muted"), capy, 0.4), monk2=mix(mix(p("muted"), capy, 0.4), ink, 0.3),
+                face=mix(p("ansi_1"), p("muted"), 0.35) if dk else mix(p("ansi_1"), p("white"), 0.42),
+                towel=p.pick("fg+white:40", "white"), ink0=ink,
             ))
         return self._c[1]
 
@@ -562,6 +585,8 @@ class Onsen(Scene):
         return self.colors(p)["sky"]
 
     def back(self, cv, p):
+        if cv.second:
+            return self.back2(cv, p)
         c = self.colors(p)
         out = []
         mx, my = (1360.0, -330.0) if cv.portrait else (1490.0, 250.0)
@@ -573,33 +598,11 @@ class Onsen(Scene):
         for x, y in flakes:
             if math.hypot(x - mx, y - my) > 190:
                 out.append(D(cv, x, y, rnd.choice((1.1, 1.4, 1.8)), c["flake"], 0.35 if p.dark else 0.0))
-        for color, base, peaks in (
+        out += self.hills(cv, c, p, 0.0, (
             (c["far"], 660, [(0, 600), (160, 520), (330, 470), (520, 545), (700, 500), (880, 430), (1080, 515), (1260, 470), (1420, 540), (1620, 455), (1800, 520), (1920, 490)]),
             (c["near"], 700, [(0, 640), (230, 560), (430, 625), (640, 575), (820, 640), (1000, 590), (1180, 650), (1390, 585), (1600, 640), (1760, 600), (1920, 630)]),
-        ):
-            out.append(L(cv, Shape().poly([(0, base + 60)] + peaks + [(W, base + 60)]), color, ss=2))
-            caps = Shape()
-            for i in range(1, len(peaks) - 1):
-                (x0, y0), (x1, y1), (x2, y2) = peaks[i - 1], peaks[i], peaks[i + 1]
-                if y1 < y0 and y1 < y2:
-                    k = 0.28
-                    a, b = (x1 + (x0 - x1) * k, y1 + (y0 - y1) * k), (x1 + (x2 - x1) * k, y1 + (y2 - y1) * k)
-                    caps.poly([a, (x1, y1), b, (b[0] - (b[0] - x1) * 0.35, b[1] + 6), ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 4), (a[0] + (x1 - a[0]) * 0.35, a[1] + 7)])
-            out.append(L(cv, caps, c["cap"], 0.8 if p.dark else 0.9, ss=2))
-        out.append(L(cv, Shape().poly([(0, 720)] + [(x, 712 + 9 * math.sin(x / 210)) for x in range(0, W + 1, 40)] + [(W, H), (0, H)]), c["snow"], ss=2))
-        rnd = random.Random(7)
-        trees = sorted([(rnd.uniform(-20, W + 20), rnd.uniform(58, 118), rnd.random()) for _ in range(34)], key=lambda t: t[1])
-        for x, h, r in trees:
-            base = 724 + 9 * math.sin(x / 210) + (h - 58) * 0.12
-            col = c["pine2"] if r > 0.5 else c["pine"]
-            sh, sn = Shape(), Shape()
-            for i in range(3):
-                y1 = base - h * (0.18 + 0.29 * i)
-                hw = h * (0.34 - 0.08 * i)
-                sh.poly([(x - hw, y1), (x, y1 - h * 0.36), (x + hw, y1)])
-                sn.poly([(x - hw * 0.35, y1 - h * 0.24), (x, y1 - h * 0.36), (x + hw * 0.35, y1 - h * 0.24), (x, y1 - h * 0.28)])
-            sh.rect(x - 2.5, base - h * 0.2, 5, h * 0.2)
-            out += [L(cv, sh, col, ss=2), L(cv, sn, c["cap"], 0.9, ss=2)]
+        ))
+        out += self.pines(cv, c, 7, 34, -20, W + 20)
         drift = Shape()
         for x0, w in ((0, 420), (380, 300), (1550, 380)):
             drift.ellipse(x0 + w / 2, 742, w / 2, 18)
@@ -613,6 +616,41 @@ class Onsen(Scene):
         out.append(L(cv, Shape().ellipse(px, py, rx, ry), c["water"], ss=2))
         out.append(L(cv, Shape().ellipse(px + 30, py + 18, rx * 0.7, ry * 0.56), c["deep"], 0.8, ss=1, soft=26, clip=self.pool(cv)))
         out.append(L(cv, Shape().ellipse(1440, py - 30, 110, 16), c["moon"], 0.16, ss=1, soft=10, clip=self.pool(cv)))  # the moon on the water
+        return out
+
+    def hills(self, cv, c, p, x0, ranges):
+        """The snowy hills, two ranges of peaks from x0 a screen wide, and the snow in front of them."""
+        out = []
+        for color, base, peaks in ranges:
+            peaks = [(x0 + x, y) for x, y in peaks]
+            out.append(L(cv, Shape().poly([(x0, base + 60)] + peaks + [(x0 + W, base + 60)]), color, ss=2))
+            caps = Shape()
+            for i in range(1, len(peaks) - 1):
+                (xa, ya), (x1, y1), (x2, y2) = peaks[i - 1], peaks[i], peaks[i + 1]
+                if y1 < ya and y1 < y2:
+                    k = 0.28
+                    a, b = (x1 + (xa - x1) * k, y1 + (ya - y1) * k), (x1 + (x2 - x1) * k, y1 + (y2 - y1) * k)
+                    caps.poly([a, (x1, y1), b, (b[0] - (b[0] - x1) * 0.35, b[1] + 6), ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 4), (a[0] + (x1 - a[0]) * 0.35, a[1] + 7)])
+            out.append(L(cv, caps, c["cap"], 0.8 if p.dark else 0.9, ss=2))
+        out.append(L(cv, Shape().poly([(x0, 720)] + [(x, 712 + 9 * math.sin(x / 210)) for x in range(int(x0), int(x0) + W + 1, 40)] + [(x0 + W, H), (x0, H)]), c["snow"], ss=2))
+        return out
+
+    def pines(self, cv, c, seed, n, x0, x1):
+        """n snowy pines along the foot of the hills, between x0 and x1."""
+        out = []
+        rnd = random.Random(seed)
+        trees = sorted([(rnd.uniform(x0, x1), rnd.uniform(58, 118), rnd.random()) for _ in range(n)], key=lambda t: t[1])
+        for x, h, r in trees:
+            base = 724 + 9 * math.sin(x / 210) + (h - 58) * 0.12
+            col = c["pine2"] if r > 0.5 else c["pine"]
+            sh, sn = Shape(), Shape()
+            for i in range(3):
+                y1 = base - h * (0.18 + 0.29 * i)
+                hw = h * (0.34 - 0.08 * i)
+                sh.poly([(x - hw, y1), (x, y1 - h * 0.36), (x + hw, y1)])
+                sn.poly([(x - hw * 0.35, y1 - h * 0.24), (x, y1 - h * 0.36), (x + hw * 0.35, y1 - h * 0.24), (x, y1 - h * 0.28)])
+            sh.rect(x - 2.5, base - h * 0.2, 5, h * 0.2)
+            out += [L(cv, sh, col, ss=2), L(cv, sn, c["cap"], 0.9, ss=2)]
         return out
 
     def rocks(self, angles):
@@ -638,12 +676,16 @@ class Onsen(Scene):
 
     def pool(self, cv):
         if getattr(self, "_pool", (None,))[0] != cv.key:
-            self._pool = (cv.key, full(cv, Shape().ellipse(self.PX, self.PY, self.PRX, self.PRY)))
+            self._pool = (cv.key, full(cv, Shape().ellipse(self.QX, self.QY, self.QRX, self.QRY) if cv.second else Shape().ellipse(self.PX, self.PY, self.PRX, self.PRY)))
         return self._pool[1]
 
     def front(self, cv, p):
         c = self.colors(p)
         out = []
+        if cv.second:  # the small pool's near rocks
+            for a, s in self.rocks(range(0, 181, 16)):
+                out += self.rock(cv, c, self.QX + (self.QRX + 10) * math.cos(a), self.QY + (self.QRY + 8) * math.sin(a) + 4, s)
+            return out
         for a, s in self.rocks(range(0, 181, 15)):
             out += self.rock(cv, c, self.PX + (self.PRX + 12) * math.cos(a), self.PY + (self.PRY + 10) * math.sin(a) + 4, s * 1.1)
         return out
@@ -676,12 +718,12 @@ class Onsen(Scene):
             out.append(L(cv, Shape().line(spline(at([(-96, -98), (-86, -93), (-76, -98)]), closed=False, per=6), 3.0), c["ink"], above=wl))
         return out, (x0 + self.TOP[0], y0 + self.TOP[1])
 
-    def yuzu(self, cv, c, x, y, spin, wl=None):
-        r = 21.0
-        out = [L(cv, Shape().circle(x, y, r), c["yuzu"], above=wl), L(cv, Shape().ellipse(x + 6, y + 7, 14, 11, 0.6), c["yuzu2"], 0.45, above=wl)]
+    def yuzu(self, cv, c, x, y, spin, wl=None, r=21.0):
+        k = r / 21.0
+        out = [L(cv, Shape().circle(x, y, r), c["yuzu"], above=wl), L(cv, Shape().ellipse(x + 6 * k, y + 7 * k, 14 * k, 11 * k, 0.6), c["yuzu2"], 0.45, above=wl)]
         lx, ly = x + r * 0.75 * math.sin(spin), y - r * 0.85 * math.cos(spin)
-        out.append(L(cv, Shape().ellipse(lx + 8 * math.cos(spin), ly + 8 * math.sin(spin), 10, 4.5, spin + 0.4), c["leaf"], above=wl))
-        out.append(D(cv, x - 7, y - 8, 4, c["capy3"], 0.5))
+        out.append(L(cv, Shape().ellipse(lx + 8 * k * math.cos(spin), ly + 8 * k * math.sin(spin), 10 * k, 4.5 * k, spin + 0.4), c["leaf"], above=wl))
+        out.append(D(cv, x - 7 * k, y - 8 * k, 4 * k, c["capy3"], 0.5))
         return out
 
     def ring(self, cv, c, x, y, age, life=1.6, big=1.0):
@@ -692,6 +734,8 @@ class Onsen(Scene):
         return [L(cv, Shape().line(ellipse_pts(x, y, rx, rx * 0.26, n=60) + [ellipse_pts(x, y, rx, rx * 0.26, n=60)[0]], 2.2 * (1 - u) + 0.6), c["shine"], 0.8 * (1 - u), ss=2)]
 
     def under(self, cv, p, t):
+        if cv.second:
+            return self.under2(cv, p, t)
         c = self.colors(p)
         out = []
         # the surface: slow light on the water
@@ -762,6 +806,8 @@ class Onsen(Scene):
     def over(self, cv, p, t):
         c = self.colors(p)
         out = []
+        if cv.second:
+            return self.snow(cv, c, p, t, W, 6)
         for k, t0 in enumerate((21.0, 21.7, 22.4)):  # z, z, z
             u = window(t, t0, t0 + 1.6)
             if 0 < u < 1:
@@ -775,6 +821,192 @@ class Onsen(Scene):
             y = (y0 + (H + 40) * k * t / self.seconds) % (H + 40) - 20
             x = x0 + sway * wave(t, self.seconds / (1 + i % 2), ph)
             out.append(D(cv, x, y, rnd.uniform(2.2, 3.4) if near else rnd.uniform(1.1, 1.9), c["flake"], (0.75 if near else 0.5) if p.dark else (0.7 if near else 0.45)))
+        return out
+
+    # -- the far side of the spring: the second landscape, a screen to the right
+
+    def snow(self, cv, c, p, t, x0, seed):
+        out = []
+        rnd = random.Random(seed)
+        for i in range(150):
+            near = i % 3 == 0
+            x1, y0 = x0 + rnd.uniform(0, W), rnd.uniform(0, H + 40)
+            k, sway, ph = (2 if near else 1), rnd.uniform(8, 26), rnd.random()
+            y = (y0 + (H + 40) * k * t / self.seconds) % (H + 40) - 20
+            x = x1 + sway * wave(t, self.seconds / (1 + i % 2), ph)
+            out.append(D(cv, x, y, rnd.uniform(2.2, 3.4) if near else rnd.uniform(1.1, 1.9), c["flake"], (0.75 if near else 0.5) if p.dark else (0.7 if near else 0.45)))
+        return out
+
+    def back2(self, cv, p):
+        c = self.colors(p)
+        X = W
+        out = []
+        rnd = random.Random(44)
+        for _ in range(46):
+            out.append(D(cv, X + rnd.uniform(0, W), rnd.uniform(40, 420), rnd.choice((1.1, 1.4, 1.8)), c["flake"], 0.35 if p.dark else 0.0))
+        out += self.hills(cv, c, p, X, (
+            (c["far"], 660, [(0, 490), (170, 540), (360, 462), (580, 525), (790, 445), (1010, 530), (1210, 478), (1420, 548), (1630, 468), (1800, 525), (1920, 500)]),
+            (c["near"], 700, [(0, 630), (210, 592), (430, 648), (640, 580), (870, 642), (1090, 598), (1310, 652), (1520, 588), (1730, 640), (1920, 612)]),
+        ))
+        out += self.pines(cv, c, 71, 26, X - 20, X + W + 20)
+        drift = Shape()
+        for x0, w in ((60, 300), (1180, 420), (1640, 300)):
+            drift.ellipse(X + x0 + w / 2, 744, w / 2, 18)
+        out.append(L(cv, drift, c["shade"], 0.55, ss=2))
+        out += self.bathhouse(cv, c, X + 510.0, 746.0)
+        # the small pool: its far rocks, the water, its light
+        px, py, rx, ry = self.QX, self.QY, self.QRX, self.QRY
+        out.append(L(cv, Shape().ellipse(px, py + 6, rx + 30, ry + 22), c["shade"], ss=2))
+        for a, s in self.rocks(range(180, 361, 20)):
+            out += self.rock(cv, c, px + (rx + 8) * math.cos(a), py + (ry + 6) * math.sin(a) - 4, s * 0.9)
+        out.append(L(cv, Shape().ellipse(px, py, rx, ry), c["water"], ss=2))
+        out.append(L(cv, Shape().ellipse(px - 30, py + 14, rx * 0.66, ry * 0.52), c["deep"], 0.8, ss=1, soft=24, clip=self.pool(cv)))
+        # the bamboo: the spout on its post, the trestle, the stone the tube knocks on
+        sx, sy = X + 1650.0, 690.0
+        out.append(L(cv, Shape().ellipse(sx + 6, 862, 40, 8), c["shade"], 0.8, ss=2))
+        out.append(L(cv, Shape().line([(sx, 862), (sx, sy - 24)], 24), c["bamboo"], ss=2))
+        out.append(L(cv, Shape().line([(sx, sy), (X + 1386, sy + 6)], 13), c["bamboo"], ss=2))
+        out.append(L(cv, Shape().line([(sx - 12, 790), (sx + 12, 790)], 3).line([(sx - 12, 740), (sx + 12, 740)], 3).line([(X + 1520, sy - 3), (X + 1520, sy + 10)], 3), c["bamboo2"], ss=2))
+        out.append(L(cv, Shape().ellipse(X + 1387, sy + 6, 4, 7, 0.3), c["bamboo2"], ss=2))
+        out.append(L(cv, Shape().ellipse(sx, sy - 30, 14, 7).ellipse(X + 1500, sy - 6, 36, 4), c["snow"], ss=2))
+        out += self.rock(cv, c, X + 1586.0, 868.0, 0.55)
+        return out
+
+    def bathhouse(self, cv, c, x, y):
+        """A small wooden bathhouse under snow: a curtain at its door, a lamp in its window."""
+        out = [L(cv, Shape().ellipse(x + 10, y + 2, 250, 16), c["shade"], 0.8, ss=2)]
+        out.append(L(cv, Shape().rect(x - 180, y - 136, 360, 130), c["wood"], ss=2))
+        out.append(L(cv, Shape().rect(x - 190, y - 16, 380, 18), c["rock"], ss=2))
+        out.append(L(cv, Shape().line([(x - 174, y - 130), (x - 174, y - 16)], 10).line([(x, y - 130), (x, y - 16)], 10).line([(x + 174, y - 130), (x + 174, y - 16)], 10).line([(x - 180, y - 128), (x + 180, y - 128)], 10), c["wood2"], ss=2))
+        out.append(L(cv, Shape().poly([(x - 220, y - 124), (x - 138, y - 198), (x + 138, y - 198), (x + 220, y - 124)]), c["roof"], ss=2))
+        out.append(L(cv, Shape().rect(x + 40, y - 226, 40, 30), c["roof"], ss=2))  # the vent
+        out.append(L(cv, Shape().poly(spline([(x - 226, y - 126), (x - 206, y - 150), (x - 138, y - 210), (x + 138, y - 210), (x + 206, y - 150), (x + 226, y - 126), (x + 190, y - 140), (x + 120, y - 186), (x - 120, y - 186), (x - 190, y - 140)], per=6)), c["snow"], ss=2))
+        out.append(L(cv, Shape().ellipse(x + 60, y - 228, 26, 7), c["snow"], ss=2))
+        out.append(L(cv, Shape().rect(x - 136, y - 100, 92, 84), mix(c["ink0"], c["wood"], 0.3), ss=2))  # the door
+        noren = Shape()
+        for i in range(3):
+            noren.rect(x - 134 + i * 30.5, y - 102, 27, 48)
+        out += [L(cv, noren, c["noren"], ss=2), D(cv, x - 90, y - 80, 7, c["towel"], 0.8)]
+        wx, wy = x + 96, y - 72
+        out.append(L(cv, Shape().rect(wx - 46, wy - 30, 92, 58), c["glow"], 0.8, ss=2))
+        out.append(L(cv, Shape().line([(wx - 15, wy - 30), (wx - 15, wy + 28)], 4).line([(wx + 15, wy - 30), (wx + 15, wy + 28)], 4).line([(wx - 46, wy), (wx + 46, wy)], 4), c["wood2"], ss=2))
+        out.append(L(cv, Shape().circle(wx, wy, 70), c["glow"], 0.2 if c["dark"] else 0.08, ss=1, soft=40))
+        return out
+
+    def shishi_angle(self, t):
+        """The bamboo tube's slope, its mouth up: it fills, leans, tips, pours, swings back and knocks."""
+        rest, tip = 0.5, -0.55
+        if t < 12.6:
+            return rest
+        if t < 15.0:
+            return rest - 0.06 * ease_in(window(t, 12.6, 15.0))
+        if t < 15.45:
+            return rest - 0.06 + (tip - rest + 0.06) * ease_in(window(t, 15.0, 15.45))
+        if t < 15.9:
+            return tip
+        if t < 16.25:
+            return tip + (rest - tip) * ease_in(window(t, 15.9, 16.25))
+        return rest - 0.07 * bump(window(t, 16.25, 16.6))
+
+    def shishi(self, cv, c, t):
+        px, py = self.PIVOT
+        a = self.shishi_angle(t)
+        m = (px - 105 * math.cos(a), py - 105 * math.sin(a))  # the open mouth
+        e = (px + 85 * math.cos(a), py + 85 * math.sin(a))  # the closed end, that knocks
+        out = []
+        sy = 698.0
+        if t < 15.2 or t >= 16.3:  # the spout's thread of water into the mouth
+            out.append(L(cv, Shape().line([(m[0] + 1, sy), (m[0] + 1 + 1.5 * wave(t, 0.5), m[1] - 4)], 3), c["shine"], 0.7, ss=2))
+        else:
+            out.append(L(cv, Shape().line([(m[0] + 1, sy), (m[0] + 2, self.QY - 30)], 3), c["shine"], 0.7, ss=2))
+        u = window(t, 15.3, 16.0)
+        if 0 < u < 1:  # it pours
+            out.append(L(cv, Shape().line(bezier(m, (m[0] - 14, m[1] + 4), (m[0] - 18, m[1] + 18), (m[0] - 16, self.QY - 18), n=10), 9 * bump(u) + 1), c["shine"], 0.8, ss=2))
+        out.append(L(cv, Shape().line([(px - 24, 868), (px + 10, py - 14)], 9).line([(px + 24, 868), (px - 10, py - 14)], 9), c["wood"], ss=2))
+        out.append(L(cv, Shape().line([m, e], 26), c["bamboo"], ss=2))
+        hi = (math.sin(a) * 6, -math.cos(a) * 6)
+        out.append(L(cv, Shape().line([(m[0] + 12 * math.cos(a) + hi[0], m[1] + 12 * math.sin(a) + hi[1]), (e[0] - 8 * math.cos(a) + hi[0], e[1] - 8 * math.sin(a) + hi[1])], 4), c["bamboo3"], 0.6, ss=2))
+        nodes = Shape()
+        for f in (0.32, 0.7):
+            nx, ny = m[0] + (e[0] - m[0]) * f, m[1] + (e[1] - m[1]) * f
+            nodes.line([(nx - math.sin(a) * 13, ny + math.cos(a) * 13), (nx + math.sin(a) * 13, ny - math.cos(a) * 13)], 3)
+        out.append(L(cv, nodes, c["bamboo2"], ss=2))
+        out.append(L(cv, Shape().ellipse(m[0], m[1], 6, 13, a), c["bamboo2"], ss=2))
+        out.append(D(cv, px, py, 5, c["wood2"]))
+        u = window(t, 16.25, 16.75)
+        if 0 < u < 1:  # the knock
+            for k in (-1, 0, 1):
+                ang = -math.pi / 2 + k * 0.6
+                r0, r1 = 34 + 16 * u, 48 + 22 * u
+                out.append(L(cv, Shape().line([(e[0] + r0 * math.cos(ang), e[1] + r0 * math.sin(ang)), (e[0] + r1 * math.cos(ang), e[1] + r1 * math.sin(ang))], 3.4), c["steam"] if c["dark"] else c["wood2"], 0.8 * (1 - u)))
+        return out
+
+    def monkey(self, cv, c, t, eye):
+        """A snow monkey soaking, a towel on its head; eye is how far it has one eye open."""
+        x, wl, k = self.MX, self.MY, 1.3
+        y = wl + 1.5 * wave(t, 6, 0.3)
+        b = 1 + 0.03 * wave(t, 4.8)
+        sh = lambda s: s.moved(x, y, k)
+        out = [L(cv, sh(Shape().ellipse(0, 8, 60, 32 * b)), c["monk"], above=wl)]  # its shoulders
+        out.append(L(cv, sh(Shape().ellipse(3, 18, 56, 26)), c["deep"], 0.45, ss=1, soft=6, below=wl + 3, clip=self.pool(cv)))
+        out.append(L(cv, sh(Shape().circle(0, -40, 34).ellipse(-29, -29, 13, 17, 0.3).ellipse(29, -29, 13, 17, -0.3)), c["monk"]))
+        out.append(L(cv, sh(Shape().ellipse(0, -13, 23, 8)), c["monk2"], 0.35, ss=2))  # its chin's shade
+        out.append(L(cv, sh(Shape().ellipse(-10, -43, 14, 16).ellipse(10, -43, 14, 16).ellipse(0, -29, 16, 12)), c["face"]))
+        tw = Shape().poly(spline([(-29, -68), (-24, -85), (22, -87), (31, -70), (24, -63), (-24, -63)], per=6))
+        out += [L(cv, sh(tw), c["towel"]), L(cv, sh(Shape().line([(-26, -73), (28, -75)], 2.4)), c["noren"], 0.7)]
+        for ex in (-10, 10):
+            if ex > 0 and eye > 0.05:  # one eye, open
+                out += [L(cv, sh(Shape().circle(ex, -45, 4.2 * eye)), c["ink0"]), L(cv, sh(Shape().circle(ex + 1.3, -46.2, 1.3 * eye)), c["towel"], 0.9)]
+                out.append(L(cv, sh(Shape().line([(ex - 6, -54 - 2.5 * eye), (ex + 6, -52 - 3.5 * eye)], 2.2)), c["monk2"]))
+            else:
+                out.append(L(cv, sh(Shape().line(spline([(ex - 5.5, -45.5), (ex, -42.5), (ex + 5.5, -45.5)], closed=False, per=5), 2.1)), c["ink0"]))
+        out.append(L(cv, sh(Shape().circle(-2.7, -32, 1.7).circle(2.7, -32, 1.7)), c["ink0"], 0.8))
+        out.append(L(cv, sh(Shape().line(spline([(-5.5, -23.5), (0, -22), (5.5, -23.5)], closed=False, per=5), 1.8)), c["ink0"], 0.7))
+        return out
+
+    def under2(self, cv, p, t):
+        c = self.colors(p)
+        X = W
+        out = []
+        px, py = self.QX, self.QY
+        for i, (x, y, w) in enumerate(((X + 860, 868, 60), (X + 1190, 900, 80), (X + 1300, 862, 50), (X + 1000, 930, 46))):
+            dx = 12 * wave(t, 6, i * 0.29)
+            out.append(L(cv, Shape().line([(x + dx - w / 2, y), (x + dx + w / 2, y)], 3), c["shine"], 0.35 + 0.15 * wave(t, 4, i * 0.31), ss=2))
+        rnd = random.Random(13)
+        for i in range(4):  # the bathhouse's vent
+            ph = i / 4 + rnd.uniform(0, 0.05)
+            u = ((t / 6.0) + ph) % 1.0
+            x, y = X + 570 + 40 * u + 8 * wave(t, 6, ph), 516 - 150 * u
+            out.append(L(cv, Shape().ellipse(x, y, 14 + 22 * u, 20 + 26 * u), c["steam"], (0.14 if p.dark else 0.45) * bump(u) ** 1.5, ss=1, soft=10 + 8 * u))
+        out += self.shishi(cv, c, t)
+        # the yuzu afloat, each on its own slow round; they bob when the tube pours
+        pour = bump(window(t, 15.6, 17.4))
+        floats = []
+        for i, (fx, fy, r, ph) in enumerate(((X + 800, 884, 19, 0.1), (X + 1120, 864, 18, 0.45), (X + 1190, 910, 20, 0.8), (X + 1300, 884, 17, 0.3), (X + 1050, 934, 19, 0.6))):
+            a = 2 * math.pi * (t / 24 + ph)
+            x, y = fx + 16 * math.cos(a), fy + 5 * math.sin(a) + 2.5 * wave(t, 2.4, ph) + 5 * pour * wave(t, 0.9, ph)
+            floats.append((y, x, a, r))
+        eye = ease_out(window(t, 16.45, 16.75)) * (1 - ease_in(window(t, 18.6, 19.0)))
+        floats.sort()
+        for y, x, a, r in floats:
+            if y < self.MY + 6:
+                out += self.yuzu(cv, c, x, y, 0.3 * math.sin(a), y + 9, r)
+        out += self.monkey(cv, c, t, eye)
+        for y, x, a, r in floats:
+            if y >= self.MY + 6:
+                out += self.yuzu(cv, c, x, y, 0.3 * math.sin(a), y + 9, r)
+        out += self.ring(cv, c, X + 1372, py - 6, t - 15.5, 2.2, 1.3)
+        out += self.ring(cv, c, X + 1372, py - 6, t - 16.0, 2.2, 0.9)
+        for k in range(4):
+            out += self.ring(cv, c, self.MX + 70, self.MY + 4, (t - k * 6 - 2) % 24, 3.0, 1.0)
+        rnd = random.Random(10)
+        for i in range(8):  # the pool's steam
+            x0 = px + rnd.uniform(-280, 280)
+            ph = i / 8 + rnd.uniform(0, 0.04)
+            u = ((t / 8.0) + ph) % 1.0
+            x, y = x0 + 50 * u + 12 * wave(t, 8, ph), py - 20 - 200 * u
+            a = (0.16 if p.dark else 0.5) * bump(u) ** 1.5
+            out.append(L(cv, Shape().ellipse(x, y, 20 + 30 * u, 30 + 36 * u, 0.3 * wave(t, 8, ph)), c["steam"], a, ss=1, soft=16 + 12 * u))
         return out
 
 
@@ -844,7 +1076,10 @@ class Duck(Scene, Cached):
     poster = 9.0
     PX, PY, PRX, PRY = 960.0, 868.0, 900.0, 205.0  # the pond
     portrait = (1080.0, 1920.0, -400.0, 840.0)  # the frog's pad and the duck, a tall sky over them
+    second = (1920.0, 1080.0, -1920.0, 0.0)  # further along the pond: a jetty, a willow, ducklings going round a lily pad
     WL = 820.0  # the duck's waterline
+    QX, QY, QRX, QRY = W + 700.0, 890.0, 900.0, 190.0  # the pond, further along
+    LOOP = (W + 760.0, 924.0, 230.0, 52.0)  # the ducklings' round: its middle (the lily pad) and its radii
 
     def colors(self, p):
         if not hasattr(self, "_c") or self._c[0] is not p:
@@ -862,13 +1097,19 @@ class Duck(Scene, Cached):
                 duck=yellow, duck2=mix(yellow, p("ansi_1"), 0.22), beak=mix(p("ansi_3"), p("ansi_1"), 0.55), ink=ink, shine2=p.pick("white", "white"),
                 frog=frog, frog2=mix(frog, ink, 0.3), belly=mix(frog, p("white"), 0.45), tongue=mix(p("ansi_1"), p("ansi_5"), 0.4),
                 bug=mix(ink, p("ansi_1"), 0.2), wing=p.pick("fg", "white"), bubble=p.pick("bg+fg:88", "white"), glow=p("ansi_3"), fly=p("accent"),
+                wood=mix(p("ansi_3+ansi_1:30"), ink, 0.4), wood2=mix(p("ansi_3+ansi_1:30"), ink, 0.62), wood3=mix(p("ansi_3+ansi_1:30"), p.pick("fg", "white"), 0.15),
+                willow=p.pick("bg+ansi_2:30", "bg+ansi_2:48"), willow2=p.pick("bg+ansi_2:44", "bg+ansi_2:64"), float1=p("ansi_1"), float2=p.pick("fg", "white"), tin=p("bg+fg:30"),
             ))
         return self._c[1]
 
     def pond(self, cv):
+        if cv.second:
+            return self.cached(cv, "pond", lambda: full(cv, Shape().ellipse(self.QX, self.QY, self.QRX, self.QRY)))
         return self.cached(cv, "pond", lambda: full(cv, Shape().ellipse(self.PX, self.PY, self.PRX, self.PRY)))
 
     def back(self, cv, p):
+        if cv.second:
+            return self.back2(cv, p)
         c = self.colors(p)
         sx, sy = (1240.0, -420.0) if cv.portrait else (400.0, 210.0)
         out = [D(cv, sx, sy, 120, c["halo"]), D(cv, sx, sy, 58, c["sun"])]
@@ -914,23 +1155,27 @@ class Duck(Scene, Cached):
                 out.append(L(cv, Shape().line([u, pts[8]], 9), c["cattail"], ss=2))
         return out
 
-    def duck(self, cv, c, x, y, t, kx, tilt):
-        sh = lambda s: s.moved(x, y, 1.22, tilt, 0, 0, kx)
+    def duck(self, cv, c, x, y, t, kx, tilt, wl=None, k=1.22):
+        """The rubber duck at (x, y), kx its way (1 to the left, -1 to the right), k its size; wl its waterline."""
+        wl = self.WL if wl is None else wl
+        e = k / 1.22
+        sh = lambda s: s.moved(x, y, k, tilt, 0, 0, kx)
         body = Shape().poly(spline([(-74, -6), (-66, -36), (-36, -50), (14, -50), (50, -50), (80, -76), (84, -40), (66, -8), (10, 6), (-50, 4)], per=8))
         head = Shape().circle(-40, -86, 31)
+        neck = Shape().poly(spline([(-69, -24), (-69, -46), (-60, -70), (-44, -84), (-24, -80), (-17, -64), (-6, -54), (8, -50), (16, -40), (-30, -20)], per=6))  # the head sits on the body
         beak = Shape().poly(spline([(-62, -93), (-94, -88), (-102, -79), (-93, -70), (-62, -72)], per=6))
         wing = Shape().poly(spline([(-14, -36), (20, -44), (46, -30), (30, -16), (-6, -18)], per=6))
-        out = [L(cv, sh(body), c["duck"], above=self.WL), L(cv, sh(head), c["duck"]), L(cv, sh(wing), c["duck2"], above=self.WL),
+        out = [L(cv, sh(body), c["duck"], above=wl), L(cv, sh(neck), c["duck"], above=wl), L(cv, sh(head), c["duck"]), L(cv, sh(wing), c["duck2"], above=wl),
                L(cv, sh(beak), c["beak"]), L(cv, sh(Shape().line([(-66, -81), (-96, -79)], 2.2)), mix(c["beak"], c["ink"], 0.35))]
         ex, ey = sh(Shape().poly([(-48, -94)])).cmds[0][1][0]
-        out += [D(cv, ex, ey, 5.2, c["ink"]), D(cv, ex - 1.6 * kx, ey - 2, 1.7, c["shine2"])]
+        out += [D(cv, ex, ey, 5.2 * e, c["ink"]), D(cv, ex - 1.6 * e * kx, ey - 2 * e, 1.7 * e, c["shine2"])]
         out.append(L(cv, sh(Shape().ellipse(-54, -78, 8, 5)), c["beak"], 0.25))
         # its reflection: upside down under the waterline, faint
-        flip = lambda s: s.moved(x, y, 1.22, tilt, 0, 0, kx).moved(0, 0, 1, 0, 0, 0, 1)
+        flip = lambda s: s.moved(x, y, k, tilt, 0, 0, kx).moved(0, 0, 1, 0, 0, 0, 1)
         refl = Shape()
         for cmd in flip(body).cmds:
-            refl.cmds.append(("poly", [(px, 2 * self.WL - py + 4) for px, py in cmd[1]]))
-        out.insert(0, L(cv, refl, c["duck"], 0.14, ss=1, soft=4, below=self.WL + 2, clip=self.pond(cv)))
+            refl.cmds.append(("poly", [(px, 2 * wl - py + 4 * e) for px, py in cmd[1]]))
+        out.insert(0, L(cv, refl, c["duck"], 0.14, ss=1, soft=4 * e, below=wl + 2 * e, clip=self.pond(cv)))
         return out
 
     def ring(self, cv, c, x, y, age, life=1.8, big=1.0):
@@ -972,6 +1217,8 @@ class Duck(Scene, Cached):
         return 660 + 70 * wave(t - 13.4, 1.9) + 10 * wave(t, 0.5), 760 + 28 * wave(t - 13.4, 1.1)
 
     def under(self, cv, p, t):
+        if cv.second:
+            return self.under2(cv, p, t)
         c = self.colors(p)
         out = []
         clouds_ = ((720, -560, 1.0), (1180, -260, 0.8), (880, 60, 0.7)) if cv.portrait else ((760, 250, 1.0), (1180, 170, 0.8), (1580, 300, 0.7))
@@ -1013,6 +1260,8 @@ class Duck(Scene, Cached):
 
     def over(self, cv, p, t):
         c = self.colors(p)
+        if cv.second:
+            return self.over2(cv, c, t)
         x = 1200 + 60 * wave(t, 24)
         y = self.WL + 3 * wave(t, 2.4) - 30 * bump(window(t, 8.7, 9.25))
         kx = 1 - 2 * ease_io(window(t, 19.6, 19.95)) + 2 * ease_io(window(t, 22.6, 22.95))
@@ -1026,15 +1275,20 @@ class Duck(Scene, Cached):
                 r0, r1 = 46 + 26 * u, 58 + 34 * u
                 out.append(L(cv, Shape().line([(hx + r0 * math.cos(a), hy + r0 * math.sin(a)), (hx + r1 * math.cos(a), hy + r1 * math.sin(a))], 3.2), c["glow"], 1 - u))
         out += bubble(cv, 560, 760, pop(t, 16.8, 19.0), "v", c["bubble"], c["ink"], tail=-1)
+        return out + self.air(cv, c, t, 0.0, 8)
+
+    def air(self, cv, c, t, x0, seed):
+        """Fireflies by night, a dragonfly by day, over the screen from x0."""
+        out = []
         if c["dark"]:  # fireflies by night
-            rnd = random.Random(8)
+            rnd = random.Random(seed)
             for i in range(14):
-                fx = rnd.uniform(100, 1820) + 60 * wave(t, 24 / rnd.choice((1, 2, 3)), rnd.random())
+                fx = x0 + rnd.uniform(100, 1820) + 60 * wave(t, 24 / rnd.choice((1, 2, 3)), rnd.random())
                 fy = rnd.uniform(560, 760) + 30 * wave(t, 24 / rnd.choice((2, 3, 4)), rnd.random())
                 a = 0.5 + 0.5 * wave(t, 24 / rnd.choice((4, 6, 8)), rnd.random())
                 out += [D(cv, fx, fy, 9, c["glow"], 0.16 * a), D(cv, fx, fy, 2.4, c["glow"], 0.9 * a)]
         else:  # a dragonfly by day
-            fx = 960 + 640 * math.sin(2 * math.pi * t / 24)
+            fx = x0 + 960 + 640 * math.sin(2 * math.pi * t / 24)
             fy = 560 + 90 * math.sin(4 * math.pi * t / 24) + 20 * wave(t, 1.5)
             ang = math.atan2(90 * 4 * math.pi / 24 * math.cos(4 * math.pi * t / 24), 640 * 2 * math.pi / 24 * math.cos(2 * math.pi * t / 24))
             f = abs(math.sin(2 * math.pi * t / 0.08))  # 300 beats a loop
@@ -1048,10 +1302,129 @@ class Duck(Scene, Cached):
             out += [L(cv, wings, c["wing"], 0.5), L(cv, body, c["fly"])]
         return out
 
+    # -- further along the pond: the second landscape, a screen to the right
+
+    def back2(self, cv, p):
+        c = self.colors(p)
+        X = W
+        out = []
+        if c["dark"]:
+            out += stars(cv, c["wing"], 22, 70, 30, 520, alpha=0.4)
+        out.append(L(cv, Shape().poly([(X, 640)] + spline([(X, 590), (X + 300, 545), (X + 700, 600), (X + 1100, 528), (X + 1500, 588), (X + 1920, 546)], closed=False, per=16) + [(X + W, 640)]), c["hill"], ss=2))
+        out.append(L(cv, Shape().poly([(X, 700)] + spline([(X, 620), (X + 400, 652), (X + 800, 608), (X + 1200, 656), (X + 1600, 614), (X + 1920, 640)], closed=False, per=16) + [(X + W, 700)]), c["hill2"], ss=2))
+        out.append(L(cv, Shape().rect(X, 650, W, H - 650), c["grass"], ss=1))
+        out.append(L(cv, Shape().ellipse(self.QX, self.QY, self.QRX, self.QRY), c["water"], ss=2))
+        out.append(L(cv, Shape().ellipse(self.QX - 40, self.QY + 40, self.QRX * 0.7, self.QRY * 0.55), c["deep"], 0.7, ss=1, soft=40, clip=self.pond(cv)))
+        # the willow's trunk on the far bank, its crown
+        tx = X + 1720.0
+        out.append(L(cv, Shape().ellipse(tx, 772, 120, 14), c["hill2"], 0.8, ss=2))
+        out.append(L(cv, Shape().poly(ribbon(bezier((tx, 776), (tx + 6, 680), (tx - 30, 600), (tx - 10, 500), n=12), 46, 22)), c["wood2"], ss=2))
+        out.append(L(cv, Shape().line(bezier((tx - 14, 560), (tx - 60, 520), (tx - 120, 500), (tx - 170, 470), n=10), 12).line(bezier((tx - 8, 540), (tx + 40, 500), (tx + 90, 480), (tx + 130, 470), n=10), 12), c["wood2"], ss=2))
+        crown = Shape()
+        for cx, cy, rx, ry in ((tx - 20, 440, 190, 70), (tx - 150, 470, 110, 50), (tx + 110, 462, 120, 52), (tx - 40, 400, 120, 50)):
+            crown.ellipse(cx, cy, rx, ry)
+        out.append(L(cv, crown, c["willow"], ss=2))
+        # the lily pads; the one in the middle of the ducklings' round has a flower
+        for x, y, r, rot, fl in ((X + 260, 1000, 44, 1.4, False), (X + 1160, 1020, 50, 4.2, False), (X + 1480, 960, 40, 2.6, True), (X + 120, 900, 36, 5.6, False)):
+            out += self.pad(cv, c, x, y, r, rot, fl)
+        lx, ly = self.LOOP[:2]
+        out += self.pad(cv, c, lx, ly, 62, 3.0, True)
+        out += self.jetty(cv, c, X)
+        return out
+
+    def jetty(self, cv, c, X):
+        """A wooden jetty from the far bank into the water, a rod left on it."""
+        out = []
+        posts = Shape()
+        for x in (1290, 1390, 1490, 1590):
+            posts.rect(X + x - 7, 812, 14, 46)
+        out.append(L(cv, posts, c["wood2"], ss=2))
+        refl = Shape()
+        for x in (1290, 1390, 1490, 1590):
+            refl.rect(X + x - 7, 858, 14, 40)
+        out.append(L(cv, refl, c["wood2"], 0.18, ss=1, soft=4, clip=self.pond(cv)))
+        out.append(L(cv, Shape().poly([(X + 1250, 796), (X + 1660, 796), (X + 1680, 812), (X + 1270, 812)]), c["wood3"], ss=2))
+        out.append(L(cv, Shape().rect(X + 1270, 812, 410, 12), c["wood"], ss=2))
+        gaps = Shape()
+        for k in range(1, 14):
+            x = X + 1270 + k * 29.5
+            gaps.line([(x - 15, 797), (x - 2, 811)], 1.6)
+        out.append(L(cv, gaps, c["wood"], 0.6, ss=2))
+        out.append(L(cv, Shape().line([(X + 1330, 798), (X + 1130, 636)], 5).circle(X + 1316, 788, 9), c["wood2"], ss=2))  # the rod, its reel
+        out.append(L(cv, Shape().rect(X + 1580, 766, 38, 32).ellipse(X + 1599, 766, 19, 5), c["tin"], ss=2))  # a bucket
+        return out
+
+    def ducklings(self, t):
+        """The four ducklings on their round: (x, y, way, which), each a quarter of the way behind the one ahead."""
+        cx, cy, rx, ry = self.LOOP
+        out = []
+        for i in range(4):
+            a = 2 * math.pi * (t / 24 - i / 4 + 1 / 8)  # on screen: along the front to the left, along the back to the right
+            kx = clamp(20 * math.sin(a), -1, 1)  # a quick turn at each end
+            out.append((cx + rx * math.cos(a), cy + ry * math.sin(a), kx if abs(kx) > 0.3 else math.copysign(0.3, math.cos(a)), i))
+        return out
+
+    def under2(self, cv, p, t):
+        c = self.colors(p)
+        X = W
+        out = []
+        for i, (x, y, w) in enumerate(((X + 300, 190, 0.9), (X + 980, 120, 0.7), (X + 1420, 270, 0.8))):  # clouds, drifting and back
+            dx = 46 * wave(t, 24, i * 0.3 + 0.15)
+            cl = Shape().rect(x + dx - 120 * w, y, 240 * w, 34 * w).circle(x + dx - 60 * w, y + 4, 42 * w).circle(x + dx + 20 * w, y - 10 * w, 56 * w).circle(x + dx + 90 * w, y + 8, 34 * w)
+            out.append(L(cv, cl, c["cloud"], 1.0, ss=2, above=y + 34 * w))
+        # the willow's hanging strands, swaying
+        rnd = random.Random(17)
+        tx = X + 1720.0
+        strands = Shape()
+        for i in range(34):
+            x0 = tx + rnd.uniform(-330, 250)
+            y0 = 430 + 40 * (abs(x0 - tx + 40) / 290) ** 2 + rnd.uniform(-10, 20)
+            h = rnd.uniform(220, 330) - 0.25 * abs(x0 - tx)
+            sw = 10 * wave(t, 6 if i % 2 else 8, rnd.random())
+            pts = bezier((x0, y0), (x0 + 6, y0 + h * 0.4), (x0 + sw * 0.6, y0 + h * 0.75), (x0 + sw, y0 + h), n=8)
+            strands.poly(ribbon(pts, 9, 2))
+        out.append(L(cv, strands, c["willow2"], ss=2))
+        # reeds by the bank and in the shallows
+        rnd = random.Random(33)
+        for i in range(16):
+            x = rnd.choice((rnd.uniform(X + 1560, X + 1640), rnd.uniform(X + 1840, X + 1910), rnd.uniform(X + 40, X + 200)))
+            base, h = rnd.uniform(700, 770), rnd.uniform(110, 210)
+            sway = 9 * (h / 200) * wave(t, 6 if i % 2 else 4, rnd.random())
+            top = (x + sway + rnd.uniform(-12, 12), base - h)
+            pts = bezier((x, base), (x, base - h * 0.4), (top[0] - sway * 0.3, base - h * 0.75), top, n=10)
+            out.append(L(cv, Shape().poly(ribbon(pts, 6, 1.5)), c["reed"], ss=2))
+            if i % 3 == 0:
+                out.append(L(cv, Shape().line([pts[7], pts[8]], 9), c["cattail"], ss=2))
+        for i, (x, y, w) in enumerate(((X + 420, 830, 90), (X + 1000, 1010, 110), (X + 1350, 900, 70), (X + 200, 950, 60), (X + 760, 840, 80))):
+            dx = 18 * wave(t, 6, i * 0.23)
+            out.append(L(cv, Shape().line([(x + dx - w / 2, y), (x + dx + w / 2, y)], 3), c["shine"], 0.3 + 0.12 * wave(t, 4, i * 0.3), ss=2))
+        # the float on the rod's line: it bobs, and once it dips
+        bx, by = X + 1112.0, 872.0
+        dip = bump(window(t, 20.0, 20.7))
+        fy = by + 2.5 * wave(t, 3) + 12 * dip
+        out.append(L(cv, Shape().line([(X + 1130, 636), (bx + 2, fy - 12)], 1.2), c["ink"], 0.45, ss=2))
+        out += self.ring(cv, c, bx, by + 4, (t - 0.5) % 6, 2.4, 0.45)
+        out += self.ring(cv, c, bx, by + 4, t - 20.5, 1.8, 0.8)
+        out.append(L(cv, Shape().circle(bx, fy, 8), c["float1"], above=by + 3))
+        out.append(L(cv, Shape().poly(ellipse_pts(bx, fy, 8, 8, n=24, a0=math.pi, a1=2 * math.pi)), c["float2"], above=by + 3))
+        out.append(L(cv, Shape().line([(bx, fy - 8), (bx, fy - 15)], 2), c["float1"]))
+        # the ducklings going round, the far ones first
+        for x, y, kx, i in sorted(self.ducklings(t), key=lambda d: d[1]):
+            out += self.ring(cv, c, x, y + 3, (t - i * 1.3) % 4, 2.6, 0.5)
+            out += self.duck(cv, c, x, y + 1.5 * wave(t, 2.4, i * 0.25), t, kx, 0.05 * wave(t, 2.4, i * 0.25 + 0.25), y, (0.64, 0.58, 0.53, 0.48)[i])  # biggest to smallest, and the biggest behind the smallest
+        return out
+
+    def over2(self, cv, c, t):
+        x, y, kx, i = self.ducklings(t)[2]  # one of them wonders who leads
+        out = bubble(cv, x - 22 * kx, y - 112, 0.62 * pop(t, 12.6, 15.0), "?", c["bubble"], c["ink"], tail=1 if kx > 0 else -1)
+        return out + self.air(cv, c, t, W, 9)
+
 
 class Reef(Scene, Cached):
     name = "reef"
     portrait = (1080.0, 1920.0, 0.0, 840.0)  # a tall water column: the eel's rock, and the starfish's brought near
+    second = (1920.0, 1080.0, -1920.0, 0.0)  # deeper in: an arch, an anchor, a clam, a jellyfish and a pufferfish
+    PUFF = (W + 1160.0, 440.0)  # the pufferfish's spot
 
     def right(self, cv):
         """How far the starfish's rock and what lives on it move for a portrait."""
@@ -1070,10 +1443,15 @@ class Reef(Scene, Cached):
                 coral=p.pick("bg+ansi_5:44", "bg+ansi_5:52"), coral2=p.pick("bg+ansi_1:40", "bg+ansi_1:48"),
                 fish=p("accent"), lost=max((p(k) for k in ("ansi_3", "ansi_5", "ansi_6", "ansi_2")), key=lambda q: sum((a - b) ** 2 for a, b in zip(q, p("accent")))), eel=mix(p("ansi_2"), p("ansi_4"), 0.5), star=mix(p("ansi_3"), p("ansi_1"), 0.45),
                 shell=p("ansi_5"), snail=p.pick("bg+fg:40", "bg+fg:30"), ink=ink, bub=p.pick("fg", "white"), bubble=p.pick("bg+fg:88", "white"),
+                abyss=p.pick("bg+ansi_6:3", "bg+ansi_6:46"), puffer=mix(p("ansi_3"), p("white"), 0.08), puffer2=mix(p("ansi_3"), ink, 0.35), belly=mix(p("ansi_3"), p("white"), 0.55),
+                jelly=mix(p("ansi_5"), p("white"), 0.3), anchor=mix(p.pick("bg+ansi_8:46", "bg+ansi_8:40"), p("ansi_3+ansi_1:40"), 0.35), anchor2=mix(mix(p.pick("bg+ansi_8:46", "bg+ansi_8:40"), p("ansi_3+ansi_1:40"), 0.35), ink, 0.35),
+                clam=p.pick("bg+fg:38", "bg+fg:22"), clam2=p.pick("bg+fg:24", "bg+fg:40"), mantle=mix(p("ansi_4"), p("ansi_5"), 0.4), sponge=p.pick("bg+ansi_3:40", "bg+ansi_3:50"),
             ))
         return self._c[1]
 
     def back(self, cv, p):
+        if cv.second:
+            return self.back2(cv, p)
         c = self.colors(p)
         top = -900.0 if cv.portrait else 0.0
         out = [L(cv, Shape().poly([(0, top), (W, top)] + [(x, 360 + 18 * math.sin(x / 140)) for x in range(W, -1, -40)]), c["top"], ss=1)]
@@ -1129,18 +1507,21 @@ class Reef(Scene, Cached):
                 x += self.right(cv)
             base, h = rnd.uniform(860, 960), rnd.uniform(280, 470)
             ph, per = rnd.random(), rnd.choice((4, 6))
-            pts = []
-            for k in range(13):
-                f = k / 12
-                pts.append((x + 34 * f**1.4 * wave(t, per, ph - f * 0.6), base - h * f))
-            col = c["kelp"] if i % 2 else c["kelp2"]
-            sh = Shape().poly(ribbon(pts, 16, 4))
-            for k in range(2, 12, 2):
-                px, py = pts[k]
-                side = 1 if k % 4 else -1
-                sh.ellipse(px + side * 14, py - 6, 16, 6, side * 0.6)
-            out.append(L(cv, sh, col, ss=2))
+            out.append(self.frond(cv, t, x, base, h, ph, per, c["kelp"] if i % 2 else c["kelp2"]))
         return out
+
+    def frond(self, cv, t, x, base, h, ph, per, col):
+        """One kelp frond from (x, base), h tall, swaying with a period of per seconds."""
+        pts = []
+        for k in range(13):
+            f = k / 12
+            pts.append((x + 34 * f**1.4 * wave(t, per, ph - f * 0.6), base - h * f))
+        sh = Shape().poly(ribbon(pts, 16, 4))
+        for k in range(2, 12, 2):
+            px, py = pts[k]
+            side = 1 if k % 4 else -1
+            sh.ellipse(px + side * 14, py - 6, 16, 6, side * 0.6)
+        return L(cv, sh, col, ss=2)
 
     def eel(self, t):
         e = ease_out(window(t, 14.0, 15.0)) * (1 - ease_in(window(t, 18.4, 19.3)))
@@ -1182,6 +1563,8 @@ class Reef(Scene, Cached):
         return 900 + (tail[0] - 900) * u, 620 + (tail[1] - 620) * u, 1
 
     def under(self, cv, p, t):
+        if cv.second:
+            return self.under2(cv, p, t)
         c = self.colors(p)
         out = []
         for i, got in enumerate(self.rays(cv)):
@@ -1224,12 +1607,12 @@ class Reef(Scene, Cached):
         for k in range(5):
             a = a0 + k * 2 * math.pi / 5 - math.pi / 2
             out.append(D(cv, sx + 16 * math.cos(a), sy + 16 * math.sin(a), 2.2, c["bub"], 0.45))
-        # the @ snail goes along its rock and back
+        # the @ snail goes along the foot of its rock and back, under the starfish and never over it
         u = (1 - math.cos(2 * math.pi * t / 24)) / 2
-        nx = 1500 + 220 * u + self.right(cv)
+        nx = 1490 + 220 * u + self.right(cv)
         kx = 1 if math.sin(2 * math.pi * t / 24) >= 0 else -1
         kx *= clamp(abs(math.sin(2 * math.pi * t / 24)) * 6)
-        ny = 812 - 26 * math.sin(math.pi * u)
+        ny = 960 - 5 * math.sin(math.pi * u)
         body = Shape().poly(spline([(-34, 0), (-10, -8), (30, -10), (44, -2), (30, 4), (-30, 4)], per=6)).line([(30, -8), (36, -30)], 3).line([(38, -6), (48, -26)], 3)
         out.append(L(cv, body.moved(nx, ny, 1.4, 0, 0, 0, kx if abs(kx) > 0.05 else 0.05), c["snail"]))
         sh = Shape()
@@ -1249,7 +1632,179 @@ class Reef(Scene, Cached):
 
     def over(self, cv, p, t):
         c = self.colors(p)
+        if cv.second:  # the little > startled by the O
+            x, y, kx = self.dart(t)
+            return bubble(cv, x + 10, y - 62, 0.8 * pop(t, 10.7, 11.9), "!", c["bubble"], c["ink"], tail=-1)
         return bubble(cv, 930, 548, pop(t, 10.2, 11.6), "!", c["bubble"], c["ink"], tail=-1)
+
+    # -- deeper in: the second landscape, a screen to the right
+
+    def back2(self, cv, p):
+        c = self.colors(p)
+        X = W
+        xs = range(X, X + W + 1, 40)
+        out = [L(cv, Shape().poly([(X, 0), (X + W, 0)] + [(x, 360 + 18 * math.sin(x / 140)) for x in reversed(xs)]), c["top"], ss=1)]
+        out.append(L(cv, Shape().poly([(x, 360 + 18 * math.sin(x / 140)) for x in xs] + [(X + W, 700), (X, 700)]), c["mid"], ss=1))
+        out.append(L(cv, Shape().poly([(x, 690 + 14 * math.sin(x / 170 + 1)) for x in xs] + [(X + W, H), (X, H)]), c["low"], ss=1))
+        out.append(L(cv, Shape().ellipse(X + 1460, 600, 760, 420), c["abyss"], 0.55, ss=1, soft=140))  # deeper, darker
+        out.append(L(cv, Shape().poly([(X, H)] + spline([(X, 806), (X + 380, 836), (X + 800, 802), (X + 1200, 846), (X + 1600, 818), (X + 1920, 840)], closed=False, per=16) + [(X + W, H)]), c["sand"], ss=2))
+        rip = Shape()
+        rnd = random.Random(29)
+        for _ in range(16):
+            x, y = X + rnd.uniform(0, W), rnd.uniform(890, 1060)
+            rip.line(bezier((x - 50, y), (x - 20, y - 8), (x + 20, y - 8), (x + 50, y), n=10), 3)
+        out.append(L(cv, rip, c["sand2"], 0.8, ss=2))
+        # the arch on the left, a brain coral on it
+        out.append(L(cv, Shape().poly(spline([(X + 50, 880), (X + 80, 700), (X + 190, 560), (X + 360, 516), (X + 530, 580), (X + 610, 720), (X + 650, 880), (X + 360, 900)], per=10)), c["rock"], ss=2))
+        out.append(L(cv, Shape().poly(spline([(X + 110, 860), (X + 150, 700), (X + 250, 600), (X + 380, 580), (X + 300, 640), (X + 200, 760)], per=8)), c["rock2"], 0.5, ss=2))
+        out.append(L(cv, Shape().poly([(X + 250, 832)] + spline([(X + 250, 832), (X + 262, 750), (X + 330, 692), (X + 412, 714), (X + 462, 792), (X + 472, 832)], closed=False, per=10)), c["low"], ss=2))
+        out.append(L(cv, Shape().poly(spline([(X + 236, 834), (X + 330, 818), (X + 486, 834), (X + 470, 850), (X + 250, 850)], per=6)), c["sand"], ss=2))
+        bx, by = X + 400.0, 528.0
+        out.append(L(cv, Shape().poly(ellipse_pts(bx, by, 84, 50, n=60, a0=math.pi, a1=2 * math.pi)), c["coral"], ss=2))
+        brain = Shape()
+        for k in range(4):
+            r = 70 - 16 * k
+            brain.line([(bx + r * math.cos(a), by + (r * 0.58) * math.sin(a) + 4 * math.sin(a * 9 + k)) for a in [math.pi + i * math.pi / 30 for i in range(31)]], 3)
+        out.append(L(cv, brain, mix(c["coral"], c["ink"], 0.3), 0.6, ss=2))
+        # tube sponges, a fan
+        for x, h, w in ((X + 700, 120, 30), (X + 740, 160, 34), (X + 782, 96, 26)):
+            out.append(L(cv, Shape().line([(x, 830), (x + 4, 830 - h)], w), c["sponge"], ss=2))
+            out.append(L(cv, Shape().ellipse(x + 4, 830 - h, w * 0.36, w * 0.14), c["hole"], ss=2))
+        fan = Shape()
+        fx, fy = X + 1330.0, 846.0
+        for k in range(11):
+            a = -math.pi / 2 + (k - 5) * 0.17
+            fan.line(bezier((fx, fy), (fx + 50 * math.cos(a), fy - 60), (fx + 140 * math.cos(a), fy + 140 * math.sin(a) + 20), (fx + 180 * math.cos(a), fy + 180 * math.sin(a)), n=12), 5)
+        out.append(L(cv, fan, c["coral2"], ss=2))
+        # the anchor, half in the sand, and its chain
+        ax, ay, rot = X + 1000.0, 776.0, 0.26
+        tf = lambda sh: sh.moved(ax, ay, 1.0, rot)
+        anc = Shape().line([(0, -190), (0, 40)], 18).line([(-62, -150), (62, -150)], 14)
+        anc.line(spline([(-90, 0), (-60, 50), (0, 70), (60, 50), (90, 0)], closed=False, per=8), 18)
+        anc.poly([(-104, -18), (-72, 4), (-96, 22)]).poly([(104, -18), (72, 4), (96, 22)])
+        ring = ellipse_pts(0, -212, 18, 18, n=30)
+        anc.line(ring + [ring[0]], 8)
+        out.append(L(cv, tf(anc), c["anchor"], ss=2, above=850))
+        top = tf(Shape().poly([(0, -230)])).cmds[0][1][0]
+        chain = Shape()
+        pts = bezier(top, (top[0] + 120, top[1] + 30), (top[0] + 160, 880), (X + 1250, 884), n=40)
+        for i in range(0, len(pts) - 1, 2):
+            (x0, y0), (x1, y1) = pts[i], pts[i + 1]
+            chain.ellipse((x0 + x1) / 2, (y0 + y1) / 2, 9, 5 if i % 4 else 3, math.atan2(y1 - y0, x1 - x0))
+        out.append(L(cv, chain, c["anchor2"], ss=2))
+        out.append(L(cv, Shape().ellipse(ax - 40, 850, 120, 12), c["sand2"], 0.6, ss=2))
+        # the giant clam
+        cx, cy = X + 1640.0, 862.0
+        out.append(L(cv, Shape().ellipse(cx, cy + 10, 120, 50), c["clam"], ss=2))
+        out.append(L(cv, Shape().ellipse(cx, cy - 10, 104, 20), c["mantle"], ss=2))
+        lip = [(cx - 110 + k * 11, cy - 6 + (6 if k % 2 else -6)) for k in range(21)]
+        out.append(L(cv, Shape().line(lip, 6), c["clam2"], ss=2))
+        ridges = Shape()
+        for k in range(-3, 4):
+            ridges.line(bezier((cx + k * 28, cy + 4), (cx + k * 30, cy + 24), (cx + k * 32, cy + 44), (cx + k * 26, cy + 56), n=8), 3)
+        out.append(L(cv, ridges, c["clam2"], 0.7, ss=2))
+        rnd = random.Random(30)
+        for _ in range(9):
+            out.append(D(cv, cx + rnd.uniform(-80, 80), cy - 10 + rnd.uniform(-8, 8), rnd.uniform(2.5, 4.5), c["bub"], 0.5))
+        return out
+
+    def dart(self, t):
+        """The little > fish: it comes up to the pufferfish, sees it swell, turns and goes back a <."""
+        px, py = self.PUFF
+        stop = (px - 150, py - 10)
+        if t < 5.0 or t >= 13.2:  # off the screen's left edge
+            return W - 80.0, stop[1], 1
+        if t < 10.6:
+            u = ease_out(window(t, 5.0, 10.6))
+            return W - 80 + (stop[0] - W + 80) * u, stop[1] + 14 * wave(t, 2.8) * (1 - u), 1
+        if t < 11.4:
+            return stop[0] - 6 * ease_out(window(t, 10.6, 10.8)), stop[1], 1
+        kx = 1 - 2 * ease_io(window(t, 11.4, 11.6))
+        u = ease_in(window(t, 11.6, 13.2))
+        return stop[0] - 6 + (W - 80 - stop[0] + 6) * u, stop[1] - 30 * u, kx
+
+    def puffer(self, cv, c, t):
+        """The pufferfish, an o, that swells to an O: its spines out, its fins going."""
+        x, y = self.PUFF[0] + 40 * wave(t, 24), self.PUFF[1] + 14 * wave(t, 6)
+        puff = ease_out(window(t, 10.6, 11.0)) * (1 - ease_io(window(t, 15.0, 17.6)))
+        r = 36 + 28 * puff
+        out = []
+        tail = 1 - 0.25 * wave(t, 0.8)
+        out.append(L(cv, Shape().poly([(x + r - 6, y), (x + r + 28.3, y - 18.3 * tail), (x + r + 21.7, y), (x + r + 28.3, y + 18.3 * tail)]), c["puffer2"]))
+        if puff > 0.02:
+            sp = Shape()
+            for k in range(16):
+                a = 2 * math.pi * k / 16 + 0.1
+                sp.poly([(x + (r - 4) * math.cos(a - 0.12), y + (r - 4) * math.sin(a - 0.12)), (x + (r + 15 * puff) * math.cos(a), y + (r + 15 * puff) * math.sin(a)), (x + (r - 4) * math.cos(a + 0.12), y + (r - 4) * math.sin(a + 0.12))])
+            out.append(L(cv, sp, c["puffer2"]))
+        out.append(L(cv, Shape().circle(x, y, r), c["puffer"]))
+        out.append(L(cv, Shape().ellipse(x - r * 0.08, y + r * 0.42, r * 0.78, r * 0.5), c["belly"]))
+        rnd = random.Random(41)
+        for _ in range(7):
+            a, d = rnd.uniform(3.6, 5.9), rnd.uniform(0.35, 0.75)
+            out.append(D(cv, x + r * d * math.cos(a), y + r * d * math.sin(a), 3.2 + 2.2 * puff, c["puffer2"], 0.7))
+        fl = wave(t, 0.5)
+        out.append(L(cv, Shape().ellipse(x + r * 0.1, y + r * 0.08, 12, 6 + 3 * fl, 0.9 + 0.3 * fl), c["puffer2"]))
+        ex, ey = x - r * 0.48, y - r * 0.3
+        out += [D(cv, ex, ey, 8 + 3 * puff, c["bubble"]), D(cv, ex - 2, ey, 4 + 2 * puff, c["ink"])]
+        mo = ellipse_pts(x - r + 2, y + r * 0.12, 5 + 2 * puff, 5 + 2 * puff, n=20)
+        out.append(L(cv, Shape().line(mo + [mo[0]], 2.6), c["puffer2"]))  # its mouth, an o of its own
+        return out
+
+    def jelly(self, cv, c, t):
+        x, y = W + 760 + 24 * wave(t, 12, 0.2), 300 + 40 * wave(t, 24, 0.1)
+        b = wave(t, 3)
+        rx, ry = 52 * (1 + 0.08 * b), 40 * (1 - 0.08 * b)
+        out = []
+        tent = Shape()
+        for k in range(5):
+            x0 = x - rx * 0.6 + k * rx * 0.3
+            tent.line([(x0 + 8 * wave(t, 3, k * 0.17 + j / 10) * j / 8, y + 4 + j * 15) for j in range(9)], 3)
+        out.append(L(cv, tent, c["jelly"], 0.55, ss=2))
+        rim = [(x + rx * math.cos(a), y + 6 * math.sin(6 * a) ** 2) for a in [math.pi * i / 40 for i in range(41)]]
+        out.append(L(cv, Shape().poly(ellipse_pts(x, y, rx, ry, n=48, a0=math.pi, a1=2 * math.pi) + rim[::-1]), c["jelly"], 0.7))
+        out.append(L(cv, Shape().ellipse(x - rx * 0.3, y - ry * 0.55, rx * 0.25, ry * 0.18, -0.3), c["bub"], 0.35))
+        return out
+
+    def under2(self, cv, p, t):
+        c = self.colors(p)
+        X = W
+        out = []
+        rays = self.cached(cv, "rays2", lambda: [cover(cv, Shape().poly([(x - 40, -10), (x + 50, -10), (x + 260, 900), (x + 90, 900)]), 1, soft=40) for x in (X + 240, X + 760, X + 1240)])
+        for i, got in enumerate(rays):
+            out.append(Layer(got, c["ray"], (0.045 if c["dark"] else 0.16) * (0.6 + 0.4 * wave(t, 8, i * 0.31))))
+        for i in range(8):  # the light on the surface
+            x = X + (i * 260 + 130 + 80 * wave(t, 12, i * 0.17)) % (W + 200) - 100
+            out.append(L(cv, Shape().line([(x - 50, 40 + 12 * (i % 3)), (x + 50, 40 + 12 * (i % 3))], 4), c["ray"], 0.18 if c["dark"] else 0.5, ss=2))
+        rnd = random.Random(16)
+        for i, (x, base, h) in enumerate(((X + 860, 900, 300), (X + 900, 920, 380), (X + 1800, 900, 420), (X + 1870, 930, 340), (X + 1530, 940, 260), (X + 30, 930, 360))):
+            out.append(self.frond(cv, t, x, base, h, rnd.random(), rnd.choice((4, 6)), c["kelp"] if i % 2 else c["kelp2"]))
+        out += self.jelly(cv, c, t)
+        rnd = random.Random(18)
+        for i in range(6):  # bubbles from the clam
+            t0 = i * 4 + rnd.uniform(0, 1.5)
+            u = ((t - t0) % 24) / 4.5
+            if u < 1:
+                out += self.bub(cv, c, X + 1640 + rnd.uniform(-60, 60) + 10 * wave(t, 1.6, i * 0.2), 846 - 700 * u, 5 + 2 * (i % 3))
+        # the lost < from the first screen, on its way there
+        tt = t if t < 12 else t - 24
+        if tt < 4:
+            lx, ly = W + 40 + 171 * (4 - tt), 620 + 10 * wave(t, 24 / 18)
+            out.append(self.chevron(cv, lx, ly, c["lost"], -1, wave(t, 0.4)))
+            out.append(D(cv, lx + 9, ly - 4, 2.6, c["ink"]))
+        out += self.puffer(cv, c, t)
+        if 5.0 <= t < 13.2:
+            x, y, kx = self.dart(t)
+            out.append(self.chevron(cv, x, y, c["fish"], kx if abs(kx) > 0.08 else 0.08, wave(t, 0.3 if t > 11.5 else 0.6), 22, 7.0))
+            out.append(D(cv, x - kx * 8, y - 4, 2.4, c["ink"]))
+        u = window(t, 15.0, 17.6)
+        if 0 < u < 1:  # the air let out
+            px, py = self.PUFF[0] + 40 * wave(t, 24), self.PUFF[1] + 14 * wave(t, 6)
+            for k in range(3):
+                v = (u * 3 - k * 0.4)
+                if 0 < v < 1:
+                    out += self.bub(cv, c, px - 40 - 10 * v, py - 10 - 120 * v, 4 + 2 * k)
+        return out
 
 
 class Campfire(Scene, Cached):
@@ -1257,7 +1812,10 @@ class Campfire(Scene, Cached):
     poster = 3.0
     FX, FY = 840.0, 880.0  # the fire
     portrait = (1080.0, 1920.0, -240.0, 840.0)  # the tent, the fire and the raccoon, the trees and the moon high
+    second = (1920.0, 1080.0, -1920.0, 0.0)  # the other side of the camp: the lake, the table, the cooler
     RX, RY = 1130.0, 884.0  # the raccoon's seat
+    BOX = (W + 860.0, 920.0)  # the cooler: the middle of its foot
+    LAMP = (W + 560.0, 806.0)  # the lantern on the table
 
     def colors(self, p):
         if not hasattr(self, "_c") or self._c[0] is not p:
@@ -1274,10 +1832,14 @@ class Campfire(Scene, Cached):
                 fur=fur, fur2=mix(fur, ink, 0.45), fur3=mix(fur, p("white"), 0.55), mask=mix(ink, fur, 0.12), ink=ink, eye=p.pick("bg+fg:92", "white"),
                 mallow=p.pick("fg+white:50", "white"), toast=mix(p("ansi_3"), ink, 0.25), char=mix(ink, p("ansi_1"), 0.1), smoke=p.pick("fg", "fg"),
                 bubble=p.pick("bg+fg:88", "white"),
+                lake=p.pick("bg+ansi_4:20", "bg+ansi_4:30"), lake2=p.pick("bg+ansi_4:40", "ansi_4+white:60"), canoe=p.pick("bg+ansi_1:46", "bg+ansi_1:56"),
+                cooler=p.pick("bg+ansi_4:44", "bg+ansi_4:60"), lid=p.pick("bg+fg:50", "bg+fg:22"), dog=mix(p("ansi_1"), p("ansi_3"), 0.35),
             ))
         return self._c[1]
 
     def back(self, cv, p):
+        if cv.second:
+            return self.back2(cv, p)
         c = self.colors(p)
         mx, my = (1120.0, -420.0) if cv.portrait else (1540.0, 200.0)
         out = [D(cv, mx, my, 110, c["halo"]), D(cv, mx, my, 50, c["moon"])]
@@ -1329,6 +1891,8 @@ class Campfire(Scene, Cached):
         return out
 
     def front(self, cv, p):
+        if cv.second:
+            return []
         return self.stones(cv, self.colors(p), 0, math.pi)
 
     def flame(self, cv, c, x, y, s, t, ph):
@@ -1374,6 +1938,7 @@ class Campfire(Scene, Cached):
             out.append(L(cv, Shape().line([tail[k], tail[k + 1]], 30 - k * 0.7), c["fur2"] if (k // 4) % 2 else c["fur"]))
         breathe = 1 + 0.02 * wave(t, 3)
         out.append(L(cv, Shape().poly(spline(at([(-38, -8), (-46, -60), (-30, -106 * breathe), (8, -114 * breathe), (38, -96), (48, -50), (36, -6)]), per=8)), c["fur"]))
+        out.append(L(cv, Shape().poly(spline(at([(-32, -96), (-45, -121 * breathe), (-36, -146 * breathe), (0, -152 * breathe), (16, -130 * breathe), (22, -100)]), per=6)), c["fur"]))  # the neck: the head sits on the body
         out.append(L(cv, Shape().ellipse(x0 - 12, y0 - 52, 22, 34), c["fur3"], 0.8))
         out.append(L(cv, Shape().ellipse(x0 - 30, y0 - 4, 16, 8).ellipse(x0 + 4, y0 - 2, 16, 8), c["fur2"]))
         paws, tip = self.pose(t)
@@ -1426,6 +1991,8 @@ class Campfire(Scene, Cached):
         return out
 
     def under(self, cv, p, t):
+        if cv.second:
+            return self.under2(cv, p, t)
         c = self.colors(p)
         out = [L(cv, Shape().ellipse(self.FX, self.FY + 10, 300, 70), c["glow"], (0.16 if c["dark"] else 0.08) * (0.85 + 0.15 * wave(t, 0.8)), ss=1, soft=40)]
         out += self.flame(cv, c, self.FX, self.FY, 1.0, t, 0.0)
@@ -1446,6 +2013,8 @@ class Campfire(Scene, Cached):
 
     def over(self, cv, p, t):
         c = self.colors(p)
+        if cv.second:
+            return []
         hx, hy = self.RX - 22, self.RY - 150
         out = bubble(cv, hx + 40, hy - 70, pop(t, 8.0, 9.6), "!", c["bubble"], c["ink"], tail=-1)
         u = window(t, 16.0, 18.4)
@@ -1453,10 +2022,156 @@ class Campfire(Scene, Cached):
             out.append(L(cv, glyph(Shape(), "n", hx + 40 + 20 * u, hy - 50 - 70 * u, 30, 3.4), c["bubble"], bump(u)))
         return out
 
+    # -- the other side of the camp: the second landscape, a screen to the right
+
+    def back2(self, cv, p):
+        c = self.colors(p)
+        X = W
+        out = []
+        if c["dark"]:
+            out += stars(cv, c["star"], 18, 90, 20, 560, alpha=0.45)
+        rnd = random.Random(11)
+        far = Shape()
+        for i in range(60):
+            x, h = X + i * 34 + rnd.uniform(-10, 10), rnd.uniform(70, 150)
+            far.poly([(x - 30, 760), (x, 760 - h), (x + 30, 760)])
+        far.rect(X, 740, W, 40)
+        out.append(L(cv, far, c["far"], ss=2))
+        # the lake behind the camp, its far shore under the trees
+        shore = spline([(X + 520, 776), (X + 760, 818), (X + 1100, 846), (X + 1500, 858), (X + 1920, 850)], closed=False, per=16)
+        out.append(L(cv, Shape().poly([(X + 400, 768), (X + W, 756), (X + W, 870)] + shore[::-1]), c["lake"], ss=2))
+        out.append(L(cv, Shape().poly([(X, 772)] + spline([(X, 772), (X + 300, 766), (X + 560, 776)], closed=False, per=8) + shore + [(X + W, H), (X, H)]), c["ground"], ss=2))
+        # the canoe, upside down on the shore
+        cx, cy = X + 1560.0, 884.0
+        out.append(L(cv, Shape().ellipse(cx, cy + 4, 170, 10), c["ground2"], ss=2))
+        hull = Shape().poly([(cx - 170, cy - 6)] + spline([(cx - 170, cy - 6), (cx - 110, cy - 38), (cx, cy - 48), (cx + 110, cy - 38), (cx + 170, cy - 6)], closed=False, per=10) + [(cx + 150, cy), (cx - 150, cy)])
+        out.append(L(cv, hull, c["canoe"], ss=2))
+        out.append(L(cv, Shape().line(spline([(cx - 160, cy - 10), (cx, cy - 22), (cx + 160, cy - 10)], closed=False, per=10), 4), c["tent2"], 0.8, ss=2))
+        out.append(L(cv, Shape().line([(cx - 60, cy - 2), (cx + 120, cy + 8)], 6).ellipse(cx + 138, cy + 9, 22, 7, 0.06), c["wood"], ss=2))  # a paddle
+        # the big trees framing it: the first screen's on the left edge, its own on the right
+        for x, side in ((1960.0, -1), (X + W + 40.0, -1)):
+            sh = Shape()
+            for k in range(6):
+                y = 300 + k * 90
+                hw = 90 + k * 26
+                sh.poly([(x + side * 40 - hw, y + 120), (x + side * 40, y - 40), (x + side * 40 + hw, y + 120)])
+            out.append(L(cv, sh, c["near"], ss=2))
+        # the picnic table, and the lantern's light on the ground
+        tx, ty = self.LAMP[0], 900.0
+        out.append(L(cv, Shape().ellipse(tx, ty + 14, 250, 18), c["ground2"], ss=2))
+        if c["dark"]:
+            out.append(L(cv, Shape().ellipse(tx + 60, ty + 10, 360, 70), c["glow"], 0.14, ss=1, soft=50))
+        legs = Shape().line([(tx - 150, ty + 10), (tx - 100, ty - 70)], 12).line([(tx - 60, ty + 10), (tx - 110, ty - 70)], 12)
+        legs.line([(tx + 150, ty + 10), (tx + 100, ty - 70)], 12).line([(tx + 60, ty + 10), (tx + 110, ty - 70)], 12)
+        out.append(L(cv, legs, c["wood"], ss=2))
+        out.append(L(cv, Shape().rect(tx - 230, ty - 36, 460, 14).rect(tx - 200, ty - 86, 400, 16), c["wood2"], ss=2))  # the bench, the top
+        out.append(L(cv, Shape().rect(tx - 200, ty - 70, 400, 6).rect(tx - 230, ty - 22, 460, 5), c["wood"], ss=2))
+        bx, by = self.BOX
+        out.append(L(cv, Shape().ellipse(bx, by + 4, 110, 10), c["ground2"], ss=2))
+        return out
+
+    def lamp(self, cv, c, t):
+        """The lantern on the table, and two moths going round it."""
+        x, y = self.LAMP
+        k = 0.88 + 0.12 * wave(t, 0.8) * wave(t, 1.2, 0.3)
+        out = [L(cv, Shape().circle(x, y - 34, 70), c["glow"], (0.3 if c["dark"] else 0.12) * k, ss=1, soft=40, mode="add")]
+        out.append(L(cv, Shape().rect(x - 22, y - 10, 44, 12).rect(x - 18, y - 66, 36, 8), c["wood2"], ss=2))
+        out.append(L(cv, Shape().rect(x - 16, y - 58, 32, 48), c["flame3"], 0.9 * k, ss=2))
+        out.append(L(cv, Shape().line(spline([(x - 16, y - 66), (x - 14, y - 86), (x, y - 92), (x + 14, y - 86), (x + 16, y - 66)], closed=False, per=6), 3), c["wood2"], ss=2))
+        out.append(L(cv, Shape().line([(x - 18, y - 58), (x - 18, y - 10)], 3).line([(x + 18, y - 58), (x + 18, y - 10)], 3), c["wood2"], ss=2))
+        for i, (per, rx, ry, ph) in enumerate(((3.0, 60, 34, 0.07), (4.0, 44, 52, 0.53))):
+            a = 2 * math.pi * (t / per + ph)
+            mx, my = x + rx * math.cos(a), y - 40 + ry * math.sin(a) * 0.6 + 6 * wave(t, 0.6, ph)
+            f = abs(math.sin(2 * math.pi * t / 0.1 + i + 0.3))
+            wings = Shape().poly([(mx, my), (mx - 9, my - 3 - 6 * f), (mx - 7, my + 3)]).poly([(mx, my), (mx + 9, my - 3 - 6 * f), (mx + 7, my + 3)])
+            out += [L(cv, wings, c["fur3"], 0.6), D(cv, mx, my, 2.2, c["fur2"])]
+        return out
+
+    def lid(self, t):
+        """How far the cooler's lid is up (radians) and how high the raccoon in it has come (0 in, 1 out)."""
+        shut = 1 - ease_in(window(t, 11.6, 12.3))
+        crack = 0.14 * (ease_out(window(t, 5.4, 6.0)) * shut + ease_out(window(t, 18.6, 19.2)) * (1 - ease_in(window(t, 20.6, 21.0))))
+        up = 0.62 * ease_io(window(t, 7.4, 8.2)) * shut
+        bounce = 0.05 * bump(window(t, 12.3, 12.6))
+        head = ease_out(window(t, 7.6, 8.4)) * (1 - ease_in(window(t, 11.3, 12.0)))
+        return crack + up + bounce, head
+
+    def cooler(self, cv, c, t):
+        bx, by = self.BOX
+        a, head = self.lid(t)
+        w, h = 150.0, 96.0
+        top = by - h
+        out = []
+        hinge = (bx + w / 2, top)
+        lid = lambda sh: sh.moved(0, 0, 1.0, a, hinge[0], hinge[1])  # up about its hinge at the back right
+        if a > 0.01:  # the dark inside, under the lid
+            out.append(L(cv, Shape().poly([(bx - w / 2, top + 2), hinge, (hinge[0] - w * math.cos(a), top - w * math.sin(a))]), c["door"]))
+        if a > 0.04 and head < 0.05:  # eyes in the dark
+            look = 3 * wave(t, 2.0)
+            blink = 6.8 <= t < 6.95 or 19.8 <= t < 19.95
+            ey = top - math.sin(a) * w * 0.42
+            for ex in (bx - 50, bx - 30):
+                if blink:
+                    out.append(L(cv, Shape().line([(ex - 5 + look, ey), (ex + 5 + look, ey)], 2.4), c["eye"]))
+                else:
+                    out += [D(cv, ex + look, ey, 5.0, c["flame3"] if c["dark"] else c["eye"]), D(cv, ex + look + 1, ey + 0.5, 2.2, c["ink"])]
+        if head > 0.01:  # the raccoon: up from the cooler with a hot dog, a look round, back down
+            hx, hy = bx - 34, top + 30 - 66 * head
+            look = 0.0 if t < 8.6 else -8 * ease_io(window(t, 8.6, 9.0)) + 16 * ease_io(window(t, 9.8, 10.2)) - 8 * ease_io(window(t, 10.8, 11.1))
+            fur = Shape().poly(spline([(hx - 40, hy + 14), (hx - 34, hy - 12), (hx - 8, hy - 30), (hx + 24, hy - 28), (hx + 44, hy - 8), (hx + 40, hy + 40), (hx - 36, hy + 40)], per=8))
+            ears = Shape().poly([(hx - 18, hy - 24), (hx - 8, hy - 52), (hx + 6, hy - 26)]).poly([(hx + 12, hy - 26), (hx + 26, hy - 50), (hx + 34, hy - 18)])
+            clip = top + 2
+            out += [L(cv, ears, c["fur2"], above=clip), L(cv, fur, c["fur"], above=clip)]
+            out.append(L(cv, Shape().poly(spline([(hx - 38, hy + 2), (hx - 22, hy - 14), (hx + 8, hy - 16), (hx + 34, hy - 6), (hx + 16, hy + 8), (hx - 10, hy + 4), (hx - 30, hy + 10)], per=6)).moved(look * 0.4), c["mask"], above=clip))
+            out.append(L(cv, Shape().ellipse(hx - 4 + look * 0.4, hy - 20, 26, 5), c["fur3"], above=clip))
+            for ex, ey in ((hx - 20, hy - 4), (hx + 8, hy - 6)):
+                out += [D(cv, ex + look * 0.5, ey, 5.5, c["eye"]), D(cv, ex + look * 0.8, ey + 0.5, 3.0, c["ink"])]
+            out.append(L(cv, Shape().ellipse(hx - 30 + look * 0.6, hy + 16, 14, 10), c["fur3"], above=clip))
+            out.append(L(cv, Shape().ellipse(hx - 42 + look * 0.6, hy + 12, 6, 5), c["ink"], above=clip))
+            dog = Shape().line([(hx - 64 + look * 0.6, hy + 27), (hx + 4 + look * 0.6, hy + 23)], 15)
+            out.append(L(cv, dog, c["dog"], above=clip))
+            out.append(L(cv, Shape().line([(hx - 57 + look * 0.6, hy + 23), (hx - 4 + look * 0.6, hy + 20)], 2.6), c["mallow"], 0.5, above=clip))
+        out.append(L(cv, Shape().rect(bx - w / 2, top, w, h), c["cooler"], ss=2))
+        out.append(L(cv, Shape().rect(bx - w / 2, by - 18, w, 8), c["lid"], 0.9, ss=2))
+        out.append(L(cv, Shape().line([(bx - 30, top + 30), (bx + 30, top + 30)], 8), mix(c["cooler"], c["ink"], 0.3), ss=2))
+        out.append(L(cv, lid(Shape().rect(bx - w / 2 - 4, top - 18, w + 8, 20)), c["lid"], ss=2))
+        return out
+
+    def under2(self, cv, p, t):
+        c = self.colors(p)
+        X = W
+        out = []
+        for i, (x, y, w) in enumerate(((X + 700, 786, 80), (X + 1000, 796, 120), (X + 1300, 790, 90), (X + 1720, 792, 70), (X + 1520, 776, 60))):
+            dx = 14 * wave(t, 6, i * 0.23)
+            out.append(L(cv, Shape().line([(x + dx - w / 2, y), (x + dx + w / 2, y)], 2.6), c["lake2"], 0.3 + 0.15 * wave(t, 4, i * 0.3), ss=2))
+        for t0, life, big in ((15.0, 2.4, 1.0), (15.5, 2.4, 0.6)):  # a fish, once
+            u = (t - t0) / life
+            if 0 <= u < 1:
+                rx = (14 + 60 * ease_out(u)) * big
+                pts = ellipse_pts(X + 1180, 812, rx, rx * 0.2, n=60)
+                out.append(L(cv, Shape().line(pts + [pts[0]], 2.4 * (1 - u) + 0.6), c["lake2"], 0.8 * (1 - u), ss=2))
+        u = window(t, 14.6, 15.1)
+        if 0 < u < 1:
+            fx, fy = X + 1150 + 60 * u, 812 - 46 * bump(u)
+            out.append(L(cv, Shape().ellipse(fx, fy, 16, 6, -1.4 + 2.8 * u), c["lake2"]))
+        if c["dark"]:
+            rnd = random.Random(12)
+            for i in range(9):
+                fx = X + rnd.uniform(500, 1800) + 50 * wave(t, 24 / rnd.choice((1, 2, 3)), rnd.random())
+                fy = rnd.uniform(700, 790) + 24 * wave(t, 24 / rnd.choice((2, 3, 4)), rnd.random())
+                a = 0.5 + 0.5 * wave(t, 24 / rnd.choice((4, 6, 8)), rnd.random())
+                out += [D(cv, fx, fy, 8, c["glow"], 0.14 * a), D(cv, fx, fy, 2.2, c["glow"], 0.9 * a)]
+        out += self.lamp(cv, c, t)
+        out += self.cooler(cv, c, t)
+        return out
+
 
 class Ufo(Scene, Cached):
     name = "ufo"
     portrait = (1080.0, 1920.0, -640.0, 840.0)  # the saucer and the cow in the middle, a tall sky with its planet
+    second = (1920.0, 1080.0, -1920.0, 0.0)  # another stretch of the dunes: a road, its sign, a windmill, a coyote
+    MILL = (W + 420.0, 548.0)  # the windmill's wheel
+    DOG = (W + 1740.0, 884.0)  # the coyote, on its rock
     poster = 8.0
     HZ = 720.0
     COW = (1180.0, 862.0)
@@ -1474,11 +2189,16 @@ class Ufo(Scene, Cached):
                 beam=p("ansi_2"), lights=[p("ansi_1"), p("ansi_3"), p("ansi_2"), p("ansi_6"), p("ansi_5")],
                 cow=p.pick("fg+white:40", "white"), spot=mix(ink, p("bg"), 0.1), nose=p.pick("ansi_5+white:45", "ansi_5+white:50"), horn=p.pick("bg+ansi_3:40", "bg+ansi_3:50"),
                 ink=ink, bubble=p.pick("bg+fg:88", "white"),
+                road=mix(p.pick("bg+ansi_3:24", "bg+ansi_3:38"), ink, 0.3), paint=p.pick("bg+ansi_3:60", "white"), sign=p("ansi_3"), metal=p.pick("bg+fg:36", "bg+fg:46"),
+                water=p.pick("bg+ansi_4:40", "bg+ansi_4:50"), coyote=mix(p("ansi_3"), p("muted"), 0.55), coyote2=mix(mix(p("ansi_3"), p("muted"), 0.55), ink, 0.3),
+                weed=mix(p.pick("bg+ansi_3:40", "bg+ansi_3:52"), ink, 0.2), rock=p.pick("bg+ansi_1:22", "bg+ansi_1:30"),
             ))
         return self._c[1]
 
     def back(self, cv, p):
         c = self.colors(p)
+        if cv.second:
+            return self.back2(cv, c)
         out = stars(cv, c["star"], 23, 240 if cv.portrait else 120, -800 if cv.portrait else 20, self.HZ - 40, alpha=0.5 if c["dark"] else 0.0)
         px, py = (900.0, -440.0) if cv.portrait else (380.0, 230.0)
         out += [D(cv, px, py, 44, c["planet"])]
@@ -1572,6 +2292,8 @@ class Ufo(Scene, Cached):
 
     def under(self, cv, p, t):
         c = self.colors(p)
+        if cv.second:
+            return self.under2(cv, c, t)
         out = []
         u = self.ufopos(t)
         cx, cy, rot, lift = self.cowpos(t)
@@ -1600,11 +2322,144 @@ class Ufo(Scene, Cached):
 
     def over(self, cv, p, t):
         c = self.colors(p)
+        if cv.second:  # the coyote's howl
+            x, y = self.DOG
+            return bubble(cv, x - 110, y - 250, 0.8 * pop(t, 3.4, 5.8), "ooo", c["bubble"], c["ink"], tail=1)
         cx, cy, rot, lift = self.cowpos(t)
         out = bubble(cv, cx - 140, cy - 150, pop(t, 8.0, 10.4), "moo", c["bubble"], c["ink"], tail=1)
         hx, hy = self.HOVER
         out += bubble(cv, hx + 110, hy - 90, pop(t, 11.2, 12.8), "?", c["bubble"], c["ink"], tail=-1)
         out += bubble(cv, cx - 150, cy - 190, pop(t, 19.8, 21.6), "?", c["bubble"], c["ink"], tail=1)
+        return out
+
+    # -- another stretch of the dunes: the second landscape, a screen to the right
+
+    def back2(self, cv, c):
+        X = W
+        HZ = self.HZ
+        out = stars(cv, c["star"], 24, 120, 20, HZ - 40, alpha=0.5 if c["dark"] else 0.0)
+        out.append(L(cv, Shape().poly([(X, HZ), (X + 110, HZ), (X + 140, 590), (X + 360, 584), (X + 392, HZ), (X + 1290, HZ), (X + 1320, 652), (X + 1520, 646), (X + 1560, 680), (X + 1780, 676), (X + 1800, HZ), (X + W, HZ), (X + W, HZ + 40), (X, HZ + 40)]), c["mesa"], ss=2))
+        for col, pts in ((c["dune"], [(X, 735), (X + 420, 704), (X + 900, 738), (X + 1400, 708), (X + 1920, 730)]), (c["dune2"], [(X, 800), (X + 480, 772), (X + 1000, 806), (X + 1560, 776), (X + 1920, 796)]), (c["dune3"], [(X, 900), (X + 640, 880), (X + 1260, 918), (X + 1920, 894)])):
+            out.append(L(cv, Shape().poly([(X, H)] + spline(pts, closed=False, per=16) + [(X + W, H)]), col, ss=2))
+        # the road to the horizon, its middle line
+        vx = X + 1040.0
+        out.append(L(cv, Shape().poly([(vx - 8, HZ + 1), (vx + 8, HZ + 1), (X + 1470, H), (X + 570, H)]), c["road"], ss=2))
+        dash = Shape()
+        for k in range(9):
+            u0, u1 = (k / 9) ** 2, ((k + 0.5) / 9) ** 2
+            y0, y1 = HZ + (H - HZ) * u0, HZ + (H - HZ) * u1
+            x0, x1 = vx + (X + 1020 - vx) * u0, vx + (X + 1020 - vx) * u1
+            dash.poly([(x0 - 1 - 6 * u0, y0), (x0 + 1 + 6 * u0, y0), (x1 + 1 + 6 * u1, y1), (x1 - 1 - 6 * u1, y1)])
+        out.append(L(cv, dash, c["paint"], 0.8, ss=2))
+        for x, y, s in ((X + 1260, 780, 0.55), (X + 170, 950, 1.05), (X + 1930, 760, 0.5)):
+            out.append(L(cv, self.cactus(x, y, s), c["cactus"], ss=2))
+        # the windmill over its trough
+        mx, my = self.MILL
+        tower = Shape()
+        for side in (-1, 1):
+            tower.line([(mx + side * 50, 846), (mx + side * 9, my + 18)], 7)
+        for k, y in enumerate((800, 740, 680, 620)):
+            f = (846 - y) / (846 - my - 18)
+            hw = 50 - 41 * f
+            tower.line([(mx - hw, y), (mx + hw, y)], 4)
+            g = (846 - y - 60) / (846 - my - 18)
+            hw2 = 50 - 41 * g
+            tower.line([(mx - hw, y), (mx + hw2, y - 60)], 3)
+        out.append(L(cv, Shape().ellipse(mx + 60, 852, 140, 10), c["shadow"], 0.3, ss=2))
+        out.append(L(cv, tower, c["metal"], ss=2))
+        out.append(L(cv, Shape().rect(mx + 50, 812, 140, 36), c["metal"], ss=2))
+        out.append(L(cv, Shape().rect(mx + 56, 812, 128, 8), c["water"], ss=2))
+        out.append(L(cv, Shape().line([(mx + 24, 760), (mx + 24, 700)], 4).line([(mx + 24, 760), (mx + 60, 760), (mx + 60, 812)], 4), c["metal"], ss=2))  # the pipe
+        out.append(L(cv, Shape().line([(mx, my), (mx + 110, my - 4)], 6).poly([(mx + 92, my - 34), (mx + 150, my - 26), (mx + 150, my + 18), (mx + 92, my + 22)]), c["metal"], ss=2))  # the tail vane
+        # the sign: watch for saucers
+        sx, sy = X + 1420.0, 724.0
+        out.append(L(cv, Shape().line([(sx, sy + 40), (sx, 906)], 9), c["metal"], ss=2))
+        out.append(L(cv, Shape().poly([(sx, sy - 74), (sx + 74, sy), (sx, sy + 74), (sx - 74, sy)]), c["ink"], ss=2))
+        out.append(L(cv, Shape().poly([(sx, sy - 66), (sx + 66, sy), (sx, sy + 66), (sx - 66, sy)]), c["sign"], ss=2))
+        pic = Shape().ellipse(sx, sy - 28, 26, 7).ellipse(sx, sy - 33, 10, 7)  # a saucer
+        pic.poly([(sx - 6, sy - 22), (sx + 6, sy - 22), (sx + 18, sy + 2), (sx - 18, sy + 2)])  # its beam
+        pic.ellipse(sx, sy + 14, 20, 10).line([(sx - 14, sy + 18), (sx - 14, sy + 32)], 4).line([(sx + 12, sy + 18), (sx + 12, sy + 32)], 4)
+        pic.ellipse(sx - 22, sy + 8, 8, 6).line([(sx + 18, sy + 10), (sx + 26, sy + 20)], 2.4)  # a cow, going up
+        out.append(L(cv, pic, c["ink"], ss=4))
+        # the coyote's rock
+        x, y = self.DOG
+        out.append(L(cv, Shape().ellipse(x + 10, y + 26, 110, 10), c["shadow"], 0.3, ss=2))
+        out.append(L(cv, Shape().poly(spline([(x - 90, y + 26), (x - 70, y - 4), (x - 10, y - 14), (x + 60, y - 8), (x + 100, y + 26)], per=8)), c["rock"], ss=2))
+        return out
+
+    def wheel(self, cv, c, t):
+        mx, my = self.MILL
+        a0 = 2 * math.pi * t / 12  # twice round a loop
+        bl = Shape()
+        for k in range(16):
+            a = a0 + 2 * math.pi * k / 16
+            ca, sa = math.cos(a), math.sin(a)
+            bl.poly([(mx + 22 * ca, my + 22 * sa), (mx + 74 * math.cos(a - 0.12), my + 74 * math.sin(a - 0.12)), (mx + 74 * math.cos(a + 0.08), my + 74 * math.sin(a + 0.08))])
+        ring = ellipse_pts(mx, my, 56, 56, n=48)
+        return [L(cv, bl, c["metal"], ss=2), L(cv, Shape().line(ring + [ring[0]], 3), c["shadow"], 0.4, ss=2), D(cv, mx, my, 12, c["shadow"]), D(cv, mx, my, 6, c["metal"])]
+
+    def coyote(self, cv, c, t):
+        """The coyote on its rock: it looks up after the saucer, howls, and settles."""
+        x, y = self.DOG[0], self.DOG[1] - 10
+        up = ease_io(window(t, 2.4, 3.2)) * (1 - ease_io(window(t, 6.2, 7.2)))
+        sh = lambda s: s.moved(x, y, 1.35)
+        tail = Shape().poly(ribbon(bezier((26, -12), (52, -4), (70, 2), (92, -4 + 3 * wave(t, 4)), n=12), 22, 8))
+        out = [L(cv, sh(tail), c["coyote2"])]
+        body = Shape().ellipse(18, -26, 30, 26).poly(spline([(-20, -4), (-26, -40), (-18, -70), (0, -80), (18, -62), (36, -30), (30, -4)], per=8))
+        body.line([(-16, -40), (-18, -2)], 9).line([(-4, -40), (-6, -2)], 9).ellipse(-21, -2, 7, 4).ellipse(-9, -2, 7, 4)
+        out.append(L(cv, sh(body), c["coyote"]))
+        nk = (-6, -76)
+        tilt = 0.85 * up
+        turn = lambda s: s.moved(0, 0, 1, tilt, nk[0], nk[1])
+        head = Shape().poly([(-22, -62), (-12, -92), (6, -86), (8, -60)]).ellipse(-16, -96, 18, 14)
+        head.poly([(-26, -104), (-58, -97), (-58, -90), (-26, -86)])
+        head.poly([(-14, -106), (-7, -134), (1, -105)]).poly([(-3, -104), (6, -130), (10, -99)])
+        out.append(L(cv, sh(turn(head)), c["coyote"]))
+        out.append(L(cv, sh(turn(Shape().ellipse(-36, -88, 14, 4, 0.1))), c["coyote2"], 0.6))  # its jaw's shade
+        ex, ey = sh(turn(Shape().poly([(-22, -100)]))).cmds[0][1][0]
+        if 4.0 <= t < 5.4:  # eyes shut while it howls
+            out.append(L(cv, Shape().line([(ex - 5, ey), (ex + 5, ey)], 2.4), c["ink"]))
+        else:
+            out.append(D(cv, ex, ey, 3.6, c["ink"]))
+        nx, ny = sh(turn(Shape().poly([(-58, -94)]))).cmds[0][1][0]
+        out.append(D(cv, nx, ny, 4.6, c["ink"]))
+        return out
+
+    def streak(self, t):
+        """The saucer on its way to the first screen: in from the sky, out at the left edge at 2 s, as it comes in there."""
+        if not 1.0 <= t < 2.6:
+            return None
+        k = 2.0 - t
+        return 2160 + 700 * k, 100 - 214 * k, -0.25 if t < 2.0 else -0.25 * (1 - ease_out(window(t, 2.0, 4.8)))
+
+    def under2(self, cv, c, t):
+        X = W
+        out = []
+        st = self.streak(t)
+        if st:
+            bx, by, br = st
+            if t >= 2.0:
+                u = ease_out(window(t, 2.0, 4.8))
+                bx, by = 2160 + (self.HOVER[0] - 2160) * u, 100 + (self.HOVER[1] - 100) * u
+            for k in range(3):
+                out.append(L(cv, Shape().line([(bx + 150 + k * 30, by - 30 - k * 14), (bx + 300 + k * 50, by - 70 - k * 26)], 3), c["saucer"], 0.5))
+            out += self.saucer(cv, c, bx, by, br, t)
+        out += self.wheel(cv, c, t)
+        out += self.coyote(cv, c, t)
+        # a tumbleweed, once a loop, right to left down the road's side
+        u = window(t, 9.0, 17.0)
+        if 0 < u < 1:
+            x = X + W + 80 - (W + 160) * u
+            hop = abs(math.sin(math.pi * 5 * u))
+            y = 892 - 44 * hop - 6 * (1 - u)
+            ang = -u * 14 * math.pi
+            weed = Shape()
+            for k in range(7):
+                a = ang + k * math.pi / 7
+                pts = ellipse_pts(x, y, 40, 16, a, n=28)
+                weed.line(pts + [pts[0]], 3)
+            out.append(L(cv, Shape().ellipse(x, 912, 40 * (1 - 0.4 * hop), 6), c["shadow"], 0.25, ss=1, soft=3))
+            out.append(L(cv, weed, c["weed"], ss=2))
         return out
 
 
@@ -1614,18 +2469,25 @@ class Pigeons(Scene, Cached):
     WIRE = (140.0, 1780.0, 410.0, 56.0)  # its ends, its height, its sag
     PERCH = (560.0, 720.0, 1060.0, 1220.0, 1360.0)
     portrait = (1080.0, 1920.0, -420.0, 840.0)  # the wire with its birds across, a tall sky for the couriers
+    second = (1920.0, 1080.0, -1920.0, 0.0)  # more of the wire and the roofs: the loft the couriers fly to and from
+    WIRE2 = (1780.0, W + 1700.0, 410.0, 70.0)  # the wire's next span, from the first screen's pole to its own
+    HOLES = (W + 700.0, W + 820.0, W + 940.0)  # the loft's doors
+    BOARD = 730.0  # the loft's landing board
 
     def colors(self, p):
         if not hasattr(self, "_c") or self._c[0] is not p:
             dk = p.dark
             ink = p.pick("ansi_0", "fg")
-            bird = mix(p("muted"), p("ansi_4"), 0.18)
+            bird = mix(p("muted"), p("ansi_4"), 0.3)  # a rock dove: blue-grey, the head darker, the wings lighter and barred, the neck green and purple
             self._c = (p, dict(
                 dark=dk, sky=p("bg"), sun=p.pick("fg+ansi_3:15", "ansi_3+bg:30"), halo=p.pick("bg+accent:6", "bg+ansi_3:10"), star=p.pick("fg", "white"),
                 cloud=p.pick("bg+fg:5", "bg+white:70"), far=p.pick("bg+fg:6", "bg+fg:7"), near=p.pick("bg+fg:11", "bg+fg:13"), roof=p.pick("bg+fg:15", "bg+fg:18"),
                 window=p.pick("ansi_3", "bg+fg:4"), pole=p.pick("bg+fg:18", "bg+fg:45"), wire=p.pick("bg+fg:30", "bg+fg:50"),
-                bird=bird, bird2=mix(bird, ink, 0.3), bird3=mix(bird, p("white"), 0.35), neck=mix(p("ansi_2"), p("ansi_5"), 0.5), foot=mix(p("ansi_1"), p("white"), 0.3),
-                eye=p("ansi_3"), ink=ink, letter=p.pick("fg+white:40", "white"), seal=p("ansi_1"), smoke=p.pick("fg", "fg"), bubble=p.pick("bg+fg:88", "white"),
+                bird=bird, bird2=mix(bird, ink, 0.3), head=mix(bird, ink, 0.34), wing=mix(bird, p("white"), 0.34), wing2=mix(bird, p("white"), 0.18), bar=mix(bird, ink, 0.62),
+                green=mix(mix(p("ansi_6"), p("ansi_2"), 0.4), bird, 0.2), purple=mix(mix(p("ansi_5"), p("ansi_4"), 0.25), bird, 0.2), cere=mix(p("white"), bird, 0.4),
+                foot=mix(p("ansi_1"), p("white"), 0.3), eye=mix(p("ansi_3"), p("ansi_1"), 0.45), ink=ink, letter=p.pick("fg+white:40", "white"), seal=p("ansi_1"), smoke=p.pick("fg", "fg"), bubble=p.pick("bg+fg:88", "white"),
+                loft=p.pick("bg+ansi_1:30", "bg+ansi_1:42"), loft2=mix(p.pick("bg+ansi_1:30", "bg+ansi_1:42"), ink, 0.35), plank=p.pick("bg+ansi_3:34", "bg+ansi_3:46"),
+                hole=mix(ink, p("bg"), 0.15), brick=p.pick("bg+ansi_1:20", "bg+ansi_1:28"),
             ))
         return self._c[1]
 
@@ -1634,7 +2496,14 @@ class Pigeons(Scene, Cached):
         m, half = (x0 + x1) / 2, (x1 - x0) / 2
         return y + low + sag * (1 - ((x - m) / half) ** 2)
 
+    def wire2_y(self, x, low=0.0):
+        x0, x1, y, sag = self.WIRE2
+        m, half = (x0 + x1) / 2, (x1 - x0) / 2
+        return y + low + sag * (1 - ((x - m) / half) ** 2)
+
     def back(self, cv, p):
+        if cv.second:
+            return self.back2(cv, p)
         c = self.colors(p)
         sx, sy = (1300.0, -430.0) if cv.portrait else (1560.0, 190.0)
         out = [D(cv, sx, sy, 110, c["halo"]), D(cv, sx, sy, 50, c["sun"])]
@@ -1688,20 +2557,28 @@ class Pigeons(Scene, Cached):
             out.append(L(cv, Shape().line(pts, 2.4), c["wire"], ss=2))
         return out
 
-    def perched(self, cv, c, x, t, ph, kx=1.0, nod=0.0, letter=False):
-        y = self.wire_y(x) - 2
+    def perched(self, cv, c, x, t, ph, kx=1.0, nod=0.0, letter=False, y=None):
+        """A pigeon standing on the wire at x, or at y on something else; with a letter in its beak, letter."""
+        y = (self.wire_y(x) if y is None else y) - 2
         bob = 5 * max(0.0, wave(t, 1.6, ph)) + 8 * nod
         sh = lambda s: s.moved(x, y, 1.3, 0, 0, 0, kx)
         out = [L(cv, sh(Shape().line([(-6, 0), (-8, -12)], 3).line([(6, 0), (4, -12)], 3)), c["foot"])]
         out.append(L(cv, sh(Shape().poly([(26, -26), (54, -14), (50, -6), (24, -16)])), c["bird2"]))
+        out.append(L(cv, sh(Shape().poly([(45, -18), (54, -14), (50, -6), (42, -10)])), c["bar"]))  # the tail's dark band
         out.append(L(cv, sh(Shape().poly(spline([(-30, -40), (-8, -58), (20, -50), (34, -28), (14, -12), (-18, -14)], per=8))), c["bird"]))
-        out.append(L(cv, sh(Shape().poly(spline([(-4, -50), (22, -44), (32, -28), (12, -24)], per=5))), c["bird2"], 0.7))
+        out.append(L(cv, sh(Shape().poly(spline([(-8, -50), (18, -48), (34, -30), (26, -22), (4, -24)], per=5))), c["wing"]))
+        out.append(L(cv, sh(Shape().line([(10, -40), (16, -27)], 3.2).line([(19, -40), (25, -27)], 3.2)), c["bar"]))  # its two bars
         hx, hy = -26 - bob * 0.6, -60 + bob * 0.5
-        out.append(L(cv, sh(Shape().ellipse(hx + 6, hy + 14, 15, 13)), c["neck"]))
-        out.append(L(cv, sh(Shape().circle(hx, hy, 14)), c["bird"]))
+        out.append(L(cv, sh(Shape().ellipse(hx + 8, hy + 18, 16, 13)), c["purple"]))  # the neck's sheen
+        out.append(L(cv, sh(Shape().ellipse(hx + 5, hy + 11, 13, 10, -0.3)), c["green"]))
+        out.append(L(cv, sh(Shape().circle(hx, hy, 14)), c["head"]))
         out.append(L(cv, sh(Shape().poly([(hx - 12, hy - 2), (hx - 24, hy + 3), (hx - 12, hy + 5)])), c["ink"]))
+        out.append(L(cv, sh(Shape().ellipse(hx - 13, hy - 1, 2.6, 1.8)), c["cere"]))
         ex, ey = sh(Shape().poly([(hx - 4, hy - 3)])).cmds[0][1][0]
         out += [D(cv, ex, ey, 3.6, c["eye"]), D(cv, ex, ey, 1.6, c["ink"])]
+        if letter:
+            lx, ly = sh(Shape().poly([(hx - 30, hy + 8)])).cmds[0][1][0]
+            out += self.envelope(cv, c, lx, ly, 0.25 * kx, 0.8)
         return out
 
     def flying(self, cv, c, x, y, kx, t, letter):
@@ -1711,20 +2588,30 @@ class Pigeons(Scene, Cached):
         if letter:
             out += self.envelope(cv, c, x + kx * 4, y + 32, 0.0)
         out.append(L(cv, sh(Shape().poly([(30, -2), (60, -12), (62, 6), (30, 8)])), c["bird2"]))
+        out.append(L(cv, sh(Shape().poly([(53, -9), (60, -12), (62, 6), (54, 7)])), c["bar"]))  # the tail's dark band
         far_wing = Shape().poly([(-4, -6), (22, -8), (10 - 4 * f, -34 - 26 * f)])
-        out.append(L(cv, sh(far_wing), c["bird2"]))
+        out.append(L(cv, sh(far_wing), c["wing2"]))
         out.append(L(cv, sh(Shape().ellipse(4, 0, 36, 14)), c["bird"]))
-        out.append(L(cv, sh(Shape().circle(-34, -8, 13)), c["bird"]))
-        out.append(L(cv, sh(Shape().ellipse(-26, -2, 10, 9)), c["neck"]))
+        out.append(L(cv, sh(Shape().ellipse(-24, 0, 11, 10)), c["purple"]))  # the neck's sheen
+        out.append(L(cv, sh(Shape().ellipse(-28, -4, 9, 8)), c["green"]))
+        out.append(L(cv, sh(Shape().circle(-34, -8, 13)), c["head"]))
         out.append(L(cv, sh(Shape().poly([(-46, -10), (-58, -5), (-46, -3)])), c["ink"]))
+        out.append(L(cv, sh(Shape().ellipse(-47, -8, 2.4, 1.7)), c["cere"]))
         ex, ey = sh(Shape().poly([(-38, -12)])).cmds[0][1][0]
         out += [D(cv, ex, ey, 3.2, c["eye"]), D(cv, ex, ey, 1.4, c["ink"])]
-        near_wing = Shape().poly([(-10, -4), (24, -4), (14 + 6 * f, -40 * f - 4)])
-        out.append(L(cv, sh(near_wing), c["bird3"]))
+        tip = (14 + 6 * f, -40 * f - 4)
+        along = lambda a, b, k: (a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k)
+        root0, root1 = (-10, -4), (24, -4)
+        out.append(L(cv, sh(Shape().poly([root0, root1, tip])), c["wing"]))
+        bars = Shape()
+        for k in (0.26, 0.42):  # its two bars, and the dark tip
+            bars.line([along(root0, tip, k), along(root1, tip, k)], 3.4)
+        bars.poly([along(root0, tip, 0.78), along(root1, tip, 0.78), tip])
+        out.append(L(cv, sh(bars), c["bar"]))
         return out
 
-    def envelope(self, cv, c, x, y, rot):
-        tf = lambda s: s.moved(x, y, 1.25, rot)
+    def envelope(self, cv, c, x, y, rot, k=1.0):
+        tf = lambda s: s.moved(x, y, 1.25 * k, rot)
         return [L(cv, tf(Shape().rect(-18, -12, 36, 24)), c["letter"]), L(cv, tf(Shape().line([(-18, -12), (0, 2), (18, -12)], 2)), c["bird2"]), L(cv, tf(Shape().circle(0, 2, 4)), c["seal"])]
 
     def drop(self, t):
@@ -1736,6 +2623,8 @@ class Pigeons(Scene, Cached):
 
     def under(self, cv, p, t):
         c = self.colors(p)
+        if cv.second:
+            return self.under2(cv, c, t)
         out = []
         clouds_ = ((760, -520, 1.0), (1240, -220, 0.7), (700, 120, 0.6)) if cv.portrait else ((560, 160, 1.0), (1060, 250, 0.7), (300, 320, 0.6))
         for i, (x, y, w) in enumerate(clouds_):
@@ -1777,8 +2666,127 @@ class Pigeons(Scene, Cached):
 
     def over(self, cv, p, t):
         c = self.colors(p)
+        if cv.second:  # the loft acknowledges the letter
+            return bubble(cv, self.HOLES[1] + 56, 614, 0.85 * pop(t, 12.4, 14.0), "v", c["bubble"], c["ink"], tail=-1)
         px = self.PERCH[2]
         return bubble(cv, px + 50, self.wire_y(px) - 140, pop(t, 11.3, 12.3), "!", c["bubble"], c["ink"], tail=-1)
+
+    # -- more of the wire and the roofs: the second landscape, a screen to the right
+
+    def back2(self, cv, p):
+        c = self.colors(p)
+        X = W
+        out = []
+        if c["dark"]:
+            out += stars(cv, c["star"], 28, 70, 20, 520, alpha=0.4)
+        rnd = random.Random(16)
+        far = Shape()
+        x = X - 20
+        while x < X + W:
+            w, h = rnd.uniform(70, 150), rnd.uniform(120, 260)
+            far.rect(x, 720 - h, w, h + 10)
+            x += w + rnd.uniform(-10, 20)
+        out.append(L(cv, far, c["far"], ss=1))
+        near, roofs = Shape(), []
+        for x, w, h in ((X - 40, 260, 300), (X + 236, 250, 250), (X + 500, 820, 280), (X + 1340, 230, 330), (X + 1590, 360, 260)):
+            near.rect(x, H - h, w, h)
+            roofs.append((x, H - h, w))
+        out.append(L(cv, near, c["near"], ss=1))
+        rf = Shape()
+        for x, y, w in roofs:
+            rf.rect(x - 6, y - 10, w + 12, 12)
+        out.append(L(cv, rf, c["roof"], ss=1))
+        win, lit = Shape(), Shape()
+        for x, y, w in roofs:
+            for wx in range(int(x + 22), int(x + w - 30), 46):
+                for wy in range(int(y + 34), H - 20, 62):
+                    if rnd.random() < 0.3:
+                        (lit if rnd.random() < 0.5 else win).rect(wx, wy, 22, 30)
+        out.append(L(cv, win, c["roof"], ss=1))
+        out.append(L(cv, lit, c["window"], 0.55 if c["dark"] else 1.0, ss=1))
+        # the chimney and an aerial on the loft's roof
+        out.append(L(cv, Shape().rect(X + 1190, 704, 46, 98).rect(X + 1184, 696, 58, 12), c["brick"], ss=2))
+        out.append(L(cv, Shape().line([(X + 560, 792), (X + 560, 650)], 5).line([(X + 524, 676), (X + 596, 676)], 4).line([(X + 536, 700), (X + 584, 700)], 4), c["roof"], ss=2))
+        # the poles and the wires' next span
+        x0, x1, wy, sag = self.WIRE2
+        out.append(L(cv, Shape().line([(x1, wy - 30), (x1, H)], 16).line([(x1 - 50, wy), (x1 + 50, wy)], 10), c["pole"], ss=2))
+        for low in (0.0, 30.0):
+            pts = [(x, self.wire2_y(x, low)) for x in range(int(x0), int(x1) + 1, 20)]
+            out.append(L(cv, Shape().line(pts, 2.4), c["wire"], ss=2))
+        # the loft: its legs, its wall with three doors, its roof, the board in front
+        lx0, lx1 = X + 620.0, X + 1020.0
+        out.append(L(cv, Shape().rect(lx0 + 20, 770, 12, 32).rect(lx1 - 32, 770, 12, 32).rect((lx0 + lx1) / 2 - 6, 770, 12, 32), c["loft2"], ss=2))
+        out.append(L(cv, Shape().rect(lx0, 640, lx1 - lx0, 132), c["loft"], ss=2))
+        boards = Shape()
+        for k in range(1, 8):
+            boards.line([(lx0 + k * 50, 644), (lx0 + k * 50, 768)], 2)
+        out.append(L(cv, boards, c["loft2"], 0.4, ss=2))
+        doors = Shape()
+        for hx in self.HOLES:
+            doors.poly([(hx - 26, self.BOARD), (hx - 26, 690)] + ellipse_pts(hx, 690, 26, 22, n=20, a0=math.pi, a1=2 * math.pi) + [(hx + 26, self.BOARD)])
+        out.append(L(cv, doors, c["hole"], ss=2))
+        out.append(L(cv, Shape().poly([(lx0 - 26, 646), ((lx0 + lx1) / 2, 568), (lx1 + 26, 646), (lx1 + 26, 656), ((lx0 + lx1) / 2, 580), (lx0 - 26, 656)]), c["loft2"], ss=2))
+        out.append(L(cv, Shape().poly([(lx0 - 4, 642), ((lx0 + lx1) / 2, 582), (lx1 + 4, 642)]), c["loft"], ss=2))
+        out.append(L(cv, Shape().rect(lx0 + 20, self.BOARD, lx1 - lx0 - 40, 10), c["plank"], ss=2))
+        out.append(L(cv, Shape().line([(lx0 + 40, self.BOARD + 10), (lx0 + 70, self.BOARD + 34)], 5).line([(lx1 - 40, self.BOARD + 10), (lx1 - 70, self.BOARD + 34)], 5), c["loft2"], ss=2))
+        return out
+
+    def courier_a(self, t):
+        """The first screen's courier A, landing on the loft's board with its letter."""
+        if 7.5 <= t < 10.4:
+            u = ease_out(window(t, 7.5, 10.4)) * 0.7 + window(t, 7.5, 10.4) * 0.3
+            x, y = bezier((2040, 250), (2380, 250), (2540, 560), (self.HOLES[0] - 50, self.BOARD - 34), n=60)[int(u * 60)]
+            return "fly", x, y
+        if 10.4 <= t < 12.3:
+            return "walk", self.HOLES[0] - 50 + 50 * ease_io(window(t, 10.9, 11.6)), 1 - ease_in(window(t, 11.7, 12.3))
+        return None
+
+    def courier_b(self, t):
+        """Courier B: out of the loft with the answer, a wait, and off to the first screen."""
+        if t >= 19.6 or t < 4.0:
+            return "sit", self.HOLES[2], ease_out(window(t, 19.6, 20.4)) if t >= 19.6 else 1.0
+        if t < 8.0:
+            u = ease_io(window(t, 4.0, 8.0))
+            x, y = bezier((self.HOLES[2], self.BOARD - 40), (self.HOLES[2] - 60, 560), (2400, 300), (2040, 300), n=60)[int(u * 60)]
+            return "fly", x, y
+        if t < 8.6:  # the first screen's own path for it, as it leaves this one
+            return "fly", 2040 - 2200 * window(t, 8.0, 16.5), 300 + 6 * wave(t, 0.7)
+        return None
+
+    def under2(self, cv, c, t):
+        X = W
+        out = []
+        for i, (x, y, w) in enumerate(((X + 420, 190, 0.9), (X + 1120, 120, 0.6), (X + 1600, 280, 0.8))):
+            dx = 40 * wave(t, 24, i * 0.3 + 0.1)
+            cl = Shape().rect(x + dx - 110 * w, y, 220 * w, 30 * w).circle(x + dx - 50 * w, y + 4, 38 * w).circle(x + dx + 24 * w, y - 8 * w, 50 * w).circle(x + dx + 86 * w, y + 8, 30 * w)
+            out.append(L(cv, cl, c["cloud"], ss=2, above=y + 30 * w))
+        rnd = random.Random(21)
+        for i in range(5):  # the chimney's smoke
+            ph = i / 5 + rnd.uniform(0, 0.04)
+            u = ((t / 8.0) + ph) % 1.0
+            x, y = X + 1213 + 70 * u + 10 * wave(t, 8, ph), 690 - 200 * u
+            out.append(L(cv, Shape().ellipse(x, y, 12 + 22 * u, 16 + 26 * u), c["smoke"], (0.12 if c["dark"] else 0.16) * bump(u) ** 1.5, ss=1, soft=8 + 8 * u))
+        # two on the wire, one on the loft's ridge
+        for i, (x, kx) in enumerate(((X + 260, 1), (X + 470, -1))):
+            out += self.perched(cv, c, x, t, 0.2 + i * 0.41, kx, 0.0, False, self.wire2_y(x))
+        out += self.perched(cv, c, X + 740, t, 0.66, 1, bump(window(t, 13.0, 13.6)), False, 604)
+        a = self.courier_a(t)
+        if a and a[0] == "fly":
+            out += self.flying(cv, c, a[1], a[2], -1, t, True)
+        elif a:
+            birds = self.perched(cv, c, a[1], t, 0.5, -1, 0.0, True, self.BOARD)
+            for ly in birds:
+                ly.alpha *= a[2]
+            out += birds
+        b = self.courier_b(t)
+        if b and b[0] == "fly":
+            out += self.flying(cv, c, b[1], b[2], 1, t, True)
+        elif b:
+            birds = self.perched(cv, c, b[1], t, 0.9, 1, 0.0, True, self.BOARD)
+            for ly in birds:
+                ly.alpha *= b[2]
+            out += birds
+        return out
 
 
 BLACK3 = (0.0, 0.0, 0.0)
