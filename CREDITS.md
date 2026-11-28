@@ -93,7 +93,8 @@ upstream on its first line.
 - Tokyo Night -- https://github.com/folke/tokyonight.nvim -- Apache-2.0.
 
 The bundled harbor, meadowlark and nightswim themes and nightswim's
-picture come from spark-shell-gallery, gallery-v3 (MIT).
+picture come from spark-shell-gallery, gallery-v3 (MIT). Its portrait and
+second landscape are drawn here, in its style (MIT).
 
 ## The wallpaper drawings
 

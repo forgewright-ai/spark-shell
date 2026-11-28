@@ -236,19 +236,6 @@ art_fit() {   # art_fit PICTURE WxH "#TOP #BOTTOM" OUT -> the picture whole insi
       base64 < "$1" | tr -d '\n'; printf '"/></svg>\n'; } > "$4.svg" && rsvg-convert -w "$_afw" -h "$_afh" -o "$4.new" "$4.svg" 2>/dev/null && mv "$4.new" "$4"; _afr=$?
     rm -f "$4.svg" "$4.new"; return "$_afr"
 }
-art_fit_drawing() {   # art_fit_drawing DRAWING.svg WxH "#TOP #BOTTOM" OUT -> a drawing on a screen taller than it: its own view widened above and below over its top and bottom colors, so a line that crosses its edge goes on (contours, ripples), a PNG; never cropped. False for a screen no taller than it, or no drawing's root tag
-    command -v rsvg-convert >/dev/null 2>&1 && [ -f "$1" ] || return 1
-    _adw=${2%x*}; _adh=${2#*x}; _adt=${3%% *}; _adb=${3##* }
-    _adv=$(sed -n 's/^<svg [^>]*viewBox="0 0 \([0-9]*\) \([0-9]*\)".*/\1 \2/p' "$1" | sed -n 1p); [ -n "$_adv" ] || return 1
-    _adx=${_adv% *}; _ady=${_adv#* }; _adz=$((_adh * _adx / _adw))   # the view's new height in the drawing's own units
-    [ "$_adz" -gt "$_ady" ] || return 1
-    _ado=$(((_ady - _adz) / 2))
-    sed "/^<svg /{
-s/viewBox=\"0 0 $_adx $_ady\"/viewBox=\"0 $_ado $_adx $_adz\"/; s/ width=\"[0-9]*\"/ width=\"$_adw\"/; s/ height=\"[0-9]*\"/ height=\"$_adh\"/
-s|>\$|><rect x=\"0\" y=\"$_ado\" width=\"$_adx\" height=\"$((_adz / 2))\" fill=\"$_adt\"/><rect x=\"0\" y=\"$((_ado + _adz / 2))\" width=\"$_adx\" height=\"$((_adz - _adz / 2))\" fill=\"$_adb\"/>|
-}" "$1" > "$4.svg" && rsvg-convert -w "$_adw" -h "$_adh" -o "$4.new" "$4.svg" 2>/dev/null && mv "$4.new" "$4"; _adr=$?
-    rm -f "$4.svg" "$4.new"; return "$_adr"
-}
 art_frame() {   # art_frame PICTURE WxH #GROUND #EDGE OUT -> the picture whole, as a screen with a hairline edge, centered on the ground
     command -v base64 >/dev/null 2>&1 && command -v rsvg-convert >/dev/null 2>&1 && [ -f "$1" ] || return 1
     _arw=${2%x*}; _arh=${2#*x}; _arm=$((_arh / 18)); _ari=$((_arh - 2 * _arm))
@@ -406,7 +393,7 @@ art_view_draw() {   # art_view_draw drawn|drawing2 WxH PALETTE_FILE OUT -> the d
 }
 art_fit_file() {   # art_fit_file WxH -> the art fitted for a screen of that size: a drawing by its name, a picture (a path) by a sum of it, never a path inside a file's name
     case ${WALLPAPER:-} in */*) _afk=picture-$(printf '%s' "$WALLPAPER" | cksum | cut -d' ' -f1) ;; *) _afk=${WALLPAPER:-none} ;; esac
-    printf '%s' "$WALL_CACHE/screens/$_afk-${THEME:-none}-$1-fitted.png"   # -fitted: a drawing has its view widened since; a -fit.png made before is never read again
+    printf '%s' "$WALL_CACHE/screens/$_afk-${THEME:-none}-$1-fitted.png"   # -fitted: a -fit.png made before (a drawing cut in a band) is never read again
 }
 art_screen_file() {   # art_screen_file FILE MODE WxH -> the still a screen of the plan shows, when it is made; the lock takes these, never a loop
     case $2 in
@@ -458,8 +445,7 @@ art_screens_follow() {   # each screen output * does not suit gets its own still
                   printf 'output "%s" bg "%s" fill\n' "$_asn" "$_ssf" ;;
               fit) [ -f "$_asw" ] || continue
                   _ssf=$(art_fit_file "$_ass")
-                  [ -f "$_ssf" ] || { mkdir_state "$WALL_CACHE/screens" && _sse=$(art_edges "$_asw" "$_asg" "$_ssf.edges.png") \
-                      && { { wall_shipped "$WALLPAPER" && art_fit_drawing "${_asw%.*}.svg" "$_ass" "$_sse" "$_ssf"; } || art_fit "$_asw" "$_ass" "$_sse" "$_ssf"; }; } >/dev/null 2>&1 || continue
+                  [ -f "$_ssf" ] || { mkdir_state "$WALL_CACHE/screens" && art_fit "$_asw" "$_ass" "$(art_edges "$_asw" "$_asg" "$_ssf.edges.png")" "$_ssf"; } >/dev/null 2>&1 || continue
                   printf 'output "%s" bg "%s" fill\n' "$_asn" "$_ssf" ;;
           esac
       done > "$TMP/screens"

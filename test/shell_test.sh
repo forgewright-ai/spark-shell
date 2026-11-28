@@ -6796,11 +6796,11 @@ mcp theme 'not json' '[1,2]' '{"jsonrpc":"2.0","id":null,"method":"ping"}' '{"js
 # the shipped wallpapers: each name in WALL_SHIPPED has its SVG source and a PNG of 3840 by 2160 in gallery/wallpaper/, and nothing else is there
 _wb=''
 for n in $(sed -n 's/^WALL_SHIPPED="\(.*\)"$/\1/p' "$SRC" | tr ' ' '\n' | cut -d: -f1); do
-    [ -f "$REPO/gallery/wallpaper/$n.svg" ] && [ -f "$REPO/gallery/wallpaper/$n.png" ] && [ "$(od -An -tu1 -j16 -N8 "$REPO/gallery/wallpaper/$n.png" | tr -s ' \n' ' ' | sed 's/^ //; s/ $//')" = '0 0 15 0 0 0 8 112' ] || _wb="$_wb $n"
+    [ -f "$REPO/gallery/wallpaper/$n.svg" ] && [ -f "$REPO/gallery/wallpaper/$n-portrait.svg" ] && [ -f "$REPO/gallery/wallpaper/$n-2.svg" ] && [ -f "$REPO/gallery/wallpaper/$n.png" ] && [ "$(od -An -tu1 -j16 -N8 "$REPO/gallery/wallpaper/$n.png" | tr -s ' \n' ' ' | sed 's/^ //; s/ $//')" = '0 0 15 0 0 0 8 112' ] || _wb="$_wb $n"
 done
 for _mf in "$REPO"/lib/motion_*.py; do _mn=${_mf##*/motion_}; wall_n=${_mn%.py}; grep -q "[ \"]$wall_n:" "$SRC" || _wb="$_wb motion_$_mn"; done
 [ -f "$REPO/lib/wallpaper.py" ] || _wb="$_wb wallpaper.py"
-[ -z "$_wb" ] && [ "$(ls "$REPO/gallery/wallpaper" | wc -l | tr -d ' ')" = 36 ] && ok "gallery/wallpaper/: the 18 drawings, each its SVG and a 3840 by 2160 PNG; lib/motion_NAME.py a script of a shipped one alone, lib/wallpaper.py the scenes'" || bad "wallpaper files" "$_wb $(ls "$REPO/gallery/wallpaper")"
+[ -z "$_wb" ] && [ "$(ls "$REPO/gallery/wallpaper" | wc -l | tr -d ' ')" = 72 ] && ok "gallery/wallpaper/: the 18 drawings, each its SVG, its portrait and second landscape SVGs and a 3840 by 2160 PNG; lib/motion_NAME.py a script of a shipped one alone, lib/wallpaper.py the scenes'" || bad "wallpaper files" "$_wb $(ls "$REPO/gallery/wallpaper")"
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic media bat clock theme window display keyboard mouse touchpad notifications storage power notes reminders bar layout apps system about undo files; do mcp "$s" "$(pinit spark-dialog)" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
@@ -10209,44 +10209,25 @@ grep -q "^-- output \"DP-3\" bg \"$th_dir/study-night/test-tall.png\" fill\$" "$
     && [ "$(grep -c '^-- output \* bg ' "$HOME/scr.log")" = 1 ] && [ "$(grep -c 'test-tall.png' "$HOME/scr.log")" = 2 ] && [ "$(grep -c '"HDMI-A-1"' "$HOME/scr.log")" = 1 ] \
     && ok "desktop --motion and --screens: each screen its panel or portrait by its port, the panels to the landscape screens in order; the same screens drawn once; a screen gone: output * first, then the stills of the screens left, a lone landscape screen showing the art" \
     || bad "screens to sway" "$p1 $p2 | $(cat "$HOME/scr.log" 2>&1)"
-# a turned screen beside a theme's picture with no portrait (Nightswim): the picture whole, fitted under a name of its own, never
+# a turned screen beside a theme's picture with no portrait (a theme of yours; Nightswim's before v0.174): the picture whole, fitted under a name of its own, never
 # cropped (its path in the still's name made none); beside a drawing, the drawing's own view widened, its rings going on to
 # its top (Ripples), never a band with flat edges
 if command -v rsvg-convert >/dev/null 2>&1 && command -v base64 >/dev/null 2>&1; then
-    band() {   # band PNG -> how many colors its row a fifth of the way down has: one where a fitted still's band is flat
-        "$fixture_python" -I - "$1" <<'BAND'
-import struct, sys, zlib
-b = open(sys.argv[1], "rb").read()
-w, h, ctype = struct.unpack(">I", b[16:20])[0], struct.unpack(">I", b[20:24])[0], b[25]
-i, idat = 8, b""
-while i < len(b):
-    n, t = struct.unpack(">I4s", b[i:i + 8])
-    idat += b[i + 8:i + 8 + n] if t == b"IDAT" else b""
-    i += 12 + n
-raw, bpp = zlib.decompress(idat), {2: 3, 6: 4}[ctype]
-st, prev = w * bpp + 1, bytearray(w * bpp)
-for y in range(h // 5 + 1):
-    f, row = raw[y * st], bytearray(raw[y * st + 1:(y + 1) * st])
-    for x in range(len(row)):
-        a, up, c = (row[x - bpp] if x >= bpp else 0), prev[x], (prev[x - bpp] if x >= bpp else 0)
-        p = a + up - c
-        row[x] = (row[x] + [0, a, up, (a + up) // 2, a if abs(p - a) <= abs(p - up) and abs(p - a) <= abs(p - c) else up if abs(p - up) <= abs(p - c) else c][f]) & 255
-    prev = row
-print(len({bytes(prev[x:x + bpp]) for x in range(0, len(prev), bpp)}))
-BAND
-    }
     png_wh() { od -An -tu1 -j16 -N8 < "$1" | awk 'NF == 8 { print $1 * 16777216 + $2 * 65536 + $3 * 256 + $4, $5 * 16777216 + $6 * 65536 + $7 * 256 + $8 }'; }   # png_wh PNG -> "W H"
-    _fns=$REPO/gallery/core/nightswim; rm -f "$HOME/scr.log"; echo 2 > "$HOME/screens"
-    printf 'DESKTOP=sway\nTHEME=nightswim\nWALLPAPER=%s\nWALLPAPER_MOTION=off\n' "$_fns/nightswim.png" > "$cfg"
+    _fns=$th_dir/one-picture; mkdir -p "$_fns"; cp "$REPO/gallery/theme/nord.env" "$_fns/palette.env"; testpng 64 36 "$_fns/wide.png"
+    printf 'FORMAT=2\nPALETTE=nord\nWALLPAPER=picture\nPICTURE=wide.png\n' > "$_fns/look.env"; rm -f "$HOME/scr.log"; echo 2 > "$HOME/screens"
+    printf 'DESKTOP=sway\nTHEME=one-picture\nWALLPAPER=%s\nWALLPAPER_MOTION=off\n' "$_fns/wide.png" > "$cfg"
     XDG_RUNTIME_DIR=$H/run scr desktop --screens >/dev/null 2>&1; scr_wait 'output "DP-3" bg .*-fitted.png' 1
     f1=$(sed -n 's/^-- output "DP-3" bg "\(.*\)" fill$/\1/p' "$HOME/scr.log" | head -1)
-    printf 'DESKTOP=sway\nTHEME=rose-pine\nWALLPAPER=ripples\nWALLPAPER_MOTION=off\n' > "$cfg"; rm -f "$HOME/scr.log"
-    XDG_RUNTIME_DIR=$H/run scr desktop --screens >/dev/null 2>&1; scr_wait 'output "DP-3" bg .*-fitted.png' 1
-    f2=$(sed -n 's/^-- output "DP-3" bg "\(.*\)" fill$/\1/p' "$HOME/scr.log" | head -1); f2c=$(band "$f2" 2>&1)
-    case ${f1##*/} in picture-*-nightswim-1200x1920-fitted.png) f1n=1 ;; *) f1n='' ;; esac
-    [ -n "$f1n" ] && [ "$(png_wh "$f1")" = '1200 1920' ] && [ "$(png_wh "$f2")" = '1200 1920' ] && [ "${f2##*/}" = ripples-rose-pine-1200x1920-fitted.png ] && [ "$f2c" -gt 2 ] \
-        && ok "a turned screen beside a theme's picture with no portrait: the picture fitted whole under a name of its own (a path in it made none, and the screen showed it cropped); beside a drawing, its view widened, its rings going on above it" \
-        || bad "turned screen stills" "$f1 $(png_wh "$f1" 2>&1) | $f2 $(png_wh "$f2" 2>&1) $f2c | $(cat "$HOME/scr.log" 2>&1)"
+    printf 'DESKTOP=sway\nTHEME=rose-pine\nWALLPAPER=ripples\nWALLPAPER_MOTION=off\n' > "$cfg"; rm -f "$HOME/scr.log"; echo 3 > "$HOME/screens"
+    XDG_RUNTIME_DIR=$H/run scr desktop --screens >/dev/null 2>&1; scr_wait 'output "DP-4" bg .*-2.png' 1
+    f2=$(sed -n 's/^-- output "DP-3" bg "\(.*\)" fill$/\1/p' "$HOME/scr.log" | head -1); f3=$(sed -n 's/^-- output "DP-4" bg "\(.*\)" fill$/\1/p' "$HOME/scr.log" | head -1)
+    f2c=$(grep -c '"HDMI-A-1" bg' "$HOME/scr.log" || :); echo 2 > "$HOME/screens"
+    case ${f1##*/} in picture-*-one-picture-1200x1920-fitted.png) f1n=1 ;; *) f1n='' ;; esac
+    [ -n "$f1n" ] && [ "$(png_wh "$f1")" = '1200 1920' ] && [ "$(png_wh "$f2")" = '1200 1920' ] && [ "${f2##*/}" = ripples-rose-pine-1200x1920-portrait.png ] \
+        && [ "$(png_wh "$f3")" = '2560 1440' ] && [ "${f3##*/}" = ripples-rose-pine-2560x1440-2.png ] && [ "$f2c" = 0 ] \
+        && ok "a turned screen beside a theme's picture with no portrait: the picture fitted whole under a name of its own (a path in it made none, and the screen showed it cropped); a drawing's own portrait on a turned screen and its second landscape on the second landscape screen, each covering it, the first the art" \
+        || bad "turned screen stills" "$f1 $(png_wh "$f1" 2>&1) | $f2 $(png_wh "$f2" 2>&1) | $f3 $(png_wh "$f3" 2>&1) $f2c | $(cat "$HOME/scr.log" 2>&1)"
     printf 'DESKTOP=sway\nTHEME=study-night\nWALLPAPER=fjord\nWALLPAPER_MOTION=off\n' > "$cfg"
 else
     ok "turned screen stills: no rsvg-convert here to draw them"
