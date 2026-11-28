@@ -149,7 +149,9 @@ motion, type and glyphs, and interface settings can also be changed on
 their own.
 
 `spark-shell theme variant dark|light` switches a theme that has both.
-`spark-shell theme screens` says what each screen shows.
+Every theme is three pictures: one for a turned screen and two
+landscapes, so a turned screen beside two others shows three different
+pictures. `spark-shell theme screens` says what each screen shows.
 
 Saved themes have their own entry. Personal themes take precedence when
 names match; they live in `$XDG_CONFIG_HOME/spark-shell/themes/` (default
