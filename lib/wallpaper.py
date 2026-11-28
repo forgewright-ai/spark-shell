@@ -69,7 +69,9 @@ them; the references and not the story, no one in them, a dry joke
               board, the rings, the circuit on a whiteboard (its last problem
               P = NP, graded V?); a fan turns its head and the rings swing
     continue  an arcade after closing, six machines playing to no one; one
-              asks the empty room to continue, counts down, and gives up
+              asks the empty room to continue, counts down, and gives up.
+              Beside it the prize counter, its bear at 9999 tickets, and an
+              air hockey table whose puck drifts to a puck short of the goal
     crossing  a level crossing at dusk, far off: the bells, the arm, a small
               train; after it the crows on the wire are in another order
 
@@ -3522,17 +3524,23 @@ class Problem(Pixel):
 
 class Continue(Pixel):
     """An arcade after closing: the machines play to no one. One of them asks
-    an empty room to continue, counts down, and gives up."""
+    an empty room to continue, counts down, and gives up. The second view is
+    the other side of the room: the prize counter, a pinball in attract mode,
+    and the air hockey, the air on, its puck drifting end to end by itself."""
 
     name = "continue"
     poster = 6.0
     portrait = True
+    second = True  # the other side of the room: the prize counter, the air hockey, a pinball
 
     def layout(self, portrait):
         """Where the machines stand: the claw and five cabinets in a row, or in a portrait three
         of them (the shooter, the one that asks, the climb) under the neon, a deep carpet in front.
-        DY moves the cabinets down to the portrait's floor."""
-        if portrait:
+        DY moves the cabinets down to the portrait's floor. The second view has none of them."""
+        if self.view2:
+            self.FLOOR, self.DY, self.CLAW, self.NEON = 214, 0, False, (186, 18, 240, 28)
+            self.SLOTS = ()
+        elif portrait:
             self.FLOOR, self.DY, self.CLAW, self.NEON = 360, 146, False, (93, 110, 135, 120)
             self.SLOTS = ((0, 27), (3, 103), (4, 179))
         else:
@@ -3604,6 +3612,8 @@ class Continue(Pixel):
                 for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
                     put(a, x + dx, y + dy, col)
         hline(a, 0, gw, self.FLOOR, c["ink"])
+        if self.view2:
+            return self.back2(a, p, c)
         if self.CLAW:
             self.claw_machine(a, c)
         # the cabinets
@@ -3784,7 +3794,159 @@ class Continue(Pixel):
             put(a, hx + step * 2, hy + 3, c["text"])
             put(a, hx + 2 - step * 2, hy + 3, c["text"])
 
+    # the second landscape: the other side of the room
+
+    BEAR = ("...bb..........bb...", "..bbbb........bbbb..", "..bbbbbbbbbbbbbbbb..", "...bbbbbbbbbbbbbb...", "...bbkbbbbbbbbkbb...",
+            "...bbbbbbbbbbbbbb...", "...bbbbbsssssbbbb...", "....bbbbsskssbbb....", ".....bbbbsssbbb.....", "...bbbbbbbbbbbbbb...",
+            ".bbbbbbbbbbbbbbbbbb.", "bbbbbbbbllllbbbbbbbb", "bbbbbbbllllllbbbbbbb", "bb.bbbbllllllbbbb.bb", "....bbbllllllbbb....",
+            "....bbbbllllbbbb....", "...bbbbbbbbbbbbbb...", "..bbbbbb....bbbbbb..", "..bbbbbb....bbbbbb..", "..sssbbb....bbbsss..")
+    DUCK = ("..yy..", ".yyko.", "yyyy..", "yyyyy.", ".yyy..")
+
+    def hockey(self, u, v):
+        """A point of the air hockey table's top, u along it, v from its far rail to its near one."""
+        x0, x1 = 214 - 18 * v, 326 + 18 * v
+        return x0 + (x1 - x0) * u, 160 + 26 * v
+
+    def back2(self, a, p, c):
+        dk, gw, FL = p.dark, self.gw, self.FLOOR
+        # the prize counter: the big prizes on the wall, the small ones in the glass, the counter
+        box(a, 12, 76, 170, 3, c["edge0"])
+        bear = {"b": mix(c["yellow"], c["ink"], 0.45), "s": mix(c["yellow"], c["white"], 0.3), "k": c["ink"], "l": mix(c["yellow"], c["white"], 0.15)}
+        sprite(a, 56, 56, self.BEAR, bear)
+        box(a, 80, 64, 19, 9, c["white"])
+        text(a, 82, 66, "9999", c["ink"])
+        rnd = random.Random(8)
+        for x0 in (20, 34, 112, 128, 150, 164):  # the middling prizes beside it, on the shelf
+            col = c[rnd.choice(("red", "green", "cyan", "blue", "neon"))]
+            fill(a, Mask().ell(x0 + 4, 71, 4, 5), mix(col, c["ink"], 0.35))
+            fill(a, Mask().ell(x0 + 4, 66, 3, 3), mix(col, c["white"], 0.1))
+            put(a, x0 + 1, 63, mix(col, c["ink"], 0.35))
+            put(a, x0 + 7, 63, mix(col, c["ink"], 0.35))
+            put(a, x0 + 3, 66, c["ink"])
+            put(a, x0 + 5, 66, c["ink"])
+        for k in range(16):  # and hanging on the wall under them, on pegs
+            x0, y0 = 18 + k * 10, 86 + (k * 7) % 3
+            col = c[("red", "yellow", "green", "cyan", "blue", "neon")[k % 6]]
+            vline(a, x0 + 2, y0 - 3, y0, c["textdim"])
+            box(a, x0, y0, 5, 7 + k % 3, mix(col, c["ink"], 0.25))
+            put(a, x0 + 1, y0 + 2, mix(col, c["white"], 0.4))
+        cy0, cy1 = 112, 150  # the glass case on the counter, its shelves
+        box(a, 12, cy0, 170, cy1 - cy0, mix(c["screen"], c["cyan"], 0.12))
+        box(a, 12, cy0, 170, 1, c["textdim"])
+        for y in (126, 140):
+            hline(a, 13, 181, y, c["textdim"])
+        for k in range(26):
+            x0, y0 = 16 + (k * 13) % 162, (125, 139, 149)[k % 3]
+            col = c[("red", "yellow", "green", "cyan", "blue", "neon")[(k * 5) % 6]]
+            kind = k % 4
+            if kind == 0:
+                fill(a, Mask().ell(x0 + 2, y0 - 3, 2, 2), col)
+            elif kind == 1:
+                box(a, x0, y0 - 5, 4, 5, col)
+                hline(a, x0, x0 + 4, y0 - 5, mix(col, c["white"], 0.4))
+            elif kind == 2:
+                sprite(a, x0, y0 - 5, self.DUCK, {"y": c["yellow"], "k": c["ink"], "o": c["red"]})
+            else:
+                fill(a, Mask().ell(x0 + 2, y0 - 2, 3, 1), col)
+                put(a, x0 + 2, y0 - 4, c["white"])
+            put(a, x0 + 2, y0 + 1, c["white"], 0.6)
+        for x in range(20, 180, 26):
+            fill(a, Mask().line([(x, cy0 + 2), (x + 8, cy0 + 12)]), c["white"], 0.18)
+        box(a, 8, cy1, 178, 4, c["edge0"])
+        box(a, 12, cy1 + 4, 170, FL - cy1 - 4, c["body0"])
+        box(a, 12, cy1 + 4, 170, 2, c["side0"])
+        for x in (12, 69, 126):
+            box(a, x + 4, cy1 + 12, 49, FL - cy1 - 18, c["edge0"])
+            box(a, x + 6, cy1 + 14, 45, FL - cy1 - 22, c["side0"])
+        text(a, 84, cy1 + 28, "TICKETS", c["marq0"])
+        # the air hockey table: its top in perspective, rails, the line, the goals at its ends
+        top = [self.hockey(0, 0), self.hockey(1, 0), self.hockey(1, 1), self.hockey(0, 1)]
+        fill(a, Mask().poly(top), mix(c["body2"], c["white"], 0.18))
+        for v in (0.05, 0.25, 0.45, 0.65, 0.85):
+            for u in [k / 18 for k in range(1, 18)]:
+                put(a, *self.hockey(u, v), mix(c["body2"], c["ink"], 0.3))
+        fill(a, Mask().line([self.hockey(0.5, 0), self.hockey(0.5, 1)]), c["red"])
+        fill(a, Mask().ring(*self.hockey(0.5, 0.5), 9, 4), c["red"])
+        for u0, u1 in ((0, 1), (0, 0), (1, 1)):
+            fill(a, Mask().line([self.hockey(u0, 0 if u0 == u1 else 0), self.hockey(u1, 1 if u0 == u1 else 0)]), c["edge2"], 1.0)
+        near = [self.hockey(0, 1), self.hockey(1, 1), (self.hockey(1, 1)[0], 196), (self.hockey(0, 1)[0], 196)]
+        fill(a, Mask().poly(near), c["body2"])
+        hline(a, near[0][0], near[1][0] + 1, 186, c["marq2"])
+        for u in (0, 1):  # the goals: a dark slot in each end rail
+            x, y = self.hockey(u, 0.5)
+            fill(a, Mask().line([(x, y - 4), (x, y + 4)]), c["ink"])
+        for lx_ in (near[0][0] + 6, near[1][0] - 8):
+            box(a, lx_, 196, 4, FL - 196 + 6, c["edge2"])
+        box(a, 236, 196, 4, FL - 196 + 4, c["edge2"])
+        for u in (0.2, 0.8):  # the mallets, put down where the players stood
+            x, y = self.hockey(u, 0.88)
+            fill(a, Mask().ell(x, y, 5, 2), c["red"] if u < 0.5 else c["blue"])
+            fill(a, Mask().ell(x, y - 2, 2, 1), mix(c["red"] if u < 0.5 else c["blue"], c["white"], 0.4))
+        # the pinball: its backbox lit, the playfield going away from us, its legs
+        bx = 384
+        box(a, bx, 58, 70, 62, c["edge3"])
+        box(a, bx + 3, 61, 64, 46, c["marq3"])
+        fill(a, Mask().ell(bx + 35, 84, 18, 18), mix(c["marq3"], c["neon"], 0.5))
+        fill(a, Mask().ell(bx + 35, 84, 11, 11), mix(c["yellow"], c["white"], 0.2))
+        for k in range(8):
+            f = 2 * math.pi * k / 8
+            put(a, bx + 35 + 24 * math.cos(f), 84 + 15 * math.sin(f), c["white"])
+        text(a, bx + 14, 64, "ORBIT", c["edge3"], scale=2)
+        box(a, bx + 3, 108, 64, 9, c["screen"])
+        box(a, bx + 30, 120, 10, 10, c["edge3"])
+        pf = [(bx + 4, 128), (bx + 66, 128), (bx + 78, 170), (bx - 8, 170)]
+        fill(a, Mask().poly(pf), c["body3"])
+        fill(a, Mask().line(pf + pf[:1]), c["edge3"])
+        for k, (u, v) in enumerate(((0.3, 0.2), (0.55, 0.15), (0.45, 0.35))):
+            x = pf[3][0] + (pf[2][0] - pf[3][0]) * u + (pf[0][0] - pf[3][0]) * (1 - v) * 0.0
+            fill(a, Mask().ell(bx + 18 + k * 14, 136 + (k % 2) * 6, 4, 2), c["marq3"])
+            put(a, bx + 18 + k * 14, 135 + (k % 2) * 6, c["white"])
+        fill(a, Mask().line([(bx + 20, 164), (bx + 30, 167)], w=2), c["white"])
+        fill(a, Mask().line([(bx + 50, 164), (bx + 40, 167)], w=2), c["white"])
+        box(a, bx - 8, 170, 87, 12, c["edge3"])
+        box(a, bx - 6, 172, 83, 8, c["side3"])
+        box(a, bx + 30, 173, 8, 4, c["ink"])
+        put(a, bx + 33, 174, c["red"])
+        for lx_ in (bx - 5, bx + 73):
+            box(a, lx_, 182, 3, FL - 182 + 8, c["edge3"])
+        box(a, bx + 30, 182, 3, FL - 182 + 2, c["edge3"])
+
+    PINS = tuple((388 + 6 + 7 * i - j * 2, 150 + j * 5) for j in range(3) for i in range(9 + j))  # the playfield's inserts, back to front
+
+    def draw2(self, a, p, c, t):
+        """The air hockey's puck drifts on the air the length of the table, to a puck short of the
+        goal, and back; the pinball runs its lights for no one."""
+        dk = p.dark
+        k = 0.12 if dk else 0.06
+        fill(a, Mask().ell(97, self.FLOOR + 10, 86, 6), c["cyan"], k)  # every machine its light on the floor
+        fill(a, Mask().ell(270, self.FLOOR + 10, 62, 6), c["green"], k)
+        fill(a, Mask().ell(420, self.FLOOR + 10, 44, 6), c["red"], k)
+        pglow(a, 97, 130, 70, c["cyan"], 0.08 if dk else 0.04, add=dk)
+        pglow(a, 270, 172, 60, c["green"], 0.08 if dk else 0.04, add=dk)
+        pglow(a, 419, 86, 50, c["red"], 0.12 if dk else 0.05, add=dk)
+        fl = (int(round(t * PFPS)) % (self.seconds * PFPS) % 53) in (11, 12, 40)
+        nx, ny, gx, gy = self.NEON
+        pglow(a, gx, gy, 66, c["neon"], 0.12 if dk else 0.05, add=dk)
+        for i, ch in enumerate("PRIZES"):
+            text(a, nx + i * 18, ny, ch, c["neondim"] if (i == 3 and fl) else c["neon"], scale=4)
+        u = 0.5 - 0.44 * math.cos(2 * math.pi * t / self.seconds)  # the far goal at the middle of the loop
+        v = 0.5 + 0.3 * math.sin(2 * math.pi * t / 8.0)
+        x, y = self.hockey(u, v)
+        fill(a, Mask().ell(x, y + 1, 3, 1), c["ink"], 0.4)
+        fill(a, Mask().ell(x, y, 3, 1), c["text"])
+        for n, (px_, py_) in enumerate(self.PINS):  # attract mode: a light running up the playfield, again and again
+            lit = (int(t * 8) - n) % 9 == 0 or (int(t * 2) + n) % 7 == 0
+            put(a, px_, py_, (c["yellow"], c["cyan"], c["red"])[n % 3] if lit else mix(c["body3"], c["ink"], 0.3))
+        for i in range(8):
+            f = 2 * math.pi * i / 8
+            if (int(t * 4) + i) % 4 == 0:
+                put(a, 419 + 24 * math.cos(f), 84 + 15 * math.sin(f), c["yellow"])
+                pglow(a, 419 + 24 * math.cos(f), 84 + 15 * math.sin(f), 4, c["yellow"], 0.4, add=dk)
+        text(a, 391, 110, "HI 427350" if int(t / 3) % 2 else "CREDITS 0", c["red"])
+
     def draw(self, a, p, c, t):
+        if self.view2:
+            return self.draw2(a, p, c, t)
         dk = p.dark
         tints = (c["cyan"], c["green"], c["yellow"], c["text"], c["red"])
         for i, x in self.SLOTS:
