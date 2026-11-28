@@ -34,7 +34,9 @@ cozy: warm and playful, a picture book for grown-ups
 
     onsen     a capybara soaks in a hot spring in the snow, a yuzu on its
               head; the yuzu rolls off, the capybara goes under, and comes
-              up with the yuzu back on its head
+              up with the yuzu back on its head. Beside it, the far side of
+              the spring: a snow monkey under a towel soaks among the yuzu,
+              and opens one eye when the bamboo tube knocks
     duck      a rubber duck on a pond, being told about a bug: a question,
               then an idea; a frog fixes a bug of its own by eating it
     reef      under the sea the fish are prompts: a school of > fish, a ~
@@ -522,7 +524,11 @@ class Onsen(Scene):
     name = "onsen"
     poster = 4.0  # the still: the list's picture, and what shows before the loop is made
     portrait = (1080.0, 1920.0, -580.0, 840.0)  # the pool at the foot, a tall sky over it
+    second = (1920.0, 1080.0, -1920.0, 0.0)  # the far side of the spring: the bathhouse, a bamboo spout, a small pool and its monkey
     PX, PY, PRX, PRY = 1120.0, 846.0, 430.0, 118.0  # the pool
+    QX, QY, QRX, QRY = W + 1080.0, 880.0, 360.0, 92.0  # the small pool, on the far side
+    MX, MY = W + 960.0, 872.0  # the monkey: its waterline under the chin
+    PIVOT = (W + 1490.0, 790.0)  # the shishi-odoshi's pin
     CX, CY = 1030.0, 836.0  # the capybara: its waterline under the neck
 
     def colors(self, p):
@@ -530,6 +536,7 @@ class Onsen(Scene):
             dk = p.dark
             ink = p.pick("ansi_0", "fg")  # what darkens: the black slot on dark, the text on light
             capy = mix(p("ansi_3+ansi_1:26"), ink, 0.3 if dk else 0.26)
+            bamboo = mix(mix(p("ansi_2"), p("ansi_3"), 0.3), p("bg"), 0.35 if dk else 0.0)
             self._c = (p, dict(
                 sky=p("bg"), band=p.pick("bg+fg:4", "bg+fg:3"),
                 moon=p.pick("fg+ansi_3:18", "ansi_3+bg:30"), halo1=p.pick("bg+accent:9", "bg+ansi_3:14"), halo2=p.pick("bg+accent:5", "bg+ansi_3:7"),
@@ -542,6 +549,11 @@ class Onsen(Scene):
                 capy=capy, capy2=mix(capy, ink, 0.35), capy3=mix(capy, p.pick("fg", "white"), 0.18), blush=p("ansi_1"), ink=mix(ink, capy, 0.15),
                 yuzu=mix(p("ansi_3"), p("white"), 0.12 if dk else 0.0), yuzu2=mix(p("ansi_3"), p("ansi_1"), 0.25), leaf=p("ansi_2"),
                 glow=p("ansi_3"), dark=dk,
+                wood=mix(p("ansi_3+ansi_1:30"), ink, 0.45 if dk else 0.35), wood2=mix(p("ansi_3+ansi_1:30"), ink, 0.7), roof=mix(p.pick("bg+ansi_8:60", "bg+ansi_8:42"), ink, 0.4),
+                bamboo=bamboo, bamboo2=mix(bamboo, ink, 0.4), bamboo3=mix(bamboo, p("white"), 0.3),
+                noren=mix(p("ansi_4"), p("bg"), 0.3 if dk else 0.0), monk=mix(p("muted"), capy, 0.4), monk2=mix(mix(p("muted"), capy, 0.4), ink, 0.3),
+                face=mix(p("ansi_1"), p("muted"), 0.35) if dk else mix(p("ansi_1"), p("white"), 0.42),
+                towel=p.pick("fg+white:40", "white"), ink0=ink,
             ))
         return self._c[1]
 
@@ -549,6 +561,8 @@ class Onsen(Scene):
         return self.colors(p)["sky"]
 
     def back(self, cv, p):
+        if cv.second:
+            return self.back2(cv, p)
         c = self.colors(p)
         out = []
         mx, my = (1360.0, -330.0) if cv.portrait else (1490.0, 250.0)
@@ -560,33 +574,11 @@ class Onsen(Scene):
         for x, y in flakes:
             if math.hypot(x - mx, y - my) > 190:
                 out.append(D(cv, x, y, rnd.choice((1.1, 1.4, 1.8)), c["flake"], 0.35 if p.dark else 0.0))
-        for color, base, peaks in (
+        out += self.hills(cv, c, p, 0.0, (
             (c["far"], 660, [(0, 600), (160, 520), (330, 470), (520, 545), (700, 500), (880, 430), (1080, 515), (1260, 470), (1420, 540), (1620, 455), (1800, 520), (1920, 490)]),
             (c["near"], 700, [(0, 640), (230, 560), (430, 625), (640, 575), (820, 640), (1000, 590), (1180, 650), (1390, 585), (1600, 640), (1760, 600), (1920, 630)]),
-        ):
-            out.append(L(cv, Shape().poly([(0, base + 60)] + peaks + [(W, base + 60)]), color, ss=2))
-            caps = Shape()
-            for i in range(1, len(peaks) - 1):
-                (x0, y0), (x1, y1), (x2, y2) = peaks[i - 1], peaks[i], peaks[i + 1]
-                if y1 < y0 and y1 < y2:
-                    k = 0.28
-                    a, b = (x1 + (x0 - x1) * k, y1 + (y0 - y1) * k), (x1 + (x2 - x1) * k, y1 + (y2 - y1) * k)
-                    caps.poly([a, (x1, y1), b, (b[0] - (b[0] - x1) * 0.35, b[1] + 6), ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 4), (a[0] + (x1 - a[0]) * 0.35, a[1] + 7)])
-            out.append(L(cv, caps, c["cap"], 0.8 if p.dark else 0.9, ss=2))
-        out.append(L(cv, Shape().poly([(0, 720)] + [(x, 712 + 9 * math.sin(x / 210)) for x in range(0, W + 1, 40)] + [(W, H), (0, H)]), c["snow"], ss=2))
-        rnd = random.Random(7)
-        trees = sorted([(rnd.uniform(-20, W + 20), rnd.uniform(58, 118), rnd.random()) for _ in range(34)], key=lambda t: t[1])
-        for x, h, r in trees:
-            base = 724 + 9 * math.sin(x / 210) + (h - 58) * 0.12
-            col = c["pine2"] if r > 0.5 else c["pine"]
-            sh, sn = Shape(), Shape()
-            for i in range(3):
-                y1 = base - h * (0.18 + 0.29 * i)
-                hw = h * (0.34 - 0.08 * i)
-                sh.poly([(x - hw, y1), (x, y1 - h * 0.36), (x + hw, y1)])
-                sn.poly([(x - hw * 0.35, y1 - h * 0.24), (x, y1 - h * 0.36), (x + hw * 0.35, y1 - h * 0.24), (x, y1 - h * 0.28)])
-            sh.rect(x - 2.5, base - h * 0.2, 5, h * 0.2)
-            out += [L(cv, sh, col, ss=2), L(cv, sn, c["cap"], 0.9, ss=2)]
+        ))
+        out += self.pines(cv, c, 7, 34, -20, W + 20)
         drift = Shape()
         for x0, w in ((0, 420), (380, 300), (1550, 380)):
             drift.ellipse(x0 + w / 2, 742, w / 2, 18)
@@ -600,6 +592,41 @@ class Onsen(Scene):
         out.append(L(cv, Shape().ellipse(px, py, rx, ry), c["water"], ss=2))
         out.append(L(cv, Shape().ellipse(px + 30, py + 18, rx * 0.7, ry * 0.56), c["deep"], 0.8, ss=1, soft=26, clip=self.pool(cv)))
         out.append(L(cv, Shape().ellipse(1440, py - 30, 110, 16), c["moon"], 0.16, ss=1, soft=10, clip=self.pool(cv)))  # the moon on the water
+        return out
+
+    def hills(self, cv, c, p, x0, ranges):
+        """The snowy hills, two ranges of peaks from x0 a screen wide, and the snow in front of them."""
+        out = []
+        for color, base, peaks in ranges:
+            peaks = [(x0 + x, y) for x, y in peaks]
+            out.append(L(cv, Shape().poly([(x0, base + 60)] + peaks + [(x0 + W, base + 60)]), color, ss=2))
+            caps = Shape()
+            for i in range(1, len(peaks) - 1):
+                (xa, ya), (x1, y1), (x2, y2) = peaks[i - 1], peaks[i], peaks[i + 1]
+                if y1 < ya and y1 < y2:
+                    k = 0.28
+                    a, b = (x1 + (xa - x1) * k, y1 + (ya - y1) * k), (x1 + (x2 - x1) * k, y1 + (y2 - y1) * k)
+                    caps.poly([a, (x1, y1), b, (b[0] - (b[0] - x1) * 0.35, b[1] + 6), ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 4), (a[0] + (x1 - a[0]) * 0.35, a[1] + 7)])
+            out.append(L(cv, caps, c["cap"], 0.8 if p.dark else 0.9, ss=2))
+        out.append(L(cv, Shape().poly([(x0, 720)] + [(x, 712 + 9 * math.sin(x / 210)) for x in range(int(x0), int(x0) + W + 1, 40)] + [(x0 + W, H), (x0, H)]), c["snow"], ss=2))
+        return out
+
+    def pines(self, cv, c, seed, n, x0, x1):
+        """n snowy pines along the foot of the hills, between x0 and x1."""
+        out = []
+        rnd = random.Random(seed)
+        trees = sorted([(rnd.uniform(x0, x1), rnd.uniform(58, 118), rnd.random()) for _ in range(n)], key=lambda t: t[1])
+        for x, h, r in trees:
+            base = 724 + 9 * math.sin(x / 210) + (h - 58) * 0.12
+            col = c["pine2"] if r > 0.5 else c["pine"]
+            sh, sn = Shape(), Shape()
+            for i in range(3):
+                y1 = base - h * (0.18 + 0.29 * i)
+                hw = h * (0.34 - 0.08 * i)
+                sh.poly([(x - hw, y1), (x, y1 - h * 0.36), (x + hw, y1)])
+                sn.poly([(x - hw * 0.35, y1 - h * 0.24), (x, y1 - h * 0.36), (x + hw * 0.35, y1 - h * 0.24), (x, y1 - h * 0.28)])
+            sh.rect(x - 2.5, base - h * 0.2, 5, h * 0.2)
+            out += [L(cv, sh, col, ss=2), L(cv, sn, c["cap"], 0.9, ss=2)]
         return out
 
     def rocks(self, angles):
@@ -625,12 +652,16 @@ class Onsen(Scene):
 
     def pool(self, cv):
         if getattr(self, "_pool", (None,))[0] != cv.key:
-            self._pool = (cv.key, full(cv, Shape().ellipse(self.PX, self.PY, self.PRX, self.PRY)))
+            self._pool = (cv.key, full(cv, Shape().ellipse(self.QX, self.QY, self.QRX, self.QRY) if cv.second else Shape().ellipse(self.PX, self.PY, self.PRX, self.PRY)))
         return self._pool[1]
 
     def front(self, cv, p):
         c = self.colors(p)
         out = []
+        if cv.second:  # the small pool's near rocks
+            for a, s in self.rocks(range(0, 181, 16)):
+                out += self.rock(cv, c, self.QX + (self.QRX + 10) * math.cos(a), self.QY + (self.QRY + 8) * math.sin(a) + 4, s)
+            return out
         for a, s in self.rocks(range(0, 181, 15)):
             out += self.rock(cv, c, self.PX + (self.PRX + 12) * math.cos(a), self.PY + (self.PRY + 10) * math.sin(a) + 4, s * 1.1)
         return out
@@ -663,12 +694,12 @@ class Onsen(Scene):
             out.append(L(cv, Shape().line(spline(at([(-96, -98), (-86, -93), (-76, -98)]), closed=False, per=6), 3.0), c["ink"], above=wl))
         return out, (x0 + self.TOP[0], y0 + self.TOP[1])
 
-    def yuzu(self, cv, c, x, y, spin, wl=None):
-        r = 21.0
-        out = [L(cv, Shape().circle(x, y, r), c["yuzu"], above=wl), L(cv, Shape().ellipse(x + 6, y + 7, 14, 11, 0.6), c["yuzu2"], 0.45, above=wl)]
+    def yuzu(self, cv, c, x, y, spin, wl=None, r=21.0):
+        k = r / 21.0
+        out = [L(cv, Shape().circle(x, y, r), c["yuzu"], above=wl), L(cv, Shape().ellipse(x + 6 * k, y + 7 * k, 14 * k, 11 * k, 0.6), c["yuzu2"], 0.45, above=wl)]
         lx, ly = x + r * 0.75 * math.sin(spin), y - r * 0.85 * math.cos(spin)
-        out.append(L(cv, Shape().ellipse(lx + 8 * math.cos(spin), ly + 8 * math.sin(spin), 10, 4.5, spin + 0.4), c["leaf"], above=wl))
-        out.append(D(cv, x - 7, y - 8, 4, c["capy3"], 0.5))
+        out.append(L(cv, Shape().ellipse(lx + 8 * k * math.cos(spin), ly + 8 * k * math.sin(spin), 10 * k, 4.5 * k, spin + 0.4), c["leaf"], above=wl))
+        out.append(D(cv, x - 7 * k, y - 8 * k, 4 * k, c["capy3"], 0.5))
         return out
 
     def ring(self, cv, c, x, y, age, life=1.6, big=1.0):
@@ -679,6 +710,8 @@ class Onsen(Scene):
         return [L(cv, Shape().line(ellipse_pts(x, y, rx, rx * 0.26, n=60) + [ellipse_pts(x, y, rx, rx * 0.26, n=60)[0]], 2.2 * (1 - u) + 0.6), c["shine"], 0.8 * (1 - u), ss=2)]
 
     def under(self, cv, p, t):
+        if cv.second:
+            return self.under2(cv, p, t)
         c = self.colors(p)
         out = []
         # the surface: slow light on the water
@@ -749,6 +782,8 @@ class Onsen(Scene):
     def over(self, cv, p, t):
         c = self.colors(p)
         out = []
+        if cv.second:
+            return self.snow(cv, c, p, t, W, 6)
         for k, t0 in enumerate((21.0, 21.7, 22.4)):  # z, z, z
             u = window(t, t0, t0 + 1.6)
             if 0 < u < 1:
@@ -762,6 +797,192 @@ class Onsen(Scene):
             y = (y0 + (H + 40) * k * t / self.seconds) % (H + 40) - 20
             x = x0 + sway * wave(t, self.seconds / (1 + i % 2), ph)
             out.append(D(cv, x, y, rnd.uniform(2.2, 3.4) if near else rnd.uniform(1.1, 1.9), c["flake"], (0.75 if near else 0.5) if p.dark else (0.7 if near else 0.45)))
+        return out
+
+    # -- the far side of the spring: the second landscape, a screen to the right
+
+    def snow(self, cv, c, p, t, x0, seed):
+        out = []
+        rnd = random.Random(seed)
+        for i in range(150):
+            near = i % 3 == 0
+            x1, y0 = x0 + rnd.uniform(0, W), rnd.uniform(0, H + 40)
+            k, sway, ph = (2 if near else 1), rnd.uniform(8, 26), rnd.random()
+            y = (y0 + (H + 40) * k * t / self.seconds) % (H + 40) - 20
+            x = x1 + sway * wave(t, self.seconds / (1 + i % 2), ph)
+            out.append(D(cv, x, y, rnd.uniform(2.2, 3.4) if near else rnd.uniform(1.1, 1.9), c["flake"], (0.75 if near else 0.5) if p.dark else (0.7 if near else 0.45)))
+        return out
+
+    def back2(self, cv, p):
+        c = self.colors(p)
+        X = W
+        out = []
+        rnd = random.Random(44)
+        for _ in range(46):
+            out.append(D(cv, X + rnd.uniform(0, W), rnd.uniform(40, 420), rnd.choice((1.1, 1.4, 1.8)), c["flake"], 0.35 if p.dark else 0.0))
+        out += self.hills(cv, c, p, X, (
+            (c["far"], 660, [(0, 490), (170, 540), (360, 462), (580, 525), (790, 445), (1010, 530), (1210, 478), (1420, 548), (1630, 468), (1800, 525), (1920, 500)]),
+            (c["near"], 700, [(0, 630), (210, 592), (430, 648), (640, 580), (870, 642), (1090, 598), (1310, 652), (1520, 588), (1730, 640), (1920, 612)]),
+        ))
+        out += self.pines(cv, c, 71, 26, X - 20, X + W + 20)
+        drift = Shape()
+        for x0, w in ((60, 300), (1180, 420), (1640, 300)):
+            drift.ellipse(X + x0 + w / 2, 744, w / 2, 18)
+        out.append(L(cv, drift, c["shade"], 0.55, ss=2))
+        out += self.bathhouse(cv, c, X + 510.0, 746.0)
+        # the small pool: its far rocks, the water, its light
+        px, py, rx, ry = self.QX, self.QY, self.QRX, self.QRY
+        out.append(L(cv, Shape().ellipse(px, py + 6, rx + 30, ry + 22), c["shade"], ss=2))
+        for a, s in self.rocks(range(180, 361, 20)):
+            out += self.rock(cv, c, px + (rx + 8) * math.cos(a), py + (ry + 6) * math.sin(a) - 4, s * 0.9)
+        out.append(L(cv, Shape().ellipse(px, py, rx, ry), c["water"], ss=2))
+        out.append(L(cv, Shape().ellipse(px - 30, py + 14, rx * 0.66, ry * 0.52), c["deep"], 0.8, ss=1, soft=24, clip=self.pool(cv)))
+        # the bamboo: the spout on its post, the trestle, the stone the tube knocks on
+        sx, sy = X + 1650.0, 690.0
+        out.append(L(cv, Shape().ellipse(sx + 6, 862, 40, 8), c["shade"], 0.8, ss=2))
+        out.append(L(cv, Shape().line([(sx, 862), (sx, sy - 24)], 24), c["bamboo"], ss=2))
+        out.append(L(cv, Shape().line([(sx, sy), (X + 1386, sy + 6)], 13), c["bamboo"], ss=2))
+        out.append(L(cv, Shape().line([(sx - 12, 790), (sx + 12, 790)], 3).line([(sx - 12, 740), (sx + 12, 740)], 3).line([(X + 1520, sy - 3), (X + 1520, sy + 10)], 3), c["bamboo2"], ss=2))
+        out.append(L(cv, Shape().ellipse(X + 1387, sy + 6, 4, 7, 0.3), c["bamboo2"], ss=2))
+        out.append(L(cv, Shape().ellipse(sx, sy - 30, 14, 7).ellipse(X + 1500, sy - 6, 36, 4), c["snow"], ss=2))
+        out += self.rock(cv, c, X + 1586.0, 868.0, 0.55)
+        return out
+
+    def bathhouse(self, cv, c, x, y):
+        """A small wooden bathhouse under snow: a curtain at its door, a lamp in its window."""
+        out = [L(cv, Shape().ellipse(x + 10, y + 2, 250, 16), c["shade"], 0.8, ss=2)]
+        out.append(L(cv, Shape().rect(x - 180, y - 136, 360, 130), c["wood"], ss=2))
+        out.append(L(cv, Shape().rect(x - 190, y - 16, 380, 18), c["rock"], ss=2))
+        out.append(L(cv, Shape().line([(x - 174, y - 130), (x - 174, y - 16)], 10).line([(x, y - 130), (x, y - 16)], 10).line([(x + 174, y - 130), (x + 174, y - 16)], 10).line([(x - 180, y - 128), (x + 180, y - 128)], 10), c["wood2"], ss=2))
+        out.append(L(cv, Shape().poly([(x - 220, y - 124), (x - 138, y - 198), (x + 138, y - 198), (x + 220, y - 124)]), c["roof"], ss=2))
+        out.append(L(cv, Shape().rect(x + 40, y - 226, 40, 30), c["roof"], ss=2))  # the vent
+        out.append(L(cv, Shape().poly(spline([(x - 226, y - 126), (x - 206, y - 150), (x - 138, y - 210), (x + 138, y - 210), (x + 206, y - 150), (x + 226, y - 126), (x + 190, y - 140), (x + 120, y - 186), (x - 120, y - 186), (x - 190, y - 140)], per=6)), c["snow"], ss=2))
+        out.append(L(cv, Shape().ellipse(x + 60, y - 228, 26, 7), c["snow"], ss=2))
+        out.append(L(cv, Shape().rect(x - 136, y - 100, 92, 84), mix(c["ink0"], c["wood"], 0.3), ss=2))  # the door
+        noren = Shape()
+        for i in range(3):
+            noren.rect(x - 134 + i * 30.5, y - 102, 27, 48)
+        out += [L(cv, noren, c["noren"], ss=2), D(cv, x - 90, y - 80, 7, c["towel"], 0.8)]
+        wx, wy = x + 96, y - 72
+        out.append(L(cv, Shape().rect(wx - 46, wy - 30, 92, 58), c["glow"], 0.8, ss=2))
+        out.append(L(cv, Shape().line([(wx - 15, wy - 30), (wx - 15, wy + 28)], 4).line([(wx + 15, wy - 30), (wx + 15, wy + 28)], 4).line([(wx - 46, wy), (wx + 46, wy)], 4), c["wood2"], ss=2))
+        out.append(L(cv, Shape().circle(wx, wy, 70), c["glow"], 0.2 if c["dark"] else 0.08, ss=1, soft=40))
+        return out
+
+    def shishi_angle(self, t):
+        """The bamboo tube's slope, its mouth up: it fills, leans, tips, pours, swings back and knocks."""
+        rest, tip = 0.5, -0.55
+        if t < 12.6:
+            return rest
+        if t < 15.0:
+            return rest - 0.06 * ease_in(window(t, 12.6, 15.0))
+        if t < 15.45:
+            return rest - 0.06 + (tip - rest + 0.06) * ease_in(window(t, 15.0, 15.45))
+        if t < 15.9:
+            return tip
+        if t < 16.25:
+            return tip + (rest - tip) * ease_in(window(t, 15.9, 16.25))
+        return rest - 0.07 * bump(window(t, 16.25, 16.6))
+
+    def shishi(self, cv, c, t):
+        px, py = self.PIVOT
+        a = self.shishi_angle(t)
+        m = (px - 105 * math.cos(a), py - 105 * math.sin(a))  # the open mouth
+        e = (px + 85 * math.cos(a), py + 85 * math.sin(a))  # the closed end, that knocks
+        out = []
+        sy = 698.0
+        if t < 15.2 or t >= 16.3:  # the spout's thread of water into the mouth
+            out.append(L(cv, Shape().line([(m[0] + 1, sy), (m[0] + 1 + 1.5 * wave(t, 0.5), m[1] - 4)], 3), c["shine"], 0.7, ss=2))
+        else:
+            out.append(L(cv, Shape().line([(m[0] + 1, sy), (m[0] + 2, self.QY - 30)], 3), c["shine"], 0.7, ss=2))
+        u = window(t, 15.3, 16.0)
+        if 0 < u < 1:  # it pours
+            out.append(L(cv, Shape().line(bezier(m, (m[0] - 14, m[1] + 4), (m[0] - 18, m[1] + 18), (m[0] - 16, self.QY - 18), n=10), 9 * bump(u) + 1), c["shine"], 0.8, ss=2))
+        out.append(L(cv, Shape().line([(px - 24, 868), (px + 10, py - 14)], 9).line([(px + 24, 868), (px - 10, py - 14)], 9), c["wood"], ss=2))
+        out.append(L(cv, Shape().line([m, e], 26), c["bamboo"], ss=2))
+        hi = (math.sin(a) * 6, -math.cos(a) * 6)
+        out.append(L(cv, Shape().line([(m[0] + 12 * math.cos(a) + hi[0], m[1] + 12 * math.sin(a) + hi[1]), (e[0] - 8 * math.cos(a) + hi[0], e[1] - 8 * math.sin(a) + hi[1])], 4), c["bamboo3"], 0.6, ss=2))
+        nodes = Shape()
+        for f in (0.32, 0.7):
+            nx, ny = m[0] + (e[0] - m[0]) * f, m[1] + (e[1] - m[1]) * f
+            nodes.line([(nx - math.sin(a) * 13, ny + math.cos(a) * 13), (nx + math.sin(a) * 13, ny - math.cos(a) * 13)], 3)
+        out.append(L(cv, nodes, c["bamboo2"], ss=2))
+        out.append(L(cv, Shape().ellipse(m[0], m[1], 6, 13, a), c["bamboo2"], ss=2))
+        out.append(D(cv, px, py, 5, c["wood2"]))
+        u = window(t, 16.25, 16.75)
+        if 0 < u < 1:  # the knock
+            for k in (-1, 0, 1):
+                ang = -math.pi / 2 + k * 0.6
+                r0, r1 = 34 + 16 * u, 48 + 22 * u
+                out.append(L(cv, Shape().line([(e[0] + r0 * math.cos(ang), e[1] + r0 * math.sin(ang)), (e[0] + r1 * math.cos(ang), e[1] + r1 * math.sin(ang))], 3.4), c["steam"] if c["dark"] else c["wood2"], 0.8 * (1 - u)))
+        return out
+
+    def monkey(self, cv, c, t, eye):
+        """A snow monkey soaking, a towel on its head; eye is how far it has one eye open."""
+        x, wl, k = self.MX, self.MY, 1.3
+        y = wl + 1.5 * wave(t, 6, 0.3)
+        b = 1 + 0.03 * wave(t, 4.8)
+        sh = lambda s: s.moved(x, y, k)
+        out = [L(cv, sh(Shape().ellipse(0, 8, 60, 32 * b)), c["monk"], above=wl)]  # its shoulders
+        out.append(L(cv, sh(Shape().ellipse(3, 18, 56, 26)), c["deep"], 0.45, ss=1, soft=6, below=wl + 3, clip=self.pool(cv)))
+        out.append(L(cv, sh(Shape().circle(0, -40, 34).ellipse(-29, -29, 13, 17, 0.3).ellipse(29, -29, 13, 17, -0.3)), c["monk"]))
+        out.append(L(cv, sh(Shape().ellipse(0, -13, 23, 8)), c["monk2"], 0.35, ss=2))  # its chin's shade
+        out.append(L(cv, sh(Shape().ellipse(-10, -43, 14, 16).ellipse(10, -43, 14, 16).ellipse(0, -29, 16, 12)), c["face"]))
+        tw = Shape().poly(spline([(-29, -68), (-24, -85), (22, -87), (31, -70), (24, -63), (-24, -63)], per=6))
+        out += [L(cv, sh(tw), c["towel"]), L(cv, sh(Shape().line([(-26, -73), (28, -75)], 2.4)), c["noren"], 0.7)]
+        for ex in (-10, 10):
+            if ex > 0 and eye > 0.05:  # one eye, open
+                out += [L(cv, sh(Shape().circle(ex, -45, 4.2 * eye)), c["ink0"]), L(cv, sh(Shape().circle(ex + 1.3, -46.2, 1.3 * eye)), c["towel"], 0.9)]
+                out.append(L(cv, sh(Shape().line([(ex - 6, -54 - 2.5 * eye), (ex + 6, -52 - 3.5 * eye)], 2.2)), c["monk2"]))
+            else:
+                out.append(L(cv, sh(Shape().line(spline([(ex - 5.5, -45.5), (ex, -42.5), (ex + 5.5, -45.5)], closed=False, per=5), 2.1)), c["ink0"]))
+        out.append(L(cv, sh(Shape().circle(-2.7, -32, 1.7).circle(2.7, -32, 1.7)), c["ink0"], 0.8))
+        out.append(L(cv, sh(Shape().line(spline([(-5.5, -23.5), (0, -22), (5.5, -23.5)], closed=False, per=5), 1.8)), c["ink0"], 0.7))
+        return out
+
+    def under2(self, cv, p, t):
+        c = self.colors(p)
+        X = W
+        out = []
+        px, py = self.QX, self.QY
+        for i, (x, y, w) in enumerate(((X + 860, 868, 60), (X + 1190, 900, 80), (X + 1300, 862, 50), (X + 1000, 930, 46))):
+            dx = 12 * wave(t, 6, i * 0.29)
+            out.append(L(cv, Shape().line([(x + dx - w / 2, y), (x + dx + w / 2, y)], 3), c["shine"], 0.35 + 0.15 * wave(t, 4, i * 0.31), ss=2))
+        rnd = random.Random(13)
+        for i in range(4):  # the bathhouse's vent
+            ph = i / 4 + rnd.uniform(0, 0.05)
+            u = ((t / 6.0) + ph) % 1.0
+            x, y = X + 570 + 40 * u + 8 * wave(t, 6, ph), 516 - 150 * u
+            out.append(L(cv, Shape().ellipse(x, y, 14 + 22 * u, 20 + 26 * u), c["steam"], (0.14 if p.dark else 0.45) * bump(u) ** 1.5, ss=1, soft=10 + 8 * u))
+        out += self.shishi(cv, c, t)
+        # the yuzu afloat, each on its own slow round; they bob when the tube pours
+        pour = bump(window(t, 15.6, 17.4))
+        floats = []
+        for i, (fx, fy, r, ph) in enumerate(((X + 800, 884, 19, 0.1), (X + 1120, 864, 18, 0.45), (X + 1190, 910, 20, 0.8), (X + 1300, 884, 17, 0.3), (X + 1050, 934, 19, 0.6))):
+            a = 2 * math.pi * (t / 24 + ph)
+            x, y = fx + 16 * math.cos(a), fy + 5 * math.sin(a) + 2.5 * wave(t, 2.4, ph) + 5 * pour * wave(t, 0.9, ph)
+            floats.append((y, x, a, r))
+        eye = ease_out(window(t, 16.45, 16.75)) * (1 - ease_in(window(t, 18.6, 19.0)))
+        floats.sort()
+        for y, x, a, r in floats:
+            if y < self.MY + 6:
+                out += self.yuzu(cv, c, x, y, 0.3 * math.sin(a), y + 9, r)
+        out += self.monkey(cv, c, t, eye)
+        for y, x, a, r in floats:
+            if y >= self.MY + 6:
+                out += self.yuzu(cv, c, x, y, 0.3 * math.sin(a), y + 9, r)
+        out += self.ring(cv, c, X + 1372, py - 6, t - 15.5, 2.2, 1.3)
+        out += self.ring(cv, c, X + 1372, py - 6, t - 16.0, 2.2, 0.9)
+        for k in range(4):
+            out += self.ring(cv, c, self.MX + 70, self.MY + 4, (t - k * 6 - 2) % 24, 3.0, 1.0)
+        rnd = random.Random(10)
+        for i in range(8):  # the pool's steam
+            x0 = px + rnd.uniform(-280, 280)
+            ph = i / 8 + rnd.uniform(0, 0.04)
+            u = ((t / 8.0) + ph) % 1.0
+            x, y = x0 + 50 * u + 12 * wave(t, 8, ph), py - 20 - 200 * u
+            a = (0.16 if p.dark else 0.5) * bump(u) ** 1.5
+            out.append(L(cv, Shape().ellipse(x, y, 20 + 30 * u, 30 + 36 * u, 0.3 * wave(t, 8, ph)), c["steam"], a, ss=1, soft=16 + 12 * u))
         return out
 
 
