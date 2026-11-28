@@ -65,7 +65,9 @@ them; the references and not the story, no one in them, a dry joke
               moorings: a gull on a post ducks each time the light goes over
     problem   a training board, a grid of holds in every color, a light by
               each; it shows a problem, then another, then runs Life, and a
-              glider walks down it
+              glider walks down it. Beside it the gym's other wall, a campus
+              board, the rings, the circuit on a whiteboard (its last problem
+              P = NP, graded V?); a fan turns its head and the rings swing
     continue  an arcade after closing, six machines playing to no one; one
               asks the empty room to continue, counts down, and gives up
     crossing  a level crossing at dusk, far off: the bells, the arm, a small
@@ -1936,7 +1938,7 @@ FONT = {  # three by five, for the few words a picture needs
     "W": "101101111111101", "Y": "101101010010010", "Z": "111001010100111", "X": "101101010101101", "Q": "010101101110011", "J": "001001001101010", "?": "110001010000010", "0": "111101101101111", "1": "010110010010111",
     "2": "110001010100111", "3": "110001010001110", "4": "101101111001001", "5": "111100110001110", "6": "011100111101111",
     "7": "111001010010010", "8": "111101111101111", "9": "111101111001110", " ": "000000000000000", ".": "000000000000010",
-    "-": "000000111000000", ":": "000010000010000", "/": "001001010100100", "!": "010010010000010",
+    "-": "000000111000000", ":": "000010000010000", "/": "001001010100100", "!": "010010010000010", "=": "000111000111000",
 }
 
 
@@ -3191,12 +3193,15 @@ def dome(m):
 class Problem(Pixel):
     """A training board at night, a grid of holds, each with its light. The
     board shows a problem, then another; then it runs Life, and a glider climbs
-    down across it."""
+    down across it. The second view is the wall behind, one lamp on: a campus
+    board, a hangboard, the rings, the circuit on a whiteboard, and a fan whose
+    look sets the rings swinging and puffs chalk out of the bucket."""
 
     name = "problem"
     poster = 4.0
     CELL = 30
     portrait = True
+    second = True  # the gym's other wall: a campus board, the rings, a fan, the circuit on a whiteboard
     KINDS = ("jug", "crimp", "sloper", "pinch", "pocket", "edge", "jug", "blob", "blob", "crimp", "sloper")
     HUES = ("ansi_1", "ansi_2", "ansi_3", "ansi_4", "ansi_5", "ansi_6", "w", "k", "ansi_3", "w")
 
@@ -3236,19 +3241,40 @@ class Problem(Pixel):
             for h in self.HUES:
                 col = p("white") if h == "w" else p("bg+fg:75") if h == "k" else p(h)
                 c[h], c[h + "l"], c[h + "d"], c[h + "s"] = col, mix(col, WHITE3, 0.35), mix(col, BLACK3, 0.35), mix(col, WHITE3, 0.7)
+        if self.view2:
+            c.update(self.colors2(p, c))
         st[k] = c
         return c
+
+    def colors2(self, p, c):
+        """The other wall's own: wood, the mats, the whiteboard and its markers, the fan's metal."""
+        bg = p("bg")
+        if p.dark:
+            wood, mat = mix(c["wall"], p("ansi_3"), 0.22), mix(mix(bg, p("ansi_4"), 0.34), BLACK3, 0.35)
+            return dict(wood=wood, woodlit=mix(wood, p("fg"), 0.2), wooddark=mix(wood, BLACK3, 0.5), mat=mat, matlit=mix(mat, p("fg"), 0.16),
+                        matdark=mix(mat, BLACK3, 0.5), board=mix(p("fg"), c["wall"], 0.22), boardedge=mix(p("fg"), BLACK3, 0.55),
+                        ink=mix(bg, BLACK3, 0.55), inkred=mix(p("ansi_1"), BLACK3, 0.15), inkblue=mix(p("ansi_4"), BLACK3, 0.25), metal=mix(p("fg"), bg, 0.5),
+                        metaldark=mix(bg, BLACK3, 0.6), chalk=p("fg"), lamp=mix(p("ansi_3"), WHITE3, 0.55), strap=mix(p("ansi_1"), BLACK3, 0.45))
+        wood, mat = p("bg+ansi_3:30"), p("bg+ansi_4:34")
+        return dict(wood=wood, woodlit=mix(wood, WHITE3, 0.35), wooddark=mix(wood, BLACK3, 0.3), mat=mat, matlit=mix(mat, WHITE3, 0.35),
+                    matdark=mix(mat, BLACK3, 0.25), board=p("white"), boardedge=p("bg+fg:45"), ink=p("bg+fg:85"), inkred=p("ansi_1"),
+                    inkblue=p("ansi_4"), metal=p("bg+fg:40"), metaldark=p("bg+fg:70"), chalk=p("white"), lamp=p("white"), strap=p("ansi_1"))
 
     def extra(self, p, c):
         out = ramp(c["walllit"], c["wall"], 3)[1:2] + ramp(c["wall"], c["walldark"], 3)[1:2]
         for led in ("start", "hand", "top", "life"):
             out += ramp(c["wall"], c[led], 5)[1:-1] + [mix(c[h], c[led], 0.4) for h in ("w", "k", "ansi_3")]
+        if self.view2:
+            out += (ramp(c["wall"], c["lamp"], 5)[1:-1] + ramp(c["mat"], c["matlit"], 3)[1:2] + ramp(c["wood"], c["woodlit"], 3)[1:2]
+                    + ramp(c["wall"], c["chalk"], 4)[1:-1] + ramp(c["metaldark"], c["metal"], 3)[1:2])
         return out
 
     def cell(self, col, row):  # row 0 at the bottom
         return col * self.CELL, (self.ROWS - 1 - row) * self.CELL
 
     def back(self, a, p, c):
+        if self.view2:
+            return self.back2(a, p, c)
         a[:] = C(c["wall"])
         pgrad(a, 0, self.gh, [(0, c["walllit"]), (110, c["wall"]), (self.gh, mix(c["wall"], c["walldark"], 0.6))])
         for y in range(5, self.gh, 10):  # the T-nuts, a hole every ten
@@ -3343,7 +3369,140 @@ class Problem(Pixel):
         st[self.GLIDER] = gens
         return gens
 
+    # the second landscape: the wall behind, after closing, one lamp on
+
+    FL, LAMP2, FAN, RINGS, BUCKET = 206, (300, 14), (450, 154), (226, 258), (170, 226)
+    CIRCUIT = (("1 CRIMPY", "V3"), ("2 THE ROOF", "V6"), ("3 GLIDER", "V5"), ("4 P = NP", "V?"))
+
+    def back2(self, a, p, c):
+        dk, gw, gh, FL = p.dark, self.gw, self.gh, self.FL
+        pgrad(a, 0, FL, [(0, c["walldark"]), (50, c["wall"]), (FL, mix(c["wall"], c["walldark"], 0.5))])
+        lx, ly = self.LAMP2
+        pglow(a, lx, ly + 30, 230, c["lamp"], 0.3 if dk else 0.2, add=False)
+        for y in range(5, FL - 4, 10):  # the T-nuts, a hole every ten, as on the board
+            for x in range(5, gw, 10):
+                put(a, x, y, c["tnut"])
+        for x in range(0, gw, 120):
+            vline(a, x, 0, FL, c["seam"])
+        hline(a, 0, gw, 90, c["seam"])
+        box(a, 0, FL - 4, gw, 4, c["walldark"])
+        # the mats: their tops in the lamp's light, their seams going toward us
+        pgrad(a, FL, gh, [(FL, c["matlit"]), (FL + 20, c["mat"]), (gh, mix(c["mat"], c["matdark"], 0.4))])
+        pglow(a, lx, FL + 20, 150, c["lamp"], 0.12 if dk else 0.08, add=False)
+        hline(a, 0, gw, FL, c["matlit"])
+        for x0 in (60, 180, 300, 420):
+            fill(a, Mask().line([(x0, FL), (x0 + (x0 - lx) * 0.45, gh)]), c["matdark"])
+        hline(a, 0, gw, 238, c["matdark"])
+        hline(a, 0, gw, 239, c["matlit"], 0.5)
+        # the campus board: wooden rungs in three sizes, numbered from the foot
+        X, Y, Wd, Ht = 24, 24, 120, 170
+        box(a, X, Y, Wd, Ht, c["wood"])
+        hline(a, X, X + Wd, Y, c["woodlit"])
+        vline(a, X, Y, Y + Ht, c["woodlit"])
+        vline(a, X + Wd - 1, Y, Y + Ht, c["wooddark"])
+        box(a, X + 3, Y + Ht, Wd - 3, 3, c["walldark"])
+        for k in range(9):
+            y = Y + Ht - 16 - k * 17
+            text(a, X + 3, y - 1, str(k + 1), c["wooddark"])
+            for x0, x1, th in ((X + 14, X + 46, 4), (X + 52, X + 84, 3), (X + 90, X + 116, 2)):
+                box(a, x0, y, x1 - x0, th, c["woodlit"])
+                hline(a, x0 + 1, x1 + 1, y + th, c["wooddark"])
+                put(a, x0 + 3, y + 1, c["wooddark"])
+                put(a, x1 - 4, y + 1, c["wooddark"])
+        # the hangboard on its panel: pockets, edges, the jugs at its ends
+        hx, hy = 206, 34
+        box(a, hx - 8, hy - 8, 84, 32, c["wood"])
+        hline(a, hx - 8, hx + 76, hy - 8, c["woodlit"])
+        box(a, hx, hy, 68, 15, c["woodlit"])
+        hline(a, hx, hx + 68, hy + 15, c["wooddark"])
+        for k in range(4):
+            box(a, hx + 8 + k * 14, hy + 3, 9, 4, c["wooddark"])
+        box(a, hx + 4, hy + 10, 60, 2, c["wooddark"])
+        for x0 in (hx - 4, hx + 66):
+            fill(a, Mask().ell(x0 + 3, hy + 6, 4, 5), c["wood"])
+            put(a, x0 + 3, hy + 4, c["wooddark"])
+        # the lamp, on its cord
+        vline(a, lx, 0, ly - 3, c["metaldark"])
+        fill(a, Mask().poly([(lx - 3, ly - 3), (lx + 3, ly - 3), (lx + 8, ly + 4), (lx - 8, ly + 4)]), c["metaldark"])
+        hline(a, lx - 7, lx + 8, ly + 4, c["lamp"])
+        pglow(a, lx, ly + 6, 16, c["lamp"], 0.5, add=dk)
+        # the whiteboard: the circuit, set by hand
+        bx, by, bw, bh = 316, 30, 144, 96
+        box(a, bx - 2, by - 2, bw + 4, bh + 4, c["boardedge"])
+        box(a, bx, by, bw, bh, c["board"])
+        box(a, bx + 10, by + bh + 2, bw - 20, 3, c["boardedge"])
+        for k, col in enumerate(("inkred", "inkblue", "ink")):
+            box(a, bx + 16 + k * 10, by + bh + 1, 7, 1, c[col])
+        text(a, bx + 8, by + 8, "CIRCUIT", c["inkred"], scale=2)
+        hline(a, bx + 8, bx + 64, by + 20, c["inkred"])
+        for i, (name, grade) in enumerate(self.CIRCUIT):
+            y = by + 30 + i * 15
+            text(a, bx + 10, y, name, c["ink"])
+            text(a, bx + bw - 20, y, grade, c["inkblue"])
+        rnd = random.Random(3)
+        for i in range(30):  # old marker, wiped
+            put(a, bx + 4 + rnd.randrange(bw - 8), by + 4 + rnd.randrange(bh - 8), c["boardedge"], 0.25)
+        # the chalk bucket on the mat, chalk round it; the fan's stand and foot
+        cx_, cy_ = self.BUCKET
+        fill(a, Mask().ell(cx_, cy_ + 1, 11, 3), c["chalk"], 0.25)
+        box(a, cx_ - 6, cy_ - 10, 12, 10, c["inkblue"])
+        vline(a, cx_ + 5, cy_ - 10, cy_, mix(c["inkblue"], BLACK3, 0.4))
+        hline(a, cx_ - 6, cx_ + 6, cy_ - 10, c["chalk"])
+        hline(a, cx_ - 5, cx_ + 5, cy_ - 11, c["chalk"], 0.6)
+        fx, fy = self.FAN
+        vline(a, fx, fy + 10, FL + 6, c["metal"])
+        vline(a, fx + 1, fy + 10, FL + 6, c["metaldark"])
+        fill(a, Mask().ell(fx, FL + 7, 12, 3), c["metaldark"])
+        hline(a, fx - 11, fx + 12, FL + 5, c["metal"])
+        for x0 in self.RINGS:  # where the rings hang from, up in the dark
+            box(a, x0 - 2, 0, 5, 2, c["metaldark"])
+
+    def draw2(self, a, p, c, t):
+        """The fan turns its head, and when it looks at the rings they swing; the chalk in the air."""
+        dk = p.dark
+        psi = 0.5 + 0.5 * math.cos(2 * math.pi * t / self.seconds)  # 1: toward us; 0: to the left, at the middle of the loop
+        blow = clamp(1 - psi / 0.45) ** 2
+        for k, x0 in enumerate(self.RINGS):
+            dx = (0.4 + 3.2 * blow) * math.sin(2 * math.pi * (t / 2.4 + k * 0.2))
+            fill(a, Mask().line([(x0, 1), (x0 + dx, 114)]), c["strap"])
+            fill(a, Mask().line([(x0 + 1, 1), (x0 + 1 + dx, 114)]), mix(c["strap"], BLACK3, 0.3))
+            rx = x0 + dx
+            box(a, rx - 1, 113, 3, 4, c["metaldark"])
+            fill(a, Mask().ring(rx, 124, 7, 7, w=2), c["wood"])
+            put(a, rx - 5, 120, c["woodlit"])
+            put(a, rx - 6, 123, c["woodlit"])
+        rnd = random.Random(29)
+        lx, ly = self.LAMP2
+        for i in range(46):  # chalk in the air, in the lamp's light; it goes with the fan
+            x0, y0 = rnd.uniform(170, 430), rnd.uniform(24, 196)
+            x = x0 + 5 * wave(t, 24 / rnd.choice((1, 2, 3)), rnd.random()) - 14 * blow * rnd.random()
+            y = y0 + 4 * wave(t, 24 / rnd.choice((1, 2)), rnd.random())
+            near = clamp(1 - math.hypot(x - lx, (y - ly) * 1.4) / 190)
+            if near > 0 and wave(t, 24 / rnd.choice((3, 4, 6)), rnd.random()) > -0.3:
+                put(a, x, y, c["chalk"], 0.35 + 0.5 * near)
+        cx_, cy_ = self.BUCKET
+        for i in range(14):  # and when it looks at the bucket, a puff out of it
+            u = window(t, 10.2 + i * 0.12, 13.8 + i * 0.12)
+            if 0 < u < 1:
+                put(a, cx_ - 4 + (i * 5) % 9 - 26 * u * (0.5 + (i % 3) / 3), cy_ - 12 - 18 * u * (0.6 + (i % 4) / 5), c["chalk"], 0.7 * (1 - u))
+        fx, fy = self.FAN  # the fan: its head turns, toward us and away to the left
+        rx = 3 + 8 * psi
+        off = (1 - psi) * 4
+        box(a, fx - 1 + off, fy - 3, 5, 7, c["metaldark"])
+        fill(a, Mask().ell(fx - off, fy, rx, 10), c["metaldark"])
+        fill(a, Mask().ring(fx - off, fy, rx, 10), c["metal"])
+        if psi > 0.25:
+            for k in range(3):
+                f = 2 * math.pi * (t * 3.2 + k / 3)
+                fill(a, Mask().line([(fx - off, fy), (fx - off + 0.8 * rx * math.cos(f), fy + 8 * math.sin(f))]), c["metal"], 0.7)
+        else:
+            vline(a, fx - off - rx + 1, fy - 8, fy + 9, c["metal"])
+        put(a, fx - off, fy, c["chalk"])
+        vline(a, fx, fy + 6, fy + 10, c["metal"])
+
     def draw(self, a, p, c, t):
+        if self.view2:
+            return self.draw2(a, p, c, t)
         dk = p.dark
         for prob, t0, t1 in ((self.A, 0.5, 7.2), (self.B, 7.8, 14.6)):
             if t0 <= t < t1:
