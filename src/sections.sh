@@ -255,8 +255,9 @@ panel_rows_wallpapers() {   # the theme's wallpaper list: the drawings, each wit
         _pw=$(wall_palette_of "$w"); case $_pw in any) _pw='for any dark palette' ;; every) _pw='moves, in any palette' ;; *) theme_title_of "$_pw"; _pw="for $_tit" ;; esac   # the palette it was drawn for, by its title: for Catppuccin Mocha
         if [ "$w" = "$_cur" ]; then printf '%s\t%s\twallpaper %s\tdrawings|%s\n' "$PANEL_TICK" "$w" "$w" "$_pw"; else printf -- '-\t%s\twallpaper %s\tdrawings|%s\n' "$w" "$w" "$_pw"; fi
     done
-    [ -n "$_cur" ] || art_stills | grep -qxF -- "$_cwp" || printf '%s\tpicture %s\tshow\tcustom\n' "$PANEL_TICK" "$(basename "$_cwp")"
-    printf -- '-\ta picture\twallpaper-picture\tcustom\n'   # the files, to pick a picture from (the dialog's)
+    _cwn="picture $(basename "$_cwp")"; ! wall_video "${WALLPAPER:-}" || _cwn="video $(file_named "$WALLPAPER")"   # a video by its own name, not its frame's
+    [ -n "$_cur" ] || art_stills | grep -qxF -- "$_cwp" || printf '%s\t%s\tshow\tcustom\n' "$PANEL_TICK" "$_cwn"
+    printf -- '-\ta picture or video\twallpaper-picture\tcustom\n'   # the files, to pick a picture or an MP4 from (the dialog's)
     ! wall_color || printf '%s\t%s\tshow\tcustom|a color\n' "$PANEL_TICK" "$_cur"
     printf -- '-\ta color\twallpaper-color\tcustom|a name or #rrggbb\n'   # it asks for one (provide_wall_rows)
     if [ "$_cur" = default ]; then _gm=$PANEL_TICK; else _gm=-; fi

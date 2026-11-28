@@ -1549,6 +1549,19 @@ if [ "$(uname -s)" != Darwin ]; then
     rc2=0; out2=$(sh "$SH" theme wallpaper "$HOME/pictures" 2>&1) || rc2=$?
     [ $rc = 1 ] && [ $rc2 = 1 ] && printf '%s\n' "$out" "$out2" | grep -c 'is not a readable file' | grep -qx 2 && ok "theme wallpaper: a directory is not a picture (~ alone too)" || bad "wallpaper dir" "$out $out2"
     rm -f "$pic"
+    # a video of yours (v0.174.1): its first frame, drawn by mpv once and kept, is the still sway fills; it plays where the moving wallpaper is on
+    vid="$HOME/videos/sea one.mp4"; vfr=$REPO/gallery/core/atlas-awakening/atlas-awakening-landscape-1.jpg; mkdir -p "$HOME/videos" "$H/vmpv"; cp "$REPO/gallery/core/atlas-awakening/atlas-awakening-landscape-2.mp4" "$vid"
+    printf '#!/bin/sh\necho "$*" >> "$HOME/vmpv.log"\nfor a; do case $a in --vo-image-outdir=*) cp "%s" "${a#*=}/00000001.jpg" ;; esac; done\n' "$vfr" > "$H/vmpv/mpv"; chmod +x "$H/vmpv/mpv"; rm -f "$HOME/vmpv.log"
+    rc=0; out=$(PATH="$H/vmpv:$PATH" sh "$SH" theme wallpaper "$vid" 2>&1) || rc=$?
+    vst=$(sed -n 's/^output \* bg "\(.*\)" fill$/\1/p' "$sway"); PATH="$H/vmpv:$PATH" sh "$SH" on --yes >/dev/null 2>&1 || :
+    [ $rc = 0 ] && grep -qxF "WALLPAPER=$vid" "$HOME/.config/spark-shell/config" && case $vst in */spark-shell/wallpapers/videos/video-[0-9]*.jpg) cmp -s "$vst" "$vfr" ;; *) false ;; esac \
+        && [ "$(printf '%s\n' "$out" | tail -1)" = "a running sway shows its first frame now, and the windows keep their transparency, 5%; spark-shell theme motion on plays it" ] \
+        && [ "$(grep -c '' "$HOME/vmpv.log")" = 1 ] && grep -q -- '--no-audio .*--frames=1 -- ' "$HOME/vmpv.log" \
+        && [ "$(sh "$SH" theme wallpaper)" = "wallpaper $vid -- a video: it plays where the moving wallpaper is on, else its first frame stands" ] && sh "$SH" status | grep -qxF "  wall  video            $vid" \
+        && ok "theme wallpaper VIDEO: an MP4 of yours in the config, its first frame drawn once by mpv and kept, sway fills it, the receipt says how it plays; the bare verb and status name the video" || bad "wallpaper video" "rc=$rc $out | $vst | $(cat "$HOME/vmpv.log" 2>&1)"
+    printf 'no video' > "$HOME/videos/fake.mp4"; rc=0; out=$(sh "$SH" theme wallpaper "$HOME/videos/fake.mp4" 2>&1) || rc=$?
+    [ $rc = 1 ] && [ "$out" = 'spark-shell theme: fake.mp4: it is no MP4' ] && grep -qxF "WALLPAPER=$vid" "$HOME/.config/spark-shell/config" && ok "theme wallpaper: an MP4 that is no video is refused, the wallpaper kept" || bad "wallpaper fake video" "rc=$rc $out"
+    rm -rf "$HOME/videos"
     # a plain color: #rrggbb or a name, saved as #rrggbb; a palette with a drawing of its own replaces it (#25)
     out=$(sh "$SH" theme wallpaper navy)
     grep -qx 'WALLPAPER=#000080' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000080 solid_color$' "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^gaps outer 8$' "$sway" && grep -q '^alpha=0.95$' "$foot" && grep -q '^        background #000000f2$' "$sway" \
@@ -4770,6 +4783,13 @@ mo theme motion off >/dev/null 2>&1; _mlo=$(mo theme motion on 2>&1); sleep 0.5
 case $_mlo in 'moving wallpaper on '*' no picture on a screen now has a loop') [ ! -s "$HOME/player.log" ] ;; *) false ;; esac \
     && ok "theme motion on, two screens of a work whose loops are on pictures neither shows: the stills, said so, nothing played or made" || bad "given loops, none shown" "$_mlo | $(cat "$HOME/player.log" 2>&1)"
 mo_stop
+# a video of yours (v0.174.1): linked into the cache and played as it is on every screen, as a picture of yours shows on every screen; none made
+rm -f "$HOME/player.log" "$HOME/mpv.log" "$H/run/spark-shell-motion.want"; mkdir -p "$HOME/Videos"; cp "$_mat/atlas-awakening-landscape-2.mp4" "$HOME/Videos/sea.mp4"
+printf 'DESKTOP=sway\nTHEME=dracula\nWALLPAPER=%s\nWALLPAPER_MOTION=on\n' "$HOME/Videos/sea.mp4" > "$HOME/.config/spark-shell/config"
+mo desktop --motion >/dev/null 2>&1; mo_wait 1; _mlv=$(sed -n 1p "$HOME/player.log" 2>/dev/null || :)
+case $_mlv in "--all $_mdir/given-"*.mp4) [ "$(readlink "${_mlv#--all }")" = "$HOME/Videos/sea.mp4" ] ;; *) false ;; esac && ! grep -q -- '--ovc' "$HOME/mpv.log" 2>/dev/null \
+    && ok "desktop --motion, a video of yours: linked into the cache and played as it is on every screen, none made (v0.174.1)" || bad "video loop" "$_mlv | $(cat "$HOME/mpv.log" 2>&1)"
+mo_stop; rm -f "$HOME/Videos/sea.mp4" "$HOME/player.log" "$H/run/spark-shell-motion.want"
 cp "$H/cfg.mo" "$HOME/.config/spark-shell/config"
 # two screens with one name (no serial, the same model): each by its port, never both at once
 sed -i.bak 's/"make":"BOE","model":"0x0BCA","serial":""/"make":"Lenovo Group Limited","model":"T24i-30","serial":"V30A1"/' "$H/lx/swaymsg"; rm -f "$H/lx/swaymsg.bak" "$HOME/swaymsg.log"
@@ -6958,11 +6978,13 @@ mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},
 ans 2 | jq -r '.result.contents[0].text' | jq -e '.title == "theme" and (.state | type == "string" and length > 0)' >/dev/null \
     && ok "provide: a rows read carries the section's state beside its title, so a subtitle follows each step" || bad "rows state" "$(ans 2 | head -c 300)"
 # the wallpaper's picture: a path, no row of it (the dialog's pick), so its own gate: under home, no link, nothing hidden, a picture's type
-mkdir -p "$H/Pictures" "$H/.hid"; a_picture "$H/Pictures/sea.png" "$H/.hid/sea.png" "$H/Pictures/sea.txt"; PH=$(realpath "$H")
+mkdir -p "$H/Pictures" "$H/.hid"; a_picture "$H/Pictures/sea.png" "$H/.hid/sea.png" "$H/Pictures/sea.txt"; printf 'no video' > "$H/Pictures/fake.mp4"; PH=$(realpath "$H")
 mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" \
-    "$(call 2 theme_wallpaper_picture "$(jq -cn --arg p "$PH/.hid/sea.png" '{path: $p}')")" "$(call 3 theme_wallpaper_picture "$(jq -cn --arg p "$PH/Pictures/sea.txt" '{path: $p}')")" "$(call 4 theme_wallpaper_picture '{"path":"/etc/hosts"}')"
-[ "$(ans 2 | jq -r '.result.content[0].text')" = 'wallpaper: a hidden file is not offered' ] && [ "$(ans 3 | jq -r '.result.content[0].text')" = 'wallpaper: a picture is jpg jpeg png webp' ] && [ "$(ans 4 | jq -r '.result.content[0].text')" = 'wallpaper: a picture comes from under your home' ] \
-    && ok "provide theme_wallpaper_picture: a path no row holds, held to its own gate: a hidden file, a type that is no picture, a path outside home refused" || bad "wallpaper picture gate" "$(cat "$H/mcp.out")"
+    "$(call 2 theme_wallpaper_picture "$(jq -cn --arg p "$PH/.hid/sea.png" '{path: $p}')")" "$(call 3 theme_wallpaper_picture "$(jq -cn --arg p "$PH/Pictures/sea.txt" '{path: $p}')")" "$(call 4 theme_wallpaper_picture '{"path":"/etc/hosts"}')" \
+    "$(call 5 theme_wallpaper_picture "$(jq -cn --arg p "$PH/Pictures/fake.mp4" '{path: $p}')")"
+[ "$(ans 2 | jq -r '.result.content[0].text')" = 'wallpaper: a hidden file is not offered' ] && [ "$(ans 3 | jq -r '.result.content[0].text')" = 'wallpaper: a picture or a video is jpg jpeg png webp mp4' ] && [ "$(ans 4 | jq -r '.result.content[0].text')" = 'wallpaper: a picture or a video comes from under your home' ] \
+    && [ "$(ans 5 | jq -r '.result.content[0].text')" = 'wallpaper: fake.mp4: it is no MP4' ] \
+    && ok "provide theme_wallpaper_picture: a path no row holds, held to its own gate: a hidden file, a type that is no picture or video, a path outside home, an MP4 that is no video refused" || bad "wallpaper picture gate" "$(cat "$H/mcp.out")"
 jq -e -s 'all(.[]; (.name | test("^[a-z][a-z0-9_]{0,63}$")) and (.title | test("^[a-z][a-z-]*( [a-z-]+| [A-Z]+)*$")) and (.title | length) <= 60)' "$H/tools.all" >/dev/null \
     && ok "provide: every tool name is lower case with underscores, every title a sentence of plain words with its argument in capitals, 60 at most" || bad "tool shapes" "$(jq -r '.name + " | " + .title' "$H/tools.all")"
 jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.destructiveHint | type) == "boolean" and (.idempotentHint | type) == "boolean" and .openWorldHint == false)' "$H/tools.all" >/dev/null \
@@ -9103,7 +9125,7 @@ _fbg=$(sed -n 's/^THEME_BG=//p' "$_fl/palette.env"); _ffg=$(sed -n 's/^THEME_FG=
 f1=$(page 1 | jq -r '[(.rows | length), .rows[0].children, (.rows[1] | .id + "=" + .columns[0] + ">" + .children), (.rows[4] | .id + " " + .text + "=" + .swatch + ":" + .tool.name + ":" + .tool.arguments.word), (.rows[14] | .id + " " + .text)] | map(tostring) | join(" ")')
 f1a=$(page 1 | jq -r '[.rows[] | select(.id | startswith("theme:color:")) | (.id | ltrimstr("theme:color:")) + "=" + (.against // "-")] | (.[0:5] + .[12:13]) | join(" ")')
 f2=$(page 2 | jq -r '(.title // "") + "|" + ([.rows[] | .group + "/" + .id + ":" + (.pick.tool // "")] | join(" "))')
-f2w='Wallpaper and screens|wallpaper/theme:wallpaper: wallpaper/theme:wallpaper-color: wallpaper/theme:show:Moving wallpaper: loops/theme:screens:loop:landscape-1:theme_loop loops/theme:screens:loop:landscape-2:theme_loop loops/theme:screens:loop:landscape-3:theme_loop loops/theme:screens:loop:portrait:theme_loop idle and lock/theme:screens:clock:'
+f2w='Wallpaper and screens|wallpaper/theme:wallpaper: wallpaper/theme:wallpaper-color: wallpaper/theme:wallpaper-picture:theme_wallpaper_picture wallpaper/theme:show:Moving wallpaper: loops/theme:screens:loop:landscape-1:theme_loop loops/theme:screens:loop:landscape-2:theme_loop loops/theme:screens:loop:landscape-3:theme_loop loops/theme:screens:loop:portrait:theme_loop idle and lock/theme:screens:clock:'
 [ "$(uname -s)" != Darwin ] || f2w='|'   # a Mac has no wallpaper of spark-shell's: no such page
 f3=$(page 3 | jq -r '[.rows[] | select(.id | startswith("theme:settings:")) | .text] | join("|")')
 f3a=$(page 3 | jq -r '.state + "|" + ([.rows[] | select(.id == "theme:gallery:open") | .columns[0] + "/" + (.chip | length | tostring) + "/" + (.page // "")] | first) + "|" + ([.rows[] | select(.id == "theme:settings:yours") | .columns[0]] | first)')
@@ -10155,22 +10177,29 @@ echo 1 > "$HOME/screens"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w1=
 w1g=$(ans 1 | jq -r '.result.contents[0].text | fromjson | .title + ": " + ([.rows[] | .group + "/" + .id] | join(" "))')
 plainc() { ans "$1" | jq -r '.result.contents[0].text | fromjson | .rows[] | select(.id == "theme:wallpaper-color") | [.text, .columns[0], .tool.name, (.tool.ask | join(",")), .swatch] + (.chip // []) | join("|")'; }
 w1c=$(plainc 1)
+pic_magic_png() { [ "$(od -An -tx1 -N8 < "$1" 2>/dev/null | tr -d ' \n')" = 89504e470d0a1a0a ]; }   # a whole PNG's first bytes: what the dialog decodes
+mediac() { ans "$1" | jq -r '.result.contents[0].text | fromjson | .rows[] | select(.id == "theme:wallpaper-picture") | [.text, .columns[0], .pick.tool, (.pick.types | join(",")), .children] | join("|")'; }
+w1m=$(mediac 1)
 echo 2 > "$HOME/screens"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w2=$(wp_rows 1)
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=watch\n' > "$cfg"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w3=$(wp_rows 1)
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=#224466\n' > "$cfg"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w4=$(wp_rows 1); w4c=$(plainc 1)
+printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=%s\n' "$_wp/photo.png" > "$cfg"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w4m=$(mediac 1)
+w4p=$(ans 1 | jq -r '.result.contents[0].text | fromjson | .rows[] | select(.id == "theme:wallpaper-picture") | .preview // ""')
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=default\n' > "$cfg"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w5=$(wp_rows 1)
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=fjord\n' > "$cfg"; echo ww > "$HOME/screens"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w6=$(wp_rows 1)
 sh "$SH" theme atlas-awakening >/dev/null 2>&1; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w7=$(wp_rows 1)
 echo 3 > "$HOME/screens"; mcp_scr theme "$(rq 1 resources/read "$wp_page")"; w8=$(wp_rows 1)
-[ "$w1" = '' ] && [ "$w1g" = 'Wallpaper and screens: wallpaper/theme:wallpaper wallpaper/theme:wallpaper-color wallpaper/theme:show:Moving wallpaper idle and lock/theme:screens:clock' ] \
+[ "$w1" = '' ] && [ "$w1g" = 'Wallpaper and screens: wallpaper/theme:wallpaper wallpaper/theme:wallpaper-color wallpaper/theme:wallpaper-picture wallpaper/theme:show:Moving wallpaper idle and lock/theme:screens:clock' ] \
     && [ "$w1c" = 'Plain color|a name or #rrggbb|theme_wallpaper_color|color|#21252d' ] && [ "$w4c" = 'Plain color|#224466|theme_wallpaper_color|color|#224466|#224466' ] \
+    && [ "$w1m" = 'Picture or video|jpg, jpeg, png, webp, mp4|theme_wallpaper_picture|jpg,jpeg,png,webp,mp4|spark-shell://files/rows' ] && [ "$w4m" = 'Picture or video|photo.png|theme_wallpaper_picture|jpg,jpeg,png,webp,mp4|spark-shell://files/rows' ] \
+    && { [ -z "$w4p" ] || case $w4p in */spark-shell/thumbs/yours-[0-9]*-960.png) pic_magic_png "$w4p" ;; *) false ;; esac; } \
     && [ "$w2" = 'DP-3/Tall (turned)=fjord, drawn for a turned screen:theme_portrait:files/rows:' ] && [ "$w3" = 'DP-3/Tall (turned)=watch, drawn for a turned screen:theme_portrait:files/rows:' ] \
     && [ "$w4" = 'DP-3/Tall (turned)=#224466::theme/rows/wallpapers:' ] && [ "$w5" = 'DP-3/Tall (turned)=the ground::theme/rows/wallpapers:' ] \
     && [ "$w6" = 'DP-4/Side=fjord, its second view::theme/rows/wallpapers:' ] \
     && [ "$w7" = 'DP-4/Side=Landscape 2:theme_panel2:files/rows:take it away {"n":"2","path":"none"}' ] \
     && [ "$w8" = 'DP-3/Tall (turned)=Portrait:theme_portrait:files/rows:take it away {"path":"none"}|DP-4/Side=Landscape 2:theme_panel2:files/rows:take it away {"n":"2","path":"none"}' ] \
-    && ok "provide theme: Wallpaper and screens holds a plain color under the wallpaper, its picker on the color in use or the ground; it lists each screen that shows something of its own by its name and what it shows (fitted, drawn for a turned screen, a role), never none: one plain screen has no row; a color or the ground and a drawing on a second screen open the wallpaper list; a turned screen picks its picture, a second or third landscape one beside a picture, counted among the landscape screens alone" \
-    || bad "wallpaper and screens rows" "$w1 | $w1g | $w1c | $w4c | $w2 | $w3 | $w4 | $w5 | $w6 | $w7 | $w8"
+    && ok "provide theme: Wallpaper and screens holds a plain color under the wallpaper, its picker on the color in use or the ground, then a picture or video to pick from the files, one of yours by its name and its picture; it lists each screen that shows something of its own by its name and what it shows (fitted, drawn for a turned screen, a role), never none: one plain screen has no row; a color or the ground and a drawing on a second screen open the wallpaper list; a turned screen picks its picture, a second or third landscape one beside a picture, counted among the landscape screens alone" \
+    || bad "wallpaper and screens rows" "$w1 | $w1g | $w1c | $w4c | $w1m | $w4m $w4p | $w2 | $w3 | $w4 | $w5 | $w6 | $w7 | $w8"
 # the picks leave the picture on that screen: a third screen of a bundled work; a turned screen beside a palette's drawing; a
 # second screen beside a picture of yours, which the look takes under a name a family can say; a turned screen of a saved
 # theme whose wallpaper in use is a picture outside its folder; a third screen with no second of its own
@@ -10344,11 +10373,11 @@ if [ "$(uname -s)" != Darwin ]; then
     jq -e '(.rows[] | select(.id == "theme:wallpaper") | .text == "Wallpaper" and .columns == ["dunes"] and .tool == null and .children == "spark-shell://theme/rows/wallpapers")
         and (.rows[] | select(.id == "theme:picture") | .text == "a theme from a picture" and .children == "spark-shell://files/rows" and .pick == {tool: "theme_picture", types: ["jpg", "jpeg", "png", "webp"]})' "$H/trows.json" >/dev/null \
         && jq -e --arg th "$HOME/.local/state/spark-shell/thumbs" '.title == "Wallpaper" and (.rows[] | select(.id == "theme:wallpaper skyline") | .group == "drawings" and .columns == ["for Tokyo Night, night style"] and .preview == ($th + "/skyline-dracula-960.png") and .tool == {name: "theme_wallpaper", arguments: {name: "skyline"}} and .quiet == true)
-            and (.rows[] | select(.id == "theme:wallpaper-picture") | .group == "custom" and .text == "a picture" and (has("quiet") | not) and .children == "spark-shell://files/rows" and .pick.tool == "theme_wallpaper_picture")
+            and (.rows[] | select(.id == "theme:wallpaper-picture") | .group == "custom" and .text == "a picture or video" and (has("quiet") | not) and .children == "spark-shell://files/rows" and .pick.tool == "theme_wallpaper_picture" and .pick.types == ["jpg", "jpeg", "png", "webp", "mp4"])
             and (.rows[] | select(.id == "theme:wallpaper-color") | .text == "a color" and .tool.name == "theme_wallpaper_color" and .tool.ask == ["color"] and (.swatch | test("^#[0-9a-f]{6}$")))
             and (.rows[] | select(.id == "theme:wallpaper default") | .text == "the ground" and .group == "custom" and .quiet == true and (.chip | length) == 1) and ([.rows[] | select(.text == "none" or .group == "colors")] | length == 0)
             and (.rows[] | select(.id == "theme:wallpaper dunes") | .sign == "check" and .quiet == true and .tool.arguments.name == "dunes") and .rows[0].id == "theme:wallpaper skyline"' "$H/wrows.json" >/dev/null \
-        && ok "provide theme: the wallpaper row opens the list resource (#36): the drawings first, each with the palette it was drawn for and its picture in this palette, each kept in place (#191); custom: a picture to pick, a color asked for, the ground with its color; no none, no color rows; dunes checked, its step kept" || bad "wallpaper rows" "$(head -c 700 "$H/trows.json"; head -c 900 "$H/wrows.json")"
+        && ok "provide theme: the wallpaper row opens the list resource (#36): the drawings first, each with the palette it was drawn for and its picture in this palette, each kept in place (#191); custom: a picture or a video to pick, a color asked for, the ground with its color; no none, no color rows; dunes checked, its step kept" || bad "wallpaper rows" "$(head -c 700 "$H/trows.json"; head -c 900 "$H/wrows.json")"
     jq -e --arg th "$HOME/.local/state/spark-shell/thumbs" '(.rows[] | select(.id == "theme:wallpaper watch") | .group == "drawings" and .columns == ["moves, in any palette"] and .preview == ($th + "/watch-dracula-960.png") and .quiet == true)
         and ([.rows[] | select(.group == "drawings") | .text] | index("watch") > index("embers")) and ([.rows[] | .text, (.columns[]?)] | map(select(test("^(cozy|night)$"))) | length == 0)' "$H/wrows.json" >/dev/null \
         && ok "provide theme: the scenes are wallpapers after the drawings, each moving in any palette, its picture drawn in this one; no collection named (#188)" || bad "scene rows" "$(jq -c '[.rows[] | select(.text == "watch")]' "$H/wrows.json")"

@@ -161,6 +161,7 @@ theme_wear() { _twl=$(theme_apply "$THEME" 2>&1) || refuse_in theme "$1, but $(p
 wall_now() {   # -> the wallpaper's word, a theme's own picture by its role (Landscape 1), or the picture's name
     _wn=$(wall_name)
     if [ -z "$_wn" ] && wall_of_theme "${WALLPAPER:-}"; then _wnd=${WALLPAPER%/*}; _wn=$(art_named "$WALLPAPER" "${_wnd##*/}"); fi
+    [ -n "$_wn" ] || ! wall_video "${WALLPAPER:-}" || _wn=$(file_named "$WALLPAPER")   # a video by its own name, not its frame's
     printf '%s' "${_wn:-$(basename "$(wall_path)")}"
 }
 theme_look_words() { printf '%s, text %s, transparency %s%%' "$(wall_now)" "$(look_font_size)" "$(transparency_of "$ALPHA")"; }   # -> "skyline, text 12, transparency 15%"
@@ -240,7 +241,7 @@ look_write() {   # look_write DIR -- the look in use as the theme DIR, its pictu
     fi
     if wall_shipped "$WALLPAPER"; then _lwl="$_lwl${NL}WALLPAPER=$WALLPAPER${NL}DRAWING=$WALLPAPER"
     elif wall_there; then
-        _lww=${WALLPAPER##*/}
+        _lww=${WALLPAPER##*/}; ! wall_video "$WALLPAPER" || _lww=${_lww%.*}.jpg   # a video of yours: its first frame the picture, the video its loop beside it
         case ${_lws:+$WALLPAPER} in "$_lws"/*) _lwo=${_lws##*/}; case $_lww in "$_lwo"-*) _lww=$_lwn-${_lww#"$_lwo"-} ;; esac ;; esac   # the theme's own: copied with its folder
         _lwl="$_lwl${NL}WALLPAPER=picture${NL}PICTURE=$_lww"
     else _lwl="$_lwl${NL}WALLPAPER=$WALLPAPER"; fi
@@ -263,6 +264,8 @@ look_write_files() {   # look_write_files FOLDER PALETTE NAME NEWDIR -- the file
     if wall_shipped "$WALLPAPER"; then
         _lwf=$(wall_path)
         for _lwe in png svg; do [ ! -f "${_lwf%.png}.$_lwe" ] || cp "${_lwf%.png}.$_lwe" "$4/wallpaper.$_lwe" 2>"$TMP/store.why" || return 1; done
+    elif wall_video "$WALLPAPER" && wall_there; then _lwv=${WALLPAPER##*/}; _lwv=${_lwv%.*}   # its first frame as NAME.jpg and the video as NAME.mp4: the theme's picture and its loop
+        cp "$(wall_path)" "$4/$_lwv.jpg" 2>"$TMP/store.why" && cp "$WALLPAPER" "$4/$_lwv.mp4" 2>"$TMP/store.why" || return 1
     elif wall_there; then case ${1:+$WALLPAPER} in "$1"/*) ;; *) cp "$WALLPAPER" "$4/${WALLPAPER##*/}" 2>"$TMP/store.why" || return 1 ;; esac
     fi
 }
@@ -419,10 +422,13 @@ theme_wall_adopt() {   # after theme_editable: the wallpaper in use is the theme
         return 0
     fi
     wall_there || { echo "the wallpaper in use cannot be read"; return 1; }
-    _twe=$(printf '%s' "${WALLPAPER##*.}" | tr 'A-Z' 'a-z'); [ "$_twe" != jpeg ] || _twe=jpg
+    _twe=$(printf '%s' "${WALLPAPER##*.}" | tr 'A-Z' 'a-z'); [ "$_twe" != jpeg ] || _twe=jpg; [ "$_twe" != mp4 ] || _twe=jpg   # a video: its first frame, the video its loop beside it
     _twf=$_twn-landscape-1.$_twe
     for _twx in jpg png webp gif; do [ ! -e "$_ted/$_twn-landscape-1.$_twx" ] || _twf=$_twn-wallpaper.$_twe; done
-    { cp "$WALLPAPER" "$_ted/.new-${TMP##*/}" && mv -f "$_ted/.new-${TMP##*/}" "$_ted/$_twf"; } 2>"$TMP/store.why" || { rm -f "$_ted/.new-${TMP##*/}"; echo "the theme could not keep the wallpaper$(store_said)"; return 1; }
+    if wall_video "$WALLPAPER"; then
+        { cp "$WALLPAPER" "$_ted/.new-${TMP##*/}" && mv -f "$_ted/.new-${TMP##*/}" "$_ted/${_twf%.*}.mp4"; } 2>"$TMP/store.why" || { rm -f "$_ted/.new-${TMP##*/}"; echo "the theme could not keep the wallpaper$(store_said)"; return 1; }
+    fi
+    { cp "$(wall_path)" "$_ted/.new-${TMP##*/}" && mv -f "$_ted/.new-${TMP##*/}" "$_ted/$_twf"; } 2>"$TMP/store.why" || { rm -f "$_ted/.new-${TMP##*/}"; echo "the theme could not keep the wallpaper$(store_said)"; return 1; }
     env_put "$_ted/look.env" WALLPAPER picture PICTURE "$_twf" 2>"$TMP/store.why" || { echo "the theme could not keep the wallpaper$(store_said)"; return 1; }
     _ltk=''; look_take WALLPAPER "$_ted/$_twf"
     look_taken 2>"$TMP/store.why" || { echo "the theme could not keep the wallpaper$(store_said)"; return 1; }
@@ -675,7 +681,9 @@ theme_wallpaper() {   # theme_wallpaper [PATH|DRAWING|COLOR|default]
     if [ -z "${1:-}" ]; then
         if [ "$WALLPAPER" = default ] || [ "$WALLPAPER" = none ]; then echo "wallpaper default -- the ground, the palette's background a shade darker ($(wall_ground)); it follows the palette"
         elif wall_color; then echo "wallpaper $WALLPAPER -- a plain color; a palette with a drawing of its own replaces it"
+        elif wall_video "$WALLPAPER" && wall_there; then echo "wallpaper $WALLPAPER -- a video: it plays where the moving wallpaper is on, else its first frame stands"
         elif wall_there; then case $(wall_path) in "$REPO"/*|"$WALLPAPER") echo "wallpaper $WALLPAPER" ;; *) echo "wallpaper $WALLPAPER -- drawn in $THEME" ;; esac
+        elif wall_video "$WALLPAPER"; then echo "wallpaper $WALLPAPER -- missing or its first frame not drawn, the ground instead"
         else echo "wallpaper $(wall_path) -- missing, the ground instead"; fi
         return
     fi
@@ -686,6 +694,7 @@ theme_wallpaper() {   # theme_wallpaper [PATH|DRAWING|COLOR|default]
     wall_value_ok "$want" || refuse_in theme "$PATH_REFUSED"   # the config would refuse it later
     case $want in   # the kinds spark-shell reads, read whole; another kind (SVG, AVIF, BMP) is the background drawer's to read
         /*.[Pp][Nn][Gg]|/*.[Jj][Pp][Gg]|/*.[Jj][Pp][Ee][Gg]|/*.[Ww][Ee][Bb][Pp]|/*.[Gg][Ii][Ff]) _pwy=$(pic_why "$want") || refuse_in theme "$_pwy" ;;
+        /*.[Mm][Pp]4) _pwy=$(art_media_ok "$want" mp4) || refuse_in theme "$(file_named "$want"): $_pwy" ;;   # a video: the loop player's kind, and its first frame the still
         /*) [ -s "$want" ] || refuse_in theme "$(file_named "$want") is empty" ;;
     esac
     config_set WALLPAPER "$want"
@@ -699,6 +708,8 @@ theme_wallpaper() {   # theme_wallpaper [PATH|DRAWING|COLOR|default]
     elif [ "$want" = default ]; then echo "the ground is back -- the palette's background a shade darker, and it follows the palette"
     elif wall_color; then echo "a running sway shows $want now, and $_tr; a palette with a drawing of its own replaces it"
     elif wall_shipped "$want"; then case $(wall_path) in "$REPO"/*) _dr='' ;; *) _dr=", drawn in $THEME" ;; esac; echo "a running sway shows $want now$_dr -- it follows the palette: a palette with a drawing of its own brings that one"
+    elif wall_video "$want" && [ "${WALLPAPER_MOTION:-off}" != on ]; then echo "a running sway shows its first frame now, and $_tr; spark-shell theme motion on plays it"
+    elif wall_video "$want"; then echo "a running sway plays it now, and $_tr"
     else echo "a running sway shows it now, and $_tr"; fi
 }
 theme_text() {   # theme_text [N|bigger|smaller] -- the pointer follows
@@ -795,12 +806,12 @@ glyphs_step() {   # glyphs_step signs|words -> the receipt; 1 when refused
 # the loop cache; a player of yours is never stopped
 MOTION_DIR=${XDG_CACHE_HOME:-$HOME/.cache}/spark-shell/motion
 motion_names() { for _ms in "$REPO"/lib/motion_*.py; do [ -f "$_ms" ] || continue; _ms=${_ms##*/motion_}; printf '%s\n' "${_ms%.py}"; done; printf '%s\n' $WALL_SCENES; }   # -> the moving wallpapers, one a line
-motion_has() { wall_scene "$1" || { wall_shipped "$1" && [ -f "$REPO/lib/motion_$1.py" ]; } || art_moves "$1"; }   # motion_has WALLPAPER -> 0 when it moves
+motion_has() { wall_scene "$1" || { wall_shipped "$1" && [ -f "$REPO/lib/motion_$1.py" ]; } || art_moves "$1" || { wall_video "$1" && [ -f "$1" ]; }; }   # motion_has WALLPAPER -> 0 when it moves
 motion_missing() {   # -> the missing tools, or nothing
     _mm=''
     command -v mpv >/dev/null 2>&1 || _mm="$_mm mpv"
     if wall_scene "${WALLPAPER:-}"; then scene_ready || _mm="$_mm numpy"
-    elif art_moves "${WALLPAPER:-}"; then :   # a loop of the theme's own: nothing to make
+    elif art_moves "${WALLPAPER:-}" || wall_video "${WALLPAPER:-}"; then :   # a loop of the theme's own or a video of yours: nothing to make
     else for _mt in python3 rsvg-convert; do command -v "$_mt" >/dev/null 2>&1 || _mm="$_mm $_mt"; done; fi
     wallpaper_cmd >/dev/null || _mm="$_mm spark-wallpaper"
     printf '%s' "${_mm# }"
@@ -882,7 +893,10 @@ motion_follow_now() {
     fi
     _mj=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || return 0
     mkdir -p "$MOTION_DIR"
-    if _mlp=$(art_loops); then   # the theme's own loops, linked into the cache so they are ours to stop: a loop a screen, none to make
+    if wall_video "$WALLPAPER"; then   # a video of yours, linked into the cache as a theme's loop is: on every screen, as a picture of yours is
+        _mll=$MOTION_DIR/given-$(printf '%s' "$WALLPAPER" | cksum | cut -d' ' -f1).mp4
+        ln -sf "$WALLPAPER" "$_mll" && printf '%s\tgiven\t*\n' "$_mll" > "$_mj/plan" && printf -- '--all\n%s\n' "$_mll" > "$_mj/args" || { rm -rf "${_mj:?}"; motion_stop; return 0; }
+    elif _mlp=$(art_loops); then   # the theme's own loops, linked into the cache so they are ours to stop: a loop a screen, none to make
         printf '%s\n' "$_mlp" | while IFS="$TAB" read -r _mls _mln; do
             _mll=$MOTION_DIR/given-$(printf '%s' "$_mls" | cksum | cut -d' ' -f1).mp4
             ln -sf "$_mls" "$_mll" && printf '%s\tgiven\t%s\n' "$_mll" "$_mln"

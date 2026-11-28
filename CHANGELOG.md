@@ -5,6 +5,16 @@
 - Wallpaper and screens has a Plain color row under the wallpaper: Enter
   opens the color picker on the color in use, else the theme's ground. It
   was only at the foot of the wallpaper list.
+- Wallpaper and screens has a Picture or video row under Plain color: Enter
+  opens your files on a picture or an MP4 video. A video's first frame is
+  the still (the lock, the login screen, previews), and with Moving
+  wallpaper on the video plays on every screen. A theme saved from it keeps
+  the frame as its picture and the video as its loop.
+- Full screen, a file pick keeps the frame: the list at the left, the file
+  about to be picked in the page, and pick (or open, for a folder) at the
+  right. It was a lone list. A row that picks a file says what it does and
+  shows the picture in use.
+- The dialog is 0.174.1.
 
 ## v0.174
 

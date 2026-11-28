@@ -281,7 +281,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         theme:picture) _lpy=$(look_picks "${3:-}") || { echo "theme: $_lpy"; return 1; }; look_picks "${3:-}"   # the picture's path, then the picks the words asked for
             _pp=$(wall_picture_ok "$_lpr") || { echo "$_pp"; return 1; }
             echo "$_pp${_lp_face:+ face=$_lp_face}${_lp_family:+ family=$_lp_family}${_lp_animation:+ animation=$_lp_animation}"; return 0 ;;
-        theme:wallpaper-picture) _pp=$(wall_picture_ok "${3:-}") && { echo "$_pp"; return 0; }; echo "$_pp"; return 1 ;;
+        theme:wallpaper-picture) _pp=$(wall_picture_ok "${3:-}" mp4) && { echo "$_pp"; return 0; }; echo "$_pp"; return 1 ;;
         theme:wallpaper) case ${3:-} in default) echo default; return 0 ;; esac; ! wall_shipped "${3:-}" || { echo "$3"; return 0; } ;;   # else the wallpaper list below
         theme:wallpaper-color) wall_hex "${3:-}" >/dev/null && { echo "$3"; return 0; }; echo "theme: a color is a name ($(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')) or #rrggbb"; return 1 ;;
         theme:text|theme:font) case ${3:-} in bigger|smaller|[6-9]|[1-3][0-9]|40) echo "$3"; return 0 ;; *) echo "theme: text takes bigger or smaller, or a size from 6 to 40"; return 1 ;; esac ;;

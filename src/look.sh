@@ -1,7 +1,7 @@
 # shellcheck extended-analysis=false
 # ------------------------------------------------------------- the slots
-# sets: HEX_KEYS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_THEMES SCENE_MAKE SCENE_READY SLOT_KEYS THUMB_DIR VGA_HEX WALL_GROUND_SAID WALL_KEYS WALL_NAMES WALL_SCENES WALL_SHIPPED WALL_TYPES WIN_KEYS
-# reads: CORE_DIR LOOKS_DIR MODE PALETTE_DIR PATH_REFUSED PM POINTER_SEEN REPO STATE_DIR TERM_HEX THEME_ENV THEME_KEYS TMP WALL_CACHE
+# sets: HEX_KEYS PANEL_KEYS POINTER_DIR POINTER_KEYS POINTER_THEMES SCENE_MAKE SCENE_READY SLOT_KEYS THUMB_DIR VGA_HEX WALL_GROUND_SAID WALL_KEYS WALL_MEDIA_TYPES WALL_NAMES WALL_SCENES WALL_SHIPPED WALL_TYPES WIN_KEYS
+# reads: CORE_DIR LOOKS_DIR MODE MPV_SAFE PALETTE_DIR PATH_REFUSED PM POINTER_SEEN REPO STATE_DIR TERM_HEX THEME_ENV THEME_KEYS TMP WALL_CACHE
 # slots (0-15), not hex: one file serves the console and an emulator;
 # spark reads SPARK_*_SGR at a tty
 SLOT_KEYS="ACCENT_SLOT MUTED_SLOT ACCENT_STAR MUTED_STAR ACCENT_SGR MUTED_SGR"
@@ -113,7 +113,8 @@ scene_still() {   # scene_still SCENE PALETTE_FILE WxH OUT.png [VIEW] -> the sti
 }
 wall_for_palette() { for _e in $WALL_SHIPPED; do _r=${_e#*:}; [ "${_r%%:*}" != "$1" ] || { printf '%s' "${_e%%:*}"; return 0; }; done; return 1; }   # wall_for_palette PALETTE -> its drawing, or false
 wall_palette_of() { for _e in $WALL_SHIPPED; do [ "${_e%%:*}" != "$1" ] || { _r=${_e#*:}; printf '%s' "${_r%%:*}"; return 0; }; done; ! wall_scene "$1" || { printf 'every'; return 0; }; return 1; }   # wall_palette_of DRAWING -> its palette (every for a scene)
-wall_path() {   # -> the picture's path
+wall_path() {   # -> the picture's path; a video's first frame for a video of yours
+    if wall_video "$WALLPAPER"; then wall_video_still "$WALLPAPER"; return; fi
     wall_shipped "$WALLPAPER" || { printf '%s' "$WALLPAPER"; return; }
     _td=$(theme_dir "${THEME:-}")
     if [ -n "$_td" ] && [ -f "$_td/wallpaper.png" ] && [ "$(look_get "$_td" DRAWING)" = "$WALLPAPER" ]; then printf '%s' "$_td/wallpaper.png"
@@ -176,7 +177,33 @@ wall_render() {   # wall_render DRAWING PALETTE_FILE OUT_BASE -> OUT_BASE.svg, O
     write_whole "$3.svg" wall_recolor "$REPO/gallery/wallpaper/$1.svg" "$2" || return 1
     svg_png "$3.svg" "$3.png" 3840 || { rm -f "$3.png"; return 1; }
 }
-wall_follow() {   # draws the wallpaper in the palette in use when missing; a row when it cannot
+wall_video() { case ${1:-} in /*.[Mm][Pp]4) return 0 ;; *) return 1 ;; esac; }   # wall_video WALLPAPER -> 0 for a video of yours (an MP4's full path)
+wall_video_still() { printf '%s' "$WALL_CACHE/videos/video-$(printf '%s' "$1" | cksum | cut -d' ' -f1).jpg"; }   # wall_video_still VIDEO -> its first frame, a JPEG as the video is lossy (a 4K PNG weighed 11 MB), by a sum of its path
+wall_video_make() {   # wall_video_make VIDEO -> its first frame drawn when missing or older than the video; false when it cannot be
+    _wvs=$(wall_video_still "$1")
+    [ ! -f "$_wvs" ] || [ -n "$(find "$1" -newer "$_wvs" 2>/dev/null)" ] || return 0   # find -newer: -nt is not POSIX
+    command -v mpv >/dev/null 2>&1 && mkdir_state "${_wvs%/*}" || return 1
+    _wvd=$_wvs.d-${TMP##*/}; rm -rf "$_wvd"; mkdir -p "$_wvd" || return 1
+    # shellcheck disable=SC2086   # MPV_SAFE is options, split on purpose
+    files_tool mpv $MPV_SAFE --untimed --really-quiet --no-audio --vo=image --vo-image-format=jpg --vo-image-jpeg-quality=95 --vo-image-outdir="$_wvd" --frames=1 -- "$1" </dev/null >/dev/null 2>&1
+    if pic_magic "$_wvd/00000001.jpg" 2>/dev/null; then mv -f "$_wvd/00000001.jpg" "$_wvs"; _wvr=$?; else _wvr=1; fi   # whole or none: a reader takes the old frame or the new
+    rm -rf "$_wvd"; return "$_wvr"
+}
+wall_yours_thumb() {   # -> a PNG 960 wide of the picture or the video's first frame of yours in use, made when missing or older than it; false when none can be
+    _wyp=$(wall_path); [ -f "$_wyp" ] || return 1
+    _wyt=$THUMB_DIR/yours-$(printf '%s' "$_wyp" | cksum | cut -d' ' -f1)-960.png   # -960: the name wall_thumbs keeps
+    if [ ! -f "$_wyt" ] || [ -n "$(find "$_wyp" -newer "$_wyt" 2>/dev/null)" ]; then mkdir_state "$THUMB_DIR" && pic_png "$_wyp" "$_wyt" 960 || return 1; fi
+    printf '%s' "$_wyt"
+}
+wall_follow() {   # draws the wallpaper in the palette in use when missing, or a video's first frame; a row when it cannot
+    if wall_video "$WALLPAPER"; then
+        [ -f "$WALLPAPER" ] || return 0   # gone: the render says it is missing
+        [ "$MODE" != dry ] || { row would wallpaper "$(file_named "$WALLPAPER"): its first frame as the still"; return 0; }
+        if wall_video_make "$WALLPAPER"; then wall_load; EXPR=$(render_expr)
+        elif command -v mpv >/dev/null 2>&1; then row todo wallpaper "$(file_named "$WALLPAPER"): no frame of it could be drawn, the ground instead"
+        else row todo wallpaper "$(file_named "$WALLPAPER"): mpv draws its first frame, and it is not installed (spark-shell on desktop installs it)"; fi
+        return 0
+    fi
     wall_shipped "$WALLPAPER" || return 0
     [ -n "${THEME:-}" ] && [ "$THEME" != none ] || return 0
     _td=$(theme_dir "$THEME")
@@ -214,18 +241,21 @@ wall_name() {   # -> default, a name or hex; nothing for a path
     for w in $WALL_NAMES; do [ "$(wall_hex "$w")" != "$(panel_lower "$WALLPAPER")" ] || { echo "$w"; return; }; done
     echo "$WALLPAPER"
 }
-wall_picture_ok() {   # wall_picture_ok PATH -> its real path (no link, under home, nothing hidden) or one line and exit 1
+wall_picture_ok() {   # wall_picture_ok PATH [mp4] -> its real path (no link, under home, nothing hidden; a picture, or with mp4 a picture or an MP4 video) or one line and exit 1
+    _rk='a picture'; _rt=$WALL_TYPES; [ "${2:-}" != mp4 ] || { _rk='a picture or a video'; _rt=$WALL_MEDIA_TYPES; }
     _rp=$(realpath "$1" 2>/dev/null) && [ ! -L "$1" ] || { echo "wallpaper: $1 is not a file of yours"; return 1; }
     _hr=$(realpath "$HOME" 2>/dev/null) || _hr=$HOME
-    case $_rp in "$_hr"/*) ;; *) echo "wallpaper: a picture comes from under your home"; return 1 ;; esac
+    case $_rp in "$_hr"/*) ;; *) echo "wallpaper: $_rk comes from under your home"; return 1 ;; esac
     case ${_rp#"$_hr"/} in .*|*/.*) echo "wallpaper: a hidden file is not offered"; return 1 ;; esac
     [ -f "$_rp" ] && [ -r "$_rp" ] || { echo "wallpaper: $1 is not a file that can be read"; return 1; }
-    case " $WALL_TYPES " in *" $(printf '%s' "${_rp##*.}" | tr 'A-Z' 'a-z') "*) ;; *) echo "wallpaper: a picture is $WALL_TYPES"; return 1 ;; esac
+    case " $_rt " in *" $(printf '%s' "${_rp##*.}" | tr 'A-Z' 'a-z') "*) ;; *) echo "wallpaper: $_rk is $_rt"; return 1 ;; esac
     path_ok "$_rp" || { echo "wallpaper: $PATH_REFUSED"; return 1; }   # the config's shape, before any write
-    _rw=$(pic_why "$_rp") || { echo "wallpaper: $_rw"; return 1; }
+    if wall_video "$_rp"; then _rw=$(art_media_ok "$_rp" mp4) || { echo "wallpaper: $(file_named "$_rp"): $_rw"; return 1; }
+    else _rw=$(pic_why "$_rp") || { echo "wallpaper: $_rw"; return 1; }; fi
     printf '%s\n' "$_rp"
 }
-WALL_TYPES='jpg jpeg png webp'   # the picker's types
+WALL_TYPES='jpg jpeg png webp'   # a picture's types
+WALL_MEDIA_TYPES="$WALL_TYPES mp4"   # the wallpaper picker's: a picture or a video
 WALL_GROUND_SAID="the palette's own, darker"   # the ground's column
 THUMB_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/thumbs   # DRAWING-PALETTE.png for the list
 thumb_palette() { if [ -n "${THEME:-}" ] && [ "$THEME" != none ] && palette_file "$THEME" >/dev/null; then printf '%s' "$THEME"; else printf none; fi; }   # -> THEME when it has a palette file, else none

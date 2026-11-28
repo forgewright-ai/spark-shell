@@ -185,7 +185,8 @@ desktop_reload() {   # desktop_reload [WHY] -- a running sway reads its new conf
     if [ -n "${1:-}" ]; then row ok "$WM_NAME" "reloaded ($1)"; else row ok "$WM_NAME" "reloaded (~/$WM_CONFIG_REL)"; fi
 }
 wall_missing() {   # a todo row when the picture the config names is not there: the ground instead
-    if [ "$WALLPAPER" != none ] && [ "$WALLPAPER" != default ] && ! wall_color && ! wall_there; then
+    if wall_video "$WALLPAPER"; then [ -f "$WALLPAPER" ] || row todo wallpaper "$WALLPAPER is missing -- the ground instead (spark-shell theme wallpaper PATH)"   # its first frame is wall_follow's to draw
+    elif [ "$WALLPAPER" != none ] && [ "$WALLPAPER" != default ] && ! wall_color && ! wall_there; then
         row todo wallpaper "$(wall_path) is missing -- the ground instead (spark-shell theme wallpaper PATH)"
     fi
 }

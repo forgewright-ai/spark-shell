@@ -88,6 +88,21 @@ impl State {
         l.rows
     }
 
+    /// What a file's page offers while a pick waits (v0.174.1): a folder opens, a file of the kind asked is picked,
+    /// as Enter does; nothing else a file's page has, as no other step runs then.
+    pub fn pick_lines(&self, a: &Actions, width: u16, keys: &Bindings) -> Vec<Line> {
+        let mut l = Lines { rows: vec![], width };
+        let enter = keys.label(HintKey::Enter).to_string();
+        if let Some(row) = &a.row {
+            if let Some(c) = &row.children {
+                l.row("open", Action::Open(c.clone()), &enter);
+            } else if row.tool.is_some() {
+                l.row("pick", Action::Pick, &enter);
+            }
+        }
+        l.rows
+    }
+
     /// Whether an actions page would hold a row to act on.
     pub fn offers(&self, a: &Actions, keys: &Bindings) -> bool {
         let mut l = Lines { rows: vec![], width: 60 };

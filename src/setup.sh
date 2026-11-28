@@ -459,7 +459,10 @@ cmd_status() {
         if [ "$WALLPAPER" = none ]; then printf '  wall  %-16s %s\n' none "the palette's background (spark-shell theme wallpaper PATH|default)"
         elif wall_color; then printf '  wall  %-16s %s\n' color "$WALLPAPER, a plain color; a palette with a drawing of its own replaces it"
         elif [ "$WALLPAPER" = default ]; then printf '  wall  %-16s %s\n' default "the ground, the palette's background a shade darker ($(wall_ground)); it follows the palette"
+        elif wall_video "$WALLPAPER" && wall_there; then printf '  wall  %-16s %s\n' video "$WALLPAPER"
         elif wall_there; then printf '  wall  %-16s %s\n' picture "$WALLPAPER"
+        elif wall_video "$WALLPAPER" && [ -f "$WALLPAPER" ]; then printf '  wall  %-16s %s\n' video "$WALLPAPER, its first frame not drawn yet -- the palette's background color instead"
+        elif wall_video "$WALLPAPER"; then printf '  wall  %-16s %s\n' missing "$WALLPAPER is missing -- the palette's background color instead"
         else printf '  wall  %-16s %s\n' missing "$(wall_path) is missing -- the palette's background color instead"; fi
         if [ "$DESKTOP_BAR" = yes ]; then printf '  bar   %-16s %s\n' shown "$(bar_place_words "$BAR_POSITION"): $(bar_names) (spark-shell bar off --desktop hides it)"
         else printf '  bar   %-16s %s\n' hidden "spark-shell bar on --desktop shows it"; fi

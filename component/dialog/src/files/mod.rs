@@ -142,6 +142,8 @@ pub enum Action {
     Transfer(Verb),
     /// The conflict page's choice, for this file or for all.
     Answer(Answer, bool),
+    /// The lit file picked, while a pick waits: what Enter on it does.
+    Pick,
 }
 
 /// The passive pane while two stand: what the active pane would be, kept aside.

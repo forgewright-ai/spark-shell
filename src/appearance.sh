@@ -1,6 +1,6 @@
 # shellcheck extended-analysis=false
 # sets: APPEARANCE_CURATION
-# reads: CONFIG_DIR CORE_DIR FONT_FACES GLYPH_FAMILIES OS PALETTE_DIR PANEL_SEP REPO SCENE_MAKE SCREEN_CALLED_JQ TAB TERM_NAME THEME_COLOR_WORDS THEME_KEYS THUMB_DIR TMP WALL_TYPES
+# reads: CONFIG_DIR CORE_DIR FONT_FACES GLYPH_FAMILIES OS PALETTE_DIR PANEL_SEP REPO SCENE_MAKE SCREEN_CALLED_JQ TAB TERM_NAME THEME_COLOR_WORDS THEME_KEYS THUMB_DIR TMP WALL_MEDIA_TYPES WALL_TYPES
 appearance_gallery_entries() {   # the colors and the index go by file: a thousand themes pass what one argument holds. A row says a theme by its title (Mars Conquest); _label keeps the name the curation lists it by
     theme_chips theme > "$TMP/theme.chips"
     if [ "${1:-}" = plain ]; then : > "$TMP/theme.titles"; else theme_titles > "$TMP/theme.titles"; fi   # plain: the rows by their names, for a count of them
@@ -198,19 +198,24 @@ appearance_screens() {   # -> the rows of the screens, the loops and the clock, 
            + [{id: "theme:screens:clock", group: "idle and lock", text: "clock over the art", columns: [],
                switch: {on: $art.clock, turn_on: {name: "theme_clock", arguments: {to: "on"}}, turn_off: {name: "theme_clock", arguments: {to: "off"}}}}])'
 }
-appearance_wallpaper() {   # stdin: the theme section's rows -> the Wallpaper and screens page: the section's wallpaper row, a plain color, its moving wallpaper row, then the screens, the loops and the clock; false where the section has no wallpaper (a Mac)
+appearance_wallpaper() {   # stdin: the theme section's rows -> the Wallpaper and screens page: the section's wallpaper row, a plain color, a picture or video, its moving wallpaper row, then the screens, the loops and the clock; false where the section has no wallpaper (a Mac)
     cat > "$TMP/theme.root"
     appearance_screens > "$TMP/theme.screens" 2>/dev/null || echo '[]' > "$TMP/theme.screens"
     [ -s "$TMP/theme.screens" ] || echo '[]' > "$TMP/theme.screens"
     _awg=$(wall_ground 2>/dev/null) || _awg=''; _awc=''; ! wall_color || _awc=$(wall_hex "$WALLPAPER")
-    # a plain color in the open, not only at the foot of the wallpaper list: the picker opens on the one in use, else the ground
-    jq -ec --slurpfile more "$TMP/theme.screens" --arg label "$(theme_title "${THEME:-none}")" --arg color "$_awc" --arg ground "$_awg" '
+    _awf=''; ! art_wall_theirs || wall_color || _awf=$(file_named "$WALLPAPER")   # a picture or a video of yours, by its name
+    _awp=''; [ -z "$_awf" ] || _awp=$(wall_yours_thumb) || _awp=''   # and its picture in the page, a video by its first frame
+    # a plain color and a picture or video in the open, not only at the foot of the wallpaper list: the picker opens on the color in use, else the ground; the files on a picture or an MP4
+    jq -ec --slurpfile more "$TMP/theme.screens" --arg label "$(theme_title "${THEME:-none}")" --arg color "$_awc" --arg ground "$_awg" --arg file "$_awf" --arg shows "$_awp" --arg types "$WALL_MEDIA_TYPES" '
         [.rows[] | select(.id == "theme:wallpaper" or .id == "theme:show:Moving wallpaper") | .group = "wallpaper"] as $w
         | select(($w | length) > 0)
         | {id: "theme:wallpaper-color", group: "wallpaper", text: "Plain color", columns: (if $color != "" then [$color] else ["a name or #rrggbb"] end),
            tool: {name: "theme_wallpaper_color", arguments: {}, ask: ["color"]}, swatch: (if $color != "" then $color else $ground end)}
           + (if $color != "" then {chip: [$color]} else {} end) as $plain
-        | {title: "Wallpaper and screens", state: $label, short: [], rows: ($w[0:1] + [$plain] + $w[1:] + ($more[0] // []))}' "$TMP/theme.root"
+        | {id: "theme:wallpaper-picture", group: "wallpaper", text: "Picture or video", sign: "opens", columns: [if $file != "" then $file else ($types | split(" ") | join(", ")) end],
+           children: "spark-shell://files/rows", pick: {tool: "theme_wallpaper_picture", types: ($types | split(" "))}}
+          + (if $shows != "" then {preview: $shows} else {} end) as $media
+        | {title: "Wallpaper and screens", state: $label, short: [], rows: ($w[0:1] + [$plain, $media] + $w[1:] + ($more[0] // []))}' "$TMP/theme.root"
 }
 appearance_pairs() {   # the themes in the other light, and none: Enter pairs it
     _apv=$(art_of "${THEME:-none}" | jq -r .variant)
@@ -401,6 +406,7 @@ appearance_preview() (
     case $_wall in
         picture) _source=$_dir/$(look_get "$_dir" PICTURE); _label=$(art_named "$_source" "${_dir##*/}"); _kind=picture ;;   # by its role: Landscape 1
         /*) _source=$(wall_picture_ok "$_wall") || _source=''; _label=${_wall##*/}; _kind=picture
+            ! wall_video "$_wall" || _source=$(wall_video_still "$_wall")   # a video by its first frame
             if wall_of_theme "$_wall"; then _source=$_wall; _lpd=${_wall%/*}; _label=$(art_named "$_wall" "${_lpd##*/}"); fi ;;   # a theme's own, not under your home
         none|default|'#'*) ;;
         *) if wall_scene "$_wall"; then _kind=scene; _source=$SCENE_MAKE

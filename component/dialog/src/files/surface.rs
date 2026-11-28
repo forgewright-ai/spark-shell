@@ -205,7 +205,6 @@ impl App {
             && self.files.pane
             && self.files_pane_view().is_some()
             && (!self.two_panes() || self.wide3)
-            && self.picking.is_none()
             && self.attaching.is_none()
             && !matches!(self.files.page, Page::Conflict(_))
             && !matches!(self.mode, Mode::Confirm(_))
@@ -228,6 +227,9 @@ impl App {
 
     /// The lines the details say of what they are of, the list holding the keys: the actions page's own, not open.
     pub fn files_about_lines(&self, a: &Actions) -> Vec<Line> {
+        if self.picking.is_some() {
+            return self.files.pick_lines(a, 60, &self.cfg.keys);
+        }
         self.files.actions_lines(a, 60, &self.cfg.keys)
     }
 
@@ -235,8 +237,9 @@ impl App {
     /// and one at a time, so a list walked fast asks for the file it rests on.
     pub fn files_follow(&mut self) {
         // a wide window shows the lit file beside the list at once (v0.160): its details open by themselves, beside
-        // two panes too where the window holds the three, and close by themselves when it no longer does
-        if self.pixels && self.files_pane_view().is_some() && self.files.page == Page::List && self.picking.is_none() && self.attaching.is_none() {
+        // two panes too where the window holds the three, and close by themselves when it no longer does. A pick
+        // too (v0.174.1): the file you are about to pick stands in the page, what Enter does at the right
+        if self.pixels && self.files_pane_view().is_some() && self.files.page == Page::List && self.attaching.is_none() {
             let room = self.pane_fits && if self.two_panes() { self.wide3 } else { self.wide };
             if room {
                 (self.files.pane, self.files_pane_wide) = (true, true);
@@ -289,6 +292,13 @@ impl App {
 
     /// A click on a row of the details while the list holds the keys: the details take them, on that row.
     pub fn files_pane_row(&mut self, n: usize, now: std::time::Instant) {
+        // while a pick waits the page's one step is what Enter does on the lit row: a folder opens, a file is picked
+        if self.picking.is_some() {
+            if n == 0 && self.in_list {
+                self.enter();
+            }
+            return;
+        }
         if self.files.page == Page::List && self.files_actions(self.files_lit_file()) && self.files.page != Page::List {
             self.clicked(n, now);
         }
@@ -416,7 +426,7 @@ impl App {
             Action::View | Action::CopyPath | Action::Transfer(_) | Action::Check(_) => true,
             Action::Open(uri) => a.row.as_ref().is_some_and(|r| r.children.as_ref() == Some(uri)),
             Action::Step(call) | Action::Ask(call, _) => on_row(call),
-            Action::UncheckAll | Action::ClosePane | Action::OpenPane | Action::Answer(..) => false,
+            Action::UncheckAll | Action::ClosePane | Action::OpenPane | Action::Answer(..) | Action::Pick => false,
         };
         if !aimed {
             return true;
@@ -509,6 +519,10 @@ impl App {
                 self.files_transfer_now(verb);
             }
             Action::Answer(answer, all) => self.files_conflict_answer(answer, all),
+            Action::Pick => {
+                self.files_to_list();
+                self.enter();
+            }
         }
     }
 

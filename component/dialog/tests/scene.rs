@@ -1579,6 +1579,62 @@ fn a_wide_window_keeps_a_files_words_beside_its_name() {
     assert!(long.1 + long.0.chars().count() as f64 * M.cw <= count.0, "{long:?}");
 }
 
+/// A video's length is said once in its page (v0.174.1): its facts carry it, and the seconds its page counts gave it
+/// again (video, 0:04, 1920 by 1080, 0:04).
+#[test]
+fn a_videos_length_is_said_once() {
+    let mut a = files();
+    (a.wide, a.pane_fits) = (true, true);
+    (a.in_list, a.sel, a.list_keys) = (true, 3, true); // diagram.png, as a video's page here
+    a.files_follow();
+    a.files.peek = Some(Peek {
+        uri: "spark-shell://files/preview/diagram.png".into(),
+        page: Some(spark_dialog::preview::Page {
+            picture: Some("/run/pages/diagram.png".into()),
+            facts: vec!["0:04".into(), "1 KB".into(), "today".into(), "1920 \u{d7} 1080".into()],
+            seconds: 4.0,
+            ..Default::default()
+        }),
+    });
+    let s = scene(&mut a, 1920.0, 1080.0);
+    let lead = words(&s).into_iter().find(|w| w.3 == Size::Lead).expect("what it is");
+    assert_eq!(lead.0.matches("0:04").count(), 1, "{}", lead.0);
+}
+
+/// A pick in a wide window keeps the frame (v0.174.1): the list at the left, the file about to be picked in large
+/// type in the page, and at the right only what Enter does then, pick for a file and open for a folder; a click
+/// on it picks. Before, the picker was a lone list with the rest of the screen empty.
+#[test]
+fn a_wide_window_picks_with_the_file_in_the_page_and_pick_beside_it() {
+    let mut a = files();
+    (a.wide, a.pane_fits) = (true, true);
+    a.picking = Some(spark_dialog::app::Picking {
+        back: View::Home,
+        depth: 1,
+        prov: 0,
+        tool: "theme_wallpaper_picture".into(),
+        types: vec!["png".into(), "mp4".into()],
+        arguments: serde_json::Map::new(),
+        step: None,
+        field: String::new(),
+        what: String::new(),
+    });
+    (a.in_list, a.sel, a.list_keys) = (true, 2, true); // diagram.png: the pick offers the folders and the kinds it takes
+    a.files_follow();
+    assert!(a.files.pane && a.files_details_beside(), "the page stands beside the list while picking");
+    let s = scene(&mut a, 1920.0, 1080.0);
+    let big: Vec<_> = words(&s).into_iter().filter(|w| w.3 == Size::Title).collect();
+    assert_eq!(big.first().map(|w| w.0.as_str()), Some("diagram.png"), "the file in large type: {big:?}");
+    let acts: Vec<String> = words(&s).into_iter().filter(|w| w.1 > 1500.0 && w.3 == Size::Main).map(|w| w.0).collect();
+    assert_eq!(acts, vec!["pick".to_string()], "what Enter does, nothing else: {acts:?}");
+    assert!(words(&s).iter().any(|w| w.0 == "Enter" && w.1 > 1700.0), "its key beside it");
+    // a folder opens
+    a.sel = 1; // figures
+    let s = scene(&mut a, 1920.0, 1080.0);
+    let acts: Vec<String> = words(&s).into_iter().filter(|w| w.1 > 1500.0 && w.3 == Size::Main).map(|w| w.0).collect();
+    assert_eq!(acts, vec!["open".to_string()], "{acts:?}");
+}
+
 /// v0.160: a wide window shows the lit file beside the list at once, in large type: its name, one line of what it
 /// is, its facts side by side, what it holds at the corner under them and what you do with it beside that, the
 /// keys in small type with no box. Two panes keep the page as a third column where the window holds the three.
@@ -2331,6 +2387,43 @@ fn a_place_in_full_screen_is_its_list_its_page_and_its_actions() {
     // the window made narrow: the list alone, as it was
     let narrow = scene(&mut a, 600.0, 800.0);
     assert!(fills(&narrow, PANEL).is_empty() && !words(&narrow).iter().any(|w| w.3 == Size::Title));
+}
+
+/// v0.174.1: a row that picks a file (Picture or video) has a page in a wide window as every row does: what its
+/// tool does with the file in its provider's words, the picture in use under them, and choose on Enter at the right,
+/// as the key bar says it. Before, its page was its name alone and the actions said open.
+#[test]
+fn a_pick_rows_page_says_what_its_tool_does_and_shows_the_picture_in_use() {
+    let mut a = home();
+    let mut theme = Provider::new("theme");
+    theme.ready = true;
+    theme.tools = spark_dialog::model::tools(&json!({"tools": [{"name": "theme_wallpaper_picture", "title": "theme wallpaper picture PATH",
+        "description": "A picture or an MP4 video of yours as the wallpaper.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}]}));
+    theme.rows = spark_dialog::model::rows(
+        &json!({"title": "Wallpaper and screens", "rows": [
+            {"id": "theme:wallpaper-picture", "sign": "opens", "text": "Picture or video", "group": "wallpaper", "columns": ["harbor.mp4"],
+             "children": "spark-shell://files/rows", "pick": {"tool": "theme_wallpaper_picture", "types": ["png", "mp4"]}, "preview": "/run/thumbs/yours-1-960.png"}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    a.providers = vec![theme];
+    a.view = View::Section(0);
+    a.came_from = vec![View::Home];
+    a.wide = true;
+    (a.in_list, a.sel) = (true, 0);
+    let s = scene(&mut a, 1920.0, 1080.0);
+    assert!(
+        words(&s).iter().any(|w| w.0.starts_with("A picture or an MP4 video") && w.1 == 792.0),
+        "its tool's words in the page"
+    );
+    assert!(
+        s.pictures.iter().any(|p| p.x >= 780.0 && p.x < 1480.0),
+        "the picture in use in the page: {:?}",
+        s.pictures
+    );
+    let acts: Vec<String> = words(&s).into_iter().filter(|w| w.1 == 1528.0).map(|w| w.0).collect();
+    assert_eq!(acts.first().map(String::as_str), Some("choose"), "{acts:?}");
 }
 
 /// v0.174: a step of the actions beside a page runs as the row's own steps do: the second is the row's first more.

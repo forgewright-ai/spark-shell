@@ -444,9 +444,16 @@ pub(super) fn side_by_side(pairs: &[(String, String)]) -> bool {
 
 /// What a row's tool does, in its provider's words: the line a page says under the name where nothing says more.
 pub(super) fn does(app: &App, p: usize, r: &model::Row) -> String {
-    let named = r.tool.as_ref().or(r.step.as_ref().map(|s| &s.set)).or(r.switch.as_ref().map(|s| &s.turn_on));
+    // a row that picks a file says what its tool does with the file (v0.174.1): its page was its name alone
+    let named = r
+        .tool
+        .as_ref()
+        .or(r.step.as_ref().map(|s| &s.set))
+        .or(r.switch.as_ref().map(|s| &s.turn_on))
+        .map(|c| c.name.as_str());
     named
-        .and_then(|c| app.providers.get(p)?.tools.iter().find(|t| t.name == c.name))
+        .or(r.pick.as_ref().map(|pk| pk.tool.as_str()))
+        .and_then(|n| app.providers.get(p)?.tools.iter().find(|t| t.name == n))
         .map(|t| t.description.trim().to_string())
         .unwrap_or_default()
 }
@@ -461,6 +468,8 @@ pub(super) fn row_acts(app: &App, r: &model::Row) -> Vec<Act> {
         out.push(Act::key(&app.step_words(t), &enter, Target::Key(HintKey::Enter)));
     } else if let Some(sw) = &r.switch {
         out.push(Act::key(if sw.on { "turn off" } else { "turn on" }, &enter, Target::Key(HintKey::Enter)));
+    } else if r.pick.is_some() {
+        out.push(Act::key("choose", &enter, Target::Key(HintKey::Enter))); // as the key bar says it
     } else if r.children.is_some() {
         out.push(Act::key("open", &enter, Target::Key(HintKey::Enter)));
     }
@@ -561,6 +570,27 @@ pub(super) fn row(app: &App, pen: &Pen, p: usize, r: &model::Row, room: f64) -> 
             }
             if !does.is_empty() && does != look.what {
                 look.body.extend(prose(&m, &does, room, false));
+            }
+            // a row with a picture of its own (the picture or video in use, v0.174.1) shows it under its words, with
+            // the air a file's page has between its facts and its picture
+            if let Some(file) = &r.preview {
+                if !look.body.is_empty() {
+                    look.body.push(Row {
+                        h: m.px(30.0),
+                        pick: None,
+                        k: K::Gap(m.px(30.0)),
+                    });
+                }
+                look.body.push(Row {
+                    h: m.px(420.0),
+                    pick: None,
+                    k: K::Shown {
+                        picture: Some((file.clone(), None)),
+                        lines: vec![],
+                        say: String::new(),
+                        large: true,
+                    },
+                });
             }
         }
     }

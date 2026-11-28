@@ -3445,7 +3445,11 @@ fn about_file(app: &App, pen: &Pen, a: &files::Actions, body: Vec<Row>, room: f6
             }
             if pg.seconds >= 1.0 {
                 let s = pg.seconds.round() as u64;
-                more.push(format!("{}:{:02}", s / 60, s % 60));
+                let length = format!("{}:{:02}", s / 60, s % 60);
+                // a video's page says its length among its facts already: once (v0.174.1, it read 0:04 twice)
+                if !more.contains(&length) {
+                    more.push(length);
+                }
             }
         }
         // as many on the kind's row as it holds, the rest on rows under it

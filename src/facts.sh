@@ -229,7 +229,7 @@ machine_now() {   # -> the .now lines
     [ -z "$_mnl" ] || printf -- '- Network: %s.\n' "$_mnl"
     _mka=$(kb_active); [ -n "$_mka" ] || _mka=${KEYBOARD%% *}; [ -n "$_mka" ] || _mka="sway's own"
     case ${THEME:-none} in none) _mpa="none (terminal default colors)" ;; *) _mpa=$THEME ;; esac
-    _mwa=$(wall_name); [ -n "$_mwa" ] || _mwa='a picture of yours'
+    _mwa=$(wall_name); [ -n "$_mwa" ] || { _mwa='a picture of yours'; ! wall_video "${WALLPAPER:-}" || _mwa='a video of yours'; }
     _mla=''; [ -n "${MACHINE_START:-}" ] || _mla=$(light_get)   # not at the start: DDC/CI is slow, the bar's loop brings it
     _mss=''; [ "$DISPLAY_SAVER" = clock ] || _mss=" (saver $DISPLAY_SAVER)"
     printf -- "- Keyboard layout in use: %s. Palette %s, wallpaper %s.%s Idle screen %s%s, lock %s.\n" "$_mka" "$_mpa" "$_mwa" "${_mla:+ Brightness $_mla%.}" "$(idle_words "$DISPLAY_IDLE")" "$_mss" "$(idle_words "$DISPLAY_LOCK")"
