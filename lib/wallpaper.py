@@ -3219,7 +3219,7 @@ CROW = (
 
 
 class Crossing(Pixel):
-    """A level crossing at dusk, far off, and a lit vending machine. The bells
+    """A level crossing at dusk, far off, a lit vending machine by its road. The bells
     ring, the arm comes down, a small train goes by; after it the crows on the
     wire are in another order."""
 
@@ -3229,16 +3229,16 @@ class Crossing(Pixel):
 
     def layout(self, portrait):
         """Where things are: landscape, or a portrait's tall dusk over a low horizon, one span of
-        wire high up between two poles, the crossing and the vending machine below."""
+        wire high up between two poles, the crossing below and the vending machine by its road."""
         if portrait:
             self.RAIL, self.CROWS, self.SX, self.SUN = 340, (70, 110, 150, 190), 196, (178, 302)
             self.POLES, self.WIRES, self.ARM = (24, 246), ((63, 18), (63, 26), (73, 22)), 62
-            self.VEND, self.CLOUDS, self.TOWER, self.DUST = (44, 336), (40, 250), (62, 306), (110, 262, 230, 340)
+            self.VEND, self.CLOUDS, self.TOWER, self.DUST = (158, 346), (40, 250), (62, 306), (110, 262, 230, 340)
             self.SKY = ((0, "top"), (190, "mid"), (340, "low"))
         else:
             self.RAIL, self.CROWS, self.SX, self.SUN = 200, (130, 190, 250, 310), 334, (345, 168)
             self.POLES, self.WIRES, self.ARM = (36, 444), ((33, 22), (33, 31), (43, 26)), 32
-            self.VEND, self.CLOUDS, self.TOWER, self.DUST = (70, 196), (30, 140), (150, 166), (200, 470, 95, 200)
+            self.VEND, self.CLOUDS, self.TOWER, self.DUST = (281, 206), (30, 140), (150, 166), (200, 470, 95, 200)
             self.SKY = ((0, "top"), (105, "mid"), (200, "low"))
 
     def colors(self, p):
@@ -3322,16 +3322,18 @@ class Crossing(Pixel):
                 put(a, x, self.wire(x, k), c["ink"])
 
     def front(self, a, c, dk):
-        x, y = self.VEND  # the vending machine, on our side of the line
-        box(a, x, y, 18, 34, c["ink"])
-        box(a, x + 2, y + 2, 14, 18, c["vend"], 0.95)
+        """The vending machine, lit, at the side of the road on our side of the crossing."""
+        x, y = self.VEND
+        box(a, x, y, 12, 22, c["ink"])
+        box(a, x + 1, y + 1, 10, 11, c["vend"], 0.95)
         for i in range(3):
-            for j in range(3):
-                box(a, x + 3 + i * 4, y + 3 + j * 6, 3, 4, (c["vend2"], c["vend3"], c["vend2"])[(i + j) % 3])
-        box(a, x + 3, y + 23, 12, 3, c["ink2"])
-        box(a, x + 13, y + 22, 2, 2, c["red"])
-        pglow(a, x + 9, y + 12, 30, c["vend"], 0.22 if dk else 0.05, add=dk)
-        fill(a, Mask().ell(x + 9, y + 36, 18, 4), c["vend"], 0.15 if dk else 0.05)
+            for j in range(2):
+                box(a, x + 2 + i * 3, y + 2 + j * 5, 2, 3, (c["vend2"], c["vend3"], c["vend2"])[(i + j) % 3])
+        box(a, x + 2, y + 14, 8, 1, c["ink2"])
+        put(a, x + 9, y + 13, c["red"])
+        box(a, x + 2, y + 17, 8, 2, c["ink2"])
+        pglow(a, x + 6, y + 7, 22, c["vend"], 0.22 if dk else 0.05, add=dk)
+        fill(a, Mask().ell(x + 6, y + 23, 13, 3), c["vend"], 0.15 if dk else 0.05)
 
     def sign(self, a, c, t, active, dk):
         x, y = self.SX, self.RAIL + 6
