@@ -51,7 +51,10 @@ squares, twelve frames a second, the palette's colors and a dither between
 them; the references and not the story, no one in them, a dry joke
 
     garoa     Sao Paulo in the drizzle at night, the Copan and the masts of
-              Paulista; a helicopter finds its roof taken and takes the next
+              Paulista; a helicopter finds its roof taken, takes the next, and
+              climbs back into the cloud. Beside it the cable-stayed bridge
+              over the Pinheiros: the Marginal's way out runs free, the way in
+              moves a car's length a loop
     horizon   a black hole over the edge of an ice planet, its disc turning;
               a probe falls in and, as seen from here, never quite does
     watch     the sea at night, the moon's road on it, a lighthouse sweeping
@@ -2125,11 +2128,14 @@ HELI_FRONT = (  # nose on, halfway through a turn
 
 class Garoa(Pixel):
     """Sao Paulo in the drizzle at night: the Copan's wave, the masts of Paulista
-    with their red lights, helicopters going from roof to roof."""
+    with their red lights, helicopters going from roof to roof. The second view
+    is the river side: the cable-stayed bridge, its lights going round their
+    colors, and the jam on the Marginal under it."""
 
     name = "garoa"
     poster = 8.0
     portrait = True
+    second = True  # the river side: the Marginal Pinheiros, the cable-stayed bridge, the jam
 
     def layout(self, portrait):
         """Where the city is: landscape, or a portrait's city at the foot of a tall sky of drizzle,
@@ -2210,6 +2216,8 @@ class Garoa(Pixel):
                     box(a, wx, wy, size[0], size[1], c["glass"])
 
     def back(self, a, p, c):
+        if self.view2:
+            return self.back2(a, p, c)
         dk = p.dark
         DY, gw, gh = self.DY, self.gw, self.gh
         pgrad(a, 0, self.HZ, [(0, c["top"]), (120 + DY, mix(c["top"], c["low"], 0.55)), (self.HZ, c["low"])])
@@ -2343,6 +2351,8 @@ class Garoa(Pixel):
         return px2 + (ex - px2) * u, lift + (ey - lift) * (u ** 0.8), -1, 1.0, fade
 
     def draw(self, a, p, c, t):
+        if self.view2:
+            return self.draw2(a, p, c, t)
         dk = p.dark
         box(a, 0, 158 + self.DY + 2 * wave(t, 24), self.gw, 18, c["fog"], 0.18)
         for k, (mx, top) in enumerate(self.MASTS):
@@ -2373,7 +2383,10 @@ class Garoa(Pixel):
             pglow(a, fx, yy, 6, col, 0.25)
             for d in range(2, 14, 2):
                 put(a, fx, yy + d, col, 0.45 * (1 - d / 14))
-        # the drizzle: thin, slanted, quick, and its splashes
+        self.drizzle(a, c, t, self.HZ + 2)
+
+    def drizzle(self, a, c, t, ground):
+        """The drizzle: thin, slanted, quick, and its splashes on the ground below ground."""
         rnd = random.Random(23)
         speed = 12 * (self.gh + 20) / self.seconds
         for i in range(150):
@@ -2384,8 +2397,187 @@ class Garoa(Pixel):
                 put(a, xx + 0.3 * j, yy + j, c["rain"], 0.9 if i % 4 else 1.0)
         frnd = random.Random(int(round(t * PFPS)) % (self.seconds * PFPS) * 7 + 1)
         for i in range(14):
-            put(a, frnd.randint(0, self.gw - 1), frnd.randint(self.HZ + 2, self.gh - 1), c["rain"])
+            put(a, frnd.randint(0, self.gw - 1), frnd.randint(ground, self.gh - 1), c["rain"])
 
+
+    # the second landscape: across the Pinheiros, the cable-stayed bridge, the Marginal
+
+    RIV, BANK, DECK = 192, 214, 182  # the river's far edge, our bank, the bridge's deck
+
+    def deck(self, x):
+        """The deck's top at x: it arches a little over the river."""
+        u = (x - 300) / 175
+        return self.DECK - 4 * max(0.0, 1 - u * u)
+
+    def arm(self, y, side):
+        """Where an upper arm of the mast is at height y: out from the crossing, then in to the top."""
+        if y >= 112:
+            return 300 + side * 9 * (self.DECK - y) / 70
+        return 300 + side * (9 - 8 * (112 - y) / 78)
+
+    def bridge(self):
+        """The mast and its cables as masks, made once: the cables in four bands, top down."""
+        st = self.__dict__.setdefault("_bridge", {})
+        if not st:
+            m = Mask()
+            for side in (-1, 1):
+                m.line([(300 + side * 6, 206), (300, self.DECK)] + [(self.arm(y, side), y) for y in (112, 34)], w=3)
+            for y in (64, 98, 150):
+                m.rect(self.arm(y, -1), y, self.arm(y, 1) - self.arm(y, -1) + 1, 1)
+            bands = [Mask() for _ in range(4)]
+            for k in range(9):
+                y = 48 + k * 12
+                for side in (-1, 1):
+                    dx = 300 + side * (160 - k * 15)
+                    bands[k * 4 // 9].line([(self.arm(y, side), y), (dx, self.deck(dx))])
+            st.update(mast=m.m(), bands=[b.m() & ~m.m() for b in bands])
+        return st["mast"], st["bands"]
+
+    def back2(self, a, p, c):
+        dk = p.dark
+        gw, gh, RIV, BANK = self.gw, self.gh, self.RIV, self.BANK
+        pgrad(a, 0, RIV, [(0, c["top"]), (110, mix(c["top"], c["low"], 0.55)), (RIV, c["low"])])
+        clouds(a, 11, 7, (4, 72), c["cloud"], c["cloudlit"], 0.75, lit_below=True, wmin=70, wmax=170, big=True, tail=True)
+        rnd = random.Random(52)  # the far bank: low blocks, in the haze
+        m, x = Mask(), -4
+        while x < gw:
+            w = rnd.randint(8, 20)
+            m.rect(x, rnd.randint(158, 176), w, RIV - 150)
+            x += w
+        fill(a, m, c["far"])
+        box(a, 0, 150, gw, RIV - 150, c["fog"], 0.25)
+        rnd = random.Random(64)  # the glass towers of the new business district, lit by the floor
+        self.REDS2, x = [], 4
+        while x < gw - 8:
+            w = rnd.randint(14, 30)
+            h = rnd.randint(50, 112) if x < 250 or x > 340 else rnd.randint(28, 60)
+            y, kind = RIV - 4 - h, rnd.random()
+            box(a, x, y, w, RIV - y, c["mid"])
+            vline(a, x, y, RIV, c["midedge"])
+            hline(a, x, x + w, y, c["midedge"])
+            if kind < 0.3:  # a stepped crown and a mast with its light
+                box(a, x + 3, y - 4, w - 6, 4, c["mid"])
+                vline(a, x + w // 2, y - 13, y - 4, c["mid"])
+                self.REDS2.append((x + w // 2, y - 13))
+            elif kind < 0.55:  # cut on a slant
+                fill(a, Mask().poly([(x, y), (x + w - 1, y - 8), (x + w - 1, y)]), c["mid"])
+            for wy in range(y + 3, RIV - 3, 3):  # a floor of offices: runs of light, glass between
+                wx = x + 2
+                while wx < x + w - 2:
+                    ln = rnd.randint(2, 6)
+                    r = rnd.random()
+                    cool, day = rnd.random() < 0.6, rnd.random() < 0.25  # drawn alike in any palette
+                    if r < 0.3:
+                        col = c["cool"] if cool else c["warmdim"]
+                        hline(a, wx, min(wx + ln, x + w - 2), wy, col if dk or day else c["glass"])
+                    elif r < 0.6:
+                        hline(a, wx, min(wx + ln, x + w - 2), wy, c["glass"])
+                    wx += ln + 1
+            x += w + rnd.randint(3, 16)
+        # the bridge: the deck over the river, its lamps, the X of its mast and the cables
+        for x in range(gw):
+            y = self.deck(x)
+            vline(a, x, y, y + 4, c["near"])
+            put(a, x, y, c["pad"])
+            if x % 12 == 0:
+                vline(a, x, y - 3, y, c["near"])
+                put(a, x, y - 3, c["warm"] if dk else c["white"])
+                if dk:
+                    pglow(a, x, y - 3, 4, c["warm"], 0.25)
+        mast, bands = self.bridge()
+        for b in bands:
+            fill(a, b, mix(c["mid"], c["cool"], 0.35) if dk else c["pad"])
+        fill(a, mast, c["pad"] if dk else c["near"])
+        # the river: every light again in it, broken by the drizzle
+        box(a, 0, RIV, gw, BANK - RIV, c["wet"])
+        src = a[RIV - 80 : RIV].copy()
+        rnd = random.Random(6)
+        for y in range(RIV + 1, BANK):
+            d = y - RIV
+            sy = 79 - int(d * 2.2)
+            if sy < 0 or rnd.random() < 0.3:
+                continue
+            row = src[sy]
+            bright = row.sum(-1) > C(c["wet"]).sum() + 120
+            xs = np.nonzero(bright)[0]
+            a[y, xs] += (row[xs] - a[y, xs]) * (0.55 * (1 - d / (BANK - RIV)))
+        # our bank, and the Marginal: the way out, free; a barrier with the lamps; the way in, solid
+        box(a, 0, BANK, gw, 4, c["near"])
+        hline(a, 0, gw, BANK, c["midedge"])
+        box(a, 0, BANK + 4, gw, gh - BANK - 4, c["wet"])
+        for lx in range(30, gw, 84):
+            for yy in (226, 252):
+                pglow(a, lx, yy, 40, c["warm"] if dk else c["white"], 0.22 if dk else 0.3, add=False)
+        for x in range(0, gw, 14):
+            hline(a, x, x + 7, 254, c["pad"], 0.6)
+        box(a, 0, 232, gw, 4, c["near"])
+        hline(a, 0, gw, 232, c["pad"])
+        for lx in range(30, gw, 84):
+            vline(a, lx, 198, 232, c["near"])
+            hline(a, lx - 6, lx + 7, 198, c["near"])
+            for dx in (-6, 6):
+                put(a, lx + dx, 199, c["warm"] if dk else c["white"])
+                if dk:
+                    pglow(a, lx + dx, 199, 6, c["warm"], 0.4)
+
+    CARS = {  # side on, nose to the right: body, glass, roof in the lamps' light, wheels
+        "small": ("....lllll.....", "...kgkgggk....", "kkkkkkkkkkkkkk", "kkkkkkkkkkkkkk", "..o......o...."),
+        "big": (".....llllllll.......", "....kggkggggkk......", "...kggkgggggkkk.....", "lllkkkkkkkkkkkklllll",
+                "kkkkkkkkkkkkkkkkkkkk", "kkkkkkkkkkkkkkkkkkkk", "..oo..........oo...."),
+    }
+
+    def car(self, a, c, x, y, kind, kx, brake):
+        """A car side on, its wheels on y, nose right (kx 1) or left: its tail light, its
+        headlight, and both again in the wet road."""
+        rows = self.CARS[kind]
+        ln, h = len(rows[0]), len(rows)
+        x = int(round(x))
+        sprite(a, x, y - h + 1, rows, {"k": c["heli"], "g": mix(c["heli"], c["pad"], 0.35), "l": c["pad"], "o": c["heli"]}, kx)
+        ty = y - (2 if kind == "small" else 3)
+        tx, fx = (x, x + ln - 1) if kx > 0 else (x + ln - 1, x)
+        put(a, tx, ty, c["red"], 0.55 + 0.45 * brake)
+        put(a, tx, ty - 1, c["red"], 0.3 + 0.5 * brake)
+        put(a, fx, ty, c["white"], 0.85)
+        if brake > 0.5:
+            pglow(a, tx, ty, 6, c["red"], 0.3 * brake)
+        for d in range(3, 11, 2):
+            put(a, tx, y + d, c["red"], (0.15 + 0.3 * brake) * (1 - d / 11))
+            put(a, fx, y + d, c["white"], 0.25 * (1 - d / 11))
+
+    def creep(self, t, start, n=3, every=8.0, burst=1.6):
+        """How far a jammed lane has gone at t, in car lengths: n short goes a loop, a car's
+        length in all, so the loop ends where it began; and whether it is going now."""
+        done, moving = 0.0, False
+        for j in range(n):
+            u = window(t, start + j * every, start + j * every + burst)
+            moving = moving or 0 < u < 1
+            done += ease_io(u)
+        return done / n, moving
+
+    def draw2(self, a, p, c, t):
+        dk = p.dark
+        box(a, 0, 150 + 2 * wave(t, 24), self.gw, 16, c["fog"], 0.16)
+        for k, (rx, ry) in enumerate(self.REDS2):
+            on = ((t + k * 0.6) % 2.0) < 1.0
+            put(a, rx, ry, c["red"], 1.0 if on else 0.35)
+            if on:
+                pglow(a, rx, ry, 6, c["red"], 0.3)
+        if dk:  # the bridge's light, going slowly round its colors, band by band
+            _, bands = self.bridge()
+            for b, m in enumerate(bands):
+                u = (t / self.seconds - b * 0.07) % 1.0
+                col = mix(c["cool"], c["warm"], 0.5 - 0.5 * math.cos(2 * math.pi * u))
+                fill(a, m, col, 0.55)
+        for k in range(2):  # the way out: nobody on it, so it goes
+            u = ((t / 8.0) + k * 0.43) % 1.0
+            self.car(a, c, self.gw + 10 - (self.gw + 40) * u, 229, "small", -1, 0.0)
+        for lane, (y, kind, gap, start) in enumerate(((247, "small", 3, 1.0), (263, "big", 4, 5.0))):
+            pitch = len(self.CARS[kind][0]) + gap
+            done, moving = self.creep(t, start)
+            for k in range(-1, self.gw // pitch + 2):
+                hold = 0.0 if moving else 0.6 if (k + lane) % 5 == 0 else 1.0
+                self.car(a, c, (k - 1 + done) * pitch, y, kind, 1, hold)
+        self.drizzle(a, c, t, self.BANK + 4)
 
 
 # -- horizon ------------------------------------------------------------------------
